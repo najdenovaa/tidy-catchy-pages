@@ -24,7 +24,6 @@ const wellFields: { key: keyof WellData; label: string; unit: string }[] = [
   { key: "cavernCoeff", label: "Коэффициент кавернозности", unit: "" },
   { key: "bottomTempStatic", label: "BHST (статическая t°)", unit: "°C" },
   { key: "bottomTempCirc", label: "BHCT (циркуляционная t°)", unit: "°C" },
-  { key: "shoeLength", label: "Башмачная труба", unit: "м" },
 ];
 
 export default function WellDataForm({ data, onChange }: Props) {
