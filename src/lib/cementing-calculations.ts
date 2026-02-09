@@ -34,7 +34,6 @@ export interface WellData {
   bottomTempStatic: number; // BHST °C
   bottomTempCirc: number; // BHCT °C
   shoeLength: number; // Башмачная труба, м
-  sumpLength: number; // Зумпф, м
 }
 
 export function getCasingID(casingOD: number, casingWall: number): number {
@@ -54,6 +53,7 @@ export interface BufferFluid {
   volume: number; // м³
   rheology: Rheology;
   additives: Additive[];
+  flowRateLps: number; // Производительность, л/с
 }
 
 export interface SlurryInput {
@@ -64,6 +64,9 @@ export interface SlurryInput {
   additives: Additive[];
   thickeningTime30Bc: number; // время загустевания до 30 Вс, мин
   thickeningTime50Bc: number; // время загустевания до 50 Вс, мин
+  flowRateLps: number; // Производительность, л/с
+  waterRatio: number; // В/Ц (водоцементное отношение)
+  yieldPerTon: number; // Выход раствора, м³/т
 }
 
 export interface Equipment {

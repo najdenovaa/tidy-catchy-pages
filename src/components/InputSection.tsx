@@ -1,7 +1,6 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useState } from "react";
 import { getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive } from "@/lib/cementing-calculations";
@@ -17,10 +16,10 @@ interface Props {
   onSlurriesChange: (s: SlurryInput[]) => void;
   fractureGradient: number;
   onFractureGradientChange: (v: number) => void;
-  flowRate: number;
-  onFlowRateChange: (v: number) => void;
   displacementDensity: number;
   onDisplacementDensityChange: (v: number) => void;
+  displacementFlowRateLps: number;
+  onDisplacementFlowRateChange: (v: number) => void;
 }
 
 const wellFields: { key: keyof WellData; label: string; unit: string }[] = [
@@ -39,7 +38,6 @@ const wellFields: { key: keyof WellData; label: string; unit: string }[] = [
   { key: "bottomTempStatic", label: "BHST (статическая t°)", unit: "°C" },
   { key: "bottomTempCirc", label: "BHCT (циркуляционная t°)", unit: "°C" },
   { key: "shoeLength", label: "Башмачная труба", unit: "м" },
-  { key: "sumpLength", label: "Зумпф", unit: "м" },
 ];
 
 function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: boolean; onClick: () => void }) {
@@ -53,22 +51,17 @@ function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: bool
 
 export default function InputSection(props: Props) {
   const [openSections, setOpenSections] = useState({
-    well: true,
-    mud: true,
-    buffers: true,
-    cement: true,
-    hydraulics: true,
+    well: true, mud: true, buffers: true, cement: true, hydraulics: true,
   });
 
   const toggle = (key: keyof typeof openSections) => {
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, fractureGradient, onFractureGradientChange, flowRate, onFlowRateChange, displacementDensity, onDisplacementDensityChange } = props;
+  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, fractureGradient, onFractureGradientChange, displacementDensity, onDisplacementDensityChange, displacementFlowRateLps, onDisplacementFlowRateChange } = props;
 
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
 
-  // === Handlers ===
   const handleWellChange = (key: keyof WellData, value: string) => {
     onWellDataChange({ ...wellData, [key]: parseFloat(value) || 0 });
   };
@@ -167,6 +160,10 @@ export default function InputSection(props: Props) {
                 <Input type="number" step="1" value={displacementDensity || ""} onChange={(e) => onDisplacementDensityChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
               </div>
               <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Производ. продавки, л/с</Label>
+                <Input type="number" step="0.1" value={displacementFlowRateLps || ""} onChange={(e) => onDisplacementFlowRateChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
+              </div>
+              <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">PV (пласт. вязкость), сПз</Label>
                 <Input type="number" step="1" value={drillingFluid.rheology.pv || ""} onChange={(e) => handleMudChange("pv", e.target.value)} className="h-9 text-sm" />
               </div>
@@ -188,12 +185,8 @@ export default function InputSection(props: Props) {
         <SectionHeader title="💧 Буферные жидкости" isOpen={openSections.buffers} onClick={() => toggle("buffers")} />
         {openSections.buffers && (
           <CardContent className="pt-4 space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="space-y-1 flex-1 max-w-xs">
-                <Label className="text-xs text-muted-foreground">Производительность насоса (буферы), м³/мин</Label>
-                <Input type="number" step="0.01" value={flowRate || ""} onChange={(e) => onFlowRateChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
-              </div>
-              <button onClick={() => onBuffersChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 }, additives: [] }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors mt-4">
+            <div className="flex justify-end">
+              <button onClick={() => onBuffersChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 }, additives: [], flowRateLps: 5 }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                 + Добавить буфер
               </button>
             </div>
@@ -204,10 +197,11 @@ export default function InputSection(props: Props) {
                   <span className="font-medium text-sm">{b.name}</span>
                   {buffers.length > 1 && <button onClick={() => onBuffersChange(buffers.filter((_, i) => i !== idx))} className="text-xs text-destructive hover:underline">Удалить</button>}
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><Input value={b.name} onChange={(e) => handleBufferChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label><Input type="number" value={b.density || ""} onChange={(e) => handleBufferChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Объём, м³</Label><Input type="number" step="0.1" value={b.volume || ""} onChange={(e) => handleBufferChange(idx, "volume", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Произв., л/с</Label><Input type="number" step="0.1" value={b.flowRateLps || ""} onChange={(e) => handleBufferChange(idx, "flowRateLps", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">PV, сПз</Label><Input type="number" value={b.rheology.pv || ""} onChange={(e) => handleBufferChange(idx, "pv", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><Input type="number" step="0.1" value={b.rheology.yp || ""} onChange={(e) => handleBufferChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
                 </div>
@@ -238,7 +232,7 @@ export default function InputSection(props: Props) {
         {openSections.cement && (
           <CardContent className="pt-4 space-y-4">
             <div className="flex justify-end">
-              <button onClick={() => onSlurriesChange([...slurries, { name: `Раствор ${slurries.length + 1}`, density: 1.85, height: 0, rheology: { pv: 30, yp: 10 }, additives: [], thickeningTime30Bc: 0, thickeningTime50Bc: 0 }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+              <button onClick={() => onSlurriesChange([...slurries, { name: `Раствор ${slurries.length + 1}`, density: 1.85, height: 0, rheology: { pv: 30, yp: 10 }, additives: [], thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateLps: 5, waterRatio: 0.5, yieldPerTon: 0.63 }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                 + Добавить раствор
               </button>
             </div>
@@ -253,6 +247,15 @@ export default function InputSection(props: Props) {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><Input value={s.name} onChange={(e) => handleSlurryChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, г/см³</Label><Input type="number" step="0.01" value={s.density || ""} onChange={(e) => handleSlurryChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Интервал (высота), м</Label><Input type="number" value={s.height || ""} onChange={(e) => handleSlurryChange(idx, "height", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Произв., л/с</Label><Input type="number" step="0.1" value={s.flowRateLps || ""} onChange={(e) => handleSlurryChange(idx, "flowRateLps", e.target.value)} className="h-8 text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">В/Ц отношение</Label><Input type="number" step="0.001" value={s.waterRatio || ""} onChange={(e) => handleSlurryChange(idx, "waterRatio", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Выход, м³/т</Label><Input type="number" step="0.01" value={s.yieldPerTon || ""} onChange={(e) => handleSlurryChange(idx, "yieldPerTon", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загуст. 30 Вс, мин</Label><Input type="number" value={s.thickeningTime30Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime30Bc", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загуст. 50 Вс, мин</Label><Input type="number" value={s.thickeningTime50Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime50Bc", e.target.value)} className="h-8 text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs text-muted-foreground">PV / YP</Label>
                     <div className="flex gap-1">
@@ -260,10 +263,6 @@ export default function InputSection(props: Props) {
                       <Input type="number" step="0.1" value={s.rheology.yp || ""} onChange={(e) => handleSlurryChange(idx, "yp", e.target.value)} className="h-8 text-sm" placeholder="YP" />
                     </div>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загустевание до 30 Вс, мин</Label><Input type="number" value={s.thickeningTime30Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime30Bc", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загустевание до 50 Вс, мин</Label><Input type="number" value={s.thickeningTime50Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime50Bc", e.target.value)} className="h-8 text-sm" /></div>
                 </div>
                 {/* Добавки */}
                 <div className="space-y-1">
@@ -288,19 +287,15 @@ export default function InputSection(props: Props) {
         )}
       </Card>
 
-      {/* ===== 5. Параметры ГРП и закачки ===== */}
+      {/* ===== 5. Параметры ГРП ===== */}
       <Card>
-        <SectionHeader title="⚙️ Параметры гидроразрыва и закачки" isOpen={openSections.hydraulics} onClick={() => toggle("hydraulics")} />
+        <SectionHeader title="⚙️ Параметры гидроразрыва" isOpen={openSections.hydraulics} onClick={() => toggle("hydraulics")} />
         {openSections.hydraulics && (
           <CardContent className="pt-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">Градиент гидроразрыва, кПа/м</Label>
                 <Input type="number" step="0.1" value={fractureGradient || ""} onChange={(e) => onFractureGradientChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Производительность насоса (общая), м³/мин</Label>
-                <Input type="number" step="0.01" value={flowRate || ""} onChange={(e) => onFlowRateChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
               </div>
             </div>
           </CardContent>

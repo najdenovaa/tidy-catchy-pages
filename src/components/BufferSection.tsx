@@ -47,7 +47,7 @@ export default function BufferSection({ buffers, onChange, annularVPM, flowRate,
   };
 
   const addBuffer = () => {
-    onChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 }, additives: [] }]);
+    onChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 }, additives: [], flowRateLps: 5 }]);
   };
 
   const removeBuffer = (idx: number) => {

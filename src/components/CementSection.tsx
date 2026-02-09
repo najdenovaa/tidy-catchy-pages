@@ -59,6 +59,7 @@ export default function CementSection({ slurries, onChange, annularVPM }: Props)
       name: `Раствор ${slurries.length + 1}`, density: 1.85, height: 0,
       rheology: { pv: 30, yp: 10 }, additives: [],
       thickeningTime30Bc: 0, thickeningTime50Bc: 0,
+      flowRateLps: 5, waterRatio: 0.5, yieldPerTon: 0.63,
     }]);
   };
 
