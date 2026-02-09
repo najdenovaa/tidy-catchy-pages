@@ -6,7 +6,7 @@ import HydraulicsSection from "@/components/HydraulicsSection";
 import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
-import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight } from "@/lib/cementing-calculations";
+import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
 
 const defaultWellData: WellData = {
@@ -102,6 +102,11 @@ export default function Index() {
   const [displacement, setDisplacement] = useState<DisplacementFluid>(defaultDisplacement);
   const [fractureGradient, setFractureGradient] = useState(17.7);
 
+  const liveDispVol = useMemo(() => {
+    const cid = getCasingID(wellData.casingOD, wellData.casingWall);
+    return pipeVolumePerMeter(cid) * wellData.ckodDepth;
+  }, [wellData.casingOD, wellData.casingWall, wellData.ckodDepth]);
+
   const [calcSnapshot, setCalcSnapshot] = useState<CalcSnapshot | null>(null);
 
   const handleCalculate = useCallback(() => {
@@ -167,6 +172,7 @@ export default function Index() {
               onSlurriesChange={setSlurries}
               displacement={displacement}
               onDisplacementChange={setDisplacement}
+              displacementVolume={liveDispVol}
               fractureGradient={fractureGradient}
               onFractureGradientChange={setFractureGradient}
             />
