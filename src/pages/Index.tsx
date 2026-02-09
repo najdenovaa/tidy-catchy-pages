@@ -1,17 +1,12 @@
 import { useState, useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import WellDataForm from "@/components/WellDataForm";
-import EquipmentSection from "@/components/EquipmentSection";
-import DrillingFluidSection from "@/components/DrillingFluidSection";
-import BufferSection from "@/components/BufferSection";
-import CementSection from "@/components/CementSection";
+import InputSection from "@/components/InputSection";
 import PumpingSchedule, { getWorkTimeWithCement } from "@/components/PumpingSchedule";
-import VolumeResults from "@/components/VolumeResults";
 import HydraulicsSection from "@/components/HydraulicsSection";
 import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials } from "@/lib/cementing-calculations";
-import type { WellData, BufferFluid, DrillingFluid, SlurryInput, Equipment } from "@/lib/cementing-calculations";
+import type { WellData, BufferFluid, DrillingFluid, SlurryInput } from "@/lib/cementing-calculations";
 
 const defaultWellData: WellData = {
   wellDepthMD: 410,
@@ -30,17 +25,6 @@ const defaultWellData: WellData = {
   bottomTempCirc: 18,
   shoeLength: 8,
   sumpLength: 2,
-};
-
-const defaultEquipment: Equipment = {
-  smn20: 2,
-  ca: 3,
-  skc: 1,
-  personnel: [
-    { role: "Мастер (буровой)", count: 1 },
-    { role: "Моторист ЦА", count: 4 },
-    { role: "Оператор по цементированию", count: 3 },
-  ],
 };
 
 const defaultDrillingFluid: DrillingFluid = {
@@ -88,7 +72,6 @@ const defaultBuffers: BufferFluid[] = [
 
 export default function Index() {
   const [wellData, setWellData] = useState<WellData>(defaultWellData);
-  const [equipment, setEquipment] = useState<Equipment>(defaultEquipment);
   const [drillingFluid, setDrillingFluid] = useState<DrillingFluid>(defaultDrillingFluid);
   const [slurries, setSlurries] = useState<SlurryInput[]>(defaultSlurries);
   const [buffers, setBuffers] = useState<BufferFluid[]>(defaultBuffers);
@@ -129,48 +112,42 @@ export default function Index() {
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         <Tabs defaultValue="input" className="space-y-6">
-          <TabsList className="flex flex-wrap h-auto gap-1">
-            <TabsTrigger value="input" className="text-xs py-2 px-3">01. Исходные</TabsTrigger>
-            <TabsTrigger value="equipment" className="text-xs py-2 px-3">02. Техника</TabsTrigger>
-            <TabsTrigger value="mud" className="text-xs py-2 px-3">03. Бур. раствор</TabsTrigger>
-            <TabsTrigger value="buffers" className="text-xs py-2 px-3">04. Буферы</TabsTrigger>
-            <TabsTrigger value="cement" className="text-xs py-2 px-3">05. Цемент</TabsTrigger>
-            <TabsTrigger value="schedule" className="text-xs py-2 px-3">06. Закачка</TabsTrigger>
-            <TabsTrigger value="volumes" className="text-xs py-2 px-3">07. Расчёты</TabsTrigger>
-            <TabsTrigger value="hydraulics" className="text-xs py-2 px-3">08. Гидравлика</TabsTrigger>
-            <TabsTrigger value="materials" className="text-xs py-2 px-3">10. Материалы</TabsTrigger>
-            <TabsTrigger value="charts" className="text-xs py-2 px-3">11. Графики</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-5 h-auto">
+            <TabsTrigger value="input" className="text-xs py-2">Исходные данные</TabsTrigger>
+            <TabsTrigger value="hydraulics" className="text-xs py-2">Гидравлика</TabsTrigger>
+            <TabsTrigger value="schedule" className="text-xs py-2">Закачка</TabsTrigger>
+            <TabsTrigger value="materials" className="text-xs py-2">Материалы</TabsTrigger>
+            <TabsTrigger value="charts" className="text-xs py-2">Графики</TabsTrigger>
           </TabsList>
 
           <TabsContent value="input">
-            <WellDataForm data={wellData} onChange={setWellData} />
-          </TabsContent>
-
-          <TabsContent value="equipment">
-            <EquipmentSection equipment={equipment} onChange={setEquipment} />
-          </TabsContent>
-
-          <TabsContent value="mud">
-            <DrillingFluidSection
-              fluid={drillingFluid}
-              onChange={setDrillingFluid}
+            <InputSection
+              wellData={wellData}
+              onWellDataChange={setWellData}
+              drillingFluid={drillingFluid}
+              onDrillingFluidChange={setDrillingFluid}
+              buffers={buffers}
+              onBuffersChange={setBuffers}
+              slurries={slurries}
+              onSlurriesChange={setSlurries}
+              fractureGradient={fractureGradient}
+              onFractureGradientChange={setFractureGradient}
+              flowRate={flowRate}
+              onFlowRateChange={setFlowRate}
               displacementDensity={displacementDensity}
               onDisplacementDensityChange={setDisplacementDensity}
             />
           </TabsContent>
 
-          <TabsContent value="buffers">
-            <BufferSection
-              buffers={buffers}
-              onChange={setBuffers}
-              annularVPM={volumes.annularVolumePerMeter}
-              flowRate={flowRate}
-              onFlowRateChange={setFlowRate}
+          <TabsContent value="hydraulics">
+            <HydraulicsSection
+              wellData={wellData}
+              slurries={slurries}
+              fractureGradient={fractureGradient}
+              displacementDensity={displacementDensity}
+              workTimeWithCement={workTimeWithCement}
+              volumes={volumes}
             />
-          </TabsContent>
-
-          <TabsContent value="cement">
-            <CementSection slurries={slurries} onChange={setSlurries} annularVPM={volumes.annularVolumePerMeter} />
           </TabsContent>
 
           <TabsContent value="schedule">
@@ -180,21 +157,6 @@ export default function Index() {
               annularVPM={volumes.annularVolumePerMeter}
               displacementVolume={volumes.displacementVolume}
               flowRate={flowRate}
-            />
-          </TabsContent>
-
-          <TabsContent value="volumes">
-            <VolumeResults results={volumes} wellData={wellData} />
-          </TabsContent>
-
-          <TabsContent value="hydraulics">
-            <HydraulicsSection
-              wellData={wellData}
-              slurries={slurries}
-              fractureGradient={fractureGradient}
-              onFractureGradientChange={setFractureGradient}
-              displacementDensity={displacementDensity}
-              workTimeWithCement={workTimeWithCement}
             />
           </TabsContent>
 
