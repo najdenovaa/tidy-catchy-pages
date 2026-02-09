@@ -2,11 +2,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { calculateHydraulics, calculateBHCT } from "@/lib/cementing-calculations";
-import type { WellData, CementSlurry } from "@/lib/cementing-calculations";
+import type { WellData, CementSlurry, SlurryInput } from "@/lib/cementing-calculations";
 
 interface Props {
   wellData: WellData;
-  slurries: { name: string; density: number; height: number }[];
+  slurries: SlurryInput[];
   fractureGradient: number;
   onFractureGradientChange: (v: number) => void;
 }
@@ -65,7 +65,7 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
           ))}
         </div>
 
-        <div className={`p-3 rounded-lg text-sm font-medium ${safetyOk ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+        <div className={`p-3 rounded-lg text-sm font-medium ${safetyOk ? "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200"}`}>
           {safetyOk
             ? "✓ Коэффициент безопасности в норме (< 1.0)"
             : "⚠ Коэффициент безопасности превышает 1.0 — риск гидроразрыва!"}

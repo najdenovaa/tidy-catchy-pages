@@ -9,6 +9,7 @@ const fmt = (v: number, dec: number = 4) => v.toFixed(dec);
 
 export default function VolumeResults({ results }: Props) {
   const rows = [
+    { label: "Внутренний диаметр колонны", value: fmt(results.casingID, 1), unit: "мм" },
     { label: "V п.м. скважины", value: fmt(results.wellVolumePerMeter), unit: "м³/м" },
     { label: "V п.м. скважины (с каверн.)", value: fmt(results.wellVolumeWithCavern), unit: "м³/м" },
     { label: "V п.м. затрубного простр.", value: fmt(results.annularVolumePerMeter), unit: "м³/м" },
