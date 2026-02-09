@@ -1,53 +1,86 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { BufferFluid, SlurryInput } from "@/lib/cementing-calculations";
+import { getSlurryHeight } from "@/lib/cementing-calculations";
+import type { BufferFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
 
 interface Props {
   buffers: BufferFluid[];
   slurries: SlurryInput[];
   annularVPM: number;
   displacementVolume: number;
-  displacementFlowRateLps: number;
+  displacement: DisplacementFluid;
+  casingDepthMD: number;
 }
 
 const fmt = (v: number, dec: number = 1) => v.toFixed(dec);
 const lpsToM3min = (lps: number) => lps * 0.06;
 
-export default function PumpingSchedule({ buffers, slurries, annularVPM, displacementVolume, displacementFlowRateLps }: Props) {
+export default function PumpingSchedule({ buffers, slurries, annularVPM, displacementVolume, displacement, casingDepthMD }: Props) {
   const stages: { name: string; fluid: string; rateLps: number; volume: number }[] = [];
 
-  const dispRate = displacementFlowRateLps;
+  const defaultRate = displacement.flowRateSteps.length > 0 ? displacement.flowRateSteps[0].rateLps : 8;
 
   // 1. Заполнение ЛВД
-  stages.push({ name: "Заполнение ЛВД", fluid: "Тех. вода", rateLps: dispRate * 0.5, volume: 1.0 });
-  // 2. Опрессовка ЛВД
+  stages.push({ name: "Заполнение ЛВД", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.0 });
   stages.push({ name: "Опрессовка ЛВД (25 МПа)", fluid: "—", rateLps: 0, volume: 0 });
 
-  // 3. Буферы (каждый со своей производительностью)
+  // 2. Буферы — по шагам
   buffers.forEach((b) => {
-    stages.push({ name: `Буфер: ${b.name}`, fluid: `${b.name} (${b.density} кг/м³)`, rateLps: b.flowRateLps, volume: b.volume });
-  });
-
-  // 4. Цементные растворы (каждый со своей производительностью)
-  slurries.forEach((s) => {
-    const vol = annularVPM * s.height;
-    if (vol > 0) {
-      stages.push({ name: `ЦР: ${s.name}`, fluid: `${s.name} (${s.density} г/см³)`, rateLps: s.flowRateLps, volume: vol });
+    if (b.flowRateSteps.length > 1) {
+      b.flowRateSteps.forEach((step, si) => {
+        if (step.volumeM3 > 0) {
+          stages.push({ name: `${b.name} (режим ${si + 1})`, fluid: `${b.name} (${b.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 });
+        }
+      });
+    } else {
+      const rate = b.flowRateSteps.length > 0 ? b.flowRateSteps[0].rateLps : 5;
+      stages.push({ name: `Буфер: ${b.name}`, fluid: `${b.name} (${b.density} кг/м³)`, rateLps: rate, volume: b.volume });
     }
   });
 
-  // 5. Промывка ЛВД и сброс пробки
-  stages.push({ name: "Промывка ЛВД, сброс пробки", fluid: "Тех. вода", rateLps: dispRate * 0.5, volume: 1.5 });
+  // 3. Цементные растворы — по шагам
+  slurries.forEach((s, idx) => {
+    const height = getSlurryHeight(slurries, idx, casingDepthMD);
+    const vol = annularVPM * height;
+    if (vol > 0) {
+      if (s.flowRateSteps.length > 1) {
+        s.flowRateSteps.forEach((step, si) => {
+          if (step.volumeM3 > 0) {
+            stages.push({ name: `${s.name} (режим ${si + 1})`, fluid: `${s.name} (${s.density} г/см³)`, rateLps: step.rateLps, volume: step.volumeM3 });
+          }
+        });
+      } else {
+        const rate = s.flowRateSteps.length > 0 ? s.flowRateSteps[0].rateLps : 5;
+        stages.push({ name: `ЦР: ${s.name}`, fluid: `${s.name} (${s.density} г/см³)`, rateLps: rate, volume: vol });
+      }
+    }
+  });
 
-  // 6. Продавка (3 этапа)
-  const dvMain = displacementVolume * 0.50;
-  const dvMid = displacementVolume * 0.30;
-  const dvSlow = displacementVolume * 0.20;
-  stages.push({ name: "Продавка (макс. расход)", fluid: "Тех. вода", rateLps: dispRate * 1.5, volume: dvMain });
-  stages.push({ name: "Продавка (средний расход)", fluid: "Тех. вода", rateLps: dispRate, volume: dvMid });
-  stages.push({ name: "Продавка (замедление, посадка)", fluid: "Тех. вода", rateLps: dispRate * 0.5, volume: dvSlow });
+  // 4. Промывка ЛВД
+  stages.push({ name: "Промывка ЛВД, сброс пробки", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.5 });
 
-  // 7. СТОП
+  // 5. Продавка — по шагам
+  if (displacement.flowRateSteps.length > 0) {
+    const totalStepVol = displacement.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
+    if (totalStepVol > 0) {
+      // Используем указанные объёмы
+      displacement.flowRateSteps.forEach((step, si) => {
+        if (step.volumeM3 > 0) {
+          stages.push({ name: `Продавка (режим ${si + 1})`, fluid: displacement.name, rateLps: step.rateLps, volume: step.volumeM3 });
+        }
+      });
+    } else {
+      // Объёмы не указаны — распределяем равномерно
+      const perStep = displacementVolume / displacement.flowRateSteps.length;
+      displacement.flowRateSteps.forEach((step, si) => {
+        stages.push({ name: `Продавка (режим ${si + 1})`, fluid: displacement.name, rateLps: step.rateLps, volume: perStep });
+      });
+    }
+  } else {
+    stages.push({ name: "Продавка", fluid: displacement.name, rateLps: defaultRate, volume: displacementVolume });
+  }
+
+  // 6. СТОП
   stages.push({ name: "Фиксация «СТОП», проверка ЦКОД", fluid: "—", rateLps: 0, volume: 0 });
   stages.push({ name: "Промывка ЛВД, демонтаж ГЦУ", fluid: "Тех. вода", rateLps: 0, volume: 0 });
 
@@ -84,7 +117,7 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
             </TableHeader>
             <TableBody>
               {stagesWithCum.map((s, i) => (
-                <TableRow key={i} className={s.name.startsWith("ЦР:") ? "bg-primary/5" : ""}>
+                <TableRow key={i} className={s.name.startsWith("ЦР:") || s.name.startsWith("ЦР (") ? "bg-primary/5" : ""}>
                   <TableCell className="text-sm">{s.name}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.fluid}</TableCell>
                   <TableCell className="text-sm text-right">{s.rateLps > 0 ? fmt(s.rateLps, 1) : "—"}</TableCell>
