@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
-import { getCasingID, getSlurryHeight } from "@/lib/cementing-calculations";
+import { getCasingID, getSlurryHeight, annularVolumePerMeter, hydrostaticPressure } from "@/lib/cementing-calculations";
 import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, DisplacementFluid, FlowRateStep } from "@/lib/cementing-calculations";
 
 interface Props {
@@ -47,7 +47,12 @@ function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: bool
   );
 }
 
-function FlowRateStepsEditor({ steps, totalVolume, onChange }: { steps: FlowRateStep[]; totalVolume: number; onChange: (s: FlowRateStep[]) => void }) {
+function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
+  steps: FlowRateStep[];
+  totalVolume: number;
+  onChange: (s: FlowRateStep[]) => void;
+  fracCheck?: (rateLps: number) => { risk: boolean; ecd: number; fracP: number } | null;
+}) {
   const usedVolume = steps.reduce((s, st) => s + st.volumeM3, 0);
   const remaining = totalVolume - usedVolume;
 
@@ -57,25 +62,37 @@ function FlowRateStepsEditor({ steps, totalVolume, onChange }: { steps: FlowRate
         <span className="text-xs text-muted-foreground font-medium">Режимы закачки</span>
         <button onClick={() => onChange([...steps, { rateLps: 5, volumeM3: Math.max(0, remaining) }])} className="text-xs text-primary hover:underline">+ режим</button>
       </div>
-      {steps.map((step, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <div className="flex items-center gap-1 flex-1">
-            <Input type="number" step="0.1" value={step.rateLps || ""} onChange={(e) => {
-              const u = [...steps]; u[i] = { ...u[i], rateLps: parseFloat(e.target.value) || 0 }; onChange(u);
-            }} className="h-7 text-xs w-20" placeholder="л/с" />
-            <span className="text-xs text-muted-foreground">л/с</span>
+      {steps.map((step, i) => {
+        const fc = fracCheck ? fracCheck(step.rateLps) : null;
+        return (
+          <div key={i} className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 flex-1">
+                <Input type="number" step="0.1" value={step.rateLps || ""} onChange={(e) => {
+                  const u = [...steps]; u[i] = { ...u[i], rateLps: parseFloat(e.target.value) || 0 }; onChange(u);
+                }} className="h-7 text-xs w-20" placeholder="л/с" />
+                <span className="text-xs text-muted-foreground">л/с</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Input type="number" step="0.1" value={step.volumeM3 || ""} onChange={(e) => {
+                  const u = [...steps]; u[i] = { ...u[i], volumeM3: parseFloat(e.target.value) || 0 }; onChange(u);
+                }} className="h-7 text-xs w-20" placeholder="м³" />
+                <span className="text-xs text-muted-foreground">м³</span>
+              </div>
+              {steps.length > 1 && (
+                <button onClick={() => onChange(steps.filter((_, j) => j !== i))} className="text-xs text-destructive">✕</button>
+              )}
+            </div>
+            {fc && step.rateLps > 0 && (
+              <div className={`text-xs px-2 py-0.5 rounded ${fc.risk ? "bg-destructive/10 text-destructive font-medium" : "bg-green-500/10 text-green-700"}`}>
+                {fc.risk
+                  ? `⚠ Риск ГРП! ECD ≈ ${fc.ecd.toFixed(1)} МПа > Pгрп ${fc.fracP.toFixed(1)} МПа`
+                  : `✓ Нет риска ГРП (ECD ≈ ${fc.ecd.toFixed(1)} МПа < Pгрп ${fc.fracP.toFixed(1)} МПа)`}
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-1">
-            <Input type="number" step="0.1" value={step.volumeM3 || ""} onChange={(e) => {
-              const u = [...steps]; u[i] = { ...u[i], volumeM3: parseFloat(e.target.value) || 0 }; onChange(u);
-            }} className="h-7 text-xs w-20" placeholder="м³" />
-            <span className="text-xs text-muted-foreground">м³</span>
-          </div>
-          {steps.length > 1 && (
-            <button onClick={() => onChange(steps.filter((_, j) => j !== i))} className="text-xs text-destructive">✕</button>
-          )}
-        </div>
-      ))}
+        );
+      })}
       {totalVolume > 0 && (
         <div className={`text-xs ${Math.abs(remaining) < 0.01 ? "text-muted-foreground" : "text-destructive font-medium"}`}>
           Остаток: {remaining.toFixed(2)} м³ из {totalVolume.toFixed(2)} м³
@@ -99,6 +116,28 @@ export default function InputSection(props: Props) {
   const calcDispVol = displacementVolume ?? 0;
 
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
+  const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
+
+  // Fracture risk checker for displacement
+  const fracCheck = (rateLps: number): { risk: boolean; ecd: number; fracP: number } | null => {
+    if (fractureGradient <= 0 || wellData.wellDepthTVD <= 0 || rateLps <= 0) return null;
+    const fracP = (fractureGradient * wellData.wellDepthTVD) / 1000; // МПа
+    // Estimate ECD: hydrostatic of heaviest column + friction
+    // Worst case: full cement column in annulus
+    let maxDensity = displacement.density / 1000; // г/см³
+    slurries.forEach(s => { if (s.density > maxDensity) maxDensity = s.density; });
+    const hydroStatic = hydrostaticPressure(maxDensity, wellData.wellDepthTVD);
+    // Simplified annular friction: ΔP_fr ≈ (128 * μ * Q * L) / (π * Dh^4) simplified
+    const dAnn = (wellData.holeDiameter - wellData.casingOD) / 1000; // м
+    if (dAnn <= 0) return null;
+    const area = (Math.PI / 4) * dAnn * dAnn;
+    const velocity = (rateLps / 1000) / area; // м/с
+    const pvPas = displacement.rheology.pv / 1000;
+    const frLoss = (32 * pvPas * velocity * wellData.casingDepthMD) / (dAnn * dAnn) / 1e6; // МПа
+    const ypLoss = (16 * displacement.rheology.yp * wellData.casingDepthMD) / (3 * dAnn) / 1e6;
+    const ecd = hydroStatic + frLoss + ypLoss;
+    return { risk: ecd > fracP, ecd, fracP };
+  };
 
   const handleWellChange = (key: keyof WellData, value: string) => {
     onWellDataChange({ ...wellData, [key]: parseFloat(value) || 0 });
@@ -327,7 +366,7 @@ export default function InputSection(props: Props) {
                   {/* Режимы закачки */}
                   <FlowRateStepsEditor
                     steps={s.flowRateSteps}
-                    totalVolume={0}
+                    totalVolume={height > 0 ? annVPM * height : 0}
                     onChange={(steps) => { const u = [...slurries]; u[idx] = { ...u[idx], flowRateSteps: steps }; onSlurriesChange(u); }}
                   />
                   {/* Добавки */}
@@ -386,6 +425,7 @@ export default function InputSection(props: Props) {
               steps={displacement.flowRateSteps}
               totalVolume={calcDispVol}
               onChange={(steps) => onDisplacementChange({ ...displacement, flowRateSteps: steps })}
+              fracCheck={fracCheck}
             />
           </CardContent>
         )}
