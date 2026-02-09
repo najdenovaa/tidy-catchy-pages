@@ -1,28 +1,35 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { calculateHydraulics, calculateSafeTime, calculateBHCT } from "@/lib/cementing-calculations";
-import type { WellData, SlurryInput } from "@/lib/cementing-calculations";
+import type { WellData, SlurryInput, VolumeResults } from "@/lib/cementing-calculations";
 
 interface Props {
   wellData: WellData;
   slurries: SlurryInput[];
   fractureGradient: number;
-  onFractureGradientChange: (v: number) => void;
   displacementDensity: number;
   workTimeWithCement: number;
+  volumes: VolumeResults;
 }
 
 const fmt = (v: number, dec: number = 2) => v.toFixed(dec);
 
-export default function HydraulicsSection({ wellData, slurries, fractureGradient, onFractureGradientChange, displacementDensity, workTimeWithCement }: Props) {
+export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes }: Props) {
   const results = calculateHydraulics(wellData, slurries, displacementDensity / 1000, fractureGradient);
   const bhct = calculateBHCT(wellData.bottomTempStatic, 20, wellData.wellDepthTVD);
 
-  // Безопасное время
   const maxThickening30 = Math.max(...slurries.map(s => s.thickeningTime30Bc || 0));
   const maxThickening50 = Math.max(...slurries.map(s => s.thickeningTime50Bc || 0));
   const safeTime = calculateSafeTime(workTimeWithCement, maxThickening30, maxThickening50);
+
+  const volumeRows = [
+    { label: "Внутренний диаметр ОК", value: fmt(volumes.casingID, 1), unit: "мм" },
+    { label: "Эквивалентный диаметр (с каверн.)", value: fmt(volumes.equivalentDiameter, 1), unit: "мм" },
+    { label: `Межтрубное пр-во`, value: fmt(volumes.annularVolumePerMeterPrevCasing, 4), unit: "м³/м" },
+    { label: `Затрубное пр-во`, value: fmt(volumes.annularVolumePerMeter, 4), unit: "м³/м" },
+    { label: `Внутр. объём колонны`, value: fmt(volumes.pipeVolumePerMeter, 4), unit: "м³/м" },
+    { label: "Расчётный объём продавки", value: fmt(volumes.displacementVolume, 1), unit: "м³" },
+    { label: "С учётом коэф. сжатия (5%)", value: fmt(volumes.displacementVolumeWithCompression, 1), unit: "м³" },
+  ];
 
   const pressureRows = [
     { label: "Гидростатическое давление ЦР (затрубное)", value: fmt(results.hydrostaticPressureAnnulus), unit: "МПа" },
@@ -38,27 +45,37 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
 
   return (
     <div className="space-y-6">
+      {/* Объёмы */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg">08. Гидравлический расчёт</CardTitle>
+          <CardTitle className="text-lg">Данные для расчёта (объёмы)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1">
+            {volumeRows.map((r, i) => (
+              <div key={i} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                <span className="text-sm text-muted-foreground">{r.label}</span>
+                <span className="text-sm font-semibold">{r.value} <span className="text-muted-foreground font-normal">{r.unit}</span></span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Гидравлика */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">Гидравлический расчёт</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-1 max-w-xs">
-            <Label className="text-xs text-muted-foreground">Градиент гидроразрыва, кПа/м</Label>
-            <Input type="number" step="0.1" value={fractureGradient || ""} onChange={(e) => onFractureGradientChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
-          </div>
-
           <div className="space-y-1">
             {pressureRows.map((r, i) => (
               <div key={i} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                 <span className="text-sm text-muted-foreground">{r.label}</span>
-                <span className="text-sm font-semibold">
-                  {r.value} <span className="text-muted-foreground font-normal">{r.unit}</span>
-                </span>
+                <span className="text-sm font-semibold">{r.value} <span className="text-muted-foreground font-normal">{r.unit}</span></span>
               </div>
             ))}
           </div>
-
           <div className={`p-3 rounded-lg text-sm font-medium ${safetyOk ? "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200"}`}>
             {safetyOk ? "✓ Коэффициент безопасности в норме (< 1.0)" : "⚠ Коэффициент безопасности превышает 1.0 — риск гидроразрыва!"}
           </div>
@@ -72,22 +89,10 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
         </CardHeader>
         <CardContent>
           <div className="space-y-1">
-            <div className="flex items-center justify-between py-2 border-b border-border">
-              <span className="text-sm text-muted-foreground">Расчётное время работы с цементом</span>
-              <span className="text-sm font-semibold">{fmt(safeTime.workTimeWithCement, 0)} мин</span>
-            </div>
-            <div className="flex items-center justify-between py-2 border-b border-border">
-              <span className="text-sm text-muted-foreground">Безопасное время (75% от загуст.)</span>
-              <span className="text-sm font-semibold">{safeTime.safeTime75} мин</span>
-            </div>
-            <div className="flex items-center justify-between py-2 border-b border-border">
-              <span className="text-sm text-muted-foreground">Загустевание до 30 Вс (лаб.)</span>
-              <span className="text-sm font-semibold">{safeTime.thickeningTime30Bc || "—"} мин</span>
-            </div>
-            <div className="flex items-center justify-between py-2 border-b border-border">
-              <span className="text-sm text-muted-foreground">Загустевание до 50 Вс (лаб.)</span>
-              <span className="text-sm font-semibold">{safeTime.thickeningTime50Bc || "—"} мин</span>
-            </div>
+            <Row label="Расчётное время работы с цементом" value={`${fmt(safeTime.workTimeWithCement, 0)} мин`} />
+            <Row label="Безопасное время (75% от загуст.)" value={`${safeTime.safeTime75} мин`} />
+            <Row label="Загустевание до 30 Вс (лаб.)" value={safeTime.thickeningTime30Bc ? `${safeTime.thickeningTime30Bc} мин` : "—"} />
+            <Row label="Загустевание до 50 Вс (лаб.)" value={safeTime.thickeningTime50Bc ? `${safeTime.thickeningTime50Bc} мин` : "—"} />
           </div>
           {maxThickening30 > 0 && (
             <div className={`mt-3 p-3 rounded-lg text-sm font-medium ${safeTime.isSafe ? "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200"}`}>
@@ -98,6 +103,15 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-border last:border-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm font-semibold">{value}</span>
     </div>
   );
 }
