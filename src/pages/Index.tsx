@@ -6,8 +6,8 @@ import HydraulicsSection from "@/components/HydraulicsSection";
 import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
-import { calculateVolumes, calculatePressureProfile, calculateMaterials } from "@/lib/cementing-calculations";
-import type { WellData, BufferFluid, DrillingFluid, SlurryInput } from "@/lib/cementing-calculations";
+import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight } from "@/lib/cementing-calculations";
+import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
 
 const defaultWellData: WellData = {
   wellDepthMD: 410,
@@ -37,7 +37,7 @@ const defaultSlurries: SlurryInput[] = [
   {
     name: "ЦР (ПЦТ-I-50)",
     density: 1.82,
-    height: 410,
+    topDepthMD: 0,
     rheology: { pv: 80, yp: 20 },
     additives: [
       { name: "Atren Cem Premium", percentage: 0.25, massKg: 28 },
@@ -45,7 +45,7 @@ const defaultSlurries: SlurryInput[] = [
     ],
     thickeningTime30Bc: 224,
     thickeningTime50Bc: 232,
-    flowRateLps: 7,
+    flowRateSteps: [{ rateLps: 7, volumeM3: 0 }],
     waterRatio: 0.536,
     yieldPerTon: 0.63,
   },
@@ -58,7 +58,7 @@ const defaultBuffers: BufferFluid[] = [
     volume: 4.0,
     rheology: { pv: 1, yp: 0 },
     additives: [{ name: "Atren Spacer WP", percentage: 0, massKg: 40 }],
-    flowRateLps: 5,
+    flowRateSteps: [{ rateLps: 5, volumeM3: 4.0 }],
   },
   {
     name: "Реологический буфер",
@@ -70,18 +70,28 @@ const defaultBuffers: BufferFluid[] = [
       { name: "Atren Cem Premium", percentage: 0, massKg: 5 },
       { name: "CaCl2", percentage: 0, massKg: 42 },
     ],
-    flowRateLps: 5,
+    flowRateSteps: [{ rateLps: 5, volumeM3: 4.0 }],
   },
 ];
+
+const defaultDisplacement: DisplacementFluid = {
+  name: "Продавочная жидкость",
+  density: 1010,
+  rheology: { pv: 1, yp: 0 },
+  flowRateSteps: [
+    { rateLps: 12, volumeM3: 0 },
+    { rateLps: 8, volumeM3: 0 },
+    { rateLps: 4, volumeM3: 0 },
+  ],
+};
 
 interface CalcSnapshot {
   wellData: WellData;
   drillingFluid: DrillingFluid;
   slurries: SlurryInput[];
   buffers: BufferFluid[];
+  displacement: DisplacementFluid;
   fractureGradient: number;
-  displacementDensity: number;
-  displacementFlowRateLps: number;
 }
 
 export default function Index() {
@@ -89,33 +99,27 @@ export default function Index() {
   const [drillingFluid, setDrillingFluid] = useState<DrillingFluid>(defaultDrillingFluid);
   const [slurries, setSlurries] = useState<SlurryInput[]>(defaultSlurries);
   const [buffers, setBuffers] = useState<BufferFluid[]>(defaultBuffers);
+  const [displacement, setDisplacement] = useState<DisplacementFluid>(defaultDisplacement);
   const [fractureGradient, setFractureGradient] = useState(17.7);
-  const [displacementDensity, setDisplacementDensity] = useState(1010);
-  const [displacementFlowRateLps, setDisplacementFlowRateLps] = useState(8);
 
-  // Snapshot-based calculation: only updates on РАССЧИТАТЬ click
   const [calcSnapshot, setCalcSnapshot] = useState<CalcSnapshot | null>(null);
 
   const handleCalculate = useCallback(() => {
-    setCalcSnapshot({
-      wellData, drillingFluid, slurries, buffers, fractureGradient, displacementDensity, displacementFlowRateLps,
-    });
-  }, [wellData, drillingFluid, slurries, buffers, fractureGradient, displacementDensity, displacementFlowRateLps]);
+    setCalcSnapshot({ wellData, drillingFluid, slurries, buffers, displacement, fractureGradient });
+  }, [wellData, drillingFluid, slurries, buffers, displacement, fractureGradient]);
 
   const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData) : null, [calcSnapshot]);
 
-  const flowRateM3min = calcSnapshot ? calcSnapshot.displacementFlowRateLps * 0.06 : 0;
-
   const materials = useMemo(
-    () => calcSnapshot && volumes ? calculateMaterials(calcSnapshot.slurries, calcSnapshot.buffers, volumes.annularVolumePerMeter) : null,
+    () => calcSnapshot && volumes ? calculateMaterials(calcSnapshot.slurries, calcSnapshot.buffers, volumes.annularVolumePerMeter, calcSnapshot.wellData.casingDepthMD) : null,
     [calcSnapshot, volumes]
   );
 
   const pressureData = useMemo(
     () => calcSnapshot && volumes
-      ? calculatePressureProfile(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.drillingFluid, calcSnapshot.fractureGradient, flowRateM3min, volumes.displacementVolume)
+      ? calculatePressureProfile(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.drillingFluid, calcSnapshot.fractureGradient, 0.48, volumes.displacementVolume)
       : [],
-    [calcSnapshot, volumes, flowRateM3min]
+    [calcSnapshot, volumes]
   );
 
   return (
@@ -161,12 +165,10 @@ export default function Index() {
               onBuffersChange={setBuffers}
               slurries={slurries}
               onSlurriesChange={setSlurries}
+              displacement={displacement}
+              onDisplacementChange={setDisplacement}
               fractureGradient={fractureGradient}
               onFractureGradientChange={setFractureGradient}
-              displacementDensity={displacementDensity}
-              onDisplacementDensityChange={setDisplacementDensity}
-              displacementFlowRateLps={displacementFlowRateLps}
-              onDisplacementFlowRateChange={setDisplacementFlowRateLps}
             />
           </TabsContent>
 
@@ -176,7 +178,7 @@ export default function Index() {
                 wellData={calcSnapshot.wellData}
                 slurries={calcSnapshot.slurries}
                 fractureGradient={calcSnapshot.fractureGradient}
-                displacementDensity={calcSnapshot.displacementDensity}
+                displacementDensity={calcSnapshot.displacement.density}
                 workTimeWithCement={0}
                 volumes={volumes}
               />
@@ -192,7 +194,8 @@ export default function Index() {
                 slurries={calcSnapshot.slurries}
                 annularVPM={volumes.annularVolumePerMeter}
                 displacementVolume={volumes.displacementVolume}
-                displacementFlowRateLps={calcSnapshot.displacementFlowRateLps}
+                displacement={calcSnapshot.displacement}
+                casingDepthMD={calcSnapshot.wellData.casingDepthMD}
               />
             ) : (
               <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>

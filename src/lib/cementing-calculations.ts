@@ -11,11 +11,23 @@ export interface Additive {
   massKg: number; // кг (автовычисляемое)
 }
 
+export interface FlowRateStep {
+  rateLps: number; // л/с
+  volumeM3: number; // м³
+}
+
 export interface DrillingFluid {
   name: string;
   density: number; // кг/м³
   rheology: Rheology;
   fluidLoss: number; // Водоотдача, мл/30мин
+}
+
+export interface DisplacementFluid {
+  name: string;
+  density: number; // кг/м³
+  rheology: Rheology;
+  flowRateSteps: FlowRateStep[];
 }
 
 export interface WellData {
@@ -52,20 +64,33 @@ export interface BufferFluid {
   volume: number; // м³
   rheology: Rheology;
   additives: Additive[];
-  flowRateLps: number; // Производительность, л/с
+  flowRateSteps: FlowRateStep[];
 }
 
 export interface SlurryInput {
   name: string;
   density: number; // г/см³ (input) / кг/м³ (internal)
-  height: number; // м
+  topDepthMD: number; // м — глубина верха цемента от устья
   rheology: Rheology;
   additives: Additive[];
   thickeningTime30Bc: number; // время загустевания до 30 Вс, мин
   thickeningTime50Bc: number; // время загустевания до 50 Вс, мин
-  flowRateLps: number; // Производительность, л/с
+  flowRateSteps: FlowRateStep[];
   waterRatio: number; // В/Ц (водоцементное отношение)
   yieldPerTon: number; // Выход раствора, м³/т
+}
+
+// Вычислить высоту столба цемента для i-го раствора
+export function getSlurryHeight(slurries: SlurryInput[], index: number, casingDepthMD: number): number {
+  const s = slurries[index];
+  // Нижняя граница: дно скважины для первого, или верх предыдущего для остальных
+  const bottomDepth = index === 0 ? casingDepthMD : slurries[index - 1].topDepthMD;
+  return Math.max(0, bottomDepth - s.topDepthMD);
+}
+
+// Совместимый getter для flowRateLps (берёт первый шаг или 0)
+export function getFlowRateLps(steps: FlowRateStep[]): number {
+  return steps.length > 0 ? steps[0].rateLps : 0;
 }
 
 export interface Equipment {
@@ -259,10 +284,11 @@ export function calculateHydraulics(
   // Затрубное — цемент + бур. раствор
   let annulusPressure = 0;
   let cementTotalHeight = 0;
-  slurries.forEach(s => {
-    if (s.height > 0) {
-      annulusPressure += hydrostaticPressure(s.density, s.height);
-      cementTotalHeight += s.height;
+  slurries.forEach((s, i) => {
+    const h = getSlurryHeight(slurries, i, data.casingDepthMD);
+    if (h > 0) {
+      annulusPressure += hydrostaticPressure(s.density, h);
+      cementTotalHeight += h;
     }
   });
   const mudHeight = Math.max(0, data.wellDepthTVD - cementTotalHeight);
@@ -326,15 +352,17 @@ export function calculateMaterials(
   slurries: SlurryInput[],
   buffers: BufferFluid[],
   annularVPM: number,
+  casingDepthMD: number,
 ): MaterialSummary {
   const cementItems: { name: string; amount: number; unit: string }[] = [];
   const bufferItems: { name: string; amount: number; unit: string }[] = [];
   let waterForCement = 0;
   let waterForBuffers = 0;
 
-  slurries.forEach(s => {
-    if (s.height > 0) {
-      const res = calculateCement(annularVPM, s.height, s.density);
+  slurries.forEach((s, i) => {
+    const h = getSlurryHeight(slurries, i, casingDepthMD);
+    if (h > 0) {
+      const res = calculateCement(annularVPM, h, s.density);
       cementItems.push({ name: s.name, amount: res.dryMass, unit: "т" });
       waterForCement += res.waterVolume;
       s.additives.forEach(a => {
@@ -408,9 +436,10 @@ export function calculatePressureProfile(
   const stages: { name: string; volume: number; density: number; pv: number; yp: number }[] = [];
 
   buffers.forEach(b => stages.push({ name: b.name, volume: b.volume, density: b.density / 1000, pv: b.rheology.pv, yp: b.rheology.yp }));
-  slurries.forEach(s => {
+  slurries.forEach((s, i) => {
     const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
-    const vol = s.height > 0 ? s.height * annVPM : 0;
+    const h = getSlurryHeight(slurries, i, wellData.casingDepthMD);
+    const vol = h > 0 ? h * annVPM : 0;
     if (vol > 0) stages.push({ name: s.name, volume: vol, density: s.density, pv: s.rheology.pv, yp: s.rheology.yp });
   });
   stages.push({ name: "Продавка", volume: displacementVol, density: 1.0, pv: 1, yp: 0 });

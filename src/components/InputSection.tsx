@@ -2,8 +2,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
-import { getCasingID } from "@/lib/cementing-calculations";
-import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive } from "@/lib/cementing-calculations";
+import { getCasingID, getSlurryHeight } from "@/lib/cementing-calculations";
+import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, DisplacementFluid, FlowRateStep } from "@/lib/cementing-calculations";
 
 interface Props {
   wellData: WellData;
@@ -14,12 +14,10 @@ interface Props {
   onBuffersChange: (b: BufferFluid[]) => void;
   slurries: SlurryInput[];
   onSlurriesChange: (s: SlurryInput[]) => void;
+  displacement: DisplacementFluid;
+  onDisplacementChange: (d: DisplacementFluid) => void;
   fractureGradient: number;
   onFractureGradientChange: (v: number) => void;
-  displacementDensity: number;
-  onDisplacementDensityChange: (v: number) => void;
-  displacementFlowRateLps: number;
-  onDisplacementFlowRateChange: (v: number) => void;
 }
 
 const wellFields: { key: keyof WellData; label: string; unit: string }[] = [
@@ -48,16 +46,54 @@ function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: bool
   );
 }
 
+function FlowRateStepsEditor({ steps, totalVolume, onChange }: { steps: FlowRateStep[]; totalVolume: number; onChange: (s: FlowRateStep[]) => void }) {
+  const usedVolume = steps.reduce((s, st) => s + st.volumeM3, 0);
+  const remaining = totalVolume - usedVolume;
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground font-medium">Режимы закачки</span>
+        <button onClick={() => onChange([...steps, { rateLps: 5, volumeM3: Math.max(0, remaining) }])} className="text-xs text-primary hover:underline">+ режим</button>
+      </div>
+      {steps.map((step, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <div className="flex items-center gap-1 flex-1">
+            <Input type="number" step="0.1" value={step.rateLps || ""} onChange={(e) => {
+              const u = [...steps]; u[i] = { ...u[i], rateLps: parseFloat(e.target.value) || 0 }; onChange(u);
+            }} className="h-7 text-xs w-20" placeholder="л/с" />
+            <span className="text-xs text-muted-foreground">л/с</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Input type="number" step="0.1" value={step.volumeM3 || ""} onChange={(e) => {
+              const u = [...steps]; u[i] = { ...u[i], volumeM3: parseFloat(e.target.value) || 0 }; onChange(u);
+            }} className="h-7 text-xs w-20" placeholder="м³" />
+            <span className="text-xs text-muted-foreground">м³</span>
+          </div>
+          {steps.length > 1 && (
+            <button onClick={() => onChange(steps.filter((_, j) => j !== i))} className="text-xs text-destructive">✕</button>
+          )}
+        </div>
+      ))}
+      {totalVolume > 0 && (
+        <div className={`text-xs ${Math.abs(remaining) < 0.01 ? "text-muted-foreground" : "text-destructive font-medium"}`}>
+          Остаток: {remaining.toFixed(2)} м³ из {totalVolume.toFixed(2)} м³
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function InputSection(props: Props) {
   const [openSections, setOpenSections] = useState({
-    well: true, mud: true, buffers: true, cement: true, hydraulics: true,
+    well: true, mud: true, buffers: true, cement: true, displacement: true, hydraulics: true,
   });
 
   const toggle = (key: keyof typeof openSections) => {
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, fractureGradient, onFractureGradientChange, displacementDensity, onDisplacementDensityChange, displacementFlowRateLps, onDisplacementFlowRateChange } = props;
+  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacement, onDisplacementChange, fractureGradient, onFractureGradientChange } = props;
 
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
 
@@ -117,6 +153,14 @@ export default function InputSection(props: Props) {
     onSlurriesChange(updated);
   };
 
+  const handleDispChange = (field: string, value: string) => {
+    const num = parseFloat(value) || 0;
+    if (field === "name") onDisplacementChange({ ...displacement, name: value });
+    else if (field === "density") onDisplacementChange({ ...displacement, density: num });
+    else if (field === "pv") onDisplacementChange({ ...displacement, rheology: { ...displacement.rheology, pv: num } });
+    else if (field === "yp") onDisplacementChange({ ...displacement, rheology: { ...displacement.rheology, yp: num } });
+  };
+
   return (
     <div className="space-y-4">
       {/* ===== 1. Скважина ===== */}
@@ -142,25 +186,17 @@ export default function InputSection(props: Props) {
 
       {/* ===== 2. Буровой раствор ===== */}
       <Card>
-        <SectionHeader title="🧪 Буровой раствор и продавочная жидкость" isOpen={openSections.mud} onClick={() => toggle("mud")} />
+        <SectionHeader title="🧪 Буровой раствор" isOpen={openSections.mud} onClick={() => toggle("mud")} />
         {openSections.mud && (
-          <CardContent className="pt-4 space-y-4">
+          <CardContent className="pt-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">Тип бурового раствора</Label>
                 <Input value={drillingFluid.name} onChange={(e) => handleMudChange("name", e.target.value)} className="h-9 text-sm" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Плотность бур. раствора, кг/м³</Label>
+                <Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label>
                 <Input type="number" step="1" value={drillingFluid.density || ""} onChange={(e) => handleMudChange("density", e.target.value)} className="h-9 text-sm" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Плотность продавочной жидкости, кг/м³</Label>
-                <Input type="number" step="1" value={displacementDensity || ""} onChange={(e) => onDisplacementDensityChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Производ. продавки, л/с</Label>
-                <Input type="number" step="0.1" value={displacementFlowRateLps || ""} onChange={(e) => onDisplacementFlowRateChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">PV (пласт. вязкость), сПз</Label>
@@ -185,7 +221,7 @@ export default function InputSection(props: Props) {
         {openSections.buffers && (
           <CardContent className="pt-4 space-y-4">
             <div className="flex justify-end">
-              <button onClick={() => onBuffersChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 }, additives: [], flowRateLps: 5 }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+              <button onClick={() => onBuffersChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 }, additives: [], flowRateSteps: [{ rateLps: 5, volumeM3: 1 }] }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                 + Добавить буфер
               </button>
             </div>
@@ -196,14 +232,19 @@ export default function InputSection(props: Props) {
                   <span className="font-medium text-sm">{b.name}</span>
                   {buffers.length > 1 && <button onClick={() => onBuffersChange(buffers.filter((_, i) => i !== idx))} className="text-xs text-destructive hover:underline">Удалить</button>}
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><Input value={b.name} onChange={(e) => handleBufferChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label><Input type="number" value={b.density || ""} onChange={(e) => handleBufferChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Объём, м³</Label><Input type="number" step="0.1" value={b.volume || ""} onChange={(e) => handleBufferChange(idx, "volume", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Произв., л/с</Label><Input type="number" step="0.1" value={b.flowRateLps || ""} onChange={(e) => handleBufferChange(idx, "flowRateLps", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">PV, сПз</Label><Input type="number" value={b.rheology.pv || ""} onChange={(e) => handleBufferChange(idx, "pv", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><Input type="number" step="0.1" value={b.rheology.yp || ""} onChange={(e) => handleBufferChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
                 </div>
+                {/* Режимы закачки */}
+                <FlowRateStepsEditor
+                  steps={b.flowRateSteps}
+                  totalVolume={b.volume}
+                  onChange={(steps) => { const u = [...buffers]; u[idx] = { ...u[idx], flowRateSteps: steps }; onBuffersChange(u); }}
+                />
                 {/* Добавки */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
@@ -231,62 +272,110 @@ export default function InputSection(props: Props) {
         {openSections.cement && (
           <CardContent className="pt-4 space-y-4">
             <div className="flex justify-end">
-              <button onClick={() => onSlurriesChange([...slurries, { name: `Раствор ${slurries.length + 1}`, density: 1.85, height: 0, rheology: { pv: 30, yp: 10 }, additives: [], thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateLps: 5, waterRatio: 0.5, yieldPerTon: 0.63 }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+              <button onClick={() => onSlurriesChange([...slurries, { name: `Раствор ${slurries.length + 1}`, density: 1.85, topDepthMD: 0, rheology: { pv: 30, yp: 10 }, additives: [], thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateSteps: [{ rateLps: 5, volumeM3: 0 }], waterRatio: 0.5, yieldPerTon: 0.63 }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                 + Добавить раствор
               </button>
             </div>
 
-            {slurries.map((s, idx) => (
-              <div key={idx} className="p-3 rounded-lg bg-muted/30 space-y-3 border border-border/50">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">{s.name}</span>
-                  {slurries.length > 1 && <button onClick={() => onSlurriesChange(slurries.filter((_, i) => i !== idx))} className="text-xs text-destructive hover:underline">Удалить</button>}
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><Input value={s.name} onChange={(e) => handleSlurryChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, г/см³</Label><Input type="number" step="0.01" value={s.density || ""} onChange={(e) => handleSlurryChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Интервал (высота), м</Label><Input type="number" value={s.height || ""} onChange={(e) => handleSlurryChange(idx, "height", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Произв., л/с</Label><Input type="number" step="0.1" value={s.flowRateLps || ""} onChange={(e) => handleSlurryChange(idx, "flowRateLps", e.target.value)} className="h-8 text-sm" /></div>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">В/Ц отношение</Label><Input type="number" step="0.001" value={s.waterRatio || ""} onChange={(e) => handleSlurryChange(idx, "waterRatio", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Выход, м³/т</Label><Input type="number" step="0.01" value={s.yieldPerTon || ""} onChange={(e) => handleSlurryChange(idx, "yieldPerTon", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загуст. 30 Вс, мин</Label><Input type="number" value={s.thickeningTime30Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime30Bc", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загуст. 50 Вс, мин</Label><Input type="number" value={s.thickeningTime50Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime50Bc", e.target.value)} className="h-8 text-sm" /></div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">PV / YP</Label>
-                    <div className="flex gap-1">
-                      <Input type="number" value={s.rheology.pv || ""} onChange={(e) => handleSlurryChange(idx, "pv", e.target.value)} className="h-8 text-sm" placeholder="PV" />
-                      <Input type="number" step="0.1" value={s.rheology.yp || ""} onChange={(e) => handleSlurryChange(idx, "yp", e.target.value)} className="h-8 text-sm" placeholder="YP" />
-                    </div>
-                  </div>
-                </div>
-                {/* Добавки */}
-                <div className="space-y-1">
+            {slurries.map((s, idx) => {
+              const height = getSlurryHeight(slurries, idx, wellData.casingDepthMD);
+              return (
+                <div key={idx} className="p-3 rounded-lg bg-muted/30 space-y-3 border border-border/50">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Добавки (% bwoc)</span>
-                    <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { name: "", percentage: 0, massKg: 0 }] }; onSlurriesChange(u); }} className="text-xs text-primary hover:underline">+ добавка</button>
+                    <span className="font-medium text-sm">{s.name}</span>
+                    {slurries.length > 1 && <button onClick={() => onSlurriesChange(slurries.filter((_, i) => i !== idx))} className="text-xs text-destructive hover:underline">Удалить</button>}
                   </div>
-                  {s.additives.map((a, aIdx) => (
-                    <div key={aIdx} className="flex items-center gap-2">
-                      <Input value={a.name} onChange={(e) => updateSlurryAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1" />
-                      <Input type="number" step="0.01" value={a.percentage || ""} onChange={(e) => updateSlurryAdditive(idx, aIdx, "percentage", e.target.value)} className="h-7 text-xs w-16" placeholder="%" />
-                      <span className="text-xs text-muted-foreground">%</span>
-                      <Input type="number" value={a.massKg || ""} onChange={(e) => updateSlurryAdditive(idx, aIdx, "massKg", e.target.value)} className="h-7 text-xs w-20" placeholder="кг" />
-                      <span className="text-xs text-muted-foreground">кг</span>
-                      <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: u[idx].additives.filter((_, i) => i !== aIdx) }; onSlurriesChange(u); }} className="text-xs text-destructive">✕</button>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><Input value={s.name} onChange={(e) => handleSlurryChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, г/см³</Label><Input type="number" step="0.01" value={s.density || ""} onChange={(e) => handleSlurryChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Верх цемента от устья, м</Label>
+                      <Input type="number" value={s.topDepthMD || ""} onChange={(e) => handleSlurryChange(idx, "topDepthMD", e.target.value)} className="h-8 text-sm" />
                     </div>
-                  ))}
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Высота столба (расчёт), м</Label>
+                      <div className="h-8 flex items-center px-3 rounded-md bg-muted text-sm font-semibold border border-border">{height.toFixed(0)}</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">В/Ц отношение</Label><Input type="number" step="0.001" value={s.waterRatio || ""} onChange={(e) => handleSlurryChange(idx, "waterRatio", e.target.value)} className="h-8 text-sm" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Выход, м³/т</Label><Input type="number" step="0.01" value={s.yieldPerTon || ""} onChange={(e) => handleSlurryChange(idx, "yieldPerTon", e.target.value)} className="h-8 text-sm" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загуст. 30 Вс, мин</Label><Input type="number" value={s.thickeningTime30Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime30Bc", e.target.value)} className="h-8 text-sm" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загуст. 50 Вс, мин</Label><Input type="number" value={s.thickeningTime50Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime50Bc", e.target.value)} className="h-8 text-sm" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">PV / YP</Label>
+                      <div className="flex gap-1">
+                        <Input type="number" value={s.rheology.pv || ""} onChange={(e) => handleSlurryChange(idx, "pv", e.target.value)} className="h-8 text-sm" placeholder="PV" />
+                        <Input type="number" step="0.1" value={s.rheology.yp || ""} onChange={(e) => handleSlurryChange(idx, "yp", e.target.value)} className="h-8 text-sm" placeholder="YP" />
+                      </div>
+                    </div>
+                  </div>
+                  {/* Режимы закачки */}
+                  <FlowRateStepsEditor
+                    steps={s.flowRateSteps}
+                    totalVolume={0}
+                    onChange={(steps) => { const u = [...slurries]; u[idx] = { ...u[idx], flowRateSteps: steps }; onSlurriesChange(u); }}
+                  />
+                  {/* Добавки */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Добавки (% bwoc)</span>
+                      <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { name: "", percentage: 0, massKg: 0 }] }; onSlurriesChange(u); }} className="text-xs text-primary hover:underline">+ добавка</button>
+                    </div>
+                    {s.additives.map((a, aIdx) => (
+                      <div key={aIdx} className="flex items-center gap-2">
+                        <Input value={a.name} onChange={(e) => updateSlurryAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1" />
+                        <Input type="number" step="0.01" value={a.percentage || ""} onChange={(e) => updateSlurryAdditive(idx, aIdx, "percentage", e.target.value)} className="h-7 text-xs w-16" placeholder="%" />
+                        <span className="text-xs text-muted-foreground">%</span>
+                        <Input type="number" value={a.massKg || ""} onChange={(e) => updateSlurryAdditive(idx, aIdx, "massKg", e.target.value)} className="h-7 text-xs w-20" placeholder="кг" />
+                        <span className="text-xs text-muted-foreground">кг</span>
+                        <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: u[idx].additives.filter((_, i) => i !== aIdx) }; onSlurriesChange(u); }} className="text-xs text-destructive">✕</button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </CardContent>
         )}
       </Card>
 
-      {/* ===== 5. Параметры ГРП ===== */}
+      {/* ===== 5. Продавочная жидкость ===== */}
+      <Card>
+        <SectionHeader title="🚀 Продавочная жидкость" isOpen={openSections.displacement} onClick={() => toggle("displacement")} />
+        {openSections.displacement && (
+          <CardContent className="pt-4 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Название</Label>
+                <Input value={displacement.name} onChange={(e) => handleDispChange("name", e.target.value)} className="h-9 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label>
+                <Input type="number" step="1" value={displacement.density || ""} onChange={(e) => handleDispChange("density", e.target.value)} className="h-9 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">PV, сПз</Label>
+                <Input type="number" step="1" value={displacement.rheology.pv || ""} onChange={(e) => handleDispChange("pv", e.target.value)} className="h-9 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">YP, Па</Label>
+                <Input type="number" step="0.1" value={displacement.rheology.yp || ""} onChange={(e) => handleDispChange("yp", e.target.value)} className="h-9 text-sm" />
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground italic">Объём продавки рассчитывается автоматически. Добавьте режимы закачки с разными производительностями.</div>
+            <FlowRateStepsEditor
+              steps={displacement.flowRateSteps}
+              totalVolume={0}
+              onChange={(steps) => onDisplacementChange({ ...displacement, flowRateSteps: steps })}
+            />
+          </CardContent>
+        )}
+      </Card>
+
+      {/* ===== 6. Параметры ГРП ===== */}
       <Card>
         <SectionHeader title="⚙️ Параметры гидроразрыва" isOpen={openSections.hydraulics} onClick={() => toggle("hydraulics")} />
         {openSections.hydraulics && (

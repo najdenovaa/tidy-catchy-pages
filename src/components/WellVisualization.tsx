@@ -2,6 +2,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Text } from "@react-three/drei";
 import { useMemo } from "react";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid } from "@/lib/cementing-calculations";
+import { getSlurryHeight } from "@/lib/cementing-calculations";
 
 interface Props {
   wellData: WellData;
@@ -38,19 +39,20 @@ function WellScene({ wellData, slurries, buffers, drillingFluid }: Props) {
     const sections: { startY: number; height: number; color: string; name: string }[] = [];
     let currentBottom = 0;
     slurries.forEach((s, i) => {
-      if (s.height > 0) {
+      const h = getSlurryHeight(slurries, i, wellData.casingDepthMD);
+      if (h > 0) {
         const colors = ["#8B7355", "#A0522D", "#CD853F", "#D2691E"];
         sections.push({
           startY: currentBottom,
-          height: s.height * scale,
+          height: h * scale,
           color: colors[i % colors.length],
           name: s.name,
         });
-        currentBottom += s.height * scale;
+        currentBottom += h * scale;
       }
     });
     return sections;
-  }, [slurries, scale]);
+  }, [slurries, scale, wellData.casingDepthMD]);
 
   const cementTotalH = cementSections.reduce((s, c) => s + c.height, 0);
   const mudH = h - cementTotalH;
