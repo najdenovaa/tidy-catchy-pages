@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { WellData } from "@/lib/cementing-calculations";
+import { getCasingID } from "@/lib/cementing-calculations";
 
 interface Props {
   data: WellData;
@@ -14,14 +15,12 @@ const fields: { key: keyof WellData; label: string; unit: string }[] = [
   { key: "casingDepthMD", label: "Глубина спуска колонны", unit: "м" },
   { key: "holeDiameter", label: "Диаметр открытого ствола", unit: "мм" },
   { key: "casingOD", label: "Наружный диаметр колонны", unit: "мм" },
-  { key: "casingID", label: "Внутренний диаметр колонны", unit: "мм" },
   { key: "casingWall", label: "Толщина стенки колонны", unit: "мм" },
   { key: "prevCasingDepth", label: "Глубина предыдущей колонны", unit: "м" },
   { key: "prevCasingID", label: "Внутр. диаметр пред. колонны", unit: "мм" },
   { key: "ckodDepth", label: "Глубина ЦКОД", unit: "м" },
   { key: "cementRiseHeight", label: "Высота подъёма цемента", unit: "м" },
   { key: "cavernCoeff", label: "Коэффициент кавернозности", unit: "" },
-  { key: "mudDensity", label: "Плотность бурового раствора", unit: "г/см³" },
   { key: "bottomTemp", label: "Температура на забое", unit: "°C" },
   { key: "maxAngle", label: "Максимальный зенитный угол", unit: "°" },
   { key: "maxAngleDepth", label: "Глубина макс. угла", unit: "м" },
@@ -31,6 +30,8 @@ export default function WellDataForm({ data, onChange }: Props) {
   const handleChange = (key: keyof WellData, value: string) => {
     onChange({ ...data, [key]: parseFloat(value) || 0 });
   };
+
+  const casingID = getCasingID(data.casingOD, data.casingWall);
 
   return (
     <Card>
@@ -54,6 +55,15 @@ export default function WellDataForm({ data, onChange }: Props) {
               />
             </div>
           ))}
+          {/* Вычисляемое поле */}
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              Внутренний диаметр колонны, мм
+            </Label>
+            <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold">
+              {casingID.toFixed(1)}
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>

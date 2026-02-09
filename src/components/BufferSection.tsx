@@ -15,18 +15,24 @@ interface Props {
 const fmt = (v: number, dec: number = 2) => v.toFixed(dec);
 
 export default function BufferSection({ buffers, onChange, annularVPM, flowRate, onFlowRateChange }: Props) {
-  const handleChange = (idx: number, field: keyof BufferFluid, value: string) => {
+  const handleChange = (idx: number, field: string, value: string) => {
     const updated = [...buffers];
+    const b = { ...updated[idx] };
     if (field === "name") {
-      updated[idx] = { ...updated[idx], name: value };
+      b.name = value;
+    } else if (field === "pv") {
+      b.rheology = { ...b.rheology, pv: parseFloat(value) || 0 };
+    } else if (field === "yp") {
+      b.rheology = { ...b.rheology, yp: parseFloat(value) || 0 };
     } else {
-      updated[idx] = { ...updated[idx], [field]: parseFloat(value) || 0 };
+      (b as any)[field] = parseFloat(value) || 0;
     }
+    updated[idx] = b;
     onChange(updated);
   };
 
   const addBuffer = () => {
-    onChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1 }]);
+    onChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 } }]);
   };
 
   const removeBuffer = (idx: number) => {
@@ -40,17 +46,14 @@ export default function BufferSection({ buffers, onChange, annularVPM, flowRate,
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">Буферные жидкости</CardTitle>
-          <button
-            onClick={addBuffer}
-            className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
+          <button onClick={addBuffer} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
             + Добавить
           </button>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-1 max-w-xs">
-          <Label className="text-xs text-muted-foreground">Расход закачки, м³/мин</Label>
+          <Label className="text-xs text-muted-foreground">Производительность насоса, м³/мин</Label>
           <Input
             type="number"
             step="0.1"
@@ -75,34 +78,26 @@ export default function BufferSection({ buffers, onChange, annularVPM, flowRate,
                   </button>
                 )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Название</Label>
-                  <Input
-                    value={b.name}
-                    onChange={(e) => handleChange(idx, "name", e.target.value)}
-                    className="h-9 text-sm"
-                  />
+                  <Input value={b.name} onChange={(e) => handleChange(idx, "name", e.target.value)} className="h-9 text-sm" />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label>
-                  <Input
-                    type="number"
-                    step="1"
-                    value={b.density || ""}
-                    onChange={(e) => handleChange(idx, "density", e.target.value)}
-                    className="h-9 text-sm"
-                  />
+                  <Input type="number" step="1" value={b.density || ""} onChange={(e) => handleChange(idx, "density", e.target.value)} className="h-9 text-sm" />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Объём, м³</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={b.volume || ""}
-                    onChange={(e) => handleChange(idx, "volume", e.target.value)}
-                    className="h-9 text-sm"
-                  />
+                  <Input type="number" step="0.1" value={b.volume || ""} onChange={(e) => handleChange(idx, "volume", e.target.value)} className="h-9 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">PV, сПз</Label>
+                  <Input type="number" step="1" value={b.rheology.pv || ""} onChange={(e) => handleChange(idx, "pv", e.target.value)} className="h-9 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">YP (ДНС), Па</Label>
+                  <Input type="number" step="0.1" value={b.rheology.yp || ""} onChange={(e) => handleChange(idx, "yp", e.target.value)} className="h-9 text-sm" />
                 </div>
               </div>
               {ct && (

@@ -2,12 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { calculateCement, getWaterCementRatio } from "@/lib/cementing-calculations";
-
-interface SlurryInput {
-  name: string;
-  density: number;
-  height: number;
-}
+import type { SlurryInput } from "@/lib/cementing-calculations";
 
 interface Props {
   slurries: SlurryInput[];
@@ -18,18 +13,24 @@ interface Props {
 const fmt = (v: number, dec: number = 2) => v.toFixed(dec);
 
 export default function CementSection({ slurries, onChange, annularVPM }: Props) {
-  const handleChange = (idx: number, field: keyof SlurryInput, value: string) => {
+  const handleChange = (idx: number, field: string, value: string) => {
     const updated = [...slurries];
+    const s = { ...updated[idx] };
     if (field === "name") {
-      updated[idx] = { ...updated[idx], name: value };
+      s.name = value;
+    } else if (field === "pv") {
+      s.rheology = { ...s.rheology, pv: parseFloat(value) || 0 };
+    } else if (field === "yp") {
+      s.rheology = { ...s.rheology, yp: parseFloat(value) || 0 };
     } else {
-      updated[idx] = { ...updated[idx], [field]: parseFloat(value) || 0 };
+      (s as any)[field] = parseFloat(value) || 0;
     }
+    updated[idx] = s;
     onChange(updated);
   };
 
   const addSlurry = () => {
-    onChange([...slurries, { name: `Раствор ${slurries.length + 1}`, density: 1.85, height: 0 }]);
+    onChange([...slurries, { name: `Раствор ${slurries.length + 1}`, density: 1.85, height: 0, rheology: { pv: 30, yp: 10 } }]);
   };
 
   const removeSlurry = (idx: number) => {
@@ -61,42 +62,31 @@ export default function CementSection({ slurries, onChange, annularVPM }: Props)
               <div className="flex items-center justify-between">
                 <span className="font-medium text-sm">{s.name}</span>
                 {slurries.length > 1 && (
-                  <button
-                    onClick={() => removeSlurry(idx)}
-                    className="text-xs text-destructive hover:underline"
-                  >
+                  <button onClick={() => removeSlurry(idx)} className="text-xs text-destructive hover:underline">
                     Удалить
                   </button>
                 )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Название</Label>
-                  <Input
-                    value={s.name}
-                    onChange={(e) => handleChange(idx, "name", e.target.value)}
-                    className="h-9 text-sm"
-                  />
+                  <Input value={s.name} onChange={(e) => handleChange(idx, "name", e.target.value)} className="h-9 text-sm" />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Плотность, г/см³</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={s.density || ""}
-                    onChange={(e) => handleChange(idx, "density", e.target.value)}
-                    className="h-9 text-sm"
-                  />
+                  <Input type="number" step="0.01" value={s.density || ""} onChange={(e) => handleChange(idx, "density", e.target.value)} className="h-9 text-sm" />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Высота подъёма, м</Label>
-                  <Input
-                    type="number"
-                    step="1"
-                    value={s.height || ""}
-                    onChange={(e) => handleChange(idx, "height", e.target.value)}
-                    className="h-9 text-sm"
-                  />
+                  <Input type="number" step="1" value={s.height || ""} onChange={(e) => handleChange(idx, "height", e.target.value)} className="h-9 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">PV, сПз</Label>
+                  <Input type="number" step="1" value={s.rheology.pv || ""} onChange={(e) => handleChange(idx, "pv", e.target.value)} className="h-9 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">YP (ДНС), Па</Label>
+                  <Input type="number" step="0.1" value={s.rheology.yp || ""} onChange={(e) => handleChange(idx, "yp", e.target.value)} className="h-9 text-sm" />
                 </div>
               </div>
               {res && (

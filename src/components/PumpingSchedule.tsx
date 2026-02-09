@@ -1,12 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { BufferFluid } from "@/lib/cementing-calculations";
-
-interface SlurryInput {
-  name: string;
-  density: number;
-  height: number;
-}
+import type { BufferFluid, SlurryInput } from "@/lib/cementing-calculations";
 
 interface Props {
   buffers: BufferFluid[];
@@ -21,15 +15,12 @@ const fmt = (v: number, dec: number = 1) => v.toFixed(dec);
 export default function PumpingSchedule({ buffers, slurries, annularVPM, displacementVolume, flowRate }: Props) {
   const stages: { name: string; fluid: string; rate: number; volume: number }[] = [];
 
-  // Заполнение линий
   stages.push({ name: "Заполнение линий", fluid: "Техническая вода", rate: flowRate, volume: 1.0 });
 
-  // Буферы
   buffers.forEach((b) => {
     stages.push({ name: `Буфер: ${b.name}`, fluid: b.name, rate: flowRate, volume: b.volume });
   });
 
-  // Цементные растворы
   slurries.forEach((s) => {
     const vol = annularVPM * s.height;
     if (vol > 0) {
@@ -37,10 +28,7 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
     }
   });
 
-  // Промывка линий
   stages.push({ name: "Промывка линий", fluid: "Техническая вода", rate: flowRate, volume: 5.0 });
-
-  // Продавка
   stages.push({ name: "Продавка", fluid: "Техническая вода", rate: flowRate * 1.5, volume: displacementVolume * 0.72 });
   stages.push({ name: "Продавка (замедление)", fluid: "Техническая вода", rate: flowRate, volume: displacementVolume * 0.26 });
   stages.push({ name: "Посадка пробки", fluid: "Техническая вода", rate: flowRate * 0.5, volume: displacementVolume * 0.027 });
