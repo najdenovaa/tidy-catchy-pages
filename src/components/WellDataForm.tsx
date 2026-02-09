@@ -9,21 +9,23 @@ interface Props {
   onChange: (data: WellData) => void;
 }
 
-const fields: { key: keyof WellData; label: string; unit: string }[] = [
-  { key: "wellDepthMD", label: "Глубина скважины по стволу", unit: "м" },
-  { key: "wellDepthTVD", label: "Глубина скважины по вертикали", unit: "м" },
-  { key: "casingDepthMD", label: "Глубина спуска колонны", unit: "м" },
-  { key: "holeDiameter", label: "Диаметр открытого ствола", unit: "мм" },
-  { key: "casingOD", label: "Наружный диаметр колонны", unit: "мм" },
-  { key: "casingWall", label: "Толщина стенки колонны", unit: "мм" },
-  { key: "prevCasingDepth", label: "Глубина предыдущей колонны", unit: "м" },
-  { key: "prevCasingID", label: "Внутр. диаметр пред. колонны", unit: "мм" },
-  { key: "ckodDepth", label: "Глубина ЦКОД", unit: "м" },
+const wellFields: { key: keyof WellData; label: string; unit: string }[] = [
+  { key: "wellDepthMD", label: "Глубина скважины (MD)", unit: "м" },
+  { key: "wellDepthTVD", label: "Глубина скважины (TVD)", unit: "м" },
+  { key: "casingDepthMD", label: "Глубина спуска ОК (MD)", unit: "м" },
+  { key: "holeDiameter", label: "Номинальный диаметр ствола", unit: "мм" },
+  { key: "casingOD", label: "Наружный диаметр ОК", unit: "мм" },
+  { key: "casingWall", label: "Толщина стенки ОК", unit: "мм" },
+  { key: "prevCasingDepth", label: "Глубина пред. колонны (MD)", unit: "м" },
+  { key: "prevCasingOD", label: "Наружный диам. пред. колонны", unit: "мм" },
+  { key: "prevCasingID", label: "Внутр. диам. пред. колонны", unit: "мм" },
+  { key: "ckodDepth", label: "Глубина ЦКОД (MD)", unit: "м" },
   { key: "cementRiseHeight", label: "Высота подъёма цемента", unit: "м" },
   { key: "cavernCoeff", label: "Коэффициент кавернозности", unit: "" },
-  { key: "bottomTemp", label: "Температура на забое", unit: "°C" },
-  { key: "maxAngle", label: "Максимальный зенитный угол", unit: "°" },
-  { key: "maxAngleDepth", label: "Глубина макс. угла", unit: "м" },
+  { key: "bottomTempStatic", label: "BHST (статическая t°)", unit: "°C" },
+  { key: "bottomTempCirc", label: "BHCT (циркуляционная t°)", unit: "°C" },
+  { key: "shoeLength", label: "Башмачная труба", unit: "м" },
+  { key: "sumpLength", label: "Зумпф", unit: "м" },
 ];
 
 export default function WellDataForm({ data, onChange }: Props) {
@@ -36,11 +38,11 @@ export default function WellDataForm({ data, onChange }: Props) {
   return (
     <Card>
       <CardHeader className="pb-4">
-        <CardTitle className="text-lg">Исходные данные скважины</CardTitle>
+        <CardTitle className="text-lg">01. Исходные данные</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {fields.map(({ key, label, unit }) => (
+          {wellFields.map(({ key, label, unit }) => (
             <div key={key} className="space-y-1">
               <Label htmlFor={key} className="text-xs text-muted-foreground">
                 {label}{unit && `, ${unit}`}
@@ -55,12 +57,9 @@ export default function WellDataForm({ data, onChange }: Props) {
               />
             </div>
           ))}
-          {/* Вычисляемое поле */}
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">
-              Внутренний диаметр колонны, мм
-            </Label>
-            <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold">
+            <Label className="text-xs text-muted-foreground">Внутр. диаметр ОК (расчёт), мм</Label>
+            <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold border border-border">
               {casingID.toFixed(1)}
             </div>
           </div>
