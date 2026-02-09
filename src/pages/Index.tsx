@@ -24,7 +24,6 @@ const defaultWellData: WellData = {
   cavernCoeff: 1.2,
   bottomTempStatic: 10,
   bottomTempCirc: 18,
-  shoeLength: 8,
 };
 
 const defaultDrillingFluid: DrillingFluid = {

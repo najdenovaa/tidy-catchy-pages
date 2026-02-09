@@ -33,7 +33,6 @@ export interface WellData {
   cavernCoeff: number;
   bottomTempStatic: number; // BHST °C
   bottomTempCirc: number; // BHCT °C
-  shoeLength: number; // Башмачная труба, м
 }
 
 export function getCasingID(casingOD: number, casingWall: number): number {
