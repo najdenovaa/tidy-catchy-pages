@@ -51,8 +51,7 @@ function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
   steps: FlowRateStep[];
   totalVolume: number;
   onChange: (s: FlowRateStep[]) => void;
-  fracCheck?: (rateLps: number) => { risk: boolean; ecd: number; fracP: number } | null;
-  fracCheckFn?: (rateLps: number, density: number, pv: number, yp: number) => { risk: boolean; ecd: number; fracP: number } | null;
+  fracCheck?: (rateLps: number) => { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null;
 }) {
   const usedVolume = steps.reduce((s, st) => s + st.volumeM3, 0);
   const remaining = totalVolume - usedVolume;
@@ -85,10 +84,15 @@ function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
               )}
             </div>
             {fc && step.rateLps > 0 && (
-              <div className={`text-xs px-2 py-0.5 rounded ${fc.risk ? "bg-destructive/10 text-destructive font-medium" : "bg-green-500/10 text-green-700"}`}>
-                {fc.risk
-                  ? `⚠ Риск ГРП! ECD ≈ ${fc.ecd.toFixed(1)} МПа > Pгрп ${fc.fracP.toFixed(1)} МПа`
-                  : `✓ Нет риска ГРП (ECD ≈ ${fc.ecd.toFixed(1)} МПа < Pгрп ${fc.fracP.toFixed(1)} МПа)`}
+              <div className={`text-xs px-2 py-1 rounded space-y-0.5 ${fc.risk ? "bg-destructive/10 text-destructive" : "bg-green-500/10 text-green-700"}`}>
+                <div className="font-medium">
+                  {fc.risk
+                    ? `⚠ Риск ГРП! ECD ≈ ${fc.ecd.toFixed(2)} МПа > Pгрп ${fc.fracP.toFixed(2)} МПа`
+                    : `✓ Нет риска ГРП (ECD ≈ ${fc.ecd.toFixed(2)} МПа < Pгрп ${fc.fracP.toFixed(2)} МПа)`}
+                </div>
+                <div className="opacity-75">
+                  Гидростатика: {fc.hydroStatic.toFixed(2)} МПа &nbsp;|&nbsp; Трение: {fc.frictionLoss.toFixed(3)} МПа
+                </div>
               </div>
             )}
           </div>
@@ -120,25 +124,24 @@ export default function InputSection(props: Props) {
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
 
   // Fracture risk checker
-  const fracCheck = (rateLps: number, fluidDensity: number, fluidPv: number, fluidYp: number): { risk: boolean; ecd: number; fracP: number } | null => {
+  const fracCheck = (rateLps: number, fluidDensity: number, fluidPv: number, fluidYp: number): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
     if (fractureGradient <= 0 || wellData.wellDepthTVD <= 0 || rateLps <= 0) return null;
     const fracP = (fractureGradient * wellData.wellDepthTVD) / 1000;
-    // ECD: hydrostatic of heaviest column + annular friction
-    let maxDensity = fluidDensity / 1000; // г/см³
+    let maxDensity = fluidDensity / 1000;
     slurries.forEach(s => { if (s.density > maxDensity) maxDensity = s.density; });
     const hydroStatic = hydrostaticPressure(maxDensity, wellData.wellDepthTVD);
-    // Annular hydraulic diameter (equivalent slot)
     const dHole = wellData.holeDiameter / 1000;
     const dCas = wellData.casingOD / 1000;
-    const dHyd = dHole - dCas; // гидравлический диаметр кольцевого пространства
+    const dHyd = dHole - dCas;
     if (dHyd <= 0) return null;
     const area = (Math.PI / 4) * (dHole * dHole - dCas * dCas);
     const velocity = (rateLps / 1000) / area;
     const pvPas = fluidPv / 1000;
     const frLoss = (32 * pvPas * velocity * wellData.casingDepthMD) / (dHyd * dHyd) / 1e6;
     const ypLoss = (16 * fluidYp * wellData.casingDepthMD) / (3 * dHyd) / 1e6;
-    const ecd = hydroStatic + frLoss + ypLoss;
-    return { risk: ecd > fracP, ecd, fracP };
+    const frictionLoss = frLoss + ypLoss;
+    const ecd = hydroStatic + frictionLoss;
+    return { risk: ecd > fracP, ecd, fracP, hydroStatic, frictionLoss };
   };
 
   const handleWellChange = (key: keyof WellData, value: string) => {
