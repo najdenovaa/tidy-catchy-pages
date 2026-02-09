@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InputSection from "@/components/InputSection";
-import PumpingSchedule, { getWorkTimeWithCement } from "@/components/PumpingSchedule";
+import PumpingSchedule from "@/components/PumpingSchedule";
 import HydraulicsSection from "@/components/HydraulicsSection";
 import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
+import WellVisualization from "@/components/WellVisualization";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput } from "@/lib/cementing-calculations";
 
@@ -24,7 +25,6 @@ const defaultWellData: WellData = {
   bottomTempStatic: 10,
   bottomTempCirc: 18,
   shoeLength: 8,
-  sumpLength: 2,
 };
 
 const defaultDrillingFluid: DrillingFluid = {
@@ -46,6 +46,9 @@ const defaultSlurries: SlurryInput[] = [
     ],
     thickeningTime30Bc: 224,
     thickeningTime50Bc: 232,
+    flowRateLps: 7,
+    waterRatio: 0.536,
+    yieldPerTon: 0.63,
   },
 ];
 
@@ -56,6 +59,7 @@ const defaultBuffers: BufferFluid[] = [
     volume: 4.0,
     rheology: { pv: 1, yp: 0 },
     additives: [{ name: "Atren Spacer WP", percentage: 0, massKg: 40 }],
+    flowRateLps: 5,
   },
   {
     name: "Реологический буфер",
@@ -67,8 +71,19 @@ const defaultBuffers: BufferFluid[] = [
       { name: "Atren Cem Premium", percentage: 0, massKg: 5 },
       { name: "CaCl2", percentage: 0, massKg: 42 },
     ],
+    flowRateLps: 5,
   },
 ];
+
+interface CalcSnapshot {
+  wellData: WellData;
+  drillingFluid: DrillingFluid;
+  slurries: SlurryInput[];
+  buffers: BufferFluid[];
+  fractureGradient: number;
+  displacementDensity: number;
+  displacementFlowRateLps: number;
+}
 
 export default function Index() {
   const [wellData, setWellData] = useState<WellData>(defaultWellData);
@@ -76,48 +91,65 @@ export default function Index() {
   const [slurries, setSlurries] = useState<SlurryInput[]>(defaultSlurries);
   const [buffers, setBuffers] = useState<BufferFluid[]>(defaultBuffers);
   const [fractureGradient, setFractureGradient] = useState(17.7);
-  const [flowRate, setFlowRate] = useState(0.4);
   const [displacementDensity, setDisplacementDensity] = useState(1010);
+  const [displacementFlowRateLps, setDisplacementFlowRateLps] = useState(8);
 
-  const volumes = useMemo(() => calculateVolumes(wellData), [wellData]);
+  // Snapshot-based calculation: only updates on РАССЧИТАТЬ click
+  const [calcSnapshot, setCalcSnapshot] = useState<CalcSnapshot | null>(null);
 
-  const workTimeWithCement = useMemo(
-    () => getWorkTimeWithCement(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolume, flowRate),
-    [buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolume, flowRate]
-  );
+  const handleCalculate = useCallback(() => {
+    setCalcSnapshot({
+      wellData, drillingFluid, slurries, buffers, fractureGradient, displacementDensity, displacementFlowRateLps,
+    });
+  }, [wellData, drillingFluid, slurries, buffers, fractureGradient, displacementDensity, displacementFlowRateLps]);
+
+  const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData) : null, [calcSnapshot]);
+
+  const flowRateM3min = calcSnapshot ? calcSnapshot.displacementFlowRateLps * 0.06 : 0;
 
   const materials = useMemo(
-    () => calculateMaterials(slurries, buffers, volumes.annularVolumePerMeter),
-    [slurries, buffers, volumes.annularVolumePerMeter]
+    () => calcSnapshot && volumes ? calculateMaterials(calcSnapshot.slurries, calcSnapshot.buffers, volumes.annularVolumePerMeter) : null,
+    [calcSnapshot, volumes]
   );
 
   const pressureData = useMemo(
-    () => calculatePressureProfile(wellData, slurries, buffers, drillingFluid, fractureGradient, flowRate, volumes.displacementVolume),
-    [wellData, slurries, buffers, drillingFluid, fractureGradient, flowRate, volumes.displacementVolume]
+    () => calcSnapshot && volumes
+      ? calculatePressureProfile(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.drillingFluid, calcSnapshot.fractureGradient, flowRateM3min, volumes.displacementVolume)
+      : [],
+    [calcSnapshot, volumes, flowRateM3min]
   );
 
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">ЦП</span>
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+              <span className="text-primary-foreground font-bold text-sm">ЦП</span>
+            </div>
+            <div>
+              <h1 className="text-base font-bold text-foreground leading-tight">Программа цементирования</h1>
+              <p className="text-xs text-muted-foreground">Расчёт обсадных колонн</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-base font-bold text-foreground leading-tight">Программа цементирования</h1>
-            <p className="text-xs text-muted-foreground">Расчёт обсадных колонн</p>
-          </div>
+          <button
+            onClick={handleCalculate}
+            className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors shadow-md"
+          >
+            РАССЧИТАТЬ
+          </button>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         <Tabs defaultValue="input" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 h-auto">
+          <TabsList className="grid w-full grid-cols-6 h-auto">
             <TabsTrigger value="input" className="text-xs py-2">Исходные данные</TabsTrigger>
             <TabsTrigger value="hydraulics" className="text-xs py-2">Гидравлика</TabsTrigger>
             <TabsTrigger value="schedule" className="text-xs py-2">Закачка</TabsTrigger>
             <TabsTrigger value="materials" className="text-xs py-2">Материалы</TabsTrigger>
             <TabsTrigger value="charts" className="text-xs py-2">Графики</TabsTrigger>
+            <TabsTrigger value="visual" className="text-xs py-2">Визуал</TabsTrigger>
           </TabsList>
 
           <TabsContent value="input">
@@ -132,40 +164,65 @@ export default function Index() {
               onSlurriesChange={setSlurries}
               fractureGradient={fractureGradient}
               onFractureGradientChange={setFractureGradient}
-              flowRate={flowRate}
-              onFlowRateChange={setFlowRate}
               displacementDensity={displacementDensity}
               onDisplacementDensityChange={setDisplacementDensity}
+              displacementFlowRateLps={displacementFlowRateLps}
+              onDisplacementFlowRateChange={setDisplacementFlowRateLps}
             />
           </TabsContent>
 
           <TabsContent value="hydraulics">
-            <HydraulicsSection
-              wellData={wellData}
-              slurries={slurries}
-              fractureGradient={fractureGradient}
-              displacementDensity={displacementDensity}
-              workTimeWithCement={workTimeWithCement}
-              volumes={volumes}
-            />
+            {calcSnapshot && volumes ? (
+              <HydraulicsSection
+                wellData={calcSnapshot.wellData}
+                slurries={calcSnapshot.slurries}
+                fractureGradient={calcSnapshot.fractureGradient}
+                displacementDensity={calcSnapshot.displacementDensity}
+                workTimeWithCement={0}
+                volumes={volumes}
+              />
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+            )}
           </TabsContent>
 
           <TabsContent value="schedule">
-            <PumpingSchedule
-              buffers={buffers}
-              slurries={slurries}
-              annularVPM={volumes.annularVolumePerMeter}
-              displacementVolume={volumes.displacementVolume}
-              flowRate={flowRate}
-            />
+            {calcSnapshot && volumes ? (
+              <PumpingSchedule
+                buffers={calcSnapshot.buffers}
+                slurries={calcSnapshot.slurries}
+                annularVPM={volumes.annularVolumePerMeter}
+                displacementVolume={volumes.displacementVolume}
+                displacementFlowRateLps={calcSnapshot.displacementFlowRateLps}
+              />
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+            )}
           </TabsContent>
 
           <TabsContent value="materials">
-            <MaterialsSection materials={materials} />
+            {materials ? (
+              <MaterialsSection materials={materials} />
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+            )}
           </TabsContent>
 
           <TabsContent value="charts">
-            <ChartsSection pressureData={pressureData} />
+            {calcSnapshot ? (
+              <ChartsSection pressureData={pressureData} />
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="visual">
+            <WellVisualization
+              wellData={wellData}
+              slurries={slurries}
+              buffers={buffers}
+              drillingFluid={drillingFluid}
+            />
           </TabsContent>
         </Tabs>
       </main>
