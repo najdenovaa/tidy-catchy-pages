@@ -81,10 +81,12 @@ export interface SlurryInput {
 }
 
 // Вычислить высоту столба цемента для i-го раствора
+// Порядок: первый в списке = у устья (верхний), последний = у забоя (нижний)
 export function getSlurryHeight(slurries: SlurryInput[], index: number, casingDepthMD: number): number {
   const s = slurries[index];
-  // Нижняя граница: дно скважины для первого, или верх предыдущего для остальных
-  const bottomDepth = index === 0 ? casingDepthMD : slurries[index - 1].topDepthMD;
+  const lastIdx = slurries.length - 1;
+  // Нижняя граница: дно скважины для последнего, или верх следующего для остальных
+  const bottomDepth = index === lastIdx ? casingDepthMD : slurries[index + 1].topDepthMD;
   return Math.max(0, bottomDepth - s.topDepthMD);
 }
 

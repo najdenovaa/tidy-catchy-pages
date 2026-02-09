@@ -14,8 +14,8 @@ interface Props {
   onBuffersChange: (b: BufferFluid[]) => void;
   slurries: SlurryInput[];
   onSlurriesChange: (s: SlurryInput[]) => void;
-  displacement: DisplacementFluid;
-  onDisplacementChange: (d: DisplacementFluid) => void;
+  displacementFluids: DisplacementFluid[];
+  onDisplacementFluidsChange: (d: DisplacementFluid[]) => void;
   fractureGradient: number;
   onFractureGradientChange: (v: number) => void;
   displacementVolume?: number;
@@ -52,6 +52,7 @@ function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
   totalVolume: number;
   onChange: (s: FlowRateStep[]) => void;
   fracCheck?: (rateLps: number) => { risk: boolean; ecd: number; fracP: number } | null;
+  fracCheckFn?: (rateLps: number, density: number, pv: number, yp: number) => { risk: boolean; ecd: number; fracP: number } | null;
 }) {
   const usedVolume = steps.reduce((s, st) => s + st.volumeM3, 0);
   const remaining = totalVolume - usedVolume;
@@ -111,30 +112,31 @@ export default function InputSection(props: Props) {
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacement, onDisplacementChange, fractureGradient, onFractureGradientChange, displacementVolume } = props;
+  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacementFluids, onDisplacementFluidsChange, fractureGradient, onFractureGradientChange, displacementVolume } = props;
 
   const calcDispVol = displacementVolume ?? 0;
 
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
 
-  // Fracture risk checker for displacement
-  const fracCheck = (rateLps: number): { risk: boolean; ecd: number; fracP: number } | null => {
+  // Fracture risk checker
+  const fracCheck = (rateLps: number, fluidDensity: number, fluidPv: number, fluidYp: number): { risk: boolean; ecd: number; fracP: number } | null => {
     if (fractureGradient <= 0 || wellData.wellDepthTVD <= 0 || rateLps <= 0) return null;
-    const fracP = (fractureGradient * wellData.wellDepthTVD) / 1000; // МПа
-    // Estimate ECD: hydrostatic of heaviest column + friction
-    // Worst case: full cement column in annulus
-    let maxDensity = displacement.density / 1000; // г/см³
+    const fracP = (fractureGradient * wellData.wellDepthTVD) / 1000;
+    // ECD: hydrostatic of heaviest column + annular friction
+    let maxDensity = fluidDensity / 1000; // г/см³
     slurries.forEach(s => { if (s.density > maxDensity) maxDensity = s.density; });
     const hydroStatic = hydrostaticPressure(maxDensity, wellData.wellDepthTVD);
-    // Simplified annular friction: ΔP_fr ≈ (128 * μ * Q * L) / (π * Dh^4) simplified
-    const dAnn = (wellData.holeDiameter - wellData.casingOD) / 1000; // м
-    if (dAnn <= 0) return null;
-    const area = (Math.PI / 4) * dAnn * dAnn;
-    const velocity = (rateLps / 1000) / area; // м/с
-    const pvPas = displacement.rheology.pv / 1000;
-    const frLoss = (32 * pvPas * velocity * wellData.casingDepthMD) / (dAnn * dAnn) / 1e6; // МПа
-    const ypLoss = (16 * displacement.rheology.yp * wellData.casingDepthMD) / (3 * dAnn) / 1e6;
+    // Annular hydraulic diameter (equivalent slot)
+    const dHole = wellData.holeDiameter / 1000;
+    const dCas = wellData.casingOD / 1000;
+    const dHyd = dHole - dCas; // гидравлический диаметр кольцевого пространства
+    if (dHyd <= 0) return null;
+    const area = (Math.PI / 4) * (dHole * dHole - dCas * dCas);
+    const velocity = (rateLps / 1000) / area;
+    const pvPas = fluidPv / 1000;
+    const frLoss = (32 * pvPas * velocity * wellData.casingDepthMD) / (dHyd * dHyd) / 1e6;
+    const ypLoss = (16 * fluidYp * wellData.casingDepthMD) / (3 * dHyd) / 1e6;
     const ecd = hydroStatic + frLoss + ypLoss;
     return { risk: ecd > fracP, ecd, fracP };
   };
@@ -195,12 +197,16 @@ export default function InputSection(props: Props) {
     onSlurriesChange(updated);
   };
 
-  const handleDispChange = (field: string, value: string) => {
+  const handleDispFluidChange = (idx: number, field: string, value: string) => {
+    const updated = [...displacementFluids];
+    const d = { ...updated[idx] };
     const num = parseFloat(value) || 0;
-    if (field === "name") onDisplacementChange({ ...displacement, name: value });
-    else if (field === "density") onDisplacementChange({ ...displacement, density: num });
-    else if (field === "pv") onDisplacementChange({ ...displacement, rheology: { ...displacement.rheology, pv: num } });
-    else if (field === "yp") onDisplacementChange({ ...displacement, rheology: { ...displacement.rheology, yp: num } });
+    if (field === "name") d.name = value;
+    else if (field === "density") d.density = num;
+    else if (field === "pv") d.rheology = { ...d.rheology, pv: num };
+    else if (field === "yp") d.rheology = { ...d.rheology, yp: num };
+    updated[idx] = d;
+    onDisplacementFluidsChange(updated);
   };
 
   return (
@@ -318,7 +324,7 @@ export default function InputSection(props: Props) {
                 + Добавить раствор
               </button>
             </div>
-            <p className="text-xs text-muted-foreground italic">Порядок растворов = порядок закачки (первый → на забой). Используйте ↑↓ для перемещения.</p>
+            <p className="text-xs text-muted-foreground italic">Порядок: первый = у устья (верхний), последний = у забоя. В закачке: последний качается первым.</p>
 
             {slurries.map((s, idx) => {
               const height = getSlurryHeight(slurries, idx, wellData.casingDepthMD);
@@ -398,35 +404,54 @@ export default function InputSection(props: Props) {
         <SectionHeader title="🚀 Продавочная жидкость" isOpen={openSections.displacement} onClick={() => toggle("displacement")} />
         {openSections.displacement && (
           <CardContent className="pt-4 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Название</Label>
-                <Input value={displacement.name} onChange={(e) => handleDispChange("name", e.target.value)} className="h-9 text-sm" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label>
-                <Input type="number" step="1" value={displacement.density || ""} onChange={(e) => handleDispChange("density", e.target.value)} className="h-9 text-sm" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">PV, сПз</Label>
-                <Input type="number" step="1" value={displacement.rheology.pv || ""} onChange={(e) => handleDispChange("pv", e.target.value)} className="h-9 text-sm" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">YP, Па</Label>
-                <Input type="number" step="0.1" value={displacement.rheology.yp || ""} onChange={(e) => handleDispChange("yp", e.target.value)} className="h-9 text-sm" />
-              </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground italic">Порции продавки — порядок закачки. Можно использовать разные жидкости.</span>
+              <button onClick={() => onDisplacementFluidsChange([...displacementFluids, { name: `Порция ${displacementFluids.length + 1}`, density: 1010, rheology: { pv: 1, yp: 0 }, flowRateSteps: [{ rateLps: 5, volumeM3: 0 }] }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                + Порция
+              </button>
             </div>
             {calcDispVol > 0 && (
               <div className="p-3 rounded-lg bg-muted/50 border border-border/50">
                 <span className="text-sm font-medium">Расчётный объём продавки: <span className="text-primary font-bold">{calcDispVol.toFixed(2)} м³</span></span>
+                {(() => {
+                  const totalUsed = displacementFluids.reduce((s, df) => s + df.flowRateSteps.reduce((ss, st) => ss + st.volumeM3, 0), 0);
+                  const rem = calcDispVol - totalUsed;
+                  return (
+                    <span className={`ml-3 text-sm ${Math.abs(rem) < 0.01 ? "text-muted-foreground" : "text-destructive font-medium"}`}>
+                      (остаток: {rem.toFixed(2)} м³)
+                    </span>
+                  );
+                })()}
               </div>
             )}
-            <FlowRateStepsEditor
-              steps={displacement.flowRateSteps}
-              totalVolume={calcDispVol}
-              onChange={(steps) => onDisplacementChange({ ...displacement, flowRateSteps: steps })}
-              fracCheck={fracCheck}
-            />
+            {displacementFluids.map((df, idx) => (
+              <div key={idx} className="p-3 rounded-lg bg-muted/30 space-y-3 border border-border/50">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-sm">{df.name}</span>
+                  <div className="flex items-center gap-2">
+                    {idx > 0 && (
+                      <button onClick={() => { const u = [...displacementFluids]; [u[idx - 1], u[idx]] = [u[idx], u[idx - 1]]; onDisplacementFluidsChange(u); }} className="text-xs px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground" title="Вверх">↑</button>
+                    )}
+                    {idx < displacementFluids.length - 1 && (
+                      <button onClick={() => { const u = [...displacementFluids]; [u[idx], u[idx + 1]] = [u[idx + 1], u[idx]]; onDisplacementFluidsChange(u); }} className="text-xs px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground" title="Вниз">↓</button>
+                    )}
+                    {displacementFluids.length > 1 && <button onClick={() => onDisplacementFluidsChange(displacementFluids.filter((_, i) => i !== idx))} className="text-xs text-destructive hover:underline">Удалить</button>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><Input value={df.name} onChange={(e) => handleDispFluidChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label><Input type="number" step="1" value={df.density || ""} onChange={(e) => handleDispFluidChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">PV, сПз</Label><Input type="number" value={df.rheology.pv || ""} onChange={(e) => handleDispFluidChange(idx, "pv", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><Input type="number" step="0.1" value={df.rheology.yp || ""} onChange={(e) => handleDispFluidChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
+                </div>
+                <FlowRateStepsEditor
+                  steps={df.flowRateSteps}
+                  totalVolume={calcDispVol}
+                  onChange={(steps) => { const u = [...displacementFluids]; u[idx] = { ...u[idx], flowRateSteps: steps }; onDisplacementFluidsChange(u); }}
+                  fracCheck={(rateLps) => fracCheck(rateLps, df.density, df.rheology.pv, df.rheology.yp)}
+                />
+              </div>
+            ))}
           </CardContent>
         )}
       </Card>
