@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { calculateContactTime } from "@/lib/cementing-calculations";
-import type { BufferFluid } from "@/lib/cementing-calculations";
+import type { BufferFluid, Additive } from "@/lib/cementing-calculations";
 
 interface Props {
   buffers: BufferFluid[];
@@ -18,21 +18,36 @@ export default function BufferSection({ buffers, onChange, annularVPM, flowRate,
   const handleChange = (idx: number, field: string, value: string) => {
     const updated = [...buffers];
     const b = { ...updated[idx] };
-    if (field === "name") {
-      b.name = value;
-    } else if (field === "pv") {
-      b.rheology = { ...b.rheology, pv: parseFloat(value) || 0 };
-    } else if (field === "yp") {
-      b.rheology = { ...b.rheology, yp: parseFloat(value) || 0 };
-    } else {
-      (b as any)[field] = parseFloat(value) || 0;
-    }
+    if (field === "name") b.name = value;
+    else if (field === "pv") b.rheology = { ...b.rheology, pv: parseFloat(value) || 0 };
+    else if (field === "yp") b.rheology = { ...b.rheology, yp: parseFloat(value) || 0 };
+    else (b as any)[field] = parseFloat(value) || 0;
     updated[idx] = b;
     onChange(updated);
   };
 
+  const updateAdditive = (bIdx: number, aIdx: number, field: keyof Additive, value: string) => {
+    const updated = [...buffers];
+    const b = { ...updated[bIdx], additives: [...updated[bIdx].additives] };
+    b.additives[aIdx] = { ...b.additives[aIdx], [field]: field === "name" ? value : parseFloat(value) || 0 };
+    updated[bIdx] = b;
+    onChange(updated);
+  };
+
+  const addAdditiveToBuffer = (bIdx: number) => {
+    const updated = [...buffers];
+    updated[bIdx] = { ...updated[bIdx], additives: [...updated[bIdx].additives, { name: "", percentage: 0, massKg: 0 }] };
+    onChange(updated);
+  };
+
+  const removeAdditive = (bIdx: number, aIdx: number) => {
+    const updated = [...buffers];
+    updated[bIdx] = { ...updated[bIdx], additives: updated[bIdx].additives.filter((_, i) => i !== aIdx) };
+    onChange(updated);
+  };
+
   const addBuffer = () => {
-    onChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 } }]);
+    onChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 }, additives: [] }]);
   };
 
   const removeBuffer = (idx: number) => {
@@ -40,12 +55,13 @@ export default function BufferSection({ buffers, onChange, annularVPM, flowRate,
   };
 
   const totalVolume = buffers.reduce((s, b) => s + b.volume, 0);
+  const totalHeight = annularVPM > 0 ? totalVolume / annularVPM : 0;
 
   return (
     <Card>
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-lg">Буферные жидкости</CardTitle>
+          <CardTitle className="text-lg">04. Буферные составы</CardTitle>
           <button onClick={addBuffer} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
             + Добавить
           </button>
@@ -54,28 +70,18 @@ export default function BufferSection({ buffers, onChange, annularVPM, flowRate,
       <CardContent className="space-y-4">
         <div className="space-y-1 max-w-xs">
           <Label className="text-xs text-muted-foreground">Производительность насоса, м³/мин</Label>
-          <Input
-            type="number"
-            step="0.1"
-            value={flowRate || ""}
-            onChange={(e) => onFlowRateChange(parseFloat(e.target.value) || 0)}
-            className="h-9 text-sm"
-          />
+          <Input type="number" step="0.1" value={flowRate || ""} onChange={(e) => onFlowRateChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
         </div>
 
         {buffers.map((b, idx) => {
-          const ct = annularVPM > 0 && flowRate > 0
-            ? calculateContactTime(b.volume, annularVPM, flowRate)
-            : null;
+          const ct = annularVPM > 0 && flowRate > 0 ? calculateContactTime(b.volume, annularVPM, flowRate) : null;
 
           return (
             <div key={idx} className="p-4 rounded-lg bg-muted/50 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium text-sm">{b.name}</span>
                 {buffers.length > 1 && (
-                  <button onClick={() => removeBuffer(idx)} className="text-xs text-destructive hover:underline">
-                    Удалить
-                  </button>
+                  <button onClick={() => removeBuffer(idx)} className="text-xs text-destructive hover:underline">Удалить</button>
                 )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -100,20 +106,28 @@ export default function BufferSection({ buffers, onChange, annularVPM, flowRate,
                   <Input type="number" step="0.1" value={b.rheology.yp || ""} onChange={(e) => handleChange(idx, "yp", e.target.value)} className="h-9 text-sm" />
                 </div>
               </div>
+
+              {/* Добавки */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground font-medium">Компонентный состав</span>
+                  <button onClick={() => addAdditiveToBuffer(idx)} className="text-xs text-primary hover:underline">+ добавка</button>
+                </div>
+                {b.additives.map((a, aIdx) => (
+                  <div key={aIdx} className="flex items-center gap-2">
+                    <Input value={a.name} onChange={(e) => updateAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-8 text-xs flex-1" />
+                    <Input type="number" value={a.massKg || ""} onChange={(e) => updateAdditive(idx, aIdx, "massKg", e.target.value)} placeholder="кг" className="h-8 text-xs w-24" />
+                    <span className="text-xs text-muted-foreground">кг</span>
+                    <button onClick={() => removeAdditive(idx, aIdx)} className="text-xs text-destructive">✕</button>
+                  </div>
+                ))}
+              </div>
+
               {ct && (
                 <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Высота в затрубе</div>
-                    <div className="text-sm font-semibold">{fmt(ct.bufferHeightAnnulus)} м</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Скорость</div>
-                    <div className="text-sm font-semibold">{fmt(ct.bufferVelocity)} м/мин</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Время контакта</div>
-                    <div className="text-sm font-semibold">{fmt(ct.contactTime)} мин</div>
-                  </div>
+                  <div><div className="text-xs text-muted-foreground">Высота в затрубе</div><div className="text-sm font-semibold">{fmt(ct.bufferHeightAnnulus)} м</div></div>
+                  <div><div className="text-xs text-muted-foreground">Скорость</div><div className="text-sm font-semibold">{fmt(ct.bufferVelocity)} м/мин</div></div>
+                  <div><div className="text-xs text-muted-foreground">Время контакта</div><div className="text-sm font-semibold">{fmt(ct.contactTime)} мин</div></div>
                 </div>
               )}
             </div>
@@ -121,8 +135,8 @@ export default function BufferSection({ buffers, onChange, annularVPM, flowRate,
         })}
 
         <div className="flex justify-between items-center pt-2 border-t border-border">
-          <span className="text-sm text-muted-foreground">Общий объём буферов</span>
-          <span className="text-sm font-semibold">{fmt(totalVolume)} м³</span>
+          <span className="text-sm text-muted-foreground">Общий объём буферов / эквив. высота</span>
+          <span className="text-sm font-semibold">{fmt(totalVolume)} м³ / {fmt(totalHeight, 0)} м кольцевого пространства</span>
         </div>
       </CardContent>
     </Card>
