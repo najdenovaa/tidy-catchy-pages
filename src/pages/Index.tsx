@@ -74,23 +74,25 @@ const defaultBuffers: BufferFluid[] = [
   },
 ];
 
-const defaultDisplacement: DisplacementFluid = {
-  name: "Продавочная жидкость",
-  density: 1010,
-  rheology: { pv: 1, yp: 0 },
-  flowRateSteps: [
-    { rateLps: 12, volumeM3: 0 },
-    { rateLps: 8, volumeM3: 0 },
-    { rateLps: 4, volumeM3: 0 },
-  ],
-};
+const defaultDisplacementFluids: DisplacementFluid[] = [
+  {
+    name: "Продавочная жидкость",
+    density: 1010,
+    rheology: { pv: 1, yp: 0 },
+    flowRateSteps: [
+      { rateLps: 12, volumeM3: 0 },
+      { rateLps: 8, volumeM3: 0 },
+      { rateLps: 4, volumeM3: 0 },
+    ],
+  },
+];
 
 interface CalcSnapshot {
   wellData: WellData;
   drillingFluid: DrillingFluid;
   slurries: SlurryInput[];
   buffers: BufferFluid[];
-  displacement: DisplacementFluid;
+  displacementFluids: DisplacementFluid[];
   fractureGradient: number;
 }
 
@@ -99,7 +101,7 @@ export default function Index() {
   const [drillingFluid, setDrillingFluid] = useState<DrillingFluid>(defaultDrillingFluid);
   const [slurries, setSlurries] = useState<SlurryInput[]>(defaultSlurries);
   const [buffers, setBuffers] = useState<BufferFluid[]>(defaultBuffers);
-  const [displacement, setDisplacement] = useState<DisplacementFluid>(defaultDisplacement);
+  const [displacementFluids, setDisplacementFluids] = useState<DisplacementFluid[]>(defaultDisplacementFluids);
   const [fractureGradient, setFractureGradient] = useState(17.7);
 
   const liveDispVol = useMemo(() => {
@@ -110,8 +112,8 @@ export default function Index() {
   const [calcSnapshot, setCalcSnapshot] = useState<CalcSnapshot | null>(null);
 
   const handleCalculate = useCallback(() => {
-    setCalcSnapshot({ wellData, drillingFluid, slurries, buffers, displacement, fractureGradient });
-  }, [wellData, drillingFluid, slurries, buffers, displacement, fractureGradient]);
+    setCalcSnapshot({ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient });
+  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient]);
 
   const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData) : null, [calcSnapshot]);
 
@@ -170,8 +172,8 @@ export default function Index() {
               onBuffersChange={setBuffers}
               slurries={slurries}
               onSlurriesChange={setSlurries}
-              displacement={displacement}
-              onDisplacementChange={setDisplacement}
+              displacementFluids={displacementFluids}
+              onDisplacementFluidsChange={setDisplacementFluids}
               displacementVolume={liveDispVol}
               fractureGradient={fractureGradient}
               onFractureGradientChange={setFractureGradient}
@@ -184,7 +186,7 @@ export default function Index() {
                 wellData={calcSnapshot.wellData}
                 slurries={calcSnapshot.slurries}
                 fractureGradient={calcSnapshot.fractureGradient}
-                displacementDensity={calcSnapshot.displacement.density}
+                displacementDensity={calcSnapshot.displacementFluids[0]?.density ?? 1000}
                 workTimeWithCement={0}
                 volumes={volumes}
               />
@@ -200,7 +202,7 @@ export default function Index() {
                 slurries={calcSnapshot.slurries}
                 annularVPM={volumes.annularVolumePerMeter}
                 displacementVolume={volumes.displacementVolume}
-                displacement={calcSnapshot.displacement}
+                displacementFluids={calcSnapshot.displacementFluids}
                 casingDepthMD={calcSnapshot.wellData.casingDepthMD}
               />
             ) : (

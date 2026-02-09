@@ -8,17 +8,18 @@ interface Props {
   slurries: SlurryInput[];
   annularVPM: number;
   displacementVolume: number;
-  displacement: DisplacementFluid;
+  displacementFluids: DisplacementFluid[];
   casingDepthMD: number;
 }
 
 const fmt = (v: number, dec: number = 1) => v.toFixed(dec);
 const lpsToM3min = (lps: number) => lps * 0.06;
 
-export default function PumpingSchedule({ buffers, slurries, annularVPM, displacementVolume, displacement, casingDepthMD }: Props) {
+export default function PumpingSchedule({ buffers, slurries, annularVPM, displacementVolume, displacementFluids, casingDepthMD }: Props) {
   const stages: { name: string; fluid: string; rateLps: number; volume: number }[] = [];
 
-  const defaultRate = displacement.flowRateSteps.length > 0 ? displacement.flowRateSteps[0].rateLps : 8;
+  const defaultRate = displacementFluids.length > 0 && displacementFluids[0].flowRateSteps.length > 0
+    ? displacementFluids[0].flowRateSteps[0].rateLps : 8;
 
   // 1. Заполнение ЛВД
   stages.push({ name: "Заполнение ЛВД", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.0 });
@@ -38,9 +39,11 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
     }
   });
 
-  // 3. Цементные растворы — по шагам
-  slurries.forEach((s, idx) => {
-    const height = getSlurryHeight(slurries, idx, casingDepthMD);
+  // 3. Цементные растворы — в ОБРАТНОМ порядке (последний в списке = забойный, качается первым)
+  const reversedSlurries = [...slurries].reverse();
+  reversedSlurries.forEach((s) => {
+    const origIdx = slurries.indexOf(s);
+    const height = getSlurryHeight(slurries, origIdx, casingDepthMD);
     const vol = annularVPM * height;
     if (vol > 0) {
       if (s.flowRateSteps.length > 1) {
@@ -59,26 +62,26 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
   // 4. Промывка ЛВД
   stages.push({ name: "Промывка ЛВД, сброс пробки", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.5 });
 
-  // 5. Продавка — по шагам
-  if (displacement.flowRateSteps.length > 0) {
-    const totalStepVol = displacement.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
-    if (totalStepVol > 0) {
-      // Используем указанные объёмы
-      displacement.flowRateSteps.forEach((step, si) => {
-        if (step.volumeM3 > 0) {
-          stages.push({ name: `Продавка (режим ${si + 1})`, fluid: displacement.name, rateLps: step.rateLps, volume: step.volumeM3 });
-        }
-      });
+  // 5. Продавка — по порциям
+  displacementFluids.forEach((df, dfIdx) => {
+    const label = displacementFluids.length > 1 ? `${df.name} (порция ${dfIdx + 1})` : df.name;
+    if (df.flowRateSteps.length > 0) {
+      const totalStepVol = df.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
+      if (totalStepVol > 0) {
+        df.flowRateSteps.forEach((step, si) => {
+          if (step.volumeM3 > 0) {
+            stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 });
+          }
+        });
+      } else {
+        df.flowRateSteps.forEach((step, si) => {
+          stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: 0 });
+        });
+      }
     } else {
-      // Объёмы не указаны — распределяем равномерно
-      const perStep = displacementVolume / displacement.flowRateSteps.length;
-      displacement.flowRateSteps.forEach((step, si) => {
-        stages.push({ name: `Продавка (режим ${si + 1})`, fluid: displacement.name, rateLps: step.rateLps, volume: perStep });
-      });
+      stages.push({ name: `Продавка: ${label}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: defaultRate, volume: 0 });
     }
-  } else {
-    stages.push({ name: "Продавка", fluid: displacement.name, rateLps: defaultRate, volume: displacementVolume });
-  }
+  });
 
   // 6. СТОП
   stages.push({ name: "Фиксация «СТОП», проверка ЦКОД", fluid: "—", rateLps: 0, volume: 0 });
