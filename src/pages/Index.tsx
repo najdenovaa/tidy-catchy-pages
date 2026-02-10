@@ -204,22 +204,22 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex flex-col">
-            <div className="flex items-center gap-4">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex flex-col items-center sm:items-start">
+            <div className="flex items-center gap-3">
               <img
                 src={deallsoftLogo}
                 alt="DeAllsoft"
-                className="h-28 object-cover object-center"
+                className="h-16 sm:h-28 object-cover object-center"
               />
-              <p className="text-2xl font-normal tracking-tight text-foreground uppercase -mt-2">Инженерные расчёты</p>
+              <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase -mt-1">Инженерные расчёты</p>
             </div>
-            <div className="mt-0.5 ml-10">
-              <h1 className="text-lg font-medium text-muted-foreground leading-tight">Программа цементирования</h1>
+            <div className="mt-0.5 sm:ml-10 text-center sm:text-left">
+              <h1 className="text-sm sm:text-lg font-medium text-muted-foreground leading-tight">Программа цементирования</h1>
               <p className="text-xs text-muted-foreground/70">Расчёт обсадных колонн</p>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-6">
+          <div className="flex items-center sm:flex-col sm:items-end gap-3 sm:gap-6 w-full sm:w-auto">
             <a
               href="https://t.me/deallbiz_support"
               target="_blank"
@@ -229,18 +229,18 @@ export default function Index() {
               <Send className="w-4 h-4" />
               <span>Поддержка</span>
             </a>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-none justify-end">
               <button
                 onClick={handleExportDocx}
                 disabled={exporting}
-                className="px-4 py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-2 disabled:opacity-50"
+                className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-xs sm:text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-1.5 disabled:opacity-50"
               >
                 {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-                {exporting ? "Экспорт..." : "DOCX"}
+                {exporting ? "..." : "DOCX"}
               </button>
               <button
                 onClick={handleCalculate}
-                className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors shadow-md"
+                className="px-4 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-xs sm:text-sm hover:bg-primary/90 transition-colors shadow-md"
               >
                 РАССЧИТАТЬ
               </button>
@@ -249,16 +249,18 @@ export default function Index() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6 relative">
-          <TabsList className="grid w-full grid-cols-6 h-auto">
-            <TabsTrigger value="input" className="text-xs py-2">Исходные данные</TabsTrigger>
-            <TabsTrigger value="hydraulics" className="text-xs py-2">Гидравлика</TabsTrigger>
-            <TabsTrigger value="schedule" className="text-xs py-2">Закачка</TabsTrigger>
-            <TabsTrigger value="materials" className="text-xs py-2">Материалы</TabsTrigger>
-            <TabsTrigger value="charts" className="text-xs py-2">Графики</TabsTrigger>
-            <TabsTrigger value="visual" className="text-xs py-2">Визуал</TabsTrigger>
-          </TabsList>
+      <main className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 sm:space-y-6 relative">
+          <div className="overflow-x-auto -mx-2 px-2 scrollbar-hide">
+            <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-6 h-auto min-w-max sm:min-w-0">
+              <TabsTrigger value="input" className="text-xs py-2 px-3 sm:px-2">Данные</TabsTrigger>
+              <TabsTrigger value="hydraulics" className="text-xs py-2 px-3 sm:px-2">Гидравлика</TabsTrigger>
+              <TabsTrigger value="schedule" className="text-xs py-2 px-3 sm:px-2">Закачка</TabsTrigger>
+              <TabsTrigger value="materials" className="text-xs py-2 px-3 sm:px-2">Материалы</TabsTrigger>
+              <TabsTrigger value="charts" className="text-xs py-2 px-3 sm:px-2">Графики</TabsTrigger>
+              <TabsTrigger value="visual" className="text-xs py-2 px-3 sm:px-2">Визуал</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="input">
             <div data-tab-content="input">
