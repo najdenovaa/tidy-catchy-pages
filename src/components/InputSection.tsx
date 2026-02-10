@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
-import { getCasingID, getSlurryHeight, annularVolumePerMeter, hydrostaticPressure } from "@/lib/cementing-calculations";
+import { getCasingID, getSlurryHeight, annularVolumePerMeter, hydrostaticPressure, interpolateTVD } from "@/lib/cementing-calculations";
 import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, DisplacementFluid, FlowRateStep, TrajectoryPoint } from "@/lib/cementing-calculations";
 
 interface Props {
@@ -131,13 +131,14 @@ export default function InputSection(props: Props) {
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
 
-  // Fracture risk checker
+  // Fracture risk checker — используем TVD из траектории, плотность конкретного флюида
   const fracCheck = (rateLps: number, fluidDensity: number, fluidPv: number, fluidYp: number): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
-    if (fractureGradient <= 0 || wellData.wellDepthTVD <= 0 || rateLps <= 0) return null;
-    const fracP = (fractureGradient * wellData.wellDepthTVD) / 1000;
-    let maxDensity = fluidDensity / 1000;
-    slurries.forEach(s => { if (s.density > maxDensity) maxDensity = s.density; });
-    const hydroStatic = hydrostaticPressure(maxDensity, wellData.wellDepthTVD);
+    const bottomTVD = interpolateTVD(wellData.casingDepthMD, wellData.trajectory);
+    if (fractureGradient <= 0 || bottomTVD <= 0 || rateLps <= 0) return null;
+    const fracP = (fractureGradient * bottomTVD) / 1000;
+    // Гидростатика — от плотности конкретного флюида в затрубье, не от макс. плотности
+    const densityGcm3 = fluidDensity / 1000;
+    const hydroStatic = hydrostaticPressure(densityGcm3, bottomTVD);
     const dHole = wellData.holeDiameter / 1000;
     const dCas = wellData.casingOD / 1000;
     const dHyd = dHole - dCas;
@@ -145,6 +146,7 @@ export default function InputSection(props: Props) {
     const area = (Math.PI / 4) * (dHole * dHole - dCas * dCas);
     const velocity = (rateLps / 1000) / area;
     const pvPas = fluidPv / 1000;
+    // Трение — по длине ствола (MD)
     const frLoss = (32 * pvPas * velocity * wellData.casingDepthMD) / (dHyd * dHyd) / 1e6;
     const ypLoss = (16 * fluidYp * wellData.casingDepthMD) / (3 * dHyd) / 1e6;
     const frictionLoss = frLoss + ypLoss;
