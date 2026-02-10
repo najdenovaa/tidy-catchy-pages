@@ -146,110 +146,18 @@ export default function Index() {
     visual: "Визуал",
   };
 
-  const handleExportPDF = useCallback(async () => {
+  const handleExportDocx = useCallback(async () => {
     setExporting(true);
     try {
-      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-        import("jspdf"),
-        import("html2canvas"),
-      ]);
-
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pageW = pdf.internal.pageSize.getWidth();
-      const pageH = pdf.internal.pageSize.getHeight();
-      const margin = 8;
-      const contentW = pageW - margin * 2;
-
-      const prevTab = activeTab;
-      const exportTabs = tabOrder.filter(t => t !== "visual");
-
-      let isFirstPage = true;
-
-      for (let t = 0; t < exportTabs.length; t++) {
-        const tab = exportTabs[t];
-
-        // Switch tab and wait for render (charts need time)
-        setActiveTab(tab);
-        await new Promise(r => setTimeout(r, 1500));
-
-        const tabContent = document.querySelector(`[data-tab-content="${tab}"]`) as HTMLElement;
-        if (!tabContent || tabContent.offsetHeight === 0) continue;
-
-        // Temporarily inject a header into the DOM for capture
-        const header = document.createElement("div");
-        header.style.cssText = "padding:16px 0 12px;border-bottom:2px solid #555;margin-bottom:16px;font-family:sans-serif;";
-        header.innerHTML = `<div style="font-size:20px;font-weight:700;color:#e0e0e0;">Программа цементирования</div><div style="font-size:14px;color:#aaa;margin-top:4px;">${tabNames[tab]}</div>`;
-        tabContent.prepend(header);
-
-        // Also inject page number footer
-        const footer = document.createElement("div");
-        footer.style.cssText = "text-align:right;padding-top:12px;border-top:1px solid #444;margin-top:16px;font-size:11px;color:#888;font-family:sans-serif;";
-        footer.textContent = `Страница ${t + 1} из ${exportTabs.length}`;
-        tabContent.appendChild(footer);
-
-        await new Promise(r => setTimeout(r, 200));
-
-        const canvas = await html2canvas(tabContent, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: "#1a1a2e",
-          logging: false,
-          windowWidth: 1200,
-        });
-
-        // Remove injected elements
-        header.remove();
-        footer.remove();
-
-        const imgData = canvas.toDataURL("image/png");
-        const imgRatio = canvas.height / canvas.width;
-        const imgW = contentW;
-        const imgH = imgW * imgRatio;
-
-        const availH = pageH - margin * 2;
-
-        if (!isFirstPage) pdf.addPage();
-        isFirstPage = false;
-
-        if (imgH <= availH) {
-          pdf.addImage(imgData, "PNG", margin, margin, imgW, imgH);
-        } else {
-          // Split into multiple pages
-          const pxPerMM = canvas.width / contentW;
-          const sliceHpx = availH * pxPerMM;
-          let srcY = 0;
-          let firstSlice = true;
-
-          while (srcY < canvas.height) {
-            if (!firstSlice) pdf.addPage();
-
-            const remaining = canvas.height - srcY;
-            const thisSlice = Math.min(sliceHpx, remaining);
-
-            const sliceCanvas = document.createElement("canvas");
-            sliceCanvas.width = canvas.width;
-            sliceCanvas.height = thisSlice;
-            const ctx = sliceCanvas.getContext("2d");
-            if (ctx) {
-              ctx.drawImage(canvas, 0, srcY, canvas.width, thisSlice, 0, 0, canvas.width, thisSlice);
-              const sliceImg = sliceCanvas.toDataURL("image/png");
-              const sliceHmm = thisSlice / pxPerMM;
-              pdf.addImage(sliceImg, "PNG", margin, margin, imgW, sliceHmm);
-            }
-            srcY += thisSlice;
-            firstSlice = false;
-          }
-        }
-      }
-
-      setActiveTab(prevTab);
-      pdf.save("cementing-program.pdf");
+      const { exportToDocx } = await import("@/lib/export-docx");
+      const snap = calcSnapshot ?? { wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient };
+      await exportToDocx(snap.wellData, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient);
     } catch (e) {
-      console.error("PDF export error:", e);
+      console.error("DOCX export error:", e);
     } finally {
       setExporting(false);
     }
-  }, [activeTab, calcSnapshot]);
+  }, [calcSnapshot, wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -266,12 +174,12 @@ export default function Index() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={handleExportPDF}
+              onClick={handleExportDocx}
               disabled={exporting}
               className="px-4 py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-2 disabled:opacity-50"
             >
               {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-              {exporting ? "Экспорт..." : "PDF"}
+              {exporting ? "Экспорт..." : "DOCX"}
             </button>
             <button
               onClick={handleCalculate}
