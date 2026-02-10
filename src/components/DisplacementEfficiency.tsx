@@ -47,6 +47,9 @@ interface DepthInfo {
   fluidDensity: number;
   fluidYP: number;
   isOpenHole: boolean;
+  distFromTopFrac: number;    // 0=top of this fluid zone, 1=bottom
+  distFromBoundary: number;   // 0..1, 0=at fluid boundary (transition zone)
+  zoneIndex: number;          // unique index for this fluid zone (seed variation)
 }
 
 function buildDepthInfo(
@@ -98,6 +101,17 @@ function buildDepthInfo(
   const N = 400;
   const info: DepthInfo[] = [];
 
+  // Build all fluid zones with boundaries
+  const allZones: { top: number; bot: number; type: DepthInfo["fluidType"]; density: number; yp: number; zoneIdx: number }[] = [];
+  let zi = 0;
+  for (const bi of bufInts) {
+    allZones.push({ top: bi.top, bot: bi.bot, type: "buffer", density: buffers[bi.idx].density, yp: buffers[bi.idx].rheology.yp, zoneIdx: zi++ });
+  }
+  for (const ci of cemInts) {
+    allZones.push({ top: ci.top, bot: ci.bot, type: "cement", density: slurries[ci.idx].density * 1000, yp: slurries[ci.idx].rheology.yp, zoneIdx: zi++ });
+  }
+  allZones.sort((a, b) => a.top - b.top);
+
   for (let i = 0; i <= N; i++) {
     const md = mdMin + (mdMax - mdMin) * i / N;
     const zenithDeg = zenithAt(md);
@@ -106,42 +120,43 @@ function buildDepthInfo(
     let fluidType: DepthInfo["fluidType"] = "mud";
     let fluidDensity = drillingFluid.density;
     let fluidYP = drillingFluid.rheology.yp;
+    let distFromTopFrac = 0.5;
+    let distFromBoundary = 1;
+    let zoneIndex = 99;
 
-    for (const ci of cemInts) {
-      if (md >= ci.top && md <= ci.bot) {
-        fluidType = "cement";
-        fluidDensity = slurries[ci.idx].density * 1000;
-        fluidYP = slurries[ci.idx].rheology.yp;
+    for (const z of allZones) {
+      if (md >= z.top && md <= z.bot) {
+        fluidType = z.type;
+        fluidDensity = z.density;
+        fluidYP = z.yp;
+        zoneIndex = z.zoneIdx;
+        const zoneLen = z.bot - z.top || 1;
+        distFromTopFrac = (md - z.top) / zoneLen;
+        // Distance to nearest boundary (0 at boundary, 1 at center)
+        const distTop = (md - z.top) / zoneLen;
+        const distBot = (z.bot - md) / zoneLen;
+        distFromBoundary = Math.min(distTop, distBot) * 2; // 0..1
         break;
       }
     }
-    if (fluidType === "mud") {
-      for (const bi of bufInts) {
-        if (md >= bi.top && md <= bi.bot) {
-          fluidType = "buffer";
-          fluidDensity = buffers[bi.idx].density;
-          fluidYP = buffers[bi.idx].rheology.yp;
-          break;
-        }
-      }
-    }
 
-    info.push({ md, zenithDeg, fluidType, fluidDensity, fluidYP, isOpenHole });
+    info.push({ md, zenithDeg, fluidType, fluidDensity, fluidYP, isOpenHole, distFromTopFrac, distFromBoundary, zoneIndex });
   }
   return { info, mdMin, mdMax };
 }
 
 /**
  * Displacement efficiency 0..1.
- * Channels are LONGITUDINAL (vertical streaks) — cement flows top-to-bottom,
- * mud channels persist along depth at fixed circumferential positions.
- * noiseX = circumferential position (high frequency), noiseY = depth (low frequency).
+ * Longitudinal channels (vertical streaks) that vary with depth.
+ * Near fluid boundaries: transition/mixing zones with poor displacement.
+ * Different zones have different channel patterns (seed from zoneIndex).
+ * Cement front (top of cement) has worse displacement than bottom.
  */
 function calcEff(
   d: DepthInfo,
   angle: number,
-  circumFrac: number, // 0..1 position across annulus width
-  depthFrac: number,  // 0..1 position along depth
+  circumFrac: number,
+  depthFrac: number,
   mudDensity: number,
   mudYP: number,
   avgRate: number,
@@ -150,20 +165,15 @@ function calcEff(
 ): number {
   if (d.fluidType === "mud") return 0;
 
-  // Density advantage
+  // ── Base efficiency from fluid properties ──
   const densityRatio = d.fluidDensity / mudDensity;
   const dScore = Math.min(1, Math.max(0, (densityRatio - 0.85) / 0.55));
-
-  // Rheology hierarchy
   const ypScore = Math.min(1, Math.max(0.15, (d.fluidYP / Math.max(mudYP, 1)) * 0.35));
-
-  // Velocity
   const vel = avgRate > 0 ? (avgRate * 0.001) / annArea : 0.3;
   const vScore = Math.min(1, vel / 1.0);
-
   let eff = 0.30 * dScore + 0.25 * ypScore + 0.45 * vScore;
 
-  // Inclination → eccentricity → narrow side worse
+  // ── Inclination → eccentricity ──
   const eccen = Math.sin(d.zenithDeg * Math.PI / 180);
   const cosA = Math.cos(angle);
   eff -= eccen * cosA * 0.35;
@@ -172,41 +182,49 @@ function calcEff(
   if (cavernCoeff > 1.05) eff *= 1.0 - (cavernCoeff - 1.0) * 0.25;
   if (d.fluidType === "buffer") eff *= 0.5;
 
-  // ── Longitudinal channel noise ──
-  // High frequency in circumferential direction (many channels across width),
-  // very low frequency in depth (channels persist vertically).
-  // This creates vertical streaks = mud channels that cement couldn't displace.
+  // ── Depth-dependent variation ──
+  // 1. Cement front (top of zone): displacement is worst here (leading edge turbulence)
+  //    Bottom of zone: cement has settled, better displacement
+  const frontPenalty = (1 - d.distFromTopFrac) * 0.2; // worse at top
+  eff -= frontPenalty;
+
+  // 2. Transition/mixing zones at fluid boundaries: poor displacement
+  //    distFromBoundary: 0=at boundary, 1=zone center
+  const boundaryPenalty = (1 - d.distFromBoundary) * 0.25;
+  eff -= boundaryPenalty;
+
+  // ── Longitudinal channels with depth variation ──
+  // Use zoneIndex as seed offset so each zone has unique channel pattern
+  const seedOffset = d.zoneIndex * 7.31;
   
-  // Primary channels: ~8-12 channels across annulus width, persistent along depth
+  // Channels: high freq circumferentially, but they SHIFT and CHANGE with depth
+  // depthFrac scaled higher so pattern actually changes along the wellbore
+  const dY = depthFrac * 30 + seedOffset; // much more depth variation
+  
   const channelNoise = 
-    0.45 * smoothNoise(circumFrac * 10, depthFrac * 1.5) +    // broad channels
-    0.30 * smoothNoise(circumFrac * 22, depthFrac * 2.5) +    // medium channels  
-    0.15 * smoothNoise(circumFrac * 45, depthFrac * 4) +      // fine channels
-    0.10 * smoothNoise(circumFrac * 80, depthFrac * 6);       // micro-channels
+    0.40 * smoothNoise(circumFrac * 8 + seedOffset, dY * 0.3) +
+    0.30 * smoothNoise(circumFrac * 18 + seedOffset * 0.5, dY * 0.7) +
+    0.20 * smoothNoise(circumFrac * 35, dY * 1.2) +
+    0.10 * smoothNoise(circumFrac * 60, dY * 2.0);
 
-  // Channel depth modulation: channels get slightly deeper/shallower along depth
-  const depthModulation = smoothNoise(circumFrac * 5, depthFrac * 8) * 0.12;
+  // Channel intensity varies with depth (some depths have deeper channels)
+  const channelIntensity = 0.3 + 0.25 * smoothNoise(circumFrac * 3, dY * 0.15);
+  eff += (channelNoise - 0.5) * channelIntensity;
 
-  // Combine: channels reduce efficiency (mud stays in channels)
-  const channelEffect = (channelNoise - 0.5) * 0.4 + depthModulation;
-  eff += channelEffect;
+  // 3. Washout/cavern zones: random pockets of bad displacement at certain depths
+  const washoutNoise = smoothNoise(depthFrac * 15 + 5.7, circumFrac * 4 + seedOffset);
+  if (washoutNoise > 0.75 && d.isOpenHole) {
+    eff -= (washoutNoise - 0.75) * 1.2; // localized bad zones
+  }
 
-  // Laminar flow effect: at low velocities, channels are more pronounced
-  // (turbulent flow would wash them out)
-  const Re = vel * (wellDhyd(d) / 1000) * mudDensity / (mudYP > 0 ? mudYP * 0.001 : 0.025);
-  const isLaminar = Re < 2100;
-  if (isLaminar) {
-    // Deepen channels in laminar regime
-    const laminarPenalty = smoothNoise(circumFrac * 15, depthFrac * 2) * 0.15;
-    eff -= laminarPenalty;
+  // 4. Laminar flow penalty — channels deeper in laminar regime
+  const Re = vel * 0.05 * mudDensity / (mudYP > 0 ? mudYP * 0.001 : 0.025);
+  if (Re < 2100) {
+    const laminarChannels = smoothNoise(circumFrac * 12 + seedOffset, dY * 0.5) * 0.18;
+    eff -= laminarChannels;
   }
 
   return Math.max(0, Math.min(1, eff));
-}
-
-// Approximate hydraulic diameter for Reynolds estimate
-function wellDhyd(d: DepthInfo): number {
-  return 50; // approximate annular hydraulic diameter in mm
 }
 
 export default function DisplacementEfficiency({ wellData, slurries, buffers, drillingFluid }: Props) {
