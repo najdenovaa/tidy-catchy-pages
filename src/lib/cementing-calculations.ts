@@ -839,8 +839,10 @@ export function calculatePressureProfile(
       annYp = drillingFluid.rheology.yp;
       annDensity = drillingFluid.density;
     }
+    // Множитель трения затрубья: эксцентриситет, муфты, шероховатость (~1.8x)
+    const annFrictionMultiplier = 1.8;
     const frAnnRes = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydAnn, annPv, annYp, annAreaM2, annDensity);
-    const frAnn = frAnnRes.pressureMPa;
+    const frAnn = frAnnRes.pressureMPa * annFrictionMultiplier;
 
     const reAnn = frAnnRes.reynolds;
     const flowRegimeAnn = frAnnRes.regime;
