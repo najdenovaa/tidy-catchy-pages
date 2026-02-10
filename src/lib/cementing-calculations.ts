@@ -168,6 +168,34 @@ export interface MaterialSummary {
   waterTotal: number; // м³
 }
 
+// === Интерполяция TVD из траектории ===
+
+export function interpolateTVD(md: number, trajectory: TrajectoryPoint[]): number {
+  if (!trajectory || trajectory.length === 0) return md;
+  if (trajectory.length === 1) return trajectory[0].tvd;
+  
+  // Сортируем по MD
+  const sorted = [...trajectory].sort((a, b) => a.md - b.md);
+  
+  if (md <= sorted[0].md) return sorted[0].tvd;
+  if (md >= sorted[sorted.length - 1].md) return sorted[sorted.length - 1].tvd;
+  
+  for (let i = 0; i < sorted.length - 1; i++) {
+    if (md >= sorted[i].md && md <= sorted[i + 1].md) {
+      const frac = (md - sorted[i].md) / (sorted[i + 1].md - sorted[i].md);
+      return sorted[i].tvd + frac * (sorted[i + 1].tvd - sorted[i].tvd);
+    }
+  }
+  return sorted[sorted.length - 1].tvd;
+}
+
+// TVD-интервал между двумя точками MD
+export function tvdInterval(mdTop: number, mdBottom: number, trajectory: TrajectoryPoint[]): number {
+  const tvdTop = interpolateTVD(mdTop, trajectory);
+  const tvdBottom = interpolateTVD(mdBottom, trajectory);
+  return Math.max(0, tvdBottom - tvdTop);
+}
+
 // === Базовые формулы ===
 
 export function wellVolumePerMeter(diameterMm: number): number {
@@ -289,27 +317,33 @@ export function calculateHydraulics(
   displacementDensity: number, // г/см³ продавочной жидкости
   fractureGradientKpaM: number
 ): HydraulicResults {
-  // Трубное — продавочная жидкость
-  const pipePressure = hydrostaticPressure(displacementDensity, data.wellDepthTVD);
+  const traj = data.trajectory;
+  const bottomTVD = interpolateTVD(data.casingDepthMD, traj);
 
-  // Затрубное — цемент + бур. раствор
+  // Трубное — продавочная жидкость по вертикали
+  const pipePressure = hydrostaticPressure(displacementDensity, bottomTVD);
+
+  // Затрубное — цемент + бур. раствор (по вертикали)
   let annulusPressure = 0;
-  let cementTotalHeight = 0;
+  let cementTVDtotal = 0;
   slurries.forEach((s, i) => {
-    const h = getSlurryHeight(slurries, i, data.casingDepthMD);
-    if (h > 0) {
-      annulusPressure += hydrostaticPressure(s.density, h);
-      cementTotalHeight += h;
+    const hMD = getSlurryHeight(slurries, i, data.casingDepthMD);
+    if (hMD > 0) {
+      // Пересчитываем высоту столба по вертикали
+      const lastIdx = slurries.length - 1;
+      const bottomMD = i === lastIdx ? data.casingDepthMD : slurries[i + 1].topDepthMD;
+      const hTVD = tvdInterval(s.topDepthMD, bottomMD, traj);
+      annulusPressure += hydrostaticPressure(s.density, hTVD);
+      cementTVDtotal += hTVD;
     }
   });
-  const mudHeight = Math.max(0, data.wellDepthTVD - cementTotalHeight);
-  // Use drilling fluid density (will be passed as parameter in future)
-  annulusPressure += hydrostaticPressure(1.1, mudHeight); // fallback
+  const mudHeightTVD = Math.max(0, bottomTVD - cementTVDtotal);
+  annulusPressure += hydrostaticPressure(1.1, mudHeightTVD); // fallback плотность бур. раствора
 
-  const fracturePressure = (fractureGradientKpaM * data.wellDepthTVD) / 1000;
+  const fracturePressure = (fractureGradientKpaM * bottomTVD) / 1000;
   const safetyCoeff = fracturePressure > 0 ? annulusPressure / fracturePressure : 0;
   const differentialPressure = annulusPressure - pipePressure;
-  const stopPressure = Math.abs(differentialPressure) + 3.0; // +30 атм как в PDF
+  const stopPressure = Math.abs(differentialPressure) + 3.0;
 
   return {
     hydrostaticPressurePipe: pipePressure,
@@ -448,13 +482,15 @@ export function calculatePressureProfile(
   displacementVol: number
 ): PressureProfileResult {
   const points: PressurePoint[] = [];
-  const fracP = (fractureGradient * wellData.wellDepthTVD) / 1000;
+  const traj = wellData.trajectory;
+  const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);
+  const fracP = (fractureGradient * bottomTVD) / 1000;
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
   const dHydAnn = Math.max(wellData.holeDiameter - wellData.casingOD, 10);
   const dHydPipe = casingID;
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
 
-  const hydroMud = hydrostaticPressure(drillingFluid.density / 1000, wellData.wellDepthTVD);
+  const hydroMud = hydrostaticPressure(drillingFluid.density / 1000, bottomTVD);
   let cumTime = 0;
   let cumVol = 0;
   let cementStartTime = 0;
@@ -546,8 +582,9 @@ export function calculatePressureProfile(
     const flowRateM3min = s.rateLps * 0.06;
     const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
 
-    const frPipe = frictionLoss(flowRateM3min, wellData.wellDepthTVD, dHydPipe, s.pv, s.yp);
-    const frAnn = frictionLoss(flowRateM3min, wellData.wellDepthTVD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp);
+    // Потери на трение — по длине ствола (MD), не по вертикали
+    const frPipe = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp);
+    const frAnn = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp);
     const bhp = hydroMud + frPipe + frAnn;
     const surfP = frPipe + frAnn;
 

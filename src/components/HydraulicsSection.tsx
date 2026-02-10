@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { calculateHydraulics, calculateSafeTime, calculateBHCT } from "@/lib/cementing-calculations";
+import { calculateHydraulics, calculateSafeTime, calculateBHCT, interpolateTVD } from "@/lib/cementing-calculations";
 import type { WellData, SlurryInput, VolumeResults } from "@/lib/cementing-calculations";
 
 interface Props {
@@ -15,7 +15,8 @@ const fmt = (v: number, dec: number = 2) => v.toFixed(dec);
 
 export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes }: Props) {
   const results = calculateHydraulics(wellData, slurries, displacementDensity / 1000, fractureGradient);
-  const bhct = calculateBHCT(wellData.bottomTempStatic, 20, wellData.wellDepthTVD);
+  const bottomTVD = interpolateTVD(wellData.casingDepthMD, wellData.trajectory);
+  const bhct = calculateBHCT(wellData.bottomTempStatic, 20, bottomTVD);
 
   const maxThickening30 = Math.max(...slurries.map(s => s.thickeningTime30Bc || 0));
   const maxThickening50 = Math.max(...slurries.map(s => s.thickeningTime50Bc || 0));
