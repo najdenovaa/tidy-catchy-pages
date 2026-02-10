@@ -123,7 +123,7 @@ export default function Index() {
   const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData) : null, [calcSnapshot]);
 
   const materials = useMemo(
-    () => calcSnapshot && volumes ? calculateMaterials(calcSnapshot.slurries, calcSnapshot.buffers, volumes.annularVolumePerMeter, calcSnapshot.wellData.casingDepthMD) : null,
+    () => calcSnapshot && volumes ? calculateMaterials(calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.wellData) : null,
     [calcSnapshot, volumes]
   );
 

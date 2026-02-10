@@ -232,6 +232,34 @@ export function equivalentDiameter(holeDiamMm: number, cavCoeff: number): number
   return holeDiamMm * Math.sqrt(cavCoeff);
 }
 
+// Объём кольцевого пространства для интервала [mdTop, mdBottom] с учётом двух зон:
+// 0..prevCasingDepth — межтрубное (prevCasingID vs casingOD)
+// prevCasingDepth..bottom — открытый ствол (holeDiam vs casingOD, с каверн.)
+export function annularVolumeForInterval(
+  mdTop: number, mdBottom: number,
+  holeDiamMm: number, casingODmm: number, prevCasingIDmm: number,
+  prevCasingDepth: number, cavernCoeff: number
+): number {
+  const openHoleVPM = annularVolumePerMeter(holeDiamMm, casingODmm, cavernCoeff);
+  const interCasingVPM = interCasingVolumePerMeter(prevCasingIDmm, casingODmm);
+
+  const top = Math.max(mdTop, 0);
+  const bot = Math.max(mdBottom, 0);
+  if (bot <= top) return 0;
+
+  // Участок внутри предыдущей колонны
+  const prevTop = top;
+  const prevBot = Math.min(bot, prevCasingDepth);
+  const prevLen = Math.max(0, prevBot - prevTop);
+
+  // Участок открытого ствола
+  const openTop = Math.max(top, prevCasingDepth);
+  const openBot = bot;
+  const openLen = Math.max(0, openBot - openTop);
+
+  return interCasingVPM * prevLen + openHoleVPM * openLen;
+}
+
 export function displacementVolume(pipeVolPerM: number, ckodDepth: number): number {
   return pipeVolPerM * ckodDepth;
 }
@@ -292,11 +320,9 @@ export function getWaterCementRatio(densityKgM3: number): number {
 }
 
 export function calculateCement(
-  annularVPM: number,
-  height: number,
+  slurryVolume: number,
   densityGcm3: number,
 ): CementResults {
-  const slurryVolume = annularVPM * height;
   const densityKg = densityGcm3 * 1000;
   const wcr = getWaterCementRatio(densityKg);
   const slurryMassKg = slurryVolume * densityKg;
@@ -434,8 +460,7 @@ export function calculateSafeTime(
 export function calculateMaterials(
   slurries: SlurryInput[],
   buffers: BufferFluid[],
-  annularVPM: number,
-  casingDepthMD: number,
+  wellData: WellData,
 ): MaterialSummary {
   const cementItems: { name: string; amount: number; unit: string }[] = [];
   const bufferItems: { name: string; amount: number; unit: string }[] = [];
@@ -443,9 +468,12 @@ export function calculateMaterials(
   let waterForBuffers = 0;
 
   slurries.forEach((s, i) => {
-    const h = getSlurryHeight(slurries, i, casingDepthMD);
+    const h = getSlurryHeight(slurries, i, wellData.casingDepthMD);
     if (h > 0) {
-      const res = calculateCement(annularVPM, h, s.density);
+      const lastIdx = slurries.length - 1;
+      const mdBot = i === lastIdx ? wellData.casingDepthMD : slurries[i + 1].topDepthMD;
+      const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff);
+      const res = calculateCement(vol, s.density);
       cementItems.push({ name: s.name, amount: res.dryMass, unit: "т" });
       waterForCement += res.waterVolume;
       s.additives.forEach(a => {
@@ -566,7 +594,10 @@ export function calculatePressureProfile(
   // Цементные растворы — в порядке списка (первый в списке качается первым)
   slurries.forEach((s, origIdx) => {
     const h = getSlurryHeight(slurries, origIdx, wellData.casingDepthMD);
-    const vol = h > 0 ? h * annVPM : 0;
+    if (h <= 0) return;
+    const lastIdx = slurries.length - 1;
+    const mdBot = origIdx === lastIdx ? wellData.casingDepthMD : slurries[origIdx + 1].topDepthMD;
+    const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff);
     if (vol <= 0) return;
     if (s.flowRateSteps.length > 1) {
       s.flowRateSteps.forEach(step => {
