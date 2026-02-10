@@ -672,14 +672,17 @@ export function calculatePressureProfile(
     const flowRateM3min = s.rateLps * 0.06;
     const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
 
+    // Потери на трение зависят от производительности данного этапа
     const frPipe = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2);
-    const frAnn = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp, annAreaM2);
+    // Затрубье: используем реологию текущего флюида в затрубье (он же движется там)
+    const frAnn = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydAnn, s.pv, s.yp, annAreaM2);
 
-    // Число Рейнольдса в затрубье (Бингам)
+    // Число Рейнольдса в затрубье (Бингам) — с реологией текущего флюида
     const annVelocity = annAreaM2 > 0 ? (flowRateM3min / 60) / annAreaM2 : 0;
     const dHydAnnM = dHydAnn / 1000;
-    const muEffAnn = drillingFluid.rheology.pv / 1000 + drillingFluid.rheology.yp * dHydAnnM / (6 * Math.max(annVelocity, 0.001));
-    const reAnn = muEffAnn > 0 ? (mudDensityGcm3 * 1000) * annVelocity * dHydAnnM / muEffAnn : 0;
+    const pvPas = s.pv / 1000;
+    const muEffAnn = pvPas + s.yp * dHydAnnM / (6 * Math.max(annVelocity, 0.001));
+    const reAnn = muEffAnn > 0 ? (s.densityGcm3 * 1000) * annVelocity * dHydAnnM / muEffAnn : 0;
     const flowRegimeAnn = reAnn > 2100 ? 1 : 0;
 
     // Добавляем новый batch в историю закачки
