@@ -8,11 +8,12 @@ interface Props {
   cementStartTime: number;
   stopTime: number;
   stageBoundaries: StageBoundary[];
+  equilibriumTimeMin: number;
 }
 
 const STAGE_COLORS = ["hsl(200, 50%, 55%)", "hsl(120, 40%, 45%)", "hsl(35, 70%, 50%)", "hsl(280, 50%, 55%)", "hsl(340, 50%, 50%)"];
 
-export default function ChartsSection({ pressureData, safeTime, cementStartTime, stopTime, stageBoundaries }: Props) {
+export default function ChartsSection({ pressureData, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin }: Props) {
   if (pressureData.length === 0) {
     return (
       <Card>
@@ -56,6 +57,10 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <div className={safeTime > 0 ? "text-green-700 font-semibold" : ""}>
               <span className="text-muted-foreground">Безопасное время (75%):</span>{" "}
               <span className="font-bold">{safeTime.toFixed(1)} мин</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Время равновесия (U-tube):</span>{" "}
+              <span className="font-semibold">{equilibriumTimeMin > 0 ? `~${equilibriumTimeMin.toFixed(0)} мин после остановки` : "—"}</span>
             </div>
           </div>
         </CardContent>

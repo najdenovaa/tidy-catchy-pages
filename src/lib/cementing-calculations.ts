@@ -472,6 +472,7 @@ export interface PressureProfileResult {
   cementStartTime: number;
   stopTime: number;
   stageBoundaries: StageBoundary[];
+  equilibriumTimeMin: number; // время выхода на равновесие после остановки, мин
 }
 
 export function calculatePressureProfile(
@@ -503,6 +504,7 @@ export function calculatePressureProfile(
   let cumTime = 0;
   let cumVol = 0;
   let cementStartTime = 0;
+  let equilibriumTimeMin = 0; // время выхода на равновесие после остановки
 
   points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0 });
 
@@ -779,6 +781,7 @@ export function calculatePressureProfile(
 
       // === Генерируем точки: экспоненциальное оседание ===
       let prevSettledVol = 0;
+      let equilibriumReached = false;
       for (let m = 1; m <= pauseMin; m++) {
         const tNow = cumTime + m;
 
@@ -789,6 +792,12 @@ export function calculatePressureProfile(
         const deltaVol = settledVol - prevSettledVol; // м³ за 1 мин
         const returnRateLps = deltaVol / 60 * 1000; // м³/мин → л/с
         prevSettledVol = settledVol;
+
+        // Определяем момент достижения равновесия (95% от freefallVol)
+        if (!equilibriumReached && settledFrac >= 0.95) {
+          equilibriumTimeMin = m;
+          equilibriumReached = true;
+        }
 
         pumpHistory[ffBatchIdx].volumeM3 = settledVol;
         totalPumped = savedCumVol + settledVol;
@@ -806,6 +815,7 @@ export function calculatePressureProfile(
           flowRegimeAnn: 0, reynoldsAnn: 0,
         });
       }
+      if (!equilibriumReached) equilibriumTimeMin = pauseMin;
 
       // Финализируем
       pumpHistory[ffBatchIdx].volumeM3 = freefallVol;
@@ -854,9 +864,13 @@ export function calculatePressureProfile(
     pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0 });
     const batchIdx = pumpHistory.length - 1;
 
-    const densityRatio = s.densityGcm3 > mudDensityGcm3 ? s.densityGcm3 / mudDensityGcm3 : 1.0;
     const compressionEffect = s.compressionCoeff > 1.0 ? 1 / s.compressionCoeff : 1.0;
-    const annularReturn = s.rateLps * densityRatio * compressionEffect;
+    const baseAnnularReturn = s.rateLps * (s.densityGcm3 > mudDensityGcm3 ? s.densityGcm3 / mudDensityGcm3 : 1.0) * compressionEffect;
+
+    // Средняя вязкость для расчёта гравитационного оседания
+    const avgSettlingPV = slurries.length > 0
+      ? slurries.reduce((sum, sl) => sum + sl.rheology.pv, 0) / slurries.length
+      : drillingFluid.rheology.pv;
 
     const minuteSteps = Math.max(1, Math.ceil(stageTime));
     for (let m = 1; m <= minuteSteps; m++) {
@@ -870,10 +884,23 @@ export function calculatePressureProfile(
       const pipeHydro = calcPipeHydrostatic();
       const annHydro = calcAnnularHydrostatic();
 
+      // === Гравитационная составляющая потока (цемент оседает даже при закачке) ===
+      let gravityReturnLps = 0;
+      const gravityDeltaMPa = pipeHydro - annHydro;
+      if (gravityDeltaMPa > 0) {
+        const deltaPa = gravityDeltaMPa * 1e6;
+        const pipeIDm = casingID / 1000;
+        const muPas = Math.max(avgSettlingPV, 5) / 1000;
+        const vGrav = (deltaPa * pipeIDm * pipeIDm) / (32 * muPas * wellData.casingDepthMD);
+        gravityReturnLps = vGrav * pipeAreaM2 * 1000; // м³/с → л/с
+      }
+
+      const totalAnnReturn = baseAnnularReturn + gravityReturnLps;
+
       const surfP = Math.max(0, (annHydro - pipeHydro) + frPipe + frAnn);
       const bhp = annHydro + frAnn;
 
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: annularReturn, flowRegimeAnn, reynoldsAnn: reAnn });
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn, reynoldsAnn: reAnn });
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;
@@ -909,7 +936,7 @@ export function calculatePressureProfile(
   const cementToStop = stopTime - cementStartTime;
   const safeWorkingTimeMin = cementToStop * 0.75;
 
-  return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries };
+  return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin };
 }
 
 // Потери давления на трение с учётом режима потока (ламинарный / переходный / турбулентный)
