@@ -550,13 +550,15 @@ function CrossSection({ wellData, slurries, buffers, drillingFluid }: Omit<Props
 
       {/* Displacement fluid inside casing */}
       <rect x={cx - casIHW} y={mdToY(0)} width={casIHW * 2} height={mdToY(totalMD) - mdToY(0)} fill="#4A90D9" opacity={0.35} />
+      {/* Inside casing label */}
+      <text x={cx} y={mdToY(totalMD / 2) + 3} fontSize="8" fill="#8CB8E8" fontFamily="sans-serif" textAnchor="middle" fontWeight="500" opacity={0.8}>Продавка</text>
 
       {/* Shoe */}
       <polygon points={`${cx - casOHW - 4},${mdToY(totalMD)} ${cx + casOHW + 4},${mdToY(totalMD)} ${cx},${mdToY(totalMD) + 10}`} fill="#FF6B35" />
 
       {/* CKOD marker */}
       <line x1={cx - casIHW} y1={mdToY(wellData.ckodDepth)} x2={cx + casIHW} y2={mdToY(wellData.ckodDepth)} stroke="#E53E3E" strokeWidth={2} />
-      <text x={cx + casOHW + 8} y={mdToY(wellData.ckodDepth) + 4} fontSize="9" fill="#E53E3E" fontFamily="sans-serif">ЦКОД {wellData.ckodDepth}м</text>
+      <text x={cx + holeHW + 8} y={mdToY(wellData.ckodDepth) + 4} fontSize="9" fill="#E53E3E" fontFamily="sans-serif">ЦКОД {wellData.ckodDepth}м</text>
 
       {/* Previous casing shoe marker */}
       {wellData.prevCasingDepth > 0 && (
@@ -574,10 +576,18 @@ function CrossSection({ wellData, slurries, buffers, drillingFluid }: Omit<Props
         </g>
       ))}
 
-      {/* Labels */}
+      {/* Cement labels — in annulus, not inside casing */}
       {cementSections.map((sec, i) => {
         const midY = (mdToY(sec.top) + mdToY(sec.bot)) / 2;
-        return <text key={`cl-${i}`} x={cx} y={midY + 3} fontSize="8" fill="#fff" fontFamily="sans-serif" textAnchor="middle" fontWeight="600" opacity={0.7}>{sec.name}</text>;
+        const labelX = cx - (casOHW + holeHW) / 2;
+        return <text key={`cl-${i}`} x={labelX} y={midY + 3} fontSize="7" fill="#fff" fontFamily="sans-serif" textAnchor="middle" fontWeight="600" opacity={0.8}>{sec.name}</text>;
+      })}
+
+      {/* Buffer labels — in annulus */}
+      {bufferSections.map((buf, i) => {
+        const midY = (mdToY(buf.top) + mdToY(buf.bot)) / 2;
+        const labelX = cx + (casOHW + holeHW) / 2;
+        return <text key={`bl-${i}`} x={labelX} y={midY + 3} fontSize="7" fill="#fff" fontFamily="sans-serif" textAnchor="middle" fontWeight="500" opacity={0.7}>{buf.name}</text>;
       })}
 
       {/* Dimension labels */}
