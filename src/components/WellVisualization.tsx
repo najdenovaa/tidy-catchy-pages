@@ -1,6 +1,6 @@
 import { useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Text, Line } from "@react-three/drei";
+import { OrbitControls, Text, Line, Grid } from "@react-three/drei";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import { getSlurryHeight, interpolateTVD, getCasingID, pipeVolumePerMeter, annularVolumePerMeter } from "@/lib/cementing-calculations";
@@ -245,18 +245,94 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
     return markers;
   }, [pts3d, scale, wellData, depthInterval]);
 
+  // Depth grid planes (horizontal rings at depth intervals)
+  const gridDepths = useMemo(() => {
+    const depths: number[] = [];
+    for (let md = 0; md <= wellData.casingDepthMD; md += depthInterval) {
+      depths.push(md);
+    }
+    return depths;
+  }, [wellData.casingDepthMD, depthInterval]);
+
+  // Previous casing label position
+  const prevCasingLabelPos = useMemo(() => {
+    if (wellData.prevCasingDepth <= 0) return null;
+    const midMD = wellData.prevCasingDepth / 2;
+    const p = interpAt(pts3d, midMD);
+    return [p.x * scale + holeR * 3, p.y * scale, p.z * scale] as [number, number, number];
+  }, [pts3d, scale, wellData.prevCasingDepth, holeR]);
+
+  // Previous casing shoe label
+  const prevCasingShoePos = useMemo(() => {
+    if (wellData.prevCasingDepth <= 0) return null;
+    const p = interpAt(pts3d, wellData.prevCasingDepth);
+    return [p.x * scale, p.y * scale, p.z * scale] as [number, number, number];
+  }, [pts3d, scale, wellData.prevCasingDepth]);
+
+  // Grid extent for horizontal reference planes
+  const gridSize = 0.6;
+
   return (
     <>
       <ambientLight intensity={0.5} />
       <directionalLight position={[3, 2, 5]} intensity={0.8} />
       <directionalLight position={[-2, -1, -3]} intensity={0.3} />
 
+      {/* Horizontal depth grid planes */}
+      {gridDepths.map((md) => {
+        const p = interpAt(pts3d, md);
+        const yPos = p.y * scale;
+        return (
+          <group key={`grid-${md}`} position={[0, yPos, 0]}>
+            <gridHelper args={[gridSize, 10, "#444444", "#333333"]} />
+          </group>
+        );
+      })}
+
+      {/* Vertical axis line */}
+      <Line
+        points={[new THREE.Vector3(0, 0.05, 0), new THREE.Vector3(0, -1.05, 0)]}
+        color="#555555"
+        lineWidth={0.5}
+        dashed
+        dashSize={0.02}
+        gapSize={0.01}
+      />
+
       {/* Rock / Formation — open hole */}
       <WellTube path={pathForRange(wellData.prevCasingDepth, wellData.casingDepthMD)} radius={holeR * 1.3} color={ROCK_COLOR_3D} opacity={0.3} />
 
-      {/* Previous casing */}
+      {/* Previous casing — outer wall (visible, thicker) */}
       {wellData.prevCasingDepth > 0 && (
-        <WellTube path={pathForRange(0, wellData.prevCasingDepth)} radius={prevCasOR} color={PREV_CASING_STEEL} opacity={0.4} />
+        <>
+          <WellTube path={pathForRange(0, wellData.prevCasingDepth)} radius={prevCasOR} color={PREV_CASING_STEEL} opacity={0.55} />
+          {/* Previous casing inner wall hint */}
+          <WellTube path={pathForRange(0, wellData.prevCasingDepth)} radius={prevCasIR} color="#666666" opacity={0.2} />
+          {/* Previous casing shoe ring */}
+          {prevCasingShoePos && (
+            <mesh position={prevCasingShoePos}>
+              <torusGeometry args={[prevCasOR * 1.3, 0.004, 8, 24]} />
+              <meshStandardMaterial color={PREV_CASING_STEEL} emissive={PREV_CASING_STEEL} emissiveIntensity={0.3} />
+            </mesh>
+          )}
+          {/* Label */}
+          {prevCasingLabelPos && (
+            <Text position={prevCasingLabelPos} fontSize={0.028} color={PREV_CASING_STEEL} anchorX="left" fontWeight={600}>
+              {`Кондуктор ∅${wellData.prevCasingOD} (${wellData.prevCasingDepth}м)`}
+            </Text>
+          )}
+          {/* Shoe depth label */}
+          {prevCasingShoePos && (
+            <Text
+              position={[prevCasingShoePos[0] + holeR * 3, prevCasingShoePos[1], prevCasingShoePos[2]]}
+              fontSize={0.025}
+              color="#BBBBBB"
+              anchorX="left"
+            >
+              {`Башмак ${wellData.prevCasingDepth}м`}
+            </Text>
+          )}
+        </>
       )}
 
       {/* Current casing (outer) */}
