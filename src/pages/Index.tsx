@@ -194,6 +194,8 @@ export default function Index() {
                 displacementDensity={calcSnapshot.displacementFluids[0]?.density ?? 1000}
                 workTimeWithCement={pressureResult ? pressureResult.stopTime - pressureResult.cementStartTime : 0}
                 volumes={volumes}
+                displacementFluids={calcSnapshot.displacementFluids}
+                drillingFluid={calcSnapshot.drillingFluid}
               />
             ) : (
               <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
