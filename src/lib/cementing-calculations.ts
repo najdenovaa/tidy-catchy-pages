@@ -768,10 +768,32 @@ export function calculatePressureProfile(
     const flowRateM3min = s.rateLps * 0.06;
     const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
 
+    // Трубное трение — по свойствам закачиваемого флюида (он в трубе)
     const densityKgM3 = s.densityGcm3 * 1000;
     const frPipeRes = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3);
-    const frAnnRes = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydAnn, s.pv, s.yp, annAreaM2, densityKgM3);
     const frPipe = frPipeRes.pressureMPa;
+
+    // Затрубное трение — по свойствам флюида В ЗАТРУБЬЕ (не закачиваемого!)
+    // До продавки: в затрубье буровой раствор. Во время продавки: цемент + буровой.
+    let annPv: number, annYp: number, annDensity: number;
+    if (!s.isCement && cementStartFound && !s.isFlushPause) {
+      // Продавка — в затрубье поднимается цемент (средние свойства растворов)
+      const totalCementSlurries = slurries.length || 1;
+      annPv = slurries.reduce((sum, sl) => sum + sl.rheology.pv, 0) / totalCementSlurries;
+      annYp = slurries.reduce((sum, sl) => sum + sl.rheology.yp, 0) / totalCementSlurries;
+      annDensity = slurries.reduce((sum, sl) => sum + sl.density * 1000, 0) / totalCementSlurries;
+    } else if (s.isCement) {
+      // Закачка цемента — в затрубье пока буровой раствор
+      annPv = drillingFluid.rheology.pv;
+      annYp = drillingFluid.rheology.yp;
+      annDensity = drillingFluid.density;
+    } else {
+      // Буферы — в затрубье буровой раствор
+      annPv = drillingFluid.rheology.pv;
+      annYp = drillingFluid.rheology.yp;
+      annDensity = drillingFluid.density;
+    }
+    const frAnnRes = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydAnn, annPv, annYp, annAreaM2, annDensity);
     const frAnn = frAnnRes.pressureMPa;
 
     const reAnn = frAnnRes.reynolds;
