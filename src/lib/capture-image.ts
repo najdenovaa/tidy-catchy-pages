@@ -35,8 +35,30 @@ export async function captureElementAsBlob(el: HTMLElement): Promise<Blob | null
 export async function copyElementAsImage(el: HTMLElement): Promise<boolean> {
   try {
     const blob = await captureElementAsBlob(el);
-    if (!blob) return false;
-    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    if (!blob) {
+      console.error("Copy image: blob is null");
+      return false;
+    }
+
+    // Try Clipboard API first
+    if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        return true;
+      } catch (clipErr) {
+        console.warn("Clipboard API failed, falling back to download:", clipErr);
+      }
+    }
+
+    // Fallback: download the image
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "image.png";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
     return true;
   } catch (e) {
     console.error("Copy image failed:", e);
