@@ -808,7 +808,7 @@ export function calculatePressureProfile(
           for (let iter = 0; iter < 15; iter++) {
             const mid = (lo + hi) / 2;
             const fP = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydPipe, cPv, cYp, pipeAreaM2, cDensity).pressureMPa;
-            const fA = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp, annAreaM2, drillingFluid.density).pressureMPa * 3.0;
+            const fA = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp, annAreaM2, drillingFluid.density).pressureMPa * 0.8;
             if (fP + fA < drivingPressureMPa) lo = mid; else hi = mid;
           }
           const settlingRateM3min = (lo + hi) / 2;
