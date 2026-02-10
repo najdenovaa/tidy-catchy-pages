@@ -161,18 +161,23 @@ export default function Index() {
       const contentW = pageW - margin * 2;
 
       const prevTab = activeTab;
+      // Skip "visual" tab — WebGL canvas can't be captured by html2canvas
+      const exportTabs = tabOrder.filter(t => t !== "visual");
 
-      for (let t = 0; t < tabOrder.length; t++) {
-        const tab = tabOrder[t];
+      let pageNum = 0;
+      for (let t = 0; t < exportTabs.length; t++) {
+        const tab = exportTabs[t];
 
-        // Switch to this tab and wait for render
+        // Switch to this tab
         setActiveTab(tab);
-        await new Promise(r => setTimeout(r, 600));
+        // Use flushSync-like approach: wait for React re-render + recharts animations
+        await new Promise(r => setTimeout(r, 1200));
 
         const tabContent = document.querySelector(`[data-tab-content="${tab}"]`) as HTMLElement;
         if (!tabContent || tabContent.offsetHeight === 0) continue;
 
-        if (t > 0) pdf.addPage();
+        if (pageNum > 0) pdf.addPage();
+        pageNum++;
 
         // Header
         pdf.setFontSize(14);
@@ -181,13 +186,19 @@ export default function Index() {
         pdf.setDrawColor(200, 200, 200);
         pdf.line(margin, margin + 9, pageW - margin, margin + 9);
 
+        // Capture — ignore WebGL canvases
         const canvas = await html2canvas(tabContent, {
           scale: 2,
           useCORS: true,
           backgroundColor: "#1a1a2e",
           logging: false,
-          windowWidth: tabContent.scrollWidth,
+          windowWidth: Math.max(tabContent.scrollWidth, 1200),
           windowHeight: tabContent.scrollHeight,
+          ignoreElements: (el) => {
+            // Skip any WebGL / three.js canvas
+            if (el.tagName === "CANVAS" && el.closest("[data-tab-content='visual']")) return true;
+            return false;
+          },
         });
 
         const imgData = canvas.toDataURL("image/jpeg", 0.92);
@@ -196,24 +207,49 @@ export default function Index() {
         const imgH = imgW * imgRatio;
         const startY = margin + 12;
 
-        // If content is taller than one page, scale to fit
+        // Scale to fit page if needed, or split across multiple pages
         const availH = pageH - startY - margin;
-        if (imgH > availH) {
-          const fitW = availH / imgRatio;
-          pdf.addImage(imgData, "JPEG", margin + (contentW - fitW) / 2, startY, fitW, availH);
-        } else {
+        if (imgH <= availH) {
           pdf.addImage(imgData, "JPEG", margin, startY, imgW, imgH);
+        } else {
+          // Multi-page: slice the canvas image
+          const pxPerMM = canvas.width / contentW;
+          const sliceHpx = availH * pxPerMM;
+          let srcY = 0;
+          let isFirst = true;
+          while (srcY < canvas.height) {
+            if (!isFirst) {
+              pdf.addPage();
+              pageNum++;
+            }
+            const remaining = canvas.height - srcY;
+            const thisSlice = Math.min(sliceHpx, remaining);
+
+            // Create a sub-canvas for this slice
+            const sliceCanvas = document.createElement("canvas");
+            sliceCanvas.width = canvas.width;
+            sliceCanvas.height = thisSlice;
+            const ctx = sliceCanvas.getContext("2d");
+            if (ctx) {
+              ctx.drawImage(canvas, 0, srcY, canvas.width, thisSlice, 0, 0, canvas.width, thisSlice);
+              const sliceImg = sliceCanvas.toDataURL("image/jpeg", 0.92);
+              const sliceHmm = (thisSlice / pxPerMM);
+              const yOffset = isFirst ? startY : margin;
+              pdf.addImage(sliceImg, "JPEG", margin, yOffset, imgW, sliceHmm);
+            }
+            srcY += thisSlice;
+            isFirst = false;
+          }
         }
 
-        // Footer
+        // Footer on last page of this tab
         pdf.setFontSize(8);
         pdf.setTextColor(150, 150, 150);
-        pdf.text(`Стр. ${t + 1} / ${tabOrder.length}`, pageW - margin, pageH - 5, { align: "right" });
+        pdf.text(`${tabNames[tab]} — стр. ${pageNum}`, pageW - margin, pageH - 5, { align: "right" });
       }
 
       // Restore original tab
       setActiveTab(prevTab);
-
       pdf.save("cementing-program.pdf");
     } catch (e) {
       console.error("PDF export error:", e);
