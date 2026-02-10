@@ -1,6 +1,8 @@
+import { useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
 import type { PressurePoint, StageBoundary } from "@/lib/cementing-calculations";
+import CopyImageButton from "./CopyImageButton";
 
 interface Props {
   pressureData: PressurePoint[];
@@ -14,6 +16,12 @@ interface Props {
 const STAGE_COLORS = ["hsl(200, 50%, 55%)", "hsl(120, 40%, 45%)", "hsl(35, 70%, 50%)", "hsl(280, 50%, 55%)", "hsl(340, 50%, 50%)"];
 
 export default function ChartsSection({ pressureData, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin }: Props) {
+  const chartRef1 = useRef<HTMLDivElement>(null);
+  const chartRef2 = useRef<HTMLDivElement>(null);
+  const chartRef3 = useRef<HTMLDivElement>(null);
+  const chartRef4 = useRef<HTMLDivElement>(null);
+  const chartRef5 = useRef<HTMLDivElement>(null);
+
   if (pressureData.length === 0) {
     return (
       <Card>
@@ -69,44 +77,23 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
       {/* Совмещённый график */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg">Совмещённый график цементирования</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg">Совмещённый график цементирования</CardTitle>
+            <CopyImageButton targetRef={chartRef1} />
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="h-[550px]">
+          <div ref={chartRef1} className="h-[550px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 20, right: 65, left: 25, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
                 <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" />
-                <YAxis
-                  yAxisId="pressure"
-                  domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.15)]}
-                  label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }}
-                  className="text-xs"
-                  width={55}
-                />
-                <YAxis
-                  yAxisId="rate"
-                  orientation="right"
-                  domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]}
-                  label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }}
-                  className="text-xs"
-                  width={55}
-                />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`}
-                  formatter={(value: number, name: string) => {
-                    if (name === "Производительность" || name === "Выход на устье") return [value.toFixed(1) + " л/с", name];
-                    return [value.toFixed(2) + " МПа", name];
-                  }}
-                />
+                <YAxis yAxisId="pressure" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.15)]} label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
+                <YAxis yAxisId="rate" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
+                <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => { if (name === "Производительность" || name === "Выход на устье") return [value.toFixed(1) + " л/с", name]; return [value.toFixed(2) + " МПа", name]; }} />
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
-                {safeTimeEnd > 0 && (
-                  <ReferenceLine yAxisId="pressure" x={safeTimeEnd} stroke="hsl(45, 90%, 45%)" strokeDasharray="4 4" strokeWidth={2} label={{ value: "75% безоп.", position: "top", fontSize: 10, fill: "hsl(45, 90%, 45%)" }} />
-                )}
-                {stageBoundaries.map((b, i) => (
-                  <ReferenceLine key={`stage-${i}`} yAxisId="pressure" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />
-                ))}
+                {safeTimeEnd > 0 && <ReferenceLine yAxisId="pressure" x={safeTimeEnd} stroke="hsl(45, 90%, 45%)" strokeDasharray="4 4" strokeWidth={2} label={{ value: "75% безоп.", position: "top", fontSize: 10, fill: "hsl(45, 90%, 45%)" }} />}
+                {stageBoundaries.map((b, i) => <ReferenceLine key={`stage-${i}`} yAxisId="pressure" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />)}
                 <Line yAxisId="pressure" type="linear" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
@@ -121,10 +108,13 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
       {/* Давление на забое vs ГРП */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg">Давление на забое vs Давление ГРП</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg">Давление на забое vs Давление ГРП</CardTitle>
+            <CopyImageButton targetRef={chartRef2} />
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="h-[400px]">
+          <div ref={chartRef2} className="h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
@@ -143,10 +133,13 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
       {/* Объём vs давление */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg">Сводный график: объём vs давление</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg">Сводный график: объём vs давление</CardTitle>
+            <CopyImageButton targetRef={chartRef3} />
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="h-[400px]">
+          <div ref={chartRef3} className="h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
@@ -163,47 +156,28 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
         </CardContent>
       </Card>
 
-      {/* План продавки для оператора */}
+      {/* План продавки */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg">План продавки: давления и макс. производительность</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg">План продавки: давления и макс. производительность</CardTitle>
+            <CopyImageButton targetRef={chartRef4} />
+          </div>
         </CardHeader>
         <CardContent>
           <p className="text-xs text-muted-foreground mb-3">
             Макс. производительность — предельная скорость закачки, при которой забойное давление не превышает давление ГРП. Оператор должен придерживаться указанных ограничений.
           </p>
-          <div className="h-[500px]">
+          <div ref={chartRef4} className="h-[500px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 20, right: 65, left: 25, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
                 <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" />
-                <YAxis
-                  yAxisId="pressure"
-                  domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.15)]}
-                  label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }}
-                  className="text-xs"
-                  width={55}
-                />
-                <YAxis
-                  yAxisId="rate"
-                  orientation="right"
-                  domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]}
-                  label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }}
-                  className="text-xs"
-                  width={55}
-                />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`}
-                  formatter={(value: number, name: string) => {
-                    if (name.includes("л/с") || name.includes("Производительность") || name.includes("Макс.")) return [value.toFixed(1) + " л/с", name];
-                    return [value.toFixed(2) + " МПа", name];
-                  }}
-                />
+                <YAxis yAxisId="pressure" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.15)]} label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
+                <YAxis yAxisId="rate" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
+                <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => { if (name.includes("л/с") || name.includes("Производительность") || name.includes("Макс.")) return [value.toFixed(1) + " л/с", name]; return [value.toFixed(2) + " МПа", name]; }} />
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
-                {stageBoundaries.map((b, i) => (
-                  <ReferenceLine key={`plan-stage-${i}`} yAxisId="pressure" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />
-                ))}
+                {stageBoundaries.map((b, i) => <ReferenceLine key={`plan-stage-${i}`} yAxisId="pressure" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />)}
                 <Line yAxisId="pressure" type="linear" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
@@ -215,47 +189,27 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
         </CardContent>
       </Card>
 
-      {/* Режим потока (затрубье) */}
+      {/* Режим потока */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg">Режим потока в затрубном пространстве</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg">Режим потока в затрубном пространстве</CardTitle>
+            <CopyImageButton targetRef={chartRef5} />
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="h-[300px]">
+          <div ref={chartRef5} className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 65, left: 25, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
                 <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" />
-                <YAxis
-                  yAxisId="regime"
-                  domain={[-0.2, 1.3]}
-                  ticks={[0, 0.5, 1]}
-                  tickFormatter={(v) => v === 0 ? "Ламин." : v === 0.5 ? "Перех." : v === 1 ? "Турбул." : ""}
-                  className="text-xs"
-                  width={70}
-                />
-                <YAxis
-                  yAxisId="re"
-                  orientation="right"
-                  domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.2)]}
-                  label={{ value: "Re", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }}
-                  className="text-xs"
-                  width={55}
-                />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`}
-                  formatter={(value: number, name: string) => {
-                    if (name === "Режим потока") return [value === 0 ? "Ламинарный" : value < 1 ? "Переходный" : "Турбулентный", name];
-                    return [Math.round(value).toString(), name];
-                  }}
-                />
+                <YAxis yAxisId="regime" domain={[-0.2, 1.3]} ticks={[0, 0.5, 1]} tickFormatter={(v) => v === 0 ? "Ламин." : v === 0.5 ? "Перех." : v === 1 ? "Турбул." : ""} className="text-xs" width={70} />
+                <YAxis yAxisId="re" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.2)]} label={{ value: "Re", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
+                <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => { if (name === "Режим потока") return [value === 0 ? "Ламинарный" : value < 1 ? "Переходный" : "Турбулентный", name]; return [Math.round(value).toString(), name]; }} />
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
                 <ReferenceLine yAxisId="re" y={2100} stroke="hsl(45, 80%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re=2100", position: "right", fontSize: 10, fill: "hsl(45, 80%, 50%)" }} />
                 <ReferenceLine yAxisId="re" y={4000} stroke="hsl(0, 70%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re=4000", position: "right", fontSize: 10, fill: "hsl(0, 70%, 50%)" }} />
-                {stageBoundaries.map((b, i) => (
-                  <ReferenceLine key={`regime-stage-${i}`} yAxisId="regime" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} />
-                ))}
+                {stageBoundaries.map((b, i) => <ReferenceLine key={`regime-stage-${i}`} yAxisId="regime" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} />)}
                 <Line yAxisId="regime" type="stepAfter" dataKey="flowRegimeAnn" name="Режим потока" stroke="hsl(280, 60%, 50%)" strokeWidth={2.5} dot={false} />
                 <Line yAxisId="re" type="linear" dataKey="reynoldsAnn" name="Re (затрубье)" stroke="hsl(200, 60%, 50%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
               </LineChart>

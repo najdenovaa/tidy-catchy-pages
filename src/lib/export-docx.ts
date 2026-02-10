@@ -2,8 +2,9 @@ import {
   Document, Packer, Paragraph, Table, TableRow, TableCell,
   TextRun, HeadingLevel, AlignmentType, WidthType,
   BorderStyle, PageBreak, ShadingType, Header, Footer,
-  TableLayoutType,
+  TableLayoutType, ImageRun,
 } from "docx";
+import { dataUrlToArrayBuffer } from "./capture-image";
 import { saveAs } from "file-saver";
 import type {
   WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid,
@@ -415,12 +416,53 @@ function buildPressureProfilePage(pressureResult: PressureProfileResult): Paragr
 
 // ======== Charts data tables ========
 
-function buildChartsDataPage(pressureResult: PressureProfileResult): Paragraph[] {
+function buildImageParagraph(dataUrl: string, title: string, widthPx = 1400, heightPx = 700): Paragraph[] {
+  try {
+    const buf = dataUrlToArrayBuffer(dataUrl);
+    return [
+      new Paragraph({
+        spacing: { before: 200, after: 100 },
+        children: [new TextRun({ text: title, bold: true, size: 20, font: "Calibri" })],
+      }),
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [
+          new ImageRun({
+            data: buf,
+            transformation: { width: 580, height: Math.round(580 * heightPx / widthPx) },
+          }),
+        ],
+      }),
+    ];
+  } catch {
+    return [
+      new Paragraph({
+        spacing: { before: 100 },
+        children: [new TextRun({ text: `[Не удалось вставить изображение: ${title}]`, italics: true, size: 18, font: "Calibri", color: "CC0000" })],
+      }),
+    ];
+  }
+}
+
+function buildChartsDataPage(pressureResult: PressureProfileResult, chartImages?: Record<string, string>): Paragraph[] {
+  const content: Paragraph[] = [
+    sectionTitle("14. Графики — диаграммы и данные"),
+  ];
+
+  // Insert chart images if available
+  if (chartImages) {
+    if (chartImages.combined) content.push(...buildImageParagraph(chartImages.combined, "Совмещённый график цементирования", 1400, 550));
+    if (chartImages.bhpVsFrac) content.push(...buildImageParagraph(chartImages.bhpVsFrac, "Давление на забое vs Давление ГРП", 1400, 400));
+    if (chartImages.volVsPressure) content.push(...buildImageParagraph(chartImages.volVsPressure, "Объём vs Давление", 1400, 400));
+    if (chartImages.pumpPlan) content.push(...buildImageParagraph(chartImages.pumpPlan, "План продавки: давления и макс. производительность", 1400, 500));
+    if (chartImages.flowRegime) content.push(...buildImageParagraph(chartImages.flowRegime, "Режим потока в затрубном пространстве", 1400, 300));
+  }
+
+  // Tabular data as fallback / supplement
   const points = pressureResult.points;
   const sampled = points.filter((p, i) => i === 0 || i === points.length - 1 || Math.abs(p.time - Math.round(p.time)) < 0.05);
 
-  // BHP vs Frac table
-  const bhpHeaders = ["Время, мин", "Pзабой, МПа", "Pгрп, МПа", "Запас (Pгрп-Pзаб), МПа", "Qмакс, л/с"];
+  const bhpHeaders = ["Время, мин", "Pзабой, МПа", "Pгрп, МПа", "Запас, МПа", "Qмакс, л/с"];
   const bhpRows = [
     new TableRow({ children: bhpHeaders.map(h => headerCell(h)) }),
     ...sampled.map(p => {
@@ -437,57 +479,27 @@ function buildChartsDataPage(pressureResult: PressureProfileResult): Paragraph[]
     }),
   ];
 
-  // Volume vs Pressure table
-  const volHeaders = ["∑V, м³", "Pнасос, МПа", "Pзабой, МПа", "Pгрп, МПа"];
-  const volSampled = points.filter((p, i) => i === 0 || i === points.length - 1 || Math.abs(p.cumulativeVolume - Math.round(p.cumulativeVolume)) < 0.1);
-  const volRows = [
-    new TableRow({ children: volHeaders.map(h => headerCell(h)) }),
-    ...volSampled.map(p => new TableRow({
-      children: [
-        cell(fmt(p.cumulativeVolume, 1), { align: AlignmentType.RIGHT }),
-        cell(fmt(p.surfacePressure, 2), { align: AlignmentType.RIGHT }),
-        cell(fmt(p.bottomholePressure, 2), { align: AlignmentType.RIGHT }),
-        cell(fmt(p.fracturePressure, 2), { align: AlignmentType.RIGHT }),
-      ],
-    })),
-  ];
+  content.push(new Paragraph({ spacing: { before: 300, after: 80 }, children: [new TextRun({ text: "Давление на забое vs Давление ГРП (табличные данные):", bold: true, size: 20, font: "Calibri" })] }));
+  content.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, layout: TableLayoutType.FIXED, rows: bhpRows }) as any);
 
-  return [
-    sectionTitle("14. Графики — табличные данные"),
-    new Paragraph({
-      spacing: { after: 100 },
-      children: [new TextRun({
-        text: "Табличное представление данных, отображаемых на графиках программы.",
-        size: 18, font: "Calibri", italics: true, color: "555555",
-      })],
-    }),
-    new Paragraph({
-      spacing: { before: 150, after: 80 },
-      children: [new TextRun({ text: "Давление на забое vs Давление ГРП (с ограничением Q):", bold: true, size: 20, font: "Calibri" })],
-    }),
-    new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      layout: TableLayoutType.FIXED,
-      rows: bhpRows,
-    }) as any,
-    new Paragraph({ spacing: { after: 200 }, children: [] }),
-    new Paragraph({
-      spacing: { before: 150, after: 80 },
-      children: [new TextRun({ text: "Объём vs Давление:", bold: true, size: 20, font: "Calibri" })],
-    }),
-    new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      layout: TableLayoutType.FIXED,
-      rows: volRows,
-    }) as any,
-  ];
+  return content;
 }
 
 // ======== Trajectory / Visualization ========
 
-function buildTrajectoryPage(wellData: WellData): Paragraph[] {
+function buildTrajectoryPage(wellData: WellData, visualImages?: Record<string, string>): Paragraph[] {
   const traj = wellData.trajectory;
-  if (!traj || traj.length < 2) return [];
+  const content: Paragraph[] = [
+    sectionTitle("15. Визуализация скважины"),
+  ];
+
+  // Insert visual images if available
+  if (visualImages) {
+    if (visualImages.well3d) content.push(...buildImageParagraph(visualImages.well3d, "3D профиль ствола скважины", 1400, 550));
+    if (visualImages.crossSection) content.push(...buildImageParagraph(visualImages.crossSection, "Поперечный разрез (после СТОП)", 800, 800));
+  }
+
+  if (!traj || traj.length < 2) return content;
 
   const headers = ["MD, м", "Азимут, °", "Зенит, °", "TVD, м"];
   const sorted = [...traj].sort((a, b) => a.md - b.md);
@@ -506,14 +518,10 @@ function buildTrajectoryPage(wellData: WellData): Paragraph[] {
 
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
 
-  return [
-    sectionTitle("15. Визуализация скважины"),
+  content.push(
     new Paragraph({
-      spacing: { after: 100 },
-      children: [new TextRun({
-        text: "Таблица инклинометрии (траектория скважины):",
-        bold: true, size: 20, font: "Calibri",
-      })],
+      spacing: { before: 200, after: 100 },
+      children: [new TextRun({ text: "Таблица инклинометрии (траектория скважины):", bold: true, size: 20, font: "Calibri" })],
     }),
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
@@ -534,10 +542,17 @@ function buildTrajectoryPage(wellData: WellData): Paragraph[] {
       { label: "Предыдущая колонна (OD/ID)", value: `${wellData.prevCasingOD} / ${wellData.prevCasingID} мм` },
       { label: "Глубина предыдущей колонны", value: `${wellData.prevCasingDepth} м` },
     ]) as any,
-  ];
+  );
+
+  return content;
 }
 
 // ======== Main export function ========
+
+export interface DocxImages {
+  chartImages?: Record<string, string>;  // data URLs
+  visualImages?: Record<string, string>; // data URLs
+}
 
 export async function exportToDocx(
   wellData: WellData,
@@ -546,6 +561,7 @@ export async function exportToDocx(
   buffers: BufferFluid[],
   displacementFluids: DisplacementFluid[],
   fractureGradient: number,
+  images?: DocxImages,
 ) {
   const volumes = calculateVolumes(wellData);
   const pressureResult = calculatePressureProfile(wellData, slurries, buffers, drillingFluid, displacementFluids, fractureGradient, volumes.displacementVolume);
@@ -591,8 +607,8 @@ export async function exportToDocx(
   const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolume, displacementFluids, wellData.casingDepthMD);
   const materialsContent = buildMaterialsPage(materials);
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
-  const chartsDataContent = buildChartsDataPage(pressureResult);
-  const trajectoryContent = buildTrajectoryPage(wellData);
+  const chartsDataContent = buildChartsDataPage(pressureResult, images?.chartImages);
+  const trajectoryContent = buildTrajectoryPage(wellData, images?.visualImages);
   const doc = new Document({
     sections: [
       {
