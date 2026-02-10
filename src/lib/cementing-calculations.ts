@@ -371,7 +371,7 @@ export function calculateHydraulics(
     const avgPv = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.pv, 0) / slurries.length : (drillingFluidRheology?.pv ?? 25);
     const avgYp = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.yp, 0) / slurries.length : (drillingFluidRheology?.yp ?? 18);
     const avgDensity = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.density * 1000, 0) / slurries.length : 1100;
-    const annFrictionMultiplier = 1.3;
+    const annFrictionMultiplier = 0.8;
     frictionAnn = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydAnn, avgPv, avgYp, annAreaM2, avgDensity).pressureMPa * annFrictionMultiplier;
   }
 
@@ -897,8 +897,8 @@ export function calculatePressureProfile(
       annYp = drillingFluid.rheology.yp;
       annDensity = drillingFluid.density;
     }
-    // Множитель трения затрубья: эксцентриситет, муфты (~1.3x)
-    const annFrictionMultiplier = 1.3;
+    // Множитель трения затрубья: эксцентриситет (~0.8x от концентрического)
+    const annFrictionMultiplier = 0.8;
     const frAnnRes = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydAnn, annPv, annYp, annAreaM2, annDensity);
     const frAnn = frAnnRes.pressureMPa * annFrictionMultiplier;
 
