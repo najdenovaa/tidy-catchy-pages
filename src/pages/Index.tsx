@@ -10,6 +10,7 @@ import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlur
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid, PressureProfileResult, TrajectoryPoint } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
 import { FileDown, Loader2 } from "lucide-react";
+import deallsoftLogo from "@/assets/deallsoft-logo.png";
 const defaultWellData: WellData = {
   wellDepthMD: 0,
   wellDepthTVD: 0,
@@ -205,9 +206,11 @@ export default function Index() {
       <header className="border-b border-border bg-card sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">ЦП</span>
-            </div>
+            <img
+              src={deallsoftLogo}
+              alt="DeAllsoft"
+              className="h-8 object-cover object-center"
+            />
             <div>
               <h1 className="text-base font-bold text-foreground leading-tight">Программа цементирования</h1>
               <p className="text-xs text-muted-foreground">Расчёт обсадных колонн</p>
