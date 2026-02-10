@@ -209,7 +209,7 @@ export default function Index() {
             <img
               src={deallsoftLogo}
               alt="DeAllsoft"
-              className="h-8 object-cover object-center"
+              className="h-10 object-cover object-center"
             />
             <div>
               <h1 className="text-base font-bold text-foreground leading-tight">Программа цементирования</h1>
