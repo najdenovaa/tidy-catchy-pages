@@ -7,7 +7,7 @@ import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
-import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
+import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid, PressureProfileResult } from "@/lib/cementing-calculations";
 
 const defaultWellData: WellData = {
   wellDepthMD: 410,
@@ -122,10 +122,10 @@ export default function Index() {
     [calcSnapshot, volumes]
   );
 
-  const pressureData = useMemo(
+  const pressureResult = useMemo(
     () => calcSnapshot && volumes
-      ? calculatePressureProfile(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.drillingFluid, calcSnapshot.fractureGradient, 0.48, volumes.displacementVolume)
-      : [],
+      ? calculatePressureProfile(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.drillingFluid, calcSnapshot.displacementFluids, calcSnapshot.fractureGradient, volumes.displacementVolume)
+      : null,
     [calcSnapshot, volumes]
   );
 
@@ -219,8 +219,8 @@ export default function Index() {
           </TabsContent>
 
           <TabsContent value="charts">
-            {calcSnapshot ? (
-              <ChartsSection pressureData={pressureData} />
+            {calcSnapshot && pressureResult ? (
+              <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} />
             ) : (
               <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
             )}

@@ -412,6 +412,14 @@ export interface PressurePoint {
   bottomholePressure: number;
   fracturePressure: number;
   cumulativeVolume: number;
+  pumpRateLps: number;
+}
+
+export interface PressureProfileResult {
+  points: PressurePoint[];
+  safeWorkingTimeMin: number;
+  cementStartTime: number;
+  stopTime: number;
 }
 
 export function calculatePressureProfile(
@@ -419,47 +427,127 @@ export function calculatePressureProfile(
   slurries: SlurryInput[],
   buffers: BufferFluid[],
   drillingFluid: DrillingFluid,
+  displacementFluids: DisplacementFluid[],
   fractureGradient: number,
-  flowRate: number,
   displacementVol: number
-): PressurePoint[] {
+): PressureProfileResult {
   const points: PressurePoint[] = [];
   const fracP = (fractureGradient * wellData.wellDepthTVD) / 1000;
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
   const dHydAnn = Math.max(wellData.holeDiameter - wellData.casingOD, 10);
   const dHydPipe = casingID;
+  const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
 
   const hydroMud = hydrostaticPressure(drillingFluid.density / 1000, wellData.wellDepthTVD);
   let cumTime = 0;
   let cumVol = 0;
+  let cementStartTime = 0;
 
-  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMud, fracturePressure: fracP, cumulativeVolume: 0 });
+  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMud, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0 });
 
-  const stages: { name: string; volume: number; density: number; pv: number; yp: number }[] = [];
+  interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean }
+  const stages: Stage[] = [];
 
-  buffers.forEach(b => stages.push({ name: b.name, volume: b.volume, density: b.density / 1000, pv: b.rheology.pv, yp: b.rheology.yp }));
-  slurries.forEach((s, i) => {
-    const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
-    const h = getSlurryHeight(slurries, i, wellData.casingDepthMD);
-    const vol = h > 0 ? h * annVPM : 0;
-    if (vol > 0) stages.push({ name: s.name, volume: vol, density: s.density, pv: s.rheology.pv, yp: s.rheology.yp });
+  // Буферы — по шагам
+  buffers.forEach(b => {
+    if (b.flowRateSteps.length > 1) {
+      b.flowRateSteps.forEach(step => {
+        if (step.volumeM3 > 0) {
+          stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: b.rheology.pv, yp: b.rheology.yp, rateLps: step.rateLps, isCement: false });
+        }
+      });
+    } else {
+      const rate = b.flowRateSteps.length > 0 ? b.flowRateSteps[0].rateLps : 5;
+      stages.push({ name: b.name, volume: b.volume, densityGcm3: b.density / 1000, pv: b.rheology.pv, yp: b.rheology.yp, rateLps: rate, isCement: false });
+    }
   });
-  stages.push({ name: "Продавка", volume: displacementVol, density: 1.0, pv: 1, yp: 0 });
+
+  // Цементные растворы — в обратном порядке (последний = забойный, качается первым)
+  const reversedSlurries = [...slurries].reverse();
+  reversedSlurries.forEach(s => {
+    const origIdx = slurries.indexOf(s);
+    const h = getSlurryHeight(slurries, origIdx, wellData.casingDepthMD);
+    const vol = h > 0 ? h * annVPM : 0;
+    if (vol <= 0) return;
+    if (s.flowRateSteps.length > 1) {
+      s.flowRateSteps.forEach(step => {
+        if (step.volumeM3 > 0) {
+          stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: s.rheology.pv, yp: s.rheology.yp, rateLps: step.rateLps, isCement: true });
+        }
+      });
+    } else {
+      const rate = s.flowRateSteps.length > 0 ? s.flowRateSteps[0].rateLps : 5;
+      stages.push({ name: s.name, volume: vol, densityGcm3: s.density, pv: s.rheology.pv, yp: s.rheology.yp, rateLps: rate, isCement: true });
+    }
+  });
+
+  // Продавочные жидкости — по шагам с распределением объёма
+  let remainingDispVol = displacementVol;
+  displacementFluids.forEach(df => {
+    const totalStepVol = df.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
+    if (totalStepVol > 0) {
+      df.flowRateSteps.forEach(step => {
+        if (step.volumeM3 > 0) {
+          const vol = Math.min(step.volumeM3, remainingDispVol);
+          if (vol > 0) {
+            stages.push({ name: df.name, volume: vol, densityGcm3: df.density / 1000, pv: df.rheology.pv, yp: df.rheology.yp, rateLps: step.rateLps, isCement: false });
+            remainingDispVol -= vol;
+          }
+        }
+      });
+    } else {
+      // Распределить оставшийся объём равномерно по шагам
+      const perStep = remainingDispVol / Math.max(df.flowRateSteps.length, 1);
+      df.flowRateSteps.forEach(step => {
+        if (perStep > 0 && step.rateLps > 0) {
+          stages.push({ name: df.name, volume: perStep, densityGcm3: df.density / 1000, pv: df.rheology.pv, yp: df.rheology.yp, rateLps: step.rateLps, isCement: false });
+        }
+      });
+      remainingDispVol = 0;
+    }
+  });
+
+  let cementStartFound = false;
 
   stages.forEach(s => {
-    const stageTime = flowRate > 0 ? s.volume / flowRate : 0;
+    if (s.isCement && !cementStartFound) {
+      cementStartTime = cumTime;
+      cementStartFound = true;
+    }
+
+    const flowRateM3min = s.rateLps * 0.06; // л/с -> м³/мин
+    const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
     cumTime += stageTime;
     cumVol += s.volume;
 
-    const frPipe = frictionLoss(flowRate, wellData.casingDepthMD, dHydPipe, s.pv, s.yp);
-    const frAnn = frictionLoss(flowRate, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp);
+    const frPipe = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp);
+    const frAnn = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp);
     const bhp = hydroMud + frPipe + frAnn;
     const surfP = frPipe + frAnn;
 
-    points.push({ stage: s.name, time: cumTime, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: cumVol });
+    points.push({ stage: s.name, time: cumTime, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: s.rateLps });
   });
 
-  return points;
+  // СТОП — давление +2.75 МПа (~27.5 атм) от последнего рабочего
+  const stopTime = cumTime;
+  const lastPoint = points[points.length - 1];
+  const stopIncrease = 2.75;
+
+  points.push({
+    stage: "СТОП (пробка в ЦКОД)",
+    time: cumTime + 0.5,
+    surfacePressure: lastPoint.surfacePressure + stopIncrease,
+    bottomholePressure: lastPoint.bottomholePressure + stopIncrease,
+    fracturePressure: fracP,
+    cumulativeVolume: cumVol,
+    pumpRateLps: 0,
+  });
+
+  // Безопасное время = 75% от (начало закачки цемента -> СТОП)
+  const cementToStop = stopTime - cementStartTime;
+  const safeWorkingTimeMin = cementToStop * 0.75;
+
+  return { points, safeWorkingTimeMin, cementStartTime, stopTime };
 }
 
 function frictionLoss(flowRateM3min: number, lengthM: number, dHydMm: number, pv: number, yp: number): number {

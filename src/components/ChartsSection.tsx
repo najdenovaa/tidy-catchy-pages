@@ -1,12 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
 import type { PressurePoint } from "@/lib/cementing-calculations";
 
 interface Props {
   pressureData: PressurePoint[];
+  safeTime: number;
+  cementStartTime: number;
+  stopTime: number;
 }
 
-export default function ChartsSection({ pressureData }: Props) {
+export default function ChartsSection({ pressureData, safeTime, cementStartTime, stopTime }: Props) {
   if (pressureData.length === 0) {
     return (
       <Card>
@@ -24,11 +27,73 @@ export default function ChartsSection({ pressureData }: Props) {
     fontSize: "12px",
   };
 
+  const safeTimeEnd = cementStartTime + safeTime;
+
   return (
     <div className="space-y-6">
+      {/* Безопасное время */}
+      <Card>
+        <CardContent className="py-4">
+          <div className="flex flex-wrap gap-6 text-sm">
+            <div>
+              <span className="text-muted-foreground">Начало закачки цемента:</span>{" "}
+              <span className="font-semibold">{cementStartTime.toFixed(1)} мин</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Время СТОП:</span>{" "}
+              <span className="font-semibold">{stopTime.toFixed(1)} мин</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Время работы с цементом:</span>{" "}
+              <span className="font-semibold">{(stopTime - cementStartTime).toFixed(1)} мин</span>
+            </div>
+            <div className={safeTime > 0 ? "text-green-700 font-semibold" : ""}>
+              <span className="text-muted-foreground">Безопасное время (75%):</span>{" "}
+              <span className="font-bold">{safeTime.toFixed(1)} мин</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Совмещённый график */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg">11. Давление на забое vs Давление ГРП</CardTitle>
+          <CardTitle className="text-lg">Совмещённый график цементирования</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[450px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={pressureData} margin={{ top: 5, right: 60, left: 20, bottom: 25 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis dataKey="time" label={{ value: "Время, мин", position: "insideBottomRight", offset: -5 }} className="text-xs" />
+                <YAxis yAxisId="pressure" label={{ value: "МПа", angle: -90, position: "insideLeft" }} className="text-xs" />
+                <YAxis yAxisId="rate" orientation="right" label={{ value: "л/с", angle: 90, position: "insideRight" }} className="text-xs" />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`}
+                  formatter={(value: number, name: string) => {
+                    if (name === "Производительность") return [value.toFixed(1) + " л/с", name];
+                    return [value.toFixed(2) + " МПа", name];
+                  }}
+                />
+                <Legend />
+                {safeTimeEnd > 0 && (
+                  <ReferenceLine yAxisId="pressure" x={safeTimeEnd} stroke="hsl(45, 90%, 45%)" strokeDasharray="4 4" strokeWidth={2} label={{ value: "75% безоп.", position: "top", fontSize: 10, fill: "hsl(45, 90%, 45%)" }} />
+                )}
+                <Line yAxisId="pressure" type="monotone" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                <Line yAxisId="pressure" type="monotone" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
+                <Line yAxisId="pressure" type="monotone" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
+                <Line yAxisId="rate" type="stepAfter" dataKey="pumpRateLps" name="Производительность" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Давление на забое vs ГРП */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">Давление на забое vs Давление ГРП</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-[400px]">
@@ -47,26 +112,7 @@ export default function ChartsSection({ pressureData }: Props) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">Давление на устье</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={pressureData} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="time" label={{ value: "Время, мин", position: "insideBottomRight", offset: -5 }} className="text-xs" />
-                <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft" }} className="text-xs" />
-                <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => [value.toFixed(2) + " МПа", name]} />
-                <Legend />
-                <Line type="monotone" dataKey="surfacePressure" name="Устьевое давление" stroke="hsl(220, 70%, 50%)" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
-
+      {/* Объём vs давление */}
       <Card>
         <CardHeader className="pb-4">
           <CardTitle className="text-lg">Сводный график: объём vs давление</CardTitle>
