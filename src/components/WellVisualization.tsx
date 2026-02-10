@@ -2,6 +2,7 @@ import { useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text, Line, Grid } from "@react-three/drei";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import CopyImageButton from "./CopyImageButton";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import { getSlurryHeight, interpolateTVD, getCasingID, pipeVolumePerMeter, annularVolumePerMeter } from "@/lib/cementing-calculations";
 import * as THREE from "three";
@@ -57,37 +58,23 @@ function buildSpline(rawPts: ReturnType<typeof trajectoryTo3DRaw>): THREE.Catmul
 // ====== Densify trajectory using spline for smooth curves ======
 function trajectoryTo3D(traj: WellData["trajectory"], casingDepthMD: number): { x: number; y: number; z: number; md: number; tvd: number }[] {
   const raw = trajectoryTo3DRaw(traj, casingDepthMD);
-  if (raw.length < 3) return raw; // straight well, no need to smooth
+  if (raw.length < 3) return raw;
 
   const spline = buildSpline(raw);
-  const totalArcLen = spline.getLength();
-  // Build MD lookup: map each raw point's arc-length fraction to its MD
-  const rawFracs: number[] = [];
   const rawMDs: number[] = raw.map(p => p.md);
   const rawTVDs: number[] = raw.map(p => p.tvd);
-  for (let i = 0; i < raw.length; i++) {
-    const pt = new THREE.Vector3(raw[i].x, raw[i].y, raw[i].z);
-    // find closest u on spline
-    rawFracs.push(i / (raw.length - 1));
-  }
 
-  // Generate dense points (~every 5m or 100 segments, whichever is more)
   const numSegments = Math.max(100, Math.ceil(casingDepthMD / 5));
   const dense: { x: number; y: number; z: number; md: number; tvd: number }[] = [];
 
   for (let i = 0; i <= numSegments; i++) {
     const u = i / numSegments;
     const pt = spline.getPointAt(u);
-
-    // Interpolate MD and TVD based on u fraction mapped to raw stations
-    let md: number, tvd: number;
-    // Find which raw segment this u falls in
     const rawU = u * (raw.length - 1);
     const segIdx = Math.min(Math.floor(rawU), raw.length - 2);
     const segFrac = rawU - segIdx;
-    md = rawMDs[segIdx] + segFrac * (rawMDs[segIdx + 1] - rawMDs[segIdx]);
-    tvd = rawTVDs[segIdx] + segFrac * (rawTVDs[segIdx + 1] - rawTVDs[segIdx]);
-
+    const md = rawMDs[segIdx] + segFrac * (rawMDs[segIdx + 1] - rawMDs[segIdx]);
+    const tvd = rawTVDs[segIdx] + segFrac * (rawTVDs[segIdx + 1] - rawTVDs[segIdx]);
     dense.push({ x: pt.x, y: pt.y, z: pt.z, md, tvd });
   }
   return dense;
@@ -99,7 +86,6 @@ function interpAt(pts: ReturnType<typeof trajectoryTo3D>, md: number): { x: numb
   if (md <= pts[0].md) return pts[0];
   if (md >= pts[pts.length - 1].md) return pts[pts.length - 1];
 
-  // Binary search for efficiency on dense arrays
   let lo = 0, hi = pts.length - 1;
   while (lo < hi - 1) {
     const mid = (lo + hi) >> 1;
@@ -153,8 +139,6 @@ function DepthMarker({ position, label, offset }: { position: [number, number, n
 function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementFluids }: Props) {
   const scale = 1 / Math.max(wellData.casingDepthMD, 100); // normalize to ~1 unit
   const pts3d = useMemo(() => trajectoryTo3D(wellData.trajectory, wellData.casingDepthMD), [wellData.trajectory, wellData.casingDepthMD]);
-
-  // Scale all points
   const scaledPts = useMemo(() => pts3d.map(p => ({ ...p, x: p.x * scale, y: p.y * scale, z: p.z * scale })), [pts3d, scale]);
 
   // Generate path points for a given MD range — adaptive density for smoothness
@@ -229,13 +213,8 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
     for (let md = 0; md <= wellData.casingDepthMD; md += depthInterval) {
       const p = interpAt(pts3d, md);
       const tvd = interpolateTVD(md, wellData.trajectory);
-      markers.push({
-        md, tvd,
-        pos: [p.x * scale, p.y * scale, p.z * scale],
-        label: `${md}/${tvd.toFixed(0)}`,
-      });
+      markers.push({ md, tvd, pos: [p.x * scale, p.y * scale, p.z * scale], label: `${md}/${tvd.toFixed(0)}` });
     }
-    // Add bottom
     const lastMD = wellData.casingDepthMD;
     if (lastMD % depthInterval !== 0) {
       const p = interpAt(pts3d, lastMD);
@@ -430,84 +409,43 @@ function CrossSection({ wellData, slurries, buffers, drillingFluid }: Omit<Props
   const casIR = maxR * (casingID / wellData.holeDiameter);
   const prevCasOR = Math.min(maxR * (wellData.prevCasingOD / wellData.holeDiameter), maxR * 1.15);
   const prevCasIR = maxR * (wellData.prevCasingID / wellData.holeDiameter);
-
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
-
-  // Cement fill fraction in annulus
   const totalCementMD = slurries.reduce((s, sl, i) => s + getSlurryHeight(slurries, i, wellData.casingDepthMD), 0);
   const cementFillFrac = Math.min(1, totalCementMD / wellData.casingDepthMD);
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full max-w-sm mx-auto">
       <defs>
-        <radialGradient id="rockRadial">
-          <stop offset="70%" stopColor="#7A6550" />
-          <stop offset="100%" stopColor="#5C4A3A" />
-        </radialGradient>
-        <radialGradient id="cementRadial">
-          <stop offset="0%" stopColor="#D4955A" />
-          <stop offset="100%" stopColor="#8B4513" />
-        </radialGradient>
-        <radialGradient id="mudRadial">
-          <stop offset="0%" stopColor="#3D9963" />
-          <stop offset="100%" stopColor="#1D5C33" />
-        </radialGradient>
-        <radialGradient id="dispRadial">
-          <stop offset="0%" stopColor="#6CB0F0" />
-          <stop offset="100%" stopColor="#2B6CB0" />
-        </radialGradient>
-        <radialGradient id="casingRadial">
-          <stop offset="0%" stopColor="#C8C8C8" />
-          <stop offset="50%" stopColor="#A0A0A0" />
-          <stop offset="100%" stopColor="#707070" />
-        </radialGradient>
+        <radialGradient id="rockRadial"><stop offset="70%" stopColor="#7A6550" /><stop offset="100%" stopColor="#5C4A3A" /></radialGradient>
+        <radialGradient id="cementRadial"><stop offset="0%" stopColor="#D4955A" /><stop offset="100%" stopColor="#8B4513" /></radialGradient>
+        <radialGradient id="mudRadial"><stop offset="0%" stopColor="#3D9963" /><stop offset="100%" stopColor="#1D5C33" /></radialGradient>
+        <radialGradient id="dispRadial"><stop offset="0%" stopColor="#6CB0F0" /><stop offset="100%" stopColor="#2B6CB0" /></radialGradient>
+        <radialGradient id="casingRadial"><stop offset="0%" stopColor="#C8C8C8" /><stop offset="50%" stopColor="#A0A0A0" /><stop offset="100%" stopColor="#707070" /></radialGradient>
       </defs>
-
-      {/* Rock formation */}
       <circle cx={cx} cy={cy} r={holeR + 15} fill="url(#rockRadial)" />
-      {/* Rock texture dots */}
       {Array.from({ length: 30 }).map((_, i) => {
         const angle = (i / 30) * Math.PI * 2 + 0.3;
         const r = holeR + 5 + Math.random() * 8;
         return <circle key={`rock-${i}`} cx={cx + Math.cos(angle) * r} cy={cy + Math.sin(angle) * r} r={1.5} fill="#5C4A3A" opacity={0.4} />;
       })}
-
-      {/* Hole wall */}
       <circle cx={cx} cy={cy} r={holeR} fill="none" stroke="#5C4A3A" strokeWidth="2" />
-
-      {/* Cement in annulus */}
       <circle cx={cx} cy={cy} r={holeR - 1} fill="url(#cementRadial)" />
-
-      {/* Previous casing (where it overlaps) */}
       <circle cx={cx} cy={cy} r={prevCasOR} fill="none" stroke={PREV_CASING_STEEL} strokeWidth="2" strokeDasharray="6 3" opacity={0.5} />
-
-      {/* Casing outer wall */}
       <circle cx={cx} cy={cy} r={casOR} fill="url(#casingRadial)" />
       <circle cx={cx} cy={cy} r={casOR} fill="none" stroke="#666" strokeWidth="1.5" />
-
-      {/* Casing inner wall */}
       <circle cx={cx} cy={cy} r={casIR} fill="url(#dispRadial)" />
       <circle cx={cx} cy={cy} r={casIR} fill="none" stroke="#888" strokeWidth="1" />
-
-      {/* Dimension lines */}
-      {/* Hole diameter */}
-      <line x1={cx - holeR} y1={cy - holeR - 20} x2={cx + holeR} y2={cy - holeR - 20} stroke="#999" strokeWidth="0.8" markerStart="url(#arrowL)" markerEnd="url(#arrowR)" />
+      <line x1={cx - holeR} y1={cy - holeR - 20} x2={cx + holeR} y2={cy - holeR - 20} stroke="#999" strokeWidth="0.8" />
       <line x1={cx - holeR} y1={cy - holeR - 25} x2={cx - holeR} y2={cy - holeR - 15} stroke="#999" strokeWidth="0.5" />
       <line x1={cx + holeR} y1={cy - holeR - 25} x2={cx + holeR} y2={cy - holeR - 15} stroke="#999" strokeWidth="0.5" />
       <text x={cx} y={cy - holeR - 24} fontSize="11" fill="#999" textAnchor="middle" fontFamily="sans-serif">∅{wellData.holeDiameter} мм</text>
-
-      {/* Casing OD */}
       <line x1={cx - casOR} y1={cy + holeR + 20} x2={cx + casOR} y2={cy + holeR + 20} stroke="#aaa" strokeWidth="0.8" />
       <line x1={cx - casOR} y1={cy + holeR + 15} x2={cx - casOR} y2={cy + holeR + 25} stroke="#aaa" strokeWidth="0.5" />
       <line x1={cx + casOR} y1={cy + holeR + 15} x2={cx + casOR} y2={cy + holeR + 25} stroke="#aaa" strokeWidth="0.5" />
       <text x={cx} y={cy + holeR + 34} fontSize="11" fill="#aaa" textAnchor="middle" fontFamily="sans-serif">∅{wellData.casingOD}×{wellData.casingWall} мм</text>
-
-      {/* Labels */}
       <text x={cx} y={cy + 5} fontSize="10" fill="#fff" textAnchor="middle" fontFamily="sans-serif" fontWeight="600" opacity={0.8}>Продавка</text>
       <text x={cx + casOR + (holeR - casOR) / 2} y={cy + 4} fontSize="9" fill="#fff" textAnchor="middle" fontFamily="sans-serif" fontWeight="500" transform={`rotate(90, ${cx + casOR + (holeR - casOR) / 2}, ${cy})`}>Цемент</text>
       <text x={cx - casOR - (holeR - casOR) / 2} y={cy + 4} fontSize="9" fill="#fff" textAnchor="middle" fontFamily="sans-serif" fontWeight="500" transform={`rotate(-90, ${cx - casOR - (holeR - casOR) / 2}, ${cy})`}>Цемент</text>
-
-      {/* Casing wall label */}
       <text x={cx} y={cy + casOR + 12} fontSize="8" fill="#ccc" textAnchor="middle" fontFamily="sans-serif">Обсадная колонна</text>
     </svg>
   );
@@ -516,36 +454,47 @@ function CrossSection({ wellData, slurries, buffers, drillingFluid }: Omit<Props
 // ====== Main Component ======
 export default function WellVisualization(props: Props) {
   const { wellData, slurries, buffers, drillingFluid, displacementFluids } = props;
+  const vis3dRef = useRef<HTMLDivElement>(null);
+  const crossRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="space-y-6">
-      {/* 3D trajectory */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg">3D профиль ствола скважины</CardTitle>
-          <p className="text-xs text-muted-foreground">Глубины: ствол / вертикаль (м). Вращайте мышью для обзора.</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg">3D профиль ствола скважины</CardTitle>
+              <p className="text-xs text-muted-foreground">Глубины: ствол / вертикаль (м). Вращайте мышью для обзора.</p>
+            </div>
+            <CopyImageButton targetRef={vis3dRef} />
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="rounded-lg border border-border overflow-hidden" style={{ height: "550px" }}>
-            <Canvas camera={{ position: [1.5, -0.3, 1.5], fov: 45, near: 0.001, far: 100 }}>
+          <div ref={vis3dRef} className="rounded-lg border border-border overflow-hidden" style={{ height: "550px" }}>
+            <Canvas camera={{ position: [1.5, -0.3, 1.5], fov: 45, near: 0.001, far: 100 }} gl={{ preserveDrawingBuffer: true }}>
               <WellScene3D {...props} />
             </Canvas>
           </div>
         </CardContent>
       </Card>
 
-      {/* Cross-section */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg">Поперечный разрез (после СТОП)</CardTitle>
-          <p className="text-xs text-muted-foreground">Размещение жидкостей в сечении скважины</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg">Поперечный разрез (после СТОП)</CardTitle>
+              <p className="text-xs text-muted-foreground">Размещение жидкостей в сечении скважины</p>
+            </div>
+            <CopyImageButton targetRef={crossRef} />
+          </div>
         </CardHeader>
         <CardContent>
-          <CrossSection wellData={wellData} slurries={slurries} buffers={buffers} drillingFluid={drillingFluid} />
+          <div ref={crossRef}>
+            <CrossSection wellData={wellData} slurries={slurries} buffers={buffers} drillingFluid={drillingFluid} />
+          </div>
         </CardContent>
       </Card>
 
-      {/* Legend */}
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground px-2">
         <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded-sm" style={{ background: CASING_STEEL }} /> Обсадная колонна</span>
         {slurries.map((s, i) => (

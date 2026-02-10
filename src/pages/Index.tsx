@@ -8,6 +8,7 @@ import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid, PressureProfileResult, TrajectoryPoint } from "@/lib/cementing-calculations";
+import { captureElementAsDataUrl } from "@/lib/capture-image";
 import { FileDown, Loader2 } from "lucide-react";
 const defaultWellData: WellData = {
   wellDepthMD: 410,
@@ -151,7 +152,56 @@ export default function Index() {
     try {
       const { exportToDocx } = await import("@/lib/export-docx");
       const snap = calcSnapshot ?? { wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient };
-      await exportToDocx(snap.wellData, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient);
+
+      // Capture chart images from the DOM
+      const chartImages: Record<string, string> = {};
+      const chartSelectors = [
+        { key: "combined", index: 1 },
+        { key: "bhpVsFrac", index: 2 },
+        { key: "volVsPressure", index: 3 },
+        { key: "pumpPlan", index: 4 },
+        { key: "flowRegime", index: 5 },
+      ];
+      const chartsTab = document.querySelector('[data-tab-content="charts"]');
+      if (chartsTab) {
+        const cards = chartsTab.querySelectorAll('.recharts-responsive-container');
+        for (const { key, index } of chartSelectors) {
+          const container = cards[index - 1]?.parentElement;
+          if (container instanceof HTMLElement) {
+            try {
+              chartImages[key] = await captureElementAsDataUrl(container);
+            } catch {}
+          }
+        }
+      }
+
+      // Capture visual images
+      const visualImages: Record<string, string> = {};
+      const visualTab = document.querySelector('[data-tab-content="visual"]');
+      if (visualTab) {
+        // 3D canvas
+        const canvas3d = visualTab.querySelector('canvas');
+        if (canvas3d) {
+          try {
+            visualImages.well3d = canvas3d.toDataURL('image/png');
+          } catch {}
+        }
+        // Cross-section SVG
+        const svgEl = visualTab.querySelector('svg');
+        if (svgEl) {
+          try {
+            const parent = svgEl.parentElement;
+            if (parent instanceof HTMLElement) {
+              visualImages.crossSection = await captureElementAsDataUrl(parent);
+            }
+          } catch {}
+        }
+      }
+
+      const images = (Object.keys(chartImages).length > 0 || Object.keys(visualImages).length > 0)
+        ? { chartImages, visualImages } : undefined;
+
+      await exportToDocx(snap.wellData, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient, images);
     } catch (e) {
       console.error("DOCX export error:", e);
     } finally {
