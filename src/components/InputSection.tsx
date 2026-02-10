@@ -252,7 +252,8 @@ export default function InputSection(props: Props) {
         {openSections.trajectory && (
           <CardContent className="pt-4 space-y-3">
             <p className="text-xs text-muted-foreground italic">Задайте точки инклинометрии. TVD используется для расчёта давлений.</p>
-            <div className="overflow-x-auto">
+            {/* Desktop table */}
+            <div className="overflow-x-auto hidden sm:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-xs text-muted-foreground">
@@ -300,6 +301,56 @@ export default function InputSection(props: Props) {
                   ))}
                 </tbody>
               </table>
+            </div>
+            {/* Mobile cards */}
+            <div className="sm:hidden space-y-3">
+              {(wellData.trajectory || []).map((pt, i) => (
+                <div key={i} className="border border-border rounded-lg p-3 space-y-2 bg-muted/30">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">Точка {i + 1}</span>
+                    {(wellData.trajectory || []).length > 2 && (
+                      <button onClick={() => {
+                        const traj = (wellData.trajectory || []).filter((_, j) => j !== i);
+                        updateTrajectory(traj);
+                      }} className="text-xs text-destructive">✕ Удалить</button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">MD, м</Label>
+                      <Input type="number" step="any" value={pt.md || ""} onChange={(e) => {
+                        const traj = [...(wellData.trajectory || [])];
+                        traj[i] = { ...traj[i], md: parseFloat(e.target.value) || 0 };
+                        updateTrajectory(traj);
+                      }} className="h-9 text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Азимут, °</Label>
+                      <Input type="number" step="any" value={pt.azimuth || ""} onChange={(e) => {
+                        const traj = [...(wellData.trajectory || [])];
+                        traj[i] = { ...traj[i], azimuth: parseFloat(e.target.value) || 0 };
+                        updateTrajectory(traj);
+                      }} className="h-9 text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Зенит, °</Label>
+                      <Input type="number" step="any" value={pt.zenith || ""} onChange={(e) => {
+                        const traj = [...(wellData.trajectory || [])];
+                        traj[i] = { ...traj[i], zenith: parseFloat(e.target.value) || 0 };
+                        updateTrajectory(traj);
+                      }} className="h-9 text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">TVD, м</Label>
+                      <Input type="number" step="any" value={pt.tvd || ""} onChange={(e) => {
+                        const traj = [...(wellData.trajectory || [])];
+                        traj[i] = { ...traj[i], tvd: parseFloat(e.target.value) || 0 };
+                        updateTrajectory(traj);
+                      }} className="h-9 text-sm" />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
             <button
               onClick={() => {
