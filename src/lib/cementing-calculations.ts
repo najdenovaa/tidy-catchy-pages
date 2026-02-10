@@ -687,59 +687,106 @@ export function calculatePressureProfile(
     if (s.isFlushPause && s.durationMin) {
       const pauseMin = s.durationMin;
 
-      // Найти плотность цемента в трубе (средневзвешенная цементных batch'ей)
-      let cementDensity = 0;
-      let cementVolInPipe = 0;
-      let volAccum = 0;
-      for (let i = pumpHistory.length - 1; i >= 0; i--) {
+      // === Анализ содержимого трубы: ищем инверсии плотности (тяжёлое над лёгким) ===
+      // Собираем текущий профиль трубы (сверху вниз)
+      interface PipeSlice { densityGcm3: number; volumeM3: number; }
+      const pipeProfile: PipeSlice[] = [];
+      let pipeRemaining = pipeCapacity;
+
+      for (let i = pumpHistory.length - 1; i >= 0 && pipeRemaining > 0; i--) {
         const b = pumpHistory[i];
-        const inPipe = Math.min(b.volumeM3, pipeCapacity - volAccum);
-        if (inPipe > 0 && b.densityGcm3 > 1.3) { // цементная плотность > 1.3 г/см³
-          cementDensity = b.densityGcm3;
-          cementVolInPipe += inPipe;
-        }
-        volAccum += Math.min(b.volumeM3, Math.max(0, pipeCapacity - volAccum));
-        if (volAccum >= pipeCapacity) break;
+        const take = Math.min(b.volumeM3, pipeRemaining);
+        if (take > 0) pipeProfile.push({ densityGcm3: b.densityGcm3, volumeM3: take });
+        pipeRemaining -= take;
+      }
+      // Если осталось — внизу исходный буровой раствор
+      if (pipeRemaining > 0) {
+        pipeProfile.push({ densityGcm3: mudDensityGcm3, volumeM3: pipeRemaining });
       }
 
-      // Рассчитать объём свободного падения цемента (итеративно до равновесия U-трубки)
+      // Найти плотность тяжёлого флюида вверху трубы и лёгкого внизу
+      // Тяжёлый цемент сверху падает, вытесняя лёгкий снизу в затрубье
+      let heavyDensity = 0;
+      let heavyVolume = 0;
+      let lightDensityBelow = mudDensityGcm3;
+
+      // Ищем первый тяжёлый слой сверху трубы
+      for (const slice of pipeProfile) {
+        if (slice.densityGcm3 > mudDensityGcm3 + 0.05) {
+          heavyDensity = Math.max(heavyDensity, slice.densityGcm3);
+          heavyVolume += slice.volumeM3;
+        } else {
+          // Нашли лёгкий слой ниже тяжёлого
+          if (heavyVolume > 0) {
+            lightDensityBelow = slice.densityGcm3;
+            break;
+          }
+        }
+      }
+
+      // === Расчёт объёма свободного падения (итеративно до равновесия U-трубки) ===
       let freefallVol = 0;
-      if (cementVolInPipe > 0 && cementDensity > mudDensityGcm3) {
+      if (heavyVolume > 0 && heavyDensity > lightDensityBelow + 0.05) {
         const savedTotal = totalPumped;
-        const testBatch: FluidBatch = { densityGcm3: cementDensity, volumeM3: 0 };
+        const testBatch: FluidBatch = { densityGcm3: heavyDensity, volumeM3: 0 };
         pumpHistory.push(testBatch);
-        const maxFreefall = Math.min(cementVolInPipe, pipeCapacity * 0.3);
-        const step = maxFreefall / 50;
+        const maxFreefall = Math.min(heavyVolume, pipeCapacity * 0.4);
+        const step = Math.max(maxFreefall / 100, 0.01);
 
         for (let v = step; v <= maxFreefall; v += step) {
           testBatch.volumeM3 = v;
           totalPumped = savedTotal + v;
           const pH = calcPipeHydrostatic();
           const aH = calcAnnularHydrostatic();
-          if (pH <= aH + 0.05) { freefallVol = v; break; }
+          if (pH <= aH + 0.02) { freefallVol = v; break; }
           freefallVol = v;
         }
 
-        // Сбросить — будем применять постепенно
         testBatch.volumeM3 = 0;
         totalPumped = savedTotal;
-        // testBatch уже в pumpHistory (последний элемент)
       } else {
-        // Нет цемента в трубе — просто пауза
         pumpHistory.push({ densityGcm3: mudDensityGcm3, volumeM3: 0 });
+      }
+
+      // === Расчёт времени свободного падения ===
+      // Движущая сила = (ρ_heavy - ρ_light) * g * h_heavy_TVD
+      // Терминальная скорость (ламинарная): v = ΔP * D² / (32 * μ * L)
+      // Время установления = V_ff / (v * A_pipe), с экспоненциальным затуханием
+      let settlingTau = 0.5; // мин (по умолчанию — быстро)
+      if (freefallVol > 0 && heavyVolume > 0) {
+        const heavyHeightMD = heavyVolume / pipeVPM;
+        const heavyTVD = tvdInterval(0, Math.min(heavyHeightMD, wellData.casingDepthMD), traj);
+        const drivingPressurePa = (heavyDensity - lightDensityBelow) * 1000 * 9.81 * heavyTVD;
+        const pipeIDm = casingID / 1000;
+        // Средняя вязкость (между цементом и вытесняемым)
+        const avgPV = slurries.length > 0
+          ? slurries.reduce((s, sl) => s + sl.rheology.pv, 0) / slurries.length
+          : 30;
+        const muPas = avgPV / 1000;
+        const lengthM = wellData.casingDepthMD;
+
+        if (drivingPressurePa > 0 && muPas > 0) {
+          const vTerminal = (drivingPressurePa * pipeIDm * pipeIDm) / (32 * muPas * lengthM);
+          const flowRateM3s = vTerminal * pipeAreaM2;
+          if (flowRateM3s > 0) {
+            settlingTau = Math.max(0.1, (freefallVol / flowRateM3s) / 60); // мин
+          }
+        }
       }
 
       const ffBatchIdx = pumpHistory.length - 1;
       const savedCumVol = cumVol;
 
-      // Генерируем точки за каждую минуту паузы
+      // === Генерируем точки: экспоненциальное оседание ===
       for (let m = 1; m <= pauseMin; m++) {
         const tNow = cumTime + m;
-        const frac = m / pauseMin;
 
-        // Цемент постепенно оседает
-        pumpHistory[ffBatchIdx].volumeM3 = freefallVol * frac;
-        totalPumped = savedCumVol + freefallVol * frac;
+        // Экспоненциальное приближение к равновесию: V(t) = V_ff * (1 - e^(-t/τ))
+        const settledFrac = 1 - Math.exp(-m / Math.max(settlingTau, 0.01));
+        const settledVol = freefallVol * settledFrac;
+
+        pumpHistory[ffBatchIdx].volumeM3 = settledVol;
+        totalPumped = savedCumVol + settledVol;
 
         const pipeHydro = calcPipeHydrostatic();
         const annHydro = calcAnnularHydrostatic();
@@ -759,9 +806,8 @@ export function calculatePressureProfile(
       // Финализируем
       pumpHistory[ffBatchIdx].volumeM3 = freefallVol;
       totalPumped = savedCumVol + freefallVol;
-      // cumVol НЕ увеличиваем (мы не качали — цемент упал сам)
       cumTime += pauseMin;
-      return; // переходим к следующему этапу
+      return;
     }
 
     // === Обычный этап (с насосом) ===
