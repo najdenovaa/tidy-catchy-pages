@@ -214,35 +214,37 @@ export default function Index() {
               />
               <p className="text-2xl font-normal tracking-tight text-foreground uppercase -mt-2">Инженерные расчёты</p>
             </div>
-            <div className="mt-0.5 ml-14">
-              <h1 className="text-sm font-medium text-muted-foreground leading-tight">Программа цементирования</h1>
+            <div className="mt-0.5 ml-10">
+              <h1 className="text-lg font-medium text-muted-foreground leading-tight">Программа цементирования</h1>
               <p className="text-xs text-muted-foreground/70">Расчёт обсадных колонн</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <a
-              href="https://t.me/deallbiz_support"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex flex-col items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Send className="w-5 h-5" />
-              <span className="text-[10px]">Поддержка</span>
-            </a>
+          <div className="flex items-start gap-4">
             <button
               onClick={handleExportDocx}
               disabled={exporting}
-              className="px-4 py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-2 disabled:opacity-50 self-center"
             >
               {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
               {exporting ? "Экспорт..." : "DOCX"}
             </button>
-            <button
-              onClick={handleCalculate}
-              className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors shadow-md"
-            >
-              РАССЧИТАТЬ
-            </button>
+            <div className="flex flex-col items-start gap-1">
+              <a
+                href="https://t.me/deallbiz_support"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs"
+              >
+                <Send className="w-4 h-4" />
+                <span>Поддержка</span>
+              </a>
+              <button
+                onClick={handleCalculate}
+                className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors shadow-md"
+              >
+                РАССЧИТАТЬ
+              </button>
+            </div>
           </div>
         </div>
       </header>
