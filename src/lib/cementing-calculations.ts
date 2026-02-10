@@ -417,11 +417,17 @@ export interface PressurePoint {
   annularReturnRate: number; // л/с — скорость выхода на устье
 }
 
+export interface StageBoundary {
+  time: number;
+  label: string;
+}
+
 export interface PressureProfileResult {
   points: PressurePoint[];
   safeWorkingTimeMin: number;
   cementStartTime: number;
   stopTime: number;
+  stageBoundaries: StageBoundary[];
 }
 
 export function calculatePressureProfile(
@@ -510,9 +516,11 @@ export function calculatePressureProfile(
   });
 
   let cementStartFound = false;
-
-  // Средняя плотность закачиваемого (для эффекта U-tube / гравитационного вытеснения)
   const mudDensityGcm3 = drillingFluid.density / 1000;
+
+  // Отслеживаем границы этапов (группируем продавку)
+  const stageBoundaries: StageBoundary[] = [];
+  let prevGroupLabel = "";
 
   stages.forEach(s => {
     if (s.isCement && !cementStartFound) {
@@ -520,7 +528,14 @@ export function calculatePressureProfile(
       cementStartFound = true;
     }
 
-    const flowRateM3min = s.rateLps * 0.06; // л/с -> м³/мин
+    // Определяем групповую метку: все продавочные = "Продавка", остальные — по имени
+    const groupLabel = (!s.isCement && cumTime >= cementStartTime && cementStartFound) ? "Продавка" : s.name;
+    if (groupLabel !== prevGroupLabel) {
+      stageBoundaries.push({ time: cumTime, label: groupLabel });
+      prevGroupLabel = groupLabel;
+    }
+
+    const flowRateM3min = s.rateLps * 0.06;
     const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
 
     const frPipe = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp);
@@ -532,7 +547,6 @@ export function calculatePressureProfile(
     const compressionEffect = s.compressionCoeff > 1.0 ? 1 / s.compressionCoeff : 1.0;
     const annularReturn = s.rateLps * densityRatio * compressionEffect;
 
-    // Генерируем точки каждую минуту внутри стадии
     const minuteSteps = Math.max(1, Math.ceil(stageTime));
     for (let m = 1; m <= minuteSteps; m++) {
       const frac = Math.min(m / stageTime, 1);
@@ -561,11 +575,10 @@ export function calculatePressureProfile(
     annularReturnRate: 0,
   });
 
-  // Безопасное время = 75% от (начало закачки цемента -> СТОП)
   const cementToStop = stopTime - cementStartTime;
   const safeWorkingTimeMin = cementToStop * 0.75;
 
-  return { points, safeWorkingTimeMin, cementStartTime, stopTime };
+  return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries };
 }
 
 function frictionLoss(flowRateM3min: number, lengthM: number, dHydMm: number, pv: number, yp: number): number {
