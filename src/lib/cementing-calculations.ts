@@ -538,8 +538,8 @@ export function calculatePressureProfile(
     const flowRateM3min = s.rateLps * 0.06;
     const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
 
-    const frPipe = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp);
-    const frAnn = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp);
+    const frPipe = frictionLoss(flowRateM3min, wellData.wellDepthTVD, dHydPipe, s.pv, s.yp);
+    const frAnn = frictionLoss(flowRateM3min, wellData.wellDepthTVD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp);
     const bhp = hydroMud + frPipe + frAnn;
     const surfP = frPipe + frAnn;
 
