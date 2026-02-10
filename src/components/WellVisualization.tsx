@@ -245,15 +245,6 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
     return markers;
   }, [pts3d, scale, wellData, depthInterval]);
 
-  // Depth grid planes (horizontal rings at depth intervals)
-  const gridDepths = useMemo(() => {
-    const depths: number[] = [];
-    for (let md = 0; md <= wellData.casingDepthMD; md += depthInterval) {
-      depths.push(md);
-    }
-    return depths;
-  }, [wellData.casingDepthMD, depthInterval]);
-
   // Previous casing label position
   const prevCasingLabelPos = useMemo(() => {
     if (wellData.prevCasingDepth <= 0) return null;
@@ -269,8 +260,15 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
     return [p.x * scale, p.y * scale, p.z * scale] as [number, number, number];
   }, [pts3d, scale, wellData.prevCasingDepth]);
 
-  // Grid extent for horizontal reference planes
-  const gridSize = 0.6;
+  // 3-plane grid sizing
+  const gridSize = 1.2;
+  const gridDiv = 12;
+  const gridColor1 = "#3a3a3a";
+  const gridColor2 = "#2a2a2a";
+  const bottomY = (() => {
+    const p = interpAt(pts3d, wellData.casingDepthMD);
+    return p.y * scale;
+  })();
 
   return (
     <>
@@ -278,26 +276,30 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
       <directionalLight position={[3, 2, 5]} intensity={0.8} />
       <directionalLight position={[-2, -1, -3]} intensity={0.3} />
 
-      {/* Horizontal depth grid planes */}
-      {gridDepths.map((md) => {
-        const p = interpAt(pts3d, md);
-        const yPos = p.y * scale;
-        return (
-          <group key={`grid-${md}`} position={[0, yPos, 0]}>
-            <gridHelper args={[gridSize, 10, "#444444", "#333333"]} />
-          </group>
-        );
-      })}
+      {/* ===== 3-plane reference grid ===== */}
+      {/* XZ plane (horizontal, at surface y=0) */}
+      <group position={[0, 0, 0]}>
+        <gridHelper args={[gridSize, gridDiv, gridColor1, gridColor2]} />
+      </group>
+      {/* XZ plane (horizontal, at bottom) */}
+      <group position={[0, bottomY, 0]}>
+        <gridHelper args={[gridSize, gridDiv, gridColor1, gridColor2]} />
+      </group>
 
-      {/* Vertical axis line */}
-      <Line
-        points={[new THREE.Vector3(0, 0.05, 0), new THREE.Vector3(0, -1.05, 0)]}
-        color="#555555"
-        lineWidth={0.5}
-        dashed
-        dashSize={0.02}
-        gapSize={0.01}
-      />
+      {/* XY plane (vertical, back wall at z = -gridSize/2) */}
+      <group position={[0, bottomY / 2, -gridSize / 2]} rotation={[Math.PI / 2, 0, 0]}>
+        <gridHelper args={[gridSize, gridDiv, gridColor1, gridColor2]} />
+      </group>
+
+      {/* YZ plane (vertical, left wall at x = -gridSize/2) */}
+      <group position={[-gridSize / 2, bottomY / 2, 0]} rotation={[0, 0, Math.PI / 2]}>
+        <gridHelper args={[gridSize, gridDiv, gridColor1, gridColor2]} />
+      </group>
+
+      {/* Axis labels */}
+      <Text position={[gridSize / 2 + 0.05, 0, 0]} fontSize={0.025} color="#666">X</Text>
+      <Text position={[0, 0, gridSize / 2 + 0.05]} fontSize={0.025} color="#666">Z</Text>
+      <Text position={[-gridSize / 2 - 0.05, bottomY / 2, 0]} fontSize={0.025} color="#666">TVD</Text>
 
       {/* Rock / Formation — open hole */}
       <WellTube path={pathForRange(wellData.prevCasingDepth, wellData.casingDepthMD)} radius={holeR * 1.3} color={ROCK_COLOR_3D} opacity={0.3} />
