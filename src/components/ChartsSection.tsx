@@ -157,6 +157,54 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
           </div>
         </CardContent>
       </Card>
+
+      {/* Режим потока (затрубье) */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">Режим потока в затрубном пространстве</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={pressureData} margin={{ top: 5, right: 65, left: 25, bottom: 25 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" />
+                <YAxis
+                  yAxisId="regime"
+                  domain={[-0.2, 1.5]}
+                  ticks={[0, 1]}
+                  tickFormatter={(v) => v === 0 ? "Ламин." : v === 1 ? "Турбул." : ""}
+                  className="text-xs"
+                  width={65}
+                />
+                <YAxis
+                  yAxisId="re"
+                  orientation="right"
+                  domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.2)]}
+                  label={{ value: "Re", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }}
+                  className="text-xs"
+                  width={55}
+                />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`}
+                  formatter={(value: number, name: string) => {
+                    if (name === "Режим потока") return [value === 0 ? "Ламинарный" : "Турбулентный", name];
+                    return [Math.round(value).toString(), name];
+                  }}
+                />
+                <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
+                <ReferenceLine yAxisId="re" y={2100} stroke="hsl(45, 80%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re=2100", position: "right", fontSize: 10, fill: "hsl(45, 80%, 50%)" }} />
+                {stageBoundaries.map((b, i) => (
+                  <ReferenceLine key={`regime-stage-${i}`} yAxisId="regime" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} />
+                ))}
+                <Line yAxisId="regime" type="stepAfter" dataKey="flowRegimeAnn" name="Режим потока" stroke="hsl(280, 60%, 50%)" strokeWidth={2.5} dot={false} />
+                <Line yAxisId="re" type="linear" dataKey="reynoldsAnn" name="Re (затрубье)" stroke="hsl(200, 60%, 50%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
