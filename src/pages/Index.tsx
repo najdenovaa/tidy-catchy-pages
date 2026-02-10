@@ -219,7 +219,7 @@ export default function Index() {
               <p className="text-xs text-muted-foreground/70">Расчёт обсадных колонн</p>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-3">
+          <div className="flex flex-col items-end gap-6">
             <a
               href="https://t.me/deallbiz_support"
               target="_blank"
