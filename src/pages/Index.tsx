@@ -205,14 +205,16 @@ export default function Index() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <img
-              src={deallsoftLogo}
-              alt="DeAllsoft"
-              className="h-28 object-cover object-center"
-            />
-            <div>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-4">
+              <img
+                src={deallsoftLogo}
+                alt="DeAllsoft"
+                className="h-28 object-cover object-center"
+              />
               <p className="text-2xl font-black tracking-tight text-foreground uppercase">Инженерные расчёты</p>
+            </div>
+            <div className="mt-0.5">
               <h1 className="text-sm font-medium text-muted-foreground leading-tight">Программа цементирования</h1>
               <p className="text-xs text-muted-foreground/70">Расчёт обсадных колонн</p>
             </div>
