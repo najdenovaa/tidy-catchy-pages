@@ -39,10 +39,8 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
     }
   });
 
-  // 3. Цементные растворы — в ОБРАТНОМ порядке (последний в списке = забойный, качается первым)
-  const reversedSlurries = [...slurries].reverse();
-  reversedSlurries.forEach((s) => {
-    const origIdx = slurries.indexOf(s);
+  // 3. Цементные растворы — в порядке списка (первый по списку качается первым)
+  slurries.forEach((s, origIdx) => {
     const height = getSlurryHeight(slurries, origIdx, casingDepthMD);
     const vol = annularVPM * height;
     if (vol > 0) {

@@ -457,6 +457,8 @@ export interface PressurePoint {
   cumulativeVolume: number;
   pumpRateLps: number;
   annularReturnRate: number; // л/с — скорость выхода на устье
+  flowRegimeAnn: number; // 0 = ламинарный, 1 = турбулентный (затрубье)
+  reynoldsAnn: number; // число Рейнольдса затрубья
 }
 
 export interface StageBoundary {
@@ -502,7 +504,7 @@ export function calculatePressureProfile(
   let cumVol = 0;
   let cementStartTime = 0;
 
-  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0 });
+  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0 });
 
   interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean; compressionCoeff: number }
   const stages: Stage[] = [];
@@ -521,10 +523,8 @@ export function calculatePressureProfile(
     }
   });
 
-  // Цементные растворы — в обратном порядке (последний = забойный, качается первым)
-  const reversedSlurries = [...slurries].reverse();
-  reversedSlurries.forEach(s => {
-    const origIdx = slurries.indexOf(s);
+  // Цементные растворы — в порядке списка (первый в списке качается первым)
+  slurries.forEach((s, origIdx) => {
     const h = getSlurryHeight(slurries, origIdx, wellData.casingDepthMD);
     const vol = h > 0 ? h * annVPM : 0;
     if (vol <= 0) return;
@@ -623,6 +623,13 @@ export function calculatePressureProfile(
     const frPipe = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2);
     const frAnn = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp, annAreaM2);
 
+    // Расчёт числа Рейнольдса в затрубье (Бингам)
+    const annVelocity = annAreaM2 > 0 ? (flowRateM3min / 60) / annAreaM2 : 0;
+    const dHydAnnM = dHydAnn / 1000;
+    const muEffAnn = drillingFluid.rheology.pv / 1000 + drillingFluid.rheology.yp * dHydAnnM / (6 * Math.max(annVelocity, 0.001));
+    const reAnn = muEffAnn > 0 ? (mudDensityGcm3 * 1000) * annVelocity * dHydAnnM / muEffAnn : 0;
+    const flowRegimeAnn = reAnn > 2100 ? 1 : 0;
+
     // Новый slug для текущего этапа
     annularSlugs.push({ densityGcm3: s.densityGcm3, volumeM3: 0 });
     const slugIdx = annularSlugs.length - 1;
@@ -648,7 +655,7 @@ export function calculatePressureProfile(
       // BHP = P_hydro_annulus + friction_annulus
       const bhp = annHydro + frAnn;
 
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: annularReturn });
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: annularReturn, flowRegimeAnn, reynoldsAnn: reAnn });
     }
 
     // Финализируем slug
@@ -667,11 +674,13 @@ export function calculatePressureProfile(
     stage: "СТОП (пробка в ЦКОД)",
     time: cumTime + 0.5,
     surfacePressure: lastPoint.surfacePressure + stopIncrease,
-    bottomholePressure: lastPoint.bottomholePressure, // забойное давление НЕ растёт при СТОП
+    bottomholePressure: lastPoint.bottomholePressure,
     fracturePressure: fracP,
     cumulativeVolume: cumVol,
     pumpRateLps: 0,
     annularReturnRate: 0,
+    flowRegimeAnn: 0,
+    reynoldsAnn: 0,
   });
 
   const cementToStop = stopTime - cementStartTime;
