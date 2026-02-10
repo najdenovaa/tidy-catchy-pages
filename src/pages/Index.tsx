@@ -9,7 +9,7 @@ import WellVisualization from "@/components/WellVisualization";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid, PressureProfileResult, TrajectoryPoint } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
-import { FileDown, Loader2 } from "lucide-react";
+import { FileDown, Loader2, Send } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 const defaultWellData: WellData = {
   wellDepthMD: 0,
@@ -212,14 +212,23 @@ export default function Index() {
                 alt="DeAllsoft"
                 className="h-28 object-cover object-center"
               />
-              <p className="text-2xl font-black tracking-tight text-foreground uppercase">Инженерные расчёты</p>
+              <p className="text-2xl font-normal tracking-tight text-foreground uppercase -mt-2">Инженерные расчёты</p>
             </div>
-            <div className="mt-0.5">
+            <div className="mt-0.5 ml-14">
               <h1 className="text-sm font-medium text-muted-foreground leading-tight">Программа цементирования</h1>
               <p className="text-xs text-muted-foreground/70">Расчёт обсадных колонн</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            <a
+              href="https://t.me/deallbiz_support"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex flex-col items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Send className="w-5 h-5" />
+              <span className="text-[10px]">Поддержка</span>
+            </a>
             <button
               onClick={handleExportDocx}
               disabled={exporting}
