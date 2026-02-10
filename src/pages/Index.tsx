@@ -219,25 +219,25 @@ export default function Index() {
               <p className="text-xs text-muted-foreground/70">Расчёт обсадных колонн</p>
             </div>
           </div>
-          <div className="flex items-start gap-4">
-            <button
-              onClick={handleExportDocx}
-              disabled={exporting}
-              className="px-4 py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-2 disabled:opacity-50 self-center"
+          <div className="flex flex-col items-end gap-1">
+            <a
+              href="https://t.me/deallbiz_support"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs"
             >
-              {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-              {exporting ? "Экспорт..." : "DOCX"}
-            </button>
-            <div className="flex flex-col items-start gap-1">
-              <a
-                href="https://t.me/deallbiz_support"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs"
+              <Send className="w-4 h-4" />
+              <span>Поддержка</span>
+            </a>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleExportDocx}
+                disabled={exporting}
+                className="px-4 py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-2 disabled:opacity-50"
               >
-                <Send className="w-4 h-4" />
-                <span>Поддержка</span>
-              </a>
+                {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+                {exporting ? "Экспорт..." : "DOCX"}
+              </button>
               <button
                 onClick={handleCalculate}
                 className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors shadow-md"
