@@ -142,6 +142,9 @@ export interface HydraulicResults {
   safetyCoefficient: number;
   differentialPressure: number;
   stopPressure: number;
+  frictionPipe: number;
+  frictionAnn: number;
+  maxBHP: number;
 }
 
 export interface ContactTimeResults {
@@ -315,7 +318,10 @@ export function calculateHydraulics(
   data: WellData,
   slurries: SlurryInput[],
   displacementDensity: number, // г/см³ продавочной жидкости
-  fractureGradientKpaM: number
+  fractureGradientKpaM: number,
+  drillingFluidRheology?: Rheology,
+  displacementRheology?: Rheology,
+  pumpRateLps?: number
 ): HydraulicResults {
   const traj = data.trajectory;
   const bottomTVD = interpolateTVD(data.casingDepthMD, traj);
@@ -341,7 +347,36 @@ export function calculateHydraulics(
   annulusPressure += hydrostaticPressure(1.1, mudHeightTVD); // fallback плотность бур. раствора
 
   const fracturePressure = (fractureGradientKpaM * bottomTVD) / 1000;
-  const safetyCoeff = fracturePressure > 0 ? annulusPressure / fracturePressure : 0;
+
+  // Потери на трение (если есть данные)
+  let frictionPipe = 0;
+  let frictionAnn = 0;
+  const rate = pumpRateLps ?? 0;
+  if (rate > 0) {
+    const casingID = getCasingID(data.casingOD, data.casingWall);
+    const dHydPipe = casingID;
+    const dHydAnn = Math.max(data.holeDiameter - data.casingOD, 10);
+    const dHoleM = data.holeDiameter / 1000;
+    const dCasM = data.casingOD / 1000;
+    const annAreaM2 = (Math.PI / 4) * (dHoleM * dHoleM - dCasM * dCasM);
+    const pipeAreaM2 = (Math.PI / 4) * (casingID / 1000) * (casingID / 1000);
+    const flowRateM3min = rate * 0.06;
+
+    // Трубное — продавочная жидкость
+    const dispPv = displacementRheology?.pv ?? 1;
+    const dispYp = displacementRheology?.yp ?? 0;
+    frictionPipe = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydPipe, dispPv, dispYp, pipeAreaM2, displacementDensity * 1000).pressureMPa;
+
+    // Затрубное — средние свойства цементного раствора (после закачки цемент в затрубье)
+    const avgPv = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.pv, 0) / slurries.length : (drillingFluidRheology?.pv ?? 25);
+    const avgYp = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.yp, 0) / slurries.length : (drillingFluidRheology?.yp ?? 18);
+    const avgDensity = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.density * 1000, 0) / slurries.length : 1100;
+    const annFrictionMultiplier = 1.3;
+    frictionAnn = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydAnn, avgPv, avgYp, annAreaM2, avgDensity).pressureMPa * annFrictionMultiplier;
+  }
+
+  const maxBHP = annulusPressure + frictionAnn;
+  const safetyCoeff = fracturePressure > 0 ? maxBHP / fracturePressure : 0;
   const differentialPressure = annulusPressure - pipePressure;
   const stopPressure = Math.abs(differentialPressure) + 3.0;
 
@@ -353,6 +388,9 @@ export function calculateHydraulics(
     safetyCoefficient: safetyCoeff,
     differentialPressure: Math.abs(differentialPressure),
     stopPressure,
+    frictionPipe,
+    frictionAnn,
+    maxBHP,
   };
 }
 
@@ -859,8 +897,8 @@ export function calculatePressureProfile(
       annYp = drillingFluid.rheology.yp;
       annDensity = drillingFluid.density;
     }
-    // Множитель трения затрубья: эксцентриситет, муфты, шероховатость (~3.0x)
-    const annFrictionMultiplier = 3.0;
+    // Множитель трения затрубья: эксцентриситет, муфты (~1.3x)
+    const annFrictionMultiplier = 1.3;
     const frAnnRes = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydAnn, annPv, annYp, annAreaM2, annDensity);
     const frAnn = frAnnRes.pressureMPa * annFrictionMultiplier;
 

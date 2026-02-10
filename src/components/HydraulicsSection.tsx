@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { calculateHydraulics, calculateSafeTime, calculateBHCT, interpolateTVD } from "@/lib/cementing-calculations";
-import type { WellData, SlurryInput, VolumeResults } from "@/lib/cementing-calculations";
+import { calculateHydraulics, calculateSafeTime, calculateBHCT, interpolateTVD, getFlowRateLps } from "@/lib/cementing-calculations";
+import type { WellData, SlurryInput, VolumeResults, DisplacementFluid, DrillingFluid } from "@/lib/cementing-calculations";
 
 interface Props {
   wellData: WellData;
@@ -9,12 +9,19 @@ interface Props {
   displacementDensity: number;
   workTimeWithCement: number;
   volumes: VolumeResults;
+  displacementFluids?: DisplacementFluid[];
+  drillingFluid?: DrillingFluid;
 }
 
 const fmt = (v: number, dec: number = 2) => v.toFixed(dec);
 
-export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes }: Props) {
-  const results = calculateHydraulics(wellData, slurries, displacementDensity / 1000, fractureGradient);
+export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes, displacementFluids, drillingFluid }: Props) {
+  const dispFluid = displacementFluids?.[0];
+  const pumpRate = dispFluid ? getFlowRateLps(dispFluid.flowRateSteps) : 0;
+  const results = calculateHydraulics(
+    wellData, slurries, displacementDensity / 1000, fractureGradient,
+    drillingFluid?.rheology, dispFluid?.rheology, pumpRate
+  );
   const bottomTVD = interpolateTVD(wellData.casingDepthMD, wellData.trajectory);
   const bhct = calculateBHCT(wellData.bottomTempStatic, 20, bottomTVD);
 
@@ -35,9 +42,12 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
   const pressureRows = [
     { label: "Гидростатическое давление ЦР (затрубное)", value: fmt(results.hydrostaticPressureAnnulus), unit: "МПа" },
     { label: "Гидростатическое давление продавочной жидкости", value: fmt(results.hydrostaticPressurePipe), unit: "МПа" },
+    { label: "Потери на трение в трубе", value: fmt(results.frictionPipe), unit: "МПа" },
+    { label: "Потери на трение в затрубье", value: fmt(results.frictionAnn), unit: "МПа" },
+    { label: "Макс. забойное давление (гидростатика + трение)", value: fmt(results.maxBHP), unit: "МПа" },
     { label: "Разница давлений на ЦКОД", value: fmt(results.differentialPressure), unit: "МПа" },
     { label: "Давление ГРП", value: fmt(results.fracturePressure), unit: "МПа" },
-    { label: "Коэффициент безопасности", value: fmt(results.safetyCoefficient, 3), unit: "" },
+    { label: "Коэффициент безопасности (макс. ЗД / ГРП)", value: fmt(results.safetyCoefficient, 3), unit: "" },
     { label: "Расчётное давление «СТОП»", value: fmt(results.stopPressure), unit: "МПа" },
     { label: "BHCT", value: fmt(bhct, 1), unit: "°C" },
   ];
