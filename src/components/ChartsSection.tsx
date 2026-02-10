@@ -171,11 +171,11 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" />
                 <YAxis
                   yAxisId="regime"
-                  domain={[-0.2, 1.5]}
-                  ticks={[0, 1]}
-                  tickFormatter={(v) => v === 0 ? "Ламин." : v === 1 ? "Турбул." : ""}
+                  domain={[-0.2, 1.3]}
+                  ticks={[0, 0.5, 1]}
+                  tickFormatter={(v) => v === 0 ? "Ламин." : v === 0.5 ? "Перех." : v === 1 ? "Турбул." : ""}
                   className="text-xs"
-                  width={65}
+                  width={70}
                 />
                 <YAxis
                   yAxisId="re"
@@ -189,12 +189,13 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                   contentStyle={tooltipStyle}
                   labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`}
                   formatter={(value: number, name: string) => {
-                    if (name === "Режим потока") return [value === 0 ? "Ламинарный" : "Турбулентный", name];
+                    if (name === "Режим потока") return [value === 0 ? "Ламинарный" : value < 1 ? "Переходный" : "Турбулентный", name];
                     return [Math.round(value).toString(), name];
                   }}
                 />
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
                 <ReferenceLine yAxisId="re" y={2100} stroke="hsl(45, 80%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re=2100", position: "right", fontSize: 10, fill: "hsl(45, 80%, 50%)" }} />
+                <ReferenceLine yAxisId="re" y={4000} stroke="hsl(0, 70%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re=4000", position: "right", fontSize: 10, fill: "hsl(0, 70%, 50%)" }} />
                 {stageBoundaries.map((b, i) => (
                   <ReferenceLine key={`regime-stage-${i}`} yAxisId="regime" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} />
                 ))}

@@ -672,18 +672,16 @@ export function calculatePressureProfile(
     const flowRateM3min = s.rateLps * 0.06;
     const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
 
-    // Потери на трение зависят от производительности данного этапа
-    const frPipe = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2);
-    // Затрубье: используем реологию текущего флюида в затрубье (он же движется там)
-    const frAnn = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydAnn, s.pv, s.yp, annAreaM2);
+    // Потери на трение с учётом режима потока и плотности
+    const densityKgM3 = s.densityGcm3 * 1000;
+    const frPipeRes = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3);
+    const frAnnRes = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydAnn, s.pv, s.yp, annAreaM2, densityKgM3);
+    const frPipe = frPipeRes.pressureMPa;
+    const frAnn = frAnnRes.pressureMPa;
 
-    // Число Рейнольдса в затрубье (Бингам) — с реологией текущего флюида
-    const annVelocity = annAreaM2 > 0 ? (flowRateM3min / 60) / annAreaM2 : 0;
-    const dHydAnnM = dHydAnn / 1000;
-    const pvPas = s.pv / 1000;
-    const muEffAnn = pvPas + s.yp * dHydAnnM / (6 * Math.max(annVelocity, 0.001));
-    const reAnn = muEffAnn > 0 ? (s.densityGcm3 * 1000) * annVelocity * dHydAnnM / muEffAnn : 0;
-    const flowRegimeAnn = reAnn > 2100 ? 1 : 0;
+    // Режим потока и число Рейнольдса (затрубье)
+    const reAnn = frAnnRes.reynolds;
+    const flowRegimeAnn = frAnnRes.regime; // 0 = ламинарный, 0.5 = переходный, 1 = турбулентный
 
     // Добавляем новый batch в историю закачки
     pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0 });
@@ -751,14 +749,44 @@ export function calculatePressureProfile(
   return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries };
 }
 
-// flowAreaM2 — фактическая площадь сечения потока (для трубы = π/4*d², для затрубья = π/4*(D²-d²))
-function frictionLoss(flowRateM3min: number, lengthM: number, dHydMm: number, pv: number, yp: number, flowAreaM2?: number): number {
+// Потери давления на трение с учётом режима потока (ламинарный / переходный / турбулентный)
+// densityKgM3 — плотность флюида, кг/м³
+interface FrictionResult { pressureMPa: number; reynolds: number; regime: number; }
+
+function frictionLossWithRegime(flowRateM3min: number, lengthM: number, dHydMm: number, pv: number, yp: number, flowAreaM2: number, densityKgM3: number): FrictionResult {
   const dHyd = dHydMm / 1000;
-  if (dHyd <= 0 || flowRateM3min <= 0) return 0;
-  const area = flowAreaM2 && flowAreaM2 > 0 ? flowAreaM2 : (Math.PI / 4) * dHyd * dHyd;
-  const velocityMs = (flowRateM3min / 60) / area;
+  if (dHyd <= 0 || flowRateM3min <= 0) return { pressureMPa: 0, reynolds: 0, regime: 0 };
+  const area = flowAreaM2 > 0 ? flowAreaM2 : (Math.PI / 4) * dHyd * dHyd;
+  const v = (flowRateM3min / 60) / area;
   const pvPas = pv / 1000;
-  const frLam = (32 * pvPas * velocityMs * lengthM) / (dHyd * dHyd) / 1e6;
+
+  // Эффективная вязкость (Бингам)
+  const muEff = pvPas + yp * dHyd / (6 * v);
+  // Обобщённое число Рейнольдса
+  const Re = densityKgM3 * v * dHyd / muEff;
+
+  // Ламинарные потери (Бингам)
+  const frLam = (32 * pvPas * v * lengthM) / (dHyd * dHyd) / 1e6;
   const yieldTerm = (16 * yp * lengthM) / (3 * dHyd) / 1e6;
-  return frLam + yieldTerm;
+  const laminarLoss = frLam + yieldTerm;
+
+  // Турбулентные потери (Фаннинг, формула Блазиуса)
+  const f = 0.0791 / Math.pow(Math.max(Re, 100), 0.25);
+  const turbulentLoss = (2 * f * densityKgM3 * v * v * lengthM) / dHyd / 1e6;
+
+  if (Re < 2100) {
+    return { pressureMPa: laminarLoss, reynolds: Re, regime: 0 }; // ламинарный
+  } else if (Re < 4000) {
+    // Переходная зона — интерполяция
+    const blend = (Re - 2100) / 1900;
+    const loss = laminarLoss * (1 - blend) + turbulentLoss * blend;
+    return { pressureMPa: loss, reynolds: Re, regime: 0.5 }; // переходный
+  } else {
+    return { pressureMPa: turbulentLoss, reynolds: Re, regime: 1 }; // турбулентный
+  }
+}
+
+// Обратно-совместимая обёртка (без режима)
+function frictionLoss(flowRateM3min: number, lengthM: number, dHydMm: number, pv: number, yp: number, flowAreaM2: number, densityKgM3: number = 1100): number {
+  return frictionLossWithRegime(flowRateM3min, lengthM, dHydMm, pv, yp, flowAreaM2, densityKgM3).pressureMPa;
 }
