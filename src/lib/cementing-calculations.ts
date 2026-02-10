@@ -31,6 +31,13 @@ export interface DisplacementFluid {
   compressionCoeff: number; // коэффициент сжатия (1.0 = без сжатия, 1.05 = +5%)
 }
 
+export interface TrajectoryPoint {
+  md: number;    // глубина по стволу, м
+  azimuth: number; // азимут, °
+  zenith: number;  // зенитный угол, °
+  tvd: number;     // вертикальная глубина, м
+}
+
 export interface WellData {
   wellDepthMD: number;
   wellDepthTVD: number;
@@ -46,6 +53,7 @@ export interface WellData {
   cavernCoeff: number;
   bottomTempStatic: number; // BHST °C
   bottomTempCirc: number; // BHCT °C
+  trajectory: TrajectoryPoint[];
 }
 
 export function getCasingID(casingOD: number, casingWall: number): number {

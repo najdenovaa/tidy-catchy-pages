@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import { getCasingID, getSlurryHeight, annularVolumePerMeter, hydrostaticPressure } from "@/lib/cementing-calculations";
-import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, DisplacementFluid, FlowRateStep } from "@/lib/cementing-calculations";
+import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, DisplacementFluid, FlowRateStep, TrajectoryPoint } from "@/lib/cementing-calculations";
 
 interface Props {
   wellData: WellData;
@@ -21,7 +21,8 @@ interface Props {
   displacementVolume?: number;
 }
 
-const wellFields: { key: keyof WellData; label: string; unit: string }[] = [
+type WellNumericKey = Exclude<keyof WellData, 'trajectory'>;
+const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "wellDepthMD", label: "Глубина скважины (по стволу)", unit: "м" },
   { key: "wellDepthTVD", label: "Глубина скважины (по вертикали)", unit: "м" },
   { key: "casingDepthMD", label: "Глубина спуска ОК (по стволу)", unit: "м" },
@@ -109,7 +110,7 @@ function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
 
 export default function InputSection(props: Props) {
   const [openSections, setOpenSections] = useState({
-    well: true, mud: true, buffers: true, cement: true, displacement: true, hydraulics: true,
+    well: true, trajectory: false, mud: true, buffers: true, cement: true, displacement: true, hydraulics: true,
   });
 
   const toggle = (key: keyof typeof openSections) => {
@@ -144,7 +145,7 @@ export default function InputSection(props: Props) {
     return { risk: ecd > fracP, ecd, fracP, hydroStatic, frictionLoss };
   };
 
-  const handleWellChange = (key: keyof WellData, value: string) => {
+  const handleWellChange = (key: WellNumericKey, value: string) => {
     onWellDataChange({ ...wellData, [key]: parseFloat(value) || 0 });
   };
 
@@ -232,6 +233,76 @@ export default function InputSection(props: Props) {
                 <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold border border-border">{casingID.toFixed(1)}</div>
               </div>
             </div>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* ===== 1.5. Профиль скважины ===== */}
+      <Card>
+        <SectionHeader title="📏 Профиль скважины (инклинометрия)" isOpen={openSections.trajectory} onClick={() => toggle("trajectory")} />
+        {openSections.trajectory && (
+          <CardContent className="pt-4 space-y-3">
+            <p className="text-xs text-muted-foreground italic">Задайте точки инклинометрии. TVD используется для расчёта давлений.</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs text-muted-foreground">
+                    <th className="text-left py-1 px-2 w-8">#</th>
+                    <th className="text-left py-1 px-2">По стволу (MD), м</th>
+                    <th className="text-left py-1 px-2">Азимут, °</th>
+                    <th className="text-left py-1 px-2">Зенит, °</th>
+                    <th className="text-left py-1 px-2">По вертикали (TVD), м</th>
+                    <th className="py-1 px-2 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(wellData.trajectory || []).map((pt, i) => (
+                    <tr key={i} className="border-b border-border/30">
+                      <td className="py-1 px-2 text-xs text-muted-foreground">{i + 1}</td>
+                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.md || ""} onChange={(e) => {
+                        const traj = [...(wellData.trajectory || [])];
+                        traj[i] = { ...traj[i], md: parseFloat(e.target.value) || 0 };
+                        onWellDataChange({ ...wellData, trajectory: traj });
+                      }} className="h-7 text-xs" /></td>
+                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.azimuth || ""} onChange={(e) => {
+                        const traj = [...(wellData.trajectory || [])];
+                        traj[i] = { ...traj[i], azimuth: parseFloat(e.target.value) || 0 };
+                        onWellDataChange({ ...wellData, trajectory: traj });
+                      }} className="h-7 text-xs" /></td>
+                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.zenith || ""} onChange={(e) => {
+                        const traj = [...(wellData.trajectory || [])];
+                        traj[i] = { ...traj[i], zenith: parseFloat(e.target.value) || 0 };
+                        onWellDataChange({ ...wellData, trajectory: traj });
+                      }} className="h-7 text-xs" /></td>
+                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.tvd || ""} onChange={(e) => {
+                        const traj = [...(wellData.trajectory || [])];
+                        traj[i] = { ...traj[i], tvd: parseFloat(e.target.value) || 0 };
+                        onWellDataChange({ ...wellData, trajectory: traj });
+                      }} className="h-7 text-xs" /></td>
+                      <td className="py-1 px-2">
+                        {(wellData.trajectory || []).length > 2 && (
+                          <button onClick={() => {
+                            const traj = (wellData.trajectory || []).filter((_, j) => j !== i);
+                            onWellDataChange({ ...wellData, trajectory: traj });
+                          }} className="text-xs text-destructive">✕</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button
+              onClick={() => {
+                const traj = [...(wellData.trajectory || [])];
+                const lastPt = traj[traj.length - 1];
+                traj.push({ md: (lastPt?.md || 0) + 50, azimuth: lastPt?.azimuth || 0, zenith: lastPt?.zenith || 0, tvd: (lastPt?.tvd || 0) + 50 });
+                onWellDataChange({ ...wellData, trajectory: traj });
+              }}
+              className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              + Добавить точку
+            </button>
           </CardContent>
         )}
       </Card>
