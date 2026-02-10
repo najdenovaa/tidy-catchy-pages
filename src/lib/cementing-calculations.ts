@@ -719,16 +719,21 @@ export function calculatePressureProfile(
     cumVol += s.volume;
   });
 
-  // СТОП — давление +2.75 МПа (~27.5 атм) от последнего рабочего
+  // СТОП — насос выключен → статическое давление (без трения) + скачок от посадки пробки
   const stopTime = cumTime;
-  const lastPoint = points[points.length - 1];
   const stopIncrease = 2.75;
+
+  // Статические давления (без трения, насос стоит)
+  const staticAnnHydro = calcAnnularHydrostatic();
+  const staticPipeHydro = calcPipeHydrostatic();
+  const staticSurfP = Math.max(0, staticAnnHydro - staticPipeHydro);
+  const staticBhp = staticAnnHydro;
 
   points.push({
     stage: "СТОП (пробка в ЦКОД)",
     time: cumTime + 0.5,
-    surfacePressure: lastPoint.surfacePressure + stopIncrease,
-    bottomholePressure: lastPoint.bottomholePressure,
+    surfacePressure: staticSurfP + stopIncrease,
+    bottomholePressure: staticBhp,
     fracturePressure: fracP,
     cumulativeVolume: cumVol,
     pumpRateLps: 0,
