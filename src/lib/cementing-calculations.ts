@@ -583,6 +583,7 @@ export function calculatePressureProfile(
   });
 
   let cementStartFound = false;
+  let cementFreefallVol = 0; // объём, на который цемент ушёл вниз при паузе (надо догнать продавкой)
 
   // Отслеживаем границы этапов (группируем продавку)
   const stageBoundaries: StageBoundary[] = [];
@@ -672,6 +673,8 @@ export function calculatePressureProfile(
 
     return pressure;
   }
+
+  let cumDisplacementVol = 0; // накопленный объём продавки (для отслеживания догонки)
 
   stages.forEach(s => {
     if (s.isCement && !cementStartFound) {
@@ -820,6 +823,7 @@ export function calculatePressureProfile(
       if (!equilibriumReached) equilibriumTimeMin = pauseMin;
 
       // Финализируем
+      cementFreefallVol = freefallVol; // запоминаем для продавки (объём догонки)
       pumpHistory[ffBatchIdx].volumeM3 = freefallVol;
       totalPumped = savedCumVol + freefallVol;
       cumTime += pauseMin;
@@ -867,12 +871,17 @@ export function calculatePressureProfile(
     const batchIdx = pumpHistory.length - 1;
 
     const compressionEffect = s.compressionCoeff > 1.0 ? 1 / s.compressionCoeff : 1.0;
+    const isDisplacement = !s.isCement && cementStartFound && !s.isFlushPause;
 
     const minuteSteps = Math.max(1, Math.ceil(stageTime));
     for (let m = 1; m <= minuteSteps; m++) {
       const frac = Math.min(m / stageTime, 1);
       const tNow = cumTime + Math.min(m, stageTime);
       const vNow = cumVol + s.volume * frac;
+      const stepVolume = s.volume / minuteSteps; // м³ за этот шаг
+
+      // Учитываем накопленный объём продавки для догонки цемента
+      if (isDisplacement) cumDisplacementVol += stepVolume;
 
       pumpHistory[batchIdx].volumeM3 = s.volume * frac;
       totalPumped = cumVol + s.volume * frac;
@@ -880,27 +889,34 @@ export function calculatePressureProfile(
       const pipeHydro = calcPipeHydrostatic();
       const annHydro = calcAnnularHydrostatic();
 
-      // === Гравитационное оседание: бинарный поиск расхода, при котором трение = ΔP_gravity ===
+      // Фаза догонки: пробка ещё не достигла цемента (заполняет зазор от freefall)
+      const isCatchingUp = isDisplacement && cementFreefallVol > 0 && cumDisplacementVol < cementFreefallVol;
+      const catchUpFrac = isDisplacement && cementFreefallVol > 0
+        ? Math.min(1, cumDisplacementVol / cementFreefallVol)
+        : 1;
+
+      // === Гравитационное оседание ===
       let gravityReturnLps = 0;
       const gravityDeltaMPa = pipeHydro - annHydro;
       if (gravityDeltaMPa > 0.01) {
-        // Ищем Q_grav (м³/мин) такой что friction_pipe(Q) + friction_ann(Q) = ΔP_gravity
-        let lo = 0, hi = 30 * 0.06; // макс 30 л/с → м³/мин
+        let lo = 0, hi = 30 * 0.06;
         for (let iter = 0; iter < 15; iter++) {
           const mid = (lo + hi) / 2;
           const fPipe = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3).pressureMPa;
           const fAnn = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydAnn, annPv, annYp, annAreaM2, annDensity).pressureMPa * annFrictionMultiplier;
           if (fPipe + fAnn < gravityDeltaMPa) lo = mid; else hi = mid;
         }
-        gravityReturnLps = ((lo + hi) / 2) / 0.06; // м³/мин → л/с
+        gravityReturnLps = ((lo + hi) / 2) / 0.06;
       }
 
-      // Выход на устье = насосный расход + гравитационная добавка
+      // Во время догонки: затрубное трение ≈ 0 (пробка не давит на цемент), выхода на устье нет
+      // Плавный переход от 0 к полному значению по мере догонки
+      const effectiveFrAnn = isCatchingUp ? frAnn * catchUpFrac * catchUpFrac : frAnn;
       const baseReturn = s.rateLps * compressionEffect;
-      const totalAnnReturn = baseReturn + gravityReturnLps;
+      const totalAnnReturn = isCatchingUp ? gravityReturnLps * catchUpFrac : baseReturn + gravityReturnLps;
 
-      const surfP = Math.max(0, (annHydro - pipeHydro) + frPipe + frAnn);
-      const bhp = annHydro + frAnn;
+      const surfP = Math.max(0, (annHydro - pipeHydro) + frPipe + effectiveFrAnn);
+      const bhp = annHydro + effectiveFrAnn;
 
       points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn, reynoldsAnn: reAnn });
     }
