@@ -79,6 +79,7 @@ const defaultDisplacementFluids: DisplacementFluid[] = [
     name: "Продавочная жидкость",
     density: 1010,
     rheology: { pv: 1, yp: 0 },
+    compressionCoeff: 1.05,
     flowRateSteps: [
       { rateLps: 12, volumeM3: 0 },
       { rateLps: 8, volumeM3: 0 },
