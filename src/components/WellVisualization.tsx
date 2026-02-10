@@ -23,8 +23,8 @@ const ROCK_COLOR_3D = "#6B5B4F";
 const CASING_STEEL = "#A8A8A8";
 const PREV_CASING_STEEL = "#888888";
 
-// ====== Convert trajectory to 3D coordinates ======
-function trajectoryTo3D(traj: WellData["trajectory"], casingDepthMD: number): { x: number; y: number; z: number; md: number; tvd: number }[] {
+// ====== Convert trajectory to 3D coordinates (coarse survey stations) ======
+function trajectoryTo3DRaw(traj: WellData["trajectory"], casingDepthMD: number): { x: number; y: number; z: number; md: number; tvd: number }[] {
   if (!traj || traj.length < 2) {
     return [
       { x: 0, y: 0, z: 0, md: 0, tvd: 0 },
@@ -41,37 +41,84 @@ function trajectoryTo3D(traj: WellData["trajectory"], casingDepthMD: number): { 
     const zenRad = ((sorted[i].zenith + sorted[i - 1].zenith) / 2) * Math.PI / 180;
     const azRad = ((sorted[i].azimuth + sorted[i - 1].azimuth) / 2) * Math.PI / 180;
     cx += dMD * Math.sin(zenRad) * Math.sin(azRad);
-    cy -= dMD * Math.cos(zenRad); // Y is depth (negative = down)
+    cy -= dMD * Math.cos(zenRad);
     cz += dMD * Math.sin(zenRad) * Math.cos(azRad);
     pts.push({ x: cx, y: cy, z: cz, md: sorted[i].md, tvd: sorted[i].tvd });
   }
   return pts;
 }
 
-// Interpolate 3D position at given MD
+// ====== Build smooth spline from raw survey points ======
+function buildSpline(rawPts: ReturnType<typeof trajectoryTo3DRaw>): THREE.CatmullRomCurve3 {
+  const vectors = rawPts.map(p => new THREE.Vector3(p.x, p.y, p.z));
+  return new THREE.CatmullRomCurve3(vectors, false, "catmullrom", 0.25);
+}
+
+// ====== Densify trajectory using spline for smooth curves ======
+function trajectoryTo3D(traj: WellData["trajectory"], casingDepthMD: number): { x: number; y: number; z: number; md: number; tvd: number }[] {
+  const raw = trajectoryTo3DRaw(traj, casingDepthMD);
+  if (raw.length < 3) return raw; // straight well, no need to smooth
+
+  const spline = buildSpline(raw);
+  const totalArcLen = spline.getLength();
+  // Build MD lookup: map each raw point's arc-length fraction to its MD
+  const rawFracs: number[] = [];
+  const rawMDs: number[] = raw.map(p => p.md);
+  const rawTVDs: number[] = raw.map(p => p.tvd);
+  for (let i = 0; i < raw.length; i++) {
+    const pt = new THREE.Vector3(raw[i].x, raw[i].y, raw[i].z);
+    // find closest u on spline
+    rawFracs.push(i / (raw.length - 1));
+  }
+
+  // Generate dense points (~every 5m or 100 segments, whichever is more)
+  const numSegments = Math.max(100, Math.ceil(casingDepthMD / 5));
+  const dense: { x: number; y: number; z: number; md: number; tvd: number }[] = [];
+
+  for (let i = 0; i <= numSegments; i++) {
+    const u = i / numSegments;
+    const pt = spline.getPointAt(u);
+
+    // Interpolate MD and TVD based on u fraction mapped to raw stations
+    let md: number, tvd: number;
+    // Find which raw segment this u falls in
+    const rawU = u * (raw.length - 1);
+    const segIdx = Math.min(Math.floor(rawU), raw.length - 2);
+    const segFrac = rawU - segIdx;
+    md = rawMDs[segIdx] + segFrac * (rawMDs[segIdx + 1] - rawMDs[segIdx]);
+    tvd = rawTVDs[segIdx] + segFrac * (rawTVDs[segIdx + 1] - rawTVDs[segIdx]);
+
+    dense.push({ x: pt.x, y: pt.y, z: pt.z, md, tvd });
+  }
+  return dense;
+}
+
+// Interpolate 3D position at given MD using dense points (smooth)
 function interpAt(pts: ReturnType<typeof trajectoryTo3D>, md: number): { x: number; y: number; z: number } {
   if (pts.length < 2) return { x: 0, y: -md, z: 0 };
   if (md <= pts[0].md) return pts[0];
   if (md >= pts[pts.length - 1].md) return pts[pts.length - 1];
-  for (let i = 0; i < pts.length - 1; i++) {
-    if (md >= pts[i].md && md <= pts[i + 1].md) {
-      const f = (md - pts[i].md) / (pts[i + 1].md - pts[i].md);
-      return {
-        x: pts[i].x + f * (pts[i + 1].x - pts[i].x),
-        y: pts[i].y + f * (pts[i + 1].y - pts[i].y),
-        z: pts[i].z + f * (pts[i + 1].z - pts[i].z),
-      };
-    }
+
+  // Binary search for efficiency on dense arrays
+  let lo = 0, hi = pts.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (pts[mid].md <= md) lo = mid; else hi = mid;
   }
-  return pts[pts.length - 1];
+  const f = (md - pts[lo].md) / (pts[hi].md - pts[lo].md || 1);
+  return {
+    x: pts[lo].x + f * (pts[hi].x - pts[lo].x),
+    y: pts[lo].y + f * (pts[hi].y - pts[lo].y),
+    z: pts[lo].z + f * (pts[hi].z - pts[lo].z),
+  };
 }
 
 // ====== 3D Tube along trajectory ======
 function WellTube({ path, radius, color, opacity = 1 }: { path: THREE.Vector3[]; radius: number; color: string; opacity?: number }) {
   const geometry = useMemo(() => {
     if (path.length < 2) return null;
-    const curve = new THREE.CatmullRomCurve3(path, false, "catmullrom", 0.1);
-    return new THREE.TubeGeometry(curve, Math.max(path.length * 8, 16), radius, 16, false);
+    const curve = new THREE.CatmullRomCurve3(path, false, "catmullrom", 0.3);
+    return new THREE.TubeGeometry(curve, Math.max(path.length * 4, 32), radius, 16, false);
   }, [path, radius]);
   if (!geometry) return null;
   return (
@@ -110,8 +157,10 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
   // Scale all points
   const scaledPts = useMemo(() => pts3d.map(p => ({ ...p, x: p.x * scale, y: p.y * scale, z: p.z * scale })), [pts3d, scale]);
 
-  // Generate path points for a given MD range
-  const pathForRange = (mdStart: number, mdEnd: number, steps = 30): THREE.Vector3[] => {
+  // Generate path points for a given MD range — adaptive density for smoothness
+  const pathForRange = (mdStart: number, mdEnd: number): THREE.Vector3[] => {
+    const range = Math.abs(mdEnd - mdStart);
+    const steps = Math.max(40, Math.ceil(range / 3)); // ~1 point per 3m for silky curves
     const result: THREE.Vector3[] = [];
     for (let i = 0; i <= steps; i++) {
       const md = mdStart + (mdEnd - mdStart) * i / steps;
