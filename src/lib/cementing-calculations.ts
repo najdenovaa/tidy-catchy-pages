@@ -922,17 +922,28 @@ export function calculatePressureProfile(
   const staticSurfP = Math.max(0, staticAnnHydro - staticPipeHydro);
   const staticBhp = staticAnnHydro;
 
+  // Точка перехода: насос остановился, давление = статика (без трения)
   points.push({
-    stage: "СТОП (пробка в ЦКОД)",
-    time: cumTime + 0.5,
-    surfacePressure: staticSurfP + stopIncrease,
-    bottomholePressure: staticBhp,
-    fracturePressure: fracP,
-    cumulativeVolume: cumVol,
-    pumpRateLps: 0,
-    annularReturnRate: 0,
-    flowRegimeAnn: 0,
-    reynoldsAnn: 0,
+    stage: "СТОП", time: cumTime,
+    surfacePressure: staticSurfP, bottomholePressure: staticBhp, fracturePressure: fracP,
+    cumulativeVolume: cumVol, pumpRateLps: 0, annularReturnRate: 0,
+    flowRegimeAnn: 0, reynoldsAnn: 0,
+  });
+
+  // Скачок давления от посадки пробки в ЦКОД
+  points.push({
+    stage: "СТОП (пробка в ЦКОД)", time: cumTime + 0.5,
+    surfacePressure: staticSurfP + stopIncrease, bottomholePressure: staticBhp,
+    fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
+    annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0,
+  });
+
+  // Удержание давления СТОП (видимая полка на графике)
+  points.push({
+    stage: "СТОП (удержание)", time: cumTime + 5,
+    surfacePressure: staticSurfP + stopIncrease, bottomholePressure: staticBhp,
+    fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
+    annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0,
   });
 
   const cementToStop = stopTime - cementStartTime;
