@@ -325,7 +325,7 @@ function buildMaterialsPage(materials: MaterialSummary): Paragraph[] {
     sectionTitle("9. Цементные материалы"),
     makeMatTable(materials.cementItems),
     new Paragraph({ spacing: { after: 150 }, children: [] }),
-    sectionTitle("10. Буферные жидкости"),
+    sectionTitle("10. Буферные материалы"),
     makeMatTable(materials.bufferItems),
     new Paragraph({ spacing: { after: 150 }, children: [] }),
     sectionTitle("11. Технологическая оснастка"),
@@ -340,10 +340,9 @@ function buildMaterialsPage(materials: MaterialSummary): Paragraph[] {
 
 function buildPressureProfilePage(pressureResult: PressureProfileResult): Paragraph[] {
   const points = pressureResult.points;
-  // Sample every ~1 min for readability (take every point where time is integer or close)
   const sampled = points.filter((p, i) => i === 0 || i === points.length - 1 || Math.abs(p.time - Math.round(p.time)) < 0.05);
 
-  const headers = ["Время, мин", "Pнасос, МПа", "Pзабой, МПа", "Pгрп, МПа", "Q, л/с", "Qвых, л/с", "Этап"];
+  const headers = ["Время, мин", "Pнасос, МПа", "Pзабой, МПа", "Pгрп, МПа", "Q, л/с", "Qвых, л/с", "Qмакс, л/с", "Этап"];
 
   const tableRows = [
     new TableRow({ children: headers.map(h => headerCell(h)) }),
@@ -355,6 +354,7 @@ function buildPressureProfilePage(pressureResult: PressureProfileResult): Paragr
         cell(fmt(p.fracturePressure, 2), { align: AlignmentType.RIGHT }),
         cell(fmt(p.pumpRateLps, 1), { align: AlignmentType.RIGHT }),
         cell(fmt(p.annularReturnRate, 1), { align: AlignmentType.RIGHT }),
+        cell(p.maxSafeRateLps > 0 ? fmt(p.maxSafeRateLps, 1) : "—", { align: AlignmentType.RIGHT, bold: true }),
         cell(p.stage),
       ],
     })),
@@ -368,19 +368,18 @@ function buildPressureProfilePage(pressureResult: PressureProfileResult): Paragr
     { label: "Время равновесия U-tube", value: pressureResult.equilibriumTimeMin > 0 ? `~${fmt(pressureResult.equilibriumTimeMin, 0)} мин` : "—" },
   ];
 
-  // Stage boundaries summary
   const boundaryRows = pressureResult.stageBoundaries.map(b => ({
     label: b.label,
     value: `${fmt(b.time, 1)} мин`,
   }));
 
   const content: Paragraph[] = [
-    sectionTitle("8. План продавки — давления и производительность"),
+    sectionTitle("13. План продавки — давления, производительность и ограничения"),
     new Paragraph({
       spacing: { after: 100 },
       children: [new TextRun({
-        text: "Поминутная таблица давлений: давление на насосе (Pнасос), давление на забое (Pзабой), давление ГРП (Pгрп), производительность насоса (Q) и выход на устье (Qвых).",
-        size: 18, font: "Calibri", italics: true, color: "555555",
+        text: "Qмакс — максимальная производительность, при которой забойное давление не превышает давление ГРП. Оператор должен придерживаться этого ограничения.",
+        size: 18, font: "Calibri", italics: true, color: "CC0000",
       })],
     }),
   ];
@@ -403,7 +402,7 @@ function buildPressureProfilePage(pressureResult: PressureProfileResult): Paragr
 
   content.push(new Paragraph({
     spacing: { before: 100, after: 80 },
-    children: [new TextRun({ text: "Профиль давлений по времени:", bold: true, size: 20, font: "Calibri" })],
+    children: [new TextRun({ text: "Профиль давлений и ограничений по времени:", bold: true, size: 20, font: "Calibri" })],
   }));
   content.push(new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
@@ -418,11 +417,10 @@ function buildPressureProfilePage(pressureResult: PressureProfileResult): Paragr
 
 function buildChartsDataPage(pressureResult: PressureProfileResult): Paragraph[] {
   const points = pressureResult.points;
-  // Key moments: every integer minute
   const sampled = points.filter((p, i) => i === 0 || i === points.length - 1 || Math.abs(p.time - Math.round(p.time)) < 0.05);
 
   // BHP vs Frac table
-  const bhpHeaders = ["Время, мин", "Pзабой, МПа", "Pгрп, МПа", "Запас (Pгрп-Pзаб), МПа"];
+  const bhpHeaders = ["Время, мин", "Pзабой, МПа", "Pгрп, МПа", "Запас (Pгрп-Pзаб), МПа", "Qмакс, л/с"];
   const bhpRows = [
     new TableRow({ children: bhpHeaders.map(h => headerCell(h)) }),
     ...sampled.map(p => {
@@ -433,6 +431,7 @@ function buildChartsDataPage(pressureResult: PressureProfileResult): Paragraph[]
           cell(fmt(p.bottomholePressure, 2), { align: AlignmentType.RIGHT }),
           cell(fmt(p.fracturePressure, 2), { align: AlignmentType.RIGHT }),
           cell(fmt(margin, 2), { align: AlignmentType.RIGHT, bold: margin < 1 }),
+          cell(p.maxSafeRateLps > 0 ? fmt(p.maxSafeRateLps, 1) : "—", { align: AlignmentType.RIGHT, bold: true }),
         ],
       });
     }),
@@ -454,7 +453,7 @@ function buildChartsDataPage(pressureResult: PressureProfileResult): Paragraph[]
   ];
 
   return [
-    sectionTitle("9. Графики — табличные данные"),
+    sectionTitle("14. Графики — табличные данные"),
     new Paragraph({
       spacing: { after: 100 },
       children: [new TextRun({
@@ -464,7 +463,7 @@ function buildChartsDataPage(pressureResult: PressureProfileResult): Paragraph[]
     }),
     new Paragraph({
       spacing: { before: 150, after: 80 },
-      children: [new TextRun({ text: "Давление на забое vs Давление ГРП:", bold: true, size: 20, font: "Calibri" })],
+      children: [new TextRun({ text: "Давление на забое vs Давление ГРП (с ограничением Q):", bold: true, size: 20, font: "Calibri" })],
     }),
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
@@ -481,6 +480,60 @@ function buildChartsDataPage(pressureResult: PressureProfileResult): Paragraph[]
       layout: TableLayoutType.FIXED,
       rows: volRows,
     }) as any,
+  ];
+}
+
+// ======== Trajectory / Visualization ========
+
+function buildTrajectoryPage(wellData: WellData): Paragraph[] {
+  const traj = wellData.trajectory;
+  if (!traj || traj.length < 2) return [];
+
+  const headers = ["MD, м", "Азимут, °", "Зенит, °", "TVD, м"];
+  const sorted = [...traj].sort((a, b) => a.md - b.md);
+
+  const tableRows = [
+    new TableRow({ children: headers.map(h => headerCell(h)) }),
+    ...sorted.map(p => new TableRow({
+      children: [
+        cell(fmt(p.md, 1), { align: AlignmentType.RIGHT }),
+        cell(fmt(p.azimuth, 1), { align: AlignmentType.RIGHT }),
+        cell(fmt(p.zenith, 1), { align: AlignmentType.RIGHT }),
+        cell(fmt(p.tvd, 1), { align: AlignmentType.RIGHT }),
+      ],
+    })),
+  ];
+
+  const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
+
+  return [
+    sectionTitle("15. Визуализация скважины"),
+    new Paragraph({
+      spacing: { after: 100 },
+      children: [new TextRun({
+        text: "Таблица инклинометрии (траектория скважины):",
+        bold: true, size: 20, font: "Calibri",
+      })],
+    }),
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      layout: TableLayoutType.FIXED,
+      rows: tableRows,
+    }) as any,
+    new Paragraph({ spacing: { after: 200 }, children: [] }),
+    new Paragraph({
+      spacing: { before: 150, after: 80 },
+      children: [new TextRun({ text: "Конструкция скважины (поперечный разрез):", bold: true, size: 20, font: "Calibri" })],
+    }),
+    kvTable([
+      { label: "Диаметр ствола (с каверн.)", value: `${fmt(wellData.holeDiameter * Math.sqrt(wellData.cavernCoeff), 1)} мм` },
+      { label: "Наружный диаметр ОК", value: `${wellData.casingOD} мм` },
+      { label: "Внутренний диаметр ОК", value: `${fmt(casingID, 1)} мм` },
+      { label: "Толщина стенки ОК", value: `${wellData.casingWall} мм` },
+      { label: "Зазор затрубья (одностор.)", value: `${fmt((wellData.holeDiameter - wellData.casingOD) / 2, 1)} мм` },
+      { label: "Предыдущая колонна (OD/ID)", value: `${wellData.prevCasingOD} / ${wellData.prevCasingID} мм` },
+      { label: "Глубина предыдущей колонны", value: `${wellData.prevCasingDepth} м` },
+    ]) as any,
   ];
 }
 
@@ -539,7 +592,7 @@ export async function exportToDocx(
   const materialsContent = buildMaterialsPage(materials);
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
   const chartsDataContent = buildChartsDataPage(pressureResult);
-
+  const trajectoryContent = buildTrajectoryPage(wellData);
   const doc = new Document({
     sections: [
       {
@@ -588,11 +641,11 @@ export async function exportToDocx(
           default: new Header({
             children: [new Paragraph({
               alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "План продавки", size: 16, color: "999999", font: "Calibri", italics: true })],
+              children: [new TextRun({ text: "Материалы", size: 16, color: "999999", font: "Calibri", italics: true })],
             })],
           }),
         },
-        children: pressureProfileContent,
+        children: materialsContent,
       },
       {
         properties: {},
@@ -600,11 +653,11 @@ export async function exportToDocx(
           default: new Header({
             children: [new Paragraph({
               alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "Материалы", size: 16, color: "999999", font: "Calibri", italics: true })],
+              children: [new TextRun({ text: "План продавки", size: 16, color: "999999", font: "Calibri", italics: true })],
             })],
           }),
         },
-        children: materialsContent,
+        children: pressureProfileContent,
       },
       {
         properties: {},
@@ -618,6 +671,18 @@ export async function exportToDocx(
         },
         children: chartsDataContent,
       },
+      ...(trajectoryContent.length > 0 ? [{
+        properties: {},
+        headers: {
+          default: new Header({
+            children: [new Paragraph({
+              alignment: AlignmentType.RIGHT,
+              children: [new TextRun({ text: "Визуализация", size: 16, color: "999999", font: "Calibri", italics: true })],
+            })],
+          }),
+        },
+        children: trajectoryContent,
+      }] : []),
     ],
   });
 
