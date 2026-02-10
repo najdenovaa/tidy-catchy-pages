@@ -157,98 +157,91 @@ export default function Index() {
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
-      const margin = 10;
+      const margin = 8;
       const contentW = pageW - margin * 2;
 
       const prevTab = activeTab;
-      // Skip "visual" tab — WebGL canvas can't be captured by html2canvas
       const exportTabs = tabOrder.filter(t => t !== "visual");
 
-      let pageNum = 0;
+      let isFirstPage = true;
+
       for (let t = 0; t < exportTabs.length; t++) {
         const tab = exportTabs[t];
 
-        // Switch to this tab
+        // Switch tab and wait for render (charts need time)
         setActiveTab(tab);
-        // Use flushSync-like approach: wait for React re-render + recharts animations
-        await new Promise(r => setTimeout(r, 1200));
+        await new Promise(r => setTimeout(r, 1500));
 
         const tabContent = document.querySelector(`[data-tab-content="${tab}"]`) as HTMLElement;
         if (!tabContent || tabContent.offsetHeight === 0) continue;
 
-        if (pageNum > 0) pdf.addPage();
-        pageNum++;
+        // Temporarily inject a header into the DOM for capture
+        const header = document.createElement("div");
+        header.style.cssText = "padding:16px 0 12px;border-bottom:2px solid #555;margin-bottom:16px;font-family:sans-serif;";
+        header.innerHTML = `<div style="font-size:20px;font-weight:700;color:#e0e0e0;">Программа цементирования</div><div style="font-size:14px;color:#aaa;margin-top:4px;">${tabNames[tab]}</div>`;
+        tabContent.prepend(header);
 
-        // Header
-        pdf.setFontSize(14);
-        pdf.setTextColor(50, 50, 50);
-        pdf.text(`Программа цементирования — ${tabNames[tab]}`, margin, margin + 6);
-        pdf.setDrawColor(200, 200, 200);
-        pdf.line(margin, margin + 9, pageW - margin, margin + 9);
+        // Also inject page number footer
+        const footer = document.createElement("div");
+        footer.style.cssText = "text-align:right;padding-top:12px;border-top:1px solid #444;margin-top:16px;font-size:11px;color:#888;font-family:sans-serif;";
+        footer.textContent = `Страница ${t + 1} из ${exportTabs.length}`;
+        tabContent.appendChild(footer);
 
-        // Capture — ignore WebGL canvases
+        await new Promise(r => setTimeout(r, 200));
+
         const canvas = await html2canvas(tabContent, {
           scale: 2,
           useCORS: true,
           backgroundColor: "#1a1a2e",
           logging: false,
-          windowWidth: Math.max(tabContent.scrollWidth, 1200),
-          windowHeight: tabContent.scrollHeight,
-          ignoreElements: (el) => {
-            // Skip any WebGL / three.js canvas
-            if (el.tagName === "CANVAS" && el.closest("[data-tab-content='visual']")) return true;
-            return false;
-          },
+          windowWidth: 1200,
         });
 
-        const imgData = canvas.toDataURL("image/jpeg", 0.92);
+        // Remove injected elements
+        header.remove();
+        footer.remove();
+
+        const imgData = canvas.toDataURL("image/png");
         const imgRatio = canvas.height / canvas.width;
         const imgW = contentW;
         const imgH = imgW * imgRatio;
-        const startY = margin + 12;
 
-        // Scale to fit page if needed, or split across multiple pages
-        const availH = pageH - startY - margin;
+        const availH = pageH - margin * 2;
+
+        if (!isFirstPage) pdf.addPage();
+        isFirstPage = false;
+
         if (imgH <= availH) {
-          pdf.addImage(imgData, "JPEG", margin, startY, imgW, imgH);
+          pdf.addImage(imgData, "PNG", margin, margin, imgW, imgH);
         } else {
-          // Multi-page: slice the canvas image
+          // Split into multiple pages
           const pxPerMM = canvas.width / contentW;
           const sliceHpx = availH * pxPerMM;
           let srcY = 0;
-          let isFirst = true;
+          let firstSlice = true;
+
           while (srcY < canvas.height) {
-            if (!isFirst) {
-              pdf.addPage();
-              pageNum++;
-            }
+            if (!firstSlice) pdf.addPage();
+
             const remaining = canvas.height - srcY;
             const thisSlice = Math.min(sliceHpx, remaining);
 
-            // Create a sub-canvas for this slice
             const sliceCanvas = document.createElement("canvas");
             sliceCanvas.width = canvas.width;
             sliceCanvas.height = thisSlice;
             const ctx = sliceCanvas.getContext("2d");
             if (ctx) {
               ctx.drawImage(canvas, 0, srcY, canvas.width, thisSlice, 0, 0, canvas.width, thisSlice);
-              const sliceImg = sliceCanvas.toDataURL("image/jpeg", 0.92);
-              const sliceHmm = (thisSlice / pxPerMM);
-              const yOffset = isFirst ? startY : margin;
-              pdf.addImage(sliceImg, "JPEG", margin, yOffset, imgW, sliceHmm);
+              const sliceImg = sliceCanvas.toDataURL("image/png");
+              const sliceHmm = thisSlice / pxPerMM;
+              pdf.addImage(sliceImg, "PNG", margin, margin, imgW, sliceHmm);
             }
             srcY += thisSlice;
-            isFirst = false;
+            firstSlice = false;
           }
         }
-
-        // Footer on last page of this tab
-        pdf.setFontSize(8);
-        pdf.setTextColor(150, 150, 150);
-        pdf.text(`${tabNames[tab]} — стр. ${pageNum}`, pageW - margin, pageH - 5, { align: "right" });
       }
 
-      // Restore original tab
       setActiveTab(prevTab);
       pdf.save("cementing-program.pdf");
     } catch (e) {
