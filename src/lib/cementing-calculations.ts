@@ -28,6 +28,7 @@ export interface DisplacementFluid {
   density: number; // кг/м³
   rheology: Rheology;
   flowRateSteps: FlowRateStep[];
+  compressionCoeff: number; // коэффициент сжатия (1.0 = без сжатия, 1.05 = +5%)
 }
 
 export interface WellData {
@@ -413,6 +414,7 @@ export interface PressurePoint {
   fracturePressure: number;
   cumulativeVolume: number;
   pumpRateLps: number;
+  annularReturnRate: number; // л/с — скорость выхода на устье
 }
 
 export interface PressureProfileResult {
@@ -443,9 +445,9 @@ export function calculatePressureProfile(
   let cumVol = 0;
   let cementStartTime = 0;
 
-  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMud, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0 });
+  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMud, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0 });
 
-  interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean }
+  interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean; compressionCoeff: number }
   const stages: Stage[] = [];
 
   // Буферы — по шагам
@@ -453,12 +455,12 @@ export function calculatePressureProfile(
     if (b.flowRateSteps.length > 1) {
       b.flowRateSteps.forEach(step => {
         if (step.volumeM3 > 0) {
-          stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: b.rheology.pv, yp: b.rheology.yp, rateLps: step.rateLps, isCement: false });
+          stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: b.rheology.pv, yp: b.rheology.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: 1.0 });
         }
       });
     } else {
       const rate = b.flowRateSteps.length > 0 ? b.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: b.name, volume: b.volume, densityGcm3: b.density / 1000, pv: b.rheology.pv, yp: b.rheology.yp, rateLps: rate, isCement: false });
+      stages.push({ name: b.name, volume: b.volume, densityGcm3: b.density / 1000, pv: b.rheology.pv, yp: b.rheology.yp, rateLps: rate, isCement: false, compressionCoeff: 1.0 });
     }
   });
 
@@ -472,35 +474,35 @@ export function calculatePressureProfile(
     if (s.flowRateSteps.length > 1) {
       s.flowRateSteps.forEach(step => {
         if (step.volumeM3 > 0) {
-          stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: s.rheology.pv, yp: s.rheology.yp, rateLps: step.rateLps, isCement: true });
+          stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: s.rheology.pv, yp: s.rheology.yp, rateLps: step.rateLps, isCement: true, compressionCoeff: 1.0 });
         }
       });
     } else {
       const rate = s.flowRateSteps.length > 0 ? s.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: s.name, volume: vol, densityGcm3: s.density, pv: s.rheology.pv, yp: s.rheology.yp, rateLps: rate, isCement: true });
+      stages.push({ name: s.name, volume: vol, densityGcm3: s.density, pv: s.rheology.pv, yp: s.rheology.yp, rateLps: rate, isCement: true, compressionCoeff: 1.0 });
     }
   });
 
   // Продавочные жидкости — по шагам с распределением объёма
   let remainingDispVol = displacementVol;
   displacementFluids.forEach(df => {
+    const cc = df.compressionCoeff || 1.0;
     const totalStepVol = df.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
     if (totalStepVol > 0) {
       df.flowRateSteps.forEach(step => {
         if (step.volumeM3 > 0) {
           const vol = Math.min(step.volumeM3, remainingDispVol);
           if (vol > 0) {
-            stages.push({ name: df.name, volume: vol, densityGcm3: df.density / 1000, pv: df.rheology.pv, yp: df.rheology.yp, rateLps: step.rateLps, isCement: false });
+            stages.push({ name: df.name, volume: vol, densityGcm3: df.density / 1000, pv: df.rheology.pv, yp: df.rheology.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc });
             remainingDispVol -= vol;
           }
         }
       });
     } else {
-      // Распределить оставшийся объём равномерно по шагам
       const perStep = remainingDispVol / Math.max(df.flowRateSteps.length, 1);
       df.flowRateSteps.forEach(step => {
         if (perStep > 0 && step.rateLps > 0) {
-          stages.push({ name: df.name, volume: perStep, densityGcm3: df.density / 1000, pv: df.rheology.pv, yp: df.rheology.yp, rateLps: step.rateLps, isCement: false });
+          stages.push({ name: df.name, volume: perStep, densityGcm3: df.density / 1000, pv: df.rheology.pv, yp: df.rheology.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc });
         }
       });
       remainingDispVol = 0;
@@ -508,6 +510,9 @@ export function calculatePressureProfile(
   });
 
   let cementStartFound = false;
+
+  // Средняя плотность закачиваемого (для эффекта U-tube / гравитационного вытеснения)
+  const mudDensityGcm3 = drillingFluid.density / 1000;
 
   stages.forEach(s => {
     if (s.isCement && !cementStartFound) {
@@ -525,7 +530,13 @@ export function calculatePressureProfile(
     const bhp = hydroMud + frPipe + frAnn;
     const surfP = frPipe + frAnn;
 
-    points.push({ stage: s.name, time: cumTime, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: s.rateLps });
+    // Выход на устье: учёт сжатия и разницы плотностей (U-tube эффект)
+    // Тяжёлый цемент вытесняет лёгкий раствор быстрее — коэффициент ускорения
+    const densityRatio = s.densityGcm3 > mudDensityGcm3 ? s.densityGcm3 / mudDensityGcm3 : 1.0;
+    const compressionEffect = s.compressionCoeff > 1.0 ? 1 / s.compressionCoeff : 1.0; // сжатие уменьшает мгновенный выход
+    const annularReturn = s.rateLps * densityRatio * compressionEffect;
+
+    points.push({ stage: s.name, time: cumTime, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: s.rateLps, annularReturnRate: annularReturn });
   });
 
   // СТОП — давление +2.75 МПа (~27.5 атм) от последнего рабочего
@@ -537,10 +548,11 @@ export function calculatePressureProfile(
     stage: "СТОП (пробка в ЦКОД)",
     time: cumTime + 0.5,
     surfacePressure: lastPoint.surfacePressure + stopIncrease,
-    bottomholePressure: lastPoint.bottomholePressure + stopIncrease,
+    bottomholePressure: lastPoint.bottomholePressure, // забойное давление НЕ растёт при СТОП
     fracturePressure: fracP,
     cumulativeVolume: cumVol,
     pumpRateLps: 0,
+    annularReturnRate: 0,
   });
 
   // Безопасное время = 75% от (начало закачки цемента -> СТОП)

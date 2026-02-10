@@ -72,7 +72,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                   contentStyle={tooltipStyle}
                   labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`}
                   formatter={(value: number, name: string) => {
-                    if (name === "Производительность") return [value.toFixed(1) + " л/с", name];
+                    if (name === "Производительность" || name === "Выход на устье") return [value.toFixed(1) + " л/с", name];
                     return [value.toFixed(2) + " МПа", name];
                   }}
                 />
@@ -80,10 +80,11 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 {safeTimeEnd > 0 && (
                   <ReferenceLine yAxisId="pressure" x={safeTimeEnd} stroke="hsl(45, 90%, 45%)" strokeDasharray="4 4" strokeWidth={2} label={{ value: "75% безоп.", position: "top", fontSize: 10, fill: "hsl(45, 90%, 45%)" }} />
                 )}
-                <Line yAxisId="pressure" type="monotone" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-                <Line yAxisId="pressure" type="monotone" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
-                <Line yAxisId="pressure" type="monotone" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
+                <Line yAxisId="pressure" type="linear" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                <Line yAxisId="pressure" type="linear" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
+                <Line yAxisId="pressure" type="linear" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="rate" type="stepAfter" dataKey="pumpRateLps" name="Производительность" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
+                <Line yAxisId="rate" type="linear" dataKey="annularReturnRate" name="Выход на устье" stroke="hsl(30, 80%, 50%)" strokeWidth={1.5} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -104,8 +105,8 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft" }} className="text-xs" />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => [value.toFixed(2) + " МПа", name]} />
                 <Legend />
-                <Line type="monotone" dataKey="bottomholePressure" name="Забойное давление" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                <Line type="linear" dataKey="bottomholePressure" name="Забойное давление" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
+                <Line type="linear" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -126,9 +127,9 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft" }} className="text-xs" />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Объём: ${Number(v).toFixed(1)} м³`} formatter={(value: number, name: string) => [value.toFixed(2) + " МПа", name]} />
                 <Legend />
-                <Line type="monotone" dataKey="surfacePressure" name="На устье" stroke="hsl(220, 70%, 50%)" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="bottomholePressure" name="На забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="fracturePressure" name="ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                <Line type="linear" dataKey="surfacePressure" name="На устье" stroke="hsl(220, 70%, 50%)" strokeWidth={2} dot={false} />
+                <Line type="linear" dataKey="bottomholePressure" name="На забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
+                <Line type="linear" dataKey="fracturePressure" name="ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>

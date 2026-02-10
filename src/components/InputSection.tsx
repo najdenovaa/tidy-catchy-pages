@@ -208,6 +208,7 @@ export default function InputSection(props: Props) {
     else if (field === "density") d.density = num;
     else if (field === "pv") d.rheology = { ...d.rheology, pv: num };
     else if (field === "yp") d.rheology = { ...d.rheology, yp: num };
+    else if (field === "compressionCoeff") d.compressionCoeff = num;
     updated[idx] = d;
     onDisplacementFluidsChange(updated);
   };
@@ -409,7 +410,7 @@ export default function InputSection(props: Props) {
           <CardContent className="pt-4 space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground italic">Порции продавки — порядок закачки. Можно использовать разные жидкости.</span>
-              <button onClick={() => onDisplacementFluidsChange([...displacementFluids, { name: `Порция ${displacementFluids.length + 1}`, density: 1010, rheology: { pv: 1, yp: 0 }, flowRateSteps: [{ rateLps: 5, volumeM3: 0 }] }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+              <button onClick={() => onDisplacementFluidsChange([...displacementFluids, { name: `Порция ${displacementFluids.length + 1}`, density: 1010, rheology: { pv: 1, yp: 0 }, compressionCoeff: 1.0, flowRateSteps: [{ rateLps: 5, volumeM3: 0 }] }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                 + Порция
               </button>
             </div>
@@ -441,11 +442,12 @@ export default function InputSection(props: Props) {
                     {displacementFluids.length > 1 && <button onClick={() => onDisplacementFluidsChange(displacementFluids.filter((_, i) => i !== idx))} className="text-xs text-destructive hover:underline">Удалить</button>}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><Input value={df.name} onChange={(e) => handleDispFluidChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label><Input type="number" step="1" value={df.density || ""} onChange={(e) => handleDispFluidChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">PV, сПз</Label><Input type="number" value={df.rheology.pv || ""} onChange={(e) => handleDispFluidChange(idx, "pv", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><Input type="number" step="0.1" value={df.rheology.yp || ""} onChange={(e) => handleDispFluidChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Коэфф. сжатия</Label><Input type="number" step="0.01" value={df.compressionCoeff || ""} onChange={(e) => handleDispFluidChange(idx, "compressionCoeff", e.target.value)} className="h-8 text-sm" placeholder="1.05" /></div>
                 </div>
                 <FlowRateStepsEditor
                   steps={df.flowRateSteps}
