@@ -2,7 +2,7 @@ import { useEffect, useRef, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import CopyImageButton from "./CopyImageButton";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid } from "@/lib/cementing-calculations";
-import { getSlurryHeight, interpolateTVD, annularVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
+import { getSlurryHeight, interpolateTVD, annularVolumePerMeter } from "@/lib/cementing-calculations";
 
 interface Props {
   wellData: WellData;
@@ -12,7 +12,35 @@ interface Props {
   displacementFluids?: DisplacementFluid[];
 }
 
-interface DepthSlice {
+// ── Simple 2D value noise (deterministic, smooth) ──
+function hash2d(ix: number, iy: number): number {
+  let h = ix * 374761393 + iy * 668265263;
+  h = (h ^ (h >> 13)) * 1274126177;
+  return ((h ^ (h >> 16)) & 0x7fffffff) / 0x7fffffff; // 0..1
+}
+
+function smoothNoise(x: number, y: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  // Smooth interpolation (hermite)
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const n00 = hash2d(ix, iy);
+  const n10 = hash2d(ix + 1, iy);
+  const n01 = hash2d(ix, iy + 1);
+  const n11 = hash2d(ix + 1, iy + 1);
+  const nx0 = n00 + (n10 - n00) * sx;
+  const nx1 = n01 + (n11 - n01) * sx;
+  return nx0 + (nx1 - nx0) * sy;
+}
+
+function fbmNoise(x: number, y: number): number {
+  return 0.6 * smoothNoise(x, y) + 0.3 * smoothNoise(x * 2.1, y * 2.1) + 0.1 * smoothNoise(x * 4.3, y * 4.3);
+}
+
+interface DepthInfo {
   md: number;
   zenithDeg: number;
   fluidType: "cement" | "buffer" | "mud";
@@ -21,14 +49,15 @@ interface DepthSlice {
   isOpenHole: boolean;
 }
 
-function buildSlices(wellData: WellData, slurries: SlurryInput[], buffers: BufferFluid[], drillingFluid: DrillingFluid): DepthSlice[] {
+function buildDepthInfo(
+  wellData: WellData, slurries: SlurryInput[], buffers: BufferFluid[], drillingFluid: DrillingFluid
+): { info: DepthInfo[]; mdMin: number; mdMax: number } {
   const traj = wellData.trajectory?.length >= 2
     ? [...wellData.trajectory].sort((a, b) => a.md - b.md)
     : [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }, { md: wellData.casingDepthMD, azimuth: 0, zenith: 0, tvd: wellData.casingDepthMD }];
 
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
 
-  // Cement intervals
   const cemInts: { top: number; bot: number; idx: number }[] = [];
   slurries.forEach((s, i) => {
     const h = getSlurryHeight(slurries, i, wellData.casingDepthMD);
@@ -38,7 +67,6 @@ function buildSlices(wellData: WellData, slurries: SlurryInput[], buffers: Buffe
     }
   });
 
-  // Buffer intervals
   const bufInts: { top: number; bot: number; idx: number }[] = [];
   let cur = cemInts.length > 0 ? Math.min(...cemInts.map(c => c.top)) : wellData.casingDepthMD;
   for (let i = buffers.length - 1; i >= 0; i--) {
@@ -52,31 +80,30 @@ function buildSlices(wellData: WellData, slurries: SlurryInput[], buffers: Buffe
   function zenithAt(md: number): number {
     if (md <= traj[0].md) return traj[0].zenith;
     if (md >= traj[traj.length - 1].md) return traj[traj.length - 1].zenith;
-    for (let i = 0; i < traj.length - 1; i++) {
-      if (md >= traj[i].md && md <= traj[i + 1].md) {
-        const f = (md - traj[i].md) / (traj[i + 1].md - traj[i].md || 1);
-        return traj[i].zenith + f * (traj[i + 1].zenith - traj[i].zenith);
+    for (let j = 0; j < traj.length - 1; j++) {
+      if (md >= traj[j].md && md <= traj[j + 1].md) {
+        const f = (md - traj[j].md) / (traj[j + 1].md - traj[j].md || 1);
+        return traj[j].zenith + f * (traj[j + 1].zenith - traj[j].zenith);
       }
     }
     return 0;
   }
 
-  // Only cement interval (from top cement/buffer to shoe)
-  const topMD = Math.min(
+  const mdMin = Math.min(
     ...(cemInts.map(c => c.top)),
     ...(bufInts.map(b => b.top)),
     wellData.casingDepthMD
   );
-  const botMD = wellData.casingDepthMD;
-  const N = 300;
-  const slices: DepthSlice[] = [];
+  const mdMax = wellData.casingDepthMD;
+  const N = 400;
+  const info: DepthInfo[] = [];
 
   for (let i = 0; i <= N; i++) {
-    const md = topMD + (botMD - topMD) * i / N;
+    const md = mdMin + (mdMax - mdMin) * i / N;
     const zenithDeg = zenithAt(md);
     const isOpenHole = md > wellData.prevCasingDepth;
 
-    let fluidType: DepthSlice["fluidType"] = "mud";
+    let fluidType: DepthInfo["fluidType"] = "mud";
     let fluidDensity = drillingFluid.density;
     let fluidYP = drillingFluid.rheology.yp;
 
@@ -99,65 +126,72 @@ function buildSlices(wellData: WellData, slurries: SlurryInput[], buffers: Buffe
       }
     }
 
-    slices.push({ md, zenithDeg, fluidType, fluidDensity, fluidYP, isOpenHole });
+    info.push({ md, zenithDeg, fluidType, fluidDensity, fluidYP, isOpenHole });
   }
-  return slices;
+  return { info, mdMin, mdMax };
 }
 
 /**
- * Compute displacement efficiency 0..1.
- * angle: circumferential 0=narrow side (top in deviated well), π=wide side (bottom)
+ * Displacement efficiency 0..1 at a given depth and circumferential position.
+ * angle: 0=narrow side (top of hole in deviated well), π=wide side (bottom)
+ * Uses smooth 2D noise for natural-looking heterogeneity.
  */
-function efficiency(
-  slice: DepthSlice,
+function calcEff(
+  d: DepthInfo,
   angle: number,
+  noiseX: number,
+  noiseY: number,
   mudDensity: number,
   mudYP: number,
-  avgRateLps: number,
+  avgRate: number,
   annArea: number,
   cavernCoeff: number,
 ): number {
-  if (slice.fluidType === "mud") return 0;
+  if (d.fluidType === "mud") return 0;
 
-  // Density advantage
-  const dr = slice.fluidDensity / mudDensity;
-  const dScore = Math.min(1, Math.max(0, (dr - 0.85) / 0.6));
+  // Density advantage: higher cement density → better displacement
+  const densityRatio = d.fluidDensity / mudDensity;
+  const dScore = Math.min(1, Math.max(0, (densityRatio - 0.85) / 0.55));
 
-  // YP advantage (cement should have higher YP)
-  const ypScore = Math.min(1, Math.max(0.2, (slice.fluidYP / Math.max(mudYP, 1)) * 0.4));
+  // Rheology: higher YP cement relative to mud → better plug flow
+  const ypScore = Math.min(1, Math.max(0.15, (d.fluidYP / Math.max(mudYP, 1)) * 0.35));
 
-  // Velocity
-  const vel = avgRateLps > 0 ? (avgRateLps * 0.001) / annArea : 0.4;
-  const vScore = Math.min(1, vel / 1.2);
+  // Velocity: faster → better turbulent displacement
+  const vel = avgRate > 0 ? (avgRate * 0.001) / annArea : 0.3;
+  const vScore = Math.min(1, vel / 1.0);
 
-  let eff = 0.35 * dScore + 0.25 * ypScore + 0.4 * vScore;
+  let eff = 0.30 * dScore + 0.25 * ypScore + 0.45 * vScore;
 
-  // Inclination effect: high zenith → eccentricity → bad on narrow side
-  const eccen = Math.sin(slice.zenithDeg * Math.PI / 180);
-  const cosA = Math.cos(angle); // +1 narrow, -1 wide
-  eff -= eccen * cosA * 0.3;
+  // Inclination: eccentricity → narrow side gets less flow → worse displacement
+  const eccen = Math.sin(d.zenithDeg * Math.PI / 180);
+  const cosA = Math.cos(angle);
+  // Narrow side (cosA > 0): reduce eff; wide side (cosA < 0): increase eff
+  eff -= eccen * cosA * 0.35;
 
-  // Open hole roughness
-  if (slice.isOpenHole) eff *= 0.93;
+  // Open hole: rougher, worse
+  if (d.isOpenHole) eff *= 0.90;
 
-  // Cavern
-  if (cavernCoeff > 1.05) eff *= 1.0 - (cavernCoeff - 1.0) * 0.2;
+  // Cavern: reduces velocity locally
+  if (cavernCoeff > 1.05) eff *= 1.0 - (cavernCoeff - 1.0) * 0.25;
 
-  // Buffer is weaker
-  if (slice.fluidType === "buffer") eff *= 0.55;
+  // Buffer: inherently less effective
+  if (d.fluidType === "buffer") eff *= 0.5;
 
-  // Deterministic noise for texture
-  const n = Math.sin(slice.md * 0.53 + angle * 3.17) * 0.5 + 0.5;
-  eff += (n - 0.5) * 0.08;
+  // Smooth 2D noise for natural heterogeneity (no banding)
+  const noise = fbmNoise(noiseX, noiseY);
+  eff += (noise - 0.5) * 0.18;
 
   return Math.max(0, Math.min(1, eff));
 }
 
-export default function DisplacementEfficiency({ wellData, slurries, buffers, drillingFluid, displacementFluids }: Props) {
+export default function DisplacementEfficiency({ wellData, slurries, buffers, drillingFluid }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const slices = useMemo(() => buildSlices(wellData, slurries, buffers, drillingFluid), [wellData, slurries, buffers, drillingFluid]);
+  const { info, mdMin, mdMax } = useMemo(
+    () => buildDepthInfo(wellData, slurries, buffers, drillingFluid),
+    [wellData, slurries, buffers, drillingFluid]
+  );
 
   const annArea = useMemo(() => {
     const dH = wellData.holeDiameter / 1000;
@@ -174,22 +208,21 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || slices.length < 2) return;
+    if (!canvas || info.length < 2) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Layout: left annulus strip | casing | right annulus strip
-    const W = 460, H = 650;
-    const mL = 55, mR = 50, mT = 30, mB = 45;
+    const W = 480, H = 680;
+    const mL = 55, mR = 20, mT = 30, mB = 50;
     const plotH = H - mT - mB;
     const plotW = W - mL - mR;
 
-    // Casing in center, annulus on both sides
-    const casingW = plotW * 0.15;
+    // Layout: [borehole wall] annulus | casing | annulus [borehole wall]
+    const casingW = plotW * 0.12;
     const annW = (plotW - casingW) / 2;
-    const annLeftX = mL;
-    const casingX = mL + annW;
-    const annRightX = casingX + casingW;
+    const annLX = mL;
+    const casX = mL + annW;
+    const annRX = casX + casingW;
 
     canvas.width = W * 2;
     canvas.height = H * 2;
@@ -200,90 +233,85 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     ctx.fillStyle = "#1a1a2e";
     ctx.fillRect(0, 0, W, H);
 
-    const mdMin = slices[0].md;
-    const mdMax = slices[slices.length - 1].md;
-    const numAngles = 60; // circumferential resolution per side
-    const cellHraw = plotH / slices.length;
+    const numAnglesPerSide = 80;
+    const mdRange = mdMax - mdMin || 1;
 
-    // Draw LEFT annulus (wide side → narrow side, angle π→0)
-    for (let di = 0; di < slices.length; di++) {
-      const slice = slices[di];
-      const y = mT + di * cellHraw;
-      const cellW = annW / numAngles;
-      for (let ai = 0; ai < numAngles; ai++) {
-        // Left side: wide side (bottom) at left edge, narrow side at casing
-        const angle = Math.PI * (1 - ai / numAngles); // π→0
-        const eff = efficiency(slice, angle, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
-        // Grayscale: dark gray = good, white = poor
-        const gray = Math.round(255 - eff * 220); // 35 (good) to 255 (poor=0)
-        ctx.fillStyle = `rgb(${gray},${gray},${gray})`;
-        ctx.fillRect(annLeftX + ai * cellW, y, cellW + 0.5, cellHraw + 0.5);
+    // Use ImageData for speed
+    // We'll draw pixel-by-pixel on a temporary canvas
+    const imgW = Math.round(plotW);
+    const imgH = Math.round(plotH);
+    const imgData = ctx.createImageData(imgW * 2, imgH * 2);
+    const pixels = imgData.data;
+
+    for (let py = 0; py < imgH * 2; py++) {
+      const yFrac = py / (imgH * 2);
+      // Find closest depth slice
+      const diFloat = yFrac * (info.length - 1);
+      const di = Math.min(Math.floor(diFloat), info.length - 1);
+      const d = info[di];
+
+      for (let px = 0; px < imgW * 2; px++) {
+        const xFrac = px / (imgW * 2);
+
+        // Determine if pixel is in left annulus, casing, or right annulus
+        const annFracW = annW / plotW;
+        const casFracW = casingW / plotW;
+
+        let gray = 0;
+        let alpha = 255;
+
+        if (xFrac < annFracW) {
+          // Left annulus: wide side at left edge (angle=π), narrow at casing (angle→0)
+          const localFrac = xFrac / annFracW; // 0=left edge (wide), 1=casing (narrow)
+          const angle = Math.PI * (1 - localFrac);
+          const noiseX = localFrac * 6;
+          const noiseY = yFrac * 20;
+          const eff = calcEff(d, angle, noiseX, noiseY, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
+          // Dark = good cement (low gray), white = poor (high gray)
+          gray = Math.round(40 + (1 - eff) * 215);
+        } else if (xFrac > annFracW + casFracW) {
+          // Right annulus: narrow at casing (angle=0), wide at right edge (angle→π)
+          const localFrac = (xFrac - annFracW - casFracW) / annFracW;
+          const angle = Math.PI * localFrac;
+          const noiseX = localFrac * 6 + 10; // offset to avoid symmetry
+          const noiseY = yFrac * 20;
+          const eff = calcEff(d, angle, noiseX, noiseY, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
+          gray = Math.round(40 + (1 - eff) * 215);
+        } else {
+          // Casing — steel gray
+          gray = 110;
+          alpha = 220;
+        }
+
+        const idx = (py * imgW * 2 + px) * 4;
+        pixels[idx] = gray;
+        pixels[idx + 1] = gray;
+        pixels[idx + 2] = gray;
+        pixels[idx + 3] = alpha;
       }
     }
 
-    // Draw RIGHT annulus (narrow side → wide side, angle 0→π)
-    for (let di = 0; di < slices.length; di++) {
-      const slice = slices[di];
-      const y = mT + di * cellHraw;
-      const cellW = annW / numAngles;
-      for (let ai = 0; ai < numAngles; ai++) {
-        const angle = Math.PI * (ai / numAngles); // 0→π
-        const eff = efficiency(slice, angle, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
-        const gray = Math.round(255 - eff * 220);
-        ctx.fillStyle = `rgb(${gray},${gray},${gray})`;
-        ctx.fillRect(annRightX + ai * cellW, y, cellW + 0.5, cellHraw + 0.5);
-      }
-    }
-
-    // Draw casing (steel gray)
-    ctx.fillStyle = "#707070";
-    ctx.fillRect(casingX, mT, casingW, plotH);
-    ctx.strokeStyle = "#999";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(casingX, mT, casingW, plotH);
-
-    // Casing label
-    ctx.save();
-    ctx.translate(casingX + casingW / 2, mT + plotH / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.fillStyle = "#ccc";
-    ctx.font = "9px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(`Обс. колонна ∅${wellData.casingOD}`, 0, 3);
-    ctx.restore();
+    ctx.putImageData(imgData, mL * 2, mT * 2);
 
     // Borehole walls
     ctx.strokeStyle = "#8B7D6B";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(annLeftX, mT); ctx.lineTo(annLeftX, mT + plotH);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(annRightX + annW, mT); ctx.lineTo(annRightX + annW, mT + plotH);
-    ctx.stroke();
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(annLX, mT); ctx.lineTo(annLX, mT + plotH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(annRX + annW, mT); ctx.lineTo(annRX + annW, mT + plotH); ctx.stroke();
 
-    // Formation labels
-    ctx.fillStyle = "#8B7D6B";
-    ctx.font = "9px sans-serif";
-    ctx.textAlign = "center";
-    ctx.save();
-    ctx.translate(annLeftX - 8, mT + plotH / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.fillText("Порода", 0, 0);
-    ctx.restore();
-    ctx.save();
-    ctx.translate(annRightX + annW + 10, mT + plotH / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.fillText("Порода", 0, 0);
-    ctx.restore();
+    // Casing walls
+    ctx.strokeStyle = "#bbb";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(casX, mT); ctx.lineTo(casX, mT + plotH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(annRX, mT); ctx.lineTo(annRX, mT + plotH); ctx.stroke();
 
-    // Y-axis depth labels
+    // Labels
     ctx.fillStyle = "#aaa";
     ctx.font = "10px sans-serif";
     ctx.textAlign = "right";
-    const dInt = mdMax - mdMin > 300 ? 100 : mdMax - mdMin > 100 ? 50 : 20;
+    const dInt = mdRange > 300 ? 100 : mdRange > 100 ? 50 : 20;
     for (let md = Math.ceil(mdMin / dInt) * dInt; md <= mdMax; md += dInt) {
-      const y = mT + ((md - mdMin) / (mdMax - mdMin)) * plotH;
+      const y = mT + ((md - mdMin) / mdRange) * plotH;
       ctx.fillStyle = "#555";
       ctx.fillRect(mL - 4, y, 4, 1);
       ctx.fillStyle = "#aaa";
@@ -300,41 +328,43 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     ctx.fillText("Глубина по стволу, м", 0, 0);
     ctx.restore();
 
+    // X labels
+    ctx.fillStyle = "#888";
+    ctx.font = "9px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Порода", annLX - 8, mT + plotH + 14);
+    ctx.fillText("Затрубье", annLX + annW / 2, mT + plotH + 14);
+    ctx.fillText("Колонна", casX + casingW / 2, mT + plotH + 14);
+    ctx.fillText("Затрубье", annRX + annW / 2, mT + plotH + 14);
+    ctx.fillText("Порода", annRX + annW + 12, mT + plotH + 14);
+
     // Title
     ctx.fillStyle = "#ddd";
     ctx.font = "bold 12px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("Эффективность замещения", W / 2, 16);
+    ctx.fillText("Эффективность замещения — продольный разрез", W / 2, 16);
 
-    // Legend bar at bottom
-    const legX = mL, legY = mT + plotH + 18, legW = plotW, legH = 10;
+    // Legend
+    const legX = mL, legY = mT + plotH + 24, legW = plotW, legH = 10;
     for (let i = 0; i < legW; i++) {
       const eff = i / legW;
-      const gray = Math.round(255 - eff * 220);
-      ctx.fillStyle = `rgb(${gray},${gray},${gray})`;
+      const g = Math.round(40 + (1 - eff) * 215);
+      ctx.fillStyle = `rgb(${g},${g},${g})`;
       ctx.fillRect(legX + i, legY, 1.5, legH);
     }
     ctx.strokeStyle = "#555";
     ctx.lineWidth = 0.5;
     ctx.strokeRect(legX, legY, legW, legH);
-
     ctx.fillStyle = "#aaa";
     ctx.font = "9px sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("Плохое (засвет)", legX, legY + legH + 12);
+    ctx.fillText("Засвет (каналы БР)", legX, legY + legH + 12);
     ctx.textAlign = "right";
     ctx.fillText("Полное замещение", legX + legW, legY + legH + 12);
 
-    // Side labels
-    ctx.fillStyle = "#888";
-    ctx.font = "9px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("Широкая сторона", annLeftX + annW * 0.3, mT + plotH + 6);
-    ctx.fillText("Широкая сторона", annRightX + annW * 0.7, mT + plotH + 6);
+  }, [info, mdMin, mdMax, drillingFluid, avgRate, annArea, wellData]);
 
-  }, [slices, drillingFluid, avgRate, annArea, wellData]);
-
-  const mdRange = slices.length >= 2 ? `${slices[0].md.toFixed(0)} – ${slices[slices.length - 1].md.toFixed(0)} м` : "";
+  const range = info.length >= 2 ? `${info[0].md.toFixed(0)} – ${info[info.length - 1].md.toFixed(0)} м` : "";
 
   return (
     <Card>
@@ -343,7 +373,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
           <div>
             <CardTitle className="text-lg">Эффективность замещения</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Продольный разрез кольцевого пространства ({mdRange}). Тёмное — полное замещение, белое (засвет) — каналы бурового раствора.
+              Продольный разрез кольцевого пространства ({range}). Тёмное — цемент замещён полностью, белое — каналы бурового раствора (засветы).
             </p>
           </div>
           <CopyImageButton targetRef={containerRef} />
