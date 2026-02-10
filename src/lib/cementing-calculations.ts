@@ -919,13 +919,15 @@ export function calculatePressureProfile(
   // Берём последнее динамическое давление (с трением, насос работал)
   const lastPoint = points[points.length - 1];
   const lastSurfP = lastPoint ? lastPoint.surfacePressure : 0;
-  const lastBhp = lastPoint ? lastPoint.bottomholePressure : 0;
   const lastRate = lastPoint ? lastPoint.pumpRateLps : 0;
 
-  // Скачок давления от посадки пробки (от динамического давления)
+  // Забойное = только гидростатика затрубья (насос отсечён пробкой, трения нет)
+  const staticAnnHydro = calcAnnularHydrostatic();
+
+  // Скачок давления от посадки пробки (от динамического давления на насосе)
   points.push({
     stage: "СТОП (пробка в ЦКОД)", time: cumTime + 0.5,
-    surfacePressure: lastSurfP + stopIncrease, bottomholePressure: lastBhp,
+    surfacePressure: lastSurfP + stopIncrease, bottomholePressure: staticAnnHydro,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: lastRate,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0,
   });
@@ -933,7 +935,7 @@ export function calculatePressureProfile(
   // Удержание давления СТОП
   points.push({
     stage: "СТОП (удержание)", time: cumTime + 5,
-    surfacePressure: lastSurfP + stopIncrease, bottomholePressure: lastBhp,
+    surfacePressure: lastSurfP + stopIncrease, bottomholePressure: staticAnnHydro,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0,
   });
