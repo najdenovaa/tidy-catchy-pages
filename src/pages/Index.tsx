@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InputSection from "@/components/InputSection";
 import PumpingSchedule from "@/components/PumpingSchedule";
@@ -8,7 +8,7 @@ import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid, PressureProfileResult, TrajectoryPoint } from "@/lib/cementing-calculations";
-
+import { FileDown, Loader2 } from "lucide-react";
 const defaultWellData: WellData = {
   wellDepthMD: 410,
   wellDepthTVD: 410,
@@ -108,6 +108,8 @@ export default function Index() {
   const [buffers, setBuffers] = useState<BufferFluid[]>(defaultBuffers);
   const [displacementFluids, setDisplacementFluids] = useState<DisplacementFluid[]>(defaultDisplacementFluids);
   const [fractureGradient, setFractureGradient] = useState(17.7);
+  const [activeTab, setActiveTab] = useState("input");
+  const [exporting, setExporting] = useState(false);
 
   const liveDispVol = useMemo(() => {
     const cid = getCasingID(wellData.casingOD, wellData.casingWall);
@@ -134,6 +136,92 @@ export default function Index() {
     [calcSnapshot, volumes]
   );
 
+  const tabOrder = ["input", "hydraulics", "schedule", "materials", "charts", "visual"] as const;
+  const tabNames: Record<string, string> = {
+    input: "Исходные данные",
+    hydraulics: "Гидравлика",
+    schedule: "Закачка",
+    materials: "Материалы",
+    charts: "Графики",
+    visual: "Визуал",
+  };
+
+  const handleExportPDF = useCallback(async () => {
+    setExporting(true);
+    try {
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+        import("jspdf"),
+        import("html2canvas"),
+      ]);
+
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 10;
+      const contentW = pageW - margin * 2;
+
+      const prevTab = activeTab;
+
+      for (let t = 0; t < tabOrder.length; t++) {
+        const tab = tabOrder[t];
+
+        // Switch to this tab and wait for render
+        setActiveTab(tab);
+        await new Promise(r => setTimeout(r, 600));
+
+        const tabContent = document.querySelector(`[data-tab-content="${tab}"]`) as HTMLElement;
+        if (!tabContent || tabContent.offsetHeight === 0) continue;
+
+        if (t > 0) pdf.addPage();
+
+        // Header
+        pdf.setFontSize(14);
+        pdf.setTextColor(50, 50, 50);
+        pdf.text(`Программа цементирования — ${tabNames[tab]}`, margin, margin + 6);
+        pdf.setDrawColor(200, 200, 200);
+        pdf.line(margin, margin + 9, pageW - margin, margin + 9);
+
+        const canvas = await html2canvas(tabContent, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#1a1a2e",
+          logging: false,
+          windowWidth: tabContent.scrollWidth,
+          windowHeight: tabContent.scrollHeight,
+        });
+
+        const imgData = canvas.toDataURL("image/jpeg", 0.92);
+        const imgRatio = canvas.height / canvas.width;
+        const imgW = contentW;
+        const imgH = imgW * imgRatio;
+        const startY = margin + 12;
+
+        // If content is taller than one page, scale to fit
+        const availH = pageH - startY - margin;
+        if (imgH > availH) {
+          const fitW = availH / imgRatio;
+          pdf.addImage(imgData, "JPEG", margin + (contentW - fitW) / 2, startY, fitW, availH);
+        } else {
+          pdf.addImage(imgData, "JPEG", margin, startY, imgW, imgH);
+        }
+
+        // Footer
+        pdf.setFontSize(8);
+        pdf.setTextColor(150, 150, 150);
+        pdf.text(`Стр. ${t + 1} / ${tabOrder.length}`, pageW - margin, pageH - 5, { align: "right" });
+      }
+
+      // Restore original tab
+      setActiveTab(prevTab);
+
+      pdf.save("cementing-program.pdf");
+    } catch (e) {
+      console.error("PDF export error:", e);
+    } finally {
+      setExporting(false);
+    }
+  }, [activeTab, calcSnapshot]);
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card sticky top-0 z-10">
@@ -147,17 +235,27 @@ export default function Index() {
               <p className="text-xs text-muted-foreground">Расчёт обсадных колонн</p>
             </div>
           </div>
-          <button
-            onClick={handleCalculate}
-            className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors shadow-md"
-          >
-            РАССЧИТАТЬ
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleExportPDF}
+              disabled={exporting}
+              className="px-4 py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-2 disabled:opacity-50"
+            >
+              {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+              {exporting ? "Экспорт..." : "PDF"}
+            </button>
+            <button
+              onClick={handleCalculate}
+              className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors shadow-md"
+            >
+              РАССЧИТАТЬ
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        <Tabs defaultValue="input" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-6 h-auto">
             <TabsTrigger value="input" className="text-xs py-2">Исходные данные</TabsTrigger>
             <TabsTrigger value="hydraulics" className="text-xs py-2">Гидравлика</TabsTrigger>
@@ -168,79 +266,91 @@ export default function Index() {
           </TabsList>
 
           <TabsContent value="input">
-            <InputSection
-              wellData={wellData}
-              onWellDataChange={setWellData}
-              drillingFluid={drillingFluid}
-              onDrillingFluidChange={setDrillingFluid}
-              buffers={buffers}
-              onBuffersChange={setBuffers}
-              slurries={slurries}
-              onSlurriesChange={setSlurries}
-              displacementFluids={displacementFluids}
-              onDisplacementFluidsChange={setDisplacementFluids}
-              displacementVolume={liveDispVol}
-              fractureGradient={fractureGradient}
-              onFractureGradientChange={setFractureGradient}
-            />
+            <div data-tab-content="input">
+              <InputSection
+                wellData={wellData}
+                onWellDataChange={setWellData}
+                drillingFluid={drillingFluid}
+                onDrillingFluidChange={setDrillingFluid}
+                buffers={buffers}
+                onBuffersChange={setBuffers}
+                slurries={slurries}
+                onSlurriesChange={setSlurries}
+                displacementFluids={displacementFluids}
+                onDisplacementFluidsChange={setDisplacementFluids}
+                displacementVolume={liveDispVol}
+                fractureGradient={fractureGradient}
+                onFractureGradientChange={setFractureGradient}
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="hydraulics">
-            {calcSnapshot && volumes ? (
-              <HydraulicsSection
-                wellData={calcSnapshot.wellData}
-                slurries={calcSnapshot.slurries}
-                fractureGradient={calcSnapshot.fractureGradient}
-                displacementDensity={calcSnapshot.displacementFluids[0]?.density ?? 1000}
-                workTimeWithCement={pressureResult ? pressureResult.stopTime - pressureResult.cementStartTime : 0}
-                volumes={volumes}
-                displacementFluids={calcSnapshot.displacementFluids}
-                drillingFluid={calcSnapshot.drillingFluid}
-              />
-            ) : (
-              <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
-            )}
+            <div data-tab-content="hydraulics">
+              {calcSnapshot && volumes ? (
+                <HydraulicsSection
+                  wellData={calcSnapshot.wellData}
+                  slurries={calcSnapshot.slurries}
+                  fractureGradient={calcSnapshot.fractureGradient}
+                  displacementDensity={calcSnapshot.displacementFluids[0]?.density ?? 1000}
+                  workTimeWithCement={pressureResult ? pressureResult.stopTime - pressureResult.cementStartTime : 0}
+                  volumes={volumes}
+                  displacementFluids={calcSnapshot.displacementFluids}
+                  drillingFluid={calcSnapshot.drillingFluid}
+                />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="schedule">
-            {calcSnapshot && volumes ? (
-              <PumpingSchedule
-                buffers={calcSnapshot.buffers}
-                slurries={calcSnapshot.slurries}
-                annularVPM={volumes.annularVolumePerMeter}
-                displacementVolume={volumes.displacementVolume}
-                displacementFluids={calcSnapshot.displacementFluids}
-                casingDepthMD={calcSnapshot.wellData.casingDepthMD}
-              />
-            ) : (
-              <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
-            )}
+            <div data-tab-content="schedule">
+              {calcSnapshot && volumes ? (
+                <PumpingSchedule
+                  buffers={calcSnapshot.buffers}
+                  slurries={calcSnapshot.slurries}
+                  annularVPM={volumes.annularVolumePerMeter}
+                  displacementVolume={volumes.displacementVolume}
+                  displacementFluids={calcSnapshot.displacementFluids}
+                  casingDepthMD={calcSnapshot.wellData.casingDepthMD}
+                />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="materials">
-            {materials ? (
-              <MaterialsSection materials={materials} />
-            ) : (
-              <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
-            )}
+            <div data-tab-content="materials">
+              {materials ? (
+                <MaterialsSection materials={materials} />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="charts">
-            {calcSnapshot && pressureResult ? (
-              <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin} />
-            ) : (
-              <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
-            )}
+            <div data-tab-content="charts">
+              {calcSnapshot && pressureResult ? (
+                <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin} />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="visual">
-            <WellVisualization
-              wellData={wellData}
-              slurries={slurries}
-              buffers={buffers}
-              drillingFluid={drillingFluid}
-              displacementFluids={displacementFluids}
-            />
+            <div data-tab-content="visual">
+              <WellVisualization
+                wellData={wellData}
+                slurries={slurries}
+                buffers={buffers}
+                drillingFluid={drillingFluid}
+                displacementFluids={displacementFluids}
+              />
+            </div>
           </TabsContent>
         </Tabs>
       </main>
