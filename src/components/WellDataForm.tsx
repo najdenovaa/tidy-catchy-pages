@@ -9,7 +9,8 @@ interface Props {
   onChange: (data: WellData) => void;
 }
 
-const wellFields: { key: keyof WellData; label: string; unit: string }[] = [
+type WellNumericKey = Exclude<keyof WellData, 'trajectory'>;
+const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "wellDepthMD", label: "Глубина скважины (MD)", unit: "м" },
   { key: "wellDepthTVD", label: "Глубина скважины (TVD)", unit: "м" },
   { key: "casingDepthMD", label: "Глубина спуска ОК (MD)", unit: "м" },
@@ -27,7 +28,7 @@ const wellFields: { key: keyof WellData; label: string; unit: string }[] = [
 ];
 
 export default function WellDataForm({ data, onChange }: Props) {
-  const handleChange = (key: keyof WellData, value: string) => {
+  const handleChange = (key: WellNumericKey, value: string) => {
     onChange({ ...data, [key]: parseFloat(value) || 0 });
   };
 

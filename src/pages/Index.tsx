@@ -7,7 +7,7 @@ import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
-import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid, PressureProfileResult } from "@/lib/cementing-calculations";
+import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid, PressureProfileResult, TrajectoryPoint } from "@/lib/cementing-calculations";
 
 const defaultWellData: WellData = {
   wellDepthMD: 410,
@@ -24,6 +24,10 @@ const defaultWellData: WellData = {
   cavernCoeff: 1.2,
   bottomTempStatic: 10,
   bottomTempCirc: 18,
+  trajectory: [
+    { md: 0, azimuth: 0, zenith: 0, tvd: 0 },
+    { md: 410, azimuth: 0, zenith: 0, tvd: 410 },
+  ],
 };
 
 const defaultDrillingFluid: DrillingFluid = {
