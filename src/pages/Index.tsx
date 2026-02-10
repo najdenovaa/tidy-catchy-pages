@@ -136,14 +136,34 @@ export default function Index() {
             visualImages.well3d = canvas3d.toDataURL('image/png');
           } catch {}
         }
-        // Cross-section SVG
+        // Cross-section SVG — serialize to data URL directly
         const svgEls = visualTab.querySelectorAll('svg');
         if (svgEls[0]) {
           try {
-            const parent = svgEls[0].parentElement;
-            if (parent instanceof HTMLElement) {
-              visualImages.crossSection = await captureElementAsDataUrl(parent);
-            }
+            const svgEl = svgEls[0];
+            const serializer = new XMLSerializer();
+            const svgStr = serializer.serializeToString(svgEl);
+            const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(svgBlob);
+            const img = new Image();
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = svgEl.clientWidth * 2 || 1000;
+                canvas.height = svgEl.clientHeight * 2 || 1200;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.fillStyle = '#1a1a2e';
+                  ctx.fillRect(0, 0, canvas.width, canvas.height);
+                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                  visualImages.crossSection = canvas.toDataURL('image/png');
+                }
+                URL.revokeObjectURL(url);
+                resolve();
+              };
+              img.onerror = () => { URL.revokeObjectURL(url); reject(); };
+              img.src = url;
+            });
           } catch {}
         }
         // Displacement efficiency canvas (second canvas after 3D)
@@ -199,7 +219,7 @@ export default function Index() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6 relative">
           <TabsList className="grid w-full grid-cols-6 h-auto">
             <TabsTrigger value="input" className="text-xs py-2">Исходные данные</TabsTrigger>
             <TabsTrigger value="hydraulics" className="text-xs py-2">Гидравлика</TabsTrigger>
@@ -275,7 +295,7 @@ export default function Index() {
             </div>
           </TabsContent>
 
-          <TabsContent value="charts" forceMount className={activeTab !== "charts" ? "hidden" : ""}>
+          <TabsContent value="charts" forceMount className={activeTab !== "charts" ? "absolute opacity-0 pointer-events-none -z-10 left-0 right-0" : ""}>
             <div data-tab-content="charts">
               {calcSnapshot && pressureResult ? (
                 <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin} />
@@ -285,7 +305,7 @@ export default function Index() {
             </div>
           </TabsContent>
 
-          <TabsContent value="visual" forceMount className={activeTab !== "visual" ? "hidden" : ""}>
+          <TabsContent value="visual" forceMount className={activeTab !== "visual" ? "absolute opacity-0 pointer-events-none -z-10 left-0 right-0" : ""}>
             <div data-tab-content="visual">
               <WellVisualization
                 wellData={wellData}
