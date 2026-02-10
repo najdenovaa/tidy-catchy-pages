@@ -22,16 +22,16 @@ interface Props {
 }
 
 const wellFields: { key: keyof WellData; label: string; unit: string }[] = [
-  { key: "wellDepthMD", label: "Глубина скважины (MD)", unit: "м" },
-  { key: "wellDepthTVD", label: "Глубина скважины (TVD)", unit: "м" },
-  { key: "casingDepthMD", label: "Глубина спуска ОК (MD)", unit: "м" },
+  { key: "wellDepthMD", label: "Глубина скважины (по стволу)", unit: "м" },
+  { key: "wellDepthTVD", label: "Глубина скважины (по вертикали)", unit: "м" },
+  { key: "casingDepthMD", label: "Глубина спуска ОК (по стволу)", unit: "м" },
   { key: "holeDiameter", label: "Номинальный диаметр ствола", unit: "мм" },
   { key: "casingOD", label: "Наружный диаметр ОК", unit: "мм" },
   { key: "casingWall", label: "Толщина стенки ОК", unit: "мм" },
-  { key: "prevCasingDepth", label: "Глубина пред. колонны (MD)", unit: "м" },
+  { key: "prevCasingDepth", label: "Глубина пред. колонны (по стволу)", unit: "м" },
   { key: "prevCasingOD", label: "Наружный диам. пред. колонны", unit: "мм" },
   { key: "prevCasingID", label: "Внутр. диам. пред. колонны", unit: "мм" },
-  { key: "ckodDepth", label: "Глубина ЦКОД (MD)", unit: "м" },
+  { key: "ckodDepth", label: "Глубина ЦКОД (по стволу)", unit: "м" },
   { key: "cementRiseHeight", label: "Высота подъёма цемента", unit: "м" },
   { key: "cavernCoeff", label: "Коэффициент кавернозности", unit: "" },
   { key: "bottomTempStatic", label: "BHST (статическая t°)", unit: "°C" },
