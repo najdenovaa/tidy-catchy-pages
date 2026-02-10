@@ -3,6 +3,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text, Line, Grid } from "@react-three/drei";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import CopyImageButton from "./CopyImageButton";
+import DisplacementEfficiency from "./DisplacementEfficiency";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import { getSlurryHeight, interpolateTVD, getCasingID, pipeVolumePerMeter, annularVolumePerMeter } from "@/lib/cementing-calculations";
 import * as THREE from "three";
@@ -494,6 +495,14 @@ export default function WellVisualization(props: Props) {
           </div>
         </CardContent>
       </Card>
+
+      <DisplacementEfficiency
+        wellData={wellData}
+        slurries={slurries}
+        buffers={buffers}
+        drillingFluid={drillingFluid}
+        displacementFluids={displacementFluids}
+      />
 
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground px-2">
         <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded-sm" style={{ background: CASING_STEEL }} /> Обсадная колонна</span>
