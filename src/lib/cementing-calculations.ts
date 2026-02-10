@@ -489,6 +489,11 @@ export function calculatePressureProfile(
   const dHydAnn = Math.max(wellData.holeDiameter - wellData.casingOD, 10);
   const dHydPipe = casingID;
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
+  // Фактические площади сечений для расчёта скорости
+  const dHoleM = wellData.holeDiameter / 1000;
+  const dCasM = wellData.casingOD / 1000;
+  const annAreaM2 = (Math.PI / 4) * (dHoleM * dHoleM - dCasM * dCasM);
+  const pipeAreaM2 = (Math.PI / 4) * (casingID / 1000) * (casingID / 1000);
 
   const hydroMud = hydrostaticPressure(drillingFluid.density / 1000, bottomTVD);
   let cumTime = 0;
@@ -582,9 +587,9 @@ export function calculatePressureProfile(
     const flowRateM3min = s.rateLps * 0.06;
     const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
 
-    // Потери на трение — по длине ствола (MD), не по вертикали
-    const frPipe = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp);
-    const frAnn = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp);
+    // Потери на трение — по длине ствола (MD), с правильными площадями сечений
+    const frPipe = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2);
+    const frAnn = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp, annAreaM2);
     const bhp = hydroMud + frPipe + frAnn;
     const surfP = frPipe + frAnn;
 
@@ -626,10 +631,11 @@ export function calculatePressureProfile(
   return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries };
 }
 
-function frictionLoss(flowRateM3min: number, lengthM: number, dHydMm: number, pv: number, yp: number): number {
+// flowAreaM2 — фактическая площадь сечения потока (для трубы = π/4*d², для затрубья = π/4*(D²-d²))
+function frictionLoss(flowRateM3min: number, lengthM: number, dHydMm: number, pv: number, yp: number, flowAreaM2?: number): number {
   const dHyd = dHydMm / 1000;
   if (dHyd <= 0 || flowRateM3min <= 0) return 0;
-  const area = (Math.PI / 4) * dHyd * dHyd;
+  const area = flowAreaM2 && flowAreaM2 > 0 ? flowAreaM2 : (Math.PI / 4) * dHyd * dHyd;
   const velocityMs = (flowRateM3min / 60) / area;
   const pvPas = pv / 1000;
   const frLam = (32 * pvPas * velocityMs * lengthM) / (dHyd * dHyd) / 1e6;
