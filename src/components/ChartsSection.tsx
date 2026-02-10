@@ -1,15 +1,18 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
-import type { PressurePoint } from "@/lib/cementing-calculations";
+import type { PressurePoint, StageBoundary } from "@/lib/cementing-calculations";
 
 interface Props {
   pressureData: PressurePoint[];
   safeTime: number;
   cementStartTime: number;
   stopTime: number;
+  stageBoundaries: StageBoundary[];
 }
 
-export default function ChartsSection({ pressureData, safeTime, cementStartTime, stopTime }: Props) {
+const STAGE_COLORS = ["hsl(200, 50%, 55%)", "hsl(120, 40%, 45%)", "hsl(35, 70%, 50%)", "hsl(280, 50%, 55%)", "hsl(340, 50%, 50%)"];
+
+export default function ChartsSection({ pressureData, safeTime, cementStartTime, stopTime, stageBoundaries }: Props) {
   if (pressureData.length === 0) {
     return (
       <Card>
@@ -83,6 +86,9 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 {safeTimeEnd > 0 && (
                   <ReferenceLine yAxisId="pressure" x={safeTimeEnd} stroke="hsl(45, 90%, 45%)" strokeDasharray="4 4" strokeWidth={2} label={{ value: "75% безоп.", position: "top", fontSize: 10, fill: "hsl(45, 90%, 45%)" }} />
                 )}
+                {stageBoundaries.filter(b => b.time > 0).map((b, i) => (
+                  <ReferenceLine key={`stage-${i}`} yAxisId="pressure" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5} label={{ value: b.label, position: "top", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length] }} />
+                ))}
                 <Line yAxisId="pressure" type="linear" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />

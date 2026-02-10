@@ -188,7 +188,7 @@ export default function Index() {
                 slurries={calcSnapshot.slurries}
                 fractureGradient={calcSnapshot.fractureGradient}
                 displacementDensity={calcSnapshot.displacementFluids[0]?.density ?? 1000}
-                workTimeWithCement={0}
+                workTimeWithCement={pressureResult ? pressureResult.stopTime - pressureResult.cementStartTime : 0}
                 volumes={volumes}
               />
             ) : (
@@ -221,7 +221,7 @@ export default function Index() {
 
           <TabsContent value="charts">
             {calcSnapshot && pressureResult ? (
-              <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} />
+              <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} />
             ) : (
               <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
             )}
