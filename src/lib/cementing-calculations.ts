@@ -522,21 +522,27 @@ export function calculatePressureProfile(
 
     const flowRateM3min = s.rateLps * 0.06; // л/с -> м³/мин
     const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
-    cumTime += stageTime;
-    cumVol += s.volume;
 
     const frPipe = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp);
     const frAnn = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp);
     const bhp = hydroMud + frPipe + frAnn;
     const surfP = frPipe + frAnn;
 
-    // Выход на устье: учёт сжатия и разницы плотностей (U-tube эффект)
-    // Тяжёлый цемент вытесняет лёгкий раствор быстрее — коэффициент ускорения
     const densityRatio = s.densityGcm3 > mudDensityGcm3 ? s.densityGcm3 / mudDensityGcm3 : 1.0;
-    const compressionEffect = s.compressionCoeff > 1.0 ? 1 / s.compressionCoeff : 1.0; // сжатие уменьшает мгновенный выход
+    const compressionEffect = s.compressionCoeff > 1.0 ? 1 / s.compressionCoeff : 1.0;
     const annularReturn = s.rateLps * densityRatio * compressionEffect;
 
-    points.push({ stage: s.name, time: cumTime, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: s.rateLps, annularReturnRate: annularReturn });
+    // Генерируем точки каждую минуту внутри стадии
+    const minuteSteps = Math.max(1, Math.ceil(stageTime));
+    for (let m = 1; m <= minuteSteps; m++) {
+      const frac = Math.min(m / stageTime, 1);
+      const tNow = cumTime + Math.min(m, stageTime);
+      const vNow = cumVol + s.volume * frac;
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: annularReturn });
+    }
+
+    cumTime += stageTime;
+    cumVol += s.volume;
   });
 
   // СТОП — давление +2.75 МПа (~27.5 атм) от последнего рабочего

@@ -20,6 +20,9 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
     );
   }
 
+  const maxTime = Math.ceil(pressureData[pressureData.length - 1]?.time || 0);
+  const timeTicks = Array.from({ length: maxTime + 1 }, (_, i) => i);
+
   const tooltipStyle = {
     backgroundColor: "hsl(var(--card))",
     border: "1px solid hsl(var(--border))",
@@ -65,7 +68,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 60, left: 20, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="time" label={{ value: "Время, мин", position: "insideBottomRight", offset: -5 }} className="text-xs" />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5 }} className="text-xs" />
                 <YAxis yAxisId="pressure" label={{ value: "МПа", angle: -90, position: "insideLeft" }} className="text-xs" />
                 <YAxis yAxisId="rate" orientation="right" label={{ value: "л/с", angle: 90, position: "insideRight" }} className="text-xs" />
                 <Tooltip
@@ -101,7 +104,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="time" label={{ value: "Время, мин", position: "insideBottomRight", offset: -5 }} className="text-xs" />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5 }} className="text-xs" />
                 <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft" }} className="text-xs" />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => [value.toFixed(2) + " МПа", name]} />
                 <Legend />
