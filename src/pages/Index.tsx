@@ -11,87 +11,37 @@ import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFlu
 import { captureElementAsDataUrl } from "@/lib/capture-image";
 import { FileDown, Loader2 } from "lucide-react";
 const defaultWellData: WellData = {
-  wellDepthMD: 410,
-  wellDepthTVD: 410,
-  casingDepthMD: 408,
-  holeDiameter: 215.9,
-  casingOD: 168,
-  casingWall: 8.94,
-  prevCasingDepth: 41,
-  prevCasingOD: 244.5,
-  prevCasingID: 222.3,
-  ckodDepth: 400,
-  cementRiseHeight: 410,
-  cavernCoeff: 1.2,
-  bottomTempStatic: 10,
-  bottomTempCirc: 18,
+  wellDepthMD: 0,
+  wellDepthTVD: 0,
+  casingDepthMD: 0,
+  holeDiameter: 0,
+  casingOD: 0,
+  casingWall: 0,
+  prevCasingDepth: 0,
+  prevCasingOD: 0,
+  prevCasingID: 0,
+  ckodDepth: 0,
+  cementRiseHeight: 0,
+  cavernCoeff: 1.0,
+  bottomTempStatic: 0,
+  bottomTempCirc: 0,
   trajectory: [
     { md: 0, azimuth: 0, zenith: 0, tvd: 0 },
-    { md: 410, azimuth: 0, zenith: 0, tvd: 410 },
   ],
 };
 
 const defaultDrillingFluid: DrillingFluid = {
-  name: "Полимерглинистый",
-  density: 1100,
-  rheology: { pv: 25, yp: 18 },
-  fluidLoss: 10,
+  name: "",
+  density: 0,
+  rheology: { pv: 0, yp: 0 },
+  fluidLoss: 0,
 };
 
-const defaultSlurries: SlurryInput[] = [
-  {
-    name: "ЦР (ПЦТ-I-50)",
-    density: 1.82,
-    topDepthMD: 0,
-    rheology: { pv: 80, yp: 20 },
-    additives: [
-      { name: "Atren Cem Premium", percentage: 0.25, massKg: 28 },
-      { name: "CaCl2", percentage: 2.0, massKg: 220 },
-    ],
-    thickeningTime30Bc: 224,
-    thickeningTime50Bc: 232,
-    flowRateSteps: [{ rateLps: 7, volumeM3: 0 }],
-    waterRatio: 0.536,
-    yieldPerTon: 0.63,
-  },
-];
+const defaultSlurries: SlurryInput[] = [];
 
-const defaultBuffers: BufferFluid[] = [
-  {
-    name: "Отмывающий буфер",
-    density: 1030,
-    volume: 4.0,
-    rheology: { pv: 1, yp: 0 },
-    additives: [{ name: "Atren Spacer WP", percentage: 0, massKg: 40 }],
-    flowRateSteps: [{ rateLps: 5, volumeM3: 4.0 }],
-  },
-  {
-    name: "Реологический буфер",
-    density: 1350,
-    volume: 4.0,
-    rheology: { pv: 5, yp: 2 },
-    additives: [
-      { name: "ПЦТ-I-50", percentage: 0, massKg: 2100 },
-      { name: "Atren Cem Premium", percentage: 0, massKg: 5 },
-      { name: "CaCl2", percentage: 0, massKg: 42 },
-    ],
-    flowRateSteps: [{ rateLps: 5, volumeM3: 4.0 }],
-  },
-];
+const defaultBuffers: BufferFluid[] = [];
 
-const defaultDisplacementFluids: DisplacementFluid[] = [
-  {
-    name: "Продавочная жидкость",
-    density: 1010,
-    rheology: { pv: 1, yp: 0 },
-    compressionCoeff: 1.05,
-    flowRateSteps: [
-      { rateLps: 12, volumeM3: 0 },
-      { rateLps: 8, volumeM3: 0 },
-      { rateLps: 4, volumeM3: 0 },
-    ],
-  },
-];
+const defaultDisplacementFluids: DisplacementFluid[] = [];
 
 interface CalcSnapshot {
   wellData: WellData;
