@@ -132,15 +132,16 @@ function buildDepthInfo(
 }
 
 /**
- * Displacement efficiency 0..1 at a given depth and circumferential position.
- * angle: 0=narrow side (top of hole in deviated well), π=wide side (bottom)
- * Uses smooth 2D noise for natural-looking heterogeneity.
+ * Displacement efficiency 0..1.
+ * Channels are LONGITUDINAL (vertical streaks) — cement flows top-to-bottom,
+ * mud channels persist along depth at fixed circumferential positions.
+ * noiseX = circumferential position (high frequency), noiseY = depth (low frequency).
  */
 function calcEff(
   d: DepthInfo,
   angle: number,
-  noiseX: number,
-  noiseY: number,
+  circumFrac: number, // 0..1 position across annulus width
+  depthFrac: number,  // 0..1 position along depth
   mudDensity: number,
   mudYP: number,
   avgRate: number,
@@ -149,39 +150,63 @@ function calcEff(
 ): number {
   if (d.fluidType === "mud") return 0;
 
-  // Density advantage: higher cement density → better displacement
+  // Density advantage
   const densityRatio = d.fluidDensity / mudDensity;
   const dScore = Math.min(1, Math.max(0, (densityRatio - 0.85) / 0.55));
 
-  // Rheology: higher YP cement relative to mud → better plug flow
+  // Rheology hierarchy
   const ypScore = Math.min(1, Math.max(0.15, (d.fluidYP / Math.max(mudYP, 1)) * 0.35));
 
-  // Velocity: faster → better turbulent displacement
+  // Velocity
   const vel = avgRate > 0 ? (avgRate * 0.001) / annArea : 0.3;
   const vScore = Math.min(1, vel / 1.0);
 
   let eff = 0.30 * dScore + 0.25 * ypScore + 0.45 * vScore;
 
-  // Inclination: eccentricity → narrow side gets less flow → worse displacement
+  // Inclination → eccentricity → narrow side worse
   const eccen = Math.sin(d.zenithDeg * Math.PI / 180);
   const cosA = Math.cos(angle);
-  // Narrow side (cosA > 0): reduce eff; wide side (cosA < 0): increase eff
   eff -= eccen * cosA * 0.35;
 
-  // Open hole: rougher, worse
   if (d.isOpenHole) eff *= 0.90;
-
-  // Cavern: reduces velocity locally
   if (cavernCoeff > 1.05) eff *= 1.0 - (cavernCoeff - 1.0) * 0.25;
-
-  // Buffer: inherently less effective
   if (d.fluidType === "buffer") eff *= 0.5;
 
-  // Smooth 2D noise for natural heterogeneity (no banding)
-  const noise = fbmNoise(noiseX, noiseY);
-  eff += (noise - 0.5) * 0.18;
+  // ── Longitudinal channel noise ──
+  // High frequency in circumferential direction (many channels across width),
+  // very low frequency in depth (channels persist vertically).
+  // This creates vertical streaks = mud channels that cement couldn't displace.
+  
+  // Primary channels: ~8-12 channels across annulus width, persistent along depth
+  const channelNoise = 
+    0.45 * smoothNoise(circumFrac * 10, depthFrac * 1.5) +    // broad channels
+    0.30 * smoothNoise(circumFrac * 22, depthFrac * 2.5) +    // medium channels  
+    0.15 * smoothNoise(circumFrac * 45, depthFrac * 4) +      // fine channels
+    0.10 * smoothNoise(circumFrac * 80, depthFrac * 6);       // micro-channels
+
+  // Channel depth modulation: channels get slightly deeper/shallower along depth
+  const depthModulation = smoothNoise(circumFrac * 5, depthFrac * 8) * 0.12;
+
+  // Combine: channels reduce efficiency (mud stays in channels)
+  const channelEffect = (channelNoise - 0.5) * 0.4 + depthModulation;
+  eff += channelEffect;
+
+  // Laminar flow effect: at low velocities, channels are more pronounced
+  // (turbulent flow would wash them out)
+  const Re = vel * (wellDhyd(d) / 1000) * mudDensity / (mudYP > 0 ? mudYP * 0.001 : 0.025);
+  const isLaminar = Re < 2100;
+  if (isLaminar) {
+    // Deepen channels in laminar regime
+    const laminarPenalty = smoothNoise(circumFrac * 15, depthFrac * 2) * 0.15;
+    eff -= laminarPenalty;
+  }
 
   return Math.max(0, Math.min(1, eff));
+}
+
+// Approximate hydraulic diameter for Reynolds estimate
+function wellDhyd(d: DepthInfo): number {
+  return 50; // approximate annular hydraulic diameter in mm
 }
 
 export default function DisplacementEfficiency({ wellData, slurries, buffers, drillingFluid }: Props) {
@@ -262,20 +287,16 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
 
         if (xFrac < annFracW) {
           // Left annulus: wide side at left edge (angle=π), narrow at casing (angle→0)
-          const localFrac = xFrac / annFracW; // 0=left edge (wide), 1=casing (narrow)
+          const localFrac = xFrac / annFracW;
           const angle = Math.PI * (1 - localFrac);
-          const noiseX = localFrac * 6;
-          const noiseY = yFrac * 20;
-          const eff = calcEff(d, angle, noiseX, noiseY, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
-          // Dark = good cement (low gray), white = poor (high gray)
+          const eff = calcEff(d, angle, localFrac, yFrac, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
           gray = Math.round(40 + (1 - eff) * 215);
         } else if (xFrac > annFracW + casFracW) {
           // Right annulus: narrow at casing (angle=0), wide at right edge (angle→π)
           const localFrac = (xFrac - annFracW - casFracW) / annFracW;
           const angle = Math.PI * localFrac;
-          const noiseX = localFrac * 6 + 10; // offset to avoid symmetry
-          const noiseY = yFrac * 20;
-          const eff = calcEff(d, angle, noiseX, noiseY, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
+          // Offset circumFrac by +1 to break left-right symmetry
+          const eff = calcEff(d, angle, localFrac + 1, yFrac, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
           gray = Math.round(40 + (1 - eff) * 215);
         } else {
           // Casing — steel gray
