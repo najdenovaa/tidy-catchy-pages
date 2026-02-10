@@ -496,7 +496,8 @@ function buildTrajectoryPage(wellData: WellData, visualImages?: Record<string, s
   // Insert visual images if available
   if (visualImages) {
     if (visualImages.well3d) content.push(...buildImageParagraph(visualImages.well3d, "3D профиль ствола скважины", 1400, 550));
-    if (visualImages.crossSection) content.push(...buildImageParagraph(visualImages.crossSection, "Поперечный разрез (после СТОП)", 800, 800));
+    if (visualImages.crossSection) content.push(...buildImageParagraph(visualImages.crossSection, "Продольный разрез скважины", 800, 800));
+    if (visualImages.displacementEfficiency) content.push(...buildImageParagraph(visualImages.displacementEfficiency, "Карта эффективности замещения", 800, 800));
   }
 
   if (!traj || traj.length < 2) return content;

@@ -137,13 +137,20 @@ export default function Index() {
           } catch {}
         }
         // Cross-section SVG
-        const svgEl = visualTab.querySelector('svg');
-        if (svgEl) {
+        const svgEls = visualTab.querySelectorAll('svg');
+        if (svgEls[0]) {
           try {
-            const parent = svgEl.parentElement;
+            const parent = svgEls[0].parentElement;
             if (parent instanceof HTMLElement) {
               visualImages.crossSection = await captureElementAsDataUrl(parent);
             }
+          } catch {}
+        }
+        // Displacement efficiency canvas (second canvas after 3D)
+        const allCanvases = visualTab.querySelectorAll('canvas');
+        if (allCanvases.length > 1) {
+          try {
+            visualImages.displacementEfficiency = allCanvases[1].toDataURL('image/png');
           } catch {}
         }
       }
@@ -268,7 +275,7 @@ export default function Index() {
             </div>
           </TabsContent>
 
-          <TabsContent value="charts">
+          <TabsContent value="charts" forceMount className={activeTab !== "charts" ? "hidden" : ""}>
             <div data-tab-content="charts">
               {calcSnapshot && pressureResult ? (
                 <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin} />
@@ -278,7 +285,7 @@ export default function Index() {
             </div>
           </TabsContent>
 
-          <TabsContent value="visual">
+          <TabsContent value="visual" forceMount className={activeTab !== "visual" ? "hidden" : ""}>
             <div data-tab-content="visual">
               <WellVisualization
                 wellData={wellData}
