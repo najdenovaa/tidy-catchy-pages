@@ -140,22 +140,36 @@ export default function Index() {
         const svgEls = visualTab.querySelectorAll('svg');
         if (svgEls[0]) {
           try {
-            const svgEl = svgEls[0];
+            const svgEl = svgEls[0] as SVGSVGElement;
+            // Get dimensions from viewBox, attributes, or fallback
+            const vb = svgEl.viewBox?.baseVal;
+            const svgW = (vb && vb.width > 0) ? vb.width : (svgEl.clientWidth || parseInt(svgEl.getAttribute('width') || '800') || 800);
+            const svgH = (vb && vb.height > 0) ? vb.height : (svgEl.clientHeight || parseInt(svgEl.getAttribute('height') || '1000') || 1000);
+
+            // Clone SVG and ensure it has proper attributes for rendering
+            const clonedSvg = svgEl.cloneNode(true) as SVGSVGElement;
+            clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            if (!clonedSvg.getAttribute('width')) clonedSvg.setAttribute('width', String(svgW));
+            if (!clonedSvg.getAttribute('height')) clonedSvg.setAttribute('height', String(svgH));
+            if (!clonedSvg.getAttribute('viewBox')) clonedSvg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+
             const serializer = new XMLSerializer();
-            const svgStr = serializer.serializeToString(svgEl);
+            const svgStr = serializer.serializeToString(clonedSvg);
             const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
             const url = URL.createObjectURL(svgBlob);
             const img = new Image();
+            const canvasW = svgW * 2;
+            const canvasH = svgH * 2;
             await new Promise<void>((resolve, reject) => {
               img.onload = () => {
                 const canvas = document.createElement('canvas');
-                canvas.width = svgEl.clientWidth * 2 || 1000;
-                canvas.height = svgEl.clientHeight * 2 || 1200;
+                canvas.width = canvasW;
+                canvas.height = canvasH;
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
                   ctx.fillStyle = '#1a1a2e';
-                  ctx.fillRect(0, 0, canvas.width, canvas.height);
-                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                  ctx.fillRect(0, 0, canvasW, canvasH);
+                  ctx.drawImage(img, 0, 0, canvasW, canvasH);
                   visualImages.crossSection = canvas.toDataURL('image/png');
                 }
                 URL.revokeObjectURL(url);
