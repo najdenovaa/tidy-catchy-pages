@@ -778,12 +778,17 @@ export function calculatePressureProfile(
       const savedCumVol = cumVol;
 
       // === Генерируем точки: экспоненциальное оседание ===
+      let prevSettledVol = 0;
       for (let m = 1; m <= pauseMin; m++) {
         const tNow = cumTime + m;
 
-        // Экспоненциальное приближение к равновесию: V(t) = V_ff * (1 - e^(-t/τ))
         const settledFrac = 1 - Math.exp(-m / Math.max(settlingTau, 0.01));
         const settledVol = freefallVol * settledFrac;
+
+        // Выход на устье = объём вытесненный за эту минуту → расход л/с
+        const deltaVol = settledVol - prevSettledVol; // м³ за 1 мин
+        const returnRateLps = deltaVol / 60 * 1000; // м³/мин → л/с
+        prevSettledVol = settledVol;
 
         pumpHistory[ffBatchIdx].volumeM3 = settledVol;
         totalPumped = savedCumVol + settledVol;
@@ -791,14 +796,13 @@ export function calculatePressureProfile(
         const pipeHydro = calcPipeHydrostatic();
         const annHydro = calcAnnularHydrostatic();
 
-        // Статическое давление (насос стоит, трение = 0)
         const surfP = Math.max(0, annHydro - pipeHydro);
         const bhp = annHydro;
 
         points.push({
           stage: s.name, time: tNow,
           surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP,
-          cumulativeVolume: savedCumVol, pumpRateLps: 0, annularReturnRate: 0,
+          cumulativeVolume: savedCumVol, pumpRateLps: 0, annularReturnRate: returnRateLps,
           flowRegimeAnn: 0, reynoldsAnn: 0,
         });
       }
