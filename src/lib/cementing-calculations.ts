@@ -912,36 +912,28 @@ export function calculatePressureProfile(
     cumVol += s.volume;
   });
 
-  // СТОП — насос выключен → статическое давление (без трения) + скачок от посадки пробки
+  // СТОП — пробка садится в ЦКОД на ходу, давление скачком от динамического
   const stopTime = cumTime;
   const stopIncrease = 2.75;
 
-  // Статические давления (без трения, насос стоит)
-  const staticAnnHydro = calcAnnularHydrostatic();
-  const staticPipeHydro = calcPipeHydrostatic();
-  const staticSurfP = Math.max(0, staticAnnHydro - staticPipeHydro);
-  const staticBhp = staticAnnHydro;
+  // Берём последнее динамическое давление (с трением, насос работал)
+  const lastPoint = points[points.length - 1];
+  const lastSurfP = lastPoint ? lastPoint.surfacePressure : 0;
+  const lastBhp = lastPoint ? lastPoint.bottomholePressure : 0;
+  const lastRate = lastPoint ? lastPoint.pumpRateLps : 0;
 
-  // Точка перехода: насос остановился, давление = статика (без трения)
-  points.push({
-    stage: "СТОП", time: cumTime,
-    surfacePressure: staticSurfP, bottomholePressure: staticBhp, fracturePressure: fracP,
-    cumulativeVolume: cumVol, pumpRateLps: 0, annularReturnRate: 0,
-    flowRegimeAnn: 0, reynoldsAnn: 0,
-  });
-
-  // Скачок давления от посадки пробки в ЦКОД
+  // Скачок давления от посадки пробки (от динамического давления)
   points.push({
     stage: "СТОП (пробка в ЦКОД)", time: cumTime + 0.5,
-    surfacePressure: staticSurfP + stopIncrease, bottomholePressure: staticBhp,
-    fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
+    surfacePressure: lastSurfP + stopIncrease, bottomholePressure: lastBhp,
+    fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: lastRate,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0,
   });
 
-  // Удержание давления СТОП (видимая полка на графике)
+  // Удержание давления СТОП
   points.push({
     stage: "СТОП (удержание)", time: cumTime + 5,
-    surfacePressure: staticSurfP + stopIncrease, bottomholePressure: staticBhp,
+    surfacePressure: lastSurfP + stopIncrease, bottomholePressure: lastBhp,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0,
   });
