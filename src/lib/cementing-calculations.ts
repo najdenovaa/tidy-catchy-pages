@@ -572,36 +572,90 @@ export function calculatePressureProfile(
   const stageBoundaries: StageBoundary[] = [];
   let prevGroupLabel = "";
 
-  // === Динамическое отслеживание флюидов в затрубье ===
-  // Флюиды заполняют затрубье снизу вверх (от башмака к устью)
-  // annularSlugs[0] = самый нижний (первый закачанный)
-  interface AnnularSlug { densityGcm3: number; volumeM3: number; }
-  const annularSlugs: AnnularSlug[] = [];
+  // === Динамическое отслеживание флюидов в ТРУБЕ и ЗАТРУБЬЕ ===
+  const pipeVPM = pipeVolumePerMeter(casingID);
+  const pipeCapacity = pipeVPM * wellData.casingDepthMD; // полный объём трубы, м³
 
-  // Вычисляет гидростатику затрубья с учётом текущих флюидов
-  function calcAnnularHydrostatic(): number {
+  // История закачки: [{densityGcm3, volumeM3}] в порядке закачки
+  interface FluidBatch { densityGcm3: number; volumeM3: number; }
+  const pumpHistory: FluidBatch[] = [];
+  let totalPumped = 0;
+
+  // Вычисляет гидростатику ТРУБЫ с учётом текущих флюидов
+  // Труба заполняется сверху: последний закачанный флюид — у устья, старый — у забоя
+  function calcPipeHydrostatic(): number {
     let pressure = 0;
-    let currentBottomMD = wellData.casingDepthMD;
-    // Снизу вверх — закачанные флюиды
-    for (const slug of annularSlugs) {
-      if (slug.volumeM3 <= 0) continue;
-      const slugHeightMD = slug.volumeM3 / annVPM;
-      const topMD = Math.max(0, currentBottomMD - slugHeightMD);
-      const tvdBot = interpolateTVD(currentBottomMD, traj);
+    let depthMD = 0; // от устья вниз
+    let remaining = pipeCapacity;
+
+    // Идём от последнего закачанного (сверху) к первому (снизу)
+    for (let i = pumpHistory.length - 1; i >= 0 && remaining > 0; i--) {
+      const batch = pumpHistory[i];
+      const take = Math.min(batch.volumeM3, remaining);
+      if (take <= 0) continue;
+      const heightM = take / pipeVPM;
+      const topMD = depthMD;
+      const botMD = Math.min(depthMD + heightM, wellData.casingDepthMD);
       const tvdTop = interpolateTVD(topMD, traj);
-      pressure += slug.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
-      currentBottomMD = topMD;
+      const tvdBot = interpolateTVD(botMD, traj);
+      pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
+      depthMD = botMD;
+      remaining -= take;
     }
-    // Сверху — буровой раствор (от устья до верха закачанного столба)
-    if (currentBottomMD > 0) {
-      const tvdRemaining = interpolateTVD(currentBottomMD, traj);
-      pressure += mudDensityGcm3 * tvdRemaining * 0.00981;
+
+    // Если осталось место — внизу трубы исходный буровой раствор
+    if (remaining > 0 && depthMD < wellData.casingDepthMD) {
+      const botMD = wellData.casingDepthMD;
+      const tvdTop = interpolateTVD(depthMD, traj);
+      const tvdBot = interpolateTVD(botMD, traj);
+      pressure += mudDensityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
     }
+
     return pressure;
   }
 
-  // Гидростатика трубного пространства (упрощение: буровой раствор)
-  const pipeHydro = hydrostaticPressure(mudDensityGcm3, bottomTVD);
+  // Вычисляет гидростатику ЗАТРУБЬЯ
+  // Флюид выходит из трубы снизу и поднимается в затрубье.
+  // Порядок выхода: сначала исходный буровой из трубы, потом закачанные флюиды по порядку.
+  // В затрубье: самый свежий флюид внизу (у забоя), самый старый — вверху.
+  function calcAnnularHydrostatic(): number {
+    let pressure = 0;
+
+    // Строим список того, что вышло в затрубье (в порядке выхода = снизу вверх наоборот)
+    // Всего вышло totalPumped м³ из трубы
+    // Первым вышел буровой раствор (до pipeCapacity м³), затем закачанные флюиды
+    const exitBatches: FluidBatch[] = [];
+    const mudExited = Math.min(totalPumped, pipeCapacity);
+    if (mudExited > 0) exitBatches.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited });
+
+    let pumpedExited = Math.max(0, totalPumped - pipeCapacity);
+    for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
+      const take = Math.min(pumpHistory[i].volumeM3, pumpedExited);
+      if (take > 0) exitBatches.push({ densityGcm3: pumpHistory[i].densityGcm3, volumeM3: take });
+      pumpedExited -= take;
+    }
+
+    // Затрубье: exitBatches в обратном порядке = самый свежий внизу
+    let currentBottomMD = wellData.casingDepthMD;
+    for (let i = exitBatches.length - 1; i >= 0; i--) {
+      const batch = exitBatches[i];
+      if (batch.volumeM3 <= 0 || currentBottomMD <= 0) continue;
+      const heightMD = batch.volumeM3 / annVPM;
+      const topMD = Math.max(0, currentBottomMD - heightMD);
+      const tvdBot = interpolateTVD(currentBottomMD, traj);
+      const tvdTop = interpolateTVD(topMD, traj);
+      pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
+      currentBottomMD = topMD;
+    }
+
+    // Выше — исходный буровой раствор затрубья
+    if (currentBottomMD > 0) {
+      const tvd = interpolateTVD(currentBottomMD, traj);
+      pressure += mudDensityGcm3 * tvd * 0.00981;
+    }
+
+    return pressure;
+  }
 
   stages.forEach(s => {
     if (s.isCement && !cementStartFound) {
@@ -609,7 +663,6 @@ export function calculatePressureProfile(
       cementStartFound = true;
     }
 
-    // Определяем групповую метку: все продавочные = "Продавка", остальные — по имени
     const groupLabel = (!s.isCement && cumTime >= cementStartTime && cementStartFound) ? "Продавка" : s.name;
     if (groupLabel !== prevGroupLabel) {
       stageBoundaries.push({ time: cumTime, label: groupLabel });
@@ -619,20 +672,19 @@ export function calculatePressureProfile(
     const flowRateM3min = s.rateLps * 0.06;
     const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
 
-    // Потери на трение — по длине ствола (MD)
     const frPipe = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2);
     const frAnn = frictionLoss(flowRateM3min, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp, annAreaM2);
 
-    // Расчёт числа Рейнольдса в затрубье (Бингам)
+    // Число Рейнольдса в затрубье (Бингам)
     const annVelocity = annAreaM2 > 0 ? (flowRateM3min / 60) / annAreaM2 : 0;
     const dHydAnnM = dHydAnn / 1000;
     const muEffAnn = drillingFluid.rheology.pv / 1000 + drillingFluid.rheology.yp * dHydAnnM / (6 * Math.max(annVelocity, 0.001));
     const reAnn = muEffAnn > 0 ? (mudDensityGcm3 * 1000) * annVelocity * dHydAnnM / muEffAnn : 0;
     const flowRegimeAnn = reAnn > 2100 ? 1 : 0;
 
-    // Новый slug для текущего этапа
-    annularSlugs.push({ densityGcm3: s.densityGcm3, volumeM3: 0 });
-    const slugIdx = annularSlugs.length - 1;
+    // Добавляем новый batch в историю закачки
+    pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0 });
+    const batchIdx = pumpHistory.length - 1;
 
     const densityRatio = s.densityGcm3 > mudDensityGcm3 ? s.densityGcm3 / mudDensityGcm3 : 1.0;
     const compressionEffect = s.compressionCoeff > 1.0 ? 1 / s.compressionCoeff : 1.0;
@@ -644,22 +696,24 @@ export function calculatePressureProfile(
       const tNow = cumTime + Math.min(m, stageTime);
       const vNow = cumVol + s.volume * frac;
 
-      // Обновляем объём текущего slug в затрубье
-      annularSlugs[slugIdx].volumeM3 = s.volume * frac;
+      // Обновляем объём текущего batch
+      pumpHistory[batchIdx].volumeM3 = s.volume * frac;
+      totalPumped = cumVol + s.volume * frac;
 
-      // Динамическая гидростатика затрубья
+      // Динамическая гидростатика
+      const pipeHydro = calcPipeHydrostatic();
       const annHydro = calcAnnularHydrostatic();
 
-      // U-tube: P_surface = (P_hydro_annulus - P_hydro_pipe) + friction_pipe + friction_annulus
+      // U-tube
       const surfP = Math.max(0, (annHydro - pipeHydro) + frPipe + frAnn);
-      // BHP = P_hydro_annulus + friction_annulus
       const bhp = annHydro + frAnn;
 
       points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: annularReturn, flowRegimeAnn, reynoldsAnn: reAnn });
     }
 
-    // Финализируем slug
-    annularSlugs[slugIdx].volumeM3 = s.volume;
+    // Финализируем batch
+    pumpHistory[batchIdx].volumeM3 = s.volume;
+    totalPumped = cumVol + s.volume;
 
     cumTime += stageTime;
     cumVol += s.volume;
