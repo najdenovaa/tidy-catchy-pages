@@ -750,28 +750,30 @@ export function calculatePressureProfile(
         pumpHistory.push({ densityGcm3: mudDensityGcm3, volumeM3: 0 });
       }
 
-      // === Расчёт времени свободного падения ===
-      // Движущая сила = (ρ_heavy - ρ_light) * g * h_heavy_TVD
-      // Терминальная скорость (ламинарная): v = ΔP * D² / (32 * μ * L)
-      // Время установления = V_ff / (v * A_pipe), с экспоненциальным затуханием
+      // === Расчёт скорости свободного падения через бинарный поиск (трение = движущее давление) ===
       let settlingTau = 0.5; // мин (по умолчанию — быстро)
       if (freefallVol > 0 && heavyVolume > 0) {
-        const heavyHeightMD = heavyVolume / pipeVPM;
-        const heavyTVD = tvdInterval(0, Math.min(heavyHeightMD, wellData.casingDepthMD), traj);
-        const drivingPressurePa = (heavyDensity - lightDensityBelow) * 1000 * 9.81 * heavyTVD;
-        const pipeIDm = casingID / 1000;
-        // Средняя вязкость (между цементом и вытесняемым)
-        const avgPV = slurries.length > 0
-          ? slurries.reduce((s, sl) => s + sl.rheology.pv, 0) / slurries.length
-          : 30;
-        const muPas = avgPV / 1000;
-        const lengthM = wellData.casingDepthMD;
+        const drivingPressureMPa = (heavyDensity - lightDensityBelow) * 9.81 *
+          tvdInterval(0, Math.min(heavyVolume / pipeVPM, wellData.casingDepthMD), traj) / 1000;
 
-        if (drivingPressurePa > 0 && muPas > 0) {
-          const vTerminal = (drivingPressurePa * pipeIDm * pipeIDm) / (32 * muPas * lengthM);
-          const flowRateM3s = vTerminal * pipeAreaM2;
-          if (flowRateM3s > 0) {
-            settlingTau = Math.max(0.1, (freefallVol / flowRateM3s) / 60); // мин
+        if (drivingPressureMPa > 0.01) {
+          // Средние свойства цемента для трения
+          const cPv = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.pv, 0) / slurries.length : 30;
+          const cYp = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.yp, 0) / slurries.length : 5;
+          const cDensity = heavyDensity * 1000;
+
+          // Бинарный поиск: friction_pipe(Q) + friction_ann(Q) = ΔP_driving
+          let lo = 0, hi = 20 * 0.06; // макс 20 л/с
+          for (let iter = 0; iter < 15; iter++) {
+            const mid = (lo + hi) / 2;
+            const fP = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydPipe, cPv, cYp, pipeAreaM2, cDensity).pressureMPa;
+            const fA = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp, annAreaM2, drillingFluid.density).pressureMPa * 3.0;
+            if (fP + fA < drivingPressureMPa) lo = mid; else hi = mid;
+          }
+          const settlingRateM3min = (lo + hi) / 2;
+          const settlingRateM3s = settlingRateM3min / 60;
+          if (settlingRateM3s > 0) {
+            settlingTau = Math.max(0.1, (freefallVol / settlingRateM3s) / 60); // мин
           }
         }
       }
@@ -865,12 +867,6 @@ export function calculatePressureProfile(
     const batchIdx = pumpHistory.length - 1;
 
     const compressionEffect = s.compressionCoeff > 1.0 ? 1 / s.compressionCoeff : 1.0;
-    const baseAnnularReturn = s.rateLps * (s.densityGcm3 > mudDensityGcm3 ? s.densityGcm3 / mudDensityGcm3 : 1.0) * compressionEffect;
-
-    // Средняя вязкость для расчёта гравитационного оседания
-    const avgSettlingPV = slurries.length > 0
-      ? slurries.reduce((sum, sl) => sum + sl.rheology.pv, 0) / slurries.length
-      : drillingFluid.rheology.pv;
 
     const minuteSteps = Math.max(1, Math.ceil(stageTime));
     for (let m = 1; m <= minuteSteps; m++) {
@@ -884,18 +880,24 @@ export function calculatePressureProfile(
       const pipeHydro = calcPipeHydrostatic();
       const annHydro = calcAnnularHydrostatic();
 
-      // === Гравитационная составляющая потока (цемент оседает даже при закачке) ===
+      // === Гравитационное оседание: бинарный поиск расхода, при котором трение = ΔP_gravity ===
       let gravityReturnLps = 0;
       const gravityDeltaMPa = pipeHydro - annHydro;
-      if (gravityDeltaMPa > 0) {
-        const deltaPa = gravityDeltaMPa * 1e6;
-        const pipeIDm = casingID / 1000;
-        const muPas = Math.max(avgSettlingPV, 5) / 1000;
-        const vGrav = (deltaPa * pipeIDm * pipeIDm) / (32 * muPas * wellData.casingDepthMD);
-        gravityReturnLps = vGrav * pipeAreaM2 * 1000; // м³/с → л/с
+      if (gravityDeltaMPa > 0.01) {
+        // Ищем Q_grav (м³/мин) такой что friction_pipe(Q) + friction_ann(Q) = ΔP_gravity
+        let lo = 0, hi = 30 * 0.06; // макс 30 л/с → м³/мин
+        for (let iter = 0; iter < 15; iter++) {
+          const mid = (lo + hi) / 2;
+          const fPipe = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3).pressureMPa;
+          const fAnn = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydAnn, annPv, annYp, annAreaM2, annDensity).pressureMPa * annFrictionMultiplier;
+          if (fPipe + fAnn < gravityDeltaMPa) lo = mid; else hi = mid;
+        }
+        gravityReturnLps = ((lo + hi) / 2) / 0.06; // м³/мин → л/с
       }
 
-      const totalAnnReturn = baseAnnularReturn + gravityReturnLps;
+      // Выход на устье = насосный расход + гравитационная добавка
+      const baseReturn = s.rateLps * compressionEffect;
+      const totalAnnReturn = baseReturn + gravityReturnLps;
 
       const surfP = Math.max(0, (annHydro - pipeHydro) + frPipe + frAnn);
       const bhp = annHydro + frAnn;
