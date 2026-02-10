@@ -525,6 +525,7 @@ export interface PressurePoint {
   annularReturnRate: number; // л/с — скорость выхода на устье
   flowRegimeAnn: number; // 0 = ламинарный, 1 = турбулентный (затрубье)
   reynoldsAnn: number; // число Рейнольдса затрубья
+  maxSafeRateLps: number; // макс. производительность без ГРП, л/с
 }
 
 export interface StageBoundary {
@@ -567,12 +568,27 @@ export function calculatePressureProfile(
   const mudDensityGcm3 = drillingFluid.density / 1000;
   // Начальная гидростатика — затрубье заполнено буровым раствором
   const hydroMudFull = hydrostaticPressure(mudDensityGcm3, bottomTVD);
+
+  // Функция расчёта макс. безопасной производительности (бинарный поиск по Q, чтоб BHP ≤ fracP)
+  function calcMaxSafeRate(annHydro: number, annPv: number, annYp: number, annDensity: number, pipePv: number, pipeYp: number, pipeDensity: number): number {
+    const margin = fracP - annHydro;
+    if (margin <= 0) return 0;
+    // Бинарный поиск: friction_ann(Q) ≤ margin
+    let lo = 0, hi = 50 * 0.06; // до 50 л/с
+    for (let iter = 0; iter < 20; iter++) {
+      const mid = (lo + hi) / 2;
+      const fAnn = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydAnn, annPv, annYp, annAreaM2, annDensity).pressureMPa * 0.8;
+      if (fAnn < margin) lo = mid; else hi = mid;
+    }
+    return ((lo + hi) / 2) / 0.06; // convert m³/min to l/s
+  }
+
   let cumTime = 0;
   let cumVol = 0;
   let cementStartTime = 0;
-  let equilibriumTimeMin = 0; // время выхода на равновесие после остановки
+  let equilibriumTimeMin = 0; // время выхода на равновесие после остановки, мин
 
-  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0 });
+  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: calcMaxSafeRate(hydroMudFull, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density) });
 
   interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean; compressionCoeff: number; durationMin?: number; isFlushPause?: boolean }
   const stages: Stage[] = [];
@@ -887,6 +903,7 @@ export function calculatePressureProfile(
           surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP,
           cumulativeVolume: savedCumVol, pumpRateLps: 0, annularReturnRate: returnRateLps,
           flowRegimeAnn: 0, reynoldsAnn: 0,
+          maxSafeRateLps: calcMaxSafeRate(annHydro, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density),
         });
       }
       if (!equilibriumReached) equilibriumTimeMin = pauseMin;
@@ -987,7 +1004,7 @@ export function calculatePressureProfile(
       const surfP = Math.max(0, (annHydro - pipeHydro) + frPipe + effectiveFrAnn);
       const bhp = annHydro + effectiveFrAnn;
 
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn, reynoldsAnn: reAnn });
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn, reynoldsAnn: reAnn, maxSafeRateLps: calcMaxSafeRate(annHydro, annPv, annYp, annDensity, s.pv, s.yp, densityKgM3) });
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;
@@ -1014,7 +1031,7 @@ export function calculatePressureProfile(
     stage: "СТОП (пробка в ЦКОД)", time: cumTime + 0.5,
     surfacePressure: lastSurfP + stopIncrease, bottomholePressure: staticAnnHydro,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: lastRate,
-    annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0,
+    annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0,
   });
 
   // Удержание давления СТОП
@@ -1022,7 +1039,7 @@ export function calculatePressureProfile(
     stage: "СТОП (удержание)", time: cumTime + 5,
     surfacePressure: lastSurfP + stopIncrease, bottomholePressure: staticAnnHydro,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
-    annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0,
+    annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0,
   });
 
   const cementToStop = stopTime - cementStartTime;

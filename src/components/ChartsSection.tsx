@@ -163,6 +163,58 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
         </CardContent>
       </Card>
 
+      {/* План продавки для оператора */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">План продавки: давления и макс. производительность</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground mb-3">
+            Макс. производительность — предельная скорость закачки, при которой забойное давление не превышает давление ГРП. Оператор должен придерживаться указанных ограничений.
+          </p>
+          <div className="h-[500px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={pressureData} margin={{ top: 20, right: 65, left: 25, bottom: 30 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" />
+                <YAxis
+                  yAxisId="pressure"
+                  domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.15)]}
+                  label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }}
+                  className="text-xs"
+                  width={55}
+                />
+                <YAxis
+                  yAxisId="rate"
+                  orientation="right"
+                  domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]}
+                  label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }}
+                  className="text-xs"
+                  width={55}
+                />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`}
+                  formatter={(value: number, name: string) => {
+                    if (name.includes("л/с") || name.includes("Производительность") || name.includes("Макс.")) return [value.toFixed(1) + " л/с", name];
+                    return [value.toFixed(2) + " МПа", name];
+                  }}
+                />
+                <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
+                {stageBoundaries.map((b, i) => (
+                  <ReferenceLine key={`plan-stage-${i}`} yAxisId="pressure" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />
+                ))}
+                <Line yAxisId="pressure" type="linear" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                <Line yAxisId="pressure" type="linear" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
+                <Line yAxisId="pressure" type="linear" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
+                <Line yAxisId="rate" type="stepAfter" dataKey="pumpRateLps" name="Производительность (факт)" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
+                <Line yAxisId="rate" type="linear" dataKey="maxSafeRateLps" name="Макс. безопасная Q, л/с" stroke="hsl(25, 90%, 50%)" strokeWidth={2.5} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Режим потока (затрубье) */}
       <Card>
         <CardHeader className="pb-4">
