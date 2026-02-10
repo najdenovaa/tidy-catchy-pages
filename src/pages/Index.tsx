@@ -239,6 +239,7 @@ export default function Index() {
               slurries={slurries}
               buffers={buffers}
               drillingFluid={drillingFluid}
+              displacementFluids={displacementFluids}
             />
           </TabsContent>
         </Tabs>
