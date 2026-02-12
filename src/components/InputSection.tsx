@@ -46,7 +46,7 @@ const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
 function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} className="w-full flex items-center justify-between py-3 px-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-      <span className="font-medium text-sm text-foreground">{title}</span>
+      <span className="font-medium text-sm text-foreground text-left">{title}</span>
       <span className="text-muted-foreground text-xs">{isOpen ? "▲ Свернуть" : "▼ Развернуть"}</span>
     </button>
   );
