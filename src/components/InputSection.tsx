@@ -113,11 +113,11 @@ function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
 }
 
 export default function InputSection(props: Props) {
-  const [openSections, setOpenSections] = useState({
-    well: true, trajectory: false, mud: true, buffers: true, cement: true, displacement: true, hydraulics: true,
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    well: true, trajectory: false, mud: true, buffers: true, cement: true, displacement: true, hydraulics: true, flush: true,
   });
 
-  const toggle = (key: keyof typeof openSections) => {
+  const toggle = (key: string) => {
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
@@ -600,24 +600,30 @@ export default function InputSection(props: Props) {
       <Card>
         <SectionHeader title="⚙️ Параметры гидроразрыва" isOpen={openSections.hydraulics} onClick={() => toggle("hydraulics")} />
         {openSections.hydraulics && (
-          <CardContent className="pt-4 space-y-4">
+          <CardContent className="pt-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">Градиент гидроразрыва, кПа/м</Label>
                 <Input type="number" step="0.1" value={fractureGradient || ""} onChange={(e) => onFractureGradientChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
               </div>
             </div>
-            <div className="border-t border-border pt-3">
-              <p className="text-xs text-muted-foreground font-medium mb-2">Промывка линии перед продавкой</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Время промывки, мин</Label>
-                  <Input type="number" step="1" value={flushTimeMin || ""} onChange={(e) => onFlushTimeMinChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Объём промывки, м³</Label>
-                  <Input type="number" step="0.1" value={flushVolumeM3 || ""} onChange={(e) => onFlushVolumeM3Change(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
-                </div>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* ===== 7. Промывка линии ===== */}
+      <Card>
+        <SectionHeader title="🔄 Промывка линии перед продавкой" isOpen={openSections.flush ?? true} onClick={() => toggle("flush" as any)} />
+        {(openSections as any).flush !== false && (
+          <CardContent className="pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Время промывки, мин</Label>
+                <Input type="number" step="1" value={flushTimeMin || ""} onChange={(e) => onFlushTimeMinChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Объём промывки, м³</Label>
+                <Input type="number" step="0.1" value={flushVolumeM3 || ""} onChange={(e) => onFlushVolumeM3Change(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
               </div>
             </div>
           </CardContent>
