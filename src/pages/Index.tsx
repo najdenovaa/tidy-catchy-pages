@@ -11,6 +11,7 @@ import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFlu
 import { captureElementAsDataUrl } from "@/lib/capture-image";
 import { FileDown, Loader2, Send } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
+import drillingBanner from "@/assets/drilling-banner.jpg";
 const defaultFlushParams = { flushTimeMin: 10, flushVolumeM3: 0 };
 
 const defaultWellData: WellData = {
@@ -361,6 +362,14 @@ export default function Index() {
           </TabsContent>
         </Tabs>
       </main>
+
+      <footer className="w-full mt-0">
+        <img
+          src={drillingBanner}
+          alt="Буровые установки"
+          className="w-full h-24 sm:h-32 object-cover object-center"
+        />
+      </footer>
     </div>
   );
 }
