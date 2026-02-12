@@ -256,9 +256,9 @@ export default function Index() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 sm:space-y-6 relative">
-          <div className="overflow-x-auto -mx-2 px-2 scrollbar-hide sticky top-[88px] sm:top-[140px] z-[9] bg-background py-2">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <div className="overflow-x-auto scrollbar-hide sticky top-[80px] sm:top-[164px] z-[9] bg-background border-b border-border">
+          <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2">
             <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-6 h-auto min-w-max sm:min-w-0">
               <TabsTrigger value="input" className="text-xs py-2 px-3 sm:px-2">Данные</TabsTrigger>
               <TabsTrigger value="hydraulics" className="text-xs py-2 px-3 sm:px-2">Гидравлика</TabsTrigger>
@@ -268,6 +268,9 @@ export default function Index() {
               <TabsTrigger value="visual" className="text-xs py-2 px-3 sm:px-2">Визуал</TabsTrigger>
             </TabsList>
           </div>
+        </div>
+
+        <main className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
 
           <TabsContent value="input">
             <div data-tab-content="input">
@@ -339,29 +342,33 @@ export default function Index() {
             </div>
           </TabsContent>
 
-          <TabsContent value="charts" forceMount className={activeTab !== "charts" ? "absolute opacity-0 pointer-events-none -z-10 left-0 right-0" : ""}>
-            <div data-tab-content="charts">
-              {calcSnapshot && pressureResult ? (
-                <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin} />
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
-              )}
-            </div>
-          </TabsContent>
+          <div className={activeTab !== "charts" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="charts" forceMount>
+              <div data-tab-content="charts">
+                {calcSnapshot && pressureResult ? (
+                  <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin} />
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+                )}
+              </div>
+            </TabsContent>
+          </div>
 
-          <TabsContent value="visual" forceMount className={activeTab !== "visual" ? "absolute opacity-0 pointer-events-none -z-10 left-0 right-0" : ""}>
-            <div data-tab-content="visual">
-              <WellVisualization
-                wellData={wellData}
-                slurries={slurries}
-                buffers={buffers}
-                drillingFluid={drillingFluid}
-                displacementFluids={displacementFluids}
-              />
-            </div>
-          </TabsContent>
-        </Tabs>
-      </main>
+          <div className={activeTab !== "visual" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="visual" forceMount>
+              <div data-tab-content="visual">
+                <WellVisualization
+                  wellData={wellData}
+                  slurries={slurries}
+                  buffers={buffers}
+                  drillingFluid={drillingFluid}
+                  displacementFluids={displacementFluids}
+                />
+              </div>
+            </TabsContent>
+          </div>
+        </main>
+      </Tabs>
 
       <footer className="w-full">
         <img
