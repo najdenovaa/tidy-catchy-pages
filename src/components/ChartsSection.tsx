@@ -4,6 +4,16 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import type { PressurePoint, StageBoundary } from "@/lib/cementing-calculations";
 import CopyImageButton from "./CopyImageButton";
 
+function ScrollableChart({ children, chartRef, height }: { children: React.ReactNode; chartRef: React.RefObject<HTMLDivElement>; height: string }) {
+  return (
+    <div className="overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
+      <div ref={chartRef} className={`${height} min-w-[700px]`}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   pressureData: PressurePoint[];
   safeTime: number;
@@ -83,7 +93,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
           </div>
         </CardHeader>
         <CardContent>
-          <div ref={chartRef1} className="h-[550px]">
+          <ScrollableChart chartRef={chartRef1} height="h-[550px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 20, right: 65, left: 25, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
@@ -101,7 +111,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <Line yAxisId="rate" type="linear" dataKey="annularReturnRate" name="Выход на устье" stroke="hsl(30, 80%, 50%)" strokeWidth={1.5} dot={false} />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </ScrollableChart>
         </CardContent>
       </Card>
 
@@ -114,7 +124,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
           </div>
         </CardHeader>
         <CardContent>
-          <div ref={chartRef2} className="h-[400px]">
+          <ScrollableChart chartRef={chartRef2} height="h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
@@ -126,7 +136,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <Line type="linear" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </ScrollableChart>
         </CardContent>
       </Card>
 
@@ -139,7 +149,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
           </div>
         </CardHeader>
         <CardContent>
-          <div ref={chartRef3} className="h-[400px]">
+          <ScrollableChart chartRef={chartRef3} height="h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
@@ -152,7 +162,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <Line type="linear" dataKey="fracturePressure" name="ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </ScrollableChart>
         </CardContent>
       </Card>
 
@@ -168,7 +178,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
           <p className="text-xs text-muted-foreground mb-3">
             Макс. производительность — предельная скорость закачки, при которой забойное давление не превышает давление ГРП. Оператор должен придерживаться указанных ограничений.
           </p>
-          <div ref={chartRef4} className="h-[500px]">
+          <ScrollableChart chartRef={chartRef4} height="h-[500px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 20, right: 65, left: 25, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
@@ -185,7 +195,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <Line yAxisId="rate" type="linear" dataKey="maxSafeRateLps" name="Макс. безопасная Q, л/с" stroke="hsl(25, 90%, 50%)" strokeWidth={2.5} dot={false} />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </ScrollableChart>
         </CardContent>
       </Card>
 
@@ -198,7 +208,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
           </div>
         </CardHeader>
         <CardContent>
-          <div ref={chartRef5} className="h-[300px]">
+          <ScrollableChart chartRef={chartRef5} height="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 65, left: 25, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
@@ -214,7 +224,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <Line yAxisId="re" type="linear" dataKey="reynoldsAnn" name="Re (затрубье)" stroke="hsl(200, 60%, 50%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </ScrollableChart>
         </CardContent>
       </Card>
     </div>
