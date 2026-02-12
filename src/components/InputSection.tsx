@@ -18,6 +18,10 @@ interface Props {
   onDisplacementFluidsChange: (d: DisplacementFluid[]) => void;
   fractureGradient: number;
   onFractureGradientChange: (v: number) => void;
+  flushTimeMin: number;
+  onFlushTimeMinChange: (v: number) => void;
+  flushVolumeM3: number;
+  onFlushVolumeM3Change: (v: number) => void;
   displacementVolume?: number;
 }
 
@@ -117,7 +121,7 @@ export default function InputSection(props: Props) {
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacementFluids, onDisplacementFluidsChange, fractureGradient, onFractureGradientChange, displacementVolume } = props;
+  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacementFluids, onDisplacementFluidsChange, fractureGradient, onFractureGradientChange, flushTimeMin, onFlushTimeMinChange, flushVolumeM3, onFlushVolumeM3Change, displacementVolume } = props;
 
   // Обновить траекторию и автосинхронизировать wellDepthTVD из последней точки
   const updateTrajectory = (newTraj: TrajectoryPoint[]) => {
@@ -596,11 +600,24 @@ export default function InputSection(props: Props) {
       <Card>
         <SectionHeader title="⚙️ Параметры гидроразрыва" isOpen={openSections.hydraulics} onClick={() => toggle("hydraulics")} />
         {openSections.hydraulics && (
-          <CardContent className="pt-4">
+          <CardContent className="pt-4 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">Градиент гидроразрыва, кПа/м</Label>
                 <Input type="number" step="0.1" value={fractureGradient || ""} onChange={(e) => onFractureGradientChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
+              </div>
+            </div>
+            <div className="border-t border-border pt-3">
+              <p className="text-xs text-muted-foreground font-medium mb-2">Промывка линии перед продавкой</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Время промывки, мин</Label>
+                  <Input type="number" step="1" value={flushTimeMin || ""} onChange={(e) => onFlushTimeMinChange(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Объём промывки, м³</Label>
+                  <Input type="number" step="0.1" value={flushVolumeM3 || ""} onChange={(e) => onFlushVolumeM3Change(parseFloat(e.target.value) || 0)} className="h-9 text-sm" />
+                </div>
               </div>
             </div>
           </CardContent>
