@@ -209,7 +209,7 @@ export default function Index() {
   }, [calcSnapshot, wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient]);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="bg-background">
       <header className="border-b border-border bg-card sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex flex-col items-center sm:items-start">
@@ -256,7 +256,7 @@ export default function Index() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 flex-1">
+      <main className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 sm:space-y-6 relative">
           <div className="overflow-x-auto -mx-2 px-2 scrollbar-hide sticky top-[88px] sm:top-[140px] z-[9] bg-background py-2">
             <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-6 h-auto min-w-max sm:min-w-0">
@@ -363,14 +363,12 @@ export default function Index() {
         </Tabs>
       </main>
 
-      <footer className="w-full mt-auto">
-        <div className="relative w-full h-20 sm:h-28 overflow-hidden">
-          <img
-            src={drillingBanner}
-            alt="Буровые установки"
-            className="w-full h-full object-cover object-center opacity-30"
-          />
-        </div>
+      <footer className="w-full">
+        <img
+          src={drillingBanner}
+          alt="Буровые установки"
+          className="w-full h-20 sm:h-28 object-cover object-center opacity-30"
+        />
       </footer>
     </div>
   );
