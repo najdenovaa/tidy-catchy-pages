@@ -11,6 +11,8 @@ import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFlu
 import { captureElementAsDataUrl } from "@/lib/capture-image";
 import { FileDown, Loader2, Send } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
+const defaultFlushParams = { flushTimeMin: 10, flushVolumeM3: 0 };
+
 const defaultWellData: WellData = {
   wellDepthMD: 0,
   wellDepthTVD: 0,
@@ -51,6 +53,8 @@ interface CalcSnapshot {
   buffers: BufferFluid[];
   displacementFluids: DisplacementFluid[];
   fractureGradient: number;
+  flushTimeMin: number;
+  flushVolumeM3: number;
 }
 
 export default function Index() {
@@ -60,6 +64,8 @@ export default function Index() {
   const [buffers, setBuffers] = useState<BufferFluid[]>(defaultBuffers);
   const [displacementFluids, setDisplacementFluids] = useState<DisplacementFluid[]>(defaultDisplacementFluids);
   const [fractureGradient, setFractureGradient] = useState(17.7);
+  const [flushTimeMin, setFlushTimeMin] = useState(defaultFlushParams.flushTimeMin);
+  const [flushVolumeM3, setFlushVolumeM3] = useState(defaultFlushParams.flushVolumeM3);
   const [activeTab, setActiveTab] = useState("input");
   const [exporting, setExporting] = useState(false);
 
@@ -71,8 +77,8 @@ export default function Index() {
   const [calcSnapshot, setCalcSnapshot] = useState<CalcSnapshot | null>(null);
 
   const handleCalculate = useCallback(() => {
-    setCalcSnapshot({ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient });
-  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient]);
+    setCalcSnapshot({ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 });
+  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3]);
 
   const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData) : null, [calcSnapshot]);
 
@@ -83,7 +89,7 @@ export default function Index() {
 
   const pressureResult = useMemo(
     () => calcSnapshot && volumes
-      ? calculatePressureProfile(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.drillingFluid, calcSnapshot.displacementFluids, calcSnapshot.fractureGradient, volumes.displacementVolume)
+      ? calculatePressureProfile(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.drillingFluid, calcSnapshot.displacementFluids, calcSnapshot.fractureGradient, volumes.displacementVolume, calcSnapshot.flushTimeMin, calcSnapshot.flushVolumeM3)
       : null,
     [calcSnapshot, volumes]
   );
@@ -278,6 +284,10 @@ export default function Index() {
                 displacementVolume={liveDispVol}
                 fractureGradient={fractureGradient}
                 onFractureGradientChange={setFractureGradient}
+                flushTimeMin={flushTimeMin}
+                onFlushTimeMinChange={setFlushTimeMin}
+                flushVolumeM3={flushVolumeM3}
+                onFlushVolumeM3Change={setFlushVolumeM3}
               />
             </div>
           </TabsContent>

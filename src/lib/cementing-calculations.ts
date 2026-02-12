@@ -549,7 +549,9 @@ export function calculatePressureProfile(
   drillingFluid: DrillingFluid,
   displacementFluids: DisplacementFluid[],
   fractureGradient: number,
-  displacementVol: number
+  displacementVol: number,
+  flushTimeMin: number = 10,
+  flushVolumeM3: number = 0
 ): PressureProfileResult {
   const points: PressurePoint[] = [];
   const traj = wellData.trajectory;
@@ -627,17 +629,17 @@ export function calculatePressureProfile(
     }
   });
 
-  // === Промывка ЛВД (пауза ~10 мин): цемент оседает под собственным весом ===
+  // === Промывка ЛВД (пауза): цемент оседает под собственным весом ===
   stages.push({
     name: "Промывка ЛВД",
-    volume: 0,
+    volume: flushVolumeM3,
     densityGcm3: mudDensityGcm3,
     pv: drillingFluid.rheology.pv,
     yp: drillingFluid.rheology.yp,
-    rateLps: 0,
+    rateLps: flushVolumeM3 > 0 && flushTimeMin > 0 ? (flushVolumeM3 / (flushTimeMin * 60)) * 1000 : 0,
     isCement: false,
     compressionCoeff: 1.0,
-    durationMin: 10,
+    durationMin: flushTimeMin,
     isFlushPause: true,
   });
 
