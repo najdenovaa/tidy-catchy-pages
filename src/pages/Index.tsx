@@ -200,8 +200,30 @@ export default function Index() {
         }
       }
 
-      const images = (Object.keys(chartImages).length > 0 || Object.keys(visualImages).length > 0)
-        ? { chartImages, visualImages } : undefined;
+      // Capture centralization images
+      const centralizationImages: Record<string, string> = {};
+      const centTab = document.querySelector('[data-tab-content="centralization"]');
+      if (centTab) {
+        const cards = centTab.querySelectorAll('[class*="Card"], .rounded-lg');
+        // Cross-section card
+        const crossSectionEl = centTab.querySelector('[class*="flex-col"][class*="sm\\:flex-row"]')?.parentElement;
+        if (crossSectionEl instanceof HTMLElement) {
+          try { centralizationImages.crossSection = await captureElementAsDataUrl(crossSectionEl); } catch {}
+        }
+        // Standoff profile - bar chart container
+        const barChartEl = centTab.querySelector('.h-40');
+        if (barChartEl?.parentElement instanceof HTMLElement) {
+          try { centralizationImages.standoffProfile = await captureElementAsDataUrl(barChartEl.parentElement as HTMLElement); } catch {}
+        }
+        // Results table
+        const tableEl = centTab.querySelector('table');
+        if (tableEl instanceof HTMLElement) {
+          try { centralizationImages.resultsTable = await captureElementAsDataUrl(tableEl); } catch {}
+        }
+      }
+
+      const images = (Object.keys(chartImages).length > 0 || Object.keys(visualImages).length > 0 || Object.keys(centralizationImages).length > 0)
+        ? { chartImages, visualImages, centralizationImages } : undefined;
 
       await exportToDocx(snap.wellData, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient, images);
     } catch (e) {
@@ -381,14 +403,16 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <TabsContent value="centralization">
-            <div data-tab-content="centralization">
-              <CentralizationSection
-                wellData={wellData}
-                mudDensity={drillingFluid.density}
-              />
-            </div>
-          </TabsContent>
+          <div className={activeTab !== "centralization" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="centralization" forceMount>
+              <div data-tab-content="centralization">
+                <CentralizationSection
+                  wellData={wellData}
+                  mudDensity={drillingFluid.density}
+                />
+              </div>
+            </TabsContent>
+          </div>
         </main>
       </Tabs>
 

@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2, Calculator } from "lucide-react";
+import CopyImageButton from "@/components/CopyImageButton";
 import type { WellData } from "@/lib/cementing-calculations";
 import {
   calculateCentralization,
@@ -87,6 +88,10 @@ export default function CentralizationSection({ wellData, mudDensity }: Props) {
   const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => [newInterval(wellData.casingDepthMD)]);
   const [results, setResults] = useState<CentralizationResult[] | null>(null);
   const [selectedMD, setSelectedMD] = useState<number | null>(null);
+
+  const crossSectionRef = useRef<HTMLDivElement>(null);
+  const standoffProfileRef = useRef<HTMLDivElement>(null);
+  const resultsTableRef = useRef<HTMLDivElement>(null);
 
   const casingID = wellData.casingOD - 2 * wellData.casingWall;
 
@@ -250,10 +255,13 @@ export default function CentralizationSection({ wellData, mudDensity }: Props) {
           {/* Cross-section preview */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Поперечное сечение</CardTitle>
+              <CardTitle className="text-sm flex items-center justify-between">
+                <span>Поперечное сечение</span>
+                <CopyImageButton targetRef={crossSectionRef} label="Копировать" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-col sm:flex-row items-center gap-4">
+              <div ref={crossSectionRef} className="flex flex-col sm:flex-row items-center gap-4">
                 <CrossSectionView
                   eccentricity={selectedResult?.eccentricity ?? 0}
                   holeD={wellData.holeDiameter}
@@ -279,9 +287,13 @@ export default function CentralizationSection({ wellData, mudDensity }: Props) {
           {/* Standoff bar chart (simple inline) */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Профиль Standoff по стволу</CardTitle>
+              <CardTitle className="text-sm flex items-center justify-between">
+                <span>Профиль Standoff по стволу</span>
+                <CopyImageButton targetRef={standoffProfileRef} label="Копировать" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
+              <div ref={standoffProfileRef}>
               <div className="h-40 flex items-end gap-[1px] overflow-hidden">
                 {results.map((r, i) => {
                   const h = Math.max(1, r.standoff);
@@ -301,16 +313,20 @@ export default function CentralizationSection({ wellData, mudDensity }: Props) {
                 <span>0 м</span>
                 <span>{wellData.casingDepthMD} м</span>
               </div>
+              </div>
             </CardContent>
           </Card>
 
           {/* Data table */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Таблица результатов</CardTitle>
+              <CardTitle className="text-sm flex items-center justify-between">
+                <span>Таблица результатов</span>
+                <CopyImageButton targetRef={resultsTableRef} label="Копировать" />
+              </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="max-h-[400px] overflow-auto">
+              <div ref={resultsTableRef} className="max-h-[400px] overflow-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
