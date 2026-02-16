@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef } from "react";
+import { Link } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InputSection from "@/components/InputSection";
 import PumpingSchedule from "@/components/PumpingSchedule";
@@ -9,7 +10,7 @@ import WellVisualization from "@/components/WellVisualization";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid, PressureProfileResult, TrajectoryPoint } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
-import { FileDown, Loader2, Send } from "lucide-react";
+import { FileDown, Loader2, Send, Home } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 const defaultFlushParams = { flushTimeMin: 10, flushVolumeM3: 0 };
@@ -213,29 +214,38 @@ export default function Index() {
       <header className="border-b border-border bg-card sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex flex-col items-center sm:items-start">
-            <div className="flex items-center gap-3">
-              <img
-                src={deallsoftLogo}
-                alt="DeAllsoft"
-                className="h-16 sm:h-28 object-cover object-center"
-              />
-              <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase -mt-1">Инженерные расчёты</p>
-            </div>
+              <Link to="/" className="flex items-center gap-3">
+                <img
+                  src={deallsoftLogo}
+                  alt="DeAllsoft"
+                  className="h-16 sm:h-28 object-cover object-center"
+                />
+                <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase -mt-1">Инженерные расчёты</p>
+              </Link>
             <div className="mt-0.5 sm:ml-10 text-center sm:text-left">
               <h1 className="text-sm sm:text-lg font-medium text-muted-foreground leading-tight">Программа цементирования</h1>
               <p className="text-xs text-muted-foreground/70">Расчёт обсадных колонн</p>
             </div>
           </div>
           <div className="flex items-center sm:flex-col sm:items-end gap-3 sm:gap-6 w-full sm:w-auto">
-            <a
-              href="https://t.me/deallbiz_support"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs"
-            >
-              <Send className="w-4 h-4" />
-              <span>Поддержка</span>
-            </a>
+            <div className="flex items-center gap-3">
+              <Link
+                to="/"
+                className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs"
+              >
+                <Home className="w-4 h-4" />
+                <span>Главная</span>
+              </Link>
+              <a
+                href="https://t.me/deallbiz_support"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs"
+              >
+                <Send className="w-4 h-4" />
+                <span>Поддержка</span>
+              </a>
+            </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-none justify-end">
               <button
                 onClick={handleExportDocx}

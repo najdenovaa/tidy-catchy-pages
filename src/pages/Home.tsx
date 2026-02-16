@@ -32,7 +32,7 @@ export default function Home() {
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b border-border bg-card">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-3">
             <img
               src={deallsoftLogo}
               alt="DeAllsoft"
@@ -41,7 +41,7 @@ export default function Home() {
             <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase">
               Инженерные расчёты
             </p>
-          </div>
+          </Link>
           <a
             href="https://t.me/deallbiz_support"
             target="_blank"

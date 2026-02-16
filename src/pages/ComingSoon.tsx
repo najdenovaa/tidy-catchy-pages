@@ -1,4 +1,4 @@
-import { useParams, Link } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 import { Send, ArrowLeft } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 
@@ -8,19 +8,19 @@ const titles: Record<string, string> = {
 };
 
 export default function ComingSoon() {
-  const { module } = useParams<{ module: string }>();
-  const title = titles[module || ""] || "Модуль";
+  const { pathname } = useLocation();
+  const title = pathname === "/drilling-fluids" ? "Буровые растворы" : "Гидроразрыв пласта";
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b border-border bg-card">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-3">
             <img src={deallsoftLogo} alt="DeAllsoft" className="h-14 sm:h-24 object-cover object-center" />
             <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase">
               Инженерные расчёты
             </p>
-          </div>
+          </Link>
           <a
             href="https://t.me/deallbiz_support"
             target="_blank"
