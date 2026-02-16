@@ -14,16 +14,93 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      calculation_logs: {
+        Row: {
+          calc_params: Json | null
+          created_at: string
+          id: string
+          ip_address: string | null
+          module: string
+          page_url: string | null
+          user_agent: string | null
+          well_data: Json | null
+        }
+        Insert: {
+          calc_params?: Json | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          module?: string
+          page_url?: string | null
+          user_agent?: string | null
+          well_data?: Json | null
+        }
+        Update: {
+          calc_params?: Json | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          module?: string
+          page_url?: string | null
+          user_agent?: string | null
+          well_data?: Json | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      visit_logs: {
+        Row: {
+          created_at: string
+          id: string
+          ip_address: string | null
+          module: string
+          page_url: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          module?: string
+          page_url?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          module?: string
+          page_url?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +227,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+    },
   },
 } as const

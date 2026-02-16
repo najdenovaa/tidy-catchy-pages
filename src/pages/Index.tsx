@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InputSection from "@/components/InputSection";
@@ -102,6 +102,15 @@ export default function Index() {
     return 0;
   });
 
+  // Log visit to backend
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/log-activity`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+      body: JSON.stringify({ type: "visit", module: "cementing", page_url: window.location.href }),
+    }).catch(() => {});
+  }, []);
+
   const liveDispVol = useMemo(() => {
     const cid = getCasingID(wellData.casingOD, wellData.casingWall);
     return pipeVolumePerMeter(cid) * wellData.ckodDepth;
@@ -116,6 +125,18 @@ export default function Index() {
       localStorage.setItem("cementing_calcs", JSON.stringify({ date: todayKey, count: next }));
       return next;
     });
+    // Log calculation to backend
+    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/log-activity`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+      body: JSON.stringify({
+        type: "calculation",
+        module: "cementing",
+        well_data: wellData,
+        calc_params: { slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 },
+        page_url: window.location.href,
+      }),
+    }).catch(() => {});
   }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3]);
 
   const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData) : null, [calcSnapshot]);
