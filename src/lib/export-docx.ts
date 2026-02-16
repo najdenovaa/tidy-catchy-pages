@@ -548,11 +548,38 @@ function buildTrajectoryPage(wellData: WellData, visualImages?: Record<string, s
   return content;
 }
 
+// ======== Centralization section ========
+
+function buildCentralizationPage(wellData: WellData, centralizationImages?: Record<string, string>): Paragraph[] {
+  const content: Paragraph[] = [
+    sectionTitle("16. Расчёт центрирования обсадной колонны"),
+  ];
+
+  const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
+  const clearance = (wellData.holeDiameter - wellData.casingOD) / 2;
+
+  content.push(kvTable([
+    { label: "Диаметр ствола", value: `${wellData.holeDiameter} мм` },
+    { label: "Наружный диаметр ОК", value: `${wellData.casingOD} мм` },
+    { label: "Внутренний диаметр ОК", value: `${fmt(casingID, 1)} мм` },
+    { label: "Радиальный зазор", value: `${fmt(clearance, 1)} мм` },
+  ]) as any);
+
+  if (centralizationImages) {
+    if (centralizationImages.crossSection) content.push(...buildImageParagraph(centralizationImages.crossSection, "Поперечное сечение — центрирование колонны", 800, 400));
+    if (centralizationImages.standoffProfile) content.push(...buildImageParagraph(centralizationImages.standoffProfile, "Профиль Standoff по стволу", 1400, 400));
+    if (centralizationImages.resultsTable) content.push(...buildImageParagraph(centralizationImages.resultsTable, "Таблица результатов центрирования", 1400, 600));
+  }
+
+  return content;
+}
+
 // ======== Main export function ========
 
 export interface DocxImages {
   chartImages?: Record<string, string>;  // data URLs
   visualImages?: Record<string, string>; // data URLs
+  centralizationImages?: Record<string, string>; // data URLs
 }
 
 export async function exportToDocx(
@@ -610,6 +637,7 @@ export async function exportToDocx(
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
   const chartsDataContent = buildChartsDataPage(pressureResult, images?.chartImages);
   const trajectoryContent = buildTrajectoryPage(wellData, images?.visualImages);
+  const centralizationContent = buildCentralizationPage(wellData, images?.centralizationImages);
   const doc = new Document({
     sections: [
       {
@@ -699,6 +727,18 @@ export async function exportToDocx(
           }),
         },
         children: trajectoryContent,
+      }] : []),
+      ...(centralizationContent.length > 1 ? [{
+        properties: {},
+        headers: {
+          default: new Header({
+            children: [new Paragraph({
+              alignment: AlignmentType.RIGHT,
+              children: [new TextRun({ text: "Центрирование", size: 16, color: "999999", font: "Calibri", italics: true })],
+            })],
+          }),
+        },
+        children: centralizationContent,
       }] : []),
     ],
   });
