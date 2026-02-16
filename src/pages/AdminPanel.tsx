@@ -157,11 +157,12 @@ export default function AdminPanel() {
                       <TableHead>Данные скважины</TableHead>
                       <TableHead>IP</TableHead>
                       <TableHead>User-Agent</TableHead>
+                      <TableHead>Ссылка</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {calcLogs.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
                     ) : calcLogs.map(log => (
                       <TableRow key={log.id}>
                         <TableCell className="whitespace-nowrap text-xs">{formatDate(log.created_at)}</TableCell>
@@ -169,6 +170,9 @@ export default function AdminPanel() {
                         <TableCell className="text-xs max-w-[200px] truncate">{getWellSummary(log.well_data)}</TableCell>
                         <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
                         <TableCell className="text-xs max-w-[200px] truncate">{log.user_agent || "—"}</TableCell>
+                        <TableCell className="text-xs">
+                          <Link to={`/admin/calc/${log.id}`} className="text-primary underline hover:text-primary/80">Открыть</Link>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
