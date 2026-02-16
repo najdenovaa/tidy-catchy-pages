@@ -2,6 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
+import { ChevronRight, ChevronDown } from "lucide-react";
 import { getCasingID, getSlurryHeight, annularVolumePerMeter, hydrostaticPressure, interpolateTVD } from "@/lib/cementing-calculations";
 import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, DisplacementFluid, FlowRateStep, TrajectoryPoint } from "@/lib/cementing-calculations";
 
@@ -45,9 +46,9 @@ const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
 
 function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="w-full flex items-center justify-between py-3 px-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+    <button onClick={onClick} className="w-full flex items-center gap-2 py-3 px-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+      {isOpen ? <ChevronDown className="w-4 h-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground" />}
       <span className="font-medium text-sm text-foreground text-left">{title}</span>
-      <span className="text-muted-foreground text-xs">{isOpen ? "▲ Свернуть" : "▼ Развернуть"}</span>
     </button>
   );
 }
