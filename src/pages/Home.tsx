@@ -1,0 +1,96 @@
+import { Link } from "react-router-dom";
+import { Send, FlaskConical, Droplets, Zap } from "lucide-react";
+import deallsoftLogo from "@/assets/deallsoft-logo.png";
+import drillingBanner from "@/assets/drilling-banner.jpg";
+
+const modules = [
+  {
+    title: "Цементирование скважин",
+    description: "Расчёт обсадных колонн, гидравлика, материалы",
+    icon: FlaskConical,
+    to: "/cementing",
+    available: true,
+  },
+  {
+    title: "Буровые растворы",
+    description: "Подбор и расчёт буровых растворов",
+    icon: Droplets,
+    to: "/drilling-fluids",
+    available: false,
+  },
+  {
+    title: "Гидроразрыв пласта",
+    description: "Проектирование и расчёт ГРП",
+    icon: Zap,
+    to: "/fracturing",
+    available: false,
+  },
+];
+
+export default function Home() {
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="border-b border-border bg-card">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img
+              src={deallsoftLogo}
+              alt="DeAllsoft"
+              className="h-14 sm:h-24 object-cover object-center"
+            />
+            <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase">
+              Инженерные расчёты
+            </p>
+          </div>
+          <a
+            href="https://t.me/deallbiz_support"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm"
+          >
+            <Send className="w-4 h-4" />
+            <span>Поддержка</span>
+          </a>
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-5xl mx-auto px-4 py-10 sm:py-16 w-full">
+        <h2 className="text-xl sm:text-2xl font-semibold text-foreground mb-8 text-center">
+          Выберите модуль
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+          {modules.map((m) => (
+            <Link
+              key={m.to}
+              to={m.to}
+              className="group rounded-xl border border-border bg-card p-6 sm:p-8 flex flex-col items-center text-center gap-4 hover:border-primary/50 hover:shadow-lg transition-all"
+            >
+              <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                <m.icon className="w-7 h-7 text-primary" />
+              </div>
+              <h3 className="text-base sm:text-lg font-semibold text-foreground">
+                {m.title}
+              </h3>
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                {m.description}
+              </p>
+              {!m.available && (
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 bg-muted px-2 py-0.5 rounded">
+                  В разработке
+                </span>
+              )}
+            </Link>
+          ))}
+        </div>
+      </main>
+
+      <footer className="w-full">
+        <img
+          src={drillingBanner}
+          alt="Буровые установки"
+          className="w-full h-20 sm:h-28 object-cover object-center opacity-30"
+        />
+      </footer>
+    </div>
+  );
+}
