@@ -7,6 +7,7 @@ import HydraulicsSection from "@/components/HydraulicsSection";
 import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
+import CentralizationSection from "@/components/CentralizationSection";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid, PressureProfileResult, TrajectoryPoint } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
@@ -96,7 +97,7 @@ export default function Index() {
     [calcSnapshot, volumes]
   );
 
-  const tabOrder = ["input", "hydraulics", "schedule", "materials", "charts", "visual"] as const;
+  const tabOrder = ["input", "hydraulics", "schedule", "materials", "charts", "visual", "centralization"] as const;
   const tabNames: Record<string, string> = {
     input: "Исходные данные",
     hydraulics: "Гидравлика",
@@ -104,6 +105,7 @@ export default function Index() {
     materials: "Материалы",
     charts: "Графики",
     visual: "Визуал",
+    centralization: "Центрирование",
   };
 
   const handleExportDocx = useCallback(async () => {
@@ -269,13 +271,14 @@ export default function Index() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="overflow-x-auto scrollbar-hide sticky top-[80px] sm:top-[164px] z-[9] bg-background border-b border-border">
           <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2">
-            <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-6 h-auto min-w-max sm:min-w-0">
-              <TabsTrigger value="input" className="text-xs py-2 px-3 sm:px-2">Данные</TabsTrigger>
-              <TabsTrigger value="hydraulics" className="text-xs py-2 px-3 sm:px-2">Гидравлика</TabsTrigger>
-              <TabsTrigger value="schedule" className="text-xs py-2 px-3 sm:px-2">Закачка</TabsTrigger>
-              <TabsTrigger value="materials" className="text-xs py-2 px-3 sm:px-2">Материалы</TabsTrigger>
-              <TabsTrigger value="charts" className="text-xs py-2 px-3 sm:px-2">Графики</TabsTrigger>
-              <TabsTrigger value="visual" className="text-xs py-2 px-3 sm:px-2">Визуал</TabsTrigger>
+            <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-7 h-auto min-w-max sm:min-w-0">
+              <TabsTrigger value="input" className="text-xs py-2 px-3 sm:px-1">Данные</TabsTrigger>
+              <TabsTrigger value="hydraulics" className="text-xs py-2 px-3 sm:px-1">Гидравлика</TabsTrigger>
+              <TabsTrigger value="schedule" className="text-xs py-2 px-3 sm:px-1">Закачка</TabsTrigger>
+              <TabsTrigger value="materials" className="text-xs py-2 px-3 sm:px-1">Материалы</TabsTrigger>
+              <TabsTrigger value="charts" className="text-xs py-2 px-3 sm:px-1">Графики</TabsTrigger>
+              <TabsTrigger value="visual" className="text-xs py-2 px-3 sm:px-1">Визуал</TabsTrigger>
+              <TabsTrigger value="centralization" className="text-xs py-2 px-3 sm:px-1">Центрир.</TabsTrigger>
             </TabsList>
           </div>
         </div>
@@ -377,6 +380,15 @@ export default function Index() {
               </div>
             </TabsContent>
           </div>
+
+          <TabsContent value="centralization">
+            <div data-tab-content="centralization">
+              <CentralizationSection
+                wellData={wellData}
+                mudDensity={drillingFluid.density}
+              />
+            </div>
+          </TabsContent>
         </main>
       </Tabs>
 
