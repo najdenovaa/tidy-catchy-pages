@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Send, FlaskConical, Droplets, Zap } from "lucide-react";
+import { Send, FlaskConical, Droplets, Zap, Shield } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 
@@ -42,15 +42,24 @@ export default function Home() {
               Инженерные расчёты
             </p>
           </Link>
-          <a
-            href="https://t.me/deallbiz_support"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm"
-          >
-            <Send className="w-4 h-4" />
-            <span>Поддержка</span>
-          </a>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/admin-login"
+              className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm"
+            >
+              <Shield className="w-4 h-4" />
+              <span>Админ</span>
+            </Link>
+            <a
+              href="https://t.me/deallbiz_support"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm"
+            >
+              <Send className="w-4 h-4" />
+              <span>Поддержка</span>
+            </a>
+          </div>
         </div>
       </header>
 
