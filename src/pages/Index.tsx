@@ -74,6 +74,34 @@ export default function Index() {
   const [exporting, setExporting] = useState(false);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
 
+  // Visit & calculation counters (localStorage, daily reset for visits)
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const [visitCount] = useState<number>(() => {
+    const stored = localStorage.getItem("cementing_visits");
+    if (stored) {
+      try {
+        const data = JSON.parse(stored);
+        if (data.date === todayKey) {
+          const newCount = data.count + 1;
+          localStorage.setItem("cementing_visits", JSON.stringify({ date: todayKey, count: newCount }));
+          return newCount;
+        }
+      } catch {}
+    }
+    localStorage.setItem("cementing_visits", JSON.stringify({ date: todayKey, count: 1 }));
+    return 1;
+  });
+  const [calcCount, setCalcCount] = useState<number>(() => {
+    const stored = localStorage.getItem("cementing_calcs");
+    if (stored) {
+      try {
+        const data = JSON.parse(stored);
+        if (data.date === todayKey) return data.count;
+      } catch {}
+    }
+    return 0;
+  });
+
   const liveDispVol = useMemo(() => {
     const cid = getCasingID(wellData.casingOD, wellData.casingWall);
     return pipeVolumePerMeter(cid) * wellData.ckodDepth;
@@ -83,6 +111,11 @@ export default function Index() {
 
   const handleCalculate = useCallback(() => {
     setCalcSnapshot({ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 });
+    setCalcCount(prev => {
+      const next = prev + 1;
+      localStorage.setItem("cementing_calcs", JSON.stringify({ date: todayKey, count: next }));
+      return next;
+    });
   }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3]);
 
   const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData) : null, [calcSnapshot]);
@@ -236,6 +269,10 @@ export default function Index() {
       <header className="border-b border-border bg-card sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex flex-col items-center sm:items-start">
+            <div className="flex items-center gap-4 text-[10px] text-muted-foreground/70 mb-1">
+              <span>👁 Посещений сегодня: <span className="font-semibold text-muted-foreground">{visitCount}</span></span>
+              <span>🧮 Расчётов сегодня: <span className="font-semibold text-muted-foreground">{calcCount}</span></span>
+            </div>
               <Link to="/" className="flex items-center gap-3">
                 <img
                   src={deallsoftLogo}
