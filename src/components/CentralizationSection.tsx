@@ -19,6 +19,7 @@ import {
 interface Props {
   wellData: WellData;
   mudDensity: number;
+  onResultsChange?: (results: CentralizationResult[] | null) => void;
 }
 
 function makeId() {
@@ -84,7 +85,7 @@ function standoffColor(standoff: number): string {
 }
 
 // ─── Main component ─────────────────────────────────────────────
-export default function CentralizationSection({ wellData, mudDensity }: Props) {
+export default function CentralizationSection({ wellData, mudDensity, onResultsChange }: Props) {
   const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => [newInterval(wellData.casingDepthMD)]);
   const [results, setResults] = useState<CentralizationResult[] | null>(null);
   const [selectedMD, setSelectedMD] = useState<number | null>(null);
@@ -122,12 +123,12 @@ export default function CentralizationSection({ wellData, mudDensity }: Props) {
   const handleCalculate = useCallback(() => {
     const res = calculateCentralization(wellData, intervals, mudDensity);
     setResults(res);
+    onResultsChange?.(res);
     if (res.length > 0) {
-      // Select point with worst eccentricity for preview
       const worst = res.reduce((a, b) => a.eccentricity > b.eccentricity ? a : b);
       setSelectedMD(worst.md);
     }
-  }, [wellData, intervals, mudDensity]);
+  }, [wellData, intervals, mudDensity, onResultsChange]);
 
   const selectedResult = useMemo(() => {
     if (results && selectedMD !== null) {

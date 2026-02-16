@@ -8,6 +8,7 @@ import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import CentralizationSection from "@/components/CentralizationSection";
+import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid, PressureProfileResult, TrajectoryPoint } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
@@ -71,6 +72,7 @@ export default function Index() {
   const [flushVolumeM3, setFlushVolumeM3] = useState(defaultFlushParams.flushVolumeM3);
   const [activeTab, setActiveTab] = useState("input");
   const [exporting, setExporting] = useState(false);
+  const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
 
   const liveDispVol = useMemo(() => {
     const cid = getCasingID(wellData.casingOD, wellData.casingWall);
@@ -215,17 +217,13 @@ export default function Index() {
         if (barChartEl?.parentElement instanceof HTMLElement) {
           try { centralizationImages.standoffProfile = await captureElementAsDataUrl(barChartEl.parentElement as HTMLElement); } catch {}
         }
-        // Results table
-        const tableEl = centTab.querySelector('table');
-        if (tableEl instanceof HTMLElement) {
-          try { centralizationImages.resultsTable = await captureElementAsDataUrl(tableEl); } catch {}
-        }
+        // No longer capturing table as image - passing data directly
       }
 
       const images = (Object.keys(chartImages).length > 0 || Object.keys(visualImages).length > 0 || Object.keys(centralizationImages).length > 0)
         ? { chartImages, visualImages, centralizationImages } : undefined;
 
-      await exportToDocx(snap.wellData, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient, images);
+      await exportToDocx(snap.wellData, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient, images, centralizationResults ?? undefined);
     } catch (e) {
       console.error("DOCX export error:", e);
     } finally {
@@ -409,6 +407,7 @@ export default function Index() {
                 <CentralizationSection
                   wellData={wellData}
                   mudDensity={drillingFluid.density}
+                  onResultsChange={setCentralizationResults}
                 />
               </div>
             </TabsContent>

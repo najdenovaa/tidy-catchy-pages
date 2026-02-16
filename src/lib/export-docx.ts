@@ -5,6 +5,7 @@ import {
   TableLayoutType, ImageRun,
 } from "docx";
 import { dataUrlToArrayBuffer } from "./capture-image";
+import type { CentralizationResult } from "./centralization-calculations";
 import { saveAs } from "file-saver";
 import type {
   WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid,
@@ -550,7 +551,7 @@ function buildTrajectoryPage(wellData: WellData, visualImages?: Record<string, s
 
 // ======== Centralization section ========
 
-function buildCentralizationPage(wellData: WellData, centralizationImages?: Record<string, string>): Paragraph[] {
+function buildCentralizationPage(wellData: WellData, centralizationImages?: Record<string, string>, centralizationResults?: CentralizationResult[]): Paragraph[] {
   const content: Paragraph[] = [
     sectionTitle("16. Расчёт центрирования обсадной колонны"),
   ];
@@ -568,7 +569,42 @@ function buildCentralizationPage(wellData: WellData, centralizationImages?: Reco
   if (centralizationImages) {
     if (centralizationImages.crossSection) content.push(...buildImageParagraph(centralizationImages.crossSection, "Поперечное сечение — центрирование колонны", 800, 400));
     if (centralizationImages.standoffProfile) content.push(...buildImageParagraph(centralizationImages.standoffProfile, "Профиль Standoff по стволу", 1400, 400));
-    if (centralizationImages.resultsTable) content.push(...buildImageParagraph(centralizationImages.resultsTable, "Таблица результатов центрирования", 1400, 600));
+  }
+
+  // Build real table from results data
+  if (centralizationResults && centralizationResults.length > 0) {
+    const avgStandoff = Math.round(centralizationResults.reduce((s, r) => s + r.standoff, 0) / centralizationResults.length * 10) / 10;
+    const minStandoff = Math.min(...centralizationResults.map(r => r.standoff));
+
+    content.push(new Paragraph({
+      spacing: { before: 200, after: 80 },
+      children: [new TextRun({ text: `Средний Standoff: ${avgStandoff}%  |  Мин. Standoff: ${fmt(minStandoff, 1)}%`, bold: true, size: 20, font: "Calibri" })],
+    }));
+
+    const headers = ["MD, м", "TVD, м", "Зенит, °", "Эксц.", "Standoff, %", "Центратор"];
+    const tableRows = [
+      new TableRow({ children: headers.map(h => headerCell(h)) }),
+      ...centralizationResults.map(r => new TableRow({
+        children: [
+          cell(fmt(r.md, 0), { align: AlignmentType.RIGHT }),
+          cell(fmt(r.tvd, 1), { align: AlignmentType.RIGHT }),
+          cell(fmt(r.zenith, 1), { align: AlignmentType.RIGHT }),
+          cell(fmt(r.eccentricity, 3), { align: AlignmentType.RIGHT }),
+          cell(fmt(r.standoff, 1), { align: AlignmentType.RIGHT, bold: r.standoff < 50 }),
+          cell(r.hasCentralizer ? "●" : "—", { align: AlignmentType.CENTER }),
+        ],
+      })),
+    ];
+
+    content.push(new Paragraph({
+      spacing: { before: 150, after: 80 },
+      children: [new TextRun({ text: "Таблица результатов центрирования:", bold: true, size: 20, font: "Calibri" })],
+    }));
+    content.push(new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      layout: TableLayoutType.FIXED,
+      rows: tableRows,
+    }) as any);
   }
 
   return content;
@@ -590,6 +626,7 @@ export async function exportToDocx(
   displacementFluids: DisplacementFluid[],
   fractureGradient: number,
   images?: DocxImages,
+  centralizationResults?: CentralizationResult[],
 ) {
   const volumes = calculateVolumes(wellData);
   const pressureResult = calculatePressureProfile(wellData, slurries, buffers, drillingFluid, displacementFluids, fractureGradient, volumes.displacementVolume);
@@ -637,7 +674,7 @@ export async function exportToDocx(
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
   const chartsDataContent = buildChartsDataPage(pressureResult, images?.chartImages);
   const trajectoryContent = buildTrajectoryPage(wellData, images?.visualImages);
-  const centralizationContent = buildCentralizationPage(wellData, images?.centralizationImages);
+  const centralizationContent = buildCentralizationPage(wellData, images?.centralizationImages, centralizationResults);
   const doc = new Document({
     sections: [
       {
