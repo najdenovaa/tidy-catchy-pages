@@ -276,8 +276,8 @@ export default function Index() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex flex-col items-center sm:items-start">
             <div className="flex items-center gap-4 text-[10px] text-muted-foreground/70 mb-1">
-              <span>👁 Посещений сегодня: <span className="font-semibold text-muted-foreground">{visitCount}</span></span>
-              <span>🧮 Расчётов сегодня: <span className="font-semibold text-muted-foreground">{calcCount}</span></span>
+              <span>👁 Посещений от начала проекта: <span className="font-semibold text-muted-foreground">{visitCount}</span></span>
+              <span>🧮 Расчётов от начала проекта: <span className="font-semibold text-muted-foreground">{calcCount}</span></span>
             </div>
               <Link to="/" className="flex items-center gap-3">
                 <img
