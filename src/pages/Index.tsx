@@ -74,42 +74,31 @@ export default function Index() {
   const [exporting, setExporting] = useState(false);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
 
-  // Visit & calculation counters (localStorage, daily reset for visits)
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const [visitCount] = useState<number>(() => {
-    const stored = localStorage.getItem("cementing_visits");
-    if (stored) {
-      try {
-        const data = JSON.parse(stored);
-        if (data.date === todayKey) {
-          const newCount = data.count + 1;
-          localStorage.setItem("cementing_visits", JSON.stringify({ date: todayKey, count: newCount }));
-          return newCount;
-        }
-      } catch {}
-    }
-    localStorage.setItem("cementing_visits", JSON.stringify({ date: todayKey, count: 1 }));
-    return 1;
-  });
-  const [calcCount, setCalcCount] = useState<number>(() => {
-    const stored = localStorage.getItem("cementing_calcs");
-    if (stored) {
-      try {
-        const data = JSON.parse(stored);
-        if (data.date === todayKey) return data.count;
-      } catch {}
-    }
-    return 0;
-  });
+  // Persistent counters from backend
+  const [visitCount, setVisitCount] = useState<number>(0);
+  const [calcCount, setCalcCount] = useState<number>(0);
 
-  // Log visit to backend
+  const fetchStats = useCallback(() => {
+    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-stats`, {
+      headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        setVisitCount(data.visits ?? 0);
+        setCalcCount(data.calculations ?? 0);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Log visit and fetch stats
   useEffect(() => {
     fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/log-activity`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
       body: JSON.stringify({ type: "visit", module: "cementing", page_url: window.location.href }),
-    }).catch(() => {});
-  }, []);
+    }).then(() => fetchStats()).catch(() => {});
+    fetchStats();
+  }, [fetchStats]);
 
   const liveDispVol = useMemo(() => {
     const cid = getCasingID(wellData.casingOD, wellData.casingWall);
@@ -120,11 +109,7 @@ export default function Index() {
 
   const handleCalculate = useCallback(() => {
     setCalcSnapshot({ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 });
-    setCalcCount(prev => {
-      const next = prev + 1;
-      localStorage.setItem("cementing_calcs", JSON.stringify({ date: todayKey, count: next }));
-      return next;
-    });
+    setCalcCount(prev => prev + 1);
     // Log calculation to backend
     fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/log-activity`, {
       method: "POST",
