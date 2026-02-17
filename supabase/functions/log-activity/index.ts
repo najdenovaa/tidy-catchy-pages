@@ -7,6 +7,19 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+async function resolveLocation(ip: string): Promise<string | null> {
+  if (!ip || ip === "unknown") return null;
+  try {
+    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city&lang=ru`);
+    const data = await res.json();
+    if (data.status === "success") {
+      const parts = [data.city, data.regionName, data.country].filter(Boolean);
+      return parts.join(", ") || null;
+    }
+  } catch {}
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -22,6 +35,7 @@ serve(async (req) => {
       "unknown";
 
     const userAgent = req.headers.get("user-agent") || "unknown";
+    const location = await resolveLocation(ip);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -33,6 +47,7 @@ serve(async (req) => {
         ip_address: ip,
         user_agent: userAgent,
         page_url: page_url || null,
+        location,
       });
     } else if (type === "calculation") {
       await supabase.from("calculation_logs").insert({
@@ -42,6 +57,7 @@ serve(async (req) => {
         ip_address: ip,
         user_agent: userAgent,
         page_url: page_url || null,
+        location,
       });
     }
 

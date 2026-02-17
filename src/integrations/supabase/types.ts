@@ -20,6 +20,7 @@ export type Database = {
           created_at: string
           id: string
           ip_address: string | null
+          location: string | null
           module: string
           page_url: string | null
           user_agent: string | null
@@ -30,6 +31,7 @@ export type Database = {
           created_at?: string
           id?: string
           ip_address?: string | null
+          location?: string | null
           module?: string
           page_url?: string | null
           user_agent?: string | null
@@ -40,6 +42,7 @@ export type Database = {
           created_at?: string
           id?: string
           ip_address?: string | null
+          location?: string | null
           module?: string
           page_url?: string | null
           user_agent?: string | null
@@ -70,6 +73,7 @@ export type Database = {
           created_at: string
           id: string
           ip_address: string | null
+          location: string | null
           module: string
           page_url: string | null
           user_agent: string | null
@@ -78,6 +82,7 @@ export type Database = {
           created_at?: string
           id?: string
           ip_address?: string | null
+          location?: string | null
           module?: string
           page_url?: string | null
           user_agent?: string | null
@@ -86,6 +91,7 @@ export type Database = {
           created_at?: string
           id?: string
           ip_address?: string | null
+          location?: string | null
           module?: string
           page_url?: string | null
           user_agent?: string | null

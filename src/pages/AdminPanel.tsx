@@ -17,6 +17,7 @@ interface CalcLog {
   ip_address: string | null;
   user_agent: string | null;
   page_url: string | null;
+  location: string | null;
 }
 
 interface VisitLog {
@@ -26,6 +27,7 @@ interface VisitLog {
   ip_address: string | null;
   user_agent: string | null;
   page_url: string | null;
+  location: string | null;
 }
 
 export default function AdminPanel() {
@@ -156,19 +158,21 @@ export default function AdminPanel() {
                       <TableHead>Модуль</TableHead>
                       <TableHead>Данные скважины</TableHead>
                       <TableHead>IP</TableHead>
+                      <TableHead>Регион</TableHead>
                       <TableHead>User-Agent</TableHead>
                       <TableHead>Ссылка</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {calcLogs.length === 0 ? (
-                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
                     ) : calcLogs.map(log => (
                       <TableRow key={log.id}>
                         <TableCell className="whitespace-nowrap text-xs">{formatDate(log.created_at)}</TableCell>
                         <TableCell className="text-xs">{log.module}</TableCell>
                         <TableCell className="text-xs max-w-[200px] truncate">{getWellSummary(log.well_data)}</TableCell>
                         <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
+                        <TableCell className="text-xs">{log.location || "—"}</TableCell>
                         <TableCell className="text-xs max-w-[200px] truncate">{log.user_agent || "—"}</TableCell>
                         <TableCell className="text-xs">
                           <Link to={`/admin/calc/${log.id}`} className="text-primary underline hover:text-primary/80">Открыть</Link>
@@ -190,18 +194,20 @@ export default function AdminPanel() {
                       <TableHead>Дата/время</TableHead>
                       <TableHead>Модуль</TableHead>
                       <TableHead>IP</TableHead>
+                      <TableHead>Регион</TableHead>
                       <TableHead>User-Agent</TableHead>
                       <TableHead>URL</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {visitLogs.length === 0 ? (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
                     ) : visitLogs.map(log => (
                       <TableRow key={log.id}>
                         <TableCell className="whitespace-nowrap text-xs">{formatDate(log.created_at)}</TableCell>
                         <TableCell className="text-xs">{log.module}</TableCell>
                         <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
+                        <TableCell className="text-xs">{log.location || "—"}</TableCell>
                         <TableCell className="text-xs max-w-[200px] truncate">{log.user_agent || "—"}</TableCell>
                         <TableCell className="text-xs max-w-[150px] truncate">{log.page_url || "—"}</TableCell>
                       </TableRow>
