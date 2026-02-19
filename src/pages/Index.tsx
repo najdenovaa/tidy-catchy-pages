@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InputSection from "@/components/InputSection";
@@ -9,46 +9,14 @@ import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import CentralizationSection from "@/components/CentralizationSection";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
-import { calculateVolumes, calculatePressureProfile, calculateMaterials, getSlurryHeight, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
-import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid, PressureProfileResult, TrajectoryPoint } from "@/lib/cementing-calculations";
+import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
+import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
-import { FileDown, Loader2, Send, Home } from "lucide-react";
+import { FileDown, Loader2, Send, Home, RotateCcw } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
-const defaultFlushParams = { flushTimeMin: 10, flushVolumeM3: 0 };
-
-const defaultWellData: WellData = {
-  wellDepthMD: 0,
-  wellDepthTVD: 0,
-  casingDepthMD: 0,
-  holeDiameter: 0,
-  casingOD: 0,
-  casingWall: 0,
-  prevCasingDepth: 0,
-  prevCasingOD: 0,
-  prevCasingID: 0,
-  ckodDepth: 0,
-  cementRiseHeight: 0,
-  cavernCoeff: 1.0,
-  bottomTempStatic: 0,
-  bottomTempCirc: 0,
-  trajectory: [
-    { md: 0, azimuth: 0, zenith: 0, tvd: 0 },
-  ],
-};
-
-const defaultDrillingFluid: DrillingFluid = {
-  name: "",
-  density: 0,
-  rheology: { pv: 0, yp: 0 },
-  fluidLoss: 0,
-};
-
-const defaultSlurries: SlurryInput[] = [];
-
-const defaultBuffers: BufferFluid[] = [];
-
-const defaultDisplacementFluids: DisplacementFluid[] = [];
+import { useCementingSession } from "@/hooks/use-cementing-session";
+import { useEffect, useRef } from "react";
 
 interface CalcSnapshot {
   wellData: WellData;
@@ -62,14 +30,18 @@ interface CalcSnapshot {
 }
 
 export default function Index() {
-  const [wellData, setWellData] = useState<WellData>(defaultWellData);
-  const [drillingFluid, setDrillingFluid] = useState<DrillingFluid>(defaultDrillingFluid);
-  const [slurries, setSlurries] = useState<SlurryInput[]>(defaultSlurries);
-  const [buffers, setBuffers] = useState<BufferFluid[]>(defaultBuffers);
-  const [displacementFluids, setDisplacementFluids] = useState<DisplacementFluid[]>(defaultDisplacementFluids);
-  const [fractureGradient, setFractureGradient] = useState(17.7);
-  const [flushTimeMin, setFlushTimeMin] = useState(defaultFlushParams.flushTimeMin);
-  const [flushVolumeM3, setFlushVolumeM3] = useState(defaultFlushParams.flushVolumeM3);
+  const {
+    wellData, setWellData,
+    drillingFluid, setDrillingFluid,
+    slurries, setSlurries,
+    buffers, setBuffers,
+    displacementFluids, setDisplacementFluids,
+    fractureGradient, setFractureGradient,
+    flushTimeMin, setFlushTimeMin,
+    flushVolumeM3, setFlushVolumeM3,
+    resetSession,
+  } = useCementingSession();
+
   const [activeTab, setActiveTab] = useState("input");
   const [exporting, setExporting] = useState(false);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
@@ -312,6 +284,14 @@ export default function Index() {
               </a>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-none justify-end">
+              <button
+                onClick={() => { resetSession(); setCalcSnapshot(null); setCentralizationResults(null); }}
+                title="Обнулить все данные сессии"
+                className="px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-xs sm:text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors shadow-sm flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Обнулить</span>
+              </button>
               <button
                 onClick={handleExportDocx}
                 disabled={exporting}
