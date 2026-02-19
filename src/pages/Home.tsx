@@ -42,14 +42,7 @@ export default function Home() {
               Инженерные расчёты
             </p>
           </Link>
-          <div className="flex items-center gap-3">
-            <Link
-              to="/admin-login"
-              className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm"
-            >
-              <Shield className="w-4 h-4" />
-              <span>Админ</span>
-            </Link>
+          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
             <a
               href="https://t.me/deallbiz_support"
               target="_blank"
@@ -59,6 +52,13 @@ export default function Home() {
               <Send className="w-4 h-4" />
               <span>Поддержка</span>
             </a>
+            <Link
+              to="/admin-login"
+              className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm"
+            >
+              <Shield className="w-4 h-4" />
+              <span>Админ</span>
+            </Link>
           </div>
         </div>
       </header>
