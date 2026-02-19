@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
-import { Send, FlaskConical, Droplets, Zap, Shield } from "lucide-react";
+import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
+import { useState } from "react";
 
 const modules = [
   {
@@ -28,6 +29,13 @@ const modules = [
 ];
 
 export default function Home() {
+  const [cabinetHint, setCabinetHint] = useState(false);
+
+  const handleCabinetClick = () => {
+    setCabinetHint(true);
+    setTimeout(() => setCabinetHint(false), 3000);
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b border-border bg-card">
@@ -52,6 +60,22 @@ export default function Home() {
               <Send className="w-4 h-4" />
               <span>Поддержка</span>
             </a>
+            {/* Личный кабинет — в разработке */}
+            <div className="relative">
+              <button
+                onClick={handleCabinetClick}
+                className="flex items-center gap-1.5 text-muted-foreground/50 cursor-not-allowed text-xs sm:text-sm select-none"
+                title="В разработке"
+              >
+                <UserCircle className="w-4 h-4" />
+                <span>Кабинет</span>
+              </button>
+              {cabinetHint && (
+                <div className="absolute right-0 top-7 z-50 whitespace-nowrap rounded-lg border border-border bg-card shadow-lg px-3 py-2 text-xs text-muted-foreground animate-in fade-in slide-in-from-top-1">
+                  🚧 Личные кабинеты в разработке
+                </div>
+              )}
+            </div>
             <Link
               to="/admin-login"
               className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm"
