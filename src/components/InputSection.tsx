@@ -115,7 +115,7 @@ function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
 
 export default function InputSection(props: Props) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    well: true, trajectory: false, mud: true, buffers: true, cement: true, displacement: true, hydraulics: true, flush: true,
+    well: false, trajectory: false, mud: false, buffers: false, cement: false, displacement: false, hydraulics: false, flush: false,
   });
 
   const toggle = (key: string) => {
