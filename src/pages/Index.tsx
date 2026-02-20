@@ -283,28 +283,28 @@ export default function Index() {
                 <span>Поддержка</span>
               </a>
             </div>
-            <div className="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-none justify-end">
+          <div className="flex items-center gap-1.5 sm:gap-3 flex-1 sm:flex-none justify-end flex-wrap">
               <button
                 onClick={() => { resetSession(); setCalcSnapshot(null); setCentralizationResults(null); }}
                 title="Обнулить все данные сессии"
-                className="px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-xs sm:text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors shadow-sm flex items-center gap-1.5"
+                className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors shadow-sm flex items-center gap-1"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
+                <RotateCcw className="w-3.5 h-3.5 shrink-0" />
                 <span className="hidden sm:inline">Обнулить</span>
               </button>
               <button
                 onClick={handleExportDocx}
                 disabled={exporting}
-                className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-xs sm:text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-1.5 disabled:opacity-50"
+                className="px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-[10px] sm:text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-1 disabled:opacity-50"
               >
-                {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+                {exporting ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" /> : <FileDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
                 {exporting ? "..." : "DOCX"}
               </button>
               <button
                 onClick={handleCalculate}
-                className="px-4 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-xs sm:text-sm hover:bg-primary/90 transition-colors shadow-md"
+                className="px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-[10px] sm:text-sm hover:bg-primary/90 transition-colors shadow-md whitespace-nowrap"
               >
-                РАССЧИТАТЬ
+                РАСЧЁТ
               </button>
             </div>
           </div>
