@@ -38,26 +38,114 @@ export interface TrajectoryPoint {
   tvd: number;     // вертикальная глубина, м
 }
 
+export interface CasingSection {
+  fromMD: number; // м — начало секции (от устья)
+  toMD: number;   // м — конец секции
+  wallThickness: number; // мм — толщина стенки
+}
+
+export interface CavernInterval {
+  fromMD: number; // м — начало интервала
+  toMD: number;   // м — конец интервала
+  coeff: number;  // коэффициент кавернозности
+}
+
 export interface WellData {
   wellDepthMD: number;
   wellDepthTVD: number;
   casingDepthMD: number;
   holeDiameter: number; // мм
   casingOD: number; // мм
-  casingWall: number; // мм
+  casingWall: number; // мм (дефолт, если нет секций)
   prevCasingDepth: number;
   prevCasingID: number; // мм
   prevCasingOD: number; // мм
   ckodDepth: number;
   cementRiseHeight: number;
-  cavernCoeff: number;
+  cavernCoeff: number; // дефолт, если нет интервалов
   bottomTempStatic: number; // BHST °C
   bottomTempCirc: number; // BHCT °C
   trajectory: TrajectoryPoint[];
+  casingSections?: CasingSection[];
+  cavernIntervals?: CavernInterval[];
 }
 
 export function getCasingID(casingOD: number, casingWall: number): number {
   return casingOD - 2 * casingWall;
+}
+
+// Получить толщину стенки ОК на данной глубине MD
+export function getCasingWallAtDepth(md: number, defaultWall: number, sections?: CasingSection[]): number {
+  if (!sections || sections.length === 0) return defaultWall;
+  for (const s of sections) {
+    if (md >= s.fromMD && md < s.toMD) return s.wallThickness;
+  }
+  return defaultWall;
+}
+
+// Получить внутр. диаметр ОК на данной глубине
+export function getCasingIDAtDepth(md: number, casingOD: number, defaultWall: number, sections?: CasingSection[]): number {
+  return casingOD - 2 * getCasingWallAtDepth(md, defaultWall, sections);
+}
+
+// Получить коэффициент кавернозности на данной глубине MD
+export function getCavernCoeffAtDepth(md: number, defaultCoeff: number, intervals?: CavernInterval[]): number {
+  if (!intervals || intervals.length === 0) return defaultCoeff;
+  for (const iv of intervals) {
+    if (md >= iv.fromMD && md < iv.toMD) return iv.coeff;
+  }
+  return defaultCoeff;
+}
+
+// Вычислить общий объём трубы от mdTop до mdBottom с учётом секций ОК
+export function totalPipeVolumeForRange(
+  mdTop: number, mdBottom: number, casingOD: number, defaultWall: number, sections?: CasingSection[]
+): number {
+  if (!sections || sections.length === 0) {
+    const id = getCasingID(casingOD, defaultWall);
+    return pipeVolumePerMeter(id) * Math.max(0, mdBottom - mdTop);
+  }
+  // Разбиваем диапазон на поддиапазоны по секциям
+  const sorted = [...sections].sort((a, b) => a.fromMD - b.fromMD);
+  let vol = 0;
+  let cursor = mdTop;
+  for (const s of sorted) {
+    if (cursor >= mdBottom) break;
+    // Участок до секции — дефолт
+    if (cursor < s.fromMD) {
+      const segEnd = Math.min(s.fromMD, mdBottom);
+      const id = getCasingID(casingOD, defaultWall);
+      vol += pipeVolumePerMeter(id) * (segEnd - cursor);
+      cursor = segEnd;
+    }
+    if (cursor >= mdBottom) break;
+    // Участок внутри секции
+    if (cursor < s.toMD) {
+      const segStart = Math.max(cursor, s.fromMD);
+      const segEnd = Math.min(s.toMD, mdBottom);
+      const id = getCasingID(casingOD, s.wallThickness);
+      vol += pipeVolumePerMeter(id) * (segEnd - segStart);
+      cursor = segEnd;
+    }
+  }
+  // Остаток после всех секций — дефолт
+  if (cursor < mdBottom) {
+    const id = getCasingID(casingOD, defaultWall);
+    vol += pipeVolumePerMeter(id) * (mdBottom - cursor);
+  }
+  return vol;
+}
+
+// Средневзвешенный внутр. диаметр ОК (для расчёта трения)
+export function weightedAverageCasingID(
+  mdTop: number, mdBottom: number, casingOD: number, defaultWall: number, sections?: CasingSection[]
+): number {
+  const totalLen = mdBottom - mdTop;
+  if (totalLen <= 0) return getCasingID(casingOD, defaultWall);
+  if (!sections || sections.length === 0) return getCasingID(casingOD, defaultWall);
+  const totalVol = totalPipeVolumeForRange(mdTop, mdBottom, casingOD, defaultWall, sections);
+  // Обратный расчёт: vol = pi/4 * (d/1000)^2 * L => d = sqrt(4*vol/pi/L) * 1000
+  return Math.sqrt(4 * totalVol / Math.PI / totalLen) * 1000;
 }
 
 export interface CementSlurry {
@@ -235,12 +323,13 @@ export function equivalentDiameter(holeDiamMm: number, cavCoeff: number): number
 // Объём кольцевого пространства для интервала [mdTop, mdBottom] с учётом двух зон:
 // 0..prevCasingDepth — межтрубное (prevCasingID vs casingOD)
 // prevCasingDepth..bottom — открытый ствол (holeDiam vs casingOD, с каверн.)
+// Поддержка интервалов кавернозности
 export function annularVolumeForInterval(
   mdTop: number, mdBottom: number,
   holeDiamMm: number, casingODmm: number, prevCasingIDmm: number,
-  prevCasingDepth: number, cavernCoeff: number
+  prevCasingDepth: number, cavernCoeff: number,
+  cavernIntervals?: CavernInterval[]
 ): number {
-  const openHoleVPM = annularVolumePerMeter(holeDiamMm, casingODmm, cavernCoeff);
   const interCasingVPM = interCasingVolumePerMeter(prevCasingIDmm, casingODmm);
 
   const top = Math.max(mdTop, 0);
@@ -252,12 +341,42 @@ export function annularVolumeForInterval(
   const prevBot = Math.min(bot, prevCasingDepth);
   const prevLen = Math.max(0, prevBot - prevTop);
 
-  // Участок открытого ствола
+  // Участок открытого ствола — с учётом интервалов кавернозности
   const openTop = Math.max(top, prevCasingDepth);
   const openBot = bot;
-  const openLen = Math.max(0, openBot - openTop);
+  let openHoleVol = 0;
+  if (openBot > openTop) {
+    if (!cavernIntervals || cavernIntervals.length === 0) {
+      openHoleVol = annularVolumePerMeter(holeDiamMm, casingODmm, cavernCoeff) * (openBot - openTop);
+    } else {
+      // Разбиваем на подинтервалы
+      const sorted = [...cavernIntervals].sort((a, b) => a.fromMD - b.fromMD);
+      let cursor = openTop;
+      for (const iv of sorted) {
+        if (cursor >= openBot) break;
+        // До интервала — дефолтный коэфф
+        if (cursor < iv.fromMD) {
+          const segEnd = Math.min(iv.fromMD, openBot);
+          openHoleVol += annularVolumePerMeter(holeDiamMm, casingODmm, cavernCoeff) * (segEnd - cursor);
+          cursor = segEnd;
+        }
+        if (cursor >= openBot) break;
+        // Внутри интервала
+        if (cursor < iv.toMD) {
+          const segStart = Math.max(cursor, iv.fromMD);
+          const segEnd = Math.min(iv.toMD, openBot);
+          openHoleVol += annularVolumePerMeter(holeDiamMm, casingODmm, iv.coeff) * (segEnd - segStart);
+          cursor = segEnd;
+        }
+      }
+      // Остаток — дефолт
+      if (cursor < openBot) {
+        openHoleVol += annularVolumePerMeter(holeDiamMm, casingODmm, cavernCoeff) * (openBot - cursor);
+      }
+    }
+  }
 
-  return interCasingVPM * prevLen + openHoleVPM * openLen;
+  return interCasingVPM * prevLen + openHoleVol;
 }
 
 export function displacementVolume(pipeVolPerM: number, ckodDepth: number): number {
@@ -276,10 +395,16 @@ export function calculateVolumes(data: WellData): VolumeResults {
   const openHoleVPM = wellVolumePerMeter(data.holeDiameter) * data.cavernCoeff;
   const eqDiam = equivalentDiameter(data.holeDiameter, data.cavernCoeff);
 
-  const openHoleInterval = data.casingDepthMD - data.prevCasingDepth;
-  const totalAnnular = annVPM * openHoleInterval + annVPMprev * data.prevCasingDepth;
-  const totalPipe = pipeVPM * data.casingDepthMD;
-  const dispVol = displacementVolume(pipeVPM, data.ckodDepth);
+  // Объём затрубного пространства с учётом интервалов кавернозности
+  const totalAnnular = annularVolumeForInterval(
+    0, data.casingDepthMD,
+    data.holeDiameter, data.casingOD, data.prevCasingID,
+    data.prevCasingDepth, data.cavernCoeff, data.cavernIntervals
+  );
+
+  // Объём трубного пространства с учётом секций ОК
+  const totalPipe = totalPipeVolumeForRange(0, data.casingDepthMD, data.casingOD, data.casingWall, data.casingSections);
+  const dispVol = totalPipeVolumeForRange(0, data.ckodDepth, data.casingOD, data.casingWall, data.casingSections);
   const dispVolComp = dispVol * 1.05; // с коэф. сжатия 5%
 
   return {
@@ -379,7 +504,7 @@ export function calculateHydraulics(
   let frictionAnn = 0;
   const rate = pumpRateLps ?? 0;
   if (rate > 0) {
-    const casingID = getCasingID(data.casingOD, data.casingWall);
+    const casingID = weightedAverageCasingID(0, data.casingDepthMD, data.casingOD, data.casingWall, data.casingSections);
     const dHydPipe = casingID;
     const dHydAnn = Math.max(data.holeDiameter - data.casingOD, 10);
     const dHoleM = data.holeDiameter / 1000;
@@ -472,7 +597,7 @@ export function calculateMaterials(
     if (h > 0) {
       const lastIdx = slurries.length - 1;
       const mdBot = i === lastIdx ? wellData.casingDepthMD : slurries[i + 1].topDepthMD;
-      const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff);
+      const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
       const res = calculateCement(vol, s.density);
       cementItems.push({ name: s.name, amount: res.dryMass, unit: "т" });
       waterForCement += res.waterVolume;
@@ -557,7 +682,7 @@ export function calculatePressureProfile(
   const traj = wellData.trajectory;
   const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);
   const fracP = (fractureGradient * bottomTVD) / 1000;
-  const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
+  const casingID = weightedAverageCasingID(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
   const dHydAnn = Math.max(wellData.holeDiameter - wellData.casingOD, 10);
   const dHydPipe = casingID;
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
@@ -615,7 +740,7 @@ export function calculatePressureProfile(
     if (h <= 0) return;
     const lastIdx = slurries.length - 1;
     const mdBot = origIdx === lastIdx ? wellData.casingDepthMD : slurries[origIdx + 1].topDepthMD;
-    const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff);
+    const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
     if (vol <= 0) return;
     if (s.flowRateSteps.length > 1) {
       s.flowRateSteps.forEach(step => {
@@ -677,8 +802,9 @@ export function calculatePressureProfile(
   let prevGroupLabel = "";
 
   // === Динамическое отслеживание флюидов в ТРУБЕ и ЗАТРУБЬЕ ===
-  const pipeVPM = pipeVolumePerMeter(casingID);
-  const pipeCapacity = pipeVPM * wellData.casingDepthMD; // полный объём трубы, м³
+  const avgCasingID = weightedAverageCasingID(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
+  const pipeVPM = pipeVolumePerMeter(avgCasingID);
+  const pipeCapacity = totalPipeVolumeForRange(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
 
   // История закачки: [{densityGcm3, volumeM3}] в порядке закачки
   interface FluidBatch { densityGcm3: number; volumeM3: number; }

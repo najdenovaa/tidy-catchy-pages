@@ -4,7 +4,7 @@ import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { getCasingID, getSlurryHeight, annularVolumePerMeter, hydrostaticPressure, interpolateTVD } from "@/lib/cementing-calculations";
-import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, DisplacementFluid, FlowRateStep, TrajectoryPoint } from "@/lib/cementing-calculations";
+import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval } from "@/lib/cementing-calculations";
 
 interface Props {
   wellData: WellData;
@@ -26,7 +26,7 @@ interface Props {
   displacementVolume?: number;
 }
 
-type WellNumericKey = Exclude<keyof WellData, 'trajectory'>;
+type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals'>;
 const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "wellDepthMD", label: "Глубина скважины (по стволу)", unit: "м" },
   { key: "wellDepthTVD", label: "Глубина скважины (по вертикали)", unit: "м" },
@@ -246,6 +246,96 @@ export default function InputSection(props: Props) {
                 <Label className="text-xs text-muted-foreground">Внутр. диаметр ОК (расчёт), мм</Label>
                 <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold border border-border">{casingID.toFixed(1)}</div>
               </div>
+            </div>
+
+            {/* Секции обсадной колонны */}
+            <div className="mt-6 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Секции ОК (разная толщина стенки)</span>
+                <button
+                  onClick={() => {
+                    const sections = [...(wellData.casingSections || [])];
+                    sections.push({ fromMD: 0, toMD: wellData.casingDepthMD || 1000, wallThickness: wellData.casingWall || 10 });
+                    onWellDataChange({ ...wellData, casingSections: sections });
+                  }}
+                  className="text-xs text-primary hover:underline"
+                >+ секция</button>
+              </div>
+              {wellData.casingSections && wellData.casingSections.length > 0 ? (
+                <div className="space-y-1">
+                  <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-xs text-muted-foreground px-1">
+                    <span>От (MD), м</span><span>До (MD), м</span><span>Стенка, мм</span><span></span>
+                  </div>
+                  {wellData.casingSections.map((sec, i) => (
+                    <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+                      <Input type="number" step="any" value={sec.fromMD || ""} onChange={(e) => {
+                        const s = [...wellData.casingSections!]; s[i] = { ...s[i], fromMD: parseFloat(e.target.value) || 0 };
+                        onWellDataChange({ ...wellData, casingSections: s });
+                      }} className="h-7 text-xs" />
+                      <Input type="number" step="any" value={sec.toMD || ""} onChange={(e) => {
+                        const s = [...wellData.casingSections!]; s[i] = { ...s[i], toMD: parseFloat(e.target.value) || 0 };
+                        onWellDataChange({ ...wellData, casingSections: s });
+                      }} className="h-7 text-xs" />
+                      <Input type="number" step="any" value={sec.wallThickness || ""} onChange={(e) => {
+                        const s = [...wellData.casingSections!]; s[i] = { ...s[i], wallThickness: parseFloat(e.target.value) || 0 };
+                        onWellDataChange({ ...wellData, casingSections: s });
+                      }} className="h-7 text-xs" />
+                      <button onClick={() => {
+                        const s = wellData.casingSections!.filter((_, j) => j !== i);
+                        onWellDataChange({ ...wellData, casingSections: s.length > 0 ? s : undefined });
+                      }} className="text-xs text-destructive">✕</button>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-muted-foreground/60 italic">Глубины без секций используют толщину стенки по умолчанию ({wellData.casingWall} мм)</p>
+                </div>
+              ) : (
+                <p className="text-[10px] text-muted-foreground/60 italic">Не задано — используется единая толщина стенки ({wellData.casingWall} мм)</p>
+              )}
+            </div>
+
+            {/* Интервалы кавернозности */}
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Интервалы кавернозности (открытый ствол)</span>
+                <button
+                  onClick={() => {
+                    const intervals = [...(wellData.cavernIntervals || [])];
+                    intervals.push({ fromMD: wellData.prevCasingDepth || 0, toMD: wellData.casingDepthMD || 1000, coeff: wellData.cavernCoeff || 1.0 });
+                    onWellDataChange({ ...wellData, cavernIntervals: intervals });
+                  }}
+                  className="text-xs text-primary hover:underline"
+                >+ интервал</button>
+              </div>
+              {wellData.cavernIntervals && wellData.cavernIntervals.length > 0 ? (
+                <div className="space-y-1">
+                  <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-xs text-muted-foreground px-1">
+                    <span>От (MD), м</span><span>До (MD), м</span><span>Коэфф. каверн.</span><span></span>
+                  </div>
+                  {wellData.cavernIntervals.map((iv, i) => (
+                    <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+                      <Input type="number" step="any" value={iv.fromMD || ""} onChange={(e) => {
+                        const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], fromMD: parseFloat(e.target.value) || 0 };
+                        onWellDataChange({ ...wellData, cavernIntervals: arr });
+                      }} className="h-7 text-xs" />
+                      <Input type="number" step="any" value={iv.toMD || ""} onChange={(e) => {
+                        const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], toMD: parseFloat(e.target.value) || 0 };
+                        onWellDataChange({ ...wellData, cavernIntervals: arr });
+                      }} className="h-7 text-xs" />
+                      <Input type="number" step="0.01" value={iv.coeff || ""} onChange={(e) => {
+                        const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], coeff: parseFloat(e.target.value) || 0 };
+                        onWellDataChange({ ...wellData, cavernIntervals: arr });
+                      }} className="h-7 text-xs" />
+                      <button onClick={() => {
+                        const arr = wellData.cavernIntervals!.filter((_, j) => j !== i);
+                        onWellDataChange({ ...wellData, cavernIntervals: arr.length > 0 ? arr : undefined });
+                      }} className="text-xs text-destructive">✕</button>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-muted-foreground/60 italic">Глубины без интервалов используют коэфф. по умолчанию ({wellData.cavernCoeff})</p>
+                </div>
+              ) : (
+                <p className="text-[10px] text-muted-foreground/60 italic">Не задано — используется единый коэфф. кавернозности ({wellData.cavernCoeff})</p>
+              )}
             </div>
           </CardContent>
         )}
