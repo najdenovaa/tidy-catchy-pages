@@ -599,11 +599,14 @@ export function calculateMaterials(
       const mdBot = i === lastIdx ? wellData.casingDepthMD : slurries[i + 1].topDepthMD;
       const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
       const res = calculateCement(vol, s.density);
+      const dryMassKg = res.dryMass * 1000; // тонны → кг
       cementItems.push({ name: s.name, amount: res.dryMass, unit: "т" });
       waterForCement += res.waterVolume;
       s.additives.forEach(a => {
-        if (a.name && a.massKg > 0) {
-          cementItems.push({ name: a.name, amount: a.massKg, unit: "кг" });
+        // Авторасчёт массы из % BWOC (от сухого цемента)
+        const computedMassKg = a.percentage > 0 ? (a.percentage / 100) * dryMassKg : a.massKg;
+        if (a.name && computedMassKg > 0) {
+          cementItems.push({ name: `  ${a.name} (${a.percentage}% bwoc)`, amount: computedMassKg, unit: "кг" });
         }
       });
     }
@@ -612,9 +615,12 @@ export function calculateMaterials(
   buffers.forEach(b => {
     bufferItems.push({ name: b.name, amount: b.volume, unit: "м³" });
     waterForBuffers += b.volume * 0.9; // ~90% вода
+    const bufferMassKg = b.volume * b.density; // density в кг/м³
     b.additives.forEach(a => {
-      if (a.name && a.massKg > 0) {
-        bufferItems.push({ name: `  ${a.name}`, amount: a.massKg, unit: "кг" });
+      // Авторасчёт массы из % (от массы буферной жидкости)
+      const computedMassKg = a.percentage > 0 ? (a.percentage / 100) * bufferMassKg : a.massKg;
+      if (a.name && computedMassKg > 0) {
+        bufferItems.push({ name: `  ${a.name} (${a.percentage}%)`, amount: computedMassKg, unit: "кг" });
       }
     });
   });
@@ -1048,10 +1054,13 @@ export function calculatePressureProfile(
     const flowRateM3min = s.rateLps * 0.06;
     const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
 
-    // Трубное трение — по свойствам закачиваемого флюида (он в трубе)
+    // Трубное трение — взвешенное по доле заполнения трубы закачиваемым флюидом
+    // Часть трубы занята новым флюидом, остальное — буровым раствором
     const densityKgM3 = s.densityGcm3 * 1000;
-    const frPipeRes = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3);
-    const frPipe = frPipeRes.pressureMPa;
+    const frPipePumped = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3);
+    const frPipeMud = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, drillingFluid.rheology.pv, drillingFluid.rheology.yp, pipeAreaM2, drillingFluid.density);
+    // filledFraction обновляется поминутно ниже, здесь — базовые значения
+    const frPipeRes = frPipePumped; // для reynolds/regime
 
     // Затрубное трение — по свойствам флюида В ЗАТРУБЬЕ (не закачиваемого!)
     // До продавки: в затрубье буровой раствор. Во время продавки: цемент + буровой.
@@ -1099,6 +1108,10 @@ export function calculatePressureProfile(
 
       pumpHistory[batchIdx].volumeM3 = s.volume * frac;
       totalPumped = cumVol + s.volume * frac;
+
+      // Доля трубы, заполненная закачанным флюидом (для взвешенного трения)
+      const filledFraction = Math.min(totalPumped / Math.max(pipeCapacity, 0.01), 1);
+      const frPipe = frPipePumped.pressureMPa * filledFraction + frPipeMud.pressureMPa * (1 - filledFraction);
 
       const pipeHydro = calcPipeHydrostatic();
       const annHydro = calcAnnularHydrostatic();
