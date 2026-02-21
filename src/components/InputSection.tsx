@@ -1,7 +1,8 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DebouncedInput } from "@/components/DebouncedInput";
 import { Label } from "@/components/ui/label";
-import { useState } from "react";
+import { useState, memo, useCallback } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { getCasingID, getSlurryHeight, annularVolumePerMeter, hydrostaticPressure, interpolateTVD } from "@/lib/cementing-calculations";
 import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval } from "@/lib/cementing-calculations";
@@ -53,7 +54,7 @@ function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: bool
   );
 }
 
-function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
+const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
   steps: FlowRateStep[];
   totalVolume: number;
   onChange: (s: FlowRateStep[]) => void;
@@ -74,13 +75,13 @@ function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
           <div key={i} className="space-y-0.5">
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1 flex-1">
-                <Input type="number" step="0.1" value={step.rateLps || ""} onChange={(e) => {
+                <DebouncedInput type="number" step="0.1" value={step.rateLps || ""} onChange={(e) => {
                   const u = [...steps]; u[i] = { ...u[i], rateLps: parseFloat(e.target.value) || 0 }; onChange(u);
                 }} className="h-7 text-xs w-20" placeholder="л/с" />
                 <span className="text-xs text-muted-foreground">л/с</span>
               </div>
               <div className="flex items-center gap-1">
-                <Input type="number" step="0.1" value={step.volumeM3 || ""} onChange={(e) => {
+                <DebouncedInput type="number" step="0.1" value={step.volumeM3 || ""} onChange={(e) => {
                   const u = [...steps]; u[i] = { ...u[i], volumeM3: parseFloat(e.target.value) || 0 }; onChange(u);
                 }} className="h-7 text-xs w-20" placeholder="м³" />
                 <span className="text-xs text-muted-foreground">м³</span>
@@ -111,7 +112,7 @@ function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
       )}
     </div>
   );
-}
+});
 
 export default function InputSection(props: Props) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -511,11 +512,11 @@ export default function InputSection(props: Props) {
                   {buffers.length > 1 && <button onClick={() => onBuffersChange(buffers.filter((_, i) => i !== idx))} className="text-xs text-destructive hover:underline">Удалить</button>}
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><Input value={b.name} onChange={(e) => handleBufferChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label><Input type="number" value={b.density || ""} onChange={(e) => handleBufferChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Объём, м³</Label><Input type="number" step="0.1" value={b.volume || ""} onChange={(e) => handleBufferChange(idx, "volume", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">PV, сПз</Label><Input type="number" value={b.rheology.pv || ""} onChange={(e) => handleBufferChange(idx, "pv", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><Input type="number" step="0.1" value={b.rheology.yp || ""} onChange={(e) => handleBufferChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><DebouncedInput value={b.name} onChange={(e) => handleBufferChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label><DebouncedInput type="number" value={b.density || ""} onChange={(e) => handleBufferChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Объём, м³</Label><DebouncedInput type="number" step="0.1" value={b.volume || ""} onChange={(e) => handleBufferChange(idx, "volume", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">PV, сПз</Label><DebouncedInput type="number" value={b.rheology.pv || ""} onChange={(e) => handleBufferChange(idx, "pv", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><DebouncedInput type="number" step="0.1" value={b.rheology.yp || ""} onChange={(e) => handleBufferChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
                 </div>
                 {/* Режимы закачки */}
                 <FlowRateStepsEditor
@@ -531,8 +532,8 @@ export default function InputSection(props: Props) {
                   </div>
                   {b.additives.map((a, aIdx) => (
                     <div key={aIdx} className="flex items-center gap-2">
-                      <Input value={a.name} onChange={(e) => updateBufferAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1" />
-                      <Input type="number" value={a.massKg || ""} onChange={(e) => updateBufferAdditive(idx, aIdx, "massKg", e.target.value)} className="h-7 text-xs w-20" placeholder="кг" />
+                      <DebouncedInput value={a.name} onChange={(e) => updateBufferAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1" />
+                      <DebouncedInput type="number" value={a.massKg || ""} onChange={(e) => updateBufferAdditive(idx, aIdx, "massKg", e.target.value)} className="h-7 text-xs w-20" placeholder="кг" />
                       <span className="text-xs text-muted-foreground">кг</span>
                       <button onClick={() => { const u = [...buffers]; u[idx] = { ...u[idx], additives: u[idx].additives.filter((_, i) => i !== aIdx) }; onBuffersChange(u); }} className="text-xs text-destructive">✕</button>
                     </div>
@@ -573,11 +574,11 @@ export default function InputSection(props: Props) {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><Input value={s.name} onChange={(e) => handleSlurryChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
-                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, г/см³</Label><Input type="number" step="0.01" value={s.density || ""} onChange={(e) => handleSlurryChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><DebouncedInput value={s.name} onChange={(e) => handleSlurryChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, г/см³</Label><DebouncedInput type="number" step="0.01" value={s.density || ""} onChange={(e) => handleSlurryChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Верх цемента от устья, м</Label>
-                      <Input type="number" value={s.topDepthMD || ""} onChange={(e) => handleSlurryChange(idx, "topDepthMD", e.target.value)} className="h-8 text-sm" />
+                      <DebouncedInput type="number" value={s.topDepthMD || ""} onChange={(e) => handleSlurryChange(idx, "topDepthMD", e.target.value)} className="h-8 text-sm" />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Высота столба (расчёт), м</Label>
@@ -585,17 +586,17 @@ export default function InputSection(props: Props) {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">В/Ц отношение</Label><Input type="number" step="0.001" value={s.waterRatio || ""} onChange={(e) => handleSlurryChange(idx, "waterRatio", e.target.value)} className="h-8 text-sm" /></div>
-                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Выход, м³/т</Label><Input type="number" step="0.01" value={s.yieldPerTon || ""} onChange={(e) => handleSlurryChange(idx, "yieldPerTon", e.target.value)} className="h-8 text-sm" /></div>
-                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загуст. 30 Вс, мин</Label><Input type="number" value={s.thickeningTime30Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime30Bc", e.target.value)} className="h-8 text-sm" /></div>
-                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загуст. 50 Вс, мин</Label><Input type="number" value={s.thickeningTime50Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime50Bc", e.target.value)} className="h-8 text-sm" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">В/Ц отношение</Label><DebouncedInput type="number" step="0.001" value={s.waterRatio || ""} onChange={(e) => handleSlurryChange(idx, "waterRatio", e.target.value)} className="h-8 text-sm" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Выход, м³/т</Label><DebouncedInput type="number" step="0.01" value={s.yieldPerTon || ""} onChange={(e) => handleSlurryChange(idx, "yieldPerTon", e.target.value)} className="h-8 text-sm" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загуст. 30 Вс, мин</Label><DebouncedInput type="number" value={s.thickeningTime30Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime30Bc", e.target.value)} className="h-8 text-sm" /></div>
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Загуст. 50 Вс, мин</Label><DebouncedInput type="number" value={s.thickeningTime50Bc || ""} onChange={(e) => handleSlurryChange(idx, "thickeningTime50Bc", e.target.value)} className="h-8 text-sm" /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">PV / YP</Label>
                       <div className="flex gap-1">
-                        <Input type="number" value={s.rheology.pv || ""} onChange={(e) => handleSlurryChange(idx, "pv", e.target.value)} className="h-8 text-sm" placeholder="PV" />
-                        <Input type="number" step="0.1" value={s.rheology.yp || ""} onChange={(e) => handleSlurryChange(idx, "yp", e.target.value)} className="h-8 text-sm" placeholder="YP" />
+                        <DebouncedInput type="number" value={s.rheology.pv || ""} onChange={(e) => handleSlurryChange(idx, "pv", e.target.value)} className="h-8 text-sm" placeholder="PV" />
+                        <DebouncedInput type="number" step="0.1" value={s.rheology.yp || ""} onChange={(e) => handleSlurryChange(idx, "yp", e.target.value)} className="h-8 text-sm" placeholder="YP" />
                       </div>
                     </div>
                   </div>
@@ -613,10 +614,10 @@ export default function InputSection(props: Props) {
                     </div>
                     {s.additives.map((a, aIdx) => (
                       <div key={aIdx} className="flex items-center gap-2">
-                        <Input value={a.name} onChange={(e) => updateSlurryAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1" />
-                        <Input type="number" step="0.01" value={a.percentage || ""} onChange={(e) => updateSlurryAdditive(idx, aIdx, "percentage", e.target.value)} className="h-7 text-xs w-16" placeholder="%" />
+                        <DebouncedInput value={a.name} onChange={(e) => updateSlurryAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1" />
+                        <DebouncedInput type="number" step="0.01" value={a.percentage || ""} onChange={(e) => updateSlurryAdditive(idx, aIdx, "percentage", e.target.value)} className="h-7 text-xs w-16" placeholder="%" />
                         <span className="text-xs text-muted-foreground">%</span>
-                        <Input type="number" value={a.massKg || ""} onChange={(e) => updateSlurryAdditive(idx, aIdx, "massKg", e.target.value)} className="h-7 text-xs w-20" placeholder="кг" />
+                        <DebouncedInput type="number" value={a.massKg || ""} onChange={(e) => updateSlurryAdditive(idx, aIdx, "massKg", e.target.value)} className="h-7 text-xs w-20" placeholder="кг" />
                         <span className="text-xs text-muted-foreground">кг</span>
                         <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: u[idx].additives.filter((_, i) => i !== aIdx) }; onSlurriesChange(u); }} className="text-xs text-destructive">✕</button>
                       </div>
@@ -669,11 +670,11 @@ export default function InputSection(props: Props) {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><Input value={df.name} onChange={(e) => handleDispFluidChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label><Input type="number" step="1" value={df.density || ""} onChange={(e) => handleDispFluidChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">PV, сПз</Label><Input type="number" value={df.rheology.pv || ""} onChange={(e) => handleDispFluidChange(idx, "pv", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><Input type="number" step="0.1" value={df.rheology.yp || ""} onChange={(e) => handleDispFluidChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Коэфф. сжатия</Label><Input type="number" step="0.01" value={df.compressionCoeff || ""} onChange={(e) => handleDispFluidChange(idx, "compressionCoeff", e.target.value)} className="h-8 text-sm" placeholder="1.05" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><DebouncedInput value={df.name} onChange={(e) => handleDispFluidChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label><DebouncedInput type="number" step="1" value={df.density || ""} onChange={(e) => handleDispFluidChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">PV, сПз</Label><DebouncedInput type="number" value={df.rheology.pv || ""} onChange={(e) => handleDispFluidChange(idx, "pv", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><DebouncedInput type="number" step="0.1" value={df.rheology.yp || ""} onChange={(e) => handleDispFluidChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Коэфф. сжатия</Label><DebouncedInput type="number" step="0.01" value={df.compressionCoeff || ""} onChange={(e) => handleDispFluidChange(idx, "compressionCoeff", e.target.value)} className="h-8 text-sm" placeholder="1.05" /></div>
                 </div>
                 <FlowRateStepsEditor
                   steps={df.flowRateSteps}
