@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import CopyImageButton from "./CopyImageButton";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import { getSlurryHeight, interpolateTVD, annularVolumePerMeter } from "@/lib/cementing-calculations";
+import type { CentralizationResult } from "@/lib/centralization-calculations";
 
 interface Props {
   wellData: WellData;
@@ -10,6 +11,7 @@ interface Props {
   buffers: BufferFluid[];
   drillingFluid: DrillingFluid;
   displacementFluids?: DisplacementFluid[];
+  centralizationResults?: CentralizationResult[];
 }
 
 // ── Simple 2D value noise (deterministic, smooth) ──
@@ -227,7 +229,7 @@ function calcEff(
   return Math.max(0, Math.min(1, eff));
 }
 
-export default function DisplacementEfficiency({ wellData, slurries, buffers, drillingFluid }: Props) {
+export default function DisplacementEfficiency({ wellData, slurries, buffers, drillingFluid, centralizationResults }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -241,6 +243,23 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     const dC = wellData.casingOD / 1000;
     return (Math.PI / 4) * (dH * dH - dC * dC);
   }, [wellData.holeDiameter, wellData.casingOD]);
+
+  // Интерполяция эксцентриситета из данных центрирования
+  const getEccentricityAtMD = useMemo(() => {
+    if (!centralizationResults || centralizationResults.length === 0) return (_md: number) => 0;
+    const sorted = [...centralizationResults].sort((a, b) => a.md - b.md);
+    return (md: number): number => {
+      if (md <= sorted[0].md) return sorted[0].eccentricity;
+      if (md >= sorted[sorted.length - 1].md) return sorted[sorted.length - 1].eccentricity;
+      for (let i = 0; i < sorted.length - 1; i++) {
+        if (md >= sorted[i].md && md <= sorted[i + 1].md) {
+          const f = (md - sorted[i].md) / (sorted[i + 1].md - sorted[i].md);
+          return sorted[i].eccentricity + f * (sorted[i + 1].eccentricity - sorted[i].eccentricity);
+        }
+      }
+      return 0;
+    };
+  }, [centralizationResults]);
 
   const avgRate = useMemo(() => {
     const r: number[] = [];
@@ -285,39 +304,52 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     const imgH = Math.round(plotH);
     const imgData = ctx.createImageData(imgW * 2, imgH * 2);
     const pixels = imgData.data;
+    const annFracW = annW / plotW;
+    const casFracW = casingW / plotW;
 
     for (let py = 0; py < imgH * 2; py++) {
       const yFrac = py / (imgH * 2);
-      // Find closest depth slice
       const diFloat = yFrac * (info.length - 1);
       const di = Math.min(Math.floor(diFloat), info.length - 1);
       const d = info[di];
 
+      // Эксцентриситет колонны на данной глубине (0 = по центру, 1 = лежит на стенке)
+      const ecc = getEccentricityAtMD(d.md);
+      // Смещение колонны: ecc * (доступный зазор в пикселях)
+      // Колонна смещается ВПРАВО (лежит на правой стенке = low side)
+      const maxOffsetPx = annW / plotW * 0.85; // макс. смещение как доля от ширины
+      const offsetFrac = ecc * maxOffsetPx; // смещение центра колонны в долях от plotW
+
+      // Динамические границы колонны с учётом смещения
+      const casCenterFrac = annFracW + casFracW / 2 + offsetFrac;
+      const casLeftFrac = casCenterFrac - casFracW / 2;
+      const casRightFrac = casCenterFrac + casFracW / 2;
+
       for (let px = 0; px < imgW * 2; px++) {
         const xFrac = px / (imgW * 2);
-
-        // Determine if pixel is in left annulus, casing, or right annulus
-        const annFracW = annW / plotW;
-        const casFracW = casingW / plotW;
 
         let gray = 0;
         let alpha = 255;
 
-        if (xFrac < annFracW) {
-          // Left annulus: wide side at left edge (angle=π), narrow at casing (angle→0)
-          const localFrac = xFrac / annFracW;
+        if (xFrac < casLeftFrac) {
+          // Левое затрубье (расширенное при эксцентриситете)
+          const leftAnnWidth = casLeftFrac;
+          const localFrac = leftAnnWidth > 0 ? xFrac / leftAnnWidth : 0;
           const angle = Math.PI * (1 - localFrac);
           const eff = calcEff(d, angle, localFrac, yFrac, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
           gray = Math.round(40 + (1 - eff) * 215);
-        } else if (xFrac > annFracW + casFracW) {
-          // Right annulus: narrow at casing (angle=0), wide at right edge (angle→π)
-          const localFrac = (xFrac - annFracW - casFracW) / annFracW;
+        } else if (xFrac > casRightFrac) {
+          // Правое затрубье (сужено при эксцентриситете — low side)
+          const rightAnnStart = casRightFrac;
+          const rightAnnWidth = 1.0 - rightAnnStart;
+          const localFrac = rightAnnWidth > 0 ? (xFrac - rightAnnStart) / rightAnnWidth : 0;
           const angle = Math.PI * localFrac;
-          // Offset circumFrac by +1 to break left-right symmetry
-          const eff = calcEff(d, angle, localFrac + 1, yFrac, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
+          // На сжатой стороне — хуже замещение (дополнительный штраф от эксцентриситета)
+          const eccPenalty = ecc * 0.3;
+          const eff = Math.max(0, calcEff(d, angle, localFrac + 1, yFrac, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff) - eccPenalty);
           gray = Math.round(40 + (1 - eff) * 215);
         } else {
-          // Casing — steel gray
+          // Колонна — steel gray
           gray = 110;
           alpha = 220;
         }
@@ -338,11 +370,27 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     ctx.beginPath(); ctx.moveTo(annLX, mT); ctx.lineTo(annLX, mT + plotH); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(annRX + annW, mT); ctx.lineTo(annRX + annW, mT + plotH); ctx.stroke();
 
-    // Casing walls
+    // Casing walls — follow eccentricity curve
     ctx.strokeStyle = "#bbb";
     ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(casX, mT); ctx.lineTo(casX, mT + plotH); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(annRX, mT); ctx.lineTo(annRX, mT + plotH); ctx.stroke();
+    ctx.beginPath();
+    for (let i = 0; i <= info.length - 1; i++) {
+      const y = mT + (i / (info.length - 1)) * plotH;
+      const ecc = getEccentricityAtMD(info[i].md);
+      const offset = ecc * annW * 0.85;
+      const x = casX + offset;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.beginPath();
+    for (let i = 0; i <= info.length - 1; i++) {
+      const y = mT + (i / (info.length - 1)) * plotH;
+      const ecc = getEccentricityAtMD(info[i].md);
+      const offset = ecc * annW * 0.85;
+      const x = annRX + offset;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
 
     // Labels
     ctx.fillStyle = "#aaa";
@@ -401,7 +449,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     ctx.textAlign = "right";
     ctx.fillText("Полное замещение", legX + legW, legY + legH + 12);
 
-  }, [info, mdMin, mdMax, drillingFluid, avgRate, annArea, wellData]);
+  }, [info, mdMin, mdMax, drillingFluid, avgRate, annArea, wellData, getEccentricityAtMD]);
 
   const range = info.length >= 2 ? `${info[0].md.toFixed(0)} – ${info[info.length - 1].md.toFixed(0)} м` : "";
 

@@ -419,6 +419,7 @@ export default function Index() {
                   buffers={buffers}
                   drillingFluid={drillingFluid}
                   displacementFluids={displacementFluids}
+                  centralizationResults={centralizationResults ?? undefined}
                 />
               </div>
             </TabsContent>

@@ -6,6 +6,7 @@ import CopyImageButton from "./CopyImageButton";
 import DisplacementEfficiency from "./DisplacementEfficiency";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import { getSlurryHeight, interpolateTVD, getCasingID, pipeVolumePerMeter, annularVolumePerMeter } from "@/lib/cementing-calculations";
+import type { CentralizationResult } from "@/lib/centralization-calculations";
 import * as THREE from "three";
 
 interface Props {
@@ -14,6 +15,7 @@ interface Props {
   buffers: BufferFluid[];
   drillingFluid: DrillingFluid;
   displacementFluids?: DisplacementFluid[];
+  centralizationResults?: CentralizationResult[];
 }
 
 // ====== Color palette ======
@@ -599,7 +601,7 @@ function CrossSection({ wellData, slurries, buffers, drillingFluid }: Omit<Props
 
 // ====== Main Component ======
 export default function WellVisualization(props: Props) {
-  const { wellData, slurries, buffers, drillingFluid, displacementFluids } = props;
+  const { wellData, slurries, buffers, drillingFluid, displacementFluids, centralizationResults } = props;
   const vis3dRef = useRef<HTMLDivElement>(null);
   const crossRef = useRef<HTMLDivElement>(null);
 
@@ -647,6 +649,7 @@ export default function WellVisualization(props: Props) {
         buffers={buffers}
         drillingFluid={drillingFluid}
         displacementFluids={displacementFluids}
+        centralizationResults={centralizationResults}
       />
 
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground px-2">
