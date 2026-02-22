@@ -1059,8 +1059,6 @@ export function calculatePressureProfile(
     const densityKgM3 = s.densityGcm3 * 1000;
     const frPipePumped = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3);
     const frPipeMud = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, drillingFluid.rheology.pv, drillingFluid.rheology.yp, pipeAreaM2, drillingFluid.density);
-    // filledFraction обновляется поминутно ниже, здесь — базовые значения
-    const frPipeRes = frPipePumped; // для reynolds/regime
 
     // Затрубное трение — по свойствам флюида В ЗАТРУБЬЕ (не закачиваемого!)
     // До продавки: в затрубье буровой раствор. Во время продавки: цемент + буровой.
@@ -1084,11 +1082,6 @@ export function calculatePressureProfile(
     }
     // Множитель трения затрубья: эксцентриситет (~0.8x от концентрического)
     const annFrictionMultiplier = 0.8;
-    const frAnnRes = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydAnn, annPv, annYp, annAreaM2, annDensity);
-    const frAnn = frAnnRes.pressureMPa * annFrictionMultiplier;
-
-    const reAnn = frAnnRes.reynolds;
-    const flowRegimeAnn = frAnnRes.regime;
 
     pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0 });
     const batchIdx = pumpHistory.length - 1;
@@ -1101,22 +1094,49 @@ export function calculatePressureProfile(
       const frac = Math.min(m / stageTime, 1);
       const tNow = cumTime + Math.min(m, stageTime);
       const vNow = cumVol + s.volume * frac;
-      const stepVolume = s.volume / minuteSteps; // м³ за этот шаг
+      const stepVolume = s.volume / minuteSteps;
 
-      // Учитываем накопленный объём продавки для догонки цемента
       if (isDisplacement) cumDisplacementVol += stepVolume;
 
       pumpHistory[batchIdx].volumeM3 = s.volume * frac;
       totalPumped = cumVol + s.volume * frac;
 
-      // Доля трубы, заполненная закачанным флюидом (для взвешенного трения)
+      // Доля трубы, заполненная закачанным флюидом
       const filledFraction = Math.min(totalPumped / Math.max(pipeCapacity, 0.01), 1);
-      const frPipe = frPipePumped.pressureMPa * filledFraction + frPipeMud.pressureMPa * (1 - filledFraction);
+
+      // === Soft start: насосы выходят на режим за первые ~2 мин от начала закачки ===
+      const globalTimeMin = cumTime + Math.min(m, stageTime);
+      const softStartFactor = Math.min(1, globalTimeMin / 2.5);
+      // Кривая разгона: s-curve для плавного нарастания
+      const rampFactor = softStartFactor * softStartFactor * (3 - 2 * softStartFactor);
+
+      const frPipeRaw = frPipePumped.pressureMPa * filledFraction + frPipeMud.pressureMPa * (1 - filledFraction);
+      const frPipe = frPipeRaw * rampFactor;
+
+      // === Загустевание цемента: увеличение эффективной вязкости с течением времени ===
+      // После начала закачки цемента, вязкость раствора в затрубье растёт
+      let thickeningMultiplier = 1.0;
+      if (cementStartFound && globalTimeMin > cementStartTime) {
+        const timeSinceCementStart = globalTimeMin - cementStartTime;
+        // Линейный рост эффективной вязкости: +15% за каждые 30 мин работы с цементом
+        // Ускорение после 60% от времени загустевания
+        const maxThick30 = slurries.length > 0 ? Math.max(...slurries.map(sl => sl.thickeningTime30Bc || 180)) : 180;
+        const progressFrac = Math.min(1, timeSinceCementStart / maxThick30);
+        // Нелинейный рост: медленно вначале, быстрее к концу
+        thickeningMultiplier = 1.0 + 0.15 * progressFrac + 0.25 * progressFrac * progressFrac;
+      }
+
+      // Пересчёт затрубного трения с загустеванием + динамический Re
+      const effAnnPv = annPv * thickeningMultiplier;
+      const effAnnYp = annYp * thickeningMultiplier;
+      const frAnnDynamic = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydAnn, effAnnPv, effAnnYp, annAreaM2, annDensity);
+      const frAnnNow = frAnnDynamic.pressureMPa * annFrictionMultiplier * rampFactor;
+      const reAnnNow = frAnnDynamic.reynolds;
+      const flowRegimeAnnNow = frAnnDynamic.regime;
 
       const pipeHydro = calcPipeHydrostatic();
       const annHydro = calcAnnularHydrostatic();
 
-      // Фаза догонки: пробка ещё не достигла цемента (заполняет зазор от freefall)
       const isCatchingUp = isDisplacement && cementFreefallVol > 0 && cumDisplacementVol < cementFreefallVol;
       const catchUpFrac = isDisplacement && cementFreefallVol > 0
         ? Math.min(1, cumDisplacementVol / cementFreefallVol)
@@ -1130,22 +1150,20 @@ export function calculatePressureProfile(
         for (let iter = 0; iter < 15; iter++) {
           const mid = (lo + hi) / 2;
           const fPipe = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3).pressureMPa;
-          const fAnn = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydAnn, annPv, annYp, annAreaM2, annDensity).pressureMPa * annFrictionMultiplier;
+          const fAnn = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydAnn, effAnnPv, effAnnYp, annAreaM2, annDensity).pressureMPa * annFrictionMultiplier;
           if (fPipe + fAnn < gravityDeltaMPa) lo = mid; else hi = mid;
         }
         gravityReturnLps = ((lo + hi) / 2) / 0.06;
       }
 
-      // Во время догонки: затрубное трение ≈ 0 (пробка не давит на цемент), выхода на устье нет
-      // Плавный переход от 0 к полному значению по мере догонки
-      const effectiveFrAnn = isCatchingUp ? frAnn * catchUpFrac * catchUpFrac : frAnn;
+      const effectiveFrAnn = isCatchingUp ? frAnnNow * catchUpFrac * catchUpFrac : frAnnNow;
       const baseReturn = s.rateLps * compressionEffect;
       const totalAnnReturn = isCatchingUp ? gravityReturnLps * catchUpFrac : baseReturn + gravityReturnLps;
 
       const surfP = Math.max(0, (annHydro - pipeHydro) + frPipe + effectiveFrAnn);
       const bhp = annHydro + effectiveFrAnn;
 
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn, reynoldsAnn: reAnn, maxSafeRateLps: calcMaxSafeRate(annHydro, annPv, annYp, annDensity, s.pv, s.yp, densityKgM3) });
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3) });
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;
