@@ -2,10 +2,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DebouncedInput } from "@/components/DebouncedInput";
 import { Label } from "@/components/ui/label";
-import { useState, memo, useCallback } from "react";
+import { useState, memo, useCallback, useMemo } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
-import { getCasingID, getSlurryHeight, annularVolumePerMeter, hydrostaticPressure, interpolateTVD } from "@/lib/cementing-calculations";
-import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval } from "@/lib/cementing-calculations";
+import { getCasingID, getSlurryHeight, annularVolumePerMeter, annularVolumeForInterval, hydrostaticPressure, interpolateTVD, calculateTVDFromSurvey, calculateCement, calculateAdditiveMass } from "@/lib/cementing-calculations";
+import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, AdditivePercentageType, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval } from "@/lib/cementing-calculations";
 
 interface Props {
   wellData: WellData;
@@ -125,11 +125,15 @@ export default function InputSection(props: Props) {
 
   const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacementFluids, onDisplacementFluidsChange, fractureGradient, onFractureGradientChange, flushTimeMin, onFlushTimeMinChange, flushVolumeM3, onFlushVolumeM3Change, displacementVolume } = props;
 
-  // Обновить траекторию и автосинхронизировать wellDepthTVD из последней точки
-  const updateTrajectory = (newTraj: TrajectoryPoint[]) => {
-    const sorted = [...newTraj].sort((a, b) => a.md - b.md);
+  // Обновить траекторию: автоматически пересчитывает TVD по методу минимальной кривизны
+  const updateTrajectory = (newTraj: TrajectoryPoint[], autoCalcTVD: boolean = true) => {
+    let traj = newTraj;
+    if (autoCalcTVD && traj.length >= 2) {
+      traj = calculateTVDFromSurvey(traj);
+    }
+    const sorted = [...traj].sort((a, b) => a.md - b.md);
     const lastTVD = sorted.length > 0 ? sorted[sorted.length - 1].tvd : wellData.wellDepthTVD;
-    onWellDataChange({ ...wellData, trajectory: newTraj, wellDepthTVD: lastTVD });
+    onWellDataChange({ ...wellData, trajectory: traj, wellDepthTVD: lastTVD });
   };
 
   const calcDispVol = displacementVolume ?? 0;
@@ -357,7 +361,7 @@ export default function InputSection(props: Props) {
                     <th className="text-left py-1 px-2">По стволу (MD), м</th>
                     <th className="text-left py-1 px-2">Азимут, °</th>
                     <th className="text-left py-1 px-2">Зенит, °</th>
-                    <th className="text-left py-1 px-2">По вертикали (TVD), м</th>
+                    <th className="text-left py-1 px-2">По вертикали (TVD), м <span className="text-primary font-normal">(авто)</span></th>
                     <th className="py-1 px-2 w-10"></th>
                   </tr>
                 </thead>
@@ -380,11 +384,11 @@ export default function InputSection(props: Props) {
                         traj[i] = { ...traj[i], zenith: parseFloat(e.target.value) || 0 };
                         updateTrajectory(traj);
                       }} className="h-7 text-xs" /></td>
-                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.tvd || ""} onChange={(e) => {
-                        const traj = [...(wellData.trajectory || [])];
-                        traj[i] = { ...traj[i], tvd: parseFloat(e.target.value) || 0 };
-                        updateTrajectory(traj);
-                      }} className="h-7 text-xs" /></td>
+                      <td className="py-1 px-2">
+                        <div className="h-7 flex items-center px-2 rounded bg-muted text-xs font-medium border border-border">
+                          {pt.tvd ? pt.tvd.toFixed(2) : "—"}
+                        </div>
+                      </td>
                       <td className="py-1 px-2">
                         {(wellData.trajectory || []).length > 2 && (
                           <button onClick={() => {
@@ -437,12 +441,10 @@ export default function InputSection(props: Props) {
                       }} className="h-9 text-sm" />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">TVD, м</Label>
-                      <Input type="number" step="any" value={pt.tvd || ""} onChange={(e) => {
-                        const traj = [...(wellData.trajectory || [])];
-                        traj[i] = { ...traj[i], tvd: parseFloat(e.target.value) || 0 };
-                        updateTrajectory(traj);
-                      }} className="h-9 text-sm" />
+                      <Label className="text-xs text-muted-foreground">TVD, м (авто)</Label>
+                      <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-medium border border-border">
+                        {pt.tvd ? pt.tvd.toFixed(2) : "—"}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -528,16 +530,24 @@ export default function InputSection(props: Props) {
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">Компонентный состав</span>
-                    <button onClick={() => { const u = [...buffers]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { name: "", percentage: 0, massKg: 0 }] }; onBuffersChange(u); }} className="text-xs text-primary hover:underline">+ добавка</button>
+                    <button onClick={() => { const u = [...buffers]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { name: "", percentage: 0, percentageType: 'bwoc' as AdditivePercentageType, massKg: 0 }] }; onBuffersChange(u); }} className="text-xs text-primary hover:underline">+ добавка</button>
                   </div>
-                  {b.additives.map((a, aIdx) => (
-                    <div key={aIdx} className="flex items-center gap-2">
-                      <DebouncedInput value={a.name} onChange={(e) => updateBufferAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1" />
-                      <DebouncedInput type="number" value={a.massKg || ""} onChange={(e) => updateBufferAdditive(idx, aIdx, "massKg", e.target.value)} className="h-7 text-xs w-20" placeholder="кг" />
-                      <span className="text-xs text-muted-foreground">кг</span>
-                      <button onClick={() => { const u = [...buffers]; u[idx] = { ...u[idx], additives: u[idx].additives.filter((_, i) => i !== aIdx) }; onBuffersChange(u); }} className="text-xs text-destructive">✕</button>
-                    </div>
-                  ))}
+                  {b.additives.map((a, aIdx) => {
+                    const bufferMassKg = b.volume * b.density;
+                    const computedMass = a.percentage > 0 ? (a.percentage / 100) * bufferMassKg : a.massKg;
+                    return (
+                      <div key={aIdx} className="flex items-center gap-2">
+                        <DebouncedInput value={a.name} onChange={(e) => updateBufferAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1" />
+                        <DebouncedInput type="number" step="0.01" value={a.percentage || ""} onChange={(e) => updateBufferAdditive(idx, aIdx, "percentage", e.target.value)} className="h-7 text-xs w-16" placeholder="%" />
+                        <span className="text-xs text-muted-foreground">%</span>
+                        <div className="h-7 flex items-center px-2 rounded bg-muted text-xs font-medium border border-border min-w-[60px]">
+                          {computedMass > 0 ? computedMass.toFixed(1) : "—"}
+                        </div>
+                        <span className="text-xs text-muted-foreground">кг</span>
+                        <button onClick={() => { const u = [...buffers]; u[idx] = { ...u[idx], additives: u[idx].additives.filter((_, i) => i !== aIdx) }; onBuffersChange(u); }} className="text-xs text-destructive">✕</button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -559,6 +569,12 @@ export default function InputSection(props: Props) {
 
             {slurries.map((s, idx) => {
               const height = getSlurryHeight(slurries, idx, wellData.casingDepthMD);
+              // Расчёт сухой массы цемента для автоподстановки массы добавок
+              const lastIdx = slurries.length - 1;
+              const mdBot = idx === lastIdx ? wellData.casingDepthMD : slurries[idx + 1].topDepthMD;
+              const slurryVol = height > 0 ? annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals) : 0;
+              const cementRes = slurryVol > 0 ? calculateCement(slurryVol, s.density) : null;
+              const dryMassKg = cementRes ? cementRes.dryMass * 1000 : 0; // т → кг
               return (
                 <div key={idx} className="p-3 rounded-lg bg-muted/30 space-y-3 border border-border/50">
                 <div className="flex items-center justify-between">
@@ -608,20 +624,41 @@ export default function InputSection(props: Props) {
                   />
                   {/* Добавки */}
                   <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">Добавки (% bwoc)</span>
-                      <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { name: "", percentage: 0, massKg: 0 }] }; onSlurriesChange(u); }} className="text-xs text-primary hover:underline">+ добавка</button>
+                     <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Добавки</span>
+                      <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { name: "", percentage: 0, percentageType: 'bwoc' as AdditivePercentageType, massKg: 0 }] }; onSlurriesChange(u); }} className="text-xs text-primary hover:underline">+ добавка</button>
                     </div>
-                    {s.additives.map((a, aIdx) => (
-                      <div key={aIdx} className="flex items-center gap-2">
-                        <DebouncedInput value={a.name} onChange={(e) => updateSlurryAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1" />
-                        <DebouncedInput type="number" step="0.01" value={a.percentage || ""} onChange={(e) => updateSlurryAdditive(idx, aIdx, "percentage", e.target.value)} className="h-7 text-xs w-16" placeholder="%" />
-                        <span className="text-xs text-muted-foreground">%</span>
-                        <DebouncedInput type="number" value={a.massKg || ""} onChange={(e) => updateSlurryAdditive(idx, aIdx, "massKg", e.target.value)} className="h-7 text-xs w-20" placeholder="кг" />
-                        <span className="text-xs text-muted-foreground">кг</span>
-                        <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: u[idx].additives.filter((_, i) => i !== aIdx) }; onSlurriesChange(u); }} className="text-xs text-destructive">✕</button>
-                      </div>
-                    ))}
+                    {s.additives.map((a, aIdx) => {
+                      const pctType = a.percentageType || 'bwoc';
+                      const computedMass = a.percentage > 0 && dryMassKg > 0
+                        ? calculateAdditiveMass(a.percentage, pctType, dryMassKg)
+                        : a.massKg;
+                      return (
+                        <div key={aIdx} className="flex items-center gap-2 flex-wrap">
+                          <DebouncedInput value={a.name} onChange={(e) => updateSlurryAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1 min-w-[100px]" />
+                          <DebouncedInput type="number" step="0.01" value={a.percentage || ""} onChange={(e) => updateSlurryAdditive(idx, aIdx, "percentage", e.target.value)} className="h-7 text-xs w-16" placeholder="%" />
+                          <select
+                            value={pctType}
+                            onChange={(e) => {
+                              const u = [...slurries];
+                              const sl = { ...u[idx], additives: [...u[idx].additives] };
+                              sl.additives[aIdx] = { ...sl.additives[aIdx], percentageType: e.target.value as AdditivePercentageType };
+                              u[idx] = sl;
+                              onSlurriesChange(u);
+                            }}
+                            className="h-7 text-xs rounded border border-border bg-background px-1"
+                          >
+                            <option value="bwoc">% bwoc</option>
+                            <option value="bwob">% bwob</option>
+                          </select>
+                          <div className="h-7 flex items-center px-2 rounded bg-muted text-xs font-medium border border-border min-w-[60px]">
+                            {computedMass > 0 ? computedMass.toFixed(1) : "—"}
+                          </div>
+                          <span className="text-xs text-muted-foreground">кг</span>
+                          <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: u[idx].additives.filter((_, i) => i !== aIdx) }; onSlurriesChange(u); }} className="text-xs text-destructive">✕</button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
