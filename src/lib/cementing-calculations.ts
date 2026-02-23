@@ -1104,11 +1104,11 @@ export function calculatePressureProfile(
       // Доля трубы, заполненная закачанным флюидом
       const filledFraction = Math.min(totalPumped / Math.max(pipeCapacity, 0.01), 1);
 
-      // === Soft start: насосы выходят на режим за первые ~2 мин от начала закачки ===
+      // === Soft start: насосы выходят на режим за первые ~5 мин от начала закачки ===
       const globalTimeMin = cumTime + Math.min(m, stageTime);
-      const softStartFactor = Math.min(1, globalTimeMin / 2.5);
-      // Кривая разгона: s-curve для плавного нарастания
-      const rampFactor = softStartFactor * softStartFactor * (3 - 2 * softStartFactor);
+      const softStartFactor = Math.min(1, globalTimeMin / 5.0);
+      // Кривая разгона: очень плавное нарастание (4-я степень для более пологого старта)
+      const rampFactor = softStartFactor * softStartFactor * softStartFactor * (10 - 15 * softStartFactor + 6 * softStartFactor * softStartFactor);
 
       const frPipeRaw = frPipePumped.pressureMPa * filledFraction + frPipeMud.pressureMPa * (1 - filledFraction);
       const frPipe = frPipeRaw * rampFactor;
@@ -1122,8 +1122,8 @@ export function calculatePressureProfile(
         // Ускорение после 60% от времени загустевания
         const maxThick30 = slurries.length > 0 ? Math.max(...slurries.map(sl => sl.thickeningTime30Bc || 180)) : 180;
         const progressFrac = Math.min(1, timeSinceCementStart / maxThick30);
-        // Нелинейный рост: медленно вначале, быстрее к концу
-        thickeningMultiplier = 1.0 + 0.15 * progressFrac + 0.25 * progressFrac * progressFrac;
+        // Нелинейный рост: медленно вначале, быстрее к концу (кубическая кривая)
+        thickeningMultiplier = 1.0 + 0.20 * progressFrac + 0.35 * progressFrac * progressFrac + 0.25 * progressFrac * progressFrac * progressFrac;
       }
 
       // Пересчёт затрубного трения с загустеванием + динамический Re
@@ -1157,8 +1157,18 @@ export function calculatePressureProfile(
       }
 
       const effectiveFrAnn = isCatchingUp ? frAnnNow * catchUpFrac * catchUpFrac : frAnnNow;
-      const baseReturn = s.rateLps * compressionEffect;
-      const totalAnnReturn = isCatchingUp ? gravityReturnLps * catchUpFrac : baseReturn + gravityReturnLps;
+
+      // === Выход на устье ===
+      // При закачке тяжёлых растворов: выход чуть выше (тяжёлый раствор быстрее вытесняет лёгкий)
+      const densityBoost = s.densityGcm3 > mudDensityGcm3 + 0.05
+        ? 1.0 + (s.densityGcm3 - mudDensityGcm3) / mudDensityGcm3 * 0.15
+        : 1.0;
+      const baseReturn = s.rateLps * compressionEffect * densityBoost;
+      // Ограничиваем гравитационный расход — не может быть слишком большим
+      const cappedGravityReturn = Math.min(gravityReturnLps, s.rateLps * 0.3);
+      let totalAnnReturn = isCatchingUp ? cappedGravityReturn * catchUpFrac : baseReturn + cappedGravityReturn;
+      // Абсолютный cap: выход не может превышать ~130% от текущей производительности
+      totalAnnReturn = Math.min(totalAnnReturn, s.rateLps * 1.3);
 
       const surfP = Math.max(0, (annHydro - pipeHydro) + frPipe + effectiveFrAnn);
       const bhp = annHydro + effectiveFrAnn;

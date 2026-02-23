@@ -331,13 +331,18 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
         let gray = 0;
         let alpha = 255;
 
-        if (xFrac < casLeftFrac) {
+         // Затемнение для тяжёлого цемента (более тёмный = более плотный)
+         const densityDarkening = d.fluidType === "cement"
+           ? Math.min(0.35, Math.max(0, (d.fluidDensity - 1400) / 2000) * 0.35)
+           : 0;
+
+         if (xFrac < casLeftFrac) {
           // Левое затрубье (расширенное при эксцентриситете)
           const leftAnnWidth = casLeftFrac;
           const localFrac = leftAnnWidth > 0 ? xFrac / leftAnnWidth : 0;
           const angle = Math.PI * (1 - localFrac);
           const eff = calcEff(d, angle, localFrac, yFrac, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
-          gray = Math.round(40 + (1 - eff) * 215);
+          gray = Math.round((40 + (1 - eff) * 215) * (1 - densityDarkening));
         } else if (xFrac > casRightFrac) {
           // Правое затрубье (сужено при эксцентриситете — low side)
           const rightAnnStart = casRightFrac;
@@ -347,7 +352,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
           // На сжатой стороне — хуже замещение (дополнительный штраф от эксцентриситета)
           const eccPenalty = ecc * 0.3;
           const eff = Math.max(0, calcEff(d, angle, localFrac + 1, yFrac, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff) - eccPenalty);
-          gray = Math.round(40 + (1 - eff) * 215);
+          gray = Math.round((40 + (1 - eff) * 215) * (1 - densityDarkening));
         } else {
           // Колонна — steel gray
           gray = 110;
