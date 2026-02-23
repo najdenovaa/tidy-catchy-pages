@@ -220,7 +220,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <ReferenceLine yAxisId="re" y={2100} stroke="hsl(45, 80%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re=2100", position: "right", fontSize: 10, fill: "hsl(45, 80%, 50%)" }} />
                 <ReferenceLine yAxisId="re" y={4000} stroke="hsl(0, 70%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re=4000", position: "right", fontSize: 10, fill: "hsl(0, 70%, 50%)" }} />
                 {stageBoundaries.map((b, i) => <ReferenceLine key={`regime-stage-${i}`} yAxisId="regime" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} />)}
-                <Line yAxisId="regime" type="stepAfter" dataKey="flowRegimeAnn" name="Режим потока" stroke="hsl(280, 60%, 50%)" strokeWidth={2.5} dot={false} />
+                <Line yAxisId="regime" type="monotone" dataKey="flowRegimeAnn" name="Режим потока" stroke="hsl(280, 60%, 50%)" strokeWidth={2.5} dot={false} />
                 <Line yAxisId="re" type="linear" dataKey="reynoldsAnn" name="Re (затрубье)" stroke="hsl(200, 60%, 50%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
               </LineChart>
             </ResponsiveContainer>
