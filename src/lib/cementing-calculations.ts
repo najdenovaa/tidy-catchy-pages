@@ -5,9 +5,12 @@ export interface Rheology {
   yp: number; // ДНС (динамическое напряжение сдвига), Па
 }
 
+export type AdditivePercentageType = 'bwoc' | 'bwob';
+
 export interface Additive {
   name: string;
-  percentage: number; // % от массы цемента (bwoc)
+  percentage: number; // % от массы цемента (bwoc) или смеси (bwob)
+  percentageType: AdditivePercentageType; // тип расчёта процента
   massKg: number; // кг (автовычисляемое)
 }
 
@@ -278,6 +281,55 @@ export function interpolateTVD(md: number, trajectory: TrajectoryPoint[]): numbe
     }
   }
   return sorted[sorted.length - 1].tvd;
+}
+
+// === Автоматический расчёт TVD по методу минимальной кривизны ===
+
+export function calculateTVDFromSurvey(trajectory: TrajectoryPoint[]): TrajectoryPoint[] {
+  if (!trajectory || trajectory.length === 0) return [];
+  const sorted = [...trajectory].sort((a, b) => a.md - b.md);
+  const result: TrajectoryPoint[] = [{ ...sorted[0], tvd: sorted[0].tvd || sorted[0].md }];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = result[i - 1];
+    const cur = sorted[i];
+    const deltaMD = cur.md - prev.md;
+    if (deltaMD <= 0) { result.push({ ...cur, tvd: prev.tvd }); continue; }
+
+    const I1 = (prev.zenith || 0) * Math.PI / 180;
+    const I2 = (cur.zenith || 0) * Math.PI / 180;
+    const A1 = (prev.azimuth || 0) * Math.PI / 180;
+    const A2 = (cur.azimuth || 0) * Math.PI / 180;
+
+    // Угол поворота (dogleg angle)
+    const cosBeta = Math.cos(I2 - I1) - Math.sin(I1) * Math.sin(I2) * (1 - Math.cos(A2 - A1));
+    const beta = Math.acos(Math.min(1, Math.max(-1, cosBeta)));
+
+    // Ratio factor (минимальная кривизна)
+    const RF = beta > 1e-6 ? (2 / beta) * Math.tan(beta / 2) : 1;
+
+    const deltaTVD = (deltaMD / 2) * (Math.cos(I1) + Math.cos(I2)) * RF;
+    result.push({ ...cur, tvd: Math.round((prev.tvd + deltaTVD) * 100) / 100 });
+  }
+  return result;
+}
+
+// === Расчёт массы добавки из процента ===
+
+export function calculateAdditiveMass(
+  percentage: number,
+  percentageType: AdditivePercentageType,
+  baseMassKg: number // сухая масса цемента (bwoc) или общая масса смеси (bwob)
+): number {
+  if (percentage <= 0 || baseMassKg <= 0) return 0;
+  if (percentageType === 'bwob') {
+    // bwob: % от смеси (цемент + все добавки). Additive = pct/100 * blend; blend = base + additive
+    // => additive = (pct/100 * base) / (1 - pct/100)
+    const frac = percentage / 100;
+    return frac >= 1 ? 0 : (frac * baseMassKg) / (1 - frac);
+  }
+  // bwoc: % от массы сухого цемента
+  return (percentage / 100) * baseMassKg;
 }
 
 // TVD-интервал между двумя точками MD
@@ -603,10 +655,11 @@ export function calculateMaterials(
       cementItems.push({ name: s.name, amount: res.dryMass, unit: "т" });
       waterForCement += res.waterVolume;
       s.additives.forEach(a => {
-        // Авторасчёт массы из % BWOC (от сухого цемента)
-        const computedMassKg = a.percentage > 0 ? (a.percentage / 100) * dryMassKg : a.massKg;
+        const pctType = a.percentageType || 'bwoc';
+        const computedMassKg = a.percentage > 0 ? calculateAdditiveMass(a.percentage, pctType, dryMassKg) : a.massKg;
+        const label = pctType === 'bwob' ? `${a.percentage}% bwob` : `${a.percentage}% bwoc`;
         if (a.name && computedMassKg > 0) {
-          cementItems.push({ name: `  ${a.name} (${a.percentage}% bwoc)`, amount: computedMassKg, unit: "кг" });
+          cementItems.push({ name: `  ${a.name} (${label})`, amount: computedMassKg, unit: "кг" });
         }
       });
     }
