@@ -1160,11 +1160,17 @@ export function calculatePressureProfile(
       // === Soft start: насосы выходят на режим за первые ~5 мин от начала закачки ===
       const globalTimeMin = cumTime + Math.min(m, stageTime);
       const softStartFactor = Math.min(1, globalTimeMin / 5.0);
-      // Кривая разгона: очень плавное нарастание (4-я степень для более пологого старта)
-      const rampFactor = softStartFactor * softStartFactor * softStartFactor * (10 - 15 * softStartFactor + 6 * softStartFactor * softStartFactor);
+      // Кривая разгона: очень плавное нарастание (5-я степень для более пологого старта)
+      const rampFactor = softStartFactor * softStartFactor * softStartFactor * softStartFactor * softStartFactor;
 
-      const frPipeRaw = frPipePumped.pressureMPa * filledFraction + frPipeMud.pressureMPa * (1 - filledFraction);
-      const frPipe = frPipeRaw * rampFactor;
+      // Фактическая производительность с учётом разгона
+      const actualRateLps = s.rateLps * rampFactor;
+      const actualFlowRateM3min = actualRateLps * 0.06;
+
+      // Пересчёт трения с ФАКТИЧЕСКОЙ производительностью (а не номинальной)
+      const frPipePumpedActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3);
+      const frPipeMudActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, drillingFluid.rheology.pv, drillingFluid.rheology.yp, pipeAreaM2, drillingFluid.density);
+      const frPipe = frPipePumpedActual.pressureMPa * filledFraction + frPipeMudActual.pressureMPa * (1 - filledFraction);
 
       // === Загустевание цемента: увеличение эффективной вязкости с течением времени ===
       // После начала закачки цемента, вязкость раствора в затрубье растёт
@@ -1179,11 +1185,11 @@ export function calculatePressureProfile(
         thickeningMultiplier = 1.0 + 0.20 * progressFrac + 0.35 * progressFrac * progressFrac + 0.25 * progressFrac * progressFrac * progressFrac;
       }
 
-      // Пересчёт затрубного трения с загустеванием + динамический Re
       const effAnnPv = annPv * thickeningMultiplier;
       const effAnnYp = annYp * thickeningMultiplier;
-      const frAnnDynamic = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydAnn, effAnnPv, effAnnYp, annAreaM2, annDensity);
-      const frAnnNow = frAnnDynamic.pressureMPa * annFrictionMultiplier * rampFactor;
+      // Затрубное трение тоже с ФАКТИЧЕСКОЙ производительностью
+      const frAnnDynamic = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydAnn, effAnnPv, effAnnYp, annAreaM2, annDensity);
+      const frAnnNow = frAnnDynamic.pressureMPa * annFrictionMultiplier;
       const reAnnNow = frAnnDynamic.reynolds;
       const flowRegimeAnnNow = frAnnDynamic.regime;
 
@@ -1214,19 +1220,19 @@ export function calculatePressureProfile(
       // === Выход на устье ===
       // При закачке тяжёлых растворов: выход чуть выше (тяжёлый раствор быстрее вытесняет лёгкий)
       const densityBoost = s.densityGcm3 > mudDensityGcm3 + 0.05
-        ? 1.0 + (s.densityGcm3 - mudDensityGcm3) / mudDensityGcm3 * 0.15
+        ? 1.0 + (s.densityGcm3 - mudDensityGcm3) / mudDensityGcm3 * 0.10
         : 1.0;
-      const baseReturn = s.rateLps * compressionEffect * densityBoost;
-      // Ограничиваем гравитационный расход — не может быть слишком большим
-      const cappedGravityReturn = Math.min(gravityReturnLps, s.rateLps * 0.3);
+      const baseReturn = actualRateLps * compressionEffect * densityBoost;
+      // Ограничиваем гравитационный расход — максимум 20% от текущей производительности
+      const cappedGravityReturn = Math.min(gravityReturnLps, actualRateLps * 0.2);
       let totalAnnReturn = isCatchingUp ? cappedGravityReturn * catchUpFrac : baseReturn + cappedGravityReturn;
-      // Абсолютный cap: выход не может превышать ~130% от текущей производительности
-      totalAnnReturn = Math.min(totalAnnReturn, s.rateLps * 1.3);
+      // Абсолютный cap: выход НИКОГДА не превышает текущую производительность насосов
+      totalAnnReturn = Math.min(totalAnnReturn, actualRateLps * 1.0);
 
       const surfP = Math.max(0, (annHydro - pipeHydro) + frPipe + effectiveFrAnn);
       const bhp = annHydro + effectiveFrAnn;
 
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: s.rateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3) });
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3) });
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;

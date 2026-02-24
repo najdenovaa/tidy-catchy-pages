@@ -106,8 +106,21 @@ function interpAt(pts: ReturnType<typeof trajectoryTo3D>, md: number): { x: numb
 function WellTube({ path, radius, color, opacity = 1 }: { path: THREE.Vector3[]; radius: number; color: string; opacity?: number }) {
   const geometry = useMemo(() => {
     if (path.length < 2) return null;
-    const curve = new THREE.CatmullRomCurve3(path, false, "catmullrom", 0.3);
-    return new THREE.TubeGeometry(curve, Math.max(path.length * 4, 32), radius, 16, false);
+    // Filter out duplicate/too-close points that break TubeGeometry
+    const filtered: THREE.Vector3[] = [path[0]];
+    for (let i = 1; i < path.length; i++) {
+      if (path[i].distanceTo(filtered[filtered.length - 1]) > 0.0001) {
+        filtered.push(path[i]);
+      }
+    }
+    if (filtered.length < 2) return null;
+    const curve = new THREE.CatmullRomCurve3(filtered, false, "catmullrom", 0.3);
+    const tubularSegments = Math.max(filtered.length * 4, 32);
+    try {
+      return new THREE.TubeGeometry(curve, tubularSegments, radius, 16, false);
+    } catch {
+      return null;
+    }
   }, [path, radius]);
   if (!geometry) return null;
   return (

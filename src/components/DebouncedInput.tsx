@@ -10,6 +10,10 @@ interface DebouncedInputProps {
   placeholder?: string;
   className?: string;
   id?: string;
+  readOnly?: boolean;
+  min?: string | number;
+  max?: string | number;
+  disabled?: boolean;
 }
 
 /**
@@ -41,14 +45,11 @@ function DebouncedInputInner({
     const val = e.target.value;
     setLocalValue(val);
     if (timerRef.current) clearTimeout(timerRef.current);
-    // Create a synthetic-like event for the parent
-    const syntheticEvent = {
-      ...e,
-      target: { ...e.target, value: val },
-    } as React.ChangeEvent<HTMLInputElement>;
     timerRef.current = setTimeout(() => {
       lastEmitted.current = val;
-      onChangeRef.current(syntheticEvent);
+      // Create a minimal synthetic event
+      const synth = { target: { value: val } } as React.ChangeEvent<HTMLInputElement>;
+      onChangeRef.current(synth);
     }, delay);
   }, [delay]);
 
