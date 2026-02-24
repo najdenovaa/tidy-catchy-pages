@@ -208,20 +208,27 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
           </div>
         </CardHeader>
         <CardContent>
-          <ScrollableChart chartRef={chartRef5} height="h-[300px]">
+          <p className="text-xs text-muted-foreground mb-3">
+            Режим потока зависит от производительности: при высокой скорости закачки Re растёт и поток переходит из ламинарного в переходный/турбулентный. При снижении — обратно.
+          </p>
+          <ScrollableChart chartRef={chartRef5} height="h-[350px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 65, left: 25, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
                 <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" />
-                <YAxis yAxisId="regime" domain={[-0.2, 1.3]} ticks={[0, 0.5, 1]} tickFormatter={(v) => v === 0 ? "Ламин." : v === 0.5 ? "Перех." : v === 1 ? "Турбул." : ""} className="text-xs" width={70} />
-                <YAxis yAxisId="re" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.2)]} label={{ value: "Re", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
-                <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => { if (name === "Режим потока") return [value === 0 ? "Ламинарный" : value < 1 ? "Переходный" : "Турбулентный", name]; return [Math.round(value).toString(), name]; }} />
+                <YAxis yAxisId="re" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.2)]} label={{ value: "Re", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
+                <YAxis yAxisId="rate" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
+                <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => {
+                  if (name === "Производительность") return [value.toFixed(1) + " л/с", name];
+                  if (name === "Re (затрубье)") return [Math.round(value).toString(), name];
+                  return [value === 0 ? "Ламинарный" : value < 1 ? "Переходный" : "Турбулентный", name];
+                }} />
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
-                <ReferenceLine yAxisId="re" y={2100} stroke="hsl(45, 80%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re=2100", position: "right", fontSize: 10, fill: "hsl(45, 80%, 50%)" }} />
-                <ReferenceLine yAxisId="re" y={4000} stroke="hsl(0, 70%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re=4000", position: "right", fontSize: 10, fill: "hsl(0, 70%, 50%)" }} />
-                {stageBoundaries.map((b, i) => <ReferenceLine key={`regime-stage-${i}`} yAxisId="regime" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} />)}
-                <Line yAxisId="regime" type="monotone" dataKey="flowRegimeAnn" name="Режим потока" stroke="hsl(280, 60%, 50%)" strokeWidth={2.5} dot={false} />
-                <Line yAxisId="re" type="linear" dataKey="reynoldsAnn" name="Re (затрубье)" stroke="hsl(200, 60%, 50%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
+                <ReferenceLine yAxisId="re" y={2100} stroke="hsl(45, 80%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re=2100 (переходный)", position: "right", fontSize: 10, fill: "hsl(45, 80%, 50%)" }} />
+                <ReferenceLine yAxisId="re" y={4000} stroke="hsl(0, 70%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re=4000 (турбулентный)", position: "right", fontSize: 10, fill: "hsl(0, 70%, 50%)" }} />
+                {stageBoundaries.map((b, i) => <ReferenceLine key={`regime-stage-${i}`} yAxisId="re" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} />)}
+                <Line yAxisId="re" type="monotone" dataKey="reynoldsAnn" name="Re (затрубье)" stroke="hsl(200, 60%, 50%)" strokeWidth={2.5} dot={false} />
+                <Line yAxisId="rate" type="monotone" dataKey="pumpRateLps" name="Производительность" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
               </LineChart>
             </ResponsiveContainer>
           </ScrollableChart>

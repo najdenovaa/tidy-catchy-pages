@@ -118,6 +118,22 @@ export default function Home() {
       </main>
 
       <footer className="w-full">
+        <div className="bg-card border-t border-border py-6">
+          <div className="max-w-5xl mx-auto px-4 text-center">
+            <p className="text-sm text-muted-foreground">
+              Мы открыты к сотрудничеству! По всем вопросам обращайтесь в{" "}
+              <a
+                href="https://t.me/deallbiz_support"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline font-medium"
+              >
+                поддержку
+              </a>
+              .
+            </p>
+          </div>
+        </div>
         <img
           src={drillingBanner}
           alt="Буровые установки"
