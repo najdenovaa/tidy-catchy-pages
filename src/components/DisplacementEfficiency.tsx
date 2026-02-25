@@ -375,27 +375,35 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     ctx.beginPath(); ctx.moveTo(annLX, mT); ctx.lineTo(annLX, mT + plotH); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(annRX + annW, mT); ctx.lineTo(annRX + annW, mT + plotH); ctx.stroke();
 
-    // Casing walls — follow eccentricity curve
-    ctx.strokeStyle = "#bbb";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
+    // Casing walls — follow eccentricity curve with smooth Bezier transitions
+    const casingPoints: { y: number; leftX: number; rightX: number }[] = [];
     for (let i = 0; i <= info.length - 1; i++) {
       const y = mT + (i / (info.length - 1)) * plotH;
       const ecc = getEccentricityAtMD(info[i].md);
       const offset = ecc * annW * 0.85;
-      const x = casX + offset;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      casingPoints.push({ y, leftX: casX + offset, rightX: annRX + offset });
     }
-    ctx.stroke();
-    ctx.beginPath();
-    for (let i = 0; i <= info.length - 1; i++) {
-      const y = mT + (i / (info.length - 1)) * plotH;
-      const ecc = getEccentricityAtMD(info[i].md);
-      const offset = ecc * annW * 0.85;
-      const x = annRX + offset;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
+
+    // Draw smooth casing walls using quadratic Bezier curves
+    const drawSmoothLine = (getX: (p: typeof casingPoints[0]) => number) => {
+      ctx.strokeStyle = "#bbb";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (casingPoints.length < 2) return;
+      ctx.moveTo(getX(casingPoints[0]), casingPoints[0].y);
+      for (let i = 0; i < casingPoints.length - 1; i++) {
+        const p0 = casingPoints[i];
+        const p1 = casingPoints[i + 1];
+        const cpX = (getX(p0) + getX(p1)) / 2;
+        const cpY = (p0.y + p1.y) / 2;
+        ctx.quadraticCurveTo(getX(p0), p0.y, cpX, cpY);
+      }
+      const last = casingPoints[casingPoints.length - 1];
+      ctx.lineTo(getX(last), last.y);
+      ctx.stroke();
+    };
+    drawSmoothLine(p => p.leftX);
+    drawSmoothLine(p => p.rightX);
 
     // Labels
     ctx.fillStyle = "#aaa";

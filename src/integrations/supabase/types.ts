@@ -50,6 +50,101 @@ export type Database = {
         }
         Relationships: []
       }
+      fields: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          email: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          email: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          email?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      saved_calculations: {
+        Row: {
+          calc_params: Json | null
+          created_at: string
+          id: string
+          module: string
+          results: Json | null
+          title: string
+          updated_at: string
+          user_id: string
+          well_data: Json | null
+          well_id: string
+        }
+        Insert: {
+          calc_params?: Json | null
+          created_at?: string
+          id?: string
+          module?: string
+          results?: Json | null
+          title: string
+          updated_at?: string
+          user_id: string
+          well_data?: Json | null
+          well_id: string
+        }
+        Update: {
+          calc_params?: Json | null
+          created_at?: string
+          id?: string
+          module?: string
+          results?: Json | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+          well_data?: Json | null
+          well_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_calculations_well_id_fkey"
+            columns: ["well_id"]
+            isOneToOne: false
+            referencedRelation: "wells"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -97,6 +192,70 @@ export type Database = {
           user_agent?: string | null
         }
         Relationships: []
+      }
+      well_pads: {
+        Row: {
+          created_at: string
+          field_id: string
+          id: string
+          name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          field_id: string
+          id?: string
+          name: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          field_id?: string
+          id?: string
+          name?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "well_pads_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wells: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          user_id: string
+          well_pad_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          user_id: string
+          well_pad_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          user_id?: string
+          well_pad_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wells_well_pad_id_fkey"
+            columns: ["well_pad_id"]
+            isOneToOne: false
+            referencedRelation: "well_pads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
