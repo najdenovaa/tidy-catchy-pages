@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InputSection from "@/components/InputSection";
 import PumpingSchedule from "@/components/PumpingSchedule";
@@ -12,7 +12,8 @@ import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
-import { FileDown, Loader2, Send, Home, RotateCcw } from "lucide-react";
+import { FileDown, Loader2, Send, Home, RotateCcw, Save } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import { useCementingSession } from "@/hooks/use-cementing-session";
@@ -45,6 +46,8 @@ export default function Index() {
   const [activeTab, setActiveTab] = useState("input");
   const [exporting, setExporting] = useState(false);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [searchParams] = useSearchParams();
 
   // Persistent counters from backend
   const [visitCount, setVisitCount] = useState<number>(0);
@@ -242,6 +245,41 @@ export default function Index() {
     }
   }, [calcSnapshot, wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient]);
 
+  const handleSaveToAccount = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      const msg = "Для сохранения расчёта войдите в личный кабинет";
+      alert(msg);
+      return;
+    }
+    // Check if user has any wells
+    const { data: userWells } = await supabase.from("wells").select("id, name").limit(1);
+    if (!userWells || userWells.length === 0) {
+      alert("Сначала создайте месторождение, куст и скважину в личном кабинете");
+      return;
+    }
+    const wellName = prompt("Введите название расчёта:", `Расчёт ${new Date().toLocaleDateString("ru-RU")}`);
+    if (!wellName) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from("saved_calculations").insert({
+        user_id: session.user.id,
+        well_id: userWells[0].id,
+        module: "cementing",
+        title: wellName,
+        well_data: wellData as any,
+        calc_params: { slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3, drillingFluid } as any,
+        results: calcSnapshot ? { volumes, materials, pressureResult } as any : null,
+      } as any);
+      if (error) throw error;
+      alert("Расчёт сохранён!");
+    } catch (e: any) {
+      alert("Ошибка сохранения: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  }, [wellData, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3, drillingFluid, calcSnapshot, volumes, materials, pressureResult]);
+
   return (
     <div className="bg-background">
       <header className="border-b border-border bg-card sticky top-0 z-10">
@@ -291,6 +329,14 @@ export default function Index() {
               >
                 <RotateCcw className="w-3.5 h-3.5 shrink-0" />
                 <span className="hidden sm:inline">Обнулить</span>
+              </button>
+              <button
+                onClick={handleSaveToAccount}
+                disabled={saving}
+                className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-colors shadow-sm flex items-center gap-1 disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5 shrink-0" />}
+                <span className="hidden sm:inline">Сохранить</span>
               </button>
               <button
                 onClick={handleExportDocx}
