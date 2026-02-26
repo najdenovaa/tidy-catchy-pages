@@ -164,6 +164,7 @@ export default function Dashboard() {
   };
 
   const formatDate = (iso: string) => new Date(iso).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const cementingLink = selectedWell ? `/cementing?from=dashboard&well=${selectedWell}` : "/cementing?from=dashboard";
 
   if (loading) return <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">Загрузка...</div>;
 
@@ -203,9 +204,10 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="py-3"><CardTitle className="text-sm text-muted-foreground">Модули</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-3">
-            <Link to="/cementing"><Button variant="outline" size="sm"><FlaskConical className="w-4 h-4 mr-1" /> Цементирование</Button></Link>
+            <Link to={cementingLink}><Button variant="outline" size="sm"><FlaskConical className="w-4 h-4 mr-1" /> Цементирование</Button></Link>
             <Button variant="outline" size="sm" disabled><Droplets className="w-4 h-4 mr-1" /> Буровые растворы (скоро)</Button>
             <Button variant="outline" size="sm" disabled><Zap className="w-4 h-4 mr-1" /> ГРП (скоро)</Button>
+            {!selectedWell && <p className="text-xs text-muted-foreground">Чтобы сохранить расчёт в нужную папку, выберите скважину справа ниже</p>}
           </CardContent>
         </Card>
 
@@ -294,7 +296,7 @@ export default function Dashboard() {
                   {calcs.length === 0 && <p className="text-xs text-muted-foreground">Нет сохранённых расчётов</p>}
                   {calcs.map(c => (
                     <div key={c.id} className="flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-muted group">
-                      <Link to={`/cementing?calc=${c.id}`} className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <Link to={`/cementing?from=dashboard&well=${selectedWell}&calc=${c.id}`} className="flex items-center gap-1.5 flex-1 min-w-0">
                         {moduleIcon(c.module)}
                         <div className="min-w-0">
                           <p className="truncate font-medium">{c.title}</p>

@@ -125,13 +125,15 @@ export default function AdminPanel() {
         </div>
 
         <Tabs defaultValue="calculations">
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="calculations">Расчёты ({calcLogs.length})</TabsTrigger>
-            <TabsTrigger value="visits">Посещения ({visitLogs.length})</TabsTrigger>
-            <TabsTrigger value="home-visits">Главная ({homeVisits.length})</TabsTrigger>
-            <TabsTrigger value="users">Пользователи ({profiles.length})</TabsTrigger>
-            <TabsTrigger value="lookup">Поиск по ID</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto pb-2">
+            <TabsList className="inline-flex min-w-max flex-nowrap">
+              <TabsTrigger value="calculations">Расчёты ({calcLogs.length})</TabsTrigger>
+              <TabsTrigger value="visits">Посещения ({visitLogs.length})</TabsTrigger>
+              <TabsTrigger value="home-visits">Главная ({homeVisits.length})</TabsTrigger>
+              <TabsTrigger value="users">Пользователи ({profiles.length})</TabsTrigger>
+              <TabsTrigger value="lookup">Поиск по ID</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="calculations">
             <Card><CardContent className="p-0">

@@ -2,10 +2,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DebouncedInput } from "@/components/DebouncedInput";
 import { Label } from "@/components/ui/label";
-import { useState, memo, useCallback, useMemo } from "react";
+import { useState, memo, useCallback, useMemo, ChangeEvent } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { getCasingID, getSlurryHeight, annularVolumePerMeter, annularVolumeForInterval, hydrostaticPressure, interpolateTVD, calculateTVDFromSurvey, calculateCement, calculateAdditiveMass } from "@/lib/cementing-calculations";
 import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, AdditivePercentageType, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval } from "@/lib/cementing-calculations";
+import * as XLSX from "xlsx";
 
 interface Props {
   wellData: WellData;
@@ -127,13 +128,75 @@ export default function InputSection(props: Props) {
 
   // Обновить траекторию: автоматически пересчитывает TVD по методу минимальной кривизны
   const updateTrajectory = (newTraj: TrajectoryPoint[], autoCalcTVD: boolean = true) => {
-    let traj = newTraj;
+    let traj = [...newTraj];
     if (autoCalcTVD && traj.length >= 2) {
       traj = calculateTVDFromSurvey(traj);
     }
     const sorted = [...traj].sort((a, b) => a.md - b.md);
     const lastTVD = sorted.length > 0 ? sorted[sorted.length - 1].tvd : wellData.wellDepthTVD;
-    onWellDataChange({ ...wellData, trajectory: traj, wellDepthTVD: lastTVD });
+    onWellDataChange({ ...wellData, trajectory: sorted, wellDepthTVD: lastTVD });
+  };
+
+  const updateTrajectoryPoint = (index: number, key: "md" | "azimuth" | "zenith", rawValue: string) => {
+    const traj = [...(wellData.trajectory || [])];
+    const current = traj[index];
+    if (!current) return;
+
+    // Не перезаписываем на 0 при временно пустом поле во время ввода
+    if (rawValue.trim() === "") {
+      traj[index] = { ...current, [key]: current[key] };
+      onWellDataChange({ ...wellData, trajectory: traj });
+      return;
+    }
+
+    traj[index] = { ...current, [key]: Number(rawValue) };
+    updateTrajectory(traj);
+  };
+
+  const handleTrajectoryExcelUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+
+      const normalize = (v: unknown) => String(v ?? "").trim().toLowerCase();
+      const getNumber = (value: unknown) => {
+        const num = Number(String(value ?? "").replace(",", "."));
+        return Number.isFinite(num) ? num : null;
+      };
+
+      const mapped: TrajectoryPoint[] = rows
+        .map((row) => {
+          const keys = Object.keys(row);
+          const mdKey = keys.find((k) => ["md", "глубина по стволу", "depth", "measured depth"].includes(normalize(k)));
+          const azKey = keys.find((k) => ["azimuth", "азимут"].includes(normalize(k)));
+          const zeKey = keys.find((k) => ["zenith", "зенит", "inclination", "inc"].includes(normalize(k)));
+
+          const md = getNumber(mdKey ? row[mdKey] : undefined);
+          const azimuth = getNumber(azKey ? row[azKey] : undefined);
+          const zenith = getNumber(zeKey ? row[zeKey] : undefined);
+
+          if (md === null || azimuth === null || zenith === null) return null;
+          return { md, azimuth, zenith, tvd: 0 };
+        })
+        .filter((point): point is TrajectoryPoint => point !== null);
+
+      if (mapped.length < 2) {
+        alert("В Excel нужно минимум 2 строки с колонками: Глубина по стволу, Азимут, Зенит");
+        event.target.value = "";
+        return;
+      }
+
+      updateTrajectory(mapped, true);
+      event.target.value = "";
+    } catch {
+      alert("Не удалось прочитать Excel-файл");
+      event.target.value = "";
+    }
   };
 
   const calcDispVol = displacementVolume ?? 0;
@@ -369,21 +432,9 @@ export default function InputSection(props: Props) {
                   {(wellData.trajectory || []).map((pt, i) => (
                     <tr key={i} className="border-b border-border/30">
                       <td className="py-1 px-2 text-xs text-muted-foreground">{i + 1}</td>
-                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.md || ""} onChange={(e) => {
-                        const traj = [...(wellData.trajectory || [])];
-                        traj[i] = { ...traj[i], md: parseFloat(e.target.value) || 0 };
-                        updateTrajectory(traj);
-                      }} className="h-7 text-xs" /></td>
-                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.azimuth || ""} onChange={(e) => {
-                        const traj = [...(wellData.trajectory || [])];
-                        traj[i] = { ...traj[i], azimuth: parseFloat(e.target.value) || 0 };
-                        updateTrajectory(traj);
-                      }} className="h-7 text-xs" /></td>
-                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.zenith || ""} onChange={(e) => {
-                        const traj = [...(wellData.trajectory || [])];
-                        traj[i] = { ...traj[i], zenith: parseFloat(e.target.value) || 0 };
-                        updateTrajectory(traj);
-                      }} className="h-7 text-xs" /></td>
+                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.md || ""} onChange={(e) => updateTrajectoryPoint(i, "md", e.target.value)} className="h-7 text-xs" /></td>
+                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.azimuth || ""} onChange={(e) => updateTrajectoryPoint(i, "azimuth", e.target.value)} className="h-7 text-xs" /></td>
+                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.zenith || ""} onChange={(e) => updateTrajectoryPoint(i, "zenith", e.target.value)} className="h-7 text-xs" /></td>
                       <td className="py-1 px-2">
                         <div className="h-7 flex items-center px-2 rounded bg-muted text-xs font-medium border border-border">
                           {pt.tvd ? pt.tvd.toFixed(2) : "—"}
@@ -418,27 +469,15 @@ export default function InputSection(props: Props) {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">MD, м</Label>
-                      <Input type="number" step="any" value={pt.md || ""} onChange={(e) => {
-                        const traj = [...(wellData.trajectory || [])];
-                        traj[i] = { ...traj[i], md: parseFloat(e.target.value) || 0 };
-                        updateTrajectory(traj);
-                      }} className="h-9 text-sm" />
+                      <Input type="number" step="any" value={pt.md || ""} onChange={(e) => updateTrajectoryPoint(i, "md", e.target.value)} className="h-9 text-sm" />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Азимут, °</Label>
-                      <Input type="number" step="any" value={pt.azimuth || ""} onChange={(e) => {
-                        const traj = [...(wellData.trajectory || [])];
-                        traj[i] = { ...traj[i], azimuth: parseFloat(e.target.value) || 0 };
-                        updateTrajectory(traj);
-                      }} className="h-9 text-sm" />
+                      <Input type="number" step="any" value={pt.azimuth || ""} onChange={(e) => updateTrajectoryPoint(i, "azimuth", e.target.value)} className="h-9 text-sm" />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Зенит, °</Label>
-                      <Input type="number" step="any" value={pt.zenith || ""} onChange={(e) => {
-                        const traj = [...(wellData.trajectory || [])];
-                        traj[i] = { ...traj[i], zenith: parseFloat(e.target.value) || 0 };
-                        updateTrajectory(traj);
-                      }} className="h-9 text-sm" />
+                      <Input type="number" step="any" value={pt.zenith || ""} onChange={(e) => updateTrajectoryPoint(i, "zenith", e.target.value)} className="h-9 text-sm" />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">TVD, м (авто)</Label>
@@ -450,17 +489,28 @@ export default function InputSection(props: Props) {
                 </div>
               ))}
             </div>
-            <button
-              onClick={() => {
-                const traj = [...(wellData.trajectory || [])];
-                const lastPt = traj[traj.length - 1];
-                traj.push({ md: (lastPt?.md || 0) + 50, azimuth: lastPt?.azimuth || 0, zenith: lastPt?.zenith || 0, tvd: (lastPt?.tvd || 0) + 50 });
-                updateTrajectory(traj);
-              }}
-              className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              + Добавить точку
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs px-3 py-1.5 rounded-md border border-border text-foreground hover:bg-muted cursor-pointer transition-colors">
+                Импорт Excel (MD-азимут-зенит)
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleTrajectoryExcelUpload}
+                  className="hidden"
+                />
+              </label>
+              <button
+                onClick={() => {
+                  const traj = [...(wellData.trajectory || [])];
+                  const lastPt = traj[traj.length - 1];
+                  traj.push({ md: (lastPt?.md || 0) + 50, azimuth: lastPt?.azimuth || 0, zenith: lastPt?.zenith || 0, tvd: (lastPt?.tvd || 0) + 50 });
+                  updateTrajectory(traj);
+                }}
+                className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                + Добавить точку
+              </button>
+            </div>
           </CardContent>
         )}
       </Card>
