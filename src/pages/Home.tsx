@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
+import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
 import { supabase } from "@/integrations/supabase/client";
 
 const modules = [
@@ -19,7 +20,18 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="relative min-h-screen bg-background flex flex-col overflow-hidden">
+      <video
+        className="absolute inset-0 w-full h-full object-cover opacity-20"
+        autoPlay
+        muted
+        loop
+        playsInline
+      >
+        <source src={engineeringGraphBg} type="video/mp4" />
+      </video>
+      <div className="absolute inset-0 bg-background/75" />
+      <div className="relative z-10 min-h-screen flex flex-col">
       <header className="border-b border-border bg-card">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
@@ -113,6 +125,7 @@ export default function Home() {
           className="w-full h-20 sm:h-28 object-cover object-center opacity-30"
         />
       </footer>
+      </div>
     </div>
   );
 }

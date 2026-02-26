@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InputSection from "@/components/InputSection";
@@ -12,12 +12,11 @@ import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
-import { FileDown, Loader2, Send, Home, RotateCcw, Save } from "lucide-react";
+import { FileDown, Loader2, Send, Home, RotateCcw, Save, LogOut, LayoutDashboard } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import { useCementingSession } from "@/hooks/use-cementing-session";
-import { useEffect, useRef } from "react";
 
 interface CalcSnapshot {
   wellData: WellData;
@@ -47,7 +46,11 @@ export default function Index() {
   const [exporting, setExporting] = useState(false);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loadingSavedCalc, setLoadingSavedCalc] = useState(false);
   const [searchParams] = useSearchParams();
+  const calcId = searchParams.get("calc");
+  const selectedWellId = searchParams.get("well");
+  const fromDashboard = searchParams.get("from") === "dashboard";
 
   // Persistent counters from backend
   const [visitCount, setVisitCount] = useState<number>(0);
@@ -81,6 +84,72 @@ export default function Index() {
   }, [wellData.casingOD, wellData.casingWall, wellData.ckodDepth]);
 
   const [calcSnapshot, setCalcSnapshot] = useState<CalcSnapshot | null>(null);
+
+  useEffect(() => {
+    if (!calcId) return;
+
+    const loadSavedCalculation = async () => {
+      setLoadingSavedCalc(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert("Чтобы открыть сохранённый расчёт, войдите в аккаунт");
+        setLoadingSavedCalc(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("saved_calculations")
+        .select("*")
+        .eq("id", calcId)
+        .single();
+
+      if (error || !data) {
+        alert("Не удалось загрузить сохранённый расчёт");
+        setLoadingSavedCalc(false);
+        return;
+      }
+
+      if (data.user_id !== session.user.id) {
+        alert("Этот расчёт недоступен для вашего аккаунта");
+        setLoadingSavedCalc(false);
+        return;
+      }
+
+      const params = (data.calc_params ?? {}) as any;
+      const loadedWellData = (data.well_data ?? {}) as unknown as WellData;
+      const loadedDrillingFluid = (params.drillingFluid ?? drillingFluid) as DrillingFluid;
+      const loadedSlurries = (Array.isArray(params.slurries) ? params.slurries : []) as SlurryInput[];
+      const loadedBuffers = (Array.isArray(params.buffers) ? params.buffers : []) as BufferFluid[];
+      const loadedDisplacementFluids = (Array.isArray(params.displacementFluids) ? params.displacementFluids : []) as DisplacementFluid[];
+      const loadedFractureGradient = typeof params.fractureGradient === "number" ? params.fractureGradient : fractureGradient;
+      const loadedFlushTimeMin = typeof params.flushTimeMin === "number" ? params.flushTimeMin : flushTimeMin;
+      const loadedFlushVolumeM3 = typeof params.flushVolumeM3 === "number" ? params.flushVolumeM3 : flushVolumeM3;
+
+      setWellData(loadedWellData);
+      setDrillingFluid(loadedDrillingFluid);
+      setSlurries(loadedSlurries);
+      setBuffers(loadedBuffers);
+      setDisplacementFluids(loadedDisplacementFluids);
+      setFractureGradient(loadedFractureGradient);
+      setFlushTimeMin(loadedFlushTimeMin);
+      setFlushVolumeM3(loadedFlushVolumeM3);
+
+      setCalcSnapshot({
+        wellData: loadedWellData,
+        drillingFluid: loadedDrillingFluid,
+        slurries: loadedSlurries,
+        buffers: loadedBuffers,
+        displacementFluids: loadedDisplacementFluids,
+        fractureGradient: loadedFractureGradient,
+        flushTimeMin: loadedFlushTimeMin,
+        flushVolumeM3: loadedFlushVolumeM3,
+      });
+      setActiveTab("hydraulics");
+      setLoadingSavedCalc(false);
+    };
+
+    loadSavedCalculation();
+  }, [calcId]);
 
   const handleCalculate = useCallback(() => {
     setCalcSnapshot({ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 });
@@ -248,37 +317,121 @@ export default function Index() {
   const handleSaveToAccount = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-      const msg = "Для сохранения расчёта войдите в личный кабинет";
-      alert(msg);
+      alert("Для сохранения расчёта войдите в личный кабинет");
       return;
     }
-    // Check if user has any wells
-    const { data: userWells } = await supabase.from("wells").select("id, name").limit(1);
-    if (!userWells || userWells.length === 0) {
-      alert("Сначала создайте месторождение, куст и скважину в личном кабинете");
+
+    if (!selectedWellId) {
+      alert("Откройте расчёт из личного кабинета и выберите скважину, чтобы сохранить в нужную папку");
       return;
     }
+
     const wellName = prompt("Введите название расчёта:", `Расчёт ${new Date().toLocaleDateString("ru-RU")}`);
     if (!wellName) return;
+
+    const freshSnapshot: CalcSnapshot = {
+      wellData,
+      drillingFluid,
+      slurries,
+      buffers,
+      displacementFluids,
+      fractureGradient,
+      flushTimeMin,
+      flushVolumeM3,
+    };
+
+    const computedVolumes = calculateVolumes(freshSnapshot.wellData);
+    const computedMaterials = calculateMaterials(freshSnapshot.slurries, freshSnapshot.buffers, freshSnapshot.wellData);
+    const computedPressure = calculatePressureProfile(
+      freshSnapshot.wellData,
+      freshSnapshot.slurries,
+      freshSnapshot.buffers,
+      freshSnapshot.drillingFluid,
+      freshSnapshot.displacementFluids,
+      freshSnapshot.fractureGradient,
+      computedVolumes.displacementVolume,
+      freshSnapshot.flushTimeMin,
+      freshSnapshot.flushVolumeM3
+    );
+
     setSaving(true);
     try {
-      const { error } = await supabase.from("saved_calculations").insert({
-        user_id: session.user.id,
-        well_id: userWells[0].id,
-        module: "cementing",
-        title: wellName,
-        well_data: wellData as any,
-        calc_params: { slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3, drillingFluid } as any,
-        results: calcSnapshot ? { volumes, materials, pressureResult } as any : null,
-      } as any);
-      if (error) throw error;
-      alert("Расчёт сохранён!");
+      if (calcId) {
+        const { error } = await supabase
+          .from("saved_calculations")
+          .update({
+            title: wellName,
+            well_data: freshSnapshot.wellData as any,
+            calc_params: {
+              slurries,
+              buffers,
+              displacementFluids,
+              fractureGradient,
+              flushTimeMin,
+              flushVolumeM3,
+              drillingFluid,
+            } as any,
+            results: {
+              volumes: computedVolumes,
+              materials: computedMaterials,
+              pressureResult: computedPressure,
+            } as any,
+          } as any)
+          .eq("id", calcId)
+          .eq("user_id", session.user.id);
+
+        if (error) throw error;
+        alert("Расчёт обновлён в личном кабинете");
+      } else {
+        const { error } = await supabase.from("saved_calculations").insert({
+          user_id: session.user.id,
+          well_id: selectedWellId,
+          module: "cementing",
+          title: wellName,
+          well_data: freshSnapshot.wellData as any,
+          calc_params: {
+            slurries,
+            buffers,
+            displacementFluids,
+            fractureGradient,
+            flushTimeMin,
+            flushVolumeM3,
+            drillingFluid,
+          } as any,
+          results: {
+            volumes: computedVolumes,
+            materials: computedMaterials,
+            pressureResult: computedPressure,
+          } as any,
+        } as any);
+
+        if (error) throw error;
+        alert("Расчёт сохранён в личный кабинет");
+      }
+
+      setCalcSnapshot(freshSnapshot);
     } catch (e: any) {
       alert("Ошибка сохранения: " + e.message);
     } finally {
       setSaving(false);
     }
-  }, [wellData, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3, drillingFluid, calcSnapshot, volumes, materials, pressureResult]);
+  }, [
+    selectedWellId,
+    calcId,
+    wellData,
+    slurries,
+    buffers,
+    displacementFluids,
+    fractureGradient,
+    flushTimeMin,
+    flushVolumeM3,
+    drillingFluid,
+  ]);
+
+  const handleLogout = useCallback(async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/";
+  }, []);
 
   return (
     <div className="bg-background">
@@ -303,6 +456,7 @@ export default function Index() {
             </div>
           </div>
           <div className="flex items-center sm:flex-col sm:items-end gap-3 sm:gap-6 w-full sm:w-auto">
+            {loadingSavedCalc && <p className="text-xs text-muted-foreground">Загрузка сохранённого расчёта...</p>}
             <div className="flex items-center gap-3">
               <Link
                 to="/"
@@ -311,6 +465,24 @@ export default function Index() {
                 <Home className="w-4 h-4" />
                 <span>Главная</span>
               </Link>
+              {fromDashboard && (
+                <>
+                  <Link
+                    to="/dashboard"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs"
+                  >
+                    <LayoutDashboard className="w-4 h-4" />
+                    <span>Кабинет</span>
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-destructive transition-colors text-xs"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Выйти</span>
+                  </button>
+                </>
+              )}
               <a
                 href="https://t.me/deallbiz_support"
                 target="_blank"
