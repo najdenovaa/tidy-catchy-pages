@@ -210,7 +210,7 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   }
 
   if (isConfined) {
-    warnings.push(`✅ Замкнутая система: мост не может провалиться (буферу некуда уйти). Оценивается риск загрязнения интерфейса.`);
+    warnings.push(`✅ Мост стабилен.`);
   }
 
   if (d > 0) {
