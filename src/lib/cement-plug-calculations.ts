@@ -43,7 +43,11 @@ export interface PlugInputs {
   pullOutAbovePlugM: number;
   washType: WashType;
   washCycles: number;
-  tripSpeedMs: number; // скорость подъёма, м/с
+  tripSpeedMs: number;
+  pumpRateCementLs: number;
+  pumpRateSpacerLs: number;
+  pumpRateDisplacementLs: number;
+  pumpRateWashLs: number;
 }
 
 /* ───── Geometry helpers ───── */
@@ -67,6 +71,7 @@ export interface PumpingStage {
   name: string;
   fluid: string;
   volumeM3: number;
+  timeMin: number;
   description: string;
 }
 
@@ -112,6 +117,17 @@ export interface PlugResults {
   isOpenHole: boolean;
   cavernCoeff: number;
   boreDiamUsed: number;
+
+  // Timing
+  safeTimeMin: number;         // 0.75 × thickeningTimeMin
+  pumpTimeCementMin: number;
+  pumpTimeSpacerBelowMin: number;
+  pumpTimeSpacerAboveMin: number;
+  pumpTimeDisplacementMin: number;
+  tripTimeMin: number;
+  washTimeMin: number;
+  totalOperationTimeMin: number; // from cement pump start → wash complete
+  isTimeSafe: boolean;
 }
 
 export interface FluidColumn {
@@ -128,7 +144,7 @@ export interface FluidColumn {
 /* ───── Main calculation ───── */
 
 export function calculateBalancedPlug(input: PlugInputs): PlugResults {
-  const { well, plug, cement, spacer, wellFluid, spacerVolumeAboveM3, spacerVolumeBelowM3, thickeningTimeMin, pullOutAbovePlugM, washType, washCycles, tripSpeedMs } = input;
+  const { well, plug, cement, spacer, wellFluid, spacerVolumeAboveM3, spacerVolumeBelowM3, thickeningTimeMin, pullOutAbovePlugM, washType, washCycles, tripSpeedMs, pumpRateCementLs, pumpRateSpacerLs, pumpRateDisplacementLs, pumpRateWashLs } = input;
 
   const isOpenHole = plug.bottomMD > well.casingShoe;
   const cavernCoeff = isOpenHole ? Math.max(1, well.cavernCoeff || 1) : 1;
@@ -279,6 +295,20 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   }
   const washVolumeM3 = washOneCycleVolume * washCycles;
 
+  // ─── Timing calculations ───
+  const volToMin = (volM3: number, qLs: number) => qLs > 0 ? (volM3 * 1000 / qLs) / 60 : 0;
+
+  const pumpTimeSpacerBelowMin = volToMin(spacerVolumeBelowM3, pumpRateSpacerLs);
+  const pumpTimeCementMin = volToMin(cementVolTotal, pumpRateCementLs);
+  const pumpTimeSpacerAboveMin = volToMin(spacerVolumeAboveM3 + pipeA * spacerAboveHeightAnn, pumpRateSpacerLs);
+  const pumpTimeDisplacementMin = volToMin(displacementVolume, pumpRateDisplacementLs);
+  const tripTimeMin = tripTimeSec / 60;
+  const washTimeMin = volToMin(washVolumeM3, pumpRateWashLs);
+
+  const safeTimeMin = 0.75 * thickeningTimeMin;
+  const totalOperationTimeMin = pumpTimeCementMin + pumpTimeSpacerAboveMin + pumpTimeDisplacementMin + tripTimeMin + washTimeMin;
+  const isTimeSafe = totalOperationTimeMin <= safeTimeMin;
+
   // Pumping stages (including pull-out and wash)
   const pumpingStages: PumpingStage[] = [];
 
@@ -287,7 +317,8 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
       name: "Нижний буфер",
       fluid: `${spacer.name} (${spacer.density} г/см³)`,
       volumeM3: spacerVolumeBelowM3,
-      description: `Буферная жидкость ниже моста (под башмаком труб). Высота: ${spacerBelowHeightAnn.toFixed(1)} м`,
+      timeMin: pumpTimeSpacerBelowMin,
+      description: `Буферная жидкость ниже моста. Высота: ${spacerBelowHeightAnn.toFixed(1)} м`,
     });
   }
 
@@ -295,15 +326,17 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     name: "Цементный раствор",
     fluid: `${cement.name} (${cement.density} г/см³)`,
     volumeM3: cementVolTotal,
-    description: `Заполнение интервала моста. Затрубье: ${cementHeightAnnMD.toFixed(1)} м, трубы: ${cementHeightPipeMD.toFixed(1)} м`,
+    timeMin: pumpTimeCementMin,
+    description: `Интервал моста. Затрубье: ${cementHeightAnnMD.toFixed(1)} м, трубы: ${cementHeightPipeMD.toFixed(1)} м`,
   });
 
   if (spacerVolumeAboveM3 > 0) {
     pumpingStages.push({
       name: "Верхний буфер",
       fluid: `${spacer.name} (${spacer.density} г/см³)`,
-      volumeM3: spacerVolumeAboveM3 + (pipeA * spacerAbovePipeHeight),
-      description: `Буферная жидкость сверху цемента. Высота в затрубье: ${spacerAboveHeightAnn.toFixed(1)} м`,
+      volumeM3: spacerVolumeAboveM3 + (pipeA * spacerAboveHeightAnn),
+      timeMin: pumpTimeSpacerAboveMin,
+      description: `Буфер сверху цемента. Высота: ${spacerAboveHeightAnn.toFixed(1)} м`,
     });
   }
 
@@ -311,14 +344,16 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     name: "Продавка",
     fluid: `${wellFluid.name} (${wellFluid.density} г/см³)`,
     volumeM3: displacementVolume,
-    description: "Продавка до установки гидростатического равновесия",
+    timeMin: pumpTimeDisplacementMin,
+    description: "Продавка до установки равновесия",
   });
 
   pumpingStages.push({
     name: "Подъём инструмента",
     fluid: "—",
     volumeM3: 0,
-    description: `Подъём на ${pullOutAbovePlugM} м выше кровли (до ${pullOutDepthMD} м). Скорость: ${effectiveTripSpeed.toFixed(2)} м/с, время: ${(tripTimeSec / 60).toFixed(1)} мин`,
+    timeMin: tripTimeMin,
+    description: `До ${pullOutDepthMD} м. V=${effectiveTripSpeed.toFixed(2)} м/с`,
   });
 
   const washTypeText = washType === 'direct' ? 'прямая' : 'обратная';
@@ -326,7 +361,8 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     name: `Промывка (${washTypeText})`,
     fluid: `${wellFluid.name}`,
     volumeM3: washVolumeM3,
-    description: `${washCycles} цикл(а/ов), 1 цикл = ${washOneCycleVolume.toFixed(2)} м³ (подъём забойной пачки на поверхность)`,
+    timeMin: washTimeMin,
+    description: `${washCycles} ц., 1 ц.= ${washOneCycleVolume.toFixed(2)} м³`,
   });
 
   const processDescription = [
@@ -383,5 +419,14 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     isOpenHole,
     cavernCoeff,
     boreDiamUsed: boreDiam,
+    safeTimeMin: Math.round(safeTimeMin * 10) / 10,
+    pumpTimeCementMin: Math.round(pumpTimeCementMin * 10) / 10,
+    pumpTimeSpacerBelowMin: Math.round(pumpTimeSpacerBelowMin * 10) / 10,
+    pumpTimeSpacerAboveMin: Math.round(pumpTimeSpacerAboveMin * 10) / 10,
+    pumpTimeDisplacementMin: Math.round(pumpTimeDisplacementMin * 10) / 10,
+    tripTimeMin: Math.round(tripTimeMin * 10) / 10,
+    washTimeMin: Math.round(washTimeMin * 10) / 10,
+    totalOperationTimeMin: Math.round(totalOperationTimeMin * 10) / 10,
+    isTimeSafe,
   };
 }

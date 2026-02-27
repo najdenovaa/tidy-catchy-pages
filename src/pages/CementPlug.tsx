@@ -51,6 +51,10 @@ interface SessionState {
   slurryYield: number;
   additives: { name: string; percent: number }[];
   spacerAdditives: { name: string; percent: number }[];
+  pumpRateCement: number;
+  pumpRateSpacer: number;
+  pumpRateDisplacement: number;
+  pumpRateWash: number;
 }
 
 function loadSession(): Partial<SessionState> {
@@ -101,14 +105,18 @@ export default function CementPlug() {
   const [slurryYield, setSlurryYield] = useState(saved.slurryYield ?? 0.63);
   const [additives, setAdditives] = useState<{ name: string; percent: number }[]>(saved.additives || []);
   const [spacerAdditives, setSpacerAdditives] = useState<{ name: string; percent: number }[]>(saved.spacerAdditives || []);
+  const [pumpRateCement, setPumpRateCement] = useState(saved.pumpRateCement ?? 3); // л/с
+  const [pumpRateSpacer, setPumpRateSpacer] = useState(saved.pumpRateSpacer ?? 5); // л/с
+  const [pumpRateDisplacement, setPumpRateDisplacement] = useState(saved.pumpRateDisplacement ?? 8); // л/с
+  const [pumpRateWash, setPumpRateWash] = useState(saved.pumpRateWash ?? 10); // л/с
 
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash]);
 
   /* ── Spacer height preview (real-time) ── */
   const isOpenHole = plug.bottomMD > well.casingShoe;
@@ -180,6 +188,10 @@ export default function CementPlug() {
     washType,
     washCycles,
     tripSpeedMs: tripSpeed,
+    pumpRateCementLs: pumpRateCement,
+    pumpRateSpacerLs: pumpRateSpacer,
+    pumpRateDisplacementLs: pumpRateDisplacement,
+    pumpRateWashLs: pumpRateWash,
   });
 
   const calculate = () => {
@@ -327,7 +339,11 @@ export default function CementPlug() {
                         <Field label="YP" value={cement.rheology.yp} onChange={v => setCement(c => ({ ...c, rheology: { ...c.rheology, yp: num(v) } }))} unit="Па" />
                       </div>
                       <div className="grid grid-cols-2 gap-2 mt-2">
-                        <Field label="Время загустевания" value={thickeningTime} onChange={v => setThickeningTime(num(v))} unit="мин" />
+                        <Field label="Время загустевания (50Bc)" value={thickeningTime} onChange={v => setThickeningTime(num(v))} unit="мин" />
+                        <div className="space-y-1">
+                          <Label className="text-xs">Безопасное время (0.75×50Bc)</Label>
+                          <div className="h-8 flex items-center text-xs font-semibold text-amber-400">{(thickeningTime * 0.75).toFixed(0)} мин</div>
+                        </div>
                       </div>
                       <Separator className="my-2" />
                       <p className="text-[10px] font-medium text-muted-foreground mb-1">Рецептура</p>
@@ -412,6 +428,14 @@ export default function CementPlug() {
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <CardContent className="pt-0 space-y-3">
+                    <p className="text-[10px] font-medium text-muted-foreground">Производительность насосов</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <Field label="Q цемент" value={pumpRateCement} onChange={v => setPumpRateCement(num(v))} unit="л/с" />
+                      <Field label="Q буфер" value={pumpRateSpacer} onChange={v => setPumpRateSpacer(num(v))} unit="л/с" />
+                      <Field label="Q продавка" value={pumpRateDisplacement} onChange={v => setPumpRateDisplacement(num(v))} unit="л/с" />
+                      <Field label="Q промывка" value={pumpRateWash} onChange={v => setPumpRateWash(num(v))} unit="л/с" />
+                    </div>
+                    <Separator />
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       <Field label="Подъём над кровлей моста" value={pullOutAbove} onChange={v => setPullOutAbove(num(v))} unit="м" />
                       <Field label="Кол-во циклов промывки" value={washCycles} onChange={v => setWashCycles(Math.max(1, num(v)))} unit="" />
@@ -480,9 +504,25 @@ export default function CementPlug() {
                       <Separator className="col-span-full my-1" />
                       <ResultRow label="Подъём на промывку до" value={results.pullOutDepthMD} unit="м MD" />
                       <ResultRow label="Скорость подъёма" value={results.tripSpeedMs.toFixed(2)} unit="м/с" raw />
-                      <ResultRow label="Время подъёма" value={(results.tripTimeSec / 60).toFixed(1)} unit="мин" raw />
                       <ResultRow label={`Промывка (${results.washType === 'direct' ? 'прямая' : 'обратная'}, ${results.washCycles} ц.)`} value={results.washVolumeM3} unit="м³" />
-                      <ResultRow label="Загустевание цемента" value={results.thickeningTimeMin} unit="мин" />
+                      <Separator className="col-span-full my-1" />
+                      <div className="col-span-full text-[10px] font-semibold text-muted-foreground">⏱ Хронометраж операции (от начала закачки цемента)</div>
+                      <ResultRow label="Закачка цемента" value={results.pumpTimeCementMin.toFixed(1)} unit="мин" raw />
+                      {results.pumpTimeSpacerAboveMin > 0 && (
+                        <ResultRow label="Закачка верх. буфера" value={results.pumpTimeSpacerAboveMin.toFixed(1)} unit="мин" raw />
+                      )}
+                      <ResultRow label="Продавка" value={results.pumpTimeDisplacementMin.toFixed(1)} unit="мин" raw />
+                      <ResultRow label="Подъём инструмента" value={results.tripTimeMin.toFixed(1)} unit="мин" raw />
+                      <ResultRow label="Промывка" value={results.washTimeMin.toFixed(1)} unit="мин" raw />
+                      <Separator className="col-span-full my-1" />
+                      <ResultRow label="Итого время операции" value={results.totalOperationTimeMin.toFixed(1)} unit="мин" raw highlight />
+                      <ResultRow label="Загустевание (50Bc)" value={results.thickeningTimeMin} unit="мин" />
+                      <ResultRow label="Безопасное время (0.75×50Bc)" value={results.safeTimeMin.toFixed(0)} unit="мин" raw highlight />
+                      <div className={`col-span-full text-xs font-bold mt-1 ${results.isTimeSafe ? 'text-green-400' : 'text-destructive'}`}>
+                        {results.isTimeSafe 
+                          ? `✅ Запас: ${(results.safeTimeMin - results.totalOperationTimeMin).toFixed(1)} мин` 
+                          : `⛔ Превышение на ${(results.totalOperationTimeMin - results.safeTimeMin).toFixed(1)} мин! Увеличьте производительность или время загустевания`}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -501,6 +541,7 @@ export default function CementPlug() {
                             <TableHead className="text-xs">Этап</TableHead>
                             <TableHead className="text-xs">Жидкость</TableHead>
                             <TableHead className="text-xs text-right">Объём, м³</TableHead>
+                            <TableHead className="text-xs text-right">Время, мин</TableHead>
                             <TableHead className="text-xs">Описание</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -511,6 +552,7 @@ export default function CementPlug() {
                               <TableCell className="text-xs font-medium">{stage.name}</TableCell>
                               <TableCell className="text-xs text-muted-foreground">{stage.fluid}</TableCell>
                               <TableCell className="text-xs text-right font-medium">{stage.volumeM3 > 0 ? stage.volumeM3.toFixed(3) : "—"}</TableCell>
+                              <TableCell className="text-xs text-right font-medium">{stage.timeMin > 0 ? stage.timeMin.toFixed(1) : "—"}</TableCell>
                               <TableCell className="text-xs text-muted-foreground max-w-[200px]">{stage.description}</TableCell>
                             </TableRow>
                           ))}
