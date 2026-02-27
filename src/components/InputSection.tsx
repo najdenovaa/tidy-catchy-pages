@@ -209,14 +209,30 @@ export default function InputSection(props: Props) {
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
 
-  // Fracture risk checker — используем TVD из траектории, плотность конкретного флюида
-  const fracCheck = (rateLps: number, fluidDensity: number, fluidPv: number, fluidYp: number): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
+  // Fracture risk checker — единый расчёт: полное затрубное давление (цементы + буровой раствор) + трение при данной производительности
+  const fracCheck = (rateLps: number, _fluidDensity: number, fluidPv: number, fluidYp: number): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
     const bottomTVD = interpolateTVD(wellData.casingDepthMD, wellData.trajectory);
     if (fractureGradient <= 0 || bottomTVD <= 0 || rateLps <= 0) return null;
     const fracP = (fractureGradient * bottomTVD) / 1000;
-    // Гидростатика — от плотности конкретного флюида в затрубье, не от макс. плотности
-    const densityGcm3 = fluidDensity / 1000;
-    const hydroStatic = hydrostaticPressure(densityGcm3, bottomTVD);
+
+    // Полное гидростатическое давление в затрубье = цементные столбы + бур. раствор сверху
+    let annHydrostatic = 0;
+    let cementTVDtotal = 0;
+    slurries.forEach((s, i) => {
+      const hMD = getSlurryHeight(slurries, i, wellData.casingDepthMD);
+      if (hMD > 0) {
+        const lastIdx = slurries.length - 1;
+        const bottomMD = i === lastIdx ? wellData.casingDepthMD : slurries[i + 1].topDepthMD;
+        const hTVD = bottomMD > s.topDepthMD ? interpolateTVD(bottomMD, wellData.trajectory) - interpolateTVD(s.topDepthMD, wellData.trajectory) : 0;
+        annHydrostatic += hydrostaticPressure(s.density, Math.max(0, hTVD));
+        cementTVDtotal += Math.max(0, hTVD);
+      }
+    });
+    const mudHeightTVD = Math.max(0, bottomTVD - cementTVDtotal);
+    const mudDensityGcm3 = drillingFluid.density / 1000;
+    annHydrostatic += hydrostaticPressure(mudDensityGcm3 > 0 ? mudDensityGcm3 : 1.1, mudHeightTVD);
+
+    // Потери на трение в затрубье
     const dHole = wellData.holeDiameter / 1000;
     const dCas = wellData.casingOD / 1000;
     const dHyd = dHole - dCas;
@@ -224,12 +240,12 @@ export default function InputSection(props: Props) {
     const area = (Math.PI / 4) * (dHole * dHole - dCas * dCas);
     const velocity = (rateLps / 1000) / area;
     const pvPas = fluidPv / 1000;
-    // Трение — по длине ствола (MD)
     const frLoss = (32 * pvPas * velocity * wellData.casingDepthMD) / (dHyd * dHyd) / 1e6;
     const ypLoss = (16 * fluidYp * wellData.casingDepthMD) / (3 * dHyd) / 1e6;
-    const frictionLoss = frLoss + ypLoss;
-    const ecd = hydroStatic + frictionLoss;
-    return { risk: ecd > fracP, ecd, fracP, hydroStatic, frictionLoss };
+    const frictionLoss = (frLoss + ypLoss) * 0.8; // коэфф. затрубного трения
+
+    const ecd = annHydrostatic + frictionLoss;
+    return { risk: ecd > fracP, ecd, fracP, hydroStatic: annHydrostatic, frictionLoss };
   };
 
   const handleWellChange = (key: WellNumericKey, value: string) => {
@@ -607,6 +623,7 @@ export default function InputSection(props: Props) {
                   steps={b.flowRateSteps}
                   totalVolume={b.volume}
                   onChange={(steps) => { const u = [...buffers]; u[idx] = { ...u[idx], flowRateSteps: steps }; onBuffersChange(u); }}
+                  fracCheck={(rateLps) => fracCheck(rateLps, b.density, b.rheology.pv, b.rheology.yp)}
                 />
                 {/* Добавки */}
                 <div className="space-y-1">
@@ -703,6 +720,7 @@ export default function InputSection(props: Props) {
                     steps={s.flowRateSteps}
                     totalVolume={height > 0 ? annVPM * height : 0}
                     onChange={(steps) => { const u = [...slurries]; u[idx] = { ...u[idx], flowRateSteps: steps }; onSlurriesChange(u); }}
+                    fracCheck={(rateLps) => fracCheck(rateLps, s.density * 1000, s.rheology.pv, s.rheology.yp)}
                   />
                   {/* Добавки */}
                   <div className="space-y-1">
