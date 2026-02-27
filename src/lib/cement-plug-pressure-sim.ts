@@ -11,14 +11,18 @@ import type { PlugInputs, PlugResults } from "./cement-plug-calculations";
 export interface PressureTimePoint {
   timeMin: number;
   stage: string;
-  pumpRateLs: number;      // л/с
-  volumePumpedM3: number;   // cumulative volume pumped, м³
-  bhpMPa: number;           // bottomhole (plug bottom) pressure, MPa
-  surfaceMPa: number;       // surface (pump) pressure, MPa
-  fracMPa: number;          // frac pressure at shoe TVD, MPa (constant line)
+  pumpRateLs: number;
+  volumePumpedM3: number;
+  volSpacerM3: number;    // cumulative spacer volume
+  volCementM3: number;    // cumulative cement volume
+  volDisplM3: number;     // cumulative displacement volume
+  volWashM3: number;      // cumulative wash volume
+  bhpMPa: number;
+  surfaceMPa: number;
+  fracMPa: number;
   hydroStaticAnnMPa: number;
   hydroStaticPipeMPa: number;
-  frictionMPa: number;      // total friction (pipe + annulus)
+  frictionMPa: number;
 }
 
 /* ───── Helpers ───── */
@@ -127,6 +131,10 @@ export function simulatePlugPressures(
 
   let timeMin = 0;
   let cumulativeVolumeM3 = 0;
+  let cumSpacer = 0;
+  let cumCite = 0;
+  let cumDispl = 0;
+  let cumWash = 0;
 
   // Helper: compute hydrostatic from a list of fluid segments over a given total length
   // Segments are ordered from one end; we need TVD-weighted pressures
@@ -259,6 +267,10 @@ export function simulatePlugPressures(
       stage,
       pumpRateLs: rateLs,
       volumePumpedM3: cumulativeVolumeM3,
+      volSpacerM3: cumSpacer,
+      volCementM3: cumCite,
+      volDisplM3: cumDispl,
+      volWashM3: cumWash,
       bhpMPa: bhp,
       surfaceMPa: surface,
       fracMPa,
@@ -286,6 +298,9 @@ export function simulatePlugPressures(
       pumpVolume(fluid, dVol);
       timeMin += actualDt;
       cumulativeVolumeM3 += dVol;
+      if (fluid === 'spacer') cumSpacer += dVol;
+      else if (fluid === 'cement') cumCite += dVol;
+      else cumDispl += dVol;
       points.push(computePoint(name, rateLs));
     }
   }
@@ -308,7 +323,9 @@ export function simulatePlugPressures(
     const washDt = washTimeMin / washSteps;
     for (let s = 0; s < washSteps; s++) {
       timeMin += washDt;
-      // During wash, friction is present but fluid columns are mostly mud
+      const dWashVol = results.washVolumeM3 / washSteps;
+      cumulativeVolumeM3 += dWashVol;
+      cumWash += dWashVol;
       points.push(computePoint('Промывка', input.pumpRateWashLs));
     }
   }
