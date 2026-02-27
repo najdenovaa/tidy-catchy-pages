@@ -328,11 +328,12 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
         const sTop = mode === 'wash' ? spacerWashTop : (cementTopMD - results.spacerAboveHeightAnnMD);
         const sBot = mode === 'wash' ? plug.topMD : cementTopMD;
         const sHeight = mode === 'wash' ? spacerWashHeight : results.spacerAboveHeightAnnMD;
+        const note = mode === 'equilibrium' ? ' (с БИ)' : '';
         return (
           <SideAnnotation x={annX}
             yTop={clampY(sTop)}
             yBot={clampY(sBot)}
-            label={`Буфер ↕${sHeight.toFixed(1)}м`} color="#4FC3F7" />
+            label={`Буфер ↕${sHeight.toFixed(1)}м${note}`} color="#4FC3F7" />
         );
       })()}
 
@@ -341,7 +342,7 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
         <SideAnnotation x={annX}
           yTop={clampY(cementTopMD)}
           yBot={clampY(plug.bottomMD)}
-          label={`Цемент ↕${results.cementHeightAnnMD.toFixed(1)}м`} color="#B0BEC5" />
+          label={`Цемент ↕${results.cementHeightAnnMD.toFixed(1)}м (с БИ)`} color="#B0BEC5" />
       ) : (
         <SideAnnotation x={annX}
           yTop={clampY(plug.topMD)}
