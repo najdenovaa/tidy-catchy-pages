@@ -239,23 +239,40 @@ function PlugSVG({ results, inputs, mode }: Props & { mode: 'equilibrium' | 'was
         </>
       ) : (
         <>
-          {/* WASH MODE: cement settled to plug interval, spacers/mud fill rest */}
-          {/* First draw ALL annulus fluid columns across full bore — this fills everything */}
-          {annCols.map((col, i) => {
-            const yTop = clampY(col.topMD);
-            const yBot = clampY(col.bottomMD);
-            const h = yBot - yTop;
-            if (h <= 0) return null;
-            const gradId = getGradId(col.color, mode);
-            return (
-              <rect key={`wash-ann-${i}`} x={cx - borePx / 2 + 4} y={yTop} width={borePx - 8} height={h}
-                fill={`url(#${gradId})`} opacity={0.85} />
-            );
-          })}
-          {/* Override: settled cement plug at full bore (plug.topMD to plug.bottomMD) */}
-          <rect x={cx - borePx / 2 + 4} y={clampY(plug.topMD)}
-            width={borePx - 8} height={clampY(plug.bottomMD) - clampY(plug.topMD)}
-            fill={`url(#cp-cement-grad-${mode})`} opacity={0.9} />
+          {/* WASH MODE: cement settled to plug interval only */}
+          {/* Rebuild columns: replace cement with settled plug, fill freed zone with mud */}
+          {(() => {
+            // Build wash-mode columns: clip cement to plug interval, fill above with spacer/mud
+            const washCols: typeof annCols = [];
+            for (const col of annCols) {
+              const isCement = col.color === '#B0BEC5';
+              if (isCement) {
+                // Only draw cement within plug interval
+                const clippedTop = Math.max(col.topMD, plug.topMD);
+                const clippedBot = Math.min(col.bottomMD, plug.bottomMD);
+                // Fill zone above plug.topMD (freed cement) with spacer if spacer existed, otherwise mud
+                if (col.topMD < plug.topMD) {
+                  washCols.push({ ...col, bottomMD: plug.topMD, color: '#4FC3F7', label: 'Буфер (осел)' });
+                }
+                if (clippedBot > clippedTop) {
+                  washCols.push({ ...col, topMD: clippedTop, bottomMD: clippedBot });
+                }
+              } else {
+                washCols.push(col);
+              }
+            }
+            return washCols.map((col, i) => {
+              const yTop = clampY(col.topMD);
+              const yBot = clampY(col.bottomMD);
+              const h = yBot - yTop;
+              if (h <= 0) return null;
+              const gradId = getGradId(col.color, mode);
+              return (
+                <rect key={`wash-ann-${i}`} x={cx - borePx / 2 + 4} y={yTop} width={borePx - 8} height={h}
+                  fill={`url(#${gradId})`} opacity={0.85} />
+              );
+            });
+          })()}
           {/* Pipe above cement with tool joint */}
           {showPipe && pipeBottomY > pipeTopY && (
             <>
