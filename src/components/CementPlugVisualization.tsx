@@ -397,15 +397,28 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
           </>
         )}
 
-        {/* ─── CONTAMINATION ZONE at cement/spacer interface ─── */}
-        {contaminationPx > 0 && mode === 'wash' && (
-          <ContaminationZone
-            cx={cx}
-            borePx={borePx}
-            interfaceY={cementBottomY}
-            contaminationPx={contaminationPx}
-            mode={mode}
-          />
+        {/* ─── CONTAMINATION ZONE at cement/spacer interfaces ─── */}
+        {contaminationPx > 0 && (
+          <>
+            {/* Bottom interface: cement/spacer below */}
+            {results.spacerVolumeBelow > 0 && (
+              <ContaminationZone
+                cx={cx}
+                borePx={borePx}
+                interfaceY={cementBottomY}
+                contaminationPx={contaminationPx}
+                mode={mode + '-bot'}
+              />
+            )}
+            {/* Top interface: spacer above/cement */}
+            <ContaminationZone
+              cx={cx}
+              borePx={borePx}
+              interfaceY={clampY(mode === 'wash' ? plug.topMD : cementTopMD)}
+              contaminationPx={contaminationPx * 0.7}
+              mode={mode + '-top'}
+            />
+          </>
         )}
 
         {/* ─── SIDE ANNOTATIONS ─── */}
