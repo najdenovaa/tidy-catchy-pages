@@ -115,6 +115,11 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
   // Compute cement top during placement (above plug.topMD due to steel)
   const cementTopMD = plug.bottomMD - results.cementHeightAnnMD;
 
+  // Wash mode: spacer recalculated for full bore (no pipe)
+  const boreAreaM2 = (Math.PI / 4) * ((results.boreDiamUsed || well.holeDiameter) / 1000) ** 2;
+  const spacerWashHeight = boreAreaM2 > 0 ? inputs.spacerVolumeAboveM3 / boreAreaM2 : results.spacerAboveHeightAnnMD;
+  const spacerWashTop = plug.topMD - spacerWashHeight;
+
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-md mx-auto" style={{ fontFamily: 'system-ui, sans-serif' }}>
       <defs>
@@ -245,28 +250,41 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
           {/* WASH MODE: cement settled to plug interval only */}
           {/* Rebuild columns: replace cement with settled plug, fill freed zone with mud */}
           {(() => {
-            // Build wash-mode columns: cement only within plug interval, 
-            // merge freed cement zone into adjacent spacer above
+            // In wash mode: pipe removed, cement settles to plug interval.
+            // Spacer keeps same volume but recalculates height for full bore (no pipe).
+            // Freed zone between old cement top and spacer fills with mud.
+            const boreAreaM2 = (Math.PI / 4) * ((results.boreDiamUsed || well.holeDiameter) / 1000) ** 2;
+            const spacerAboveVol = inputs.spacerVolumeAboveM3;
+            const spacerWashHeight = boreAreaM2 > 0 ? spacerAboveVol / boreAreaM2 : results.spacerAboveHeightAnnMD;
+            const spacerWashBottom = plug.topMD;
+            const spacerWashTop = plug.topMD - spacerWashHeight;
+            // Freed zone: from old cementTopMD to spacerWashTop → mud
+            const freedTop = cementTopMD;
+            const freedBottom = spacerWashTop;
+
             const washCols: typeof annCols = [];
             for (const col of annCols) {
               const isCement = col.color === '#B0BEC5';
+              const isSpacer = col.color === '#4FC3F7';
               if (isCement) {
                 // Clip cement to plug interval only
-                const clippedTop = Math.max(col.topMD, plug.topMD);
-                const clippedBot = Math.min(col.bottomMD, plug.bottomMD);
-                if (clippedBot > clippedTop) {
-                  washCols.push({ ...col, topMD: clippedTop, bottomMD: clippedBot });
-                }
+                const ct = Math.max(col.topMD, plug.topMD);
+                const cb = Math.min(col.bottomMD, plug.bottomMD);
+                if (cb > ct) washCols.push({ ...col, topMD: ct, bottomMD: cb });
+              } else if (isSpacer && col.bottomMD <= cementTopMD + 1 && col.topMD < cementTopMD) {
+                // Upper spacer: reposition to sit just above plug.topMD with recalculated height
+                washCols.push({ ...col, topMD: spacerWashTop, bottomMD: spacerWashBottom });
               } else {
-                const isSpacer = col.color === '#4FC3F7';
-                // Extend upper spacer down to plug.topMD (absorbs freed cement zone)
-                if (isSpacer && col.bottomMD <= plug.topMD + 1 && col.topMD < plug.topMD) {
-                  washCols.push({ ...col, bottomMD: plug.topMD });
-                } else {
-                  washCols.push(col);
-                }
+                washCols.push(col);
               }
             }
+            // Insert mud for freed zone if it exists
+            if (freedBottom > freedTop + 0.1) {
+              washCols.push({ label: inputs.wellFluid.name, topMD: freedTop, bottomMD: freedBottom, topTVD: 0, bottomTVD: 0, densityGcm3: inputs.wellFluid.density, location: 'annulus', color: '#8B7355' });
+            }
+            // Sort by topMD
+            washCols.sort((a, b) => a.topMD - b.topMD);
+
             return washCols.map((col, i) => {
               const yTop = clampY(col.topMD);
               const yBot = clampY(col.bottomMD);
@@ -296,23 +314,28 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
       {/* ─── SIDE ANNOTATIONS ─── */}
       {/* Mud above spacer */}
       {(() => {
-        const mudBottomMD = cementTopMD - results.spacerAboveHeightAnnMD;
-        if (mudBottomMD > viewTop) {
+        const spacerTopMD = mode === 'wash' ? spacerWashTop : (cementTopMD - results.spacerAboveHeightAnnMD);
+        if (spacerTopMD > viewTop) {
           return (
-            <SideAnnotation x={annX} yTop={clampY(viewTop)} yBot={clampY(mudBottomMD)}
+            <SideAnnotation x={annX} yTop={clampY(viewTop)} yBot={clampY(spacerTopMD)}
               label={`${inputs.wellFluid.name.substring(0, 12)}`} color="#A1887F" />
           );
         }
         return null;
       })()}
 
-      {/* Upper spacer — in wash mode extends down to plug.topMD */}
-      {results.spacerAboveHeightAnnMD > 0 && (
-        <SideAnnotation x={annX}
-          yTop={clampY(cementTopMD - results.spacerAboveHeightAnnMD)}
-          yBot={clampY(mode === 'wash' ? plug.topMD : cementTopMD)}
-          label={`Буфер ↕${(mode === 'wash' ? (plug.topMD - (cementTopMD - results.spacerAboveHeightAnnMD)) : results.spacerAboveHeightAnnMD).toFixed(1)}м`} color="#4FC3F7" />
-      )}
+      {/* Upper spacer */}
+      {results.spacerAboveHeightAnnMD > 0 && (() => {
+        const sTop = mode === 'wash' ? spacerWashTop : (cementTopMD - results.spacerAboveHeightAnnMD);
+        const sBot = mode === 'wash' ? plug.topMD : cementTopMD;
+        const sHeight = mode === 'wash' ? spacerWashHeight : results.spacerAboveHeightAnnMD;
+        return (
+          <SideAnnotation x={annX}
+            yTop={clampY(sTop)}
+            yBot={clampY(sBot)}
+            label={`Буфер ↕${sHeight.toFixed(1)}м`} color="#4FC3F7" />
+        );
+      })()}
 
       {/* Cement */}
       {mode === 'equilibrium' ? (
