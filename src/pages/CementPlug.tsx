@@ -2,8 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Send, Home, Calculator, ArrowLeft } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { DebouncedInput } from "@/components/DebouncedInput";
+import { BlurInput } from "@/components/BlurInput";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -117,7 +116,7 @@ export default function CementPlug() {
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">
       <Label className="text-xs">{label}{unit ? ` (${unit})` : ""}</Label>
-      <DebouncedInput type="number" step="any" value={value || ""} onChange={e => onChange(e.target.value)} className="h-8 text-xs" delay={400} />
+      <BlurInput type="number" step="any" value={value || ""} onValueCommit={onChange} className="h-8 text-xs" />
     </div>
   );
 
@@ -191,9 +190,9 @@ export default function CementPlug() {
                         <tbody>
                           {trajPoints.map((p, i) => (
                             <tr key={i}>
-                              <td><DebouncedInput type="number" className="h-6 text-[10px] w-16" value={p.md || ""} onChange={e => updateTrajPoint(i, "md", e.target.value)} delay={400} /></td>
-                              <td><DebouncedInput type="number" className="h-6 text-[10px] w-16" value={p.azimuth || ""} onChange={e => updateTrajPoint(i, "azimuth", e.target.value)} delay={400} /></td>
-                              <td><DebouncedInput type="number" className="h-6 text-[10px] w-16" value={p.zenith || ""} onChange={e => updateTrajPoint(i, "zenith", e.target.value)} delay={400} /></td>
+                              <td><BlurInput type="number" className="h-6 text-[10px] w-16" value={p.md || ""} onValueCommit={v => updateTrajPoint(i, "md", v)} /></td>
+                              <td><BlurInput type="number" className="h-6 text-[10px] w-16" value={p.azimuth || ""} onValueCommit={v => updateTrajPoint(i, "azimuth", v)} /></td>
+                              <td><BlurInput type="number" className="h-6 text-[10px] w-16" value={p.zenith || ""} onValueCommit={v => updateTrajPoint(i, "zenith", v)} /></td>
                               <td className="text-center text-muted-foreground">{p.tvd?.toFixed(1)}</td>
                               <td>{trajPoints.length > 1 && <button className="text-destructive text-[10px]" onClick={() => removeTrajPoint(i)}>✕</button>}</td>
                             </tr>
@@ -242,7 +241,7 @@ export default function CementPlug() {
                     <div>
                       <p className="text-xs font-semibold mb-1">Цементный раствор</p>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <div className="space-y-1"><Label className="text-xs">Название</Label><DebouncedInput className="h-8 text-xs" value={cement.name} onChange={e => setCement(c => ({ ...c, name: e.target.value }))} delay={400} /></div>
+                        <div className="space-y-1"><Label className="text-xs">Название</Label><BlurInput className="h-8 text-xs" value={cement.name} onValueCommit={v => setCement(c => ({ ...c, name: v }))} /></div>
                         <Field label="Плотность" value={cement.density} onChange={v => setCement(c => ({ ...c, density: num(v) }))} unit="г/см³" />
                         <Field label="PV" value={cement.rheology.pv} onChange={v => setCement(c => ({ ...c, rheology: { ...c.rheology, pv: num(v) } }))} unit="сПз" />
                         <Field label="YP" value={cement.rheology.yp} onChange={v => setCement(c => ({ ...c, rheology: { ...c.rheology, yp: num(v) } }))} unit="Па" />
@@ -253,7 +252,7 @@ export default function CementPlug() {
                     <div>
                       <p className="text-xs font-semibold mb-1">Буферная жидкость</p>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <div className="space-y-1"><Label className="text-xs">Название</Label><DebouncedInput className="h-8 text-xs" value={spacer.name} onChange={e => setSpacer(s => ({ ...s, name: e.target.value }))} delay={400} /></div>
+                        <div className="space-y-1"><Label className="text-xs">Название</Label><BlurInput className="h-8 text-xs" value={spacer.name} onValueCommit={v => setSpacer(s => ({ ...s, name: v }))} /></div>
                         <Field label="Плотность" value={spacer.density} onChange={v => setSpacer(s => ({ ...s, density: num(v) }))} unit="г/см³" />
                         <Field label="PV" value={spacer.rheology.pv} onChange={v => setSpacer(s => ({ ...s, rheology: { ...s.rheology, pv: num(v) } }))} unit="сПз" />
                         <Field label="YP" value={spacer.rheology.yp} onChange={v => setSpacer(s => ({ ...s, rheology: { ...s.rheology, yp: num(v) } }))} unit="Па" />
@@ -267,7 +266,7 @@ export default function CementPlug() {
                     <div>
                       <p className="text-xs font-semibold mb-1">Буровой раствор</p>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <div className="space-y-1"><Label className="text-xs">Название</Label><DebouncedInput className="h-8 text-xs" value={drillingFluid.name} onChange={e => setDrillingFluid(d => ({ ...d, name: e.target.value }))} delay={400} /></div>
+                        <div className="space-y-1"><Label className="text-xs">Название</Label><BlurInput className="h-8 text-xs" value={drillingFluid.name} onValueCommit={v => setDrillingFluid(d => ({ ...d, name: v }))} /></div>
                         <Field label="Плотность" value={drillingFluid.density} onChange={v => setDrillingFluid(d => ({ ...d, density: num(v) }))} unit="г/см³" />
                         <Field label="PV" value={drillingFluid.rheology.pv} onChange={v => setDrillingFluid(d => ({ ...d, rheology: { ...d.rheology, pv: num(v) } }))} unit="сПз" />
                         <Field label="YP" value={drillingFluid.rheology.yp} onChange={v => setDrillingFluid(d => ({ ...d, rheology: { ...d.rheology, yp: num(v) } }))} unit="Па" />
