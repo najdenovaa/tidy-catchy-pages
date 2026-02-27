@@ -52,8 +52,8 @@ export default function AdminPanel() {
   const fetchData = async () => {
     setLoading(true);
     const [calcRes, visitRes, profilesRes] = await Promise.all([
-      supabase.from("calculation_logs").select("*").order("created_at", { ascending: false }).limit(200),
-      supabase.from("visit_logs").select("*").order("created_at", { ascending: false }).limit(200),
+      supabase.from("calculation_logs").select("*").order("created_at", { ascending: false }).limit(10000),
+      supabase.from("visit_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
     ]);
     if (calcRes.data) setCalcLogs(calcRes.data as CalcLog[]);
@@ -94,6 +94,8 @@ export default function AdminPanel() {
   };
 
   const homeVisits = visitLogs.filter(v => v.page_url === "/" || v.page_url === "" || v.module === "home" || v.page_url?.endsWith("/"));
+  const cementPlugVisits = visitLogs.filter(v => v.page_url?.includes("/cement-plug") || v.module === "cement-plug");
+  const cementPlugCalcs = calcLogs.filter(l => l.module === "cement-plug");
 
   if (!authenticated) return null;
 
@@ -116,6 +118,8 @@ export default function AdminPanel() {
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Посещений</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{visitLogs.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Пользователей</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{profiles.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Уникальных IP</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{new Set([...calcLogs, ...visitLogs].map(l => l.ip_address).filter(Boolean)).size}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Цем. мосты (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementPlugVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Цем. мосты (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementPlugCalcs.length}</p></CardContent></Card>
         </div>
 
         <div className="flex justify-end mb-4">
