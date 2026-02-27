@@ -31,7 +31,9 @@ export interface PlugFluid {
   name: string;
   density: number;
   rheology: Rheology;
-  /** 10-minute gel strength, Pa (optional — if 0 or missing, estimated as 3×YP) */
+  /** Static gel strength at 10 seconds, Pa */
+  gel10sec?: number;
+  /** Static gel strength at 10 minutes, Pa */
   gel10min?: number;
 }
 
@@ -482,6 +484,9 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     cementDensityKgM3: cement.density * 1000,
     spacerDensityKgM3: spacer.density * 1000,
     wellFluidDensityKgM3: wellFluid.density * 1000,
+    cementGel10Sec: cement.gel10sec || 0,
+    spacerGel10Sec: spacer.gel10sec || 0,
+    wellFluidGel10Sec: wellFluid.gel10sec || 0,
     cementGel10Min: cement.gel10min || 0,
     spacerGel10Min: spacer.gel10min || 0,
     wellFluidGel10Min: wellFluid.gel10min || 0,
