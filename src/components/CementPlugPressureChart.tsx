@@ -128,13 +128,13 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
             tick={{ fontSize: 10 }}
           />
 
-          {/* Right Y axis: Volume / Rate */}
+          {/* Right Y axis: Rate */}
           <YAxis
             yAxisId="volume"
             orientation="right"
-            domain={[0, Math.ceil(Math.max(maxVol * 1.2, maxRate * 1.2))]}
-            tickFormatter={(v: number) => v.toFixed(1)}
-            label={{ value: 'Объём м³ / Q л/с', angle: 90, position: 'insideRight', style: { fontSize: 10, fill: 'hsl(var(--muted-foreground))' } }}
+            domain={[0, Math.ceil(maxRate * 1.5)]}
+            tickFormatter={(v: number) => v.toFixed(0)}
+            label={{ value: 'Q, л/с', angle: 90, position: 'insideRight', style: { fontSize: 10, fill: 'hsl(var(--muted-foreground))' } }}
             tick={{ fontSize: 10 }}
           />
 
@@ -201,59 +201,6 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
             isAnimationActive={false}
           />
 
-          {/* Volumes — stacked areas per fluid */}
-          <Area
-            yAxisId="volume"
-            type="monotone"
-            dataKey="volSpacerM3"
-            name="V буфер, м³"
-            stroke={COLORS.spacer}
-            fill={COLORS.spacer}
-            fillOpacity={0.4}
-            strokeWidth={1.5}
-            dot={false}
-            stackId="vol"
-            isAnimationActive={false}
-          />
-          <Area
-            yAxisId="volume"
-            type="monotone"
-            dataKey="volCementM3"
-            name="V цемент, м³"
-            stroke={COLORS.cement}
-            fill={COLORS.cement}
-            fillOpacity={0.45}
-            strokeWidth={1.5}
-            dot={false}
-            stackId="vol"
-            isAnimationActive={false}
-          />
-          <Area
-            yAxisId="volume"
-            type="monotone"
-            dataKey="volDisplM3"
-            name="V продавка, м³"
-            stroke={COLORS.displ}
-            fill={COLORS.displ}
-            fillOpacity={0.4}
-            strokeWidth={1.5}
-            dot={false}
-            stackId="vol"
-            isAnimationActive={false}
-          />
-          <Area
-            yAxisId="volume"
-            type="monotone"
-            dataKey="volWashM3"
-            name="V промывка, м³"
-            stroke={COLORS.wash}
-            fill={COLORS.wash}
-            fillOpacity={0.4}
-            strokeWidth={1.5}
-            dot={false}
-            stackId="vol"
-            isAnimationActive={false}
-          />
 
           {/* Pump rate */}
           <Line
