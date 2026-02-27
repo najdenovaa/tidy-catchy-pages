@@ -822,8 +822,8 @@ export default function CementPlug() {
                               {results.stability.stabilityFactor1.toFixed(2)}
                             </span>
                             <span className="text-muted-foreground">SF₁ (СНС 10с):</span>
-                            <span className={`${results.stability.stabilityFactor1_10sec >= 1.0 ? 'text-muted-foreground' : 'text-amber-400'}`}>
-                              {results.stability.stabilityFactor1_10sec.toFixed(2)}
+                            <span className={`${(results.stability.stabilityFactor1_10sec ?? 999) >= 1.0 ? 'text-muted-foreground' : 'text-amber-400'}`}>
+                              {(results.stability.stabilityFactor1_10sec ?? 0).toFixed(2)}
                             </span>
                           </div>
                         </div>
@@ -840,8 +840,8 @@ export default function CementPlug() {
                               {results.stability.stabilityFactor2.toFixed(2)}
                             </span>
                             <span className="text-muted-foreground">SF₂ (СНС 10с):</span>
-                            <span className={`${results.stability.stabilityFactor2_10sec >= 1.0 ? 'text-muted-foreground' : 'text-amber-400'}`}>
-                              {results.stability.stabilityFactor2_10sec.toFixed(2)}
+                            <span className={`${(results.stability.stabilityFactor2_10sec ?? 999) >= 1.0 ? 'text-muted-foreground' : 'text-amber-400'}`}>
+                              {(results.stability.stabilityFactor2_10sec ?? 0).toFixed(2)}
                             </span>
                           </div>
                         </div>
