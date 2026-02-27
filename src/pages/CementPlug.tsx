@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from "react";
-import { Link } from "react-router-dom";
-import { Send, Home, Calculator, ArrowLeft, FileDown } from "lucide-react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { Send, Home, Calculator, ArrowLeft, FileDown, Save, Loader2, LayoutDashboard, LogOut } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { BlurInput } from "@/components/BlurInput";
 import { Label } from "@/components/ui/label";
@@ -93,6 +93,14 @@ export default function CementPlug() {
   const saved = useMemo(() => loadSession(), []);
   const vizRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLDivElement>(null);
+
+  /* ── Dashboard integration ── */
+  const [searchParams] = useSearchParams();
+  const calcId = searchParams.get("calc");
+  const selectedWellId = searchParams.get("well");
+  const fromDashboard = searchParams.get("from") === "dashboard";
+  const [saving, setSaving] = useState(false);
+  const [loadingSavedCalc, setLoadingSavedCalc] = useState(false);
 
   /* ── State ── */
   const [well, setWell] = useState<PlugWellData>(saved.well || defaultWell);
@@ -212,6 +220,110 @@ export default function CementPlug() {
     setResults(calculateBalancedPlug(buildInputs()));
   };
 
+  /* ── Load saved calculation from dashboard ── */
+  useEffect(() => {
+    if (!calcId) return;
+    const loadSaved = async () => {
+      setLoadingSavedCalc(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { alert("Войдите в аккаунт"); setLoadingSavedCalc(false); return; }
+      const { data, error } = await supabase.from("saved_calculations").select("*").eq("id", calcId).single();
+      if (error || !data) { alert("Не удалось загрузить расчёт"); setLoadingSavedCalc(false); return; }
+      if (data.user_id !== session.user.id) { alert("Расчёт недоступен"); setLoadingSavedCalc(false); return; }
+
+      const p = (data.calc_params ?? {}) as any;
+      const w = (data.well_data ?? {}) as unknown as PlugWellData;
+      setWell(w);
+      if (p.plug) setPlug(p.plug);
+      if (p.cement) setCement(p.cement);
+      if (p.spacer) setSpacer(p.spacer);
+      if (p.wellFluid) setWellFluid(p.wellFluid);
+      if (typeof p.spacerVolumeAbove === "number") setSpacerVolumeAbove(p.spacerVolumeAbove);
+      if (typeof p.spacerVolumeBelow === "number") setSpacerVolumeBelow(p.spacerVolumeBelow);
+      if (typeof p.thickeningTime === "number") setThickeningTime(p.thickeningTime);
+      if (typeof p.wocTimeHours === "number") setWocTimeHours(p.wocTimeHours);
+      if (typeof p.pullOutAbove === "number") setPullOutAbove(p.pullOutAbove);
+      if (p.washType) setWashType(p.washType);
+      if (typeof p.washCycles === "number") setWashCycles(p.washCycles);
+      if (typeof p.tripSpeed === "number") setTripSpeed(p.tripSpeed);
+      if (Array.isArray(p.trajPoints)) setTrajPoints(p.trajPoints);
+      if (typeof p.wcRatio === "number") setWcRatio(p.wcRatio);
+      if (typeof p.slurryYield === "number") setSlurryYield(p.slurryYield);
+      if (Array.isArray(p.additives)) setAdditives(p.additives);
+      if (Array.isArray(p.spacerAdditives)) setSpacerAdditives(p.spacerAdditives);
+      if (typeof p.pumpRateCement === "number") setPumpRateCement(p.pumpRateCement);
+      if (typeof p.pumpRateSpacer === "number") setPumpRateSpacer(p.pumpRateSpacer);
+      if (typeof p.pumpRateDisplacement === "number") setPumpRateDisplacement(p.pumpRateDisplacement);
+      if (typeof p.pumpRateWash === "number") setPumpRateWash(p.pumpRateWash);
+      if (typeof p.fracGradient === "number") setFracGradient(p.fracGradient);
+
+      // Restore results if present
+      if (data.results) {
+        const r = data.results as any;
+        if (r.plugResults) setResults(r.plugResults);
+      }
+      setLoadingSavedCalc(false);
+    };
+    loadSaved();
+  }, [calcId]);
+
+  /* ── Save to account ── */
+  const handleSaveToAccount = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { alert("Для сохранения войдите в личный кабинет"); return; }
+    if (!selectedWellId) { alert("Откройте модуль из личного кабинета, выбрав скважину"); return; }
+
+    const calcTitle = prompt("Название расчёта:", `Мост ${new Date().toLocaleDateString("ru-RU")}`);
+    if (!calcTitle) return;
+
+    const currentResults = results ?? calculateBalancedPlug(buildInputs());
+
+    const calcParams = {
+      plug, cement, spacer, wellFluid,
+      spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours,
+      pullOutAbove, washType, washCycles, tripSpeed, trajPoints,
+      wcRatio, slurryYield, additives, spacerAdditives,
+      pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient,
+    };
+
+    setSaving(true);
+    try {
+      if (calcId) {
+        const { error } = await supabase.from("saved_calculations")
+          .update({
+            title: calcTitle,
+            well_data: well as any,
+            calc_params: calcParams as any,
+            results: { plugResults: currentResults } as any,
+          } as any)
+          .eq("id", calcId).eq("user_id", session.user.id);
+        if (error) throw error;
+        alert("Расчёт обновлён");
+      } else {
+        const { error } = await supabase.from("saved_calculations").insert({
+          user_id: session.user.id,
+          well_id: selectedWellId,
+          module: "cement-plug",
+          title: calcTitle,
+          well_data: well as any,
+          calc_params: calcParams as any,
+          results: { plugResults: currentResults } as any,
+        } as any);
+        if (error) throw error;
+        alert("Расчёт сохранён в личный кабинет");
+      }
+    } catch (e: any) {
+      alert("Ошибка сохранения: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  }, [selectedWellId, calcId, well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, results]);
+
+  const handleLogout = useCallback(async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/";
+  }, []);
+
   const handleExportDocx = async () => {
     if (!results) return;
     try {
@@ -263,14 +375,31 @@ export default function CementPlug() {
             <Button size="sm" className="gap-1" onClick={calculate}>
               <Calculator className="w-4 h-4" /> Расчёт
             </Button>
+            {fromDashboard && (
+              <Button size="sm" variant="outline" className="gap-1" onClick={handleSaveToAccount} disabled={saving}>
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span className="hidden sm:inline">Сохранить</span>
+              </Button>
+            )}
             {results && (
               <Button size="sm" variant="outline" className="gap-1" onClick={handleExportDocx}>
                 <FileDown className="w-4 h-4" /> Word
               </Button>
             )}
+            {loadingSavedCalc && <span className="text-xs text-muted-foreground">Загрузка...</span>}
             <Link to="/cementing" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
               <ArrowLeft className="w-3.5 h-3.5" /> Цементирование
             </Link>
+            {fromDashboard && (
+              <>
+                <Link to="/dashboard" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                  <LayoutDashboard className="w-3.5 h-3.5" /> Кабинет
+                </Link>
+                <button onClick={handleLogout} className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1">
+                  <LogOut className="w-3.5 h-3.5" /> Выйти
+                </button>
+              </>
+            )}
             <Link to="/" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
               <Home className="w-3.5 h-3.5" /> Главная
             </Link>
