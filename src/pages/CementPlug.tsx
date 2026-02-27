@@ -375,30 +375,30 @@ export default function CementPlug() {
 
   const resetSession = useCallback(() => {
     sessionStorage.removeItem(SESSION_KEY);
-    setWell(defaultWell);
-    setPlug({ topMD: 2600, bottomMD: 2650 });
-    setCement({ name: "Тампонажный р-р", density: 1.85, rheology: { pv: 50, yp: 10 } });
-    setSpacer({ name: "Буферная жидкость", density: 1.10, rheology: { pv: 5, yp: 2 } });
-    setWellFluid({ name: "Буровой раствор", density: 1.20, rheology: { pv: 15, yp: 5 } });
-    setSpacerVolumeAbove(0.3);
-    setSpacerVolumeBelow(0.3);
-    setThickeningTime(120);
-    setWocTimeHours(24);
-    setPullOutAbove(50);
+    setWell({ wellDepthMD: 0, holeDiameter: 0, casingShoe: 0, casingID: 0, pipeOD: 0, pipeID: 0, cavernCoeff: 0, trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }] });
+    setPlug({ topMD: 0, bottomMD: 0 });
+    setCement({ name: "", density: 0, rheology: { pv: 0, yp: 0 } });
+    setSpacer({ name: "", density: 0, rheology: { pv: 0, yp: 0 } });
+    setWellFluid({ name: "", density: 0, rheology: { pv: 0, yp: 0 } });
+    setSpacerVolumeAbove(0);
+    setSpacerVolumeBelow(0);
+    setThickeningTime(0);
+    setWocTimeHours(0);
+    setPullOutAbove(0);
     setWashType('direct');
-    setWashCycles(2);
-    setTripSpeed(0.3);
+    setWashCycles(0);
+    setTripSpeed(0);
     setTrajPoints([{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }]);
     setResults(null);
-    setWcRatio(0.44);
-    setSlurryYield(0.63);
+    setWcRatio(0);
+    setSlurryYield(0);
     setAdditives([]);
     setSpacerAdditives([]);
-    setPumpRateCement(3);
-    setPumpRateSpacer(5);
-    setPumpRateDisplacement(8);
-    setPumpRateWash(10);
-    setFracGradient(0.017);
+    setPumpRateCement(0);
+    setPumpRateSpacer(0);
+    setPumpRateDisplacement(0);
+    setPumpRateWash(0);
+    setFracGradient(0);
   }, []);
 
   /* ── Collapsible state ── */
