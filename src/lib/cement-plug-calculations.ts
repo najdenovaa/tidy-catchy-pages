@@ -481,6 +481,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     plugLengthTVD: plugLenTVD,
     spacerBelowLengthTVD: spacerBelowTVD,
     boreDiameterM: boreDiam / 1000,
+    pipeODm: well.pipeOD / 1000,
     cementDensityKgM3: cement.density * 1000,
     spacerDensityKgM3: spacer.density * 1000,
     wellFluidDensityKgM3: wellFluid.density * 1000,
