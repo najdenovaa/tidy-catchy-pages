@@ -838,7 +838,7 @@ export default function CementPlug() {
 
           {/* Visualization & Chart — below results */}
           {results && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <Card>
                 <CardHeader className="py-3 px-4">
                   <CardTitle className="text-sm">📈 Совмещённый график давлений</CardTitle>
