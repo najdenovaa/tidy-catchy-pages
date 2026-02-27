@@ -343,19 +343,6 @@ export function simulatePlugPressures(
     }
   }
 
-  // Wash phase — only first and last points
-  const washTimeMin = results.washTimeMin;
-  if (washTimeMin > 0 && input.pumpRateWashLs > 0) {
-    // Start of wash
-    cumWash = 0;
-    points.push(computePoint('Промывка', input.pumpRateWashLs));
-
-    // End of wash
-    timeMin += washTimeMin;
-    cumulativeVolumeM3 += results.washVolumeM3;
-    cumWash = results.washVolumeM3;
-    points.push(computePoint('Промывка', input.pumpRateWashLs));
-  }
 
   return points;
 }
