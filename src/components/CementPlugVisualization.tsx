@@ -242,23 +242,26 @@ function PlugSVG({ results, inputs, mode }: Props & { mode: 'equilibrium' | 'was
           {/* WASH MODE: cement settled to plug interval only */}
           {/* Rebuild columns: replace cement with settled plug, fill freed zone with mud */}
           {(() => {
-            // Build wash-mode columns: clip cement to plug interval, fill above with spacer/mud
+            // Build wash-mode columns: cement only within plug interval, 
+            // merge freed cement zone into adjacent spacer above
             const washCols: typeof annCols = [];
             for (const col of annCols) {
               const isCement = col.color === '#B0BEC5';
               if (isCement) {
-                // Only draw cement within plug interval
+                // Clip cement to plug interval only
                 const clippedTop = Math.max(col.topMD, plug.topMD);
                 const clippedBot = Math.min(col.bottomMD, plug.bottomMD);
-                // Fill zone above plug.topMD (freed cement) with spacer if spacer existed, otherwise mud
-                if (col.topMD < plug.topMD) {
-                  washCols.push({ ...col, bottomMD: plug.topMD, color: '#4FC3F7', label: 'Буфер (осел)' });
-                }
                 if (clippedBot > clippedTop) {
                   washCols.push({ ...col, topMD: clippedTop, bottomMD: clippedBot });
                 }
               } else {
-                washCols.push(col);
+                const isSpacer = col.color === '#4FC3F7';
+                // Extend upper spacer down to plug.topMD (absorbs freed cement zone)
+                if (isSpacer && col.bottomMD <= plug.topMD + 1 && col.topMD < plug.topMD) {
+                  washCols.push({ ...col, bottomMD: plug.topMD });
+                } else {
+                  washCols.push(col);
+                }
               }
             }
             return washCols.map((col, i) => {
@@ -300,12 +303,12 @@ function PlugSVG({ results, inputs, mode }: Props & { mode: 'equilibrium' | 'was
         return null;
       })()}
 
-      {/* Upper spacer */}
+      {/* Upper spacer — in wash mode extends down to plug.topMD */}
       {results.spacerAboveHeightAnnMD > 0 && (
         <SideAnnotation x={annX}
           yTop={clampY(cementTopMD - results.spacerAboveHeightAnnMD)}
-          yBot={clampY(cementTopMD)}
-          label={`Буфер ↕${results.spacerAboveHeightAnnMD.toFixed(1)}м`} color="#4FC3F7" />
+          yBot={clampY(mode === 'wash' ? plug.topMD : cementTopMD)}
+          label={`Буфер ↕${(mode === 'wash' ? (plug.topMD - (cementTopMD - results.spacerAboveHeightAnnMD)) : results.spacerAboveHeightAnnMD).toFixed(1)}м`} color="#4FC3F7" />
       )}
 
       {/* Cement */}
@@ -337,12 +340,16 @@ function PlugSVG({ results, inputs, mode }: Props & { mode: 'equilibrium' | 'was
           label={inputs.wellFluid.name.substring(0, 12)} color="#A1887F" />
       )}
 
-      {/* Pipe / tool string */}
+      {/* Pipe / tool string — inside bore, next to pipe */}
       {showPipe && (
-        <SideAnnotation x={annX + 50}
-          yTop={pipeTopY}
-          yBot={pipeBottomY}
-          label={`БИ ∅${well.pipeOD}`} color="#81C784" />
+        <text
+          x={cx + pipePx / 2 + 4}
+          y={pipeTopY + (pipeBottomY - pipeTopY) / 2}
+          fill="#81C784" fontSize={6} fontWeight="bold"
+          dominantBaseline="middle"
+        >
+          БИ ∅{well.pipeOD}
+        </text>
       )}
 
       {/* Casing shoe annotation */}
