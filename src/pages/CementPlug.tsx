@@ -41,6 +41,7 @@ interface SessionState {
   spacerVolumeAbove: number;
   spacerVolumeBelow: number;
   thickeningTime: number;
+  wocTimeHours: number;
   pullOutAbove: number;
   washType: WashType;
   washCycles: number;
@@ -95,6 +96,7 @@ export default function CementPlug() {
   const [spacerVolumeAbove, setSpacerVolumeAbove] = useState(saved.spacerVolumeAbove ?? 0.3);
   const [spacerVolumeBelow, setSpacerVolumeBelow] = useState(saved.spacerVolumeBelow ?? 0.3);
   const [thickeningTime, setThickeningTime] = useState(saved.thickeningTime ?? 120);
+  const [wocTimeHours, setWocTimeHours] = useState(saved.wocTimeHours ?? 24);
   const [pullOutAbove, setPullOutAbove] = useState(saved.pullOutAbove ?? 50);
   const [washType, setWashType] = useState<WashType>(saved.washType || 'direct');
   const [washCycles, setWashCycles] = useState(saved.washCycles ?? 2);
@@ -113,10 +115,10 @@ export default function CementPlug() {
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash]);
 
   /* ── Spacer height preview (real-time) ── */
   const isOpenHole = plug.bottomMD > well.casingShoe;
@@ -338,12 +340,13 @@ export default function CementPlug() {
                         <Field label="PV" value={cement.rheology.pv} onChange={v => setCement(c => ({ ...c, rheology: { ...c.rheology, pv: num(v) } }))} unit="сПз" />
                         <Field label="YP" value={cement.rheology.yp} onChange={v => setCement(c => ({ ...c, rheology: { ...c.rheology, yp: num(v) } }))} unit="Па" />
                       </div>
-                      <div className="grid grid-cols-2 gap-2 mt-2">
-                        <Field label="Время загустевания (50Bc)" value={thickeningTime} onChange={v => setThickeningTime(num(v))} unit="мин" />
+                      <div className="grid grid-cols-3 gap-2 mt-2">
+                        <Field label="Загустевание (50Bc)" value={thickeningTime} onChange={v => setThickeningTime(num(v))} unit="мин" />
                         <div className="space-y-1">
-                          <Label className="text-xs">Безопасное время (0.75×50Bc)</Label>
+                          <Label className="text-xs">Безопасн. время (0.75×50Bc)</Label>
                           <div className="h-8 flex items-center text-xs font-semibold text-amber-400">{(thickeningTime * 0.75).toFixed(0)} мин</div>
                         </div>
+                        <Field label="Время ОЗЦ" value={wocTimeHours} onChange={v => setWocTimeHours(num(v))} unit="ч" />
                       </div>
                       <Separator className="my-2" />
                       <p className="text-[10px] font-medium text-muted-foreground mb-1">Рецептура</p>
@@ -523,6 +526,8 @@ export default function CementPlug() {
                           ? `✅ Запас: ${(results.safeTimeMin - results.totalOperationTimeMin).toFixed(1)} мин` 
                           : `⛔ Превышение на ${(results.totalOperationTimeMin - results.safeTimeMin).toFixed(1)} мин! Увеличьте производительность или время загустевания`}
                       </div>
+                      <Separator className="col-span-full my-1" />
+                      <ResultRow label="Время ОЗЦ" value={wocTimeHours} unit="ч" highlight />
                     </div>
                   </CardContent>
                 </Card>

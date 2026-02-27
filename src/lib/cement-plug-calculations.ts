@@ -377,7 +377,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     `   Скорость подъёма: ${effectiveTripSpeed.toFixed(2)} м/с. Время подъёма: ${(tripTimeSec / 60).toFixed(1)} мин.`,
     `7. ${washTypeText.charAt(0).toUpperCase() + washTypeText.slice(1)} промывка: ${washCycles} цикл(а/ов), объём ${washVolumeM3.toFixed(2)} м³.`,
     `   1 цикл = ${washOneCycleVolume.toFixed(2)} м³.`,
-    `8. Подъём инструмента. ОЗЦ (время загустевания: ${thickeningTimeMin} мин).`,
+    `8. Подъём инструмента.`,
     ``,
     `Статическое давление на забое моста:`,
     `  Затрубье: ${pAnn.toFixed(2)} МПа | Трубы: ${pPipe.toFixed(2)} МПа | ΔP: ${Math.abs(pAnn - pPipe).toFixed(2)} МПа`,
