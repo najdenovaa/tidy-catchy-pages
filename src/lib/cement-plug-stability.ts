@@ -230,7 +230,7 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   }
 
   if (isConfined) {
-    warnings.push(`✅ Стабилен.`);
+    warnings.push(`✅ Устойчивость моста — стабилен.`);
   }
 
   const zenithDeg = p.zenithDeg ?? 0;
