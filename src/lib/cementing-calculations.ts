@@ -1057,6 +1057,9 @@ export function calculatePressureProfile(
       const ffBatchIdx = pumpHistory.length - 1;
       const savedCumVol = cumVol;
 
+      // Определяем макс. допустимый расход на выходе = последний расход перед паузой
+      const lastActiveRate = points.length > 0 ? points[points.length - 1].pumpRateLps : 5;
+
       // === Генерируем точки: экспоненциальное оседание ===
       let prevSettledVol = 0;
       let equilibriumReached = false;
@@ -1068,7 +1071,9 @@ export function calculatePressureProfile(
 
         // Выход на устье = объём вытесненный за эту минуту → расход л/с
         const deltaVol = settledVol - prevSettledVol; // м³ за 1 мин
-        const returnRateLps = deltaVol / 60 * 1000; // м³/мин → л/с
+        let returnRateLps = deltaVol / 60 * 1000; // м³/мин → л/с
+        // Ограничиваем: выход на устье не должен превышать последнюю производительность
+        returnRateLps = Math.min(returnRateLps, lastActiveRate);
         prevSettledVol = settledVol;
 
         // Определяем момент достижения равновесия (95% от freefallVol)
@@ -1226,7 +1231,13 @@ export function calculatePressureProfile(
       const baseReturn = actualRateLps * compressionEffect * densityBoost;
       // Ограничиваем гравитационный расход — максимум 20% от текущей производительности
       const cappedGravityReturn = Math.min(gravityReturnLps, actualRateLps * 0.2);
-      let totalAnnReturn = isCatchingUp ? cappedGravityReturn * catchUpFrac : baseReturn + cappedGravityReturn;
+      // При догонке (пробка ещё не дошла до цемента): выход = производительность насоса
+      // (флюид закачивается → объём вытесняется на устье, независимо от положения пробки)
+      // После догонки: цемент начинает подниматься в затрубье, небольшой гравитационный вклад
+      let totalAnnReturn = baseReturn;
+      if (!isCatchingUp) {
+        totalAnnReturn = baseReturn + cappedGravityReturn;
+      }
       // Абсолютный cap: выход НИКОГДА не превышает текущую производительность насосов
       totalAnnReturn = Math.min(totalAnnReturn, actualRateLps * 1.0);
 
