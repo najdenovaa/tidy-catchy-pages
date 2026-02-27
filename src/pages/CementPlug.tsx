@@ -808,6 +808,11 @@ export default function CementPlug() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="pt-0 space-y-3">
+                      {results.stability.hydraulicDiameterM && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Dгидр = {(results.stability.hydraulicDiameterM * 1000).toFixed(0)} мм (кольцевое пространство при трубах в скважине)
+                        </p>
+                      )}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {/* Scenario 1 */}
                         <div className="rounded-lg border border-border p-3 space-y-1">
@@ -817,13 +822,17 @@ export default function CementPlug() {
                             <span>{results.stability.drivingPressure1.toFixed(1)} Па</span>
                             <span className="text-muted-foreground">Удерживающее давление:</span>
                             <span>{results.stability.resistingPressure1.toFixed(1)} Па</span>
-                            <span className="text-muted-foreground font-semibold">SF₁ (СНС 10мин):</span>
+                            <span className="text-muted-foreground font-semibold">SF₁ (СНС 10мин, трубы):</span>
                             <span className={`font-bold ${results.stability.stabilityFactor1 >= 1.5 ? 'text-green-500' : results.stability.stabilityFactor1 >= 1.0 ? 'text-amber-400' : 'text-destructive'}`}>
                               {results.stability.stabilityFactor1.toFixed(2)}
                             </span>
                             <span className="text-muted-foreground">SF₁ (СНС 10с):</span>
                             <span className={`${(results.stability.stabilityFactor1_10sec ?? 999) >= 1.0 ? 'text-muted-foreground' : 'text-amber-400'}`}>
                               {(results.stability.stabilityFactor1_10sec ?? 0).toFixed(2)}
+                            </span>
+                            <span className="text-muted-foreground">SF₁ (после подъёма, ~30мин):</span>
+                            <span className={`${(results.stability.stabilityFactor1_afterPull ?? 999) >= 1.0 ? 'text-green-500' : 'text-amber-400'}`}>
+                              {(results.stability.stabilityFactor1_afterPull ?? 0).toFixed(2)}
                             </span>
                           </div>
                         </div>
@@ -835,13 +844,17 @@ export default function CementPlug() {
                             <span>{results.stability.drivingPressure2.toFixed(1)} Па</span>
                             <span className="text-muted-foreground">Удерживающее давление:</span>
                             <span>{results.stability.resistingPressure2.toFixed(1)} Па</span>
-                            <span className="text-muted-foreground font-semibold">SF₂ (СНС 10мин):</span>
+                            <span className="text-muted-foreground font-semibold">SF₂ (СНС 10мин, трубы):</span>
                             <span className={`font-bold ${results.stability.stabilityFactor2 >= 1.5 ? 'text-green-500' : results.stability.stabilityFactor2 >= 1.0 ? 'text-amber-400' : 'text-destructive'}`}>
                               {results.stability.stabilityFactor2.toFixed(2)}
                             </span>
                             <span className="text-muted-foreground">SF₂ (СНС 10с):</span>
                             <span className={`${(results.stability.stabilityFactor2_10sec ?? 999) >= 1.0 ? 'text-muted-foreground' : 'text-amber-400'}`}>
                               {(results.stability.stabilityFactor2_10sec ?? 0).toFixed(2)}
+                            </span>
+                            <span className="text-muted-foreground">SF₂ (после подъёма, ~30мин):</span>
+                            <span className={`${(results.stability.stabilityFactor2_afterPull ?? 999) >= 1.0 ? 'text-green-500' : 'text-amber-400'}`}>
+                              {(results.stability.stabilityFactor2_afterPull ?? 0).toFixed(2)}
                             </span>
                           </div>
                         </div>
