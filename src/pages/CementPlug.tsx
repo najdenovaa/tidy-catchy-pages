@@ -10,9 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import CementPlugVisualization from "@/components/CementPlugVisualization";
-import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults } from "@/lib/cement-plug-calculations";
+import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults, type WashType } from "@/lib/cement-plug-calculations";
 import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-calculations";
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from "xlsx";
@@ -46,6 +47,8 @@ export default function CementPlug() {
   const [spacerVolumeBelow, setSpacerVolumeBelow] = useState(0.3);
   const [thickeningTime, setThickeningTime] = useState(120);
   const [pullOutAbove, setPullOutAbove] = useState(50);
+  const [washType, setWashType] = useState<WashType>('direct');
+  const [washCycles, setWashCycles] = useState(2);
 
   /* ── Trajectory ── */
   const [trajPoints, setTrajPoints] = useState<TrajectoryPoint[]>(well.trajectory);
@@ -111,6 +114,8 @@ export default function CementPlug() {
       safetyMarginM: 30,
       thickeningTimeMin: thickeningTime,
       pullOutAbovePlugM: pullOutAbove,
+      washType,
+      washCycles,
     };
     setResults(calculateBalancedPlug(inp));
   };
@@ -134,6 +139,8 @@ export default function CementPlug() {
     safetyMarginM: 30,
     thickeningTimeMin: thickeningTime,
     pullOutAbovePlugM: pullOutAbove,
+    washType,
+    washCycles,
   });
 
   return (
@@ -306,13 +313,23 @@ export default function CementPlug() {
                   </CardHeader>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <CardContent className="pt-0">
+                  <CardContent className="pt-0 space-y-3">
                     <div className="grid grid-cols-2 gap-2">
-                      <Field label="Подъём над кровлей моста на промывку" value={pullOutAbove} onChange={v => setPullOutAbove(num(v))} unit="м" />
-                      <div className="space-y-1">
-                        <Label className="text-xs">Промывка</Label>
-                        <p className="text-sm text-foreground font-medium mt-1">1,5 цикла</p>
-                      </div>
+                      <Field label="Подъём над кровлей моста" value={pullOutAbove} onChange={v => setPullOutAbove(num(v))} unit="м" />
+                      <Field label="Количество циклов промывки" value={washCycles} onChange={v => setWashCycles(Math.max(1, num(v)))} unit="" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Тип промывки</Label>
+                      <RadioGroup value={washType} onValueChange={v => setWashType(v as WashType)} className="flex gap-4">
+                        <div className="flex items-center space-x-1.5">
+                          <RadioGroupItem value="direct" id="wash-direct" />
+                          <Label htmlFor="wash-direct" className="text-xs cursor-pointer">Прямая</Label>
+                        </div>
+                        <div className="flex items-center space-x-1.5">
+                          <RadioGroupItem value="reverse" id="wash-reverse" />
+                          <Label htmlFor="wash-reverse" className="text-xs cursor-pointer">Обратная</Label>
+                        </div>
+                      </RadioGroup>
                     </div>
                   </CardContent>
                 </CollapsibleContent>
@@ -344,16 +361,18 @@ export default function CementPlug() {
                       <ResultRow label="Цемент (трубы)" value={results.cementVolumePipe} unit="м³" />
                       <ResultRow label="Цемент ИТОГО" value={results.cementVolumeTotal} unit="м³" highlight />
                       <ResultRow label="Буфер сверху" value={results.spacerVolumeAbove} unit="м³" />
+                      <ResultRow label="↕ Интервал буфера сверху" value={results.spacerAboveHeightAnnMD} unit="м" />
                       <ResultRow label="Буфер снизу" value={results.spacerVolumeBelow} unit="м³" />
+                      <ResultRow label="↕ Интервал буфера снизу" value={results.spacerBelowHeightAnnMD} unit="м" />
                       <ResultRow label="Высота цем. в трубах" value={results.cementHeightPipeMD} unit="м" />
                       <ResultRow label="Объём продавки" value={results.displacementVolume} unit="м³" highlight />
                       <Separator className="col-span-full my-1" />
-                      <ResultRow label="P затрубье (дно моста)" value={results.pressureAnnulus} unit="МПа" />
-                      <ResultRow label="P трубы (дно моста)" value={results.pressurePipe} unit="МПа" />
+                      <ResultRow label="P_статич. затрубье" value={results.pressureAnnulus} unit="МПа" />
+                      <ResultRow label="P_статич. трубы" value={results.pressurePipe} unit="МПа" />
                       <ResultRow label="ΔP" value={Math.abs(results.pressureAnnulus - results.pressurePipe).toFixed(2)} unit="МПа" raw highlight />
                       <Separator className="col-span-full my-1" />
                       <ResultRow label="Подъём на промывку до" value={results.pullOutDepthMD} unit="м MD" />
-                      <ResultRow label="Объём промывки (1,5 цикла)" value={results.washVolumeM3} unit="м³" />
+                      <ResultRow label={`Промывка (${results.washType === 'direct' ? 'прямая' : 'обратная'}, ${results.washCycles} ц.)`} value={results.washVolumeM3} unit="м³" />
                       <ResultRow label="Загустевание цемента" value={results.thickeningTimeMin} unit="мин" />
                     </div>
                   </CardContent>
