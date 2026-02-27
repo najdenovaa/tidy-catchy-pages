@@ -47,6 +47,9 @@ interface SessionState {
   tripSpeed: number;
   trajPoints: TrajectoryPoint[];
   lastResults: PlugResults | null;
+  wcRatio: number;
+  slurryYield: number;
+  additives: { name: string; percent: number }[];
 }
 
 function loadSession(): Partial<SessionState> {
@@ -93,21 +96,25 @@ export default function CementPlug() {
   const [tripSpeed, setTripSpeed] = useState(saved.tripSpeed ?? 0.3);
   const [trajPoints, setTrajPoints] = useState<TrajectoryPoint[]>(saved.trajPoints || well.trajectory);
   const [results, setResults] = useState<PlugResults | null>(saved.lastResults || null);
+  const [wcRatio, setWcRatio] = useState(saved.wcRatio ?? 0.44);
+  const [slurryYield, setSlurryYield] = useState(saved.slurryYield ?? 0.63);
+  const [additives, setAdditives] = useState<{ name: string; percent: number }[]>(saved.additives || []);
 
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives]);
 
   /* ── Spacer height preview (real-time) ── */
   const isOpenHole = plug.bottomMD > well.casingShoe;
   const effectiveBore = isOpenHole ? well.holeDiameter * Math.sqrt(Math.max(1, well.cavernCoeff)) : well.casingID;
   const previewAnnArea = annArea(effectiveBore, well.pipeOD);
+  const previewBoreArea = (Math.PI / 4) * (effectiveBore / 1000) ** 2;
   const spacerAboveHeight = previewAnnArea > 0 ? spacerVolumeAbove / previewAnnArea : 0;
-  const spacerBelowHeight = previewAnnArea > 0 ? spacerVolumeBelow / previewAnnArea : 0;
+  const spacerBelowHeight = previewBoreArea > 0 ? spacerVolumeBelow / previewBoreArea : 0;
 
   /* ── Trajectory ── */
   const updateTrajPoint = (idx: number, key: keyof TrajectoryPoint, val: string) => {
@@ -320,6 +327,26 @@ export default function CementPlug() {
                       <div className="grid grid-cols-2 gap-2 mt-2">
                         <Field label="Время загустевания" value={thickeningTime} onChange={v => setThickeningTime(num(v))} unit="мин" />
                       </div>
+                      <Separator className="my-2" />
+                      <p className="text-[10px] font-medium text-muted-foreground mb-1">Рецептура</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        <Field label="В/Ц" value={wcRatio} onChange={v => setWcRatio(num(v))} unit="" />
+                        <Field label="Выход раствора" value={slurryYield} onChange={v => setSlurryYield(num(v))} unit="м³/т" />
+                      </div>
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-[10px] font-medium text-muted-foreground">Добавки (% BWOC)</p>
+                          <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1" onClick={() => setAdditives(a => [...a, { name: "Добавка", percent: 0 }])}>+ добавка</Button>
+                        </div>
+                        {additives.map((add, i) => (
+                          <div key={i} className="flex gap-1 items-center mb-1">
+                            <BlurInput className="h-6 text-[10px] flex-1" value={add.name} onValueCommit={v => { const a = [...additives]; a[i] = { ...a[i], name: v }; setAdditives(a); }} />
+                            <BlurInput type="number" className="h-6 text-[10px] w-16" value={add.percent || ""} onValueCommit={v => { const a = [...additives]; a[i] = { ...a[i], percent: num(v) }; setAdditives(a); }} />
+                            <span className="text-[10px] text-muted-foreground">%</span>
+                            <button className="text-destructive text-[10px]" onClick={() => setAdditives(a => a.filter((_, idx) => idx !== i))}>✕</button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     <Separator />
                     {/* Spacer */}
@@ -476,6 +503,32 @@ export default function CementPlug() {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* Materials */}
+                {slurryYield > 0 && (
+                  <Card>
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-sm">🏗️ Материалы</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      {(() => {
+                        const dryMass = results.cementVolumeTotal / slurryYield; // tonnes
+                        const waterMass = dryMass * wcRatio; // tonnes
+                        return (
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                            <ResultRow label="Сухой цемент" value={(dryMass * 1000).toFixed(0)} unit="кг" raw />
+                            <ResultRow label="Вода затворения" value={(waterMass * 1000).toFixed(0)} unit="кг" raw />
+                            <ResultRow label="В/Ц" value={wcRatio.toFixed(2)} unit="" raw />
+                            <ResultRow label="Выход" value={slurryYield.toFixed(2)} unit="м³/т" raw />
+                            {additives.filter(a => a.percent > 0).map((add, i) => (
+                              <ResultRow key={i} label={add.name} value={(dryMass * 1000 * add.percent / 100).toFixed(1)} unit={`кг (${add.percent}%)`} raw />
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Process description */}
                 <Card>
