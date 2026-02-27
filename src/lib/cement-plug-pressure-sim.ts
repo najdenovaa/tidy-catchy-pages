@@ -18,6 +18,7 @@ export interface PressureTimePoint {
   volDisplM3: number;     // cumulative displacement volume
   volWashM3: number;      // cumulative wash volume
   bhpMPa: number;
+  shoePressMPa: number;   // pressure at casing shoe depth (annulus side)
   surfaceMPa: number;
   fracMPa: number;
   hydroStaticAnnMPa: number;
@@ -90,10 +91,13 @@ export function simulatePlugPressures(
   const dHydPipe = well.pipeID; // mm
   const dHydAnn = boreDiam - well.pipeOD; // mm
 
-  // Frac pressure (constant)
+  // Frac pressure (constant) — at casing shoe depth
   const shoeTVD = interpolateTVD(well.casingShoe, traj);
   const fracMPa = fracGradientMPaPerM * shoeTVD;
   const bottomTVD = interpolateTVD(pipeEndMD, traj);
+  const shoeMD = well.casingShoe;
+  // Distance from bottom of annulus to shoe
+  const belowShoeMD = Math.max(0, pipeEndMD - shoeMD);
 
   const points: PressureTimePoint[] = [];
   const dt = 0.5; // time step, min
@@ -251,15 +255,37 @@ export function simulatePlugPressures(
     const fPipe = computePipeFriction(rateLs);
     const fAnn = computeAnnFriction(rateLs);
 
-    // BHP (at pipe end / plug bottom) from annulus side:
-    // BHP = hydrostatic_ann (from surface to bottom through annulus)
-    // But annulus goes bottom to surface, so hAnn is already the hydrostatic from surface to bottom.
+    // BHP at plug bottom: P_bottom = hydro_ann + friction_ann (annulus open at surface)
     const bhp = hAnn + fAnn;
 
-    // Surface pressure: Psurface + hPipe + fPipe_down = BHP (when pumping into pipe, friction is downstream)
-    // Actually: Psurface = BHP - hPipe + fPipe (friction adds to surface pressure when pumping down)
-    // Wait — pressure balance:  Psurface + hPipe - fPipe_pipe = P_bottom_pipe = P_bottom_ann = hAnn + fAnn
-    // So Psurface = hAnn + fAnn - hPipe + fPipe
+    // Pressure at casing shoe from annulus side:
+    // P_shoe = BHP - hydro(bottom→shoe) - friction(bottom→shoe)
+    // We compute partial hydrostatic & friction for the below-shoe portion of annulus
+    let hBelowShoe = 0;
+    let fBelowShoe = 0;
+    if (belowShoeMD > 0) {
+      let remainMD = belowShoeMD;
+      for (const seg of annContents) {
+        if (remainMD <= 0) break;
+        const segLen = Math.min(seg.lengthM, remainMD);
+        if (segLen <= 0) continue;
+        const props = fluidProps(seg.fluid);
+        // Hydrostatic for this segment
+        const md1 = pipeEndMD - (belowShoeMD - remainMD);
+        const md2 = md1 - segLen;
+        const tvd1 = interpolateTVD(Math.max(0, Math.min(well.wellDepthMD, md1)), traj);
+        const tvd2 = interpolateTVD(Math.max(0, Math.min(well.wellDepthMD, md2)), traj);
+        hBelowShoe += hydroMPa(props.density, Math.abs(tvd1 - tvd2));
+        // Friction for this segment
+        if (rateLs > 0) {
+          fBelowShoe += frictionBingham(rateLs, segLen, dHydAnn, annA, props.pv, props.yp, props.density * 1000) * 0.8;
+        }
+        remainMD -= segLen;
+      }
+    }
+    const shoePress = Math.max(0, bhp - hBelowShoe - fBelowShoe);
+
+    // Surface pressure balance: P_surface + hPipe - fPipe = BHP
     const surface = Math.max(0, hAnn + fAnn - hPipe + fPipe);
 
     return {
@@ -272,6 +298,7 @@ export function simulatePlugPressures(
       volDisplM3: cumDispl,
       volWashM3: cumWash,
       bhpMPa: bhp,
+      shoePressMPa: shoePress,
       surfaceMPa: surface,
       fracMPa,
       hydroStaticAnnMPa: hAnn,

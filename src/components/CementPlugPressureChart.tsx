@@ -14,6 +14,7 @@ interface Props {
 
 const COLORS = {
   bhp: "hsl(0, 80%, 55%)",
+  shoe: "hsl(330, 70%, 55%)",
   surface: "hsl(210, 80%, 55%)",
   frac: "hsl(40, 90%, 50%)",
   volume: "hsl(150, 60%, 45%)",
@@ -63,7 +64,7 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
   if (!data.length) return null;
 
   const maxP = Math.max(
-    ...data.map(d => Math.max(d.bhpMPa, d.surfaceMPa, d.fracMPa))
+    ...data.map(d => Math.max(d.bhpMPa, d.shoePressMPa, d.surfaceMPa, d.fracMPa))
   );
   const maxVol = Math.max(...data.map(d => d.volumePumpedM3));
   const maxRate = Math.max(...data.map(d => d.pumpRateLs));
@@ -171,6 +172,19 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
             name="Р забой"
             stroke={COLORS.bhp}
             strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+
+          {/* Pressure at casing shoe (compare with frac) */}
+          <Line
+            yAxisId="pressure"
+            type="monotone"
+            dataKey="shoePressMPa"
+            name="Р на башмаке"
+            stroke={COLORS.shoe}
+            strokeWidth={2}
+            strokeDasharray="6 3"
             dot={false}
             isAnimationActive={false}
           />
