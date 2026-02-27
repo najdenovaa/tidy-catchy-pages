@@ -22,7 +22,8 @@ export interface FlowRateStep {
 export interface DrillingFluid {
   name: string;
   density: number; // кг/м³
-  rheology: Rheology;
+  rheology: Rheology; // реология на поверхности (основная)
+  rheologyBottomhole?: Rheology; // реология на забое (опционально)
   fluidLoss: number; // Водоотдача, мл/30мин
 }
 
