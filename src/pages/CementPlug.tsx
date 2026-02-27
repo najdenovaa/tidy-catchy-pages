@@ -107,9 +107,9 @@ export default function CementPlug() {
   /* ── State ── */
   const [well, setWell] = useState<PlugWellData>(saved.well || defaultWell);
   const [plug, setPlug] = useState<PlugInterval>(saved.plug || { topMD: 2600, bottomMD: 2650 });
-  const [cement, setCement] = useState<PlugFluid>(saved.cement || { name: "Тампонажный р-р", density: 1.85, rheology: { pv: 50, yp: 10 } });
-  const [spacer, setSpacer] = useState<PlugFluid>(saved.spacer || { name: "Буферная жидкость", density: 1.10, rheology: { pv: 5, yp: 2 } });
-  const [wellFluid, setWellFluid] = useState<PlugFluid>(saved.wellFluid || { name: "Буровой раствор", density: 1.20, rheology: { pv: 15, yp: 5 } });
+  const [cement, setCement] = useState<PlugFluid>(saved.cement || { name: "Тампонажный р-р", density: 1.85, rheology: { pv: 50, yp: 10 }, gel10min: 0 });
+  const [spacer, setSpacer] = useState<PlugFluid>(saved.spacer || { name: "Буферная жидкость", density: 1.10, rheology: { pv: 5, yp: 2 }, gel10min: 0 });
+  const [wellFluid, setWellFluid] = useState<PlugFluid>(saved.wellFluid || { name: "Буровой раствор", density: 1.20, rheology: { pv: 15, yp: 5 }, gel10min: 0 });
   const [spacerVolumeAbove, setSpacerVolumeAbove] = useState(saved.spacerVolumeAbove ?? 0.3);
   const [spacerVolumeBelow, setSpacerVolumeBelow] = useState(saved.spacerVolumeBelow ?? 0.3);
   const [thickeningTime, setThickeningTime] = useState(saved.thickeningTime ?? 120);
@@ -652,6 +652,7 @@ export default function CementPlug() {
                         <Field label="Плотность" value={cement.density} onChange={v => setCement(c => ({ ...c, density: num(v) }))} unit="г/см³" />
                         <Field label="PV" value={cement.rheology.pv} onChange={v => setCement(c => ({ ...c, rheology: { ...c.rheology, pv: num(v) } }))} unit="сПз" />
                         <Field label="YP" value={cement.rheology.yp} onChange={v => setCement(c => ({ ...c, rheology: { ...c.rheology, yp: num(v) } }))} unit="Па" />
+                        <Field label="Гель 10 мин" value={cement.gel10min || 0} onChange={v => setCement(c => ({ ...c, gel10min: num(v) }))} unit="Па" />
                       </div>
                       <div className="grid grid-cols-3 gap-2 mt-2">
                         <Field label="Загустевание (50Bc)" value={thickeningTime} onChange={v => setThickeningTime(num(v))} unit="мин" />
@@ -691,6 +692,7 @@ export default function CementPlug() {
                         <Field label="Плотность" value={spacer.density} onChange={v => setSpacer(s => ({ ...s, density: num(v) }))} unit="г/см³" />
                         <Field label="PV" value={spacer.rheology.pv} onChange={v => setSpacer(s => ({ ...s, rheology: { ...s.rheology, pv: num(v) } }))} unit="сПз" />
                         <Field label="YP" value={spacer.rheology.yp} onChange={v => setSpacer(s => ({ ...s, rheology: { ...s.rheology, yp: num(v) } }))} unit="Па" />
+                        <Field label="Гель 10 мин" value={spacer.gel10min || 0} onChange={v => setSpacer(s => ({ ...s, gel10min: num(v) }))} unit="Па" />
                       </div>
                       <div className="grid grid-cols-2 gap-2 mt-2">
                         <div className="space-y-1">
@@ -726,6 +728,7 @@ export default function CementPlug() {
                         <Field label="Плотность" value={wellFluid.density} onChange={v => setWellFluid(d => ({ ...d, density: num(v) }))} unit="г/см³" />
                         <Field label="PV" value={wellFluid.rheology.pv} onChange={v => setWellFluid(d => ({ ...d, rheology: { ...d.rheology, pv: num(v) } }))} unit="сПз" />
                         <Field label="YP" value={wellFluid.rheology.yp} onChange={v => setWellFluid(d => ({ ...d, rheology: { ...d.rheology, yp: num(v) } }))} unit="Па" />
+                        <Field label="Гель 10 мин" value={wellFluid.gel10min || 0} onChange={v => setWellFluid(d => ({ ...d, gel10min: num(v) }))} unit="Па" />
                       </div>
                     </div>
                   </CardContent>
@@ -852,9 +855,14 @@ export default function CementPlug() {
                         'bg-destructive/10 text-destructive'
                       }`}>
                         <p className="whitespace-pre-line">{results.stability.recommendation}</p>
-                        {results.stability.requiredSpacerYP > 0 && results.stability.minStabilityFactor < 1.5 && (
+                        {results.stability.requiredSpacerGel > 0 && results.stability.minStabilityFactor < 1.5 && (
                           <p className="mt-1 font-semibold text-[11px]">
-                            Рекомендуемый YP буфера для SF=1.5: ≥ {results.stability.requiredSpacerYP.toFixed(1)} Па
+                            Рекомендуемый 10-мин гель буфера для SF=1.5: ≥ {results.stability.requiredSpacerGel.toFixed(1)} Па
+                          </p>
+                        )}
+                        {!results.stability.usedGelStrength && (
+                          <p className="mt-1 text-[10px] opacity-70">
+                            ℹ Гель не задан — используется оценка Gel ≈ 3×YP. Введите 10-мин гель для точности.
                           </p>
                         )}
                       </div>

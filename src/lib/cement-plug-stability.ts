@@ -5,15 +5,20 @@
  *
  * Physics:
  * After pipe removal, the cement plug is a free-standing column in the wellbore.
- * Two failure scenarios are evaluated:
+ * The KEY factor is STATIC GEL STRENGTH (SGS), not dynamic Yield Point.
+ * Once pumping stops, cement and spacer develop gel strength over time,
+ * which is typically 3–10× higher than dynamic YP.
+ *
+ * The resistance calculation uses the 10-minute gel strength as a conservative
+ * estimate of what the fluids develop during pipe withdrawal.
  *
  * Scenario 1: Plug sinks THROUGH the spacer below
  *   Driving force: (ρ_cement - ρ_spacer) × g × L_plug_TVD
- *   Resisting force: wall yield stress friction (4/D) × (τ_cement × L_plug + τ_spacer × L_spacer)
+ *   Resisting force: wall gel friction (4/D) × (SGS_cement × L_plug + SGS_spacer × L_spacer)
  *
  * Scenario 2: Plug + spacer sink TOGETHER in well fluid
  *   Driving force: (ρ_cement - ρ_wf) × g × L_plug + (ρ_spacer - ρ_wf) × g × L_spacer
- *   Resisting force: wall friction of cement + spacer + well fluid yield stress
+ *   Resisting force: wall gel friction of cement + spacer + well fluid gel
  *
  * Stability Factor (SF) = Resisting / Driving
  *   SF ≥ 1.5: stable with good margin
@@ -28,9 +33,16 @@ export interface StabilityParams {
   cementDensityKgM3: number;    // kg/m³
   spacerDensityKgM3: number;    // kg/m³
   wellFluidDensityKgM3: number; // kg/m³
-  cementYP: number;             // Pa (yield point)
-  spacerYP: number;             // Pa
-  wellFluidYP: number;          // Pa
+  /** 10-min gel strength of cement, Pa (if 0, falls back to YP × multiplier) */
+  cementGel10Min: number;
+  /** 10-min gel strength of spacer, Pa */
+  spacerGel10Min: number;
+  /** 10-min gel strength of well fluid, Pa */
+  wellFluidGel10Min: number;
+  /** Dynamic YP as fallback, Pa */
+  cementYP: number;
+  spacerYP: number;
+  wellFluidYP: number;
   isDeviated: boolean;
 }
 
@@ -50,11 +62,21 @@ export interface StabilityResult {
   warnings: string[];
   recommendation: string;
 
-  /** Minimum spacer YP needed for SF=1.5 in scenario 1 */
+  /** Minimum spacer gel strength needed for SF=1.5 in scenario 1 */
+  requiredSpacerGel: number;    // Pa
+
+  /** For backward compatibility */
   requiredSpacerYP: number;     // Pa
+
+  /** Whether gel strength values were used (vs fallback to YP) */
+  usedGelStrength: boolean;
 }
 
 const G = 9.81;
+/** If user doesn't provide gel strength, estimate as YP × this factor */
+const GEL_FROM_YP_FACTOR = 3.0;
+/** Maximum realistic spacer gel strength, Pa (~80 lb/100ft²) */
+const MAX_REALISTIC_GEL_PA = 38;
 
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
@@ -64,8 +86,14 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   const {
     plugLengthTVD: Lp, spacerBelowLengthTVD: Ls, boreDiameterM: D,
     cementDensityKgM3: ρc, spacerDensityKgM3: ρs, wellFluidDensityKgM3: ρwf,
-    cementYP: τc, spacerYP: τs, wellFluidYP: τwf,
+    cementYP, spacerYP, wellFluidYP,
   } = p;
+
+  // Use gel strength if provided, otherwise estimate from YP
+  const usedGel = p.cementGel10Min > 0 || p.spacerGel10Min > 0 || p.wellFluidGel10Min > 0;
+  const τc = p.cementGel10Min > 0 ? p.cementGel10Min : cementYP * GEL_FROM_YP_FACTOR;
+  const τs = p.spacerGel10Min > 0 ? p.spacerGel10Min : spacerYP * GEL_FROM_YP_FACTOR;
+  const τwf = p.wellFluidGel10Min > 0 ? p.wellFluidGel10Min : wellFluidYP * GEL_FROM_YP_FACTOR;
 
   // --- Scenario 1: plug pushes through spacer below ---
   const drive1 = Math.max(0, (ρc - ρs) * G * Lp);
@@ -81,16 +109,21 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   const minSF = Math.min(sf1, sf2);
   const isStable = minSF >= 1.0;
 
-  // Required spacer YP for SF=1.5 in scenario 1
+  // Required spacer gel for SF=1.5 in scenario 1
   const targetSF = 1.5;
-  let requiredSpacerYP = 0;
+  let requiredSpacerGel = 0;
   if (drive1 > 0 && D > 0 && Ls > 0) {
-    requiredSpacerYP = Math.max(0, (drive1 * targetSF * D / 4 - τc * Lp) / Ls);
+    requiredSpacerGel = Math.max(0, (drive1 * targetSF * D / 4 - τc * Lp) / Ls);
   }
 
   const warnings: string[] = [];
+
+  if (!usedGel) {
+    warnings.push(`ℹ Прочность геля не задана — используется оценка: Gel ≈ ${GEL_FROM_YP_FACTOR}×YP. Для точности введите 10-мин гель.`);
+  }
+
   if (sf1 < 1.0)
-    warnings.push(`⛔ Мост проседает через буфер (SF₁ = ${sf1.toFixed(2)}). Увеличьте YP буфера или его объём.`);
+    warnings.push(`⛔ Мост проседает через буфер (SF₁ = ${sf1.toFixed(2)}). Увеличьте гель буфера или его объём.`);
   else if (sf1 < 1.5)
     warnings.push(`⚠ Малый запас устойчивости через буфер (SF₁ = ${sf1.toFixed(2)}). Рекомендуется SF ≥ 1.5.`);
 
@@ -102,6 +135,10 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   if (Ls < 1 && Lp > 0)
     warnings.push(`⚠ Нижний буфер слишком мал (${Ls.toFixed(1)} м TVD). Рекомендуется ≥ 5 м.`);
 
+  if (requiredSpacerGel > MAX_REALISTIC_GEL_PA && minSF < 1.5) {
+    warnings.push(`⚠ Требуемый гель буфера (${requiredSpacerGel.toFixed(1)} Па) превышает реалистичный диапазон (≤ ${MAX_REALISTIC_GEL_PA} Па). Необходимо увеличить объём буфера или уменьшить разницу плотностей.`);
+  }
+
   if (ρc > ρwf * 1.5 && isStable)
     warnings.push(`ℹ Большая разница плотностей (${(ρc / 1000).toFixed(2)} vs ${(ρwf / 1000).toFixed(2)} г/см³). Контролируйте стабильность.`);
 
@@ -109,11 +146,11 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   if (!isStable) {
     recommendation = `Мост нестабилен! Рекомендации:\n` +
       `1. Увеличьте объём нижнего буфера (вязкая пачка)\n` +
-      `2. Увеличьте YP буфера до ≥ ${requiredSpacerYP.toFixed(1)} Па\n` +
-      `3. Увеличьте YP цемента\n` +
+      `2. Увеличьте 10-мин гель буфера до ≥ ${Math.min(requiredSpacerGel, MAX_REALISTIC_GEL_PA).toFixed(1)} Па\n` +
+      `3. Если гель > ${MAX_REALISTIC_GEL_PA} Па — увеличьте длину буфера\n` +
       `4. Уменьшите разницу плотностей`;
   } else if (minSF < 1.5) {
-    recommendation = `Мост стабилен, но запас мал. Рекомендуется увеличить YP буфера до ≥ ${requiredSpacerYP.toFixed(1)} Па.`;
+    recommendation = `Мост стабилен, но запас мал. Рекомендуется увеличить 10-мин гель буфера до ≥ ${requiredSpacerGel.toFixed(1)} Па.`;
   } else {
     recommendation = `Мост стабилен с хорошим запасом (SF = ${minSF.toFixed(2)}).`;
   }
@@ -129,6 +166,8 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
     isStable,
     warnings,
     recommendation,
-    requiredSpacerYP: round2(requiredSpacerYP),
+    requiredSpacerGel: round2(requiredSpacerGel),
+    requiredSpacerYP: round2(requiredSpacerGel), // backward compat
+    usedGelStrength: usedGel,
   };
 }
