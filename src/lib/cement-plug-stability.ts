@@ -33,11 +33,13 @@ export interface StabilityParams {
   cementDensityKgM3: number;    // kg/m³
   spacerDensityKgM3: number;    // kg/m³
   wellFluidDensityKgM3: number; // kg/m³
-  /** 10-min gel strength of cement, Pa (if 0, falls back to YP × multiplier) */
+  /** СНС 10 сек, Pa */
+  cementGel10Sec: number;
+  spacerGel10Sec: number;
+  wellFluidGel10Sec: number;
+  /** СНС 10 мин, Pa */
   cementGel10Min: number;
-  /** 10-min gel strength of spacer, Pa */
   spacerGel10Min: number;
-  /** 10-min gel strength of well fluid, Pa */
   wellFluidGel10Min: number;
   /** Dynamic YP as fallback, Pa */
   cementYP: number;
@@ -62,7 +64,7 @@ export interface StabilityResult {
   warnings: string[];
   recommendation: string;
 
-  /** Minimum spacer gel strength needed for SF=1.5 in scenario 1 */
+  /** Minimum spacer gel strength (10 min) needed for SF=1.5 in scenario 1 */
   requiredSpacerGel: number;    // Pa
 
   /** For backward compatibility */
@@ -70,6 +72,10 @@ export interface StabilityResult {
 
   /** Whether gel strength values were used (vs fallback to YP) */
   usedGelStrength: boolean;
+
+  /** SF using 10-sec gel (immediate stability after pumping stops) */
+  stabilityFactor1_10sec: number;
+  stabilityFactor2_10sec: number;
 }
 
 const G = 9.81;
@@ -95,16 +101,29 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   const τs = p.spacerGel10Min > 0 ? p.spacerGel10Min : spacerYP * GEL_FROM_YP_FACTOR;
   const τwf = p.wellFluidGel10Min > 0 ? p.wellFluidGel10Min : wellFluidYP * GEL_FROM_YP_FACTOR;
 
-  // --- Scenario 1: plug pushes through spacer below ---
+  // 10-sec gel for immediate stability check
+  const τc_10s = p.cementGel10Sec > 0 ? p.cementGel10Sec : cementYP;
+  const τs_10s = p.spacerGel10Sec > 0 ? p.spacerGel10Sec : spacerYP;
+  const τwf_10s = p.wellFluidGel10Sec > 0 ? p.wellFluidGel10Sec : wellFluidYP;
+
+  // --- Scenario 1: plug pushes through spacer below (10-min gel) ---
   const drive1 = Math.max(0, (ρc - ρs) * G * Lp);
   const resist1 = D > 0 ? (4 / D) * (τc * Lp + τs * Ls) : 0;
   const sf1 = drive1 > 0.01 ? resist1 / drive1 : 999;
 
-  // --- Scenario 2: plug+spacer move together downward ---
+  // --- Scenario 1 with 10-sec gel (immediate) ---
+  const resist1_10s = D > 0 ? (4 / D) * (τc_10s * Lp + τs_10s * Ls) : 0;
+  const sf1_10s = drive1 > 0.01 ? resist1_10s / drive1 : 999;
+
+  // --- Scenario 2: plug+spacer move together downward (10-min gel) ---
   const drive2_raw = (ρc - ρwf) * G * Lp + (ρs - ρwf) * G * Ls;
   const drive2 = Math.max(0, drive2_raw);
   const resist2 = D > 0 ? (4 / D) * (τc * Lp + τs * Ls + τwf * Lp) : 0;
   const sf2 = drive2 > 0.01 ? resist2 / drive2 : 999;
+
+  // --- Scenario 2 with 10-sec gel ---
+  const resist2_10s = D > 0 ? (4 / D) * (τc_10s * Lp + τs_10s * Ls + τwf_10s * Lp) : 0;
+  const sf2_10s = drive2 > 0.01 ? resist2_10s / drive2 : 999;
 
   const minSF = Math.min(sf1, sf2);
   const isStable = minSF >= 1.0;
@@ -129,8 +148,13 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
 
   if (sf2 < 1.0)
     warnings.push(`⛔ Система мост+буфер уходит вниз (SF₂ = ${sf2.toFixed(2)}). Увеличьте реологию или плотность буфера.`);
-  else if (sf2 < 1.5)
+   else if (sf2 < 1.5)
     warnings.push(`⚠ Малый запас устойчивости системы (SF₂ = ${sf2.toFixed(2)}).`);
+
+  // 10-sec warnings (immediate stability)
+  const minSF_10s = Math.min(sf1_10s, sf2_10s);
+  if (minSF_10s < 1.0 && minSF >= 1.0)
+    warnings.push(`⚠ Сразу после остановки насосов (СНС 10с) мост нестабилен (SF = ${minSF_10s.toFixed(2)}). Важно быстро набирать прочность геля.`);
 
   if (Ls < 1 && Lp > 0)
     warnings.push(`⚠ Нижний буфер слишком мал (${Ls.toFixed(1)} м TVD). Рекомендуется ≥ 5 м.`);
@@ -167,7 +191,9 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
     warnings,
     recommendation,
     requiredSpacerGel: round2(requiredSpacerGel),
-    requiredSpacerYP: round2(requiredSpacerGel), // backward compat
+    requiredSpacerYP: round2(requiredSpacerGel),
     usedGelStrength: usedGel,
+    stabilityFactor1_10sec: round2(sf1_10s),
+    stabilityFactor2_10sec: round2(sf2_10s),
   };
 }
