@@ -245,12 +245,12 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   let recommendation = '';
   if (isConfined) {
     if (interfaceRisk === 'low') {
-      recommendation = `Мост стабилен. Замкнутая система — проседание невозможно. Интерфейс чистый (SF = ${interfaceSF.toFixed(2)}).`;
+      recommendation = `Мост стабилен. Интерфейс чистый (SF = ${interfaceSF.toFixed(2)}).`;
     } else if (interfaceRisk === 'medium') {
-      recommendation = `Мост стабилен (замкнутая система). Незначительное смешение на интерфейсе (~${contaminationDepthM.toFixed(1)} м).\n` +
+      recommendation = `Мост стабилен. Незначительное смешение на интерфейсе (~${contaminationDepthM.toFixed(1)} м).\n` +
         `Для улучшения качества герметизации увеличьте СНС буфера до ≥ ${requiredSpacerGel.toFixed(1)} Па.`;
     } else {
-      recommendation = `Мост стабилен (замкнутая система, проседание невозможно), но высокий риск загрязнения интерфейса (~${contaminationDepthM.toFixed(1)} м).\n` +
+      recommendation = `Мост стабилен, но высокий риск загрязнения интерфейса (~${contaminationDepthM.toFixed(1)} м).\n` +
         `Рекомендации:\n` +
         `1. Увеличьте СНС 10 мин буфера до ≥ ${requiredSpacerGel.toFixed(1)} Па\n` +
         `2. Увеличьте объём нижнего буфера (компенсация зоны смешения)\n` +
