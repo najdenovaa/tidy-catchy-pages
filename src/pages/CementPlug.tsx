@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Send, Home, Calculator, ArrowLeft } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -18,10 +18,56 @@ import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-ca
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from "xlsx";
 
+const SESSION_KEY = "cement_plug_session_v2";
+
 function num(v: string): number {
   const n = parseFloat(v);
   return isNaN(n) ? 0 : n;
 }
+
+/** Compute annular area for spacer height preview */
+function annArea(boreMm: number, pipeODMm: number): number {
+  const bo = boreMm / 1000;
+  const pi = pipeODMm / 1000;
+  return (Math.PI / 4) * (bo * bo - pi * pi);
+}
+
+interface SessionState {
+  well: PlugWellData;
+  plug: PlugInterval;
+  cement: PlugFluid;
+  spacer: PlugFluid;
+  wellFluid: PlugFluid;
+  spacerVolumeAbove: number;
+  spacerVolumeBelow: number;
+  thickeningTime: number;
+  pullOutAbove: number;
+  washType: WashType;
+  washCycles: number;
+  tripSpeed: number;
+  trajPoints: TrajectoryPoint[];
+  lastResults: PlugResults | null;
+}
+
+function loadSession(): Partial<SessionState> {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+function saveSession(state: SessionState) {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(state));
+  } catch {}
+}
+
+const defaultWell: PlugWellData = {
+  wellDepthMD: 3000, holeDiameter: 215.9, casingShoe: 2500, casingID: 220,
+  pipeOD: 89, pipeID: 75.9, cavernCoeff: 1.3,
+  trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }],
+};
 
 export default function CementPlug() {
   useEffect(() => {
@@ -30,29 +76,40 @@ export default function CementPlug() {
     }).catch(() => {});
   }, []);
 
-  /* ── State: well ── */
-  const [well, setWell] = useState<PlugWellData>({
-    wellDepthMD: 3000, holeDiameter: 215.9, casingShoe: 2500, casingID: 220,
-    pipeOD: 89, pipeID: 75.9,
-    trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }],
-  });
+  const saved = useMemo(() => loadSession(), []);
 
-  const [plug, setPlug] = useState<PlugInterval>({ topMD: 2600, bottomMD: 2650 });
+  /* ── State ── */
+  const [well, setWell] = useState<PlugWellData>(saved.well || defaultWell);
+  const [plug, setPlug] = useState<PlugInterval>(saved.plug || { topMD: 2600, bottomMD: 2650 });
+  const [cement, setCement] = useState<PlugFluid>(saved.cement || { name: "Тампонажный р-р", density: 1.85, rheology: { pv: 50, yp: 10 } });
+  const [spacer, setSpacer] = useState<PlugFluid>(saved.spacer || { name: "Буферная жидкость", density: 1.10, rheology: { pv: 5, yp: 2 } });
+  const [wellFluid, setWellFluid] = useState<PlugFluid>(saved.wellFluid || { name: "Буровой раствор", density: 1.20, rheology: { pv: 15, yp: 5 } });
+  const [spacerVolumeAbove, setSpacerVolumeAbove] = useState(saved.spacerVolumeAbove ?? 0.3);
+  const [spacerVolumeBelow, setSpacerVolumeBelow] = useState(saved.spacerVolumeBelow ?? 0.3);
+  const [thickeningTime, setThickeningTime] = useState(saved.thickeningTime ?? 120);
+  const [pullOutAbove, setPullOutAbove] = useState(saved.pullOutAbove ?? 50);
+  const [washType, setWashType] = useState<WashType>(saved.washType || 'direct');
+  const [washCycles, setWashCycles] = useState(saved.washCycles ?? 2);
+  const [tripSpeed, setTripSpeed] = useState(saved.tripSpeed ?? 0.3);
+  const [trajPoints, setTrajPoints] = useState<TrajectoryPoint[]>(saved.trajPoints || well.trajectory);
+  const [results, setResults] = useState<PlugResults | null>(saved.lastResults || null);
 
-  /* ── State: fluids ── */
-  const [cement, setCement] = useState<PlugFluid>({ name: "Тампонажный р-р", density: 1.85, rheology: { pv: 50, yp: 10 } });
-  const [spacer, setSpacer] = useState<PlugFluid>({ name: "Буферная жидкость", density: 1.10, rheology: { pv: 5, yp: 2 } });
-  const [wellFluid, setWellFluid] = useState<PlugFluid>({ name: "Буровой раствор", density: 1.20, rheology: { pv: 15, yp: 5 } });
-  const [spacerVolumeAbove, setSpacerVolumeAbove] = useState(0.3);
-  const [spacerVolumeBelow, setSpacerVolumeBelow] = useState(0.3);
-  const [thickeningTime, setThickeningTime] = useState(120);
-  const [pullOutAbove, setPullOutAbove] = useState(50);
-  const [washType, setWashType] = useState<WashType>('direct');
-  const [washCycles, setWashCycles] = useState(2);
+  /* ── Session save ── */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results]);
+
+  /* ── Spacer height preview (real-time) ── */
+  const isOpenHole = plug.bottomMD > well.casingShoe;
+  const effectiveBore = isOpenHole ? well.holeDiameter * Math.sqrt(Math.max(1, well.cavernCoeff)) : well.casingID;
+  const previewAnnArea = annArea(effectiveBore, well.pipeOD);
+  const spacerAboveHeight = previewAnnArea > 0 ? spacerVolumeAbove / previewAnnArea : 0;
+  const spacerBelowHeight = previewAnnArea > 0 ? spacerVolumeBelow / previewAnnArea : 0;
 
   /* ── Trajectory ── */
-  const [trajPoints, setTrajPoints] = useState<TrajectoryPoint[]>(well.trajectory);
-
   const updateTrajPoint = (idx: number, key: keyof TrajectoryPoint, val: string) => {
     const pts = [...trajPoints];
     pts[idx] = { ...pts[idx], [key]: num(val) };
@@ -103,21 +160,21 @@ export default function CementPlug() {
   };
 
   /* ── Calculation ── */
-  const [results, setResults] = useState<PlugResults | null>(null);
+  const buildInputs = (): PlugInputs => ({
+    well: { ...well, trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory },
+    plug, cement, spacer, wellFluid,
+    spacerVolumeAboveM3: spacerVolumeAbove,
+    spacerVolumeBelowM3: spacerVolumeBelow,
+    safetyMarginM: 30,
+    thickeningTimeMin: thickeningTime,
+    pullOutAbovePlugM: pullOutAbove,
+    washType,
+    washCycles,
+    tripSpeedMs: tripSpeed,
+  });
 
   const calculate = () => {
-    const inp: PlugInputs = {
-      well: { ...well, trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory },
-      plug, cement, spacer, wellFluid,
-      spacerVolumeAboveM3: spacerVolumeAbove,
-      spacerVolumeBelowM3: spacerVolumeBelow,
-      safetyMarginM: 30,
-      thickeningTimeMin: thickeningTime,
-      pullOutAbovePlugM: pullOutAbove,
-      washType,
-      washCycles,
-    };
-    setResults(calculateBalancedPlug(inp));
+    setResults(calculateBalancedPlug(buildInputs()));
   };
 
   /* ── Collapsible state ── */
@@ -130,18 +187,6 @@ export default function CementPlug() {
       <BlurInput type="number" step="any" value={value || ""} onValueCommit={onChange} className="h-8 text-xs" />
     </div>
   );
-
-  const buildInputs = (): PlugInputs => ({
-    well: { ...well, trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory },
-    plug, cement, spacer, wellFluid,
-    spacerVolumeAboveM3: spacerVolumeAbove,
-    spacerVolumeBelowM3: spacerVolumeBelow,
-    safetyMarginM: 30,
-    thickeningTimeMin: thickeningTime,
-    pullOutAbovePlugM: pullOutAbove,
-    washType,
-    washCycles,
-  });
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -193,7 +238,11 @@ export default function CementPlug() {
                       <Field label="Вн. ∅ колонны" value={well.casingID} onChange={v => setWell(w => ({ ...w, casingID: num(v) }))} unit="мм" />
                       <Field label="Нар. ∅ труб" value={well.pipeOD} onChange={v => setWell(w => ({ ...w, pipeOD: num(v) }))} unit="мм" />
                       <Field label="Вн. ∅ труб" value={well.pipeID} onChange={v => setWell(w => ({ ...w, pipeID: num(v) }))} unit="мм" />
+                      <Field label="Коэфф. кавернозности" value={well.cavernCoeff} onChange={v => setWell(w => ({ ...w, cavernCoeff: num(v) }))} unit="" />
                     </div>
+                    {isOpenHole && (
+                      <p className="text-[10px] text-amber-400">⚠ Открытый ствол: эфф. диаметр = {effectiveBore.toFixed(1)} мм (Kкав = {well.cavernCoeff})</p>
+                    )}
                     <Separator />
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-medium text-muted-foreground">Инклинометрия</p>
@@ -283,8 +332,14 @@ export default function CementPlug() {
                         <Field label="YP" value={spacer.rheology.yp} onChange={v => setSpacer(s => ({ ...s, rheology: { ...s.rheology, yp: num(v) } }))} unit="Па" />
                       </div>
                       <div className="grid grid-cols-2 gap-2 mt-2">
-                        <Field label="Объём буфера сверху" value={spacerVolumeAbove} onChange={v => setSpacerVolumeAbove(num(v))} unit="м³" />
-                        <Field label="Объём буфера снизу" value={spacerVolumeBelow} onChange={v => setSpacerVolumeBelow(num(v))} unit="м³" />
+                        <div className="space-y-1">
+                          <Field label="Объём буфера сверху" value={spacerVolumeAbove} onChange={v => setSpacerVolumeAbove(num(v))} unit="м³" />
+                          <p className="text-[10px] text-muted-foreground">↕ Высота в затрубье: {spacerAboveHeight.toFixed(2)} м</p>
+                        </div>
+                        <div className="space-y-1">
+                          <Field label="Объём буфера снизу" value={spacerVolumeBelow} onChange={v => setSpacerVolumeBelow(num(v))} unit="м³" />
+                          <p className="text-[10px] text-muted-foreground">↕ Высота в затрубье: {spacerBelowHeight.toFixed(2)} м</p>
+                        </div>
                       </div>
                     </div>
                     <Separator />
@@ -314,9 +369,10 @@ export default function CementPlug() {
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <CardContent className="pt-0 space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       <Field label="Подъём над кровлей моста" value={pullOutAbove} onChange={v => setPullOutAbove(num(v))} unit="м" />
-                      <Field label="Количество циклов промывки" value={washCycles} onChange={v => setWashCycles(Math.max(1, num(v)))} unit="" />
+                      <Field label="Кол-во циклов промывки" value={washCycles} onChange={v => setWashCycles(Math.max(1, num(v)))} unit="" />
+                      <Field label="Скорость подъёма" value={tripSpeed} onChange={v => setTripSpeed(num(v))} unit="м/с" />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Тип промывки</Label>
@@ -356,15 +412,23 @@ export default function CementPlug() {
                       <ResultRow label="Низ моста TVD" value={results.plugBottomTVD} unit="м" />
                       <ResultRow label="Sзатр." value={(results.annArea * 1e4).toFixed(1)} unit="см²" raw />
                       <ResultRow label="Sтруб." value={(results.pipeArea * 1e4).toFixed(1)} unit="см²" raw />
+                      {results.isOpenHole && (
+                        <ResultRow label="Kкав / эфф.∅" value={`${results.cavernCoeff.toFixed(2)} / ${results.boreDiamUsed.toFixed(1)} мм`} unit="" raw />
+                      )}
                       <Separator className="col-span-full my-1" />
                       <ResultRow label="Цемент (затрубье)" value={results.cementVolumeAnn} unit="м³" />
                       <ResultRow label="Цемент (трубы)" value={results.cementVolumePipe} unit="м³" />
                       <ResultRow label="Цемент ИТОГО" value={results.cementVolumeTotal} unit="м³" highlight />
+                      <ResultRow label="Высота цем. (затрубье)" value={results.cementHeightAnnMD} unit="м" />
+                      <ResultRow label="Высота цем. (трубы)" value={results.cementHeightPipeMD} unit="м" />
+                      <div className="col-span-full text-[10px] text-muted-foreground italic mt-1">
+                        {results.heightDifferenceExplanation}
+                      </div>
+                      <Separator className="col-span-full my-1" />
                       <ResultRow label="Буфер сверху" value={results.spacerVolumeAbove} unit="м³" />
                       <ResultRow label="↕ Интервал буфера сверху" value={results.spacerAboveHeightAnnMD} unit="м" />
                       <ResultRow label="Буфер снизу" value={results.spacerVolumeBelow} unit="м³" />
                       <ResultRow label="↕ Интервал буфера снизу" value={results.spacerBelowHeightAnnMD} unit="м" />
-                      <ResultRow label="Высота цем. в трубах" value={results.cementHeightPipeMD} unit="м" />
                       <ResultRow label="Объём продавки" value={results.displacementVolume} unit="м³" highlight />
                       <Separator className="col-span-full my-1" />
                       <ResultRow label="P_статич. затрубье" value={results.pressureAnnulus} unit="МПа" />
@@ -372,6 +436,8 @@ export default function CementPlug() {
                       <ResultRow label="ΔP" value={Math.abs(results.pressureAnnulus - results.pressurePipe).toFixed(2)} unit="МПа" raw highlight />
                       <Separator className="col-span-full my-1" />
                       <ResultRow label="Подъём на промывку до" value={results.pullOutDepthMD} unit="м MD" />
+                      <ResultRow label="Скорость подъёма" value={results.tripSpeedMs.toFixed(2)} unit="м/с" raw />
+                      <ResultRow label="Время подъёма" value={(results.tripTimeSec / 60).toFixed(1)} unit="мин" raw />
                       <ResultRow label={`Промывка (${results.washType === 'direct' ? 'прямая' : 'обратная'}, ${results.washCycles} ц.)`} value={results.washVolumeM3} unit="м³" />
                       <ResultRow label="Загустевание цемента" value={results.thickeningTimeMin} unit="мин" />
                     </div>
@@ -381,7 +447,7 @@ export default function CementPlug() {
                 {/* Pumping schedule */}
                 <Card>
                   <CardHeader className="py-3 px-4">
-                    <CardTitle className="text-sm">📋 Порядок закачки</CardTitle>
+                    <CardTitle className="text-sm">📋 Порядок работ</CardTitle>
                   </CardHeader>
                   <CardContent className="pt-0">
                     <div className="overflow-x-auto">
@@ -401,7 +467,7 @@ export default function CementPlug() {
                               <TableCell className="text-xs font-medium">{i + 1}</TableCell>
                               <TableCell className="text-xs font-medium">{stage.name}</TableCell>
                               <TableCell className="text-xs text-muted-foreground">{stage.fluid}</TableCell>
-                              <TableCell className="text-xs text-right font-medium">{stage.volumeM3.toFixed(3)}</TableCell>
+                              <TableCell className="text-xs text-right font-medium">{stage.volumeM3 > 0 ? stage.volumeM3.toFixed(3) : "—"}</TableCell>
                               <TableCell className="text-xs text-muted-foreground max-w-[200px]">{stage.description}</TableCell>
                             </TableRow>
                           ))}
