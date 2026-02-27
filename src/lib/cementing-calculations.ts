@@ -949,6 +949,7 @@ export function calculatePressureProfile(
 
   let cumDisplacementVol = 0; // накопленный объём продавки (для отслеживания догонки)
   let freefallOffset = 0; // объём, сместившийся при U-tube оседании (добавляется к totalPumped)
+  let displacementStartTime: number | null = null; // старт продавки после промывки
 
   stages.forEach(s => {
     if (s.isCement && !cementStartFound) {
@@ -1073,11 +1074,16 @@ export function calculatePressureProfile(
         const settledFrac = 1 - Math.exp(-m / Math.max(settlingTau, 0.01));
         const settledVol = freefallVol * settledFrac;
 
-        // Выход на устье = объём вытесненный за эту минуту → расход л/с
-        const deltaVol = settledVol - prevSettledVol; // м³ за 1 мин
+        // Выход на устье = объём вытесненный за шаг → расход л/с
+        const deltaVol = settledVol - prevSettledVol; // м³ за шаг
         let returnRateLps = deltaVol / 60 * 1000; // м³/мин → л/с
         // Ограничиваем: выход на устье не должен превышать последнюю производительность
         returnRateLps = Math.min(returnRateLps, lastActiveRate);
+        // Плавное затухание к нулю к концу промывки
+        const pauseFrac = m / Math.max(pauseMin, 0.001);
+        const taper = Math.pow(Math.max(0, 1 - pauseFrac), 1.15);
+        returnRateLps = Math.max(0, returnRateLps * taper);
+        if (m === pauseMin) returnRateLps = 0;
         prevSettledVol = settledVol;
 
         // Определяем момент достижения равновесия (95% от freefallVol)
@@ -1150,15 +1156,19 @@ export function calculatePressureProfile(
     pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0 });
     const batchIdx = pumpHistory.length - 1;
 
-    const compressionEffect = s.compressionCoeff > 1.0 ? 1 / s.compressionCoeff : 1.0;
     const isDisplacement = !s.isCement && cementStartFound && !s.isFlushPause;
+    if (isDisplacement && displacementStartTime === null) {
+      displacementStartTime = cumTime;
+    }
 
-    const minuteSteps = Math.max(1, Math.ceil(stageTime));
-    for (let m = 1; m <= minuteSteps; m++) {
-      const frac = Math.min(m / stageTime, 1);
-      const tNow = cumTime + Math.min(m, stageTime);
+    const dtMin = 0.5;
+    const stepCount = Math.max(1, Math.ceil(stageTime / dtMin));
+    for (let step = 1; step <= stepCount; step++) {
+      const progressedTime = Math.min(step * dtMin, stageTime);
+      const frac = stageTime > 0 ? Math.min(progressedTime / stageTime, 1) : 1;
+      const tNow = cumTime + progressedTime;
       const vNow = cumVol + s.volume * frac;
-      const stepVolume = s.volume / minuteSteps;
+      const stepVolume = stepCount > 0 ? s.volume / stepCount : 0;
 
       if (isDisplacement) cumDisplacementVol += stepVolume;
 
@@ -1169,7 +1179,7 @@ export function calculatePressureProfile(
       const filledFraction = Math.min(totalPumped / Math.max(pipeCapacity, 0.01), 1);
 
       // === Soft start: насосы выходят на режим за первые ~5 мин от начала закачки ===
-      const globalTimeMin = cumTime + Math.min(m, stageTime);
+      const globalTimeMin = tNow;
       const softStartFactor = Math.min(1, globalTimeMin / 5.0);
       // Кривая разгона: очень плавное нарастание (5-я степень для более пологого старта)
       const rampFactor = softStartFactor * softStartFactor * softStartFactor * softStartFactor * softStartFactor;
@@ -1184,21 +1194,16 @@ export function calculatePressureProfile(
       const frPipe = frPipePumpedActual.pressureMPa * filledFraction + frPipeMudActual.pressureMPa * (1 - filledFraction);
 
       // === Загустевание цемента: увеличение эффективной вязкости с течением времени ===
-      // После начала закачки цемента, вязкость раствора в затрубье растёт
       let thickeningMultiplier = 1.0;
       if (cementStartFound && globalTimeMin > cementStartTime) {
         const timeSinceCementStart = globalTimeMin - cementStartTime;
-        // Линейный рост эффективной вязкости: +15% за каждые 30 мин работы с цементом
-        // Ускорение после 60% от времени загустевания
         const maxThick30 = slurries.length > 0 ? Math.max(...slurries.map(sl => sl.thickeningTime30Bc || 180)) : 180;
         const progressFrac = Math.min(1, timeSinceCementStart / maxThick30);
-        // Нелинейный рост: медленно вначале, быстрее к концу (кубическая кривая)
         thickeningMultiplier = 1.0 + 0.20 * progressFrac + 0.35 * progressFrac * progressFrac + 0.25 * progressFrac * progressFrac * progressFrac;
       }
 
       const effAnnPv = annPv * thickeningMultiplier;
       const effAnnYp = annYp * thickeningMultiplier;
-      // Затрубное трение тоже с ФАКТИЧЕСКОЙ производительностью
       const frAnnDynamic = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydAnn, effAnnPv, effAnnYp, annAreaM2, annDensity);
       const frAnnNow = frAnnDynamic.pressureMPa * annFrictionMultiplier;
       const reAnnNow = frAnnDynamic.reynolds;
@@ -1212,42 +1217,47 @@ export function calculatePressureProfile(
         ? Math.min(1, cumDisplacementVol / cementFreefallVol)
         : 1;
 
-      // === Гравитационное оседание ===
-      let gravityReturnLps = 0;
-      const gravityDeltaMPa = pipeHydro - annHydro;
-      if (gravityDeltaMPa > 0.01) {
-        let lo = 0, hi = 30 * 0.06;
-        for (let iter = 0; iter < 15; iter++) {
-          const mid = (lo + hi) / 2;
-          const fPipe = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3).pressureMPa;
-          const fAnn = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydAnn, effAnnPv, effAnnYp, annAreaM2, annDensity).pressureMPa * annFrictionMultiplier;
-          if (fPipe + fAnn < gravityDeltaMPa) lo = mid; else hi = mid;
-        }
-        gravityReturnLps = ((lo + hi) / 2) / 0.06;
-      }
-
       const effectiveFrAnn = isCatchingUp ? frAnnNow * catchUpFrac * catchUpFrac : frAnnNow;
 
-      // === Выход на устье ===
-      // При закачке тяжёлых растворов: выход чуть выше (тяжёлый раствор быстрее вытесняет лёгкий)
-      const densityBoost = s.densityGcm3 > mudDensityGcm3 + 0.05
-        ? 1.0 + (s.densityGcm3 - mudDensityGcm3) / mudDensityGcm3 * 0.10
-        : 1.0;
-      const baseReturn = actualRateLps * compressionEffect * densityBoost;
-      // Ограничиваем гравитационный расход — максимум 20% от текущей производительности
-      const cappedGravityReturn = Math.min(gravityReturnLps, actualRateLps * 0.2);
-      // При догонке (пробка ещё не дошла до цемента): выход = производительность насоса
-      // (флюид закачивается → объём вытесняется на устье, независимо от положения пробки)
-      // После догонки: цемент начинает подниматься в затрубье, небольшой гравитационный вклад
-      let totalAnnReturn = baseReturn;
-      if (!isCatchingUp) {
-        totalAnnReturn = baseReturn + cappedGravityReturn;
-      }
-      // Абсолютный cap: выход НИКОГДА не превышает текущую производительность насосов
-      totalAnnReturn = Math.min(totalAnnReturn, actualRateLps * 1.0);
+      const surfPRaw = Math.max(0, (annHydro - pipeHydro) + frPipe + effectiveFrAnn);
+      const bhpRaw = annHydro + effectiveFrAnn;
 
-      const surfP = Math.max(0, (annHydro - pipeHydro) + frPipe + effectiveFrAnn);
-      const bhp = annHydro + effectiveFrAnn;
+      // === Выход на устье ===
+      // На длинных промывках перед продавкой возможна задержка циркуляции:
+      // сначала небольшой лаг, затем плавный рост до Qвых = Qвх,
+      // после появления давления на агрегате — синхронный режим 1:1.
+      let circulationFactor = 1;
+      if (isDisplacement && displacementStartTime !== null) {
+        const timeFromDispStart = tNow - displacementStartTime;
+        const delayMin = 2;
+        const rampMin = 4;
+
+        if (timeFromDispStart <= delayMin) {
+          circulationFactor = 0;
+        } else {
+          const x = Math.min(1, (timeFromDispStart - delayMin) / rampMin);
+          circulationFactor = x * x * (3 - 2 * x); // smoothstep
+        }
+
+        // Как только давление на агрегате стабильно появилось — выход = вход
+        if (surfPRaw >= 0.3) {
+          circulationFactor = 1;
+        }
+      }
+
+      let totalAnnReturn = actualRateLps * circulationFactor;
+      totalAnnReturn = Math.min(totalAnnReturn, actualRateLps);
+      totalAnnReturn = Math.max(0, totalAnnReturn);
+
+      // Сглаживаем кривые давления на этапе цемента — без резких "ломаных" падений
+      let surfP = surfPRaw;
+      let bhp = bhpRaw;
+      if (s.isCement && points.length > 0) {
+        const prev = points[points.length - 1];
+        const blend = 0.35;
+        surfP = prev.surfacePressure + (surfPRaw - prev.surfacePressure) * blend;
+        bhp = prev.bottomholePressure + (bhpRaw - prev.bottomholePressure) * blend;
+      }
 
       points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3) });
     }
