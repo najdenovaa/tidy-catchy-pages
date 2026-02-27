@@ -3,8 +3,17 @@
  */
 
 import { interpolateTVD, calculateTVDFromSurvey, type TrajectoryPoint, type Rheology } from "./cementing-calculations";
+import { calculatePlugStability, type StabilityResult } from "./cement-plug-stability";
 
 /* ───── Interfaces ───── */
+
+export interface PipeSection {
+  fromMD: number;
+  toMD: number;
+  od: number; // mm
+  id: number; // mm
+  name?: string;
+}
 
 export interface PlugWellData {
   wellDepthMD: number;
@@ -13,8 +22,9 @@ export interface PlugWellData {
   casingID: number;
   pipeOD: number;
   pipeID: number;
-  cavernCoeff: number; // коэффициент кавернозности (only for open hole)
+  cavernCoeff: number;
   trajectory: TrajectoryPoint[];
+  pipeSections?: PipeSection[];
 }
 
 export interface PlugFluid {
@@ -63,6 +73,49 @@ function annularArea(outerMm: number, innerMm: number): number {
 
 function hydroP(densityGcm3: number, tvdM: number): number {
   return densityGcm3 * 9.81 * tvdM / 1000;
+}
+
+/** Compute annular + pipe volumes in a depth interval considering pipe sections */
+function volumeInInterval(topMD: number, bottomMD: number, boreDiamMm: number, sections: PipeSection[]): { annVol: number; pipeVol: number } {
+  if (topMD >= bottomMD) return { annVol: 0, pipeVol: 0 };
+  let annVol = 0, pipeVol = 0, coveredLen = 0;
+  for (const s of sections) {
+    const t = Math.max(topMD, s.fromMD);
+    const b = Math.min(bottomMD, s.toMD);
+    if (t >= b) continue;
+    const len = b - t;
+    annVol += annularArea(boreDiamMm, s.od) * len;
+    pipeVol += area(s.id) * len;
+    coveredLen += len;
+  }
+  const uncovered = (bottomMD - topMD) - coveredLen;
+  if (uncovered > 0.001) {
+    annVol += area(boreDiamMm) * uncovered; // full bore, no pipe
+  }
+  return { annVol, pipeVol };
+}
+
+/** Binary-search for placement height so total available volume = target */
+function findPlacementHeight(targetVolM3: number, pipeEndMD: number, boreDiamMm: number, sections: PipeSection[]): number {
+  if (targetVolM3 <= 0) return 0;
+  let lo = 0, hi = pipeEndMD * 1.5;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    const vols = volumeInInterval(pipeEndMD - mid, pipeEndMD, boreDiamMm, sections);
+    if (vols.annVol + vols.pipeVol < targetVolM3) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/** Get representative pipe areas at a specific depth */
+function getAreasAtDepth(md: number, boreDiamMm: number, sections: PipeSection[]): { annA: number; pipeA: number } {
+  for (const s of sections) {
+    if (md >= s.fromMD && md < s.toMD) {
+      return { annA: annularArea(boreDiamMm, s.od), pipeA: area(s.id) };
+    }
+  }
+  return { annA: area(boreDiamMm), pipeA: 0 };
 }
 
 /* ───── Results ───── */
@@ -119,15 +172,19 @@ export interface PlugResults {
   boreDiamUsed: number;
 
   // Timing
-  safeTimeMin: number;         // 0.75 × thickeningTimeMin
+  safeTimeMin: number;
   pumpTimeCementMin: number;
   pumpTimeSpacerBelowMin: number;
   pumpTimeSpacerAboveMin: number;
   pumpTimeDisplacementMin: number;
   tripTimeMin: number;
   washTimeMin: number;
-  totalOperationTimeMin: number; // from cement pump start → wash complete
+  totalOperationTimeMin: number;
   isTimeSafe: boolean;
+
+  // Stability analysis
+  stability: StabilityResult;
+  pipeSectionsUsed: PipeSection[];
 }
 
 export interface FluidColumn {
@@ -148,11 +205,23 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
 
   const isOpenHole = plug.bottomMD > well.casingShoe;
   const cavernCoeff = isOpenHole ? Math.max(1, well.cavernCoeff || 1) : 1;
-  // Effective bore diameter for open hole with cavern coefficient
   const boreDiam = isOpenHole ? well.holeDiameter * Math.sqrt(cavernCoeff) : well.casingID;
 
-  const annA = annularArea(boreDiam, well.pipeOD);
-  const pipeA = area(well.pipeID);
+  const pipeEndMD = plug.bottomMD;
+
+  // Build effective pipe sections
+  const effectiveSections: PipeSection[] = (well.pipeSections && well.pipeSections.length > 0)
+    ? well.pipeSections
+        .filter(s => s.fromMD < s.toMD && s.od > 0 && s.id > 0)
+        .map(s => ({ ...s, toMD: Math.min(s.toMD, pipeEndMD) }))
+        .filter(s => s.fromMD < s.toMD)
+    : [{ fromMD: 0, toMD: pipeEndMD, od: well.pipeOD, id: well.pipeID }];
+
+  // Representative areas at plug center (for display and simple height calcs)
+  const plugCenterMD = Math.min((plug.topMD + plug.bottomMD) / 2, pipeEndMD - 0.01);
+  const repAreas = getAreasAtDepth(Math.max(0, plugCenterMD), boreDiam, effectiveSections);
+  const annA = repAreas.annA;
+  const pipeA = repAreas.pipeA;
 
   const plugLenMD = Math.max(0, plug.bottomMD - plug.topMD);
 
@@ -161,34 +230,33 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const plugBottomTVD = interpolateTVD(plug.bottomMD, traj);
   const plugLenTVD = plugBottomTVD - plugTopTVD;
 
-  const pipeEndMD = plug.bottomMD;
-
-  // Areas
   const boreArea = area(boreDiam);
-  const steelArea = area(well.pipeOD) - area(well.pipeID);
 
   // Spacer heights
-  // Below plug: no pipe present below pipe end → full bore area
   const spacerBelowHeightAnn = boreArea > 0 ? spacerVolumeBelowM3 / boreArea : 0;
-  // Above plug: pipe present → annular area
   const spacerAboveHeightAnn = annA > 0 ? spacerVolumeAboveM3 / annA : 0;
 
-  // Cement: account for steel wall volume displacement
-  // Target: final plug (after pipe removal) = plugLenMD height → V = boreArea * plugLenMD
-  // During placement (pipe in hole): available area = annA + pipeA = boreArea - steelArea
-  // So placement height = V / (annA + pipeA) > plugLenMD
+  // Cement: target final volume = boreArea × plugLenMD (after pipe removal)
   const cementVolTotal = boreArea * plugLenMD;
-  const availableArea = annA + pipeA; // boreArea - steelArea
-  const placementHeight = availableArea > 0 ? cementVolTotal / availableArea : plugLenMD;
+
+  // Placement height via binary search (accounts for varying pipe sections)
+  const placementHeight = findPlacementHeight(cementVolTotal, pipeEndMD, boreDiam, effectiveSections);
   const extraHeight = placementHeight - plugLenMD;
   const cementHeightAnnMD = placementHeight;
-  const cementHeightPipeMD = placementHeight; // equal heights for balance
-  const cementVolAnn = annA * placementHeight;
-  const cementVolPipe = pipeA * placementHeight;
+  const cementHeightPipeMD = placementHeight;
 
-  // Height difference explanation (steel wall volume effect)
+  // Exact cement volumes in annulus and pipe during placement
+  const placementVols = volumeInInterval(pipeEndMD - placementHeight, pipeEndMD, boreDiam, effectiveSections);
+  const cementVolAnn = placementVols.annVol;
+  const cementVolPipe = placementVols.pipeVol;
+
+  // Average steel area for explanation
+  const avgSteelArea = placementHeight > 0
+    ? Math.max(0, boreArea - (cementVolAnn + cementVolPipe) / placementHeight)
+    : 0;
+
   const heightDifferenceExplanation = `Высота цемента при установке: ${placementHeight.toFixed(2)} м (на ${extraHeight.toFixed(2)} м выше интервала моста ${plugLenMD} м). ` +
-    `Причина: стенки инструмента (Sстали = ${(steelArea * 1e4).toFixed(1)} см², объём ${(steelArea * plugLenMD * 1000).toFixed(1)} л) вытесняют цемент вверх. ` +
+    `Причина: стенки инструмента (Sстали ≈ ${(avgSteelArea * 1e4).toFixed(1)} см²) вытесняют цемент вверх. ` +
     `После извлечения труб мост осядет до проектных ${plugLenMD} м. ` +
     `Sзатр = ${(annA * 1e4).toFixed(1)} см², Sтруб = ${(pipeA * 1e4).toFixed(1)} см².`;
 
@@ -196,11 +264,21 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const spacerBelowPipeHeight = spacerBelowHeightAnn;
   const spacerAbovePipeHeight = spacerAboveHeightAnn;
 
-  // Cement top during placement (extends above plug.topMD due to steel volume)
-  const cementTopMD = plug.bottomMD - placementHeight; // above plug.topMD by extraHeight
-  const cementTopInPipeMD = cementTopMD; // same for pipe (balanced)
+  // Cement top during placement
+  const cementTopMD = pipeEndMD - placementHeight;
+  const cementTopInPipeMD = cementTopMD;
   const spacerAboveTopPipeMD = cementTopMD - spacerAboveHeightAnn;
-  const displacementVolume = pipeA * Math.max(0, spacerAboveTopPipeMD);
+
+  // Displacement volume: pipe internal volume from surface to spacer above top
+  const dispVols = volumeInInterval(0, Math.max(0, spacerAboveTopPipeMD), boreDiam, effectiveSections);
+  const displacementVolume = dispVols.pipeVol;
+
+  // Spacer above pipe volume (for pumping stage total)
+  const spacerAbovePipeVol = volumeInInterval(
+    Math.max(0, spacerAboveTopPipeMD),
+    Math.max(0, cementTopMD),
+    boreDiam, effectiveSections
+  ).pipeVol;
 
   // Static pressures at plug bottom (pipe end level)
   const spacerAboveTopMD = cementTopMD - spacerAboveHeightAnn;
@@ -214,7 +292,6 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const spacerBelowTVD = Math.max(0, spacerBelowBottomTVD - plugBottomTVD);
   const cementTVD = Math.max(0, plugBottomTVD - cementTopTVD);
 
-  // Balanced plug: identical fluid columns → equal pressures
   const pAnn = hydroP(wellFluid.density, mudTVD_ann)
     + hydroP(spacer.density, spacerAboveTVD)
     + hydroP(cement.density, cementTVD);
@@ -281,17 +358,21 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     densityGcm3: cement.density, color: cementColor, location: 'pipe',
   });
 
-  // Pull-out and wash
+  // Pull-out and wash (with pipe-section-aware volumes)
   const pullOutDepthMD = Math.max(0, plug.topMD - pullOutAbovePlugM);
   const tripDistanceM = plug.bottomMD - pullOutDepthMD;
   const effectiveTripSpeed = tripSpeedMs > 0 ? tripSpeedMs : 0.3;
   const tripTimeSec = tripDistanceM / effectiveTripSpeed;
 
+  const washSections = effectiveSections
+    .map(s => ({ ...s, toMD: Math.min(s.toMD, pullOutDepthMD) }))
+    .filter(s => s.fromMD < s.toMD);
+  const washVols = volumeInInterval(0, pullOutDepthMD, boreDiam, washSections);
   let washOneCycleVolume: number;
   if (washType === 'direct') {
-    washOneCycleVolume = annA * pullOutDepthMD;
+    washOneCycleVolume = washVols.annVol;
   } else {
-    washOneCycleVolume = pipeA * pullOutDepthMD;
+    washOneCycleVolume = washVols.pipeVol;
   }
   const washVolumeM3 = washOneCycleVolume * washCycles;
 
@@ -300,7 +381,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
 
   const pumpTimeSpacerBelowMin = volToMin(spacerVolumeBelowM3, pumpRateSpacerLs);
   const pumpTimeCementMin = volToMin(cementVolTotal, pumpRateCementLs);
-  const pumpTimeSpacerAboveMin = volToMin(spacerVolumeAboveM3 + pipeA * spacerAboveHeightAnn, pumpRateSpacerLs);
+  const pumpTimeSpacerAboveMin = volToMin(spacerVolumeAboveM3 + spacerAbovePipeVol, pumpRateSpacerLs);
   const pumpTimeDisplacementMin = volToMin(displacementVolume, pumpRateDisplacementLs);
   const tripTimeMin = tripTimeSec / 60;
   const washTimeMin = volToMin(washVolumeM3, pumpRateWashLs);
@@ -309,7 +390,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const totalOperationTimeMin = pumpTimeCementMin + pumpTimeSpacerAboveMin + pumpTimeDisplacementMin + tripTimeMin + washTimeMin;
   const isTimeSafe = totalOperationTimeMin <= safeTimeMin;
 
-  // Pumping stages (including pull-out and wash)
+  // Pumping stages
   const pumpingStages: PumpingStage[] = [];
 
   if (spacerVolumeBelowM3 > 0) {
@@ -334,7 +415,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     pumpingStages.push({
       name: "Верхний буфер",
       fluid: `${spacer.name} (${spacer.density} г/см³)`,
-      volumeM3: spacerVolumeAboveM3 + (pipeA * spacerAboveHeightAnn),
+      volumeM3: spacerVolumeAboveM3 + spacerAbovePipeVol,
       timeMin: pumpTimeSpacerAboveMin,
       description: `Буфер сверху цемента. Высота: ${spacerAboveHeightAnn.toFixed(1)} м`,
     });
@@ -365,8 +446,15 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     description: `${washCycles} ц., 1 ц.= ${washOneCycleVolume.toFixed(2)} м³`,
   });
 
+  // Pipe sections info for process description
+  const pipeSectionsInfo = effectiveSections.length > 1
+    ? `\nКомпоновка инструмента:\n` + effectiveSections.map((s, i) =>
+        `  ${s.name || `Секция ${i + 1}`}: ${s.fromMD}–${s.toMD} м, ∅${s.od}/${s.id} мм`
+      ).join('\n')
+    : '';
+
   const processDescription = [
-    `1. Спуск бурильного инструмента (∅${well.pipeOD} мм) до забоя моста ${plug.bottomMD} м MD.`,
+    `1. Спуск бурильного инструмента (∅${well.pipeOD} мм) до забоя моста ${plug.bottomMD} м MD.${pipeSectionsInfo}`,
     spacerVolumeBelowM3 > 0 ? `2. Закачка нижнего буфера (${spacerVolumeBelowM3.toFixed(2)} м³, интервал ${spacerBelowHeightAnn.toFixed(1)} м). Q=${pumpRateSpacerLs} л/с, t=${pumpTimeSpacerBelowMin.toFixed(1)} мин.` : null,
     `3. Закачка тампонажного раствора (${cementVolTotal.toFixed(3)} м³, ρ=${cement.density} г/см³). Q=${pumpRateCementLs} л/с, t=${pumpTimeCementMin.toFixed(1)} мин.`,
     `   Высота цемента в затрубье: ${cementHeightAnnMD.toFixed(1)} м, в трубах: ${cementHeightPipeMD.toFixed(1)} м.`,
@@ -383,6 +471,20 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     `  Затрубье: ${pAnn.toFixed(2)} МПа | Трубы: ${pPipe.toFixed(2)} МПа | ΔP: ${Math.abs(pAnn - pPipe).toFixed(2)} МПа`,
     isOpenHole ? `\nОткрытый ствол: каверн. коэфф. = ${cavernCoeff.toFixed(2)}, эфф. диаметр = ${boreDiam.toFixed(1)} мм` : '',
   ].filter(Boolean).join('\n');
+
+  // ─── Stability analysis ───
+  const stability = calculatePlugStability({
+    plugLengthTVD: plugLenTVD,
+    spacerBelowLengthTVD: spacerBelowTVD,
+    boreDiameterM: boreDiam / 1000,
+    cementDensityKgM3: cement.density * 1000,
+    spacerDensityKgM3: spacer.density * 1000,
+    wellFluidDensityKgM3: wellFluid.density * 1000,
+    cementYP: cement.rheology.yp,
+    spacerYP: spacer.rheology.yp,
+    wellFluidYP: wellFluid.rheology.yp,
+    isDeviated: plugLenTVD < plugLenMD * 0.99,
+  });
 
   return {
     annArea: annA,
@@ -428,5 +530,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     washTimeMin: Math.round(washTimeMin * 10) / 10,
     totalOperationTimeMin: Math.round(totalOperationTimeMin * 10) / 10,
     isTimeSafe,
+    stability,
+    pipeSectionsUsed: effectiveSections,
   };
 }
