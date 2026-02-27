@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Send, Home, Calculator, ArrowLeft, FileDown, Save, Loader2, LayoutDashboard, LogOut, RotateCcw } from "lucide-react";
+import { Send, Home, Calculator, ArrowLeft, FileDown, Save, Loader2, LayoutDashboard, LogOut, RotateCcw, Plus, Trash2, AlertTriangle, ShieldCheck, ShieldAlert } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { BlurInput } from "@/components/BlurInput";
 import { Label } from "@/components/ui/label";
@@ -11,10 +11,11 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ChevronDown } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import CementPlugVisualization from "@/components/CementPlugVisualization";
 import CementPlugPressureChart from "@/components/CementPlugPressureChart";
-import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults, type WashType } from "@/lib/cement-plug-calculations";
+import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults, type WashType, type PipeSection } from "@/lib/cement-plug-calculations";
 import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
 import { exportCementPlugToDocx, type CementPlugExportData } from "@/lib/export-cement-plug-docx";
@@ -61,6 +62,7 @@ interface SessionState {
   pumpRateDisplacement: number;
   pumpRateWash: number;
   fracGradient: number;
+  pipeSections: PipeSection[];
 }
 
 function loadSession(): Partial<SessionState> {
@@ -119,26 +121,26 @@ export default function CementPlug() {
   const [trajPoints, setTrajPoints] = useState<TrajectoryPoint[]>(saved.trajPoints || well.trajectory);
   const [results, setResults] = useState<PlugResults | null>(() => {
     const r = saved.lastResults;
-    // Invalidate stale cached results missing newer fields
     return r && r.pumpTimeCementMin !== undefined ? r : null;
   });
   const [wcRatio, setWcRatio] = useState(saved.wcRatio ?? 0.44);
   const [slurryYield, setSlurryYield] = useState(saved.slurryYield ?? 0.63);
   const [additives, setAdditives] = useState<{ name: string; percent: number }[]>(saved.additives || []);
   const [spacerAdditives, setSpacerAdditives] = useState<{ name: string; percent: number }[]>(saved.spacerAdditives || []);
-  const [pumpRateCement, setPumpRateCement] = useState(saved.pumpRateCement ?? 3); // л/с
-  const [pumpRateSpacer, setPumpRateSpacer] = useState(saved.pumpRateSpacer ?? 5); // л/с
-  const [pumpRateDisplacement, setPumpRateDisplacement] = useState(saved.pumpRateDisplacement ?? 8); // л/с
-  const [pumpRateWash, setPumpRateWash] = useState(saved.pumpRateWash ?? 10); // л/с
-  const [fracGradient, setFracGradient] = useState(saved.fracGradient ?? 0.017); // МПа/м
+  const [pumpRateCement, setPumpRateCement] = useState(saved.pumpRateCement ?? 3);
+  const [pumpRateSpacer, setPumpRateSpacer] = useState(saved.pumpRateSpacer ?? 5);
+  const [pumpRateDisplacement, setPumpRateDisplacement] = useState(saved.pumpRateDisplacement ?? 8);
+  const [pumpRateWash, setPumpRateWash] = useState(saved.pumpRateWash ?? 10);
+  const [fracGradient, setFracGradient] = useState(saved.fracGradient ?? 0.017);
+  const [pipeSections, setPipeSections] = useState<PipeSection[]>(saved.pipeSections || []);
 
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections]);
 
   /* ── Spacer height preview (real-time) ── */
   const isOpenHole = plug.bottomMD > well.casingShoe;
@@ -198,9 +200,20 @@ export default function CementPlug() {
     e.target.value = "";
   };
 
+  /* ── Pipe sections helpers ── */
+  const addPipeSection = () => setPipeSections(s => [...s, { fromMD: 0, toMD: 0, od: well.pipeOD || 89, id: well.pipeID || 75.9, name: `Секция ${s.length + 1}` }]);
+  const updatePipeSection = (idx: number, key: keyof PipeSection, val: string) => {
+    setPipeSections(s => s.map((sec, i) => i === idx ? { ...sec, [key]: key === 'name' ? val : num(val) } : sec));
+  };
+  const removePipeSection = (idx: number) => setPipeSections(s => s.filter((_, i) => i !== idx));
+
   /* ── Calculation ── */
   const buildInputs = (): PlugInputs => ({
-    well: { ...well, trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory },
+    well: {
+      ...well,
+      trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory,
+      pipeSections: pipeSections.length > 0 ? pipeSections : undefined,
+    },
     plug, cement, spacer, wellFluid,
     spacerVolumeAboveM3: spacerVolumeAbove,
     spacerVolumeBelowM3: spacerVolumeBelow,
@@ -280,6 +293,7 @@ export default function CementPlug() {
       if (typeof p.pumpRateDisplacement === "number") setPumpRateDisplacement(p.pumpRateDisplacement);
       if (typeof p.pumpRateWash === "number") setPumpRateWash(p.pumpRateWash);
       if (typeof p.fracGradient === "number") setFracGradient(p.fracGradient);
+      if (Array.isArray(p.pipeSections)) setPipeSections(p.pipeSections);
 
       // Restore results if present
       if (data.results) {
@@ -308,6 +322,7 @@ export default function CementPlug() {
       pullOutAbove, washType, washCycles, tripSpeed, trajPoints,
       wcRatio, slurryYield, additives, spacerAdditives,
       pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient,
+      pipeSections,
     };
 
     setSaving(true);
@@ -341,7 +356,7 @@ export default function CementPlug() {
     } finally {
       setSaving(false);
     }
-  }, [selectedWellId, calcId, well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, results]);
+  }, [selectedWellId, calcId, well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, results, pipeSections]);
 
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
@@ -399,10 +414,11 @@ export default function CementPlug() {
     setPumpRateDisplacement(0);
     setPumpRateWash(0);
     setFracGradient(0);
+    setPipeSections([]);
   }, []);
 
   /* ── Collapsible state ── */
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: false, plug: false, fluids: false, process: false });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: false, plug: false, fluids: false, process: false, pipeSec: false });
   const toggle = (k: string) => setOpenSections(s => ({ ...s, [k]: !s[k] }));
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
@@ -526,6 +542,71 @@ export default function CementPlug() {
                         </tbody>
                       </table>
                     </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+
+            {/* Pipe sections (drill string) */}
+            <Collapsible open={openSections.pipeSec} onOpenChange={() => toggle("pipeSec")}>
+              <Card>
+                <CollapsibleTrigger className="w-full">
+                  <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
+                    <CardTitle className="text-sm">🔧 Компоновка инструмента {pipeSections.length > 0 && <Badge variant="secondary" className="ml-2 text-[10px]">{pipeSections.length} секц.</Badge>}</CardTitle>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${openSections.pipeSec ? "rotate-180" : ""}`} />
+                  </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0 space-y-3">
+                    <p className="text-[10px] text-muted-foreground">
+                      Если инструмент состоит из нескольких секций с разными диаметрами — задайте их здесь.
+                      При пустом списке используются диаметры труб из «Данные скважины» (∅{well.pipeOD}/{well.pipeID} мм).
+                    </p>
+                    {pipeSections.length > 0 && (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-[10px]">Название</TableHead>
+                              <TableHead className="text-[10px]">От, м MD</TableHead>
+                              <TableHead className="text-[10px]">До, м MD</TableHead>
+                              <TableHead className="text-[10px]">Нар. ∅, мм</TableHead>
+                              <TableHead className="text-[10px]">Вн. ∅, мм</TableHead>
+                              <TableHead className="text-[10px] w-8"></TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {pipeSections.map((sec, i) => (
+                              <TableRow key={i}>
+                                <TableCell className="p-1">
+                                  <BlurInput className="h-7 text-[10px] w-24" value={sec.name || ""} onValueCommit={v => updatePipeSection(i, "name", v)} />
+                                </TableCell>
+                                <TableCell className="p-1">
+                                  <BlurInput type="number" className="h-7 text-[10px] w-20" value={sec.fromMD || ""} onValueCommit={v => updatePipeSection(i, "fromMD", v)} />
+                                </TableCell>
+                                <TableCell className="p-1">
+                                  <BlurInput type="number" className="h-7 text-[10px] w-20" value={sec.toMD || ""} onValueCommit={v => updatePipeSection(i, "toMD", v)} />
+                                </TableCell>
+                                <TableCell className="p-1">
+                                  <BlurInput type="number" className="h-7 text-[10px] w-20" value={sec.od || ""} onValueCommit={v => updatePipeSection(i, "od", v)} />
+                                </TableCell>
+                                <TableCell className="p-1">
+                                  <BlurInput type="number" className="h-7 text-[10px] w-20" value={sec.id || ""} onValueCommit={v => updatePipeSection(i, "id", v)} />
+                                </TableCell>
+                                <TableCell className="p-1">
+                                  <button className="text-destructive hover:text-destructive/80" onClick={() => removePipeSection(i)}>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                    <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={addPipeSection}>
+                      <Plus className="w-3 h-3" /> Добавить секцию
+                    </Button>
                   </CardContent>
                 </CollapsibleContent>
               </Card>
@@ -697,6 +778,100 @@ export default function CementPlug() {
             {/* Results */}
             {results && (
               <>
+                {/* ── Stability analysis card ── */}
+                {results.stability && (
+                  <Card className={`border-2 ${
+                    results.stability.minStabilityFactor >= 1.5 ? 'border-green-500/40' :
+                    results.stability.minStabilityFactor >= 1.0 ? 'border-amber-500/40' :
+                    'border-destructive/60'
+                  }`}>
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        {results.stability.isStable ? (
+                          <ShieldCheck className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <ShieldAlert className="w-4 h-4 text-destructive" />
+                        )}
+                        Устойчивость моста
+                        <Badge
+                          variant={results.stability.minStabilityFactor >= 1.5 ? "default" : results.stability.isStable ? "secondary" : "destructive"}
+                          className="text-[10px]"
+                        >
+                          SF = {results.stability.minStabilityFactor.toFixed(2)}
+                        </Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-0 space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Scenario 1 */}
+                        <div className="rounded-lg border border-border p-3 space-y-1">
+                          <p className="text-[10px] font-semibold text-muted-foreground">Сценарий 1: мост → через буфер</p>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
+                            <span className="text-muted-foreground">Движущее давление:</span>
+                            <span>{results.stability.drivingPressure1.toFixed(1)} Па</span>
+                            <span className="text-muted-foreground">Удерживающее давление:</span>
+                            <span>{results.stability.resistingPressure1.toFixed(1)} Па</span>
+                            <span className="text-muted-foreground font-semibold">SF₁:</span>
+                            <span className={`font-bold ${results.stability.stabilityFactor1 >= 1.5 ? 'text-green-500' : results.stability.stabilityFactor1 >= 1.0 ? 'text-amber-400' : 'text-destructive'}`}>
+                              {results.stability.stabilityFactor1.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                        {/* Scenario 2 */}
+                        <div className="rounded-lg border border-border p-3 space-y-1">
+                          <p className="text-[10px] font-semibold text-muted-foreground">Сценарий 2: мост+буфер → в скв. жидкость</p>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
+                            <span className="text-muted-foreground">Движущее давление:</span>
+                            <span>{results.stability.drivingPressure2.toFixed(1)} Па</span>
+                            <span className="text-muted-foreground">Удерживающее давление:</span>
+                            <span>{results.stability.resistingPressure2.toFixed(1)} Па</span>
+                            <span className="text-muted-foreground font-semibold">SF₂:</span>
+                            <span className={`font-bold ${results.stability.stabilityFactor2 >= 1.5 ? 'text-green-500' : results.stability.stabilityFactor2 >= 1.0 ? 'text-amber-400' : 'text-destructive'}`}>
+                              {results.stability.stabilityFactor2.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Warnings */}
+                      {results.stability.warnings.length > 0 && (
+                        <div className="space-y-1.5">
+                          {results.stability.warnings.map((w, i) => (
+                            <Alert key={i} variant={w.startsWith('⛔') ? 'destructive' : 'default'} className="py-2">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              <AlertDescription className="text-[10px]">{w}</AlertDescription>
+                            </Alert>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Recommendation */}
+                      <div className={`rounded-lg p-3 text-xs ${
+                        results.stability.minStabilityFactor >= 1.5 ? 'bg-green-500/10 text-green-400' :
+                        results.stability.isStable ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-destructive/10 text-destructive'
+                      }`}>
+                        <p className="whitespace-pre-line">{results.stability.recommendation}</p>
+                        {results.stability.requiredSpacerYP > 0 && results.stability.minStabilityFactor < 1.5 && (
+                          <p className="mt-1 font-semibold text-[11px]">
+                            Рекомендуемый YP буфера для SF=1.5: ≥ {results.stability.requiredSpacerYP.toFixed(1)} Па
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Pipe sections used */}
+                      {results.pipeSectionsUsed && results.pipeSectionsUsed.length > 1 && (
+                        <div className="text-[10px] text-muted-foreground">
+                          <p className="font-semibold mb-0.5">Компоновка инструмента ({results.pipeSectionsUsed.length} секц.):</p>
+                          {results.pipeSectionsUsed.map((s, i) => (
+                            <p key={i}>{s.name || `Секция ${i + 1}`}: {s.fromMD}–{s.toMD} м, ∅{s.od}/{s.id} мм</p>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
                 <Card className="border-primary/30">
                   <CardHeader className="py-3 px-4">
                     <CardTitle className="text-sm flex items-center gap-2">
@@ -807,10 +982,10 @@ export default function CementPlug() {
                     </CardHeader>
                     <CardContent className="pt-0">
                       {(() => {
-                        const dryMass = results.cementVolumeTotal / slurryYield; // tonnes
-                        const waterMass = dryMass * wcRatio; // tonnes
+                        const dryMass = results.cementVolumeTotal / slurryYield;
+                        const waterMass = dryMass * wcRatio;
                         const spacerTotalVol = results.spacerVolumeAbove + results.spacerVolumeBelow;
-                        const spacerMassKg = spacerTotalVol * spacer.density * 1000; // kg total spacer
+                        const spacerMassKg = spacerTotalVol * spacer.density * 1000;
                         return (
                           <div className="space-y-3">
                             <div>
