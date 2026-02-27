@@ -948,6 +948,7 @@ export function calculatePressureProfile(
   }
 
   let cumDisplacementVol = 0; // накопленный объём продавки (для отслеживания догонки)
+  let freefallOffset = 0; // объём, сместившийся при U-tube оседании (добавляется к totalPumped)
 
   stages.forEach(s => {
     if (s.isCement && !cementStartFound) {
@@ -1053,6 +1054,9 @@ export function calculatePressureProfile(
           }
         }
       }
+      // Растягиваем оседание на всю промывку — не менее 1/3 паузы
+      // чтобы кривая затухания заняла бо́льшую часть паузы (без длинных плоских участков)
+      settlingTau = Math.max(settlingTau, pauseMin * 0.3);
 
       const ffBatchIdx = pumpHistory.length - 1;
       const savedCumVol = cumVol;
@@ -1103,6 +1107,7 @@ export function calculatePressureProfile(
 
       // Финализируем
       cementFreefallVol = freefallVol; // запоминаем для продавки (объём догонки)
+      freefallOffset = freefallVol; // смещение для корректного totalPumped в последующих этапах
       pumpHistory[ffBatchIdx].volumeM3 = freefallVol;
       totalPumped = savedCumVol + freefallVol;
       cumTime += pauseMin;
@@ -1158,7 +1163,7 @@ export function calculatePressureProfile(
       if (isDisplacement) cumDisplacementVol += stepVolume;
 
       pumpHistory[batchIdx].volumeM3 = s.volume * frac;
-      totalPumped = cumVol + s.volume * frac;
+      totalPumped = cumVol + s.volume * frac + freefallOffset;
 
       // Доля трубы, заполненная закачанным флюидом
       const filledFraction = Math.min(totalPumped / Math.max(pipeCapacity, 0.01), 1);
@@ -1248,7 +1253,7 @@ export function calculatePressureProfile(
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;
-    totalPumped = cumVol + s.volume;
+    totalPumped = cumVol + s.volume + freefallOffset;
 
     cumTime += stageTime;
     cumVol += s.volume;
