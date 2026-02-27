@@ -331,10 +331,13 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
         let gray = 0;
         let alpha = 255;
 
-         // Затемнение для тяжёлого цемента (более тёмный = более плотный)
+         // Затемнение для тяжёлого цемента — усиленное
+         // Более плотный цемент = значительно темнее; плавный переход от светлого к тёмному
          const densityDarkening = d.fluidType === "cement"
-           ? Math.min(0.35, Math.max(0, (d.fluidDensity - 1400) / 2000) * 0.35)
-           : 0;
+           ? Math.min(0.55, Math.max(0, (d.fluidDensity - 1200) / 1200) * 0.55)
+           : d.fluidType === "buffer" ? 0.05 : 0;
+         // Переход между зонами: плавное затемнение у границ (от светлого к тёмному)
+         const boundaryBlend = 1 - Math.pow(1 - d.distFromBoundary, 2); // квадратичный ease-in у границ
 
          if (xFrac < casLeftFrac) {
           // Левое затрубье (расширенное при эксцентриситете)
@@ -342,17 +345,16 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
           const localFrac = leftAnnWidth > 0 ? xFrac / leftAnnWidth : 0;
           const angle = Math.PI * (1 - localFrac);
           const eff = calcEff(d, angle, localFrac, yFrac, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
-          gray = Math.round((40 + (1 - eff) * 215) * (1 - densityDarkening));
+          gray = Math.round((40 + (1 - eff) * 215) * (1 - densityDarkening * boundaryBlend));
         } else if (xFrac > casRightFrac) {
           // Правое затрубье (сужено при эксцентриситете — low side)
           const rightAnnStart = casRightFrac;
           const rightAnnWidth = 1.0 - rightAnnStart;
           const localFrac = rightAnnWidth > 0 ? (xFrac - rightAnnStart) / rightAnnWidth : 0;
           const angle = Math.PI * localFrac;
-          // На сжатой стороне — хуже замещение (дополнительный штраф от эксцентриситета)
           const eccPenalty = ecc * 0.3;
           const eff = Math.max(0, calcEff(d, angle, localFrac + 1, yFrac, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff) - eccPenalty);
-          gray = Math.round((40 + (1 - eff) * 215) * (1 - densityDarkening));
+          gray = Math.round((40 + (1 - eff) * 215) * (1 - densityDarkening * boundaryBlend));
         } else {
           // Колонна — steel gray
           gray = 110;

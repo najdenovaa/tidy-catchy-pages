@@ -137,20 +137,25 @@ export default function InputSection(props: Props) {
     onWellDataChange({ ...wellData, trajectory: sorted, wellDepthTVD: lastTVD });
   };
 
+  // Обновление одного поля строки — БЕЗ пересчёта TVD и БЕЗ сортировки (строки независимые)
   const updateTrajectoryPoint = (index: number, key: "md" | "azimuth" | "zenith", rawValue: string) => {
     const traj = [...(wellData.trajectory || [])];
     const current = traj[index];
     if (!current) return;
-
-    // Не перезаписываем на 0 при временно пустом поле во время ввода
-    if (rawValue.trim() === "") {
-      traj[index] = { ...current, [key]: current[key] };
-      onWellDataChange({ ...wellData, trajectory: traj });
-      return;
-    }
-
+    if (rawValue.trim() === "") return; // пустое поле — игнорируем
     traj[index] = { ...current, [key]: Number(rawValue) };
-    updateTrajectory(traj);
+    // Просто обновляем данные на месте, без сортировки и пересчёта
+    onWellDataChange({ ...wellData, trajectory: traj });
+  };
+
+  // Пересчитать TVD по кнопке
+  const recalcTrajectoryTVD = () => {
+    const traj = [...(wellData.trajectory || [])];
+    if (traj.length < 2) return;
+    const sorted = [...traj].sort((a, b) => a.md - b.md);
+    const calculated = calculateTVDFromSurvey(sorted);
+    const lastTVD = calculated.length > 0 ? calculated[calculated.length - 1].tvd : wellData.wellDepthTVD;
+    onWellDataChange({ ...wellData, trajectory: calculated, wellDepthTVD: lastTVD });
   };
 
   const handleTrajectoryExcelUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -236,6 +241,8 @@ export default function InputSection(props: Props) {
     if (field === "density") onDrillingFluidChange({ ...drillingFluid, density: num });
     else if (field === "pv") onDrillingFluidChange({ ...drillingFluid, rheology: { ...drillingFluid.rheology, pv: num } });
     else if (field === "yp") onDrillingFluidChange({ ...drillingFluid, rheology: { ...drillingFluid.rheology, yp: num } });
+    else if (field === "pvBottom") onDrillingFluidChange({ ...drillingFluid, rheologyBottomhole: { ...(drillingFluid.rheologyBottomhole || { pv: 0, yp: 0 }), pv: num } });
+    else if (field === "ypBottom") onDrillingFluidChange({ ...drillingFluid, rheologyBottomhole: { ...(drillingFluid.rheologyBottomhole || { pv: 0, yp: 0 }), yp: num } });
     else if (field === "fluidLoss") onDrillingFluidChange({ ...drillingFluid, fluidLoss: num });
     else if (field === "name") onDrillingFluidChange({ ...drillingFluid, name: value });
   };
@@ -503,12 +510,18 @@ export default function InputSection(props: Props) {
                 onClick={() => {
                   const traj = [...(wellData.trajectory || [])];
                   const lastPt = traj[traj.length - 1];
-                  traj.push({ md: (lastPt?.md || 0) + 50, azimuth: lastPt?.azimuth || 0, zenith: lastPt?.zenith || 0, tvd: (lastPt?.tvd || 0) + 50 });
-                  updateTrajectory(traj);
+                  traj.push({ md: (lastPt?.md || 0) + 50, azimuth: lastPt?.azimuth || 0, zenith: lastPt?.zenith || 0, tvd: 0 });
+                  onWellDataChange({ ...wellData, trajectory: traj });
                 }}
                 className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
               >
                 + Добавить точку
+              </button>
+              <button
+                onClick={recalcTrajectoryTVD}
+                className="text-xs px-3 py-1.5 rounded-md bg-accent text-accent-foreground hover:bg-accent/80 transition-colors font-medium"
+              >
+                📐 Пересчитать TVD
               </button>
             </div>
           </CardContent>
@@ -530,17 +543,36 @@ export default function InputSection(props: Props) {
                 <Input type="number" step="1" value={drillingFluid.density || ""} onChange={(e) => handleMudChange("density", e.target.value)} className="h-9 text-sm" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">PV (пласт. вязкость), сПз</Label>
-                <Input type="number" step="1" value={drillingFluid.rheology.pv || ""} onChange={(e) => handleMudChange("pv", e.target.value)} className="h-9 text-sm" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">YP (ДНС), Па</Label>
-                <Input type="number" step="0.1" value={drillingFluid.rheology.yp || ""} onChange={(e) => handleMudChange("yp", e.target.value)} className="h-9 text-sm" />
-              </div>
-              <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">Водоотдача, мл/30мин</Label>
                 <Input type="number" step="1" value={drillingFluid.fluidLoss || ""} onChange={(e) => handleMudChange("fluidLoss", e.target.value)} className="h-9 text-sm" />
               </div>
+            </div>
+            <div className="mt-4">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Реология на поверхности</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">PV (пласт. вязкость), сПз</Label>
+                  <Input type="number" step="1" value={drillingFluid.rheology.pv || ""} onChange={(e) => handleMudChange("pv", e.target.value)} className="h-9 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">YP (ДНС), Па</Label>
+                  <Input type="number" step="0.1" value={drillingFluid.rheology.yp || ""} onChange={(e) => handleMudChange("yp", e.target.value)} className="h-9 text-sm" />
+                </div>
+              </div>
+            </div>
+            <div className="mt-4">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Реология на забое (опционально)</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">PV забой, сПз</Label>
+                  <Input type="number" step="1" value={drillingFluid.rheologyBottomhole?.pv || ""} onChange={(e) => handleMudChange("pvBottom", e.target.value)} className="h-9 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">YP забой, Па</Label>
+                  <Input type="number" step="0.1" value={drillingFluid.rheologyBottomhole?.yp || ""} onChange={(e) => handleMudChange("ypBottom", e.target.value)} className="h-9 text-sm" />
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground/60 italic mt-1">Если не задано, используются значения с поверхности</p>
             </div>
           </CardContent>
         )}

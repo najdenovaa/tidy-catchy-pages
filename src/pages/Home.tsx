@@ -46,7 +46,7 @@ export default function Home() {
           </Link>
           <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
             <a
-              href="https://t.me/deallbiz_support"
+              href="https://t.me/deall_support"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm"
@@ -108,7 +108,7 @@ export default function Home() {
             <p className="text-sm text-muted-foreground">
               Мы открыты к сотрудничеству! По всем вопросам обращайтесь в{" "}
               <a
-                href="https://t.me/deallbiz_support"
+                href="https://t.me/deall_support"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary hover:underline font-medium"
