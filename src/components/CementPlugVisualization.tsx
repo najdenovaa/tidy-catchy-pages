@@ -72,13 +72,13 @@ function PlugSVG({ results, inputs, mode }: Props & { mode: 'equilibrium' | 'was
   const annCols = results.fluidColumns.filter(c => c.location === 'annulus' && c.bottomMD > viewTop && c.topMD < viewBottom);
   const pipeCols = results.fluidColumns.filter(c => c.location === 'pipe' && c.bottomMD > viewTop && c.topMD < viewBottom);
 
-  const pipeTopMD = mode === 'equilibrium' ? Math.max(viewTop, 0) : Math.max(viewTop, results.pullOutDepthMD);
-  const pipeBottomMD = mode === 'equilibrium' ? Math.min(viewBottom, plug.bottomMD) : results.pullOutDepthMD;
+  const pipeTopMD = Math.max(viewTop, 0);
+  const pipeBottomMD = mode === 'equilibrium' ? Math.min(viewBottom, plug.bottomMD) : Math.min(viewBottom, results.pullOutDepthMD);
 
   const pipeTopY = y(pipeTopMD);
-  const pipeBottomY = mode === 'equilibrium' ? y(Math.min(viewBottom, plug.bottomMD)) : y(results.pullOutDepthMD);
+  const pipeBottomY = y(pipeBottomMD);
 
-  const showPipe = mode === 'equilibrium' || results.pullOutDepthMD > viewTop;
+  const showPipe = pipeBottomMD > pipeTopMD;
 
   const title = mode === 'equilibrium'
     ? "Равновесие (до подъёма)"

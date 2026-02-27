@@ -157,46 +157,55 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   // Above plug: pipe present → annular area
   const spacerAboveHeightAnn = annA > 0 ? spacerVolumeAboveM3 / annA : 0;
 
-  // Cement: EQUAL HEIGHTS in pipe and annulus (balanced plug method)
-  const cementVolAnn = annA * plugLenMD;
-  const cementHeightAnnMD = plugLenMD;
-  const cementVolPipe = pipeA * plugLenMD;
-  const cementHeightPipeMD = plugLenMD; // same height = balanced
-  const cementVolTotal = cementVolAnn + cementVolPipe;
+  // Cement: account for steel wall volume displacement
+  // Target: final plug (after pipe removal) = plugLenMD height → V = boreArea * plugLenMD
+  // During placement (pipe in hole): available area = annA + pipeA = boreArea - steelArea
+  // So placement height = V / (annA + pipeA) > plugLenMD
+  const cementVolTotal = boreArea * plugLenMD;
+  const availableArea = annA + pipeA; // boreArea - steelArea
+  const placementHeight = availableArea > 0 ? cementVolTotal / availableArea : plugLenMD;
+  const extraHeight = placementHeight - plugLenMD;
+  const cementHeightAnnMD = placementHeight;
+  const cementHeightPipeMD = placementHeight; // equal heights for balance
+  const cementVolAnn = annA * placementHeight;
+  const cementVolPipe = pipeA * placementHeight;
 
-  // Height difference explanation (balanced = equal heights, steel wall volume)
-  const heightDifferenceExplanation = `Сбалансированный мост: высота цемента одинакова (${cementHeightAnnMD.toFixed(1)} м). ` +
-    `Объёмы различны: Vзатр = ${cementVolAnn.toFixed(3)} м³, Vтруб = ${cementVolPipe.toFixed(3)} м³. ` +
-    `Sзатр = ${(annA * 1e4).toFixed(1)} см², Sтруб = ${(pipeA * 1e4).toFixed(1)} см², Sстали стенок = ${(steelArea * 1e4).toFixed(1)} см² ` +
-    `(${(steelArea * plugLenMD * 1000).toFixed(1)} л стали на интервале моста).`;
+  // Height difference explanation (steel wall volume effect)
+  const heightDifferenceExplanation = `Высота цемента при установке: ${placementHeight.toFixed(2)} м (на ${extraHeight.toFixed(2)} м выше интервала моста ${plugLenMD} м). ` +
+    `Причина: стенки инструмента (Sстали = ${(steelArea * 1e4).toFixed(1)} см², объём ${(steelArea * plugLenMD * 1000).toFixed(1)} л) вытесняют цемент вверх. ` +
+    `После извлечения труб мост осядет до проектных ${plugLenMD} м. ` +
+    `Sзатр = ${(annA * 1e4).toFixed(1)} см², Sтруб = ${(pipeA * 1e4).toFixed(1)} см².`;
 
   // Spacer in pipe: same HEIGHT as annulus for balance
   const spacerBelowPipeHeight = spacerBelowHeightAnn;
   const spacerAbovePipeHeight = spacerAboveHeightAnn;
 
-  // Pipe positions (cement at same depths as annulus for balance)
-  const cementTopInPipeMD = plug.topMD;
-  const spacerAboveTopPipeMD = plug.topMD - spacerAboveHeightAnn;
+  // Cement top during placement (extends above plug.topMD due to steel volume)
+  const cementTopMD = plug.bottomMD - placementHeight; // above plug.topMD by extraHeight
+  const cementTopInPipeMD = cementTopMD; // same for pipe (balanced)
+  const spacerAboveTopPipeMD = cementTopMD - spacerAboveHeightAnn;
   const displacementVolume = pipeA * Math.max(0, spacerAboveTopPipeMD);
 
   // Static pressures at plug bottom (pipe end level)
-  const spacerAboveTopMD = plug.topMD - spacerAboveHeightAnn;
+  const spacerAboveTopMD = cementTopMD - spacerAboveHeightAnn;
   const spacerBelowBottomMD = plug.bottomMD + spacerBelowHeightAnn;
+  const cementTopTVD = interpolateTVD(Math.max(0, cementTopMD), traj);
   const spacerAboveTopTVD = interpolateTVD(Math.max(0, spacerAboveTopMD), traj);
   const spacerBelowBottomTVD = interpolateTVD(Math.min(well.wellDepthMD, spacerBelowBottomMD), traj);
 
   const mudTVD_ann = Math.max(0, spacerAboveTopTVD);
-  const spacerAboveTVD = Math.max(0, plugTopTVD - spacerAboveTopTVD);
+  const spacerAboveTVD = Math.max(0, cementTopTVD - spacerAboveTopTVD);
   const spacerBelowTVD = Math.max(0, spacerBelowBottomTVD - plugBottomTVD);
+  const cementTVD = Math.max(0, plugBottomTVD - cementTopTVD);
 
-  // Balanced plug: identical fluid columns above pipe end → equal pressures
+  // Balanced plug: identical fluid columns → equal pressures
   const pAnn = hydroP(wellFluid.density, mudTVD_ann)
     + hydroP(spacer.density, spacerAboveTVD)
-    + hydroP(cement.density, plugLenTVD);
+    + hydroP(cement.density, cementTVD);
 
   const pPipe = hydroP(wellFluid.density, mudTVD_ann)
     + hydroP(spacer.density, spacerAboveTVD)
-    + hydroP(cement.density, plugLenTVD);
+    + hydroP(cement.density, cementTVD);
 
   const isBalanced = Math.abs(pAnn - pPipe) < 0.5;
 
@@ -214,14 +223,14 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   });
   if (spacerAboveHeightAnn > 0) {
     fluidColumns.push({
-      label: spacer.name + " (верх)", topMD: Math.max(0, spacerAboveTopMD), bottomMD: plug.topMD,
-      topTVD: spacerAboveTopTVD, bottomTVD: plugTopTVD,
+      label: spacer.name + " (верх)", topMD: Math.max(0, spacerAboveTopMD), bottomMD: cementTopMD,
+      topTVD: spacerAboveTopTVD, bottomTVD: cementTopTVD,
       densityGcm3: spacer.density, color: spacerColor, location: 'annulus',
     });
   }
   fluidColumns.push({
-    label: cement.name, topMD: plug.topMD, bottomMD: plug.bottomMD,
-    topTVD: plugTopTVD, bottomTVD: plugBottomTVD,
+    label: cement.name, topMD: cementTopMD, bottomMD: plug.bottomMD,
+    topTVD: cementTopTVD, bottomTVD: plugBottomTVD,
     densityGcm3: cement.density, color: cementColor, location: 'annulus',
   });
   if (spacerBelowHeightAnn > 0) {
@@ -245,14 +254,14 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   });
   if (spacerAbovePipeHeight > 0) {
     fluidColumns.push({
-      label: spacer.name + " (труб. верх)", topMD: Math.max(0, spacerAboveTopPipeMD), bottomMD: plug.topMD,
-      topTVD: spacerAboveTopTVD, bottomTVD: plugTopTVD,
+      label: spacer.name + " (труб. верх)", topMD: Math.max(0, spacerAboveTopPipeMD), bottomMD: cementTopMD,
+      topTVD: spacerAboveTopTVD, bottomTVD: cementTopTVD,
       densityGcm3: spacer.density, color: spacerColor, location: 'pipe',
     });
   }
   fluidColumns.push({
-    label: cement.name + " (труб.)", topMD: plug.topMD, bottomMD: plug.bottomMD,
-    topTVD: plugTopTVD, bottomTVD: plugBottomTVD,
+    label: cement.name + " (труб.)", topMD: cementTopMD, bottomMD: plug.bottomMD,
+    topTVD: cementTopTVD, bottomTVD: plugBottomTVD,
     densityGcm3: cement.density, color: cementColor, location: 'pipe',
   });
 
