@@ -95,8 +95,8 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
         ))}
       </div>
 
-      <ResponsiveContainer width="100%" height={400}>
-        <ComposedChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+      <ResponsiveContainer width="100%" height={550}>
+        <ComposedChart data={data} margin={{ top: 15, right: 15, left: 5, bottom: 10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
 
           {/* Stage background bands */}
