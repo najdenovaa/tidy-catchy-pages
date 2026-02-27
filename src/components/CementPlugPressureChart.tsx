@@ -93,6 +93,7 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
           {stageBands.map((band, i) => (
             <ReferenceLine
               key={`band-${i}`}
+              yAxisId="pressure"
               x={band.x1}
               stroke={stageColors[band.stage] || 'hsl(var(--muted))'}
               strokeWidth={0}
