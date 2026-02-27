@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Home, LogOut, Plus, Trash2, ChevronRight, FolderOpen, FlaskConical, Droplets, Zap, Copy } from "lucide-react";
+import { Home, LogOut, Plus, Trash2, ChevronRight, FolderOpen, FlaskConical, Droplets, Zap, Copy, Blocks } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { User } from "@supabase/supabase-js";
 
@@ -153,18 +153,21 @@ export default function Dashboard() {
 
   const moduleIcon = (m: string) => {
     if (m === "cementing") return <FlaskConical className="w-4 h-4 text-primary" />;
+    if (m === "cement-plug") return <Blocks className="w-4 h-4 text-orange-500" />;
     if (m === "drilling-fluids") return <Droplets className="w-4 h-4 text-blue-500" />;
     return <Zap className="w-4 h-4 text-yellow-500" />;
   };
 
   const moduleLabel = (m: string) => {
     if (m === "cementing") return "Цементирование";
+    if (m === "cement-plug") return "Цементный мост";
     if (m === "drilling-fluids") return "Буровые растворы";
     return "ГРП";
   };
 
   const formatDate = (iso: string) => new Date(iso).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const cementingLink = selectedWell ? `/cementing?from=dashboard&well=${selectedWell}` : "/cementing?from=dashboard";
+  const cementPlugLink = selectedWell ? `/cement-plug?from=dashboard&well=${selectedWell}` : "/cement-plug?from=dashboard";
 
   if (loading) return <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">Загрузка...</div>;
 
@@ -205,6 +208,7 @@ export default function Dashboard() {
           <CardHeader className="py-3"><CardTitle className="text-sm text-muted-foreground">Модули</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-3">
             <Link to={cementingLink}><Button variant="outline" size="sm"><FlaskConical className="w-4 h-4 mr-1" /> Цементирование</Button></Link>
+            <Link to={cementPlugLink}><Button variant="outline" size="sm"><Blocks className="w-4 h-4 mr-1" /> Цементные мосты</Button></Link>
             <Button variant="outline" size="sm" disabled><Droplets className="w-4 h-4 mr-1" /> Буровые растворы (скоро)</Button>
             <Button variant="outline" size="sm" disabled><Zap className="w-4 h-4 mr-1" /> ГРП (скоро)</Button>
             {!selectedWell && <p className="text-xs text-muted-foreground">Чтобы сохранить расчёт в нужную папку, выберите скважину справа ниже</p>}
@@ -296,11 +300,15 @@ export default function Dashboard() {
                   {calcs.length === 0 && <p className="text-xs text-muted-foreground">Нет сохранённых расчётов</p>}
                   {calcs.map(c => (
                     <div key={c.id} className="flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-muted group">
-                      <Link to={`/cementing?from=dashboard&well=${selectedWell}&calc=${c.id}`} className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <Link to={
+                        c.module === "cement-plug"
+                          ? `/cement-plug?from=dashboard&well=${selectedWell}&calc=${c.id}`
+                          : `/cementing?from=dashboard&well=${selectedWell}&calc=${c.id}`
+                      } className="flex items-center gap-1.5 flex-1 min-w-0">
                         {moduleIcon(c.module)}
                         <div className="min-w-0">
                           <p className="truncate font-medium">{c.title}</p>
-                          <p className="text-[10px] text-muted-foreground">{formatDate(c.created_at)}</p>
+                          <p className="text-[10px] text-muted-foreground">{moduleLabel(c.module)} · {formatDate(c.created_at)}</p>
                         </div>
                       </Link>
                       <button onClick={() => deleteCalc(c.id)} className="text-destructive/50 hover:text-destructive opacity-0 group-hover:opacity-100"><Trash2 className="w-3 h-3" /></button>
