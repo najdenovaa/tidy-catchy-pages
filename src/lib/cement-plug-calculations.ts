@@ -189,6 +189,8 @@ export interface PlugResults {
   // Stability analysis
   stability: StabilityResult;
   pipeSectionsUsed: PipeSection[];
+  /** Average zenith angle at plug interval, degrees */
+  plugZenithDeg: number;
 }
 
 export interface FluidColumn {
@@ -233,6 +235,23 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const plugTopTVD = interpolateTVD(plug.topMD, traj);
   const plugBottomTVD = interpolateTVD(plug.bottomMD, traj);
   const plugLenTVD = plugBottomTVD - plugTopTVD;
+
+  // Average zenith angle at plug interval (interpolate from trajectory)
+  const plugMidMD = (plug.topMD + plug.bottomMD) / 2;
+  let plugZenithDeg = 0;
+  if (traj.length >= 2) {
+    // Find bracketing points
+    let lower = traj[0], upper = traj[traj.length - 1];
+    for (let i = 0; i < traj.length - 1; i++) {
+      if (traj[i].md <= plugMidMD && traj[i + 1].md >= plugMidMD) {
+        lower = traj[i];
+        upper = traj[i + 1];
+        break;
+      }
+    }
+    const frac = upper.md > lower.md ? (plugMidMD - lower.md) / (upper.md - lower.md) : 0;
+    plugZenithDeg = lower.zenith + frac * (upper.zenith - lower.zenith);
+  }
 
   const boreArea = area(boreDiam);
 
@@ -495,6 +514,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     spacerYP: spacer.rheology.yp,
     wellFluidYP: wellFluid.rheology.yp,
     isDeviated: plugLenTVD < plugLenMD * 0.99,
+    zenithDeg: plugZenithDeg,
   });
 
   return {
@@ -543,5 +563,6 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     isTimeSafe,
     stability,
     pipeSectionsUsed: effectiveSections,
+    plugZenithDeg: Math.round(plugZenithDeg * 10) / 10,
   };
 }

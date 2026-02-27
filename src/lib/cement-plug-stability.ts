@@ -48,6 +48,8 @@ export interface StabilityParams {
   spacerYP: number;
   wellFluidYP: number;
   isDeviated: boolean;
+  /** Average zenith angle at plug interval, degrees */
+  zenithDeg?: number;
   /** Is the system confined (closed bottom)? Default: true */
   isConfined?: boolean;
 }
@@ -116,6 +118,10 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
 
   const isConfined = p.isConfined !== false; // default true
 
+  // Gravity component: cos(zenith) for deviated wells
+  const zenithRad = ((p.zenithDeg ?? 0) * Math.PI) / 180;
+  const cosZ = Math.cos(zenithRad);
+
   // Hydraulic diameter: annulus during gel development
   const Dh = d > 0 ? Math.max(D - d, 0.01) : D;
 
@@ -137,14 +143,12 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   const Δρ_cw = Math.max(0, ρc - ρwf);    // cement vs well fluid
 
   // ═══ INTERFACE STABILITY (Rayleigh-Taylor fingering) ═══
-  // For a finger to form, BOTH fluids must yield at the interface
-  // Effective yield stress = τ_cement + τ_spacer
   const τ_eff_10min = τc + τs;
   const τ_eff_10sec = τc_10s + τs_10s;
   const τ_eff_30min = τc_30 + τs_30;
 
-  // Critical driving stress for RT instability
-  const rtDriving = Δρ_cs * G * Dh / RT_CONSTANT;
+  // Driving stress reduced by cos(zenith) — less gravity component in deviated wells
+  const rtDriving = Δρ_cs * G * cosZ * Dh / RT_CONSTANT;
   const interfaceSF = rtDriving > 0.01 ? τ_eff_10min / rtDriving : 999;
 
   // Estimate contamination depth: if SF < 1, fingers can penetrate
@@ -160,7 +164,7 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
     interfaceSF >= 0.7 ? 'medium' : 'high';
 
   // ═══ PISTON MODEL (for open systems / informational) ═══
-  const drive1 = Δρ_cs * G * Lp;
+  const drive1 = Δρ_cs * G * cosZ * Lp;
   const resist1 = Dh > 0 ? (4 / Dh) * (τc * Lp + τs * Ls) : 0;
   const sf1 = drive1 > 0.01 ? resist1 / drive1 : 999;
 
@@ -170,7 +174,7 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   const resist1_after = D > 0 ? (4 / D) * (τc_30 * Lp + τs_30 * Ls) : 0;
   const sf1_after = drive1 > 0.01 ? resist1_after / drive1 : 999;
 
-  const drive2_raw = Δρ_cw * G * Lp + Math.max(0, ρs - ρwf) * G * Ls;
+  const drive2_raw = Δρ_cw * G * cosZ * Lp + Math.max(0, ρs - ρwf) * G * cosZ * Ls;
   const drive2 = Math.max(0, drive2_raw);
   const resist2 = Dh > 0 ? (4 / Dh) * (τc * Lp + τs * Ls + τwf * Lp) : 0;
   const sf2 = drive2 > 0.01 ? resist2 / drive2 : 999;
@@ -211,6 +215,11 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
 
   if (isConfined) {
     warnings.push(`✅ Мост стабилен.`);
+  }
+
+  const zenithDeg = p.zenithDeg ?? 0;
+  if (zenithDeg > 5) {
+    warnings.push(`ℹ Зенитный угол ${zenithDeg.toFixed(1)}° — гравитационная составляющая снижена до ${(cosZ * 100).toFixed(0)}%.`);
   }
 
   if (d > 0) {
