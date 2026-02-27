@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
-import { Send, Home, Calculator, ArrowLeft } from "lucide-react";
+import { Send, Home, Calculator, ArrowLeft, FileDown } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { BlurInput } from "@/components/BlurInput";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,10 @@ import CementPlugVisualization from "@/components/CementPlugVisualization";
 import CementPlugPressureChart from "@/components/CementPlugPressureChart";
 import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults, type WashType } from "@/lib/cement-plug-calculations";
 import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-calculations";
+import { captureElementAsDataUrl } from "@/lib/capture-image";
+import { exportCementPlugToDocx, type CementPlugExportData } from "@/lib/export-cement-plug-docx";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import * as XLSX from "xlsx";
 
 const SESSION_KEY = "cement_plug_session_v2";
@@ -88,6 +91,8 @@ export default function CementPlug() {
   }, []);
 
   const saved = useMemo(() => loadSession(), []);
+  const vizRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
 
   /* ── State ── */
   const [well, setWell] = useState<PlugWellData>(saved.well || defaultWell);
@@ -207,6 +212,31 @@ export default function CementPlug() {
     setResults(calculateBalancedPlug(buildInputs()));
   };
 
+  const handleExportDocx = async () => {
+    if (!results) return;
+    try {
+      toast.info("Формирование документа...");
+      let vizImage: string | undefined;
+      let chartImage: string | undefined;
+      if (vizRef.current) {
+        try { vizImage = await captureElementAsDataUrl(vizRef.current); } catch {}
+      }
+      if (chartRef.current) {
+        try { chartImage = await captureElementAsDataUrl(chartRef.current); } catch {}
+      }
+      const exportData: CementPlugExportData = {
+        inputs: buildInputs(), results, fracGradient,
+        wcRatio, slurryYield, additives, spacerAdditives, trajPoints,
+        visualizationImage: vizImage, pressureChartImage: chartImage,
+      };
+      await exportCementPlugToDocx(exportData);
+      toast.success("Документ сохранён!");
+    } catch (e) {
+      console.error(e);
+      toast.error("Ошибка экспорта");
+    }
+  };
+
   /* ── Collapsible state ── */
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: true, plug: true, fluids: true, process: true });
   const toggle = (k: string) => setOpenSections(s => ({ ...s, [k]: !s[k] }));
@@ -233,6 +263,11 @@ export default function CementPlug() {
             <Button size="sm" className="gap-1" onClick={calculate}>
               <Calculator className="w-4 h-4" /> Расчёт
             </Button>
+            {results && (
+              <Button size="sm" variant="outline" className="gap-1" onClick={handleExportDocx}>
+                <FileDown className="w-4 h-4" /> Word
+              </Button>
+            )}
             <Link to="/cementing" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
               <ArrowLeft className="w-3.5 h-3.5" /> Цементирование
             </Link>
@@ -643,7 +678,7 @@ export default function CementPlug() {
                 <CardHeader className="py-3 px-4">
                   <CardTitle className="text-sm">🖼️ Продольное сечение</CardTitle>
                 </CardHeader>
-                <CardContent className="pt-0 flex justify-center">
+                <CardContent className="pt-0 flex justify-center" ref={vizRef}>
                   <CementPlugVisualization results={results} inputs={buildInputs()} />
                 </CardContent>
               </Card>
@@ -653,7 +688,7 @@ export default function CementPlug() {
                 <CardHeader className="py-3 px-4">
                   <CardTitle className="text-sm">📈 Совмещённый график давлений</CardTitle>
                 </CardHeader>
-                <CardContent className="pt-0">
+                <CardContent className="pt-0" ref={chartRef}>
                   <CementPlugPressureChart inputs={buildInputs()} results={results} fracGradient={fracGradient} />
                 </CardContent>
               </Card>
