@@ -50,6 +50,7 @@ interface SessionState {
   wcRatio: number;
   slurryYield: number;
   additives: { name: string; percent: number }[];
+  spacerAdditives: { name: string; percent: number }[];
 }
 
 function loadSession(): Partial<SessionState> {
@@ -99,14 +100,15 @@ export default function CementPlug() {
   const [wcRatio, setWcRatio] = useState(saved.wcRatio ?? 0.44);
   const [slurryYield, setSlurryYield] = useState(saved.slurryYield ?? 0.63);
   const [additives, setAdditives] = useState<{ name: string; percent: number }[]>(saved.additives || []);
+  const [spacerAdditives, setSpacerAdditives] = useState<{ name: string; percent: number }[]>(saved.spacerAdditives || []);
 
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives]);
 
   /* ── Spacer height preview (real-time) ── */
   const isOpenHole = plug.bottomMD > well.casingShoe;
@@ -368,6 +370,20 @@ export default function CementPlug() {
                           <p className="text-[10px] text-muted-foreground">↕ Высота в затрубье: {spacerBelowHeight.toFixed(2)} м</p>
                         </div>
                       </div>
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-[10px] font-medium text-muted-foreground">Добавки буфера (% BWOB)</p>
+                          <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1" onClick={() => setSpacerAdditives(a => [...a, { name: "Добавка", percent: 0 }])}>+ добавка</Button>
+                        </div>
+                        {spacerAdditives.map((add, i) => (
+                          <div key={i} className="flex gap-1 items-center mb-1">
+                            <BlurInput className="h-6 text-[10px] flex-1" value={add.name} onValueCommit={v => { const a = [...spacerAdditives]; a[i] = { ...a[i], name: v }; setSpacerAdditives(a); }} />
+                            <BlurInput type="number" className="h-6 text-[10px] w-16" value={add.percent || ""} onValueCommit={v => { const a = [...spacerAdditives]; a[i] = { ...a[i], percent: num(v) }; setSpacerAdditives(a); }} />
+                            <span className="text-[10px] text-muted-foreground">%</span>
+                            <button className="text-destructive text-[10px]" onClick={() => setSpacerAdditives(a => a.filter((_, idx) => idx !== i))}>✕</button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     <Separator />
                     {/* Well fluid */}
@@ -514,15 +530,35 @@ export default function CementPlug() {
                       {(() => {
                         const dryMass = results.cementVolumeTotal / slurryYield; // tonnes
                         const waterMass = dryMass * wcRatio; // tonnes
+                        const spacerTotalVol = results.spacerVolumeAbove + results.spacerVolumeBelow;
+                        const spacerMassKg = spacerTotalVol * spacer.density * 1000; // kg total spacer
                         return (
-                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                            <ResultRow label="Сухой цемент" value={(dryMass * 1000).toFixed(0)} unit="кг" raw />
-                            <ResultRow label="Вода затворения" value={(waterMass * 1000).toFixed(0)} unit="кг" raw />
-                            <ResultRow label="В/Ц" value={wcRatio.toFixed(2)} unit="" raw />
-                            <ResultRow label="Выход" value={slurryYield.toFixed(2)} unit="м³/т" raw />
-                            {additives.filter(a => a.percent > 0).map((add, i) => (
-                              <ResultRow key={i} label={add.name} value={(dryMass * 1000 * add.percent / 100).toFixed(1)} unit={`кг (${add.percent}%)`} raw />
-                            ))}
+                          <div className="space-y-3">
+                            <div>
+                              <p className="text-[10px] font-semibold text-muted-foreground mb-1">Цемент</p>
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                <ResultRow label="Сухой цемент" value={(dryMass * 1000).toFixed(0)} unit="кг" raw />
+                                <ResultRow label="Вода затворения" value={(waterMass * 1000).toFixed(0)} unit="кг" raw />
+                                <ResultRow label="В/Ц" value={wcRatio.toFixed(2)} unit="" raw />
+                                <ResultRow label="Выход" value={slurryYield.toFixed(2)} unit="м³/т" raw />
+                                {additives.filter(a => a.percent > 0).map((add, i) => (
+                                  <ResultRow key={i} label={add.name} value={(dryMass * 1000 * add.percent / 100).toFixed(1)} unit={`кг (${add.percent}%)`} raw />
+                                ))}
+                              </div>
+                            </div>
+                            {spacerTotalVol > 0 && (
+                              <div>
+                                <Separator className="mb-2" />
+                                <p className="text-[10px] font-semibold text-muted-foreground mb-1">Буфер</p>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                  <ResultRow label="Объём буфера (всего)" value={spacerTotalVol.toFixed(3)} unit="м³" raw />
+                                  <ResultRow label="Масса буфера" value={spacerMassKg.toFixed(0)} unit="кг" raw />
+                                  {spacerAdditives.filter(a => a.percent > 0).map((add, i) => (
+                                    <ResultRow key={i} label={add.name} value={(spacerMassKg * add.percent / 100).toFixed(1)} unit={`кг (${add.percent}%)`} raw />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
