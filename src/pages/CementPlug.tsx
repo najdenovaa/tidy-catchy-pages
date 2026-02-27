@@ -217,7 +217,31 @@ export default function CementPlug() {
   });
 
   const calculate = () => {
-    setResults(calculateBalancedPlug(buildInputs()));
+    const inputs = buildInputs();
+    const res = calculateBalancedPlug(inputs);
+    setResults(res);
+    // Log calculation to backend
+    supabase.functions.invoke("log-activity", {
+      body: {
+        type: "calculation",
+        module: "cement-plug",
+        page_url: "/cement-plug",
+        well_data: {
+          wellDepthMD: inputs.well.wellDepthMD,
+          holeDiameter: inputs.well.holeDiameter,
+          casingOD: inputs.well.pipeOD,
+          plugTop: inputs.plug.topMD,
+          plugBottom: inputs.plug.bottomMD,
+        },
+        calc_params: {
+          cementDensity: inputs.cement.density,
+          spacerDensity: inputs.spacer.density,
+          spacerVolumeAbove: inputs.spacerVolumeAboveM3,
+          spacerVolumeBelow: inputs.spacerVolumeBelowM3,
+          wcRatio, slurryYield,
+        },
+      },
+    }).catch(() => {});
   };
 
   /* ── Load saved calculation from dashboard ── */
