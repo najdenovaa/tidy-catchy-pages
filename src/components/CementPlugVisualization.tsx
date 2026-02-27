@@ -41,6 +41,25 @@ function SideAnnotation({ x, yTop, yBot, label, color }: { x: number; yTop: numb
   );
 }
 
+/** Generate a wavy edge path across the bore width */
+function wavyEdgePath(cx: number, borePx: number, baseY: number, amplitude: number, seed: number): string {
+  const left = cx - borePx / 2 + 4;
+  const right = cx + borePx / 2 - 4;
+  const w = right - left;
+  const segments = 8;
+  const step = w / segments;
+  let d = `M${left},${baseY}`;
+  for (let i = 0; i < segments; i++) {
+    const x1 = left + i * step + step * 0.5;
+    const x2 = left + (i + 1) * step;
+    // Deterministic pseudo-random based on seed+i
+    const phase = Math.sin(seed * 7.3 + i * 2.7) * amplitude;
+    const phase2 = Math.sin(seed * 4.1 + i * 1.9) * amplitude * 0.6;
+    d += ` Q${x1},${baseY + phase} ${x2},${baseY + phase2}`;
+  }
+  return d;
+}
+
 /** Contamination zone gradient at cement/spacer interface */
 function ContaminationZone({ cx, borePx, interfaceY, contaminationPx, mode }: {
   cx: number; borePx: number; interfaceY: number; contaminationPx: number; mode: string;
@@ -48,36 +67,60 @@ function ContaminationZone({ cx, borePx, interfaceY, contaminationPx, mode }: {
   if (contaminationPx < 2) return null;
   const halfZone = contaminationPx / 2;
   const gradId = `cp-contam-${mode}`;
+  const clipId = `cp-contam-clip-${mode}`;
+  const filterId = `cp-contam-blur-${mode}`;
+  const left = cx - borePx / 2 + 4;
+  const right = cx + borePx / 2 - 4;
+  const topY = interfaceY - halfZone;
+  const botY = interfaceY + halfZone;
+  const amp = Math.max(3, contaminationPx * 0.25);
+
+  // Build wavy clip path: top wavy edge → right side → bottom wavy edge → left side
+  const topEdge = wavyEdgePath(cx, borePx, topY, amp, 1.0);
+  const botEdge = wavyEdgePath(cx, borePx, botY, amp, 3.5);
+  // Reverse bottom edge for closing
+  const botParts = botEdge.split(/[MQ]/).filter(Boolean);
+  // Simple close: top wavy → line down right → bottom wavy reversed → line up left
+  const clipPath = `${topEdge} L${right},${botY} L${left},${botY} Z`;
+  const clipPath2 = `${botEdge} L${right},${topY} L${left},${topY} Z`;
+
+  const numWaves = Math.min(Math.max(Math.floor(contaminationPx / 3), 3), 8);
+
   return (
     <g>
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#90A4AE" stopOpacity={0.6} />
-          <stop offset="30%" stopColor="#E65100" stopOpacity={0.35} />
-          <stop offset="50%" stopColor="#FF6D00" stopOpacity={0.4} />
-          <stop offset="70%" stopColor="#E65100" stopOpacity={0.35} />
-          <stop offset="100%" stopColor="#4FC3F7" stopOpacity={0.6} />
+          <stop offset="0%" stopColor="#90A4AE" stopOpacity={0.5} />
+          <stop offset="25%" stopColor="#E65100" stopOpacity={0.3} />
+          <stop offset="50%" stopColor="#FF6D00" stopOpacity={0.45} />
+          <stop offset="75%" stopColor="#E65100" stopOpacity={0.3} />
+          <stop offset="100%" stopColor="#4FC3F7" stopOpacity={0.5} />
         </linearGradient>
+        <filter id={filterId}>
+          <feGaussianBlur stdDeviation="1.5" />
+        </filter>
       </defs>
+      {/* Main gradient zone with soft blur */}
       <rect
-        x={cx - borePx / 2 + 4}
-        y={interfaceY - halfZone}
-        width={borePx - 8}
-        height={contaminationPx}
-        fill={`url(#${gradId})`}
-        rx={1}
+        x={left} y={topY - amp} width={right - left} height={contaminationPx + amp * 2}
+        fill={`url(#${gradId})`} filter={`url(#${filterId})`}
       />
-      {/* Wavy mixing lines */}
-      {Array.from({ length: Math.min(Math.floor(contaminationPx / 4), 5) }).map((_, i) => {
-        const yy = interfaceY - halfZone + (i + 1) * (contaminationPx / (Math.min(Math.floor(contaminationPx / 4), 5) + 1));
-        const amp = 3 + Math.random() * 2;
+      {/* Wavy mixing lines — organic curves across the zone */}
+      {Array.from({ length: numWaves }).map((_, i) => {
+        const frac = (i + 1) / (numWaves + 1);
+        const yy = topY + frac * contaminationPx;
+        const waveAmp = amp * (0.6 + 0.4 * Math.sin(i * 1.7));
+        const seed = 2.0 + i * 1.3;
+        const wavePath = wavyEdgePath(cx, borePx, yy, waveAmp, seed);
+        const opacity = 0.25 + 0.2 * Math.sin(i * 2.1);
         return (
           <path
             key={i}
-            d={`M${cx - borePx / 2 + 8},${yy} Q${cx - borePx / 4},${yy + amp} ${cx},${yy - amp / 2} T${cx + borePx / 2 - 8},${yy}`}
-            stroke="rgba(255,109,0,0.4)"
-            strokeWidth={0.6}
+            d={wavePath}
+            stroke={i % 2 === 0 ? "rgba(255,109,0,0.5)" : "rgba(79,195,247,0.4)"}
+            strokeWidth={0.8 + Math.sin(i * 1.3) * 0.3}
             fill="none"
+            opacity={opacity + 0.3}
           />
         );
       })}
