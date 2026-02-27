@@ -191,49 +191,91 @@ function PlugSVG({ results, inputs, mode }: Props & { mode: 'equilibrium' | 'was
         </>
       )}
 
-      {/* Annulus fluid columns */}
-      {annCols.map((col, i) => {
-        const yTop = y(Math.max(col.topMD, viewTop));
-        const yBot = y(Math.min(col.bottomMD, viewBottom));
-        const h = yBot - yTop;
-        if (h <= 0) return null;
-        const gradId = col.color === "#B0BEC5" ? `cp-cement-grad-${mode}` : col.color === "#4FC3F7" ? `cp-spacer-grad-${mode}` : `cp-mud-grad-${mode}`;
-        const leftW = (borePx - pipePx) / 2 - (showPipe && yTop >= pipeTopY && yTop <= pipeBottomY ? 0 : 0);
-        return (
-          <g key={`ann-${i}`}>
-            <rect x={cx - borePx / 2 + 4} y={yTop} width={leftW} height={h} fill={`url(#${gradId})`} opacity={0.85} />
-            <rect x={cx + pipePx / 2} y={yTop} width={leftW} height={h} fill={`url(#${gradId})`} opacity={0.85} />
-          </g>
-        );
-      })}
-
-      {/* Drill pipe with single tool joint at bottom */}
-      {showPipe && pipeBottomY > pipeTopY && (
+      {/* Fluid columns — full bore width, then pipe overlays on top */}
+      {mode === 'equilibrium' ? (
         <>
-          {/* Pipe walls */}
-          <rect x={cx - pipePx / 2} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
-          <rect x={cx + pipePx / 2 - 2.5} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
-          {/* Single tool joint (муфта) at pipe bottom */}
-          <BottomToolJoint cx={cx} pipePx={pipePx} bottomY={pipeBottomY} mode={mode} />
+          {/* Equilibrium: annulus fills full bore, pipe draws on top */}
+          {annCols.map((col, i) => {
+            const yTop = y(Math.max(col.topMD, viewTop));
+            const yBot = y(Math.min(col.bottomMD, viewBottom));
+            const h = yBot - yTop;
+            if (h <= 0) return null;
+            const gradId = col.color === "#B0BEC5" ? `cp-cement-grad-${mode}` : col.color === "#4FC3F7" ? `cp-spacer-grad-${mode}` : `cp-mud-grad-${mode}`;
+            return (
+              <rect key={`ann-${i}`} x={cx - borePx / 2 + 4} y={yTop} width={borePx - 8} height={h}
+                fill={`url(#${gradId})`} opacity={0.85} />
+            );
+          })}
+          {/* Pipe walls on top */}
+          {showPipe && pipeBottomY > pipeTopY && (
+            <>
+              <rect x={cx - pipePx / 2} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
+              <rect x={cx + pipePx / 2 - 2.5} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
+              <BottomToolJoint cx={cx} pipePx={pipePx} bottomY={pipeBottomY} mode={mode} />
+            </>
+          )}
+          {/* Pipe interior fluid */}
+          {pipeCols.map((col, i) => {
+            const yTop = y(Math.max(col.topMD, viewTop));
+            const yBot = y(Math.min(col.bottomMD, viewBottom));
+            const h = yBot - yTop;
+            if (h <= 0) return null;
+            const gradId = col.color === "#B0BEC5" ? `cp-cement-grad-${mode}` : col.color === "#4FC3F7" ? `cp-spacer-grad-${mode}` : `cp-mud-grad-${mode}`;
+            return (
+              <rect key={`pipe-${i}`} x={cx - pipeIDPx / 2} y={yTop} width={pipeIDPx} height={h}
+                fill={`url(#${gradId})`} opacity={0.8} />
+            );
+          })}
+          {/* Cement top marker (placement height, above plug.topMD) */}
+          {results.cementHeightAnnMD > results.plugLengthMD && (
+            <>
+              <line x1={cx - borePx / 2} y1={y(plug.bottomMD - results.cementHeightAnnMD)}
+                x2={cx + borePx / 2} y2={y(plug.bottomMD - results.cementHeightAnnMD)}
+                stroke="#E0E0E0" strokeWidth={0.8} strokeDasharray="3,2" />
+              <text x={cx + borePx / 2 + 16} y={y(plug.bottomMD - results.cementHeightAnnMD) + 3}
+                fill="#E0E0E0" fontSize={6}>
+                верх цем. {(plug.bottomMD - results.cementHeightAnnMD).toFixed(1)} м
+              </text>
+            </>
+          )}
         </>
-      )}
-
-      {/* Pipe fluid columns (equilibrium) */}
-      {mode === 'equilibrium' && pipeCols.map((col, i) => {
-        const yTop = y(Math.max(col.topMD, viewTop));
-        const yBot = y(Math.min(col.bottomMD, viewBottom));
-        const h = yBot - yTop;
-        if (h <= 0) return null;
-        const gradId = col.color === "#B0BEC5" ? `cp-cement-grad-${mode}` : col.color === "#4FC3F7" ? `cp-spacer-grad-${mode}` : `cp-mud-grad-${mode}`;
-        return (
-          <rect key={`pipe-${i}`} x={cx - pipeIDPx / 2} y={yTop} width={pipeIDPx} height={h} fill={`url(#${gradId})`} opacity={0.8} />
-        );
-      })}
-
-      {/* Wash mode: pipe has well fluid */}
-      {mode === 'wash' && showPipe && pipeBottomY > pipeTopY && (
-        <rect x={cx - pipeIDPx / 2} y={pipeTopY} width={pipeIDPx} height={pipeBottomY - pipeTopY}
-          fill={`url(#cp-mud-grad-${mode})`} opacity={0.6} />
+      ) : (
+        <>
+          {/* Wash mode: pipe pulled out, cement settled to plug interval */}
+          {/* Mud above settled cement — full bore */}
+          {annCols.filter(c => c.color !== "#B0BEC5").map((col, i) => {
+            const yTop = y(Math.max(col.topMD, viewTop));
+            const yBot = y(Math.min(col.bottomMD, viewBottom));
+            const h = yBot - yTop;
+            if (h <= 0) return null;
+            const gradId = col.color === "#4FC3F7" ? `cp-spacer-grad-${mode}` : `cp-mud-grad-${mode}`;
+            return (
+              <rect key={`wash-fluid-${i}`} x={cx - borePx / 2 + 4} y={yTop} width={borePx - 8} height={h}
+                fill={`url(#${gradId})`} opacity={0.85} />
+            );
+          })}
+          {/* Settled cement plug — full bore, plug.topMD to plug.bottomMD */}
+          <rect x={cx - borePx / 2 + 4} y={y(Math.max(plug.topMD, viewTop))}
+            width={borePx - 8} height={y(Math.min(plug.bottomMD, viewBottom)) - y(Math.max(plug.topMD, viewTop))}
+            fill={`url(#cp-cement-grad-${mode})`} opacity={0.9} />
+          {/* Pipe above cement with tool joint */}
+          {showPipe && pipeBottomY > pipeTopY && (
+            <>
+              <rect x={cx - pipePx / 2} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
+              <rect x={cx + pipePx / 2 - 2.5} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
+              <BottomToolJoint cx={cx} pipePx={pipePx} bottomY={pipeBottomY} mode={mode} />
+              {/* Mud inside pipe */}
+              <rect x={cx - pipeIDPx / 2} y={pipeTopY} width={pipeIDPx} height={pipeBottomY - pipeTopY}
+                fill={`url(#cp-mud-grad-${mode})`} opacity={0.6} />
+            </>
+          )}
+          {/* Pull-out label */}
+          {showPipe && (
+            <text x={cx + borePx / 2 + 16} y={pipeBottomY + 3} fill="#81C784" fontSize={7}>
+              🔧 {results.pullOutDepthMD} м
+            </text>
+          )}
+        </>
       )}
 
       {/* Plug interval markers */}
@@ -241,17 +283,8 @@ function PlugSVG({ results, inputs, mode }: Props & { mode: 'equilibrium' | 'was
       <line x1={cx - borePx / 2 - 14} y1={y(plug.bottomMD)} x2={cx + borePx / 2 + 14} y2={y(plug.bottomMD)} stroke="#FFD54F" strokeWidth={1} strokeDasharray="4,2" />
       <text x={cx + borePx / 2 + 16} y={y(plug.topMD) + 3} fill="#FFD54F" fontSize={7}>▲ {plug.topMD} м</text>
       <text x={cx + borePx / 2 + 16} y={y(plug.bottomMD) + 3} fill="#FFD54F" fontSize={7}>▼ {plug.bottomMD} м</text>
-
       <rect x={cx - borePx / 2 - 14} y={y(plug.topMD)} width={borePx + 28} height={y(plug.bottomMD) - y(plug.topMD)} fill={`url(#cp-hatch-${mode})`} />
 
-      {/* Wash mode pull-out label */}
-      {mode === 'wash' && showPipe && (
-        <text x={cx + borePx / 2 + 16} y={pipeBottomY + 3} fill="#81C784" fontSize={7}>
-          🔧 {results.pullOutDepthMD} м
-        </text>
-      )}
-
-      {/* Spacer interval labels */}
       {results.spacerBelowHeightAnnMD > 0 && (
         <text x={cx} y={y(plug.bottomMD + results.spacerBelowHeightAnnMD / 2) + 3} textAnchor="middle" fill="#4FC3F7" fontSize={6} fontWeight="bold">
           ↕ {results.spacerBelowHeightAnnMD.toFixed(1)} м
