@@ -787,78 +787,103 @@ export default function CementPlug() {
                 {/* ── Stability analysis card ── */}
                 {results.stability && (
                   <Card className={`border-2 ${
-                    results.stability.minStabilityFactor >= 1.5 ? 'border-green-500/40' :
-                    results.stability.minStabilityFactor >= 1.0 ? 'border-amber-500/40' :
-                    'border-destructive/60'
+                    results.stability.isConfined ? (
+                      results.stability.interfaceRisk === 'low' ? 'border-green-500/40' :
+                      results.stability.interfaceRisk === 'medium' ? 'border-amber-500/40' :
+                      'border-amber-500/40'
+                    ) : (
+                      results.stability.minStabilityFactor >= 1.5 ? 'border-green-500/40' :
+                      results.stability.minStabilityFactor >= 1.0 ? 'border-amber-500/40' :
+                      'border-destructive/60'
+                    )
                   }`}>
                     <CardHeader className="py-3 px-4">
                       <CardTitle className="text-sm flex items-center gap-2">
-                        {results.stability.isStable ? (
-                          <ShieldCheck className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <ShieldAlert className="w-4 h-4 text-destructive" />
-                        )}
+                        <ShieldCheck className="w-4 h-4 text-green-500" />
                         Устойчивость моста
-                        <Badge
-                          variant={results.stability.minStabilityFactor >= 1.5 ? "default" : results.stability.isStable ? "secondary" : "destructive"}
-                          className="text-[10px]"
-                        >
-                          SF = {results.stability.minStabilityFactor.toFixed(2)}
-                        </Badge>
+                        {results.stability.isConfined ? (
+                          <Badge variant="default" className="text-[10px]">
+                            Замкнутая система — стабилен
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant={results.stability.minStabilityFactor >= 1.5 ? "default" : results.stability.isStable ? "secondary" : "destructive"}
+                            className="text-[10px]"
+                          >
+                            SF = {results.stability.minStabilityFactor.toFixed(2)}
+                          </Badge>
+                        )}
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="pt-0 space-y-3">
-                      {results.stability.hydraulicDiameterM && (
-                        <p className="text-[10px] text-muted-foreground">
-                          Dгидр = {(results.stability.hydraulicDiameterM * 1000).toFixed(0)} мм (кольцевое пространство при трубах в скважине)
-                        </p>
+                      {/* Confined system: interface analysis */}
+                      {results.stability.isConfined && (
+                        <div className="rounded-lg border border-border p-3 space-y-2">
+                          <p className="text-[10px] font-semibold text-muted-foreground">
+                            Анализ интерфейса (критерий Рэлея-Тейлора)
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Буферу некуда деваться → мост не проседает. Оценивается риск пальцевания (смешения) на границе цемент/буфер.
+                          </p>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
+                            <span className="text-muted-foreground">Dгидр (кольцевое):</span>
+                            <span>{((results.stability.hydraulicDiameterM ?? 0) * 1000).toFixed(0)} мм</span>
+                            <span className="text-muted-foreground font-semibold">SF интерфейса:</span>
+                            <span className={`font-bold ${
+                              (results.stability.interfaceSF ?? 0) >= 1.5 ? 'text-green-500' :
+                              (results.stability.interfaceSF ?? 0) >= 0.7 ? 'text-amber-400' : 'text-destructive'
+                            }`}>
+                              {(results.stability.interfaceSF ?? 0).toFixed(2)}
+                            </span>
+                            <span className="text-muted-foreground">Риск загрязнения:</span>
+                            <span className={`font-semibold ${
+                              results.stability.interfaceRisk === 'low' ? 'text-green-500' :
+                              results.stability.interfaceRisk === 'medium' ? 'text-amber-400' : 'text-destructive'
+                            }`}>
+                              {results.stability.interfaceRisk === 'low' ? 'Низкий' :
+                               results.stability.interfaceRisk === 'medium' ? 'Умеренный' : 'Высокий'}
+                            </span>
+                            {(results.stability.contaminationDepthM ?? 0) > 0 && (
+                              <>
+                                <span className="text-muted-foreground">Глубина смешения:</span>
+                                <span className="text-amber-400">~{(results.stability.contaminationDepthM ?? 0).toFixed(1)} м</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
                       )}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {/* Scenario 1 */}
-                        <div className="rounded-lg border border-border p-3 space-y-1">
-                          <p className="text-[10px] font-semibold text-muted-foreground">Сценарий 1: мост → через буфер</p>
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
-                            <span className="text-muted-foreground">Движущее давление:</span>
-                            <span>{results.stability.drivingPressure1.toFixed(1)} Па</span>
-                            <span className="text-muted-foreground">Удерживающее давление:</span>
-                            <span>{results.stability.resistingPressure1.toFixed(1)} Па</span>
-                            <span className="text-muted-foreground font-semibold">SF₁ (СНС 10мин, трубы):</span>
-                            <span className={`font-bold ${results.stability.stabilityFactor1 >= 1.5 ? 'text-green-500' : results.stability.stabilityFactor1 >= 1.0 ? 'text-amber-400' : 'text-destructive'}`}>
-                              {results.stability.stabilityFactor1.toFixed(2)}
-                            </span>
-                            <span className="text-muted-foreground">SF₁ (СНС 10с):</span>
-                            <span className={`${(results.stability.stabilityFactor1_10sec ?? 999) >= 1.0 ? 'text-muted-foreground' : 'text-amber-400'}`}>
-                              {(results.stability.stabilityFactor1_10sec ?? 0).toFixed(2)}
-                            </span>
-                            <span className="text-muted-foreground">SF₁ (после подъёма, ~30мин):</span>
-                            <span className={`${(results.stability.stabilityFactor1_afterPull ?? 999) >= 1.0 ? 'text-green-500' : 'text-amber-400'}`}>
-                              {(results.stability.stabilityFactor1_afterPull ?? 0).toFixed(2)}
-                            </span>
+
+                      {/* Open system: piston model */}
+                      {!results.stability.isConfined && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="rounded-lg border border-border p-3 space-y-1">
+                            <p className="text-[10px] font-semibold text-muted-foreground">Сценарий 1: мост → через буфер</p>
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
+                              <span className="text-muted-foreground">Движущее давление:</span>
+                              <span>{results.stability.drivingPressure1.toFixed(1)} Па</span>
+                              <span className="text-muted-foreground">Удерживающее давление:</span>
+                              <span>{results.stability.resistingPressure1.toFixed(1)} Па</span>
+                              <span className="text-muted-foreground font-semibold">SF₁ (СНС 10мин):</span>
+                              <span className={`font-bold ${results.stability.stabilityFactor1 >= 1.5 ? 'text-green-500' : results.stability.stabilityFactor1 >= 1.0 ? 'text-amber-400' : 'text-destructive'}`}>
+                                {results.stability.stabilityFactor1.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="rounded-lg border border-border p-3 space-y-1">
+                            <p className="text-[10px] font-semibold text-muted-foreground">Сценарий 2: мост+буфер → в скв. жидкость</p>
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
+                              <span className="text-muted-foreground">Движущее давление:</span>
+                              <span>{results.stability.drivingPressure2.toFixed(1)} Па</span>
+                              <span className="text-muted-foreground">Удерживающее давление:</span>
+                              <span>{results.stability.resistingPressure2.toFixed(1)} Па</span>
+                              <span className="text-muted-foreground font-semibold">SF₂ (СНС 10мин):</span>
+                              <span className={`font-bold ${results.stability.stabilityFactor2 >= 1.5 ? 'text-green-500' : results.stability.stabilityFactor2 >= 1.0 ? 'text-amber-400' : 'text-destructive'}`}>
+                                {results.stability.stabilityFactor2.toFixed(2)}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                        {/* Scenario 2 */}
-                        <div className="rounded-lg border border-border p-3 space-y-1">
-                          <p className="text-[10px] font-semibold text-muted-foreground">Сценарий 2: мост+буфер → в скв. жидкость</p>
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
-                            <span className="text-muted-foreground">Движущее давление:</span>
-                            <span>{results.stability.drivingPressure2.toFixed(1)} Па</span>
-                            <span className="text-muted-foreground">Удерживающее давление:</span>
-                            <span>{results.stability.resistingPressure2.toFixed(1)} Па</span>
-                            <span className="text-muted-foreground font-semibold">SF₂ (СНС 10мин, трубы):</span>
-                            <span className={`font-bold ${results.stability.stabilityFactor2 >= 1.5 ? 'text-green-500' : results.stability.stabilityFactor2 >= 1.0 ? 'text-amber-400' : 'text-destructive'}`}>
-                              {results.stability.stabilityFactor2.toFixed(2)}
-                            </span>
-                            <span className="text-muted-foreground">SF₂ (СНС 10с):</span>
-                            <span className={`${(results.stability.stabilityFactor2_10sec ?? 999) >= 1.0 ? 'text-muted-foreground' : 'text-amber-400'}`}>
-                              {(results.stability.stabilityFactor2_10sec ?? 0).toFixed(2)}
-                            </span>
-                            <span className="text-muted-foreground">SF₂ (после подъёма, ~30мин):</span>
-                            <span className={`${(results.stability.stabilityFactor2_afterPull ?? 999) >= 1.0 ? 'text-green-500' : 'text-amber-400'}`}>
-                              {(results.stability.stabilityFactor2_afterPull ?? 0).toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                      )}
 
                       {/* Warnings */}
                       {results.stability.warnings.length > 0 && (
@@ -874,19 +899,24 @@ export default function CementPlug() {
 
                       {/* Recommendation */}
                       <div className={`rounded-lg p-3 text-xs ${
-                        results.stability.minStabilityFactor >= 1.5 ? 'bg-green-500/10 text-green-400' :
-                        results.stability.isStable ? 'bg-amber-500/10 text-amber-400' :
-                        'bg-destructive/10 text-destructive'
+                        results.stability.isConfined ? (
+                          results.stability.interfaceRisk === 'low' ? 'bg-green-500/10 text-green-400' :
+                          'bg-amber-500/10 text-amber-400'
+                        ) : (
+                          results.stability.minStabilityFactor >= 1.5 ? 'bg-green-500/10 text-green-400' :
+                          results.stability.isStable ? 'bg-amber-500/10 text-amber-400' :
+                          'bg-destructive/10 text-destructive'
+                        )
                       }`}>
                         <p className="whitespace-pre-line">{results.stability.recommendation}</p>
-                        {results.stability.requiredSpacerGel > 0 && results.stability.minStabilityFactor < 1.5 && (
+                        {(results.stability.requiredSpacerGel ?? 0) > 0 && results.stability.interfaceRisk !== 'low' && (
                           <p className="mt-1 font-semibold text-[11px]">
-                            Рекомендуемый 10-мин гель буфера для SF=1.5: ≥ {results.stability.requiredSpacerGel.toFixed(1)} Па
+                            Рекомендуемый СНС 10 мин буфера для чистого интерфейса: ≥ {(results.stability.requiredSpacerGel ?? 0).toFixed(1)} Па
                           </p>
                         )}
                         {!results.stability.usedGelStrength && (
                           <p className="mt-1 text-[10px] opacity-70">
-                            ℹ Гель не задан — используется оценка Gel ≈ 3×YP. Введите 10-мин гель для точности.
+                            ℹ СНС не задан — используется оценка Gel ≈ 3×YP. Введите СНС для точности.
                           </p>
                         )}
                       </div>
