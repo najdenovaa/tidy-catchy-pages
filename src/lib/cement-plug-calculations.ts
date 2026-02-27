@@ -31,17 +31,21 @@ export interface PlugInterval {
   bottomMD: number;
 }
 
+export type WashType = 'direct' | 'reverse';
+
 export interface PlugInputs {
   well: PlugWellData;
   plug: PlugInterval;
   cement: PlugFluid;
   spacer: PlugFluid;
-  wellFluid: PlugFluid;            // жидкость заполнения скважины (любая)
-  spacerVolumeAboveM3: number;     // объём буфера сверху моста
-  spacerVolumeBelowM3: number;     // объём буфера снизу моста
+  wellFluid: PlugFluid;
+  spacerVolumeAboveM3: number;
+  spacerVolumeBelowM3: number;
   safetyMarginM: number;
-  thickeningTimeMin: number;       // время загустевания цемента, мин
-  pullOutAbovePlugM: number;       // интервал подъёма над кровлей моста для промывки, м
+  thickeningTimeMin: number;
+  pullOutAbovePlugM: number;
+  washType: WashType;
+  washCycles: number;
 }
 
 /* ───── Geometry helpers ───── */
@@ -55,9 +59,16 @@ function annularArea(outerMm: number, innerMm: number): number {
   return area(outerMm) - area(innerMm);
 }
 
+/** Hydrostatic pressure, МПа */
 function hydroP(densityGcm3: number, tvdM: number): number {
   return densityGcm3 * 9.81 * tvdM / 1000;
 }
+
+/** Bingham friction pressure drop for a fluid in a pipe/annulus, МПа
+ *  Simplified Bingham model: ΔP = (12 * PV * V * L) / (D_h^2) + (4 * YP * L) / (D_h * 1000)
+ *  where D_h is hydraulic diameter. For static state ΔP_friction = 0, we compute gel-strength-like contribution.
+ *  For STATIC pressures we only include hydrostatic — friction is 0 at rest.
+ */
 
 /* ───── Results ───── */
 
@@ -82,10 +93,15 @@ export interface PlugResults {
   spacerVolumeBelow: number;
   spacerVolumeAbove: number;
 
+  // Spacer intervals (heights in MD)
+  spacerBelowHeightAnnMD: number;
+  spacerAboveHeightAnnMD: number;
+
   cementHeightPipeMD: number;
   pipeEndDepthMD: number;
   displacementVolume: number;
 
+  // Static pressures (hydrostatic only, no friction)
   pressureAnnulus: number;
   pressurePipe: number;
   isBalanced: boolean;
@@ -94,8 +110,10 @@ export interface PlugResults {
   pumpingStages: PumpingStage[];
   processDescription: string;
   thickeningTimeMin: number;
-  pullOutDepthMD: number;       // глубина после подъёма на промывку
-  washVolumeM3: number;         // объём промывки (1.5 цикла)
+  pullOutDepthMD: number;
+  washVolumeM3: number;
+  washType: WashType;
+  washCycles: number;
 }
 
 export interface FluidColumn {
@@ -112,7 +130,7 @@ export interface FluidColumn {
 /* ───── Main calculation ───── */
 
 export function calculateBalancedPlug(input: PlugInputs): PlugResults {
-  const { well, plug, cement, spacer, wellFluid, spacerVolumeAboveM3, spacerVolumeBelowM3, thickeningTimeMin, pullOutAbovePlugM } = input;
+  const { well, plug, cement, spacer, wellFluid, spacerVolumeAboveM3, spacerVolumeBelowM3, thickeningTimeMin, pullOutAbovePlugM, washType, washCycles } = input;
 
   const isOpenHole = plug.bottomMD > well.casingShoe;
   const boreDiam = isOpenHole ? well.holeDiameter : well.casingID;
@@ -129,9 +147,9 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
 
   const pipeEndMD = plug.bottomMD;
 
-  // Spacer heights in annulus
-  const spacerBelowHeightAnn = spacerVolumeBelowM3 / annA;
-  const spacerAboveHeightAnn = spacerVolumeAboveM3 / annA;
+  // Spacer heights in annulus (convert volume → height)
+  const spacerBelowHeightAnn = annA > 0 ? spacerVolumeBelowM3 / annA : 0;
+  const spacerAboveHeightAnn = annA > 0 ? spacerVolumeAboveM3 / annA : 0;
 
   // Cement in annulus
   const cementVolAnn = annA * plugLenMD;
@@ -150,7 +168,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const spacerAboveTopPipeMD = cementTopInPipeMD - spacerAbovePipeHeight;
   const displacementVolume = pipeA * Math.max(0, spacerAboveTopPipeMD);
 
-  // Pressure at plug bottom
+  // STATIC pressure at plug bottom (hydrostatic only, no friction at rest)
   const spacerAboveTopMD = plug.topMD - spacerAboveHeightAnn;
   const spacerBelowBottomMD = plug.bottomMD + spacerBelowHeightAnn;
   const spacerAboveTopTVD = interpolateTVD(Math.max(0, spacerAboveTopMD), traj);
@@ -235,14 +253,25 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
 
   // Pull-out and wash
   const pullOutDepthMD = Math.max(0, plug.topMD - pullOutAbovePlugM);
-  // Wash 1.5 cycles: annular volume from pullOutDepth to plug.topMD * 1.5
-  const washIntervalMD = plug.topMD - pullOutDepthMD;
-  const washVolumeM3 = annA * washIntervalMD * 1.5;
+
+  // Wash volume: 1 cycle = full annular volume from pipe shoe to surface (direct)
+  // or full pipe volume from surface to pipe shoe (reverse)
+  // Direct: fluid pumped down pipe, returns up annulus — 1 cycle lifts bottoms-up
+  // Reverse: fluid pumped down annulus, returns up pipe
+  let washOneCycleMD: number;
+  let washOneCycleVolume: number;
+  if (washType === 'direct') {
+    // 1 cycle = annular volume from pullOutDepth to surface
+    washOneCycleVolume = annA * pullOutDepthMD;
+  } else {
+    // reverse: 1 cycle = pipe volume from surface to pullOutDepth  
+    washOneCycleVolume = pipeA * pullOutDepthMD;
+  }
+  const washVolumeM3 = washOneCycleVolume * washCycles;
 
   // Pumping stages
   const pumpingStages: PumpingStage[] = [];
 
-  // 1. Нижний буфер
   if (spacerVolumeBelowM3 > 0) {
     pumpingStages.push({
       name: "Нижний буфер",
@@ -252,7 +281,6 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     });
   }
 
-  // 2. Цемент
   pumpingStages.push({
     name: "Цементный раствор",
     fluid: `${cement.name} (${cement.density} г/см³)`,
@@ -260,7 +288,6 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     description: "Закачка тампонажного раствора в объёме, обеспечивающем заполнение интервала моста в затрубье и трубах",
   });
 
-  // 3. Верхний буфер
   if (spacerVolumeAboveM3 > 0) {
     pumpingStages.push({
       name: "Верхний буфер",
@@ -270,7 +297,6 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     });
   }
 
-  // 4. Продавка
   pumpingStages.push({
     name: "Продавка",
     fluid: `${wellFluid.name} (${wellFluid.density} г/см³)`,
@@ -278,16 +304,20 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     description: "Продавка жидкостью заполнения до установки равновесия столбов жидкости",
   });
 
-  // Process description
+  const washTypeText = washType === 'direct' ? 'прямая' : 'обратная';
   const processDescription = [
     `1. Спуск бурильного инструмента (НКТ/БТ ∅${well.pipeOD} мм) до забоя моста ${plug.bottomMD} м MD.`,
-    `2. Закачка нижнего буфера (${spacerVolumeBelowM3.toFixed(2)} м³) для разделения цемента и жидкости скважины снизу.`,
+    `2. Закачка нижнего буфера (${spacerVolumeBelowM3.toFixed(2)} м³, интервал ${spacerBelowHeightAnn.toFixed(1)} м) для разделения цемента и жидкости скважины снизу.`,
     `3. Закачка тампонажного раствора (${cementVolTotal.toFixed(3)} м³, ρ=${cement.density} г/см³).`,
-    `4. Закачка верхнего буфера (${spacerVolumeAboveM3.toFixed(2)} м³) для разделения сверху.`,
+    `4. Закачка верхнего буфера (${spacerVolumeAboveM3.toFixed(2)} м³, интервал ${spacerAboveHeightAnn.toFixed(1)} м) для разделения сверху.`,
     `5. Продавка жидкостью скважины (${displacementVolume.toFixed(3)} м³) до установки гидростатического равновесия.`,
     `6. Медленный подъём инструмента на ${pullOutAbovePlugM} м выше кровли моста (до ${pullOutDepthMD} м MD) без вращения.`,
-    `7. Промывка 1,5 цикла (${washVolumeM3.toFixed(2)} м³) для очистки затрубного пространства от остатков цемента.`,
+    `7. ${washTypeText.charAt(0).toUpperCase() + washTypeText.slice(1)} промывка: ${washCycles} цикл(а/ов), объём ${washVolumeM3.toFixed(2)} м³.`,
+    `   1 цикл = подъём забойной пачки на поверхность (V=${washOneCycleVolume.toFixed(2)} м³).`,
     `8. Подъём инструмента. Ожидание ОЗЦ (время загустевания: ${thickeningTimeMin} мин).`,
+    ``,
+    `Статическое давление на забое моста:`,
+    `  Затрубье: ${pAnn.toFixed(2)} МПа | Трубы: ${pPipe.toFixed(2)} МПа | ΔP: ${Math.abs(pAnn - pPipe).toFixed(2)} МПа`,
   ].join('\n');
 
   return {
@@ -302,6 +332,8 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     cementVolumeTotal: Math.round(cementVolTotal * 1000) / 1000,
     spacerVolumeBelow: Math.round(spacerVolumeBelowM3 * 1000) / 1000,
     spacerVolumeAbove: Math.round(spacerVolumeAboveM3 * 1000) / 1000,
+    spacerBelowHeightAnnMD: Math.round(spacerBelowHeightAnn * 100) / 100,
+    spacerAboveHeightAnnMD: Math.round(spacerAboveHeightAnn * 100) / 100,
     cementHeightPipeMD: Math.round(cementHeightPipeMD * 100) / 100,
     pipeEndDepthMD: pipeEndMD,
     displacementVolume: Math.round(displacementVolume * 1000) / 1000,
@@ -314,5 +346,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     thickeningTimeMin,
     pullOutDepthMD,
     washVolumeM3: Math.round(washVolumeM3 * 1000) / 1000,
+    washType,
+    washCycles,
   };
 }
