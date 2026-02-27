@@ -404,9 +404,13 @@ export default function CementPlugVisualization({ results, inputs }: Props) {
   if (plugLen <= 0) return null;
 
   return (
-    <div className="space-y-4">
-      <PlugSVG results={results} inputs={inputs} mode="equilibrium" />
-      <PlugSVG results={results} inputs={inputs} mode="wash" />
+    <div className="flex flex-col md:flex-row gap-4 w-full">
+      <div className="flex-1 min-w-0">
+        <PlugSVG results={results} inputs={inputs} mode="equilibrium" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <PlugSVG results={results} inputs={inputs} mode="wash" />
+      </div>
     </div>
   );
 }
