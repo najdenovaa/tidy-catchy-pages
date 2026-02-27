@@ -822,9 +822,6 @@ export default function CementPlug() {
                           <p className="text-[10px] font-semibold text-muted-foreground">
                             Анализ интерфейса (критерий Рэлея-Тейлора)
                           </p>
-                          <p className="text-[10px] text-muted-foreground">
-                            Буферу некуда деваться → мост не проседает. Оценивается риск пальцевания (смешения) на границе цемент/буфер.
-                          </p>
                           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
                             <span className="text-muted-foreground">Dгидр (кольцевое):</span>
                             <span>{((results.stability.hydraulicDiameterM ?? 0) * 1000).toFixed(0)} мм</span>
