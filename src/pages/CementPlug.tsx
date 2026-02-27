@@ -392,48 +392,56 @@ export default function CementPlug() {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <header className="border-b border-border bg-card sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-3 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link to="/">
-              <img src={deallsoftLogo} alt="DeAllsoft" className="h-10 object-cover" />
+        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex flex-col items-center sm:items-start">
+            <Link to="/" className="flex items-center gap-3">
+              <img src={deallsoftLogo} alt="DeAllsoft" className="h-16 sm:h-28 object-cover object-center" />
+              <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase -mt-1">Инженерные расчёты</p>
             </Link>
-            <h1 className="text-sm sm:text-base font-semibold text-foreground">Цементные мосты</h1>
+            <div className="mt-0.5 sm:ml-10 text-center sm:text-left">
+              <h1 className="text-sm sm:text-lg font-medium text-muted-foreground leading-tight">Цементные мосты</h1>
+              <p className="text-xs text-muted-foreground/70">Установка мостов на равновесие</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" className="gap-1" onClick={calculate}>
-              <Calculator className="w-4 h-4" /> Расчёт
-            </Button>
-            {fromDashboard && (
-              <Button size="sm" variant="outline" className="gap-1" onClick={handleSaveToAccount} disabled={saving}>
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                <span className="hidden sm:inline">Сохранить</span>
-              </Button>
-            )}
-            <Button size="sm" variant="outline" className="gap-1" onClick={resetSession}>
-              <RotateCcw className="w-4 h-4" /> <span className="hidden sm:inline">Обнулить</span>
-            </Button>
-            {results && (
-              <Button size="sm" variant="outline" className="gap-1" onClick={handleExportDocx}>
-                <FileDown className="w-4 h-4" /> Word
-              </Button>
-            )}
-            {loadingSavedCalc && <span className="text-xs text-muted-foreground">Загрузка...</span>}
-            {fromDashboard && (
-              <>
-                <Link to="/dashboard" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-                  <LayoutDashboard className="w-3.5 h-3.5" /> Кабинет
-                </Link>
-                <button onClick={handleLogout} className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1">
-                  <LogOut className="w-3.5 h-3.5" /> Выйти
+          <div className="flex items-center sm:flex-col sm:items-end gap-3 sm:gap-6 w-full sm:w-auto">
+            {loadingSavedCalc && <p className="text-xs text-muted-foreground">Загрузка сохранённого расчёта...</p>}
+            <div className="flex items-center gap-3">
+              <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
+                <Home className="w-4 h-4" /> <span>Главная</span>
+              </Link>
+              {fromDashboard && (
+                <>
+                  <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
+                    <LayoutDashboard className="w-4 h-4" /> <span>Кабинет</span>
+                  </Link>
+                  <button onClick={handleLogout} className="flex items-center gap-1.5 text-muted-foreground hover:text-destructive transition-colors text-xs">
+                    <LogOut className="w-4 h-4" /> <span>Выйти</span>
+                  </button>
+                </>
+              )}
+              <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
+                <Send className="w-4 h-4" /> <span>Поддержка</span>
+              </a>
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-3 flex-1 sm:flex-none justify-end flex-wrap">
+              <button onClick={resetSession} title="Обнулить все данные сессии" className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors shadow-sm flex items-center gap-1">
+                <RotateCcw className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">Обнулить</span>
+              </button>
+              {fromDashboard && (
+                <button onClick={handleSaveToAccount} disabled={saving} className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-colors shadow-sm flex items-center gap-1 disabled:opacity-50">
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5 shrink-0" />}
+                  <span className="hidden sm:inline">Сохранить</span>
                 </button>
-              </>
-            )}
-            <Link to="/" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-              <Home className="w-3.5 h-3.5" /> Главная
-            </Link>
-            <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-              <Send className="w-3.5 h-3.5" /> Поддержка
-            </a>
+              )}
+              {results && (
+                <button onClick={handleExportDocx} className="px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-[10px] sm:text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-1">
+                  <FileDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> DOCX
+                </button>
+              )}
+              <button onClick={calculate} className="px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-[10px] sm:text-sm hover:bg-primary/90 transition-colors shadow-md whitespace-nowrap">
+                РАСЧЁТ
+              </button>
+            </div>
           </div>
         </div>
       </header>
