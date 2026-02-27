@@ -102,7 +102,11 @@ export default function CementPlug() {
   const [washCycles, setWashCycles] = useState(saved.washCycles ?? 2);
   const [tripSpeed, setTripSpeed] = useState(saved.tripSpeed ?? 0.3);
   const [trajPoints, setTrajPoints] = useState<TrajectoryPoint[]>(saved.trajPoints || well.trajectory);
-  const [results, setResults] = useState<PlugResults | null>(saved.lastResults || null);
+  const [results, setResults] = useState<PlugResults | null>(() => {
+    const r = saved.lastResults;
+    // Invalidate stale cached results missing newer fields
+    return r && r.pumpTimeCementMin !== undefined ? r : null;
+  });
   const [wcRatio, setWcRatio] = useState(saved.wcRatio ?? 0.44);
   const [slurryYield, setSlurryYield] = useState(saved.slurryYield ?? 0.63);
   const [additives, setAdditives] = useState<{ name: string; percent: number }[]>(saved.additives || []);
