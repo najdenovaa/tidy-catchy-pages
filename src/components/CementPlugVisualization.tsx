@@ -28,17 +28,59 @@ function SideAnnotation({ x, yTop, yBot, label, color }: { x: number; yTop: numb
   const h = yBot - yTop;
   if (h < 3) return null;
   const midY = yTop + h / 2;
-  const bw = 4; // bracket width
+  const bw = 4;
   return (
     <g>
-      {/* Bracket */}
       <line x1={x} y1={yTop} x2={x + bw} y2={yTop} stroke={color} strokeWidth={0.6} />
       <line x1={x + bw} y1={yTop} x2={x + bw} y2={yBot} stroke={color} strokeWidth={0.6} />
       <line x1={x} y1={yBot} x2={x + bw} y2={yBot} stroke={color} strokeWidth={0.6} />
-      {/* Label */}
       <text x={x + bw + 3} y={midY + 3} fill={color} fontSize={6} fontWeight="bold">
         {label}
       </text>
+    </g>
+  );
+}
+
+/** Contamination zone gradient at cement/spacer interface */
+function ContaminationZone({ cx, borePx, interfaceY, contaminationPx, mode }: {
+  cx: number; borePx: number; interfaceY: number; contaminationPx: number; mode: string;
+}) {
+  if (contaminationPx < 2) return null;
+  const halfZone = contaminationPx / 2;
+  const gradId = `cp-contam-${mode}`;
+  return (
+    <g>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#90A4AE" stopOpacity={0.6} />
+          <stop offset="30%" stopColor="#E65100" stopOpacity={0.35} />
+          <stop offset="50%" stopColor="#FF6D00" stopOpacity={0.4} />
+          <stop offset="70%" stopColor="#E65100" stopOpacity={0.35} />
+          <stop offset="100%" stopColor="#4FC3F7" stopOpacity={0.6} />
+        </linearGradient>
+      </defs>
+      <rect
+        x={cx - borePx / 2 + 4}
+        y={interfaceY - halfZone}
+        width={borePx - 8}
+        height={contaminationPx}
+        fill={`url(#${gradId})`}
+        rx={1}
+      />
+      {/* Wavy mixing lines */}
+      {Array.from({ length: Math.min(Math.floor(contaminationPx / 4), 5) }).map((_, i) => {
+        const yy = interfaceY - halfZone + (i + 1) * (contaminationPx / (Math.min(Math.floor(contaminationPx / 4), 5) + 1));
+        const amp = 3 + Math.random() * 2;
+        return (
+          <path
+            key={i}
+            d={`M${cx - borePx / 2 + 8},${yy} Q${cx - borePx / 4},${yy + amp} ${cx},${yy - amp / 2} T${cx + borePx / 2 - 8},${yy}`}
+            stroke="rgba(255,109,0,0.4)"
+            strokeWidth={0.6}
+            fill="none"
+          />
+        );
+      })}
     </g>
   );
 }
@@ -71,6 +113,11 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
 
   const y = (md: number) => margin.top + ((md - viewTop) / viewRange) * drawH;
   const clampY = (md: number) => y(Math.max(viewTop, Math.min(viewBottom, md)));
+
+  // Zenith angle for tilting
+  const zenithDeg = results.plugZenithDeg ?? 0;
+  // Limit visual tilt to max 25° for readability
+  const visualTiltDeg = Math.min(zenithDeg, 25);
 
   const maxBorePx = drawW * 0.55;
   const borePx = maxBorePx;
@@ -112,13 +159,22 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
   // Annotation x position (right side of bore)
   const annX = cx + borePx / 2 + 8;
 
-  // Compute cement top during placement (above plug.topMD due to steel)
+  // Cement top during placement
   const cementTopMD = plug.bottomMD - results.cementHeightAnnMD;
 
-  // Wash mode: spacer recalculated for full bore (no pipe)
+  // Wash mode spacer recalculation
   const boreAreaM2 = (Math.PI / 4) * ((results.boreDiamUsed || well.holeDiameter) / 1000) ** 2;
   const spacerWashHeight = boreAreaM2 > 0 ? inputs.spacerVolumeAboveM3 / boreAreaM2 : results.spacerAboveHeightAnnMD;
   const spacerWashTop = plug.topMD - spacerWashHeight;
+
+  // Contamination zone
+  const contaminationM = results.stability?.contaminationDepthM ?? 0;
+  const contaminationPx = contaminationM > 0 ? (contaminationM / viewRange) * drawH : 0;
+  const cementBottomY = clampY(plug.bottomMD);
+
+  // Tilt transform: rotate the entire bore section around its center
+  const boreGroupCenterY = margin.top + drawH / 2;
+  const tiltTransform = visualTiltDeg > 1 ? `rotate(${visualTiltDeg}, ${cx}, ${boreGroupCenterY})` : '';
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-md mx-auto" style={{ fontFamily: 'system-ui, sans-serif' }}>
@@ -165,9 +221,10 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
       <text x={W / 2} y={14} textAnchor="middle" fill="#eee" fontSize={9} fontWeight="bold">{title}</text>
       <text x={W / 2} y={24} textAnchor="middle" fill="#888" fontSize={7}>
         {viewTop.toFixed(0)}–{viewBottom.toFixed(0)} м MD
+        {zenithDeg > 1 ? ` · θ=${zenithDeg.toFixed(1)}°` : ''}
       </text>
 
-      {/* Depth scale */}
+      {/* Depth scale (NOT tilted — stays vertical as reference) */}
       {ticks.map(d => (
         <g key={d}>
           <line x1={margin.left - 5} y1={y(d)} x2={margin.left} y2={y(d)} stroke="#555" strokeWidth={0.5} />
@@ -176,240 +233,239 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
       ))}
       <text x={margin.left - 8} y={margin.top - 5} textAnchor="end" fill="#aaa" fontSize={7}>MD, м</text>
 
-      {/* Rock / formation background */}
-      <rect x={cx - borePx / 2 - 12} y={margin.top} width={borePx + 24} height={drawH}
-        fill={`url(#cp-rock-${mode})`} rx={2} />
+      {/* ═══ TILTED BORE GROUP ═══ */}
+      <g transform={tiltTransform}>
+        {/* Rock / formation background */}
+        <rect x={cx - borePx / 2 - 12} y={margin.top} width={borePx + 24} height={drawH}
+          fill={`url(#cp-rock-${mode})`} rx={2} />
 
-      {/* Open hole rough walls */}
-      {ohVisible && (
-        <>
-          <path d={generateRoughWall(cx - borePx / 2 - 6, ohTopY, ohBottomY, -1)}
-            fill={`url(#cp-openhole-${mode})`} stroke="#6a5a4e" strokeWidth={0.5} />
-          <path d={generateRoughWall(cx + borePx / 2 + 6, ohTopY, ohBottomY, 1)}
-            fill={`url(#cp-openhole-${mode})`} stroke="#6a5a4e" strokeWidth={0.5} />
-        </>
-      )}
+        {/* Open hole rough walls */}
+        {ohVisible && (
+          <>
+            <path d={generateRoughWall(cx - borePx / 2 - 6, ohTopY, ohBottomY, -1)}
+              fill={`url(#cp-openhole-${mode})`} stroke="#6a5a4e" strokeWidth={0.5} />
+            <path d={generateRoughWall(cx + borePx / 2 + 6, ohTopY, ohBottomY, 1)}
+              fill={`url(#cp-openhole-${mode})`} stroke="#6a5a4e" strokeWidth={0.5} />
+          </>
+        )}
 
-      {/* Borehole interior */}
-      <rect x={cx - borePx / 2} y={margin.top} width={borePx} height={drawH} fill="#2d2d44" rx={1} />
+        {/* Borehole interior */}
+        <rect x={cx - borePx / 2} y={margin.top} width={borePx} height={drawH} fill="#2d2d44" rx={1} />
 
-      {/* Casing walls */}
-      {well.casingShoe >= viewTop && (
-        <>
-          <rect x={cx - borePx / 2} y={margin.top} width={4} height={Math.min(shoeY, margin.top + drawH) - margin.top}
-            fill={`url(#cp-casing-${mode})`} />
-          <rect x={cx + borePx / 2 - 4} y={margin.top} width={4} height={Math.min(shoeY, margin.top + drawH) - margin.top}
-            fill={`url(#cp-casing-${mode})`} />
-          {shoeVisible && (
-            <>
-              <rect x={cx - borePx / 2 - 2} y={shoeY - 2} width={8} height={4} fill="#FFB74D" rx={1} />
-              <rect x={cx + borePx / 2 - 6} y={shoeY - 2} width={8} height={4} fill="#FFB74D" rx={1} />
-            </>
-          )}
-        </>
-      )}
+        {/* Casing walls */}
+        {well.casingShoe >= viewTop && (
+          <>
+            <rect x={cx - borePx / 2} y={margin.top} width={4} height={Math.min(shoeY, margin.top + drawH) - margin.top}
+              fill={`url(#cp-casing-${mode})`} />
+            <rect x={cx + borePx / 2 - 4} y={margin.top} width={4} height={Math.min(shoeY, margin.top + drawH) - margin.top}
+              fill={`url(#cp-casing-${mode})`} />
+            {shoeVisible && (
+              <>
+                <rect x={cx - borePx / 2 - 2} y={shoeY - 2} width={8} height={4} fill="#FFB74D" rx={1} />
+                <rect x={cx + borePx / 2 - 6} y={shoeY - 2} width={8} height={4} fill="#FFB74D" rx={1} />
+              </>
+            )}
+          </>
+        )}
 
-      {/* ─── FLUID COLUMNS ─── */}
-      {mode === 'equilibrium' ? (
-        <>
-          {/* Annulus columns fill full bore */}
-          {annCols.map((col, i) => {
-            const yTop = clampY(col.topMD);
-            const yBot = clampY(col.bottomMD);
-            const h = yBot - yTop;
-            if (h <= 0) return null;
-            const gradId = getGradId(col.color, mode);
-            return (
-              <rect key={`ann-${i}`} x={cx - borePx / 2 + 4} y={yTop} width={borePx - 8} height={h}
-                fill={`url(#${gradId})`} opacity={0.85} />
-            );
-          })}
-          {/* Pipe walls */}
-          {showPipe && pipeBottomY > pipeTopY && (
-            <>
-              <rect x={cx - pipePx / 2} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
-              <rect x={cx + pipePx / 2 - 2.5} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
-              <BottomToolJoint cx={cx} pipePx={pipePx} bottomY={pipeBottomY} mode={mode} />
-            </>
-          )}
-          {/* Pipe interior fluid */}
-          {pipeCols.map((col, i) => {
-            const yTop = clampY(col.topMD);
-            const yBot = clampY(col.bottomMD);
-            const h = yBot - yTop;
-            if (h <= 0) return null;
-            const gradId = getGradId(col.color, mode);
-            return (
-              <rect key={`pipe-${i}`} x={cx - pipeIDPx / 2} y={yTop} width={pipeIDPx} height={h}
-                fill={`url(#${gradId})`} opacity={0.8} />
-            );
-          })}
-        </>
-      ) : (
-        <>
-          {/* WASH MODE: cement settled to plug interval only */}
-          {/* Rebuild columns: replace cement with settled plug, fill freed zone with mud */}
-          {(() => {
-            // In wash mode: pipe removed, cement settles to plug interval.
-            // Spacer keeps same volume but recalculates height for full bore (no pipe).
-            // Freed zone between old cement top and spacer fills with mud.
-            const boreAreaM2 = (Math.PI / 4) * ((results.boreDiamUsed || well.holeDiameter) / 1000) ** 2;
-            const spacerAboveVol = inputs.spacerVolumeAboveM3;
-            const spacerWashHeight = boreAreaM2 > 0 ? spacerAboveVol / boreAreaM2 : results.spacerAboveHeightAnnMD;
-            const spacerWashBottom = plug.topMD;
-            const spacerWashTop = plug.topMD - spacerWashHeight;
-            // Freed zone: from old cementTopMD to spacerWashTop → mud
-            const freedTop = cementTopMD;
-            const freedBottom = spacerWashTop;
-
-            const washCols: typeof annCols = [];
-            for (const col of annCols) {
-              const isCement = col.color === '#B0BEC5';
-              const isSpacer = col.color === '#4FC3F7';
-              if (isCement) {
-                // Clip cement to plug interval only
-                const ct = Math.max(col.topMD, plug.topMD);
-                const cb = Math.min(col.bottomMD, plug.bottomMD);
-                if (cb > ct) washCols.push({ ...col, topMD: ct, bottomMD: cb });
-              } else if (isSpacer && col.bottomMD <= cementTopMD + 1 && col.topMD < cementTopMD) {
-                // Upper spacer: reposition to sit just above plug.topMD with recalculated height
-                washCols.push({ ...col, topMD: spacerWashTop, bottomMD: spacerWashBottom });
-              } else if (col.location === 'annulus' && col.bottomMD <= cementTopMD && col.topMD < col.bottomMD) {
-                // Mud above old spacer — extend it down to spacerWashTop (fills freed zone)
-                washCols.push({ ...col, bottomMD: spacerWashTop });
-              } else {
-                washCols.push(col);
-              }
-            }
-            // Sort by topMD
-            washCols.sort((a, b) => a.topMD - b.topMD);
-
-            return washCols.map((col, i) => {
+        {/* ─── FLUID COLUMNS ─── */}
+        {mode === 'equilibrium' ? (
+          <>
+            {annCols.map((col, i) => {
               const yTop = clampY(col.topMD);
               const yBot = clampY(col.bottomMD);
               const h = yBot - yTop;
               if (h <= 0) return null;
               const gradId = getGradId(col.color, mode);
               return (
-                <rect key={`wash-ann-${i}`} x={cx - borePx / 2 + 4} y={yTop} width={borePx - 8} height={h}
+                <rect key={`ann-${i}`} x={cx - borePx / 2 + 4} y={yTop} width={borePx - 8} height={h}
                   fill={`url(#${gradId})`} opacity={0.85} />
               );
-            });
-          })()}
-          {/* Pipe above cement with tool joint */}
-          {showPipe && pipeBottomY > pipeTopY && (
-            <>
-              <rect x={cx - pipePx / 2} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
-              <rect x={cx + pipePx / 2 - 2.5} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
-              <BottomToolJoint cx={cx} pipePx={pipePx} bottomY={pipeBottomY} mode={mode} />
-              {/* Mud inside pipe */}
-              <rect x={cx - pipeIDPx / 2} y={pipeTopY} width={pipeIDPx} height={pipeBottomY - pipeTopY}
-                fill={`url(#cp-mud-grad-${mode})`} opacity={0.6} />
-            </>
-          )}
-        </>
-      )}
+            })}
+            {showPipe && pipeBottomY > pipeTopY && (
+              <>
+                <rect x={cx - pipePx / 2} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
+                <rect x={cx + pipePx / 2 - 2.5} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
+                <BottomToolJoint cx={cx} pipePx={pipePx} bottomY={pipeBottomY} mode={mode} />
+              </>
+            )}
+            {pipeCols.map((col, i) => {
+              const yTop = clampY(col.topMD);
+              const yBot = clampY(col.bottomMD);
+              const h = yBot - yTop;
+              if (h <= 0) return null;
+              const gradId = getGradId(col.color, mode);
+              return (
+                <rect key={`pipe-${i}`} x={cx - pipeIDPx / 2} y={yTop} width={pipeIDPx} height={h}
+                  fill={`url(#${gradId})`} opacity={0.8} />
+              );
+            })}
+          </>
+        ) : (
+          <>
+            {(() => {
+              const boreAreaM2Local = (Math.PI / 4) * ((results.boreDiamUsed || well.holeDiameter) / 1000) ** 2;
+              const spacerAboveVol = inputs.spacerVolumeAboveM3;
+              const spacerWashHeightLocal = boreAreaM2Local > 0 ? spacerAboveVol / boreAreaM2Local : results.spacerAboveHeightAnnMD;
+              const spacerWashBottom = plug.topMD;
+              const spacerWashTopLocal = plug.topMD - spacerWashHeightLocal;
+              const freedTop = cementTopMD;
+              const freedBottom = spacerWashTopLocal;
 
-      {/* ─── SIDE ANNOTATIONS ─── */}
-      {/* Mud above spacer */}
-      {(() => {
-        const spacerTopMD = mode === 'wash' ? spacerWashTop : (cementTopMD - results.spacerAboveHeightAnnMD);
-        if (spacerTopMD > viewTop) {
+              const washCols: typeof annCols = [];
+              for (const col of annCols) {
+                const isCement = col.color === '#B0BEC5';
+                const isSpacer = col.color === '#4FC3F7';
+                if (isCement) {
+                  const ct = Math.max(col.topMD, plug.topMD);
+                  const cb = Math.min(col.bottomMD, plug.bottomMD);
+                  if (cb > ct) washCols.push({ ...col, topMD: ct, bottomMD: cb });
+                } else if (isSpacer && col.bottomMD <= cementTopMD + 1 && col.topMD < cementTopMD) {
+                  washCols.push({ ...col, topMD: spacerWashTopLocal, bottomMD: spacerWashBottom });
+                } else if (col.location === 'annulus' && col.bottomMD <= cementTopMD && col.topMD < col.bottomMD) {
+                  washCols.push({ ...col, bottomMD: spacerWashTopLocal });
+                } else {
+                  washCols.push(col);
+                }
+              }
+              washCols.sort((a, b) => a.topMD - b.topMD);
+
+              return washCols.map((col, i) => {
+                const yTop = clampY(col.topMD);
+                const yBot = clampY(col.bottomMD);
+                const h = yBot - yTop;
+                if (h <= 0) return null;
+                const gradId = getGradId(col.color, mode);
+                return (
+                  <rect key={`wash-ann-${i}`} x={cx - borePx / 2 + 4} y={yTop} width={borePx - 8} height={h}
+                    fill={`url(#${gradId})`} opacity={0.85} />
+                );
+              });
+            })()}
+            {showPipe && pipeBottomY > pipeTopY && (
+              <>
+                <rect x={cx - pipePx / 2} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
+                <rect x={cx + pipePx / 2 - 2.5} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
+                <BottomToolJoint cx={cx} pipePx={pipePx} bottomY={pipeBottomY} mode={mode} />
+                <rect x={cx - pipeIDPx / 2} y={pipeTopY} width={pipeIDPx} height={pipeBottomY - pipeTopY}
+                  fill={`url(#cp-mud-grad-${mode})`} opacity={0.6} />
+              </>
+            )}
+          </>
+        )}
+
+        {/* ─── CONTAMINATION ZONE at cement/spacer interface ─── */}
+        {contaminationPx > 0 && mode === 'wash' && (
+          <ContaminationZone
+            cx={cx}
+            borePx={borePx}
+            interfaceY={cementBottomY}
+            contaminationPx={contaminationPx}
+            mode={mode}
+          />
+        )}
+
+        {/* ─── SIDE ANNOTATIONS ─── */}
+        {(() => {
+          const spacerTopMD = mode === 'wash' ? spacerWashTop : (cementTopMD - results.spacerAboveHeightAnnMD);
+          if (spacerTopMD > viewTop) {
+            return (
+              <SideAnnotation x={annX} yTop={clampY(viewTop)} yBot={clampY(spacerTopMD)}
+                label={`${inputs.wellFluid.name.substring(0, 12)}`} color="#A1887F" />
+            );
+          }
+          return null;
+        })()}
+
+        {results.spacerAboveHeightAnnMD > 0 && (() => {
+          const sTop = mode === 'wash' ? spacerWashTop : (cementTopMD - results.spacerAboveHeightAnnMD);
+          const sBot = mode === 'wash' ? plug.topMD : cementTopMD;
+          const sHeight = mode === 'wash' ? spacerWashHeight : results.spacerAboveHeightAnnMD;
+          const note = mode === 'equilibrium' ? ' (с БИ)' : '';
           return (
-            <SideAnnotation x={annX} yTop={clampY(viewTop)} yBot={clampY(spacerTopMD)}
-              label={`${inputs.wellFluid.name.substring(0, 12)}`} color="#A1887F" />
+            <SideAnnotation x={annX}
+              yTop={clampY(sTop)}
+              yBot={clampY(sBot)}
+              label={`Буфер ↕${sHeight.toFixed(1)}м${note}`} color="#4FC3F7" />
           );
-        }
-        return null;
-      })()}
+        })()}
 
-      {/* Upper spacer */}
-      {results.spacerAboveHeightAnnMD > 0 && (() => {
-        const sTop = mode === 'wash' ? spacerWashTop : (cementTopMD - results.spacerAboveHeightAnnMD);
-        const sBot = mode === 'wash' ? plug.topMD : cementTopMD;
-        const sHeight = mode === 'wash' ? spacerWashHeight : results.spacerAboveHeightAnnMD;
-        const note = mode === 'equilibrium' ? ' (с БИ)' : '';
-        return (
+        {mode === 'equilibrium' ? (
           <SideAnnotation x={annX}
-            yTop={clampY(sTop)}
-            yBot={clampY(sBot)}
-            label={`Буфер ↕${sHeight.toFixed(1)}м${note}`} color="#4FC3F7" />
-        );
-      })()}
+            yTop={clampY(cementTopMD)}
+            yBot={clampY(plug.bottomMD)}
+            label={`Цемент ↕${results.cementHeightAnnMD.toFixed(1)}м (с БИ)`} color="#B0BEC5" />
+        ) : (
+          <SideAnnotation x={annX}
+            yTop={clampY(plug.topMD)}
+            yBot={clampY(plug.bottomMD)}
+            label={`Цем. мост ↕${plugLen}м`} color="#B0BEC5" />
+        )}
 
-      {/* Cement */}
-      {mode === 'equilibrium' ? (
-        <SideAnnotation x={annX}
-          yTop={clampY(cementTopMD)}
-          yBot={clampY(plug.bottomMD)}
-          label={`Цемент ↕${results.cementHeightAnnMD.toFixed(1)}м (с БИ)`} color="#B0BEC5" />
-      ) : (
-        <SideAnnotation x={annX}
-          yTop={clampY(plug.topMD)}
-          yBot={clampY(plug.bottomMD)}
-          label={`Цем. мост ↕${plugLen}м`} color="#B0BEC5" />
-      )}
+        {/* Contamination annotation */}
+        {contaminationM > 0.1 && mode === 'wash' && (
+          <SideAnnotation x={annX}
+            yTop={cementBottomY - contaminationPx / 2}
+            yBot={cementBottomY + contaminationPx / 2}
+            label={`Смешение ~${contaminationM.toFixed(1)}м`} color="#FF6D00" />
+        )}
 
-      {/* Lower spacer */}
-      {results.spacerBelowHeightAnnMD > 0 && (
-        <SideAnnotation x={annX}
-          yTop={clampY(plug.bottomMD)}
-          yBot={clampY(plug.bottomMD + results.spacerBelowHeightAnnMD)}
-          label={`Буфер ↕${results.spacerBelowHeightAnnMD.toFixed(1)}м`} color="#4FC3F7" />
-      )}
+        {results.spacerBelowHeightAnnMD > 0 && (
+          <SideAnnotation x={annX}
+            yTop={clampY(plug.bottomMD)}
+            yBot={clampY(plug.bottomMD + results.spacerBelowHeightAnnMD)}
+            label={`Буфер ↕${results.spacerBelowHeightAnnMD.toFixed(1)}м`} color="#4FC3F7" />
+        )}
 
-      {/* Mud below spacer */}
-      {plug.bottomMD + results.spacerBelowHeightAnnMD < viewBottom && (
-        <SideAnnotation x={annX}
-          yTop={clampY(plug.bottomMD + results.spacerBelowHeightAnnMD)}
-          yBot={clampY(viewBottom)}
-          label={inputs.wellFluid.name.substring(0, 12)} color="#A1887F" />
-      )}
+        {plug.bottomMD + results.spacerBelowHeightAnnMD < viewBottom && (
+          <SideAnnotation x={annX}
+            yTop={clampY(plug.bottomMD + results.spacerBelowHeightAnnMD)}
+            yBot={clampY(viewBottom)}
+            label={inputs.wellFluid.name.substring(0, 12)} color="#A1887F" />
+        )}
 
-      {/* Pipe / tool string — inside bore, next to pipe */}
-      {showPipe && (
-        <text
-          x={cx + pipePx / 2 + 4}
-          y={pipeTopY + (pipeBottomY - pipeTopY) / 2}
-          fill="#81C784" fontSize={6} fontWeight="bold"
-          dominantBaseline="middle"
-        >
-          БИ ∅{well.pipeOD}
-        </text>
-      )}
-
-      {/* Casing shoe annotation */}
-      {shoeVisible && (
-        <text x={cx - borePx / 2 - 14} y={shoeY + 3} textAnchor="end" fill="#FFB74D" fontSize={6}>
-          башмак {well.casingShoe}м
-        </text>
-      )}
-
-      {/* Plug interval markers */}
-      <line x1={cx - borePx / 2 - 8} y1={clampY(plug.topMD)} x2={cx + borePx / 2 + 5} y2={clampY(plug.topMD)} stroke="#FFD54F" strokeWidth={1} strokeDasharray="4,2" />
-      <line x1={cx - borePx / 2 - 8} y1={clampY(plug.bottomMD)} x2={cx + borePx / 2 + 5} y2={clampY(plug.bottomMD)} stroke="#FFD54F" strokeWidth={1} strokeDasharray="4,2" />
-      <text x={cx - borePx / 2 - 10} y={clampY(plug.topMD) + 3} textAnchor="end" fill="#FFD54F" fontSize={6.5}>▲ {plug.topMD}м</text>
-      <text x={cx - borePx / 2 - 10} y={clampY(plug.bottomMD) + 3} textAnchor="end" fill="#FFD54F" fontSize={6.5}>▼ {plug.bottomMD}м</text>
-
-      {/* Cement top marker in equilibrium (above plug.topMD due to steel) */}
-      {mode === 'equilibrium' && results.cementHeightAnnMD > results.plugLengthMD && (
-        <>
-          <line x1={cx - borePx / 2 - 8} y1={clampY(cementTopMD)} x2={cx + borePx / 2 + 5} y2={clampY(cementTopMD)}
-            stroke="#E0E0E0" strokeWidth={0.8} strokeDasharray="3,2" />
-          <text x={cx - borePx / 2 - 10} y={clampY(cementTopMD) + 3} textAnchor="end" fill="#E0E0E0" fontSize={6}>
-            верх цем. {cementTopMD.toFixed(0)}м
+        {showPipe && (
+          <text
+            x={cx + pipePx / 2 + 4}
+            y={pipeTopY + (pipeBottomY - pipeTopY) / 2}
+            fill="#81C784" fontSize={6} fontWeight="bold"
+            dominantBaseline="middle"
+          >
+            БИ ∅{well.pipeOD}
           </text>
-        </>
-      )}
+        )}
 
-      {/* Pull-out label in wash mode */}
-      {mode === 'wash' && showPipe && (
-        <text x={cx - borePx / 2 - 10} y={pipeBottomY + 3} textAnchor="end" fill="#81C784" fontSize={6.5}>
-          🔧 {results.pullOutDepthMD}м
-        </text>
-      )}
+        {shoeVisible && (
+          <text x={cx - borePx / 2 - 14} y={shoeY + 3} textAnchor="end" fill="#FFB74D" fontSize={6}>
+            башмак {well.casingShoe}м
+          </text>
+        )}
 
-      {/* Static pressure */}
+        {/* Plug interval markers */}
+        <line x1={cx - borePx / 2 - 8} y1={clampY(plug.topMD)} x2={cx + borePx / 2 + 5} y2={clampY(plug.topMD)} stroke="#FFD54F" strokeWidth={1} strokeDasharray="4,2" />
+        <line x1={cx - borePx / 2 - 8} y1={clampY(plug.bottomMD)} x2={cx + borePx / 2 + 5} y2={clampY(plug.bottomMD)} stroke="#FFD54F" strokeWidth={1} strokeDasharray="4,2" />
+        <text x={cx - borePx / 2 - 10} y={clampY(plug.topMD) + 3} textAnchor="end" fill="#FFD54F" fontSize={6.5}>▲ {plug.topMD}м</text>
+        <text x={cx - borePx / 2 - 10} y={clampY(plug.bottomMD) + 3} textAnchor="end" fill="#FFD54F" fontSize={6.5}>▼ {plug.bottomMD}м</text>
+
+        {mode === 'equilibrium' && results.cementHeightAnnMD > results.plugLengthMD && (
+          <>
+            <line x1={cx - borePx / 2 - 8} y1={clampY(cementTopMD)} x2={cx + borePx / 2 + 5} y2={clampY(cementTopMD)}
+              stroke="#E0E0E0" strokeWidth={0.8} strokeDasharray="3,2" />
+            <text x={cx - borePx / 2 - 10} y={clampY(cementTopMD) + 3} textAnchor="end" fill="#E0E0E0" fontSize={6}>
+              верх цем. {cementTopMD.toFixed(0)}м
+            </text>
+          </>
+        )}
+
+        {mode === 'wash' && showPipe && (
+          <text x={cx - borePx / 2 - 10} y={pipeBottomY + 3} textAnchor="end" fill="#81C784" fontSize={6.5}>
+            🔧 {results.pullOutDepthMD}м
+          </text>
+        )}
+      </g>
+      {/* END TILTED GROUP */}
+
+      {/* Static pressure (NOT tilted) */}
       <text x={W / 2} y={H - 18} textAnchor="middle" fill="#aaa" fontSize={7}>
         P_затр={results.pressureAnnulus.toFixed(2)} | P_труб={results.pressurePipe.toFixed(2)} МПа
       </text>
@@ -454,7 +510,6 @@ export default function CementPlugVisualization({ results, inputs }: Props) {
   const plugLen = plug.bottomMD - plug.topMD;
   if (plugLen <= 0) return null;
 
-  // Compute shared view range covering both modes
   const viewMargin = Math.max(plugLen * 0.6, 50);
   const eqTop = Math.max(0, plug.topMD - viewMargin - results.spacerAboveHeightAnnMD);
   const washTop = Math.max(0, results.pullOutDepthMD - 30);
