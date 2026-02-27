@@ -110,7 +110,7 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
           <XAxis
             dataKey="timeMin"
             type="number"
-            domain={[0, 'auto']}
+            domain={[0, 'dataMax']}
             tickFormatter={(v: number) => v.toFixed(0)}
             label={{ value: 'Время, мин', position: 'insideBottom', offset: -2, style: { fontSize: 10, fill: 'hsl(var(--muted-foreground))' } }}
             tick={{ fontSize: 10 }}
