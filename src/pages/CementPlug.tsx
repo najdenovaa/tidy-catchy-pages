@@ -447,9 +447,9 @@ export default function CementPlug() {
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-3 py-4">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Left column — inputs */}
-          <div className="lg:col-span-2 space-y-3">
+        <div className="space-y-4">
+          {/* Inputs & results */}
+          <div className="space-y-3">
             {/* Well data */}
             <Collapsible open={openSections.well} onOpenChange={() => toggle("well")}>
               <Card>
@@ -836,9 +836,21 @@ export default function CementPlug() {
             )}
           </div>
 
-          {/* Right column — visualization */}
-          <div className="space-y-3">
-            {results && (
+          {/* Visualization & Chart — below results */}
+          {results && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader className="py-3 px-4">
+                  <CardTitle className="text-sm">📈 Совмещённый график давлений</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0" ref={chartRef}>
+                  <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+                    <div className="min-w-[600px]">
+                      <CementPlugPressureChart inputs={buildInputs()} results={results} fracGradient={fracGradient} />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
               <Card>
                 <CardHeader className="py-3 px-4">
                   <CardTitle className="text-sm">🖼️ Продольное сечение</CardTitle>
@@ -847,25 +859,15 @@ export default function CementPlug() {
                   <CementPlugVisualization results={results} inputs={buildInputs()} />
                 </CardContent>
               </Card>
-            )}
-            {results && (
-              <Card>
-                <CardHeader className="py-3 px-4">
-                  <CardTitle className="text-sm">📈 Совмещённый график давлений</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0" ref={chartRef}>
-                  <CementPlugPressureChart inputs={buildInputs()} results={results} fracGradient={fracGradient} />
-                </CardContent>
-              </Card>
-            )}
-            {!results && (
-              <Card>
-                <CardContent className="py-10 text-center text-muted-foreground text-sm">
-                  Заполните данные и нажмите <strong>Расчёт</strong> для получения результатов и визуализации
-                </CardContent>
-              </Card>
-            )}
-          </div>
+            </div>
+          )}
+          {!results && (
+            <Card>
+              <CardContent className="py-10 text-center text-muted-foreground text-sm">
+                Заполните данные и нажмите <strong>Расчёт</strong> для получения результатов и визуализации
+              </CardContent>
+            </Card>
+          )}
         </div>
       </main>
     </div>
