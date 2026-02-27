@@ -91,10 +91,10 @@ export function simulatePlugPressures(
   const dHydPipe = well.pipeID; // mm
   const dHydAnn = boreDiam - well.pipeOD; // mm
 
-  // Frac pressure (constant) — at casing shoe depth
+  // Frac pressure — at plug bottom (bottomTVD)
   const shoeTVD = interpolateTVD(well.casingShoe, traj);
-  const fracMPa = fracGradientMPaPerM * shoeTVD;
   const bottomTVD = interpolateTVD(pipeEndMD, traj);
+  const fracMPa = fracGradientMPaPerM * bottomTVD;
   const shoeMD = well.casingShoe;
   // Distance from bottom of annulus to shoe
   const belowShoeMD = Math.max(0, pipeEndMD - shoeMD);
