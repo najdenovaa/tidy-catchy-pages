@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Send, Home, Calculator, ArrowLeft } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import CementPlugVisualization from "@/components/CementPlugVisualization";
 import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults } from "@/lib/cement-plug-calculations";
@@ -16,7 +17,6 @@ import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-ca
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from "xlsx";
 
-/* ─── helper ─── */
 function num(v: string): number {
   const n = parseFloat(v);
   return isNaN(n) ? 0 : n;
@@ -36,14 +36,16 @@ export default function CementPlug() {
     trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }],
   });
 
-  /* ── State: plug interval ── */
   const [plug, setPlug] = useState<PlugInterval>({ topMD: 2600, bottomMD: 2650 });
 
   /* ── State: fluids ── */
   const [cement, setCement] = useState<PlugFluid>({ name: "Тампонажный р-р", density: 1.85, rheology: { pv: 50, yp: 10 } });
   const [spacer, setSpacer] = useState<PlugFluid>({ name: "Буферная жидкость", density: 1.10, rheology: { pv: 5, yp: 2 } });
-  const [drillingFluid, setDrillingFluid] = useState<PlugFluid>({ name: "Буровой раствор", density: 1.20, rheology: { pv: 15, yp: 5 } });
-  const [spacerVolume, setSpacerVolume] = useState(0.5);
+  const [wellFluid, setWellFluid] = useState<PlugFluid>({ name: "Буровой раствор", density: 1.20, rheology: { pv: 15, yp: 5 } });
+  const [spacerVolumeAbove, setSpacerVolumeAbove] = useState(0.3);
+  const [spacerVolumeBelow, setSpacerVolumeBelow] = useState(0.3);
+  const [thickeningTime, setThickeningTime] = useState(120);
+  const [pullOutAbove, setPullOutAbove] = useState(50);
 
   /* ── Trajectory ── */
   const [trajPoints, setTrajPoints] = useState<TrajectoryPoint[]>(well.trajectory);
@@ -103,22 +105,36 @@ export default function CementPlug() {
   const calculate = () => {
     const inp: PlugInputs = {
       well: { ...well, trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory },
-      plug, cement, spacer, drillingFluid, spacerVolumeM3: spacerVolume, safetyMarginM: 30,
+      plug, cement, spacer, wellFluid,
+      spacerVolumeAboveM3: spacerVolumeAbove,
+      spacerVolumeBelowM3: spacerVolumeBelow,
+      safetyMarginM: 30,
+      thickeningTimeMin: thickeningTime,
+      pullOutAbovePlugM: pullOutAbove,
     };
     setResults(calculateBalancedPlug(inp));
   };
 
   /* ── Collapsible state ── */
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: true, plug: true, fluids: true });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: true, plug: true, fluids: true, process: true });
   const toggle = (k: string) => setOpenSections(s => ({ ...s, [k]: !s[k] }));
 
-  /* ── Render helpers ── */
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">
       <Label className="text-xs">{label}{unit ? ` (${unit})` : ""}</Label>
       <BlurInput type="number" step="any" value={value || ""} onValueCommit={onChange} className="h-8 text-xs" />
     </div>
   );
+
+  const buildInputs = (): PlugInputs => ({
+    well: { ...well, trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory },
+    plug, cement, spacer, wellFluid,
+    spacerVolumeAboveM3: spacerVolumeAbove,
+    spacerVolumeBelowM3: spacerVolumeBelow,
+    safetyMarginM: 30,
+    thickeningTimeMin: thickeningTime,
+    pullOutAbovePlugM: pullOutAbove,
+  });
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -171,7 +187,6 @@ export default function CementPlug() {
                       <Field label="Нар. ∅ труб" value={well.pipeOD} onChange={v => setWell(w => ({ ...w, pipeOD: num(v) }))} unit="мм" />
                       <Field label="Вн. ∅ труб" value={well.pipeID} onChange={v => setWell(w => ({ ...w, pipeID: num(v) }))} unit="мм" />
                     </div>
-
                     <Separator />
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-medium text-muted-foreground">Инклинометрия</p>
@@ -231,7 +246,7 @@ export default function CementPlug() {
               <Card>
                 <CollapsibleTrigger className="w-full">
                   <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
-                    <CardTitle className="text-sm">🧪 Растворы</CardTitle>
+                    <CardTitle className="text-sm">🧪 Растворы и жидкости</CardTitle>
                     <ChevronDown className={`w-4 h-4 transition-transform ${openSections.fluids ? "rotate-180" : ""}`} />
                   </CardHeader>
                 </CollapsibleTrigger>
@@ -246,6 +261,9 @@ export default function CementPlug() {
                         <Field label="PV" value={cement.rheology.pv} onChange={v => setCement(c => ({ ...c, rheology: { ...c.rheology, pv: num(v) } }))} unit="сПз" />
                         <Field label="YP" value={cement.rheology.yp} onChange={v => setCement(c => ({ ...c, rheology: { ...c.rheology, yp: num(v) } }))} unit="Па" />
                       </div>
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <Field label="Время загустевания" value={thickeningTime} onChange={v => setThickeningTime(num(v))} unit="мин" />
+                      </div>
                     </div>
                     <Separator />
                     {/* Spacer */}
@@ -257,19 +275,43 @@ export default function CementPlug() {
                         <Field label="PV" value={spacer.rheology.pv} onChange={v => setSpacer(s => ({ ...s, rheology: { ...s.rheology, pv: num(v) } }))} unit="сПз" />
                         <Field label="YP" value={spacer.rheology.yp} onChange={v => setSpacer(s => ({ ...s, rheology: { ...s.rheology, yp: num(v) } }))} unit="Па" />
                       </div>
-                      <div className="mt-2">
-                        <Field label="Общий объём буфера" value={spacerVolume} onChange={v => setSpacerVolume(num(v))} unit="м³" />
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <Field label="Объём буфера сверху" value={spacerVolumeAbove} onChange={v => setSpacerVolumeAbove(num(v))} unit="м³" />
+                        <Field label="Объём буфера снизу" value={spacerVolumeBelow} onChange={v => setSpacerVolumeBelow(num(v))} unit="м³" />
                       </div>
                     </div>
                     <Separator />
-                    {/* Drilling fluid */}
+                    {/* Well fluid */}
                     <div>
-                      <p className="text-xs font-semibold mb-1">Буровой раствор</p>
+                      <p className="text-xs font-semibold mb-1">Жидкость заполнения скважины</p>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <div className="space-y-1"><Label className="text-xs">Название</Label><BlurInput className="h-8 text-xs" value={drillingFluid.name} onValueCommit={v => setDrillingFluid(d => ({ ...d, name: v }))} /></div>
-                        <Field label="Плотность" value={drillingFluid.density} onChange={v => setDrillingFluid(d => ({ ...d, density: num(v) }))} unit="г/см³" />
-                        <Field label="PV" value={drillingFluid.rheology.pv} onChange={v => setDrillingFluid(d => ({ ...d, rheology: { ...d.rheology, pv: num(v) } }))} unit="сПз" />
-                        <Field label="YP" value={drillingFluid.rheology.yp} onChange={v => setDrillingFluid(d => ({ ...d, rheology: { ...d.rheology, yp: num(v) } }))} unit="Па" />
+                        <div className="space-y-1"><Label className="text-xs">Название</Label><BlurInput className="h-8 text-xs" value={wellFluid.name} onValueCommit={v => setWellFluid(d => ({ ...d, name: v }))} /></div>
+                        <Field label="Плотность" value={wellFluid.density} onChange={v => setWellFluid(d => ({ ...d, density: num(v) }))} unit="г/см³" />
+                        <Field label="PV" value={wellFluid.rheology.pv} onChange={v => setWellFluid(d => ({ ...d, rheology: { ...d.rheology, pv: num(v) } }))} unit="сПз" />
+                        <Field label="YP" value={wellFluid.rheology.yp} onChange={v => setWellFluid(d => ({ ...d, rheology: { ...d.rheology, yp: num(v) } }))} unit="Па" />
+                      </div>
+                    </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+
+            {/* Process parameters */}
+            <Collapsible open={openSections.process} onOpenChange={() => toggle("process")}>
+              <Card>
+                <CollapsibleTrigger className="w-full">
+                  <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
+                    <CardTitle className="text-sm">⚙️ Параметры процесса</CardTitle>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${openSections.process ? "rotate-180" : ""}`} />
+                  </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0">
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Подъём над кровлей моста на промывку" value={pullOutAbove} onChange={v => setPullOutAbove(num(v))} unit="м" />
+                      <div className="space-y-1">
+                        <Label className="text-xs">Промывка</Label>
+                        <p className="text-sm text-foreground font-medium mt-1">1,5 цикла</p>
                       </div>
                     </div>
                   </CardContent>
@@ -279,38 +321,89 @@ export default function CementPlug() {
 
             {/* Results */}
             {results && (
-              <Card className="border-primary/30">
-                <CardHeader className="py-3 px-4">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    📊 Результаты расчёта
-                    <Badge variant={results.isBalanced ? "default" : "destructive"} className="text-[10px]">
-                      {results.isBalanced ? "Сбалансировано ✓" : "Дисбаланс ⚠"}
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs">
-                    <ResultRow label="Длина моста (MD)" value={results.plugLengthMD} unit="м" />
-                    <ResultRow label="Длина моста (TVD)" value={results.plugLengthTVD} unit="м" />
-                    <ResultRow label="Верх моста TVD" value={results.plugTopTVD} unit="м" />
-                    <ResultRow label="Низ моста TVD" value={results.plugBottomTVD} unit="м" />
-                    <ResultRow label="Sзатр." value={(results.annArea * 1e4).toFixed(1)} unit="см²" raw />
-                    <ResultRow label="Sтруб." value={(results.pipeArea * 1e4).toFixed(1)} unit="см²" raw />
-                    <Separator className="col-span-full my-1" />
-                    <ResultRow label="Цемент (затрубье)" value={results.cementVolumeAnn} unit="м³" />
-                    <ResultRow label="Цемент (трубы)" value={results.cementVolumePipe} unit="м³" />
-                    <ResultRow label="Цемент ИТОГО" value={results.cementVolumeTotal} unit="м³" highlight />
-                    <ResultRow label="Буфер снизу" value={results.spacerVolumeBelow} unit="м³" />
-                    <ResultRow label="Буфер сверху" value={results.spacerVolumeAbove} unit="м³" />
-                    <ResultRow label="Высота цем. в трубах" value={results.cementHeightPipeMD} unit="м" />
-                    <ResultRow label="Объём продавки" value={results.displacementVolume} unit="м³" highlight />
-                    <Separator className="col-span-full my-1" />
-                    <ResultRow label="P затрубье (дно моста)" value={results.pressureAnnulus} unit="МПа" />
-                    <ResultRow label="P трубы (дно моста)" value={results.pressurePipe} unit="МПа" />
-                    <ResultRow label="ΔP" value={Math.abs(results.pressureAnnulus - results.pressurePipe).toFixed(2)} unit="МПа" raw highlight />
-                  </div>
-                </CardContent>
-              </Card>
+              <>
+                <Card className="border-primary/30">
+                  <CardHeader className="py-3 px-4">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      📊 Результаты расчёта
+                      <Badge variant={results.isBalanced ? "default" : "destructive"} className="text-[10px]">
+                        {results.isBalanced ? "Сбалансировано ✓" : "Дисбаланс ⚠"}
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs">
+                      <ResultRow label="Длина моста (MD)" value={results.plugLengthMD} unit="м" />
+                      <ResultRow label="Длина моста (TVD)" value={results.plugLengthTVD} unit="м" />
+                      <ResultRow label="Верх моста TVD" value={results.plugTopTVD} unit="м" />
+                      <ResultRow label="Низ моста TVD" value={results.plugBottomTVD} unit="м" />
+                      <ResultRow label="Sзатр." value={(results.annArea * 1e4).toFixed(1)} unit="см²" raw />
+                      <ResultRow label="Sтруб." value={(results.pipeArea * 1e4).toFixed(1)} unit="см²" raw />
+                      <Separator className="col-span-full my-1" />
+                      <ResultRow label="Цемент (затрубье)" value={results.cementVolumeAnn} unit="м³" />
+                      <ResultRow label="Цемент (трубы)" value={results.cementVolumePipe} unit="м³" />
+                      <ResultRow label="Цемент ИТОГО" value={results.cementVolumeTotal} unit="м³" highlight />
+                      <ResultRow label="Буфер сверху" value={results.spacerVolumeAbove} unit="м³" />
+                      <ResultRow label="Буфер снизу" value={results.spacerVolumeBelow} unit="м³" />
+                      <ResultRow label="Высота цем. в трубах" value={results.cementHeightPipeMD} unit="м" />
+                      <ResultRow label="Объём продавки" value={results.displacementVolume} unit="м³" highlight />
+                      <Separator className="col-span-full my-1" />
+                      <ResultRow label="P затрубье (дно моста)" value={results.pressureAnnulus} unit="МПа" />
+                      <ResultRow label="P трубы (дно моста)" value={results.pressurePipe} unit="МПа" />
+                      <ResultRow label="ΔP" value={Math.abs(results.pressureAnnulus - results.pressurePipe).toFixed(2)} unit="МПа" raw highlight />
+                      <Separator className="col-span-full my-1" />
+                      <ResultRow label="Подъём на промывку до" value={results.pullOutDepthMD} unit="м MD" />
+                      <ResultRow label="Объём промывки (1,5 цикла)" value={results.washVolumeM3} unit="м³" />
+                      <ResultRow label="Загустевание цемента" value={results.thickeningTimeMin} unit="мин" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Pumping schedule */}
+                <Card>
+                  <CardHeader className="py-3 px-4">
+                    <CardTitle className="text-sm">📋 Порядок закачки</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">№</TableHead>
+                            <TableHead className="text-xs">Этап</TableHead>
+                            <TableHead className="text-xs">Жидкость</TableHead>
+                            <TableHead className="text-xs text-right">Объём, м³</TableHead>
+                            <TableHead className="text-xs">Описание</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {results.pumpingStages.map((stage, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="text-xs font-medium">{i + 1}</TableCell>
+                              <TableCell className="text-xs font-medium">{stage.name}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{stage.fluid}</TableCell>
+                              <TableCell className="text-xs text-right font-medium">{stage.volumeM3.toFixed(3)}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground max-w-[200px]">{stage.description}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Process description */}
+                <Card>
+                  <CardHeader className="py-3 px-4">
+                    <CardTitle className="text-sm">📝 Описание процесса</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="space-y-1.5 text-xs text-foreground whitespace-pre-line leading-relaxed">
+                      {results.processDescription}
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
             )}
           </div>
 
@@ -322,10 +415,7 @@ export default function CementPlug() {
                   <CardTitle className="text-sm">🖼️ Продольное сечение</CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0 flex justify-center">
-                  <CementPlugVisualization
-                    results={results}
-                    inputs={{ well: { ...well, trajectory: trajPoints }, plug, cement, spacer, drillingFluid, spacerVolumeM3: spacerVolume, safetyMarginM: 30 }}
-                  />
+                  <CementPlugVisualization results={results} inputs={buildInputs()} />
                 </CardContent>
               </Card>
             )}
