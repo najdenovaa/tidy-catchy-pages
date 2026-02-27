@@ -151,12 +151,28 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   const rtDriving = Δρ_cs * G * cosZ * Dh / RT_CONSTANT;
   const interfaceSF = rtDriving > 0.01 ? τ_eff_10min / rtDriving : 999;
 
-  // Estimate contamination depth: if SF < 1, fingers can penetrate
-  // Penetration limited by gel strength development over time
+  // Estimate contamination depth: two mechanisms
+  // 1. Axial RT fingering (when SF < 1)
+  // 2. Lateral spreading in deviated wells (sin θ component causes cement to slump)
   let contaminationDepthM = 0;
+
+  // Axial RT fingering
   if (interfaceSF < 1.0 && Δρ_cs > 0) {
-    // Maximum finger penetration ≈ 3.5 × Dh × (1/SF - 1), capped by spacer length
     contaminationDepthM = Math.min(3.5 * Dh * (1 / Math.max(interfaceSF, 0.1) - 1), Ls);
+  }
+
+  // Lateral spreading in deviated wells: sin(θ) gravity component drives cement
+  // along the low side, causing interface smearing even when axial SF is OK
+  const sinZ = Math.sin(zenithRad);
+  const zenithDegVal = p.zenithDeg ?? 0;
+  if (zenithDegVal > 5 && Δρ_cs > 0 && Dh > 0) {
+    // Lateral driving ~ Δρ × g × sin(θ) × D
+    // Resisted by yield stress; spreading length ~ D × sin(θ) × Δρ / (τ_eff / D)
+    const lateralDrive = Δρ_cs * G * sinZ * Dh;
+    const lateralResist = τ_eff_10min > 0 ? τ_eff_10min : 1;
+    const lateralPenetration = 1.5 * Dh * (lateralDrive / lateralResist);
+    // Lateral spreading adds to contamination depth
+    contaminationDepthM = Math.max(contaminationDepthM, Math.min(lateralPenetration, Ls > 0 ? Ls : Lp * 0.3));
   }
 
   const interfaceRisk: 'low' | 'medium' | 'high' =
@@ -220,6 +236,9 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   const zenithDeg = p.zenithDeg ?? 0;
   if (zenithDeg > 5) {
     warnings.push(`ℹ Зенитный угол ${zenithDeg.toFixed(1)}° — гравитационная составляющая снижена до ${(cosZ * 100).toFixed(0)}%.`);
+    if (zenithDeg > 15 && contaminationDepthM > 0) {
+      warnings.push(`⚠ Боковое растекание: при наклоне ${zenithDeg.toFixed(0)}° цемент стекает по нижней стенке (~${contaminationDepthM.toFixed(1)} м зона смешения).`);
+    }
   }
 
   if (d > 0) {
