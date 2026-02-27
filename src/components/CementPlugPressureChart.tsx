@@ -13,11 +13,15 @@ interface Props {
 }
 
 const COLORS = {
-  bhp: "hsl(0, 80%, 55%)",        // red
-  surface: "hsl(210, 80%, 55%)",   // blue
-  frac: "hsl(40, 90%, 50%)",       // orange
-  volume: "hsl(150, 60%, 45%)",    // green
-  rate: "hsl(270, 60%, 60%)",      // purple
+  bhp: "hsl(0, 80%, 55%)",
+  surface: "hsl(210, 80%, 55%)",
+  frac: "hsl(40, 90%, 50%)",
+  volume: "hsl(150, 60%, 45%)",
+  rate: "hsl(270, 60%, 60%)",
+  spacer: "hsl(195, 70%, 55%)",
+  cement: "hsl(0, 0%, 65%)",
+  displ: "hsl(30, 60%, 50%)",
+  wash: "hsl(120, 50%, 50%)",
 };
 
 const stageColors: Record<string, string> = {
@@ -36,12 +40,17 @@ function CustomTooltip({ active, payload, label }: any) {
   return (
     <div className="bg-popover border border-border rounded-md p-2 text-xs shadow-lg">
       <p className="font-semibold mb-1">{data?.stage} — {Number(label).toFixed(1)} мин</p>
-      {payload.map((p: any, i: number) => (
-        <div key={i} className="flex justify-between gap-3">
-          <span style={{ color: p.color }}>{p.name}:</span>
-          <span className="font-medium">{Number(p.value).toFixed(2)} {p.name.includes('м³') ? '' : p.name.includes('л/с') ? '' : 'МПа'}</span>
-        </div>
-      ))}
+      {payload.filter((p: any) => Number(p.value) > 0.001).map((p: any, i: number) => {
+        const isVol = p.name.includes('м³');
+        const isRate = p.name.includes('л/с');
+        const unit = isVol ? 'м³' : isRate ? 'л/с' : 'МПа';
+        return (
+          <div key={i} className="flex justify-between gap-3">
+            <span style={{ color: p.color }}>{p.name}:</span>
+            <span className="font-medium">{Number(p.value).toFixed(isVol ? 3 : 2)} {unit}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -178,17 +187,57 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
             isAnimationActive={false}
           />
 
-          {/* Volume */}
+          {/* Volumes — stacked areas per fluid */}
           <Area
             yAxisId="volume"
             type="monotone"
-            dataKey="volumePumpedM3"
-            name="Объём, м³"
-            stroke={COLORS.volume}
-            fill={COLORS.volume}
-            fillOpacity={0.15}
-            strokeWidth={1.5}
+            dataKey="volSpacerM3"
+            name="V буфер, м³"
+            stroke={COLORS.spacer}
+            fill={COLORS.spacer}
+            fillOpacity={0.3}
+            strokeWidth={1}
             dot={false}
+            stackId="vol"
+            isAnimationActive={false}
+          />
+          <Area
+            yAxisId="volume"
+            type="monotone"
+            dataKey="volCementM3"
+            name="V цемент, м³"
+            stroke={COLORS.cement}
+            fill={COLORS.cement}
+            fillOpacity={0.35}
+            strokeWidth={1}
+            dot={false}
+            stackId="vol"
+            isAnimationActive={false}
+          />
+          <Area
+            yAxisId="volume"
+            type="monotone"
+            dataKey="volDisplM3"
+            name="V продавка, м³"
+            stroke={COLORS.displ}
+            fill={COLORS.displ}
+            fillOpacity={0.25}
+            strokeWidth={1}
+            dot={false}
+            stackId="vol"
+            isAnimationActive={false}
+          />
+          <Area
+            yAxisId="volume"
+            type="monotone"
+            dataKey="volWashM3"
+            name="V промывка, м³"
+            stroke={COLORS.wash}
+            fill={COLORS.wash}
+            fillOpacity={0.25}
+            strokeWidth={1}
+            dot={false}
+            stackId="vol"
             isAnimationActive={false}
           />
 
