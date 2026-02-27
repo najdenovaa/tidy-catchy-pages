@@ -43,7 +43,7 @@ function SideAnnotation({ x, yTop, yBot, label, color }: { x: number; yTop: numb
   );
 }
 
-function PlugSVG({ results, inputs, mode }: Props & { mode: 'equilibrium' | 'wash' }) {
+function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Props & { mode: 'equilibrium' | 'wash'; sharedViewTop?: number; sharedViewBottom?: number }) {
   const { well, plug } = inputs;
   const plugLen = plug.bottomMD - plug.topMD;
   if (plugLen <= 0) return null;
@@ -55,9 +55,12 @@ function PlugSVG({ results, inputs, mode }: Props & { mode: 'equilibrium' | 'was
   const drawW = W - margin.left - margin.right;
 
   const viewMargin = Math.max(plugLen * 0.6, 50);
-  let viewTop: number, viewBottom: number;
 
-  if (mode === 'equilibrium') {
+  let viewTop: number, viewBottom: number;
+  if (sharedViewTop !== undefined && sharedViewBottom !== undefined) {
+    viewTop = sharedViewTop;
+    viewBottom = sharedViewBottom;
+  } else if (mode === 'equilibrium') {
     viewTop = Math.max(0, plug.topMD - viewMargin - results.spacerAboveHeightAnnMD);
     viewBottom = Math.min(well.wellDepthMD, plug.bottomMD + viewMargin + results.spacerBelowHeightAnnMD);
   } else {
@@ -424,16 +427,24 @@ function generateRoughWall(x: number, topY: number, bottomY: number, dir: number
 }
 
 export default function CementPlugVisualization({ results, inputs }: Props) {
-  const plugLen = inputs.plug.bottomMD - inputs.plug.topMD;
+  const { well, plug } = inputs;
+  const plugLen = plug.bottomMD - plug.topMD;
   if (plugLen <= 0) return null;
+
+  // Compute shared view range covering both modes
+  const viewMargin = Math.max(plugLen * 0.6, 50);
+  const eqTop = Math.max(0, plug.topMD - viewMargin - results.spacerAboveHeightAnnMD);
+  const washTop = Math.max(0, results.pullOutDepthMD - 30);
+  const sharedViewTop = Math.min(eqTop, washTop);
+  const sharedViewBottom = Math.min(well.wellDepthMD, plug.bottomMD + viewMargin + results.spacerBelowHeightAnnMD);
 
   return (
     <div className="flex flex-col md:flex-row gap-4 w-full">
       <div className="flex-1 min-w-0">
-        <PlugSVG results={results} inputs={inputs} mode="equilibrium" />
+        <PlugSVG results={results} inputs={inputs} mode="equilibrium" sharedViewTop={sharedViewTop} sharedViewBottom={sharedViewBottom} />
       </div>
       <div className="flex-1 min-w-0">
-        <PlugSVG results={results} inputs={inputs} mode="wash" />
+        <PlugSVG results={results} inputs={inputs} mode="wash" sharedViewTop={sharedViewTop} sharedViewBottom={sharedViewBottom} />
       </div>
     </div>
   );
