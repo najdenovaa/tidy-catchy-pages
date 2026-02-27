@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
@@ -14,11 +14,27 @@ const modules = [
 ];
 
 export default function Home() {
+  const [visitCount, setVisitCount] = useState(0);
+  const [calcCount, setCalcCount] = useState(0);
+
+  const fetchStats = useCallback(() => {
+    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-stats`, {
+      headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        setVisitCount(data.visits ?? 0);
+        setCalcCount(data.calculations ?? 0);
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     supabase.functions.invoke("log-activity", {
       body: { type: "visit", module: "home", page_url: "/" },
-    }).catch(() => {});
-  }, []);
+    }).then(() => fetchStats()).catch(() => {});
+    fetchStats();
+  }, [fetchStats]);
 
   return (
     <div className="relative min-h-screen bg-background flex flex-col overflow-hidden">
@@ -74,6 +90,10 @@ export default function Home() {
       </header>
 
       <main className="flex-1 max-w-5xl mx-auto px-4 py-10 sm:py-16 w-full">
+        <div className="flex items-center justify-center gap-6 text-[11px] text-muted-foreground/70 mb-6">
+          <span>👁 Посещений от начала проекта: <span className="font-semibold text-muted-foreground">{visitCount}</span></span>
+          <span>🧮 Расчётов от начала проекта: <span className="font-semibold text-muted-foreground">{calcCount}</span></span>
+        </div>
         <h2 className="text-xl sm:text-2xl font-semibold text-foreground mb-8 text-center">
           Выберите модуль
         </h2>
