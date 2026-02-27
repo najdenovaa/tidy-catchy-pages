@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import CementPlugVisualization from "@/components/CementPlugVisualization";
+import CementPlugPressureChart from "@/components/CementPlugPressureChart";
 import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults, type WashType } from "@/lib/cement-plug-calculations";
 import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-calculations";
 import { supabase } from "@/integrations/supabase/client";
@@ -56,6 +57,7 @@ interface SessionState {
   pumpRateSpacer: number;
   pumpRateDisplacement: number;
   pumpRateWash: number;
+  fracGradient: number;
 }
 
 function loadSession(): Partial<SessionState> {
@@ -115,14 +117,15 @@ export default function CementPlug() {
   const [pumpRateSpacer, setPumpRateSpacer] = useState(saved.pumpRateSpacer ?? 5); // л/с
   const [pumpRateDisplacement, setPumpRateDisplacement] = useState(saved.pumpRateDisplacement ?? 8); // л/с
   const [pumpRateWash, setPumpRateWash] = useState(saved.pumpRateWash ?? 10); // л/с
+  const [fracGradient, setFracGradient] = useState(saved.fracGradient ?? 0.017); // МПа/м
 
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient]);
 
   /* ── Spacer height preview (real-time) ── */
   const isOpenHole = plug.bottomMD > well.casingShoe;
@@ -266,6 +269,7 @@ export default function CementPlug() {
                       <Field label="Нар. ∅ труб" value={well.pipeOD} onChange={v => setWell(w => ({ ...w, pipeOD: num(v) }))} unit="мм" />
                       <Field label="Вн. ∅ труб" value={well.pipeID} onChange={v => setWell(w => ({ ...w, pipeID: num(v) }))} unit="мм" />
                       <Field label="Коэфф. кавернозности" value={well.cavernCoeff} onChange={v => setWell(w => ({ ...w, cavernCoeff: num(v) }))} unit="" />
+                      <Field label="Градиент ГРП" value={fracGradient} onChange={v => setFracGradient(num(v))} unit="МПа/м" />
                     </div>
                     {isOpenHole && (
                       <p className="text-[10px] text-amber-400">⚠ Открытый ствол: эфф. диаметр = {effectiveBore.toFixed(1)} мм (Kкав = {well.cavernCoeff})</p>
@@ -641,6 +645,16 @@ export default function CementPlug() {
                 </CardHeader>
                 <CardContent className="pt-0 flex justify-center">
                   <CementPlugVisualization results={results} inputs={buildInputs()} />
+                </CardContent>
+              </Card>
+            )}
+            {results && (
+              <Card>
+                <CardHeader className="py-3 px-4">
+                  <CardTitle className="text-sm">📈 Совмещённый график давлений</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <CementPlugPressureChart inputs={buildInputs()} results={results} fracGradient={fracGradient} />
                 </CardContent>
               </Card>
             )}
