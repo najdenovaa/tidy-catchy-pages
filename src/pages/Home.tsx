@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 const modules = [
   { title: "Цементирование скважин", description: "Расчёт обсадных колонн, гидравлика, материалы", icon: FlaskConical, to: "/cementing", available: true },
+  { title: "Цементные мосты", description: "Расчёт установки цементных мостов на равновесие", icon: Shield, to: "/cement-plug", available: true },
   { title: "Буровые растворы", description: "Подбор и расчёт буровых растворов", icon: Droplets, to: "/drilling-fluids", available: false },
   { title: "Гидроразрыв пласта", description: "Проектирование и расчёт ГРП", icon: Zap, to: "/fracturing", available: false },
 ];
