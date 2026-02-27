@@ -5,19 +5,28 @@ interface Props {
   inputs: PlugInputs;
 }
 
-/** Tool joint markers on drill pipe */
-function ToolJoints({ cx, pipePx, topY, bottomY, mode }: { cx: number; pipePx: number; topY: number; bottomY: number; mode: string }) {
-  const joints: JSX.Element[] = [];
-  const jointSpacing = 30; // px spacing between joints
-  const jointWidth = pipePx * 1.35;
-  const jointHeight = 3;
-  for (let yy = topY + 20; yy < bottomY - 10; yy += jointSpacing) {
-    joints.push(
-      <rect key={`tj-${mode}-${yy}`} x={cx - jointWidth / 2} y={yy} width={jointWidth} height={jointHeight}
-        fill="#9E9E9E" rx={1} stroke="#757575" strokeWidth={0.3} />
-    );
-  }
-  return <>{joints}</>;
+/** Single detailed tool joint (муфта) at pipe bottom */
+function BottomToolJoint({ cx, pipePx, bottomY, mode }: { cx: number; pipePx: number; bottomY: number; mode: string }) {
+  const jw = pipePx * 1.6;
+  const jh = 14;
+  const jy = bottomY - jh;
+  return (
+    <g>
+      {/* Joint body */}
+      <rect x={cx - jw / 2} y={jy} width={jw} height={jh} rx={2.5}
+        fill={`url(#cp-casing-${mode})`} stroke="#616161" strokeWidth={0.6} />
+      {/* Upper groove */}
+      <line x1={cx - jw / 2 + 2} y1={jy + 3} x2={cx + jw / 2 - 2} y2={jy + 3} stroke="#757575" strokeWidth={0.5} />
+      {/* Center groove */}
+      <line x1={cx - jw / 2 + 1.5} y1={jy + jh / 2} x2={cx + jw / 2 - 1.5} y2={jy + jh / 2} stroke="#888" strokeWidth={0.4} />
+      {/* Lower groove */}
+      <line x1={cx - jw / 2 + 2} y1={jy + jh - 3} x2={cx + jw / 2 - 2} y2={jy + jh - 3} stroke="#757575" strokeWidth={0.5} />
+      {/* Highlight reflection */}
+      <rect x={cx - jw / 2 + 1} y={jy + 1} width={jw - 2} height={2.5} rx={1} fill="rgba(255,255,255,0.18)" />
+      {/* Bottom cap */}
+      <rect x={cx - pipePx / 2 - 1} y={bottomY - 2.5} width={pipePx + 2} height={3} rx={1} fill="#BDBDBD" stroke="#9E9E9E" strokeWidth={0.4} />
+    </g>
+  );
 }
 
 function PlugSVG({ results, inputs, mode }: Props & { mode: 'equilibrium' | 'wash' }) {
@@ -198,16 +207,14 @@ function PlugSVG({ results, inputs, mode }: Props & { mode: 'equilibrium' | 'was
         );
       })}
 
-      {/* Drill pipe with tool joints */}
+      {/* Drill pipe with single tool joint at bottom */}
       {showPipe && pipeBottomY > pipeTopY && (
         <>
           {/* Pipe walls */}
           <rect x={cx - pipePx / 2} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
           <rect x={cx + pipePx / 2 - 2.5} y={pipeTopY} width={2.5} height={pipeBottomY - pipeTopY} fill="#B0BEC5" stroke="#90A4AE" strokeWidth={0.3} />
-          {/* Tool joints (муфты) */}
-          <ToolJoints cx={cx} pipePx={pipePx} topY={pipeTopY} bottomY={pipeBottomY} mode={mode} />
-          {/* Pipe shoe */}
-          <rect x={cx - pipePx / 2 - 3} y={pipeBottomY - 2} width={pipePx + 6} height={4} fill="#E0E0E0" rx={1} stroke="#BDBDBD" strokeWidth={0.5} />
+          {/* Single tool joint (муфта) at pipe bottom */}
+          <BottomToolJoint cx={cx} pipePx={pipePx} bottomY={pipeBottomY} mode={mode} />
         </>
       )}
 

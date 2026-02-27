@@ -147,35 +147,39 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
 
   const pipeEndMD = plug.bottomMD;
 
-  // Spacer heights in annulus
-  const spacerBelowHeightAnn = annA > 0 ? spacerVolumeBelowM3 / annA : 0;
+  // Areas
+  const boreArea = area(boreDiam);
+  const steelArea = area(well.pipeOD) - area(well.pipeID);
+
+  // Spacer heights
+  // Below plug: no pipe present below pipe end → full bore area
+  const spacerBelowHeightAnn = boreArea > 0 ? spacerVolumeBelowM3 / boreArea : 0;
+  // Above plug: pipe present → annular area
   const spacerAboveHeightAnn = annA > 0 ? spacerVolumeAboveM3 / annA : 0;
 
-  // Cement in annulus
+  // Cement: EQUAL HEIGHTS in pipe and annulus (balanced plug method)
   const cementVolAnn = annA * plugLenMD;
   const cementHeightAnnMD = plugLenMD;
-
-  // Balanced plug: same volume in pipe → different height due to different cross-section
-  const cementVolPipe = cementVolAnn; // for balance, same volume
-  const cementHeightPipeMD = pipeA > 0 ? cementVolPipe / pipeA : 0;
+  const cementVolPipe = pipeA * plugLenMD;
+  const cementHeightPipeMD = plugLenMD; // same height = balanced
   const cementVolTotal = cementVolAnn + cementVolPipe;
 
-  // Height difference explanation
-  const heightDiff = cementHeightPipeMD - cementHeightAnnMD;
-  const heightDifferenceExplanation = `Sзатр = ${(annA * 1e4).toFixed(1)} см² vs Sтруб = ${(pipeA * 1e4).toFixed(1)} см². ` +
-    `При равных объёмах (${cementVolAnn.toFixed(3)} м³) высота в трубах ${heightDiff > 0 ? 'больше' : 'меньше'} на ${Math.abs(heightDiff).toFixed(2)} м ` +
-    `из-за ${pipeA < annA ? 'меньшего' : 'большего'} сечения труб.`;
+  // Height difference explanation (balanced = equal heights, steel wall volume)
+  const heightDifferenceExplanation = `Сбалансированный мост: высота цемента одинакова (${cementHeightAnnMD.toFixed(1)} м). ` +
+    `Объёмы различны: Vзатр = ${cementVolAnn.toFixed(3)} м³, Vтруб = ${cementVolPipe.toFixed(3)} м³. ` +
+    `Sзатр = ${(annA * 1e4).toFixed(1)} см², Sтруб = ${(pipeA * 1e4).toFixed(1)} см², Sстали стенок = ${(steelArea * 1e4).toFixed(1)} см² ` +
+    `(${(steelArea * plugLenMD * 1000).toFixed(1)} л стали на интервале моста).`;
 
-  // Spacer in pipe (same volume for balance)
-  const spacerBelowPipeHeight = pipeA > 0 ? spacerVolumeBelowM3 / pipeA : 0;
-  const spacerAbovePipeHeight = pipeA > 0 ? spacerVolumeAboveM3 / pipeA : 0;
+  // Spacer in pipe: same HEIGHT as annulus for balance
+  const spacerBelowPipeHeight = spacerBelowHeightAnn;
+  const spacerAbovePipeHeight = spacerAboveHeightAnn;
 
-  // Pipe positions
-  const cementTopInPipeMD = pipeEndMD - spacerBelowPipeHeight - cementHeightPipeMD;
-  const spacerAboveTopPipeMD = cementTopInPipeMD - spacerAbovePipeHeight;
+  // Pipe positions (cement at same depths as annulus for balance)
+  const cementTopInPipeMD = plug.topMD;
+  const spacerAboveTopPipeMD = plug.topMD - spacerAboveHeightAnn;
   const displacementVolume = pipeA * Math.max(0, spacerAboveTopPipeMD);
 
-  // Static pressures at plug bottom
+  // Static pressures at plug bottom (pipe end level)
   const spacerAboveTopMD = plug.topMD - spacerAboveHeightAnn;
   const spacerBelowBottomMD = plug.bottomMD + spacerBelowHeightAnn;
   const spacerAboveTopTVD = interpolateTVD(Math.max(0, spacerAboveTopMD), traj);
@@ -185,20 +189,14 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const spacerAboveTVD = Math.max(0, plugTopTVD - spacerAboveTopTVD);
   const spacerBelowTVD = Math.max(0, spacerBelowBottomTVD - plugBottomTVD);
 
+  // Balanced plug: identical fluid columns above pipe end → equal pressures
   const pAnn = hydroP(wellFluid.density, mudTVD_ann)
     + hydroP(spacer.density, spacerAboveTVD)
-    + hydroP(cement.density, plugLenTVD)
-    + hydroP(spacer.density, spacerBelowTVD);
+    + hydroP(cement.density, plugLenTVD);
 
-  const mudTVD_pipe = Math.max(0, interpolateTVD(Math.max(0, spacerAboveTopPipeMD), traj));
-  const spacerAbovePipeTVD = Math.max(0, interpolateTVD(Math.max(0, cementTopInPipeMD), traj) - mudTVD_pipe);
-  const cementTopPipeTVD = interpolateTVD(Math.max(0, cementTopInPipeMD), traj);
-  const cementPipeTVD = Math.max(0, plugBottomTVD - spacerBelowTVD - cementTopPipeTVD);
-
-  const pPipe = hydroP(wellFluid.density, mudTVD_pipe)
-    + hydroP(spacer.density, spacerAbovePipeTVD)
-    + hydroP(cement.density, Math.min(plugLenTVD, cementPipeTVD))
-    + hydroP(spacer.density, spacerBelowTVD);
+  const pPipe = hydroP(wellFluid.density, mudTVD_ann)
+    + hydroP(spacer.density, spacerAboveTVD)
+    + hydroP(cement.density, plugLenTVD);
 
   const isBalanced = Math.abs(pAnn - pPipe) < 0.5;
 
@@ -239,22 +237,22 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     densityGcm3: wellFluid.density, color: mudColor, location: 'annulus',
   });
 
-  // Pipe
+  // Pipe (balanced: same depths as annulus)
   fluidColumns.push({
     label: wellFluid.name + " (труб.)", topMD: 0, bottomMD: Math.max(0, spacerAboveTopPipeMD),
-    topTVD: 0, bottomTVD: Math.max(0, mudTVD_pipe),
+    topTVD: 0, bottomTVD: spacerAboveTopTVD,
     densityGcm3: wellFluid.density, color: mudColor, location: 'pipe',
   });
   if (spacerAbovePipeHeight > 0) {
     fluidColumns.push({
-      label: spacer.name + " (труб. верх)", topMD: Math.max(0, spacerAboveTopPipeMD), bottomMD: Math.max(0, cementTopInPipeMD),
-      topTVD: mudTVD_pipe, bottomTVD: cementTopPipeTVD,
+      label: spacer.name + " (труб. верх)", topMD: Math.max(0, spacerAboveTopPipeMD), bottomMD: plug.topMD,
+      topTVD: spacerAboveTopTVD, bottomTVD: plugTopTVD,
       densityGcm3: spacer.density, color: spacerColor, location: 'pipe',
     });
   }
   fluidColumns.push({
-    label: cement.name + " (труб.)", topMD: Math.max(0, cementTopInPipeMD), bottomMD: Math.max(0, cementTopInPipeMD + cementHeightPipeMD),
-    topTVD: cementTopPipeTVD, bottomTVD: cementTopPipeTVD + plugLenTVD,
+    label: cement.name + " (труб.)", topMD: plug.topMD, bottomMD: plug.bottomMD,
+    topTVD: plugTopTVD, bottomTVD: plugBottomTVD,
     densityGcm3: cement.density, color: cementColor, location: 'pipe',
   });
 
@@ -279,8 +277,8 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     pumpingStages.push({
       name: "Нижний буфер",
       fluid: `${spacer.name} (${spacer.density} г/см³)`,
-      volumeM3: spacerVolumeBelowM3 + (pipeA * spacerBelowPipeHeight),
-      description: `Буферная жидкость ниже цемента. Высота в затрубье: ${spacerBelowHeightAnn.toFixed(1)} м`,
+      volumeM3: spacerVolumeBelowM3,
+      description: `Буферная жидкость ниже моста (под башмаком труб). Высота: ${spacerBelowHeightAnn.toFixed(1)} м`,
     });
   }
 
