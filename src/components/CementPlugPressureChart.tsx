@@ -201,53 +201,57 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
             isAnimationActive={false}
           />
 
-          {/* Volumes — individual ramp areas (triangles) per fluid, no stacking */}
+          {/* Volumes — stacked areas per fluid */}
           <Area
             yAxisId="volume"
-            type="linear"
+            type="monotone"
             dataKey="volSpacerM3"
             name="V буфер, м³"
             stroke={COLORS.spacer}
             fill={COLORS.spacer}
-            fillOpacity={0.45}
+            fillOpacity={0.4}
             strokeWidth={1.5}
             dot={false}
+            stackId="vol"
             isAnimationActive={false}
           />
           <Area
             yAxisId="volume"
-            type="linear"
+            type="monotone"
             dataKey="volCementM3"
             name="V цемент, м³"
             stroke={COLORS.cement}
             fill={COLORS.cement}
-            fillOpacity={0.5}
+            fillOpacity={0.45}
             strokeWidth={1.5}
             dot={false}
+            stackId="vol"
             isAnimationActive={false}
           />
           <Area
             yAxisId="volume"
-            type="linear"
+            type="monotone"
             dataKey="volDisplM3"
             name="V продавка, м³"
             stroke={COLORS.displ}
             fill={COLORS.displ}
-            fillOpacity={0.45}
+            fillOpacity={0.4}
             strokeWidth={1.5}
             dot={false}
+            stackId="vol"
             isAnimationActive={false}
           />
           <Area
             yAxisId="volume"
-            type="linear"
+            type="monotone"
             dataKey="volWashM3"
             name="V промывка, м³"
             stroke={COLORS.wash}
             fill={COLORS.wash}
-            fillOpacity={0.45}
+            fillOpacity={0.4}
             strokeWidth={1.5}
             dot={false}
+            stackId="vol"
             isAnimationActive={false}
           />
 

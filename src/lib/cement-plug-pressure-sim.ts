@@ -135,11 +135,9 @@ export function simulatePlugPressures(
 
   let timeMin = 0;
   let cumulativeVolumeM3 = 0;
-  // Per-stage volume (resets at each new stage)
-  let stgSpacer = 0;
-  let stgCement = 0;
-  let stgDispl = 0;
-  let stgWash = 0;
+  let cumSpacer = 0;
+  let cumCement = 0;
+  let cumDispl = 0;
   let cumWash = 0;
 
   // Helper: compute hydrostatic from a list of fluid segments over a given total length
@@ -295,10 +293,10 @@ export function simulatePlugPressures(
       stage,
       pumpRateLs: rateLs,
       volumePumpedM3: cumulativeVolumeM3,
-      volSpacerM3: stgSpacer,
-      volCementM3: stgCement,
-      volDisplM3: stgDispl,
-      volWashM3: stgWash,
+      volSpacerM3: cumSpacer,
+      volCementM3: cumCement,
+      volDisplM3: cumDispl,
+      volWashM3: cumWash,
       bhpMPa: bhp,
       shoePressMPa: shoePress,
       surfaceMPa: surface,
@@ -317,9 +315,6 @@ export function simulatePlugPressures(
     const { name, fluid, volumeM3, rateLs } = stage;
     if (volumeM3 <= 0 || rateLs <= 0) continue;
 
-    // Reset all per-stage volumes at start of each stage
-    stgSpacer = 0; stgCement = 0; stgDispl = 0; stgWash = 0;
-
     const totalTimeStageSec = (volumeM3 * 1000 / rateLs);
     const totalTimeStageMin = totalTimeStageSec / 60;
     const steps = Math.max(1, Math.ceil(totalTimeStageMin / dt));
@@ -330,17 +325,16 @@ export function simulatePlugPressures(
       pumpVolume(fluid, dVol);
       timeMin += actualDt;
       cumulativeVolumeM3 += dVol;
-      if (fluid === 'spacer') stgSpacer += dVol;
-      else if (fluid === 'cement') stgCement += dVol;
-      else stgDispl += dVol;
+      if (fluid === 'spacer') cumSpacer += dVol;
+      else if (fluid === 'cement') cumCement += dVol;
+      else cumDispl += dVol;
       points.push(computePoint(name, rateLs));
     }
   }
 
-  // Pull-out phase (no pumping)
+  // Pull-out phase
   const tripTimeMin = results.tripTimeMin;
   if (tripTimeMin > 0) {
-    stgSpacer = 0; stgCement = 0; stgDispl = 0; stgWash = 0;
     const tripSteps = Math.max(1, Math.ceil(tripTimeMin / dt));
     const tripDt = tripTimeMin / tripSteps;
     for (let s = 0; s < tripSteps; s++) {
@@ -352,14 +346,13 @@ export function simulatePlugPressures(
   // Wash phase
   const washTimeMin = results.washTimeMin;
   if (washTimeMin > 0 && input.pumpRateWashLs > 0) {
-    stgSpacer = 0; stgCement = 0; stgDispl = 0; stgWash = 0;
     const washSteps = Math.max(1, Math.ceil(washTimeMin / dt));
     const washDt = washTimeMin / washSteps;
     for (let s = 0; s < washSteps; s++) {
       timeMin += washDt;
       const dWashVol = results.washVolumeM3 / washSteps;
       cumulativeVolumeM3 += dWashVol;
-      stgWash += dWashVol;
+      cumWash += dWashVol;
       points.push(computePoint('Промывка', input.pumpRateWashLs));
     }
   }
