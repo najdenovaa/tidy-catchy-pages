@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import {
-  ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ComposedChart, Line, Bar, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import type { PlugInputs, PlugResults } from "@/lib/cement-plug-calculations";
@@ -201,41 +201,53 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
             isAnimationActive={false}
           />
 
-          {/* Volumes — stacked bars per fluid */}
-          <Bar
+          {/* Volumes — individual ramp areas (triangles) per fluid, no stacking */}
+          <Area
             yAxisId="volume"
+            type="linear"
             dataKey="volSpacerM3"
             name="V буфер, м³"
+            stroke={COLORS.spacer}
             fill={COLORS.spacer}
-            fillOpacity={0.7}
-            stackId="vol"
+            fillOpacity={0.45}
+            strokeWidth={1.5}
+            dot={false}
             isAnimationActive={false}
           />
-          <Bar
+          <Area
             yAxisId="volume"
+            type="linear"
             dataKey="volCementM3"
             name="V цемент, м³"
+            stroke={COLORS.cement}
             fill={COLORS.cement}
-            fillOpacity={0.8}
-            stackId="vol"
+            fillOpacity={0.5}
+            strokeWidth={1.5}
+            dot={false}
             isAnimationActive={false}
           />
-          <Bar
+          <Area
             yAxisId="volume"
+            type="linear"
             dataKey="volDisplM3"
             name="V продавка, м³"
+            stroke={COLORS.displ}
             fill={COLORS.displ}
-            fillOpacity={0.7}
-            stackId="vol"
+            fillOpacity={0.45}
+            strokeWidth={1.5}
+            dot={false}
             isAnimationActive={false}
           />
-          <Bar
+          <Area
             yAxisId="volume"
+            type="linear"
             dataKey="volWashM3"
             name="V промывка, м³"
+            stroke={COLORS.wash}
             fill={COLORS.wash}
-            fillOpacity={0.7}
-            stackId="vol"
+            fillOpacity={0.45}
+            strokeWidth={1.5}
+            dot={false}
             isAnimationActive={false}
           />
 
