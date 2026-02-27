@@ -418,9 +418,6 @@ export default function CementPlug() {
               </Button>
             )}
             {loadingSavedCalc && <span className="text-xs text-muted-foreground">Загрузка...</span>}
-            <Link to="/cementing" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-              <ArrowLeft className="w-3.5 h-3.5" /> Цементирование
-            </Link>
             {fromDashboard && (
               <>
                 <Link to="/dashboard" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
