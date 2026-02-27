@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import {
-  ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import type { PlugInputs, PlugResults } from "@/lib/cement-plug-calculations";
@@ -9,7 +9,7 @@ import { simulatePlugPressures, type PressureTimePoint } from "@/lib/cement-plug
 interface Props {
   inputs: PlugInputs;
   results: PlugResults;
-  fracGradient: number; // МПа/м
+  fracGradient: number;
 }
 
 const COLORS = {
@@ -18,10 +18,6 @@ const COLORS = {
   surface: "hsl(210, 80%, 55%)",
   frac: "hsl(40, 90%, 50%)",
   rate: "hsl(270, 60%, 60%)",
-  spacer: "hsl(195, 70%, 55%)",
-  cement: "hsl(0, 0%, 65%)",
-  displ: "hsl(30, 60%, 50%)",
-  wash: "hsl(120, 50%, 50%)",
 };
 
 const stageColors: Record<string, string> = {
@@ -41,13 +37,12 @@ function CustomTooltip({ active, payload, label }: any) {
     <div className="bg-popover border border-border rounded-md p-2 text-xs shadow-lg">
       <p className="font-semibold mb-1">{data?.stage} — {Number(label).toFixed(1)} мин</p>
       {payload.filter((p: any) => Number(p.value) > 0.001).map((p: any, i: number) => {
-        const isVol = p.name.includes('м³');
         const isRate = p.name.includes('л/с');
-        const unit = isVol ? 'м³' : isRate ? 'л/с' : 'МПа';
+        const unit = isRate ? 'л/с' : 'МПа';
         return (
           <div key={i} className="flex justify-between gap-3">
             <span style={{ color: p.color }}>{p.name}:</span>
-            <span className="font-medium">{Number(p.value).toFixed(isVol ? 3 : 2)} {unit}</span>
+            <span className="font-medium">{Number(p.value).toFixed(2)} {unit}</span>
           </div>
         );
       })}
@@ -62,14 +57,18 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
 
   if (!data.length) return null;
 
-  const maxP = Math.max(
-    ...data.map(d => Math.max(d.bhpMPa, d.shoePressMPa, d.surfaceMPa, d.fracMPa))
+  // Left axis: BHP, shoe, frac (high pressures)
+  const maxPLeft = Math.max(
+    ...data.map(d => Math.max(d.bhpMPa, d.shoePressMPa, d.fracMPa))
   );
-  const maxVol = Math.max(...data.map(d => d.volumePumpedM3));
+  // Right axis: surface pressure + pump rate (lower values)
+  const maxSurface = Math.max(...data.map(d => d.surfaceMPa));
   const maxRate = Math.max(...data.map(d => d.pumpRateLs));
+  const maxPRight = Math.max(maxSurface * 1.3, maxRate * 1.2);
+
   const safeTimeMin = results.safeTimeMin;
 
-  // Stage color bands
+  // Stage bands
   const stageBands: { x1: number; x2: number; stage: string }[] = [];
   let currentStage = data[0]?.stage;
   let bandStart = data[0]?.timeMin ?? 0;
@@ -94,15 +93,14 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
         ))}
       </div>
 
-      <ResponsiveContainer width="100%" height={400}>
+      <ResponsiveContainer width="100%" height={420}>
         <ComposedChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
 
-          {/* Stage background bands */}
           {stageBands.map((band, i) => (
             <ReferenceLine
               key={`band-${i}`}
-              yAxisId="pressure"
+              yAxisId="pLeft"
               x={band.x1}
               stroke={stageColors[band.stage] || 'hsl(var(--muted))'}
               strokeWidth={0}
@@ -118,154 +116,52 @@ export default function CementPlugPressureChart({ inputs, results, fracGradient 
             tick={{ fontSize: 10 }}
           />
 
-          {/* Left Y axis: Pressure */}
+          {/* Left Y: BHP / Shoe / Frac */}
           <YAxis
-            yAxisId="pressure"
-            domain={[0, Math.ceil(maxP * 1.15)]}
+            yAxisId="pLeft"
+            domain={[0, Math.ceil(maxPLeft * 1.1)]}
             tickFormatter={(v: number) => v.toFixed(0)}
-            label={{ value: 'Давление, МПа', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: 'hsl(var(--muted-foreground))' } }}
+            label={{ value: 'Р забой / ГРП, МПа', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: 'hsl(var(--muted-foreground))' } }}
             tick={{ fontSize: 10 }}
           />
 
-          {/* Right Y axis: Volume / Rate */}
+          {/* Right Y: Surface pressure / Rate */}
           <YAxis
-            yAxisId="volume"
+            yAxisId="pRight"
             orientation="right"
-            domain={[0, Math.ceil(Math.max(maxVol * 1.2, maxRate * 1.2))]}
+            domain={[0, Math.ceil(maxPRight)]}
             tickFormatter={(v: number) => v.toFixed(1)}
-            label={{ value: 'Объём м³ / Q л/с', angle: 90, position: 'insideRight', style: { fontSize: 10, fill: 'hsl(var(--muted-foreground))' } }}
+            label={{ value: 'Р агрегат, МПа / Q, л/с', angle: 90, position: 'insideRight', style: { fontSize: 10, fill: 'hsl(var(--muted-foreground))' } }}
             tick={{ fontSize: 10 }}
           />
 
           <Tooltip content={<CustomTooltip />} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
 
-          {/* Safe time line */}
+          {/* Safe time */}
           <ReferenceLine
             x={safeTimeMin}
-            yAxisId="pressure"
+            yAxisId="pLeft"
             stroke="hsl(var(--destructive))"
             strokeDasharray="5 3"
             strokeWidth={1.5}
             label={{ value: `Безоп. ${safeTimeMin.toFixed(0)}′`, position: 'top', style: { fontSize: 9, fill: 'hsl(var(--destructive))' } }}
           />
 
-          {/* Frac pressure */}
-          <Line
-            yAxisId="pressure"
-            type="stepAfter"
-            dataKey="fracMPa"
-            name="ГРП"
-            stroke={COLORS.frac}
-            strokeWidth={2}
-            strokeDasharray="8 4"
-            dot={false}
-            isAnimationActive={false}
-          />
+          {/* Frac */}
+          <Line yAxisId="pLeft" type="stepAfter" dataKey="fracMPa" name="ГРП" stroke={COLORS.frac} strokeWidth={2} strokeDasharray="8 4" dot={false} isAnimationActive={false} />
 
           {/* BHP */}
-          <Line
-            yAxisId="pressure"
-            type="monotone"
-            dataKey="bhpMPa"
-            name="Р забой"
-            stroke={COLORS.bhp}
-            strokeWidth={2}
-            dot={false}
-            isAnimationActive={false}
-          />
+          <Line yAxisId="pLeft" type="monotone" dataKey="bhpMPa" name="Р забой" stroke={COLORS.bhp} strokeWidth={2} dot={false} isAnimationActive={false} />
 
-          {/* Pressure at casing shoe */}
-          <Line
-            yAxisId="pressure"
-            type="monotone"
-            dataKey="shoePressMPa"
-            name="Р на башмаке"
-            stroke={COLORS.shoe}
-            strokeWidth={2}
-            strokeDasharray="6 3"
-            dot={false}
-            isAnimationActive={false}
-          />
+          {/* Shoe */}
+          <Line yAxisId="pLeft" type="monotone" dataKey="shoePressMPa" name="Р на башмаке" stroke={COLORS.shoe} strokeWidth={2} strokeDasharray="6 3" dot={false} isAnimationActive={false} />
 
-          {/* Surface pressure */}
-          <Line
-            yAxisId="pressure"
-            type="monotone"
-            dataKey="surfaceMPa"
-            name="Р агрегат"
-            stroke={COLORS.surface}
-            strokeWidth={2}
-            dot={false}
-            isAnimationActive={false}
-          />
-
-          {/* Volumes — stacked areas */}
-          <Area
-            yAxisId="volume"
-            type="monotone"
-            dataKey="volSpacerM3"
-            name="V буфер, м³"
-            stroke={COLORS.spacer}
-            fill={COLORS.spacer}
-            fillOpacity={0.3}
-            strokeWidth={1}
-            dot={false}
-            stackId="vol"
-            isAnimationActive={false}
-          />
-          <Area
-            yAxisId="volume"
-            type="monotone"
-            dataKey="volCementM3"
-            name="V цемент, м³"
-            stroke={COLORS.cement}
-            fill={COLORS.cement}
-            fillOpacity={0.35}
-            strokeWidth={1}
-            dot={false}
-            stackId="vol"
-            isAnimationActive={false}
-          />
-          <Area
-            yAxisId="volume"
-            type="monotone"
-            dataKey="volDisplM3"
-            name="V продавка, м³"
-            stroke={COLORS.displ}
-            fill={COLORS.displ}
-            fillOpacity={0.25}
-            strokeWidth={1}
-            dot={false}
-            stackId="vol"
-            isAnimationActive={false}
-          />
-          <Area
-            yAxisId="volume"
-            type="monotone"
-            dataKey="volWashM3"
-            name="V промывка, м³"
-            stroke={COLORS.wash}
-            fill={COLORS.wash}
-            fillOpacity={0.25}
-            strokeWidth={1}
-            dot={false}
-            stackId="vol"
-            isAnimationActive={false}
-          />
+          {/* Surface pressure — on RIGHT axis for visibility */}
+          <Line yAxisId="pRight" type="monotone" dataKey="surfaceMPa" name="Р агрегат" stroke={COLORS.surface} strokeWidth={2.5} dot={false} isAnimationActive={false} />
 
           {/* Pump rate */}
-          <Line
-            yAxisId="volume"
-            type="stepAfter"
-            dataKey="pumpRateLs"
-            name="Q, л/с"
-            stroke={COLORS.rate}
-            strokeWidth={1.5}
-            strokeDasharray="4 2"
-            dot={false}
-            isAnimationActive={false}
-          />
+          <Line yAxisId="pRight" type="stepAfter" dataKey="pumpRateLs" name="Q, л/с" stroke={COLORS.rate} strokeWidth={1.5} strokeDasharray="4 2" dot={false} isAnimationActive={false} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
