@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Send, Home, Calculator, ArrowLeft, FileDown, Save, Loader2, LayoutDashboard, LogOut } from "lucide-react";
+import { Send, Home, Calculator, ArrowLeft, FileDown, Save, Loader2, LayoutDashboard, LogOut, RotateCcw } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { BlurInput } from "@/components/BlurInput";
 import { Label } from "@/components/ui/label";
@@ -349,6 +349,34 @@ export default function CementPlug() {
     }
   };
 
+  const resetSession = useCallback(() => {
+    sessionStorage.removeItem(SESSION_KEY);
+    setWell(defaultWell);
+    setPlug({ topMD: 2600, bottomMD: 2650 });
+    setCement({ name: "Тампонажный р-р", density: 1.85, rheology: { pv: 50, yp: 10 } });
+    setSpacer({ name: "Буферная жидкость", density: 1.10, rheology: { pv: 5, yp: 2 } });
+    setWellFluid({ name: "Буровой раствор", density: 1.20, rheology: { pv: 15, yp: 5 } });
+    setSpacerVolumeAbove(0.3);
+    setSpacerVolumeBelow(0.3);
+    setThickeningTime(120);
+    setWocTimeHours(24);
+    setPullOutAbove(50);
+    setWashType('direct');
+    setWashCycles(2);
+    setTripSpeed(0.3);
+    setTrajPoints([{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }]);
+    setResults(null);
+    setWcRatio(0.44);
+    setSlurryYield(0.63);
+    setAdditives([]);
+    setSpacerAdditives([]);
+    setPumpRateCement(3);
+    setPumpRateSpacer(5);
+    setPumpRateDisplacement(8);
+    setPumpRateWash(10);
+    setFracGradient(0.017);
+  }, []);
+
   /* ── Collapsible state ── */
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: false, plug: false, fluids: false, process: false });
   const toggle = (k: string) => setOpenSections(s => ({ ...s, [k]: !s[k] }));
@@ -381,6 +409,9 @@ export default function CementPlug() {
                 <span className="hidden sm:inline">Сохранить</span>
               </Button>
             )}
+            <Button size="sm" variant="outline" className="gap-1" onClick={resetSession}>
+              <RotateCcw className="w-4 h-4" /> <span className="hidden sm:inline">Обнулить</span>
+            </Button>
             {results && (
               <Button size="sm" variant="outline" className="gap-1" onClick={handleExportDocx}>
                 <FileDown className="w-4 h-4" /> Word
