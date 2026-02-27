@@ -151,8 +151,8 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   // Penetration limited by gel strength development over time
   let contaminationDepthM = 0;
   if (interfaceSF < 1.0 && Δρ_cs > 0) {
-    // Maximum finger penetration ≈ Dh × (1/SF - 1), capped by spacer length
-    contaminationDepthM = Math.min(Dh * (1 / Math.max(interfaceSF, 0.1) - 1), Ls);
+    // Maximum finger penetration ≈ 3.5 × Dh × (1/SF - 1), capped by spacer length
+    contaminationDepthM = Math.min(3.5 * Dh * (1 / Math.max(interfaceSF, 0.1) - 1), Ls);
   }
 
   const interfaceRisk: 'low' | 'medium' | 'high' =
