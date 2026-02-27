@@ -274,13 +274,12 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
               } else if (isSpacer && col.bottomMD <= cementTopMD + 1 && col.topMD < cementTopMD) {
                 // Upper spacer: reposition to sit just above plug.topMD with recalculated height
                 washCols.push({ ...col, topMD: spacerWashTop, bottomMD: spacerWashBottom });
+              } else if (col.location === 'annulus' && col.bottomMD <= cementTopMD && col.topMD < col.bottomMD) {
+                // Mud above old spacer — extend it down to spacerWashTop (fills freed zone)
+                washCols.push({ ...col, bottomMD: spacerWashTop });
               } else {
                 washCols.push(col);
               }
-            }
-            // Insert mud for freed zone if it exists
-            if (freedBottom > freedTop + 0.1) {
-              washCols.push({ label: inputs.wellFluid.name, topMD: freedTop, bottomMD: freedBottom, topTVD: 0, bottomTVD: 0, densityGcm3: inputs.wellFluid.density, location: 'annulus', color: '#8B7355' });
             }
             // Sort by topMD
             washCols.sort((a, b) => a.topMD - b.topMD);
