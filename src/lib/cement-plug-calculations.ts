@@ -197,6 +197,21 @@ export interface PlugResults {
   useViscousPad: boolean;
   padPullUpMD?: number;
   reverseFlushVolume?: number;
+  /** Per-interface contamination data for visualization */
+  interfaceContaminations: InterfaceContamination[];
+}
+
+export interface InterfaceContamination {
+  /** MD where the interface is (boundary between upper and lower fluid) */
+  interfaceMD: number;
+  /** Contamination depth in meters (how far fingers extend below interface) */
+  depthM: number;
+  /** Direction: 'down' = heavy fluid fingers going down, 'up' = light fluid rising */
+  direction: 'down' | 'up';
+  /** Color of the fingering fluid (the denser one) */
+  fingerColor: string;
+  /** RT stability factor at this interface */
+  sfInterface: number;
 }
 
 export interface FluidColumn {
@@ -640,6 +655,64 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     zenithDeg: plugZenithDeg,
   });
 
+  // ═══ Per-interface contamination (RT fingering) ═══
+  const RT_C = 4 * Math.PI;
+  const zenithRad = (plugZenithDeg * Math.PI) / 180;
+  const cosZ = Math.cos(zenithRad);
+  const sinZ = Math.sin(zenithRad);
+  const Dh = well.pipeOD > 0 ? Math.max(boreDiam - well.pipeOD, 10) / 1000 : boreDiam / 1000;
+
+  // Helper: get gel strengths for a fluid by matching color/density
+  function getGelForFluid(densityGcm3: number, color: string): { gel10min: number; yp: number } {
+    if (color === cementColor) return { gel10min: cement.gel10min || 0, yp: cement.rheology.yp };
+    if (color === spacerColor) return { gel10min: spacer.gel10min || 0, yp: spacer.rheology.yp };
+    if (color === "#AB47BC") return { gel10min: padFluid.gel10min || 0, yp: padFluid.rheology.yp };
+    return { gel10min: wellFluid.gel10min || 0, yp: wellFluid.rheology.yp };
+  }
+
+  const annularCols = fluidColumns.filter(c => c.location === 'annulus').sort((a, b) => a.topMD - b.topMD);
+  const interfaceContaminations: InterfaceContamination[] = [];
+
+  for (let i = 0; i < annularCols.length - 1; i++) {
+    const upper = annularCols[i];
+    const lower = annularCols[i + 1];
+    const deltaRho = (upper.densityGcm3 - lower.densityGcm3) * 1000; // kg/m³
+    if (deltaRho <= 10) continue; // negligible density difference
+
+    const gUpper = getGelForFluid(upper.densityGcm3, upper.color);
+    const gLower = getGelForFluid(lower.densityGcm3, lower.color);
+    const GEL_FROM_YP = 3.0;
+    const tauUpper = gUpper.gel10min > 0 ? gUpper.gel10min : gUpper.yp * GEL_FROM_YP;
+    const tauLower = gLower.gel10min > 0 ? gLower.gel10min : gLower.yp * GEL_FROM_YP;
+    const tauEff = tauUpper + tauLower;
+
+    const rtDriving = deltaRho * 9.81 * cosZ * Dh / RT_C;
+    const sf = rtDriving > 0.01 ? tauEff / rtDriving : 999;
+
+    let contDepth = 0;
+    if (sf < 1.0 && deltaRho > 0) {
+      contDepth = Math.min(3.5 * Dh * (1 / Math.max(sf, 0.1) - 1), 
+        lower.bottomMD - lower.topMD);
+    }
+    // Lateral spreading in deviated wells
+    if (plugZenithDeg > 5 && deltaRho > 0 && Dh > 0) {
+      const lateralDrive = deltaRho * 9.81 * sinZ * Dh;
+      const lateralResist = tauEff > 0 ? tauEff : 1;
+      const lateralPen = 1.5 * Dh * (lateralDrive / lateralResist);
+      contDepth = Math.max(contDepth, Math.min(lateralPen, lower.bottomMD - lower.topMD));
+    }
+
+    if (contDepth > 0.01) {
+      interfaceContaminations.push({
+        interfaceMD: upper.bottomMD,
+        depthM: Math.round(contDepth * 100) / 100,
+        direction: 'down',
+        fingerColor: upper.color,
+        sfInterface: Math.round(sf * 100) / 100,
+      });
+    }
+  }
+
   return {
     annArea: annA,
     pipeArea: pipeA,
@@ -690,5 +763,6 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     useViscousPad,
     padPullUpMD: useViscousPad ? Math.round(padPullUpMD * 10) / 10 : undefined,
     reverseFlushVolume: useViscousPad ? Math.round(reverseFlushVol * 1000) / 1000 : undefined,
+    interfaceContaminations,
   };
 }

@@ -165,10 +165,12 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
   const spacerWashHeight = boreAreaM2 > 0 ? inputs.spacerVolumeAboveM3 / boreAreaM2 : results.spacerAboveHeightAnnMD;
   const spacerWashTop = plug.topMD - spacerWashHeight;
 
-  // Contamination
-  const contaminationM = results.stability?.contaminationDepthM ?? 0;
-  const contaminationPx = contaminationM > 0 ? (contaminationM / viewRange) * drawH : 0;
-  const interfaceY = clampY(plug.bottomMD);
+  // Per-interface contaminations
+  const contaminations = (results.interfaceContaminations || []).map(c => ({
+    ...c,
+    ifY: clampY(c.interfaceMD),
+    depthPx: c.depthM > 0 ? (c.depthM / viewRange) * drawH : 0,
+  })).filter(c => c.depthPx > 1 && c.interfaceMD >= viewTop && c.interfaceMD <= viewBottom);
 
   // Annotation x
   const annX = Math.max(boreR(topPx), boreR(botPx)) + 8;
@@ -317,29 +319,30 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
           return <rect key={`fl-${i}`} x={0} y={yTop} width={W} height={h} fill={`url(#${getGradId(col.color, mode)})`} opacity={0.85} />;
         })}
 
-        {/* ─── FINGERING / CONTAMINATION at bottom cement/spacer interface ─── */}
-        {contaminationPx > 1 && (() => {
-          const numFingers = Math.min(Math.max(3, Math.floor(contaminationPx / 2.5)), 8);
-          const dxAtIF = dx(interfaceY);
+        {/* ─── FINGERING / CONTAMINATION at all unstable interfaces ─── */}
+        {contaminations.map((cont, ci) => {
+          const { ifY, depthPx, fingerColor, depthM } = cont;
+          const numFingers = Math.min(Math.max(3, Math.floor(depthPx / 2.5)), 8);
+          const dxAtIF = dx(ifY);
           const usableW = borePx * 0.8;
+          // Map finger color to fill
+          const fillColor = fingerColor === '#B0BEC5' ? '#78909C' : fingerColor === '#AB47BC' ? '#8E24AA' : fingerColor === '#4FC3F7' ? '#0288D1' : '#6D4C41';
 
           return (
-            <g>
+            <g key={`fg-${ci}`}>
               {/* Gradient blend zone */}
-              <rect x={0} y={interfaceY - contaminationPx * 0.15} width={W} height={contaminationPx * 1.15}
-                fill={`url(#fg-grad-${mode})`} filter={`url(#fg-blur-${mode})`} />
+              <rect x={0} y={ifY - depthPx * 0.15} width={W} height={depthPx * 1.15}
+                fill={`url(#fg-grad-${mode})`} filter={`url(#fg-blur-${mode})`} opacity={0.7} />
 
-              {/* Individual finger shapes (teardrop cement fingers going into spacer) */}
+              {/* Individual finger shapes */}
               {Array.from({ length: numFingers }).map((_, i) => {
                 const frac = numFingers > 1 ? i / (numFingers - 1) : 0.5;
                 const fingerX = cx + dxAtIF - usableW / 2 + frac * usableW;
-                // Low side bias: fingers longer on right (low side) when tilted
-                const lowBias = isTilted ? (0.15 + 0.85 * frac) : (0.4 + 0.6 * Math.abs(Math.sin(i * 1.7)));
-                const fingerDepth = contaminationPx * lowBias;
-                const fw = 3 + Math.sin(i * 2.3 + 0.7) * 1.5;
-                const startY = interfaceY;
-                const endY = interfaceY + fingerDepth;
-                // Teardrop path
+                const lowBias = isTilted ? (0.15 + 0.85 * frac) : (0.4 + 0.6 * Math.abs(Math.sin(i * 1.7 + ci * 2)));
+                const fingerDepth = depthPx * lowBias;
+                const fw = 3 + Math.sin(i * 2.3 + 0.7 + ci) * 1.5;
+                const startY = ifY;
+                const endY = ifY + fingerDepth;
                 const path = [
                   `M${fingerX - fw},${startY}`,
                   `C${fingerX - fw * 1.1},${startY + fingerDepth * 0.35} ${fingerX - fw * 0.3},${startY + fingerDepth * 0.8} ${fingerX},${endY}`,
@@ -347,26 +350,26 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
                   `Z`
                 ].join(' ');
                 const opacity = 0.3 + 0.3 * lowBias;
-                return <path key={i} d={path} fill="#78909C" opacity={opacity} />;
+                return <path key={i} d={path} fill={fillColor} opacity={opacity} />;
               })}
 
-              {/* Asymmetric interface curve: cement rises on low side */}
-              {isTilted && contaminationPx > 3 && (
+              {/* Asymmetric interface curve for deviated wells */}
+              {isTilted && depthPx > 3 && (
                 <path
-                  d={`M${cx + dxAtIF - usableW / 2},${interfaceY + contaminationPx * 0.1} Q${cx + dxAtIF},${interfaceY} ${cx + dxAtIF + usableW / 2},${interfaceY - contaminationPx * 0.12}`}
+                  d={`M${cx + dxAtIF - usableW / 2},${ifY + depthPx * 0.1} Q${cx + dxAtIF},${ifY} ${cx + dxAtIF + usableW / 2},${ifY - depthPx * 0.12}`}
                   stroke="rgba(255,109,0,0.5)" strokeWidth={1.2} fill="none" strokeDasharray="4,2"
                 />
               )}
 
               {/* Wavy mixing lines */}
-              {Array.from({ length: Math.min(4, Math.floor(contaminationPx / 5)) }).map((_, i) => {
-                const frac = (i + 1) / (Math.min(4, Math.floor(contaminationPx / 5)) + 1);
-                const lineY = interfaceY + frac * contaminationPx * 0.8;
+              {Array.from({ length: Math.min(4, Math.floor(depthPx / 5)) }).map((_, i) => {
+                const frac = (i + 1) / (Math.min(4, Math.floor(depthPx / 5)) + 1);
+                const lineY = ifY + frac * depthPx * 0.8;
                 const amp = 3 + Math.sin(i * 1.7) * 2;
                 const lx = cx + dx(lineY) - usableW / 2;
                 const rx = cx + dx(lineY) + usableW / 2;
                 return (
-                  <path key={`wl-${i}`}
+                  <path key={`wl-${ci}-${i}`}
                     d={`M${lx},${lineY} Q${lx + usableW * 0.25},${lineY + amp} ${lx + usableW * 0.5},${lineY - amp * 0.5} T${rx},${lineY}`}
                     stroke={i % 2 === 0 ? "rgba(255,109,0,0.4)" : "rgba(79,195,247,0.35)"}
                     strokeWidth={0.7} fill="none"
@@ -375,7 +378,7 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
               })}
             </g>
           );
-        })()}
+        })}
       </g>
 
       {/* Bore wall outlines (tilted lines) */}
@@ -446,9 +449,10 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
         <SideAnnotation x={annX} yTop={clampY(plug.topMD)} yBot={clampY(plug.bottomMD)} label={`Цем. мост ↕${plugLen}м`} color="#B0BEC5" />
       )}
 
-      {contaminationM > 0.05 && (
-        <SideAnnotation x={annX} yTop={interfaceY} yBot={interfaceY + contaminationPx} label={`Смешение ~${contaminationM.toFixed(1)}м`} color="#FF6D00" />
-      )}
+      {/* Per-interface contamination annotations */}
+      {contaminations.map((cont, ci) => (
+        <SideAnnotation key={`cont-${ci}`} x={annX} yTop={cont.ifY} yBot={cont.ifY + cont.depthPx} label={`Смешение ~${cont.depthM.toFixed(1)}м`} color="#FF6D00" />
+      ))}
 
       {results.useViscousPad && results.spacerBelowHeightAnnMD > 0 && (
         <SideAnnotation x={annX} yTop={clampY(plug.bottomMD)} yBot={clampY(plug.bottomMD + results.spacerBelowHeightAnnMD)} label={`Вязкая пачка ↕${results.spacerBelowHeightAnnMD.toFixed(1)}м`} color="#4FC3F7" />
@@ -517,7 +521,7 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
             <text x={180} y={7} fill="#ccc" fontSize={6}>Вязк. пачка</text>
           </>
         )}
-        {contaminationM > 0 && (
+        {contaminations.length > 0 && (
           <>
             <rect x={results.useViscousPad ? 235 : 170} width={8} height={8} fill="rgba(255,109,0,0.5)" rx={1} />
             <text x={results.useViscousPad ? 245 : 180} y={7} fill="#ccc" fontSize={6}>Смешение</text>
