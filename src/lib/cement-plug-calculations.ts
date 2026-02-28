@@ -362,7 +362,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     fluidColumns.push({
       label: padFluid.name + " (низ)", topMD: plug.bottomMD, bottomMD: spacerBelowBottomMD,
       topTVD: plugBottomTVD, bottomTVD: spacerBelowBottomTVD,
-      densityGcm3: padFluid.density, color: "#1A237E", location: 'annulus',
+      densityGcm3: padFluid.density, color: "#AB47BC", location: 'annulus',
     });
   }
   fluidColumns.push({
