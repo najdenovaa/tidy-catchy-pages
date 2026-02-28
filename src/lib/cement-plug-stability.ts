@@ -155,10 +155,12 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   // 1. Axial RT fingering (when SF < 1)
   // 2. Lateral spreading in deviated wells (sin θ component causes cement to slump)
   let contaminationDepthM = 0;
+  // Maximum space available below cement for contamination
+  const maxContSpace = Ls > 0 ? Ls : Lp * 0.3;
 
   // Axial RT fingering
-  if (interfaceSF < 1.0 && Δρ_cs > 0) {
-    contaminationDepthM = Math.min(3.5 * Dh * (1 / Math.max(interfaceSF, 0.1) - 1), Ls);
+  if (interfaceSF < 1.0 && Δρ_cs > 0 && maxContSpace > 0) {
+    contaminationDepthM = Math.min(3.5 * Dh * (1 / Math.max(interfaceSF, 0.1) - 1), maxContSpace);
   }
 
   // Lateral spreading in deviated wells: sin(θ) gravity component drives cement
@@ -166,13 +168,10 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   const sinZ = Math.sin(zenithRad);
   const zenithDegVal = p.zenithDeg ?? 0;
   if (zenithDegVal > 5 && Δρ_cs > 0 && Dh > 0) {
-    // Lateral driving ~ Δρ × g × sin(θ) × D
-    // Resisted by yield stress; spreading length ~ D × sin(θ) × Δρ / (τ_eff / D)
     const lateralDrive = Δρ_cs * G * sinZ * Dh;
     const lateralResist = τ_eff_10min > 0 ? τ_eff_10min : 1;
     const lateralPenetration = 1.5 * Dh * (lateralDrive / lateralResist);
-    // Lateral spreading adds to contamination depth
-    contaminationDepthM = Math.max(contaminationDepthM, Math.min(lateralPenetration, Ls > 0 ? Ls : Lp * 0.3));
+    contaminationDepthM = Math.max(contaminationDepthM, Math.min(lateralPenetration, maxContSpace));
   }
 
   const interfaceRisk: 'low' | 'medium' | 'high' =
