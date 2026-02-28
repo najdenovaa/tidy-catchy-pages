@@ -513,6 +513,16 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     });
   } else {
     // ── Standard workflow (no lower buffer) ──
+    // Sequence: upper spacer (annular) → cement → upper spacer (pipe) → displacement
+    if (spacerVolumeAboveM3 > 0) {
+      pumpingStages.push({
+        name: "Верхний буфер (затрубье)",
+        fluid: `${spacer.name} (${spacer.density} г/см³)`,
+        volumeM3: spacerVolumeAboveM3,
+        timeMin: volToMin(spacerVolumeAboveM3, pumpRateSpacerLs),
+        description: `Буфер над цементом в затрубье. Высота: ${spacerAboveHeightAnn.toFixed(1)} м`,
+      });
+    }
     pumpingStages.push({
       name: "Цементный раствор",
       fluid: `${cement.name} (${cement.density} г/см³)`,
@@ -520,13 +530,13 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
       timeMin: pumpTimeCementMin,
       description: `Интервал моста. Затрубье: ${cementHeightAnnMD.toFixed(1)} м, трубы: ${cementHeightPipeMD.toFixed(1)} м`,
     });
-    if (spacerVolumeAboveM3 > 0) {
+    if (spacerAbovePipeVol > 0) {
       pumpingStages.push({
-        name: "Верхний буфер",
+        name: "Верхний буфер (трубное)",
         fluid: `${spacer.name} (${spacer.density} г/см³)`,
-        volumeM3: spacerVolumeAboveM3 + spacerAbovePipeVol,
-        timeMin: pumpTimeSpacerAboveMin,
-        description: `Буфер сверху цемента. Высота: ${spacerAboveHeightAnn.toFixed(1)} м`,
+        volumeM3: spacerAbovePipeVol,
+        timeMin: volToMin(spacerAbovePipeVol, pumpRateSpacerLs),
+        description: `Буфер над цементом в трубном пространстве`,
       });
     }
     pumpingStages.push({
@@ -586,16 +596,17 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   } else {
     processDescription = [
       `1. Спуск бурильного инструмента (∅${well.pipeOD} мм) до забоя моста ${plug.bottomMD} м MD.${pipeSectionsInfo}`,
-      `2. Закачка тампонажного раствора (${cementVolTotal.toFixed(3)} м³, ρ=${cement.density} г/см³). Q=${pumpRateCementLs} л/с, t=${pumpTimeCementMin.toFixed(1)} мин.`,
+      spacerVolumeAboveM3 > 0 ? `2. Закачка верхнего буфера в затрубье (${spacerVolumeAboveM3.toFixed(2)} м³, высота ${spacerAboveHeightAnn.toFixed(1)} м). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerVolumeAboveM3, pumpRateSpacerLs).toFixed(1)} мин.` : null,
+      `3. Закачка тампонажного раствора (${cementVolTotal.toFixed(3)} м³, ρ=${cement.density} г/см³). Q=${pumpRateCementLs} л/с, t=${pumpTimeCementMin.toFixed(1)} мин.`,
       `   Высота цемента в затрубье: ${cementHeightAnnMD.toFixed(1)} м, в трубах: ${cementHeightPipeMD.toFixed(1)} м.`,
       `   ${heightDifferenceExplanation}`,
-      spacerVolumeAboveM3 > 0 ? `3. Закачка верхнего буфера (${spacerVolumeAboveM3.toFixed(2)} м³, интервал ${spacerAboveHeightAnn.toFixed(1)} м). Q=${pumpRateSpacerLs} л/с, t=${pumpTimeSpacerAboveMin.toFixed(1)} мин.` : null,
-      `4. Продавка жидкостью скважины (${displacementVolume.toFixed(3)} м³). Q=${pumpRateDisplacementLs} л/с, t=${pumpTimeDisplacementMin.toFixed(1)} мин.`,
-      `5. Подъём инструмента без вращения на ${pullOutAbovePlugM} м выше кровли (до ${pullOutDepthMD} м MD).`,
+      spacerAbovePipeVol > 0 ? `4. Закачка верхнего буфера в трубное пространство (${spacerAbovePipeVol.toFixed(3)} м³). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerAbovePipeVol, pumpRateSpacerLs).toFixed(1)} мин.` : null,
+      `5. Продавка жидкостью скважины (${displacementVolume.toFixed(3)} м³). Q=${pumpRateDisplacementLs} л/с, t=${pumpTimeDisplacementMin.toFixed(1)} мин.`,
+      `6. Подъём инструмента без вращения на ${pullOutAbovePlugM} м выше кровли (до ${pullOutDepthMD} м MD).`,
       `   Скорость подъёма: ${effectiveTripSpeed.toFixed(2)} м/с. Время подъёма: ${tripTimeMin.toFixed(1)} мин.`,
-      `6. ${washTypeText.charAt(0).toUpperCase() + washTypeText.slice(1)} промывка: ${washCycles} цикл(а/ов), объём ${washVolumeM3.toFixed(2)} м³. Q=${pumpRateWashLs} л/с, t=${washTimeMin.toFixed(1)} мин.`,
+      `7. ${washTypeText.charAt(0).toUpperCase() + washTypeText.slice(1)} промывка: ${washCycles} цикл(а/ов), объём ${washVolumeM3.toFixed(2)} м³. Q=${pumpRateWashLs} л/с, t=${washTimeMin.toFixed(1)} мин.`,
       `   1 цикл = ${washOneCycleVolume.toFixed(2)} м³.`,
-      `7. Подъём инструмента.`,
+      `8. Подъём инструмента.`,
       ``,
       `Статическое давление на забое моста:`,
       `  Затрубье: ${pAnn.toFixed(2)} МПа | Трубы: ${pPipe.toFixed(2)} МПа | ΔP: ${Math.abs(pAnn - pPipe).toFixed(2)} МПа`,
