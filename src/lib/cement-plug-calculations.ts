@@ -63,6 +63,8 @@ export interface PlugInputs {
   pumpRateDisplacementLs: number;
   pumpRateWashLs: number;
   useViscousPad?: boolean;
+  /** Separate fluid for viscous pad (if not set, spacer is used) */
+  viscousPadFluid?: PlugFluid;
 }
 
 /* ───── Geometry helpers ───── */
@@ -212,6 +214,8 @@ export interface FluidColumn {
 
 export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const { well, plug, cement, spacer, wellFluid, spacerVolumeAboveM3, spacerVolumeBelowM3, thickeningTimeMin, pullOutAbovePlugM, washType, washCycles, tripSpeedMs, pumpRateCementLs, pumpRateSpacerLs, pumpRateDisplacementLs, pumpRateWashLs } = input;
+  // Viscous pad uses its own fluid or falls back to spacer
+  const padFluid: PlugFluid = input.viscousPadFluid && input.useViscousPad ? input.viscousPadFluid : spacer;
 
   const isOpenHole = plug.bottomMD > well.casingShoe;
   const cavernCoeff = isOpenHole ? Math.max(1, well.cavernCoeff || 1) : 1;
@@ -356,9 +360,9 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   });
   if (spacerBelowHeightAnn > 0) {
     fluidColumns.push({
-      label: spacer.name + " (низ)", topMD: plug.bottomMD, bottomMD: spacerBelowBottomMD,
+      label: padFluid.name + " (низ)", topMD: plug.bottomMD, bottomMD: spacerBelowBottomMD,
       topTVD: plugBottomTVD, bottomTVD: spacerBelowBottomTVD,
-      densityGcm3: spacer.density, color: spacerColor, location: 'annulus',
+      densityGcm3: padFluid.density, color: "#AB47BC", location: 'annulus',
     });
   }
   fluidColumns.push({
@@ -439,7 +443,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     // ── Viscous pad workflow ──
     pumpingStages.push({
       name: "Закачка вязкой пачки",
-      fluid: `${spacer.name} (${spacer.density} г/см³)`,
+      fluid: `${padFluid.name} (${padFluid.density} г/см³)`,
       volumeM3: spacerVolumeBelowM3,
       timeMin: pumpTimeSpacerBelowMin,
       description: `Вязкая пачка ниже моста. Высота: ${spacerBelowHeightAnn.toFixed(1)} м`,
@@ -573,7 +577,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   if (useViscousPad && spacerVolumeBelowM3 > 0) {
     processDescription = [
       `1. Спуск бурильного инструмента (∅${well.pipeOD} мм) до забоя моста ${plug.bottomMD} м MD.${pipeSectionsInfo}`,
-      `2. Закачка нижней вязкой пачки (${spacerVolumeBelowM3.toFixed(2)} м³, высота ${spacerBelowHeightAnn.toFixed(1)} м). Q=${pumpRateSpacerLs} л/с, t=${pumpTimeSpacerBelowMin.toFixed(1)} мин.`,
+      `2. Закачка нижней вязкой пачки: ${padFluid.name} (${spacerVolumeBelowM3.toFixed(2)} м³, ρ=${padFluid.density} г/см³, высота ${spacerBelowHeightAnn.toFixed(1)} м). Q=${pumpRateSpacerLs} л/с, t=${pumpTimeSpacerBelowMin.toFixed(1)} мин.`,
       `3. Подъём инструмента над пачкой до ${padPullUpMD.toFixed(0)} м MD (+${padPullUpDistance.toFixed(0)} м). V=${effectiveTripSpeed.toFixed(2)} м/с, t=${padTripUpTimeMin.toFixed(1)} мин.`,
       `4. Обратная промывка для очистки труб от остатков вязкой пачки (${reverseFlushVol.toFixed(3)} м³). Q=${pumpRateWashLs} л/с, t=${reverseFlushTimeMin.toFixed(1)} мин.`,
       `5. Спуск инструмента на голову пачки (${plug.bottomMD} м MD). V=${effectiveTripSpeed.toFixed(2)} м/с, t=${padTripDownTimeMin.toFixed(1)} мин.`,
@@ -621,16 +625,16 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     boreDiameterM: boreDiam / 1000,
     pipeODm: well.pipeOD / 1000,
     cementDensityKgM3: cement.density * 1000,
-    spacerDensityKgM3: spacer.density * 1000,
+    spacerDensityKgM3: (useViscousPad ? padFluid.density : spacer.density) * 1000,
     wellFluidDensityKgM3: wellFluid.density * 1000,
     cementGel10Sec: cement.gel10sec || 0,
-    spacerGel10Sec: spacer.gel10sec || 0,
+    spacerGel10Sec: (useViscousPad ? padFluid.gel10sec : spacer.gel10sec) || 0,
     wellFluidGel10Sec: wellFluid.gel10sec || 0,
     cementGel10Min: cement.gel10min || 0,
-    spacerGel10Min: spacer.gel10min || 0,
+    spacerGel10Min: (useViscousPad ? padFluid.gel10min : spacer.gel10min) || 0,
     wellFluidGel10Min: wellFluid.gel10min || 0,
     cementYP: cement.rheology.yp,
-    spacerYP: spacer.rheology.yp,
+    spacerYP: (useViscousPad ? padFluid.rheology.yp : spacer.rheology.yp),
     wellFluidYP: wellFluid.rheology.yp,
     isDeviated: plugLenTVD < plugLenMD * 0.99,
     zenithDeg: plugZenithDeg,

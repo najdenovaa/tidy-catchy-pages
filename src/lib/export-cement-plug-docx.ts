@@ -70,14 +70,16 @@ export interface CementPlugExportData {
   slurryYield: number;
   additives: { name: string; percent: number }[];
   spacerAdditives: { name: string; percent: number }[];
+  viscousPadAdditives?: { name: string; percent: number }[];
   trajPoints: TrajectoryPoint[];
   visualizationImage?: string; // data URL
   pressureChartImage?: string; // data URL
 }
 
 export async function exportCementPlugToDocx(data: CementPlugExportData) {
-  const { inputs, results, fracGradient, wcRatio, slurryYield, additives, spacerAdditives, trajPoints } = data;
+  const { inputs, results, fracGradient, wcRatio, slurryYield, additives, spacerAdditives, viscousPadAdditives, trajPoints } = data;
   const { well, plug, cement, spacer, wellFluid } = inputs;
+  const padFluid = inputs.viscousPadFluid || spacer;
 
   const sections: Paragraph[] = [];
 
@@ -148,6 +150,7 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
       new TableRow({ children: [hCell("Жидкость"), hCell("Плотность, г/см³"), hCell("PV, сПз"), hCell("YP, Па")] }),
       new TableRow({ children: [c(cement.name, { bold: true }), c(fmt(cement.density, 2), { align: AlignmentType.CENTER }), c(fmt(cement.rheology.pv, 0), { align: AlignmentType.CENTER }), c(fmt(cement.rheology.yp, 0), { align: AlignmentType.CENTER })] }),
       new TableRow({ children: [c(spacer.name, { bold: true }), c(fmt(spacer.density, 2), { align: AlignmentType.CENTER }), c(fmt(spacer.rheology.pv, 0), { align: AlignmentType.CENTER }), c(fmt(spacer.rheology.yp, 0), { align: AlignmentType.CENTER })] }),
+      ...(inputs.useViscousPad ? [new TableRow({ children: [c(padFluid.name + " (вязк. пачка)", { bold: true }), c(fmt(padFluid.density, 2), { align: AlignmentType.CENTER }), c(fmt(padFluid.rheology.pv, 0), { align: AlignmentType.CENTER }), c(fmt(padFluid.rheology.yp, 0), { align: AlignmentType.CENTER })] })] : []),
       new TableRow({ children: [c(wellFluid.name, { bold: true }), c(fmt(wellFluid.density, 2), { align: AlignmentType.CENTER }), c(fmt(wellFluid.rheology.pv, 0), { align: AlignmentType.CENTER }), c(fmt(wellFluid.rheology.yp, 0), { align: AlignmentType.CENTER })] }),
     ],
   });
@@ -168,18 +171,34 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
   }
   const recipeTable = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: recipeRows });
 
-  // Spacer materials
-  const spacerTotalVol = results.spacerVolumeAbove + results.spacerVolumeBelow;
-  const spacerMassKg = spacerTotalVol * spacer.density * 1000;
+  // Spacer materials (upper buffer only)
+  const spacerVolAbove = results.spacerVolumeAbove;
+  const spacerMassKg = spacerVolAbove * spacer.density * 1000;
   const spacerRows = [
     new TableRow({ children: [hCell("Параметр", 60), hCell("Значение", 40)] }),
-    kvRow("Объём буфера (всего)", `${fmt(spacerTotalVol, 3)} м³`),
+    kvRow("Объём верхнего буфера", `${fmt(spacerVolAbove, 3)} м³`),
     kvRow("Масса буфера", `${fmt(spacerMassKg, 0)} кг`),
   ];
   for (const add of spacerAdditives.filter(a => a.percent > 0)) {
     spacerRows.push(kvRow(add.name, `${fmt(spacerMassKg * add.percent / 100, 1)} кг (${add.percent}%)`));
   }
   const spacerMatTable = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: spacerRows });
+
+  // Viscous pad materials (if enabled)
+  let viscousPadMatTable: Table | null = null;
+  if (inputs.useViscousPad && results.spacerVolumeBelow > 0) {
+    const padVol = results.spacerVolumeBelow;
+    const padMassKg = padVol * padFluid.density * 1000;
+    const padRows = [
+      new TableRow({ children: [hCell("Параметр", 60), hCell("Значение", 40)] }),
+      kvRow("Объём вязкой пачки", `${fmt(padVol, 3)} м³`),
+      kvRow("Масса вязкой пачки", `${fmt(padMassKg, 0)} кг`),
+    ];
+    for (const add of (viscousPadAdditives || []).filter(a => a.percent > 0)) {
+      padRows.push(kvRow(add.name, `${fmt(padMassKg * add.percent / 100, 1)} кг (${add.percent}%)`));
+    }
+    viscousPadMatTable = new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: padRows });
+  }
 
   // ─── 6. Volumes ───
   sections.push(heading("6. Результаты расчёта объёмов"));
@@ -287,6 +306,7 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
     recipeTable,
     textP("Материалы буферной жидкости:", { bold: true }),
     spacerMatTable,
+    ...(viscousPadMatTable ? [textP("Материалы вязкой пачки:", { bold: true }), viscousPadMatTable] : []),
     sections[6], // heading 6
     volTable,
     textP(results.heightDifferenceExplanation),
