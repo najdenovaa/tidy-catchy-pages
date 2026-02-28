@@ -393,7 +393,7 @@ export default function CementPlug() {
         inputs: buildInputs(), results, fracGradient,
         wcRatio, slurryYield, additives, spacerAdditives,
         viscousPadAdditives: useViscousPad ? viscousPadAdditives : undefined,
-        trajPoints,
+        trajPoints, wocTimeHours,
         visualizationImage: vizImage, pressureChartImage: chartImage,
       };
       await exportCementPlugToDocx(exportData);
