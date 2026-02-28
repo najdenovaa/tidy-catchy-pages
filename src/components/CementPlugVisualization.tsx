@@ -67,6 +67,7 @@ function buildWashCols(annCols: FluidColumn[], cementTopMD: number, plug: { topM
 function getGradId(color: string, mode: string): string {
   if (color === "#B0BEC5") return `cp-cement-grad-${mode}`;
   if (color === "#4FC3F7") return `cp-spacer-grad-${mode}`;
+  if (color === "#AB47BC") return `cp-pad-grad-${mode}`;
   return `cp-mud-grad-${mode}`;
 }
 
@@ -199,6 +200,10 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
         <linearGradient id={`cp-mud-grad-${mode}`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#A1887F" />
           <stop offset="100%" stopColor="#6D4C41" />
+        </linearGradient>
+        <linearGradient id={`cp-pad-grad-${mode}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#CE93D8" />
+          <stop offset="100%" stopColor="#8E24AA" />
         </linearGradient>
         <pattern id={`cp-rock-${mode}`} width="12" height="12" patternUnits="userSpaceOnUse">
           <rect width="12" height="12" fill="#3a3a40" />
@@ -506,10 +511,16 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
         <text x={85} y={7} fill="#ccc" fontSize={6}>Буфер</text>
         <rect x={120} width={8} height={8} fill={`url(#cp-cement-grad-${mode})`} rx={1} />
         <text x={130} y={7} fill="#ccc" fontSize={6}>Цемент</text>
+        {results.useViscousPad && (
+          <>
+            <rect x={170} width={8} height={8} fill={`url(#cp-pad-grad-${mode})`} rx={1} />
+            <text x={180} y={7} fill="#ccc" fontSize={6}>Вязк. пачка</text>
+          </>
+        )}
         {contaminationM > 0 && (
           <>
-            <rect x={170} width={8} height={8} fill="rgba(255,109,0,0.5)" rx={1} />
-            <text x={180} y={7} fill="#ccc" fontSize={6}>Смешение</text>
+            <rect x={results.useViscousPad ? 235 : 170} width={8} height={8} fill="rgba(255,109,0,0.5)" rx={1} />
+            <text x={results.useViscousPad ? 245 : 180} y={7} fill="#ccc" fontSize={6}>Смешение</text>
           </>
         )}
       </g>
