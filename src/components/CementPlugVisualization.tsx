@@ -445,8 +445,8 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
         <SideAnnotation x={annX} yTop={interfaceY} yBot={interfaceY + contaminationPx} label={`Смешение ~${contaminationM.toFixed(1)}м`} color="#FF6D00" />
       )}
 
-      {results.spacerBelowHeightAnnMD > 0 && (
-        <SideAnnotation x={annX} yTop={clampY(plug.bottomMD)} yBot={clampY(plug.bottomMD + results.spacerBelowHeightAnnMD)} label={`Буфер ↕${results.spacerBelowHeightAnnMD.toFixed(1)}м`} color="#4FC3F7" />
+      {results.useViscousPad && results.spacerBelowHeightAnnMD > 0 && (
+        <SideAnnotation x={annX} yTop={clampY(plug.bottomMD)} yBot={clampY(plug.bottomMD + results.spacerBelowHeightAnnMD)} label={`Вязкая пачка ↕${results.spacerBelowHeightAnnMD.toFixed(1)}м`} color="#4FC3F7" />
       )}
 
       {plug.bottomMD + results.spacerBelowHeightAnnMD < viewBottom && (
