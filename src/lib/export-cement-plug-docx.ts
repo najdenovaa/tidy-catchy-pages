@@ -197,8 +197,10 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
       kvRow("Высота цем. (трубы)", `${fmt(results.cementHeightPipeMD, 1)} м`),
       kvRow("Буфер сверху", `${fmt(results.spacerVolumeAbove, 3)} м³`),
       kvRow("↕ Интервал буфера сверху", `${fmt(results.spacerAboveHeightAnnMD, 1)} м`),
-      kvRow("Буфер снизу", `${fmt(results.spacerVolumeBelow, 3)} м³`),
-      kvRow("↕ Интервал буфера снизу", `${fmt(results.spacerBelowHeightAnnMD, 1)} м`),
+      ...(results.spacerVolumeBelow > 0 ? [
+        kvRow("Вязкая пачка", `${fmt(results.spacerVolumeBelow, 3)} м³`),
+        kvRow("↕ Интервал вязкой пачки", `${fmt(results.spacerBelowHeightAnnMD, 1)} м`),
+      ] : []),
       kvRow("Объём продавки", `${fmt(results.displacementVolume, 3)} м³`),
     ],
   });

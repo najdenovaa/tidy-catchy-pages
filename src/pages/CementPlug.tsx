@@ -702,22 +702,22 @@ export default function CementPlug() {
                         <Field label="СНС 10 сек" value={spacer.gel10sec || 0} onChange={v => setSpacer(s => ({ ...s, gel10sec: num(v) }))} unit="Па" />
                         <Field label="СНС 10 мин" value={spacer.gel10min || 0} onChange={v => setSpacer(s => ({ ...s, gel10min: num(v) }))} unit="Па" />
                       </div>
-                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <div className="space-y-2 mt-2">
                         <div className="space-y-1">
                           <Field label="Объём буфера сверху" value={spacerVolumeAbove} onChange={v => setSpacerVolumeAbove(num(v))} unit="м³" />
                           <p className="text-[10px] text-muted-foreground">↕ Высота в затрубье: {spacerAboveHeight.toFixed(2)} м</p>
                         </div>
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Switch checked={useViscousPad} onCheckedChange={setUseViscousPad} id="viscous-pad" />
-                            <Label htmlFor="viscous-pad" className="text-xs cursor-pointer">Нижняя вязкая пачка</Label>
-                          </div>
-                          <Field label={useViscousPad ? "Объём вязкой пачки" : "Объём буфера снизу"} value={spacerVolumeBelow} onChange={v => setSpacerVolumeBelow(num(v))} unit="м³" />
-                          <p className="text-[10px] text-muted-foreground">↕ Высота в затрубье: {spacerBelowHeight.toFixed(2)} м</p>
-                          {useViscousPad && (
-                            <p className="text-[10px] text-amber-400">⚠ Вязкая пачка будет установлена отдельной стадией с подъёмом и обратной промывкой</p>
-                          )}
+                        <div className="flex items-center gap-2 mt-2">
+                          <Switch checked={useViscousPad} onCheckedChange={setUseViscousPad} id="viscous-pad" />
+                          <Label htmlFor="viscous-pad" className="text-xs cursor-pointer">Нижняя вязкая пачка</Label>
                         </div>
+                        {useViscousPad && (
+                          <div className="space-y-1">
+                            <Field label="Объём вязкой пачки" value={spacerVolumeBelow} onChange={v => setSpacerVolumeBelow(num(v))} unit="м³" />
+                            <p className="text-[10px] text-muted-foreground">↕ Высота в затрубье: {spacerBelowHeight.toFixed(2)} м</p>
+                            <p className="text-[10px] text-amber-400">⚠ Вязкая пачка будет установлена отдельной стадией с подъёмом и обратной промывкой</p>
+                          </div>
+                        )}
                       </div>
                       <div className="mt-2">
                         <div className="flex items-center justify-between mb-1">
@@ -976,8 +976,12 @@ export default function CementPlug() {
                       <Separator className="col-span-full my-1" />
                       <ResultRow label="Буфер сверху" value={results.spacerVolumeAbove} unit="м³" />
                       <ResultRow label="↕ Интервал буфера сверху" value={results.spacerAboveHeightAnnMD} unit="м" />
-                      <ResultRow label="Буфер снизу" value={results.spacerVolumeBelow} unit="м³" />
-                      <ResultRow label="↕ Интервал буфера снизу" value={results.spacerBelowHeightAnnMD} unit="м" />
+                      {results.useViscousPad && results.spacerVolumeBelow > 0 && (
+                        <>
+                          <ResultRow label="Вязкая пачка" value={results.spacerVolumeBelow} unit="м³" />
+                          <ResultRow label="↕ Интервал вязкой пачки" value={results.spacerBelowHeightAnnMD} unit="м" />
+                        </>
+                      )}
                       <ResultRow label="Объём продавки" value={results.displacementVolume} unit="м³" highlight />
                       <Separator className="col-span-full my-1" />
                       <ResultRow label="P_статич. затрубье" value={results.pressureAnnulus} unit="МПа" />
