@@ -262,7 +262,11 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   // Spacer heights
   const effectiveSpacerBelowVol = (input.useViscousPad ?? false) ? spacerVolumeBelowM3 : 0;
   const spacerBelowHeightAnn = boreArea > 0 ? effectiveSpacerBelowVol / boreArea : 0;
-  const spacerAboveHeightAnn = annA > 0 ? spacerVolumeAboveM3 / annA : 0;
+  // Upper spacer: total input volume is split between annulus and pipe at same height
+  const spacerAboveTotalArea = annA + pipeA; // both annulus and pipe share same height
+  const spacerAboveHeightAnn = spacerAboveTotalArea > 0 ? spacerVolumeAboveM3 / spacerAboveTotalArea : 0;
+  const spacerAboveVolAnn = annA * spacerAboveHeightAnn;  // annular portion
+  const spacerAboveVolPipe = pipeA * spacerAboveHeightAnn; // pipe portion
 
   // Cement: target final volume = boreArea × plugLenMD (after pipe removal)
   const cementVolTotal = boreArea * plugLenMD;
@@ -301,12 +305,8 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const dispVols = volumeInInterval(0, Math.max(0, spacerAboveTopPipeMD), boreDiam, effectiveSections);
   const displacementVolume = dispVols.pipeVol;
 
-  // Spacer above pipe volume (for pumping stage total)
-  const spacerAbovePipeVol = volumeInInterval(
-    Math.max(0, spacerAboveTopPipeMD),
-    Math.max(0, cementTopMD),
-    boreDiam, effectiveSections
-  ).pipeVol;
+  // Spacer above pipe volume: use pre-calculated split (not volumeInInterval)
+  const spacerAbovePipeVol = spacerAboveVolPipe;
 
   // Static pressures at plug bottom (pipe end level)
   const spacerAboveTopMD = cementTopMD - spacerAboveHeightAnn;
@@ -412,7 +412,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const effectiveSpacerBelowM3 = useViscousPad ? spacerVolumeBelowM3 : 0;
   const pumpTimeSpacerBelowMin = volToMin(effectiveSpacerBelowM3, pumpRateSpacerLs);
   const pumpTimeCementMin = volToMin(cementVolTotal, pumpRateCementLs);
-  const pumpTimeSpacerAboveMin = volToMin(spacerVolumeAboveM3 + spacerAbovePipeVol, pumpRateSpacerLs);
+  const pumpTimeSpacerAboveMin = volToMin(spacerVolumeAboveM3, pumpRateSpacerLs); // total = ann + pipe
   const pumpTimeDisplacementMin = volToMin(displacementVolume, pumpRateDisplacementLs);
   const tripTimeMin = tripTimeSec / 60;
   const washTimeMin = volToMin(washVolumeM3, pumpRateWashLs);
@@ -465,13 +465,13 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
       timeMin: padTripDownTimeMin,
       description: `До ${plug.bottomMD} м MD. V=${effectiveTripSpeed.toFixed(2)} м/с`,
     });
-    if (spacerVolumeAboveM3 > 0) {
+    if (spacerAboveVolAnn > 0) {
       pumpingStages.push({
         name: "Верхний буфер (затрубье)",
         fluid: `${spacer.name} (${spacer.density} г/см³)`,
-        volumeM3: spacerVolumeAboveM3,
-        timeMin: volToMin(spacerVolumeAboveM3, pumpRateSpacerLs),
-        description: `Буфер над цементом в затрубье. Высота: ${spacerAboveHeightAnn.toFixed(1)} м`,
+        volumeM3: spacerAboveVolAnn,
+        timeMin: volToMin(spacerAboveVolAnn, pumpRateSpacerLs),
+        description: `Буфер над цементом в затрубье (${spacerAboveVolAnn.toFixed(3)} из ${spacerVolumeAboveM3.toFixed(3)} м³). Высота: ${spacerAboveHeightAnn.toFixed(1)} м`,
       });
     }
     pumpingStages.push({
@@ -514,13 +514,13 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   } else {
     // ── Standard workflow (no lower buffer) ──
     // Sequence: upper spacer (annular) → cement → upper spacer (pipe) → displacement
-    if (spacerVolumeAboveM3 > 0) {
+    if (spacerAboveVolAnn > 0) {
       pumpingStages.push({
         name: "Верхний буфер (затрубье)",
         fluid: `${spacer.name} (${spacer.density} г/см³)`,
-        volumeM3: spacerVolumeAboveM3,
-        timeMin: volToMin(spacerVolumeAboveM3, pumpRateSpacerLs),
-        description: `Буфер над цементом в затрубье. Высота: ${spacerAboveHeightAnn.toFixed(1)} м`,
+        volumeM3: spacerAboveVolAnn,
+        timeMin: volToMin(spacerAboveVolAnn, pumpRateSpacerLs),
+        description: `Буфер над цементом в затрубье (${spacerAboveVolAnn.toFixed(3)} из ${spacerVolumeAboveM3.toFixed(3)} м³). Высота: ${spacerAboveHeightAnn.toFixed(1)} м`,
       });
     }
     pumpingStages.push({
@@ -577,11 +577,11 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
       `3. Подъём инструмента над пачкой до ${padPullUpMD.toFixed(0)} м MD (+${padPullUpDistance.toFixed(0)} м). V=${effectiveTripSpeed.toFixed(2)} м/с, t=${padTripUpTimeMin.toFixed(1)} мин.`,
       `4. Обратная промывка для очистки труб от остатков вязкой пачки (${reverseFlushVol.toFixed(3)} м³). Q=${pumpRateWashLs} л/с, t=${reverseFlushTimeMin.toFixed(1)} мин.`,
       `5. Спуск инструмента на голову пачки (${plug.bottomMD} м MD). V=${effectiveTripSpeed.toFixed(2)} м/с, t=${padTripDownTimeMin.toFixed(1)} мин.`,
-      spacerVolumeAboveM3 > 0 ? `6. Закачка верхнего буфера в затрубье (${spacerVolumeAboveM3.toFixed(2)} м³, высота ${spacerAboveHeightAnn.toFixed(1)} м). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerVolumeAboveM3, pumpRateSpacerLs).toFixed(1)} мин.` : null,
+      spacerAboveVolAnn > 0 ? `6. Закачка верхнего буфера в затрубье (${spacerAboveVolAnn.toFixed(3)} м³ из ${spacerVolumeAboveM3.toFixed(3)} м³, высота ${spacerAboveHeightAnn.toFixed(1)} м). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerAboveVolAnn, pumpRateSpacerLs).toFixed(1)} мин.` : null,
       `7. Закачка тампонажного раствора (${cementVolTotal.toFixed(3)} м³, ρ=${cement.density} г/см³). Q=${pumpRateCementLs} л/с, t=${pumpTimeCementMin.toFixed(1)} мин.`,
       `   Высота цемента в затрубье: ${cementHeightAnnMD.toFixed(1)} м, в трубах: ${cementHeightPipeMD.toFixed(1)} м.`,
       `   ${heightDifferenceExplanation}`,
-      spacerAbovePipeVol > 0 ? `8. Закачка верхнего буфера в трубное пространство (${spacerAbovePipeVol.toFixed(3)} м³). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerAbovePipeVol, pumpRateSpacerLs).toFixed(1)} мин.` : null,
+      spacerAboveVolPipe > 0 ? `8. Закачка верхнего буфера в трубное пространство (${spacerAboveVolPipe.toFixed(3)} м³). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerAboveVolPipe, pumpRateSpacerLs).toFixed(1)} мин.` : null,
       `9. Продавка жидкостью скважины (${displacementVolume.toFixed(3)} м³). Q=${pumpRateDisplacementLs} л/с, t=${pumpTimeDisplacementMin.toFixed(1)} мин.`,
       `10. Подъём инструмента без вращения на ${pullOutAbovePlugM} м выше кровли (до ${pullOutDepthMD} м MD).`,
       `    Скорость подъёма: ${effectiveTripSpeed.toFixed(2)} м/с. Время подъёма: ${tripTimeMin.toFixed(1)} мин.`,
@@ -596,11 +596,11 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   } else {
     processDescription = [
       `1. Спуск бурильного инструмента (∅${well.pipeOD} мм) до забоя моста ${plug.bottomMD} м MD.${pipeSectionsInfo}`,
-      spacerVolumeAboveM3 > 0 ? `2. Закачка верхнего буфера в затрубье (${spacerVolumeAboveM3.toFixed(2)} м³, высота ${spacerAboveHeightAnn.toFixed(1)} м). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerVolumeAboveM3, pumpRateSpacerLs).toFixed(1)} мин.` : null,
+      spacerAboveVolAnn > 0 ? `2. Закачка верхнего буфера в затрубье (${spacerAboveVolAnn.toFixed(3)} м³ из ${spacerVolumeAboveM3.toFixed(3)} м³, высота ${spacerAboveHeightAnn.toFixed(1)} м). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerAboveVolAnn, pumpRateSpacerLs).toFixed(1)} мин.` : null,
       `3. Закачка тампонажного раствора (${cementVolTotal.toFixed(3)} м³, ρ=${cement.density} г/см³). Q=${pumpRateCementLs} л/с, t=${pumpTimeCementMin.toFixed(1)} мин.`,
       `   Высота цемента в затрубье: ${cementHeightAnnMD.toFixed(1)} м, в трубах: ${cementHeightPipeMD.toFixed(1)} м.`,
       `   ${heightDifferenceExplanation}`,
-      spacerAbovePipeVol > 0 ? `4. Закачка верхнего буфера в трубное пространство (${spacerAbovePipeVol.toFixed(3)} м³). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerAbovePipeVol, pumpRateSpacerLs).toFixed(1)} мин.` : null,
+      spacerAboveVolPipe > 0 ? `4. Закачка верхнего буфера в трубное пространство (${spacerAboveVolPipe.toFixed(3)} м³). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerAboveVolPipe, pumpRateSpacerLs).toFixed(1)} мин.` : null,
       `5. Продавка жидкостью скважины (${displacementVolume.toFixed(3)} м³). Q=${pumpRateDisplacementLs} л/с, t=${pumpTimeDisplacementMin.toFixed(1)} мин.`,
       `6. Подъём инструмента без вращения на ${pullOutAbovePlugM} м выше кровли (до ${pullOutDepthMD} м MD).`,
       `   Скорость подъёма: ${effectiveTripSpeed.toFixed(2)} м/с. Время подъёма: ${tripTimeMin.toFixed(1)} мин.`,
