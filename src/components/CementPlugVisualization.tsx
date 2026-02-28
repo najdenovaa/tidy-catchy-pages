@@ -48,12 +48,16 @@ function buildWashCols(annCols: FluidColumn[], cementTopMD: number, plug: { topM
   for (const col of annCols) {
     const isCement = col.color === '#B0BEC5';
     const isSpacer = col.color === '#4FC3F7';
+    const isViscPad = col.color === '#1A237E';
     if (isCement) {
       const ct = Math.max(col.topMD, plug.topMD);
       const cb = Math.min(col.bottomMD, plug.bottomMD);
       if (cb > ct) washCols.push({ ...col, topMD: ct, bottomMD: cb });
     } else if (isSpacer && col.bottomMD <= cementTopMD + 1 && col.topMD < cementTopMD) {
       washCols.push({ ...col, topMD: spacerWashTop, bottomMD: spacerWashBottom });
+    } else if (isViscPad) {
+      // Viscous pad stays in place after placement
+      washCols.push(col);
     } else if (col.location === 'annulus' && col.bottomMD <= cementTopMD && col.topMD < col.bottomMD) {
       washCols.push({ ...col, bottomMD: spacerWashTop });
     } else {
@@ -67,6 +71,7 @@ function buildWashCols(annCols: FluidColumn[], cementTopMD: number, plug: { topM
 function getGradId(color: string, mode: string): string {
   if (color === "#B0BEC5") return `cp-cement-grad-${mode}`;
   if (color === "#4FC3F7") return `cp-spacer-grad-${mode}`;
+  if (color === "#1A237E") return `cp-viscpad-grad-${mode}`;
   return `cp-mud-grad-${mode}`;
 }
 
@@ -196,6 +201,10 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
           <stop offset="0%" stopColor="#4FC3F7" />
           <stop offset="100%" stopColor="#0288D1" />
         </linearGradient>
+        <linearGradient id={`cp-viscpad-grad-${mode}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#283593" />
+          <stop offset="100%" stopColor="#0D1642" />
+        </linearGradient>
         <linearGradient id={`cp-mud-grad-${mode}`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#A1887F" />
           <stop offset="100%" stopColor="#6D4C41" />
@@ -318,23 +327,27 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
           const dxAtIF = dx(interfaceY);
           const usableW = borePx * 0.8;
 
+          // Determine fingering colors based on what's below
+          const hasViscousPad = results.useViscousPad && results.spacerBelowHeightAnnMD > 0;
+          const fingerFill = "#78909C";
+          const mixGradColor1 = hasViscousPad ? "#1A237E" : "#4FC3F7";
+          const mixLineColor1 = hasViscousPad ? "rgba(26,35,126,0.5)" : "rgba(79,195,247,0.35)";
+
           return (
             <g>
               {/* Gradient blend zone */}
               <rect x={0} y={interfaceY - contaminationPx * 0.15} width={W} height={contaminationPx * 1.15}
                 fill={`url(#fg-grad-${mode})`} filter={`url(#fg-blur-${mode})`} />
 
-              {/* Individual finger shapes (teardrop cement fingers going into spacer) */}
+              {/* Individual finger shapes (teardrop cement fingers going into spacer/pad) */}
               {Array.from({ length: numFingers }).map((_, i) => {
                 const frac = numFingers > 1 ? i / (numFingers - 1) : 0.5;
                 const fingerX = cx + dxAtIF - usableW / 2 + frac * usableW;
-                // Low side bias: fingers longer on right (low side) when tilted
                 const lowBias = isTilted ? (0.15 + 0.85 * frac) : (0.4 + 0.6 * Math.abs(Math.sin(i * 1.7)));
                 const fingerDepth = contaminationPx * lowBias;
                 const fw = 3 + Math.sin(i * 2.3 + 0.7) * 1.5;
                 const startY = interfaceY;
                 const endY = interfaceY + fingerDepth;
-                // Teardrop path
                 const path = [
                   `M${fingerX - fw},${startY}`,
                   `C${fingerX - fw * 1.1},${startY + fingerDepth * 0.35} ${fingerX - fw * 0.3},${startY + fingerDepth * 0.8} ${fingerX},${endY}`,
@@ -342,7 +355,7 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
                   `Z`
                 ].join(' ');
                 const opacity = 0.3 + 0.3 * lowBias;
-                return <path key={i} d={path} fill="#78909C" opacity={opacity} />;
+                return <path key={i} d={path} fill={fingerFill} opacity={opacity} />;
               })}
 
               {/* Asymmetric interface curve: cement rises on low side */}
@@ -363,8 +376,52 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
                 return (
                   <path key={`wl-${i}`}
                     d={`M${lx},${lineY} Q${lx + usableW * 0.25},${lineY + amp} ${lx + usableW * 0.5},${lineY - amp * 0.5} T${rx},${lineY}`}
-                    stroke={i % 2 === 0 ? "rgba(255,109,0,0.4)" : "rgba(79,195,247,0.35)"}
+                    stroke={i % 2 === 0 ? "rgba(255,109,0,0.4)" : mixLineColor1}
                     strokeWidth={0.7} fill="none"
+                  />
+                );
+              })}
+            </g>
+          );
+        })()}
+
+        {/* ─── FINGERING at viscous pad / well fluid interface (below pad) ─── */}
+        {results.useViscousPad && results.spacerBelowHeightAnnMD > 0 && (() => {
+          const padBottomMD = plug.bottomMD + results.spacerBelowHeightAnnMD;
+          const padBottomY = clampY(padBottomMD);
+          const padContamPx = Math.min(15, (results.spacerBelowHeightAnnMD / viewRange) * drawH * 0.3);
+          if (padContamPx < 2) return null;
+          const numF = Math.min(5, Math.max(3, Math.floor(padContamPx / 3)));
+          const dxAtPB = dx(padBottomY);
+          const usableW = borePx * 0.8;
+          return (
+            <g>
+              {Array.from({ length: numF }).map((_, i) => {
+                const frac = numF > 1 ? i / (numF - 1) : 0.5;
+                const fingerX = cx + dxAtPB - usableW / 2 + frac * usableW;
+                const lowBias = isTilted ? (0.15 + 0.85 * frac) : (0.4 + 0.6 * Math.abs(Math.sin(i * 1.9)));
+                const fingerDepth = padContamPx * lowBias;
+                const fw = 2.5 + Math.sin(i * 2.1) * 1.2;
+                const startY = padBottomY;
+                const endY = padBottomY + fingerDepth;
+                const path = [
+                  `M${fingerX - fw},${startY}`,
+                  `C${fingerX - fw * 1.1},${startY + fingerDepth * 0.35} ${fingerX - fw * 0.3},${startY + fingerDepth * 0.8} ${fingerX},${endY}`,
+                  `C${fingerX + fw * 0.3},${startY + fingerDepth * 0.8} ${fingerX + fw * 1.1},${startY + fingerDepth * 0.35} ${fingerX + fw},${startY}`,
+                  `Z`
+                ].join(' ');
+                return <path key={`vpf-${i}`} d={path} fill="#1A237E" opacity={0.35 + 0.2 * lowBias} />;
+              })}
+              {Array.from({ length: 2 }).map((_, i) => {
+                const frac = (i + 1) / 3;
+                const lineY = padBottomY + frac * padContamPx * 0.7;
+                const amp = 2.5;
+                const lx = cx + dx(lineY) - usableW / 2;
+                const rx = cx + dx(lineY) + usableW / 2;
+                return (
+                  <path key={`vpwl-${i}`}
+                    d={`M${lx},${lineY} Q${lx + usableW * 0.25},${lineY + amp} ${lx + usableW * 0.5},${lineY - amp * 0.5} T${rx},${lineY}`}
+                    stroke="rgba(26,35,126,0.4)" strokeWidth={0.6} fill="none"
                   />
                 );
               })}
@@ -446,7 +503,7 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
       )}
 
       {results.useViscousPad && results.spacerBelowHeightAnnMD > 0 && (
-        <SideAnnotation x={annX} yTop={clampY(plug.bottomMD)} yBot={clampY(plug.bottomMD + results.spacerBelowHeightAnnMD)} label={`Вязкая пачка ↕${results.spacerBelowHeightAnnMD.toFixed(1)}м`} color="#4FC3F7" />
+        <SideAnnotation x={annX} yTop={clampY(plug.bottomMD)} yBot={clampY(plug.bottomMD + results.spacerBelowHeightAnnMD)} label={`Вязкая пачка ↕${results.spacerBelowHeightAnnMD.toFixed(1)}м`} color="#5C6BC0" />
       )}
 
       {plug.bottomMD + results.spacerBelowHeightAnnMD < viewBottom && (
@@ -506,10 +563,16 @@ function PlugSVG({ results, inputs, mode, sharedViewTop, sharedViewBottom }: Pro
         <text x={85} y={7} fill="#ccc" fontSize={6}>Буфер</text>
         <rect x={120} width={8} height={8} fill={`url(#cp-cement-grad-${mode})`} rx={1} />
         <text x={130} y={7} fill="#ccc" fontSize={6}>Цемент</text>
+        {results.useViscousPad && results.spacerBelowHeightAnnMD > 0 && (
+          <>
+            <rect x={170} width={8} height={8} fill={`url(#cp-viscpad-grad-${mode})`} rx={1} />
+            <text x={180} y={7} fill="#ccc" fontSize={6}>Вязк. пачка</text>
+          </>
+        )}
         {contaminationM > 0 && (
           <>
-            <rect x={170} width={8} height={8} fill="rgba(255,109,0,0.5)" rx={1} />
-            <text x={180} y={7} fill="#ccc" fontSize={6}>Смешение</text>
+            <rect x={results.useViscousPad ? 240 : 170} width={8} height={8} fill="rgba(255,109,0,0.5)" rx={1} />
+            <text x={results.useViscousPad ? 250 : 180} y={7} fill="#ccc" fontSize={6}>Смешение</text>
           </>
         )}
       </g>
