@@ -251,12 +251,22 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
     kvRow("↕ Интервал буфера сверху", `${fmt(results.spacerAboveHeightAnnMD, 1)} м`),
   );
   if (results.useViscousPad && results.spacerVolumeBelow > 0) {
+    const padAnnA = results.annArea;
+    const padPipeA = results.pipeArea;
+    const padHeight = results.spacerBelowHeightAnnMD;
+    const padVolAnn = padAnnA * padHeight;
+    const padVolPipe = padPipeA * padHeight;
     volRows.push(
-      kvRow("Вязкая пачка", `${fmt(results.spacerVolumeBelow, 3)} м³`),
-      kvRow("↕ Интервал вязкой пачки", `${fmt(results.spacerBelowHeightAnnMD, 1)} м`),
+      kvRow("Вязкая пачка ИТОГО", `${fmt(results.spacerVolumeBelow, 3)} м³`),
+      kvRow("  — в затрубье", `${fmt(padVolAnn, 3)} м³`),
+      kvRow("  — в трубах", `${fmt(padVolPipe, 3)} м³`),
+      kvRow("↕ Высота пачки (равновесие)", `${fmt(padHeight, 1)} м`),
     );
   }
   volRows.push(kvRow("Объём продавки", `${fmt(results.displacementVolume, 3)} м³`));
+  if (results.useViscousPad && results.reverseFlushVolume) {
+    volRows.push(kvRow("Объём обратной промывки (пачка)", `${fmt(results.reverseFlushVolume, 3)} м³`));
+  }
   children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: volRows }));
   children.push(textP(results.heightDifferenceExplanation));
 
@@ -373,6 +383,7 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
     new TableRow({ children: [hCell("Этап", 60), hCell("Время, мин", 40)] }),
     kvRow("Закачка цемента", fmt(results.pumpTimeCementMin, 1)),
   ];
+  if (results.pumpTimeSpacerBelowMin > 0) timingRows.push(kvRow("Закачка вязкой пачки", fmt(results.pumpTimeSpacerBelowMin, 1)));
   if (results.pumpTimeSpacerAboveMin > 0) timingRows.push(kvRow("Закачка верх. буфера", fmt(results.pumpTimeSpacerAboveMin, 1)));
   timingRows.push(
     kvRow("Продавка", fmt(results.pumpTimeDisplacementMin, 1)),
@@ -400,6 +411,16 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
     kvRow("Q продавка", `${fmt(inputs.pumpRateDisplacementLs, 1)} л/с`),
     kvRow("Q промывка", `${fmt(inputs.pumpRateWashLs, 1)} л/с`),
     kvRow("Подъём над кровлей моста", `${fmt(inputs.pullOutAbovePlugM, 0)} м`),
+  ];
+  if (inputs.useViscousPad) {
+    processParamsRows.push(
+      kvRow("Подъём над пачкой", `${fmt(inputs.padPullUpAboveM ?? 5, 0)} м`),
+    );
+    if (results.padPullUpMD !== undefined) {
+      processParamsRows.push(kvRow("Глубина подъёма над пачкой", `${fmt(results.padPullUpMD, 0)} м MD`));
+    }
+  }
+  processParamsRows.push(
     kvRow("Кол-во циклов промывки", String(inputs.washCycles)),
     kvRow("Скорость подъёма", `${fmt(inputs.tripSpeedMs, 2)} м/с`),
     kvRow("Тип промывки", inputs.washType === 'direct' ? 'Прямая' : 'Обратная'),
