@@ -425,8 +425,9 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
     kvRow("Скорость подъёма", `${fmt(inputs.tripSpeedMs, 2)} м/с`),
     kvRow("Тип промывки", inputs.washType === 'direct' ? 'Прямая' : 'Обратная'),
     kvRow("Подъём на промывку до", `${fmt(results.pullOutDepthMD, 0)} м MD`),
-    kvRow("Промывка", `${fmt(results.washVolumeM3, 3)} м³ (${results.washCycles} цикл.)`),
-  ];
+    kvRow("Промывка", `${fmt(results.washVolumeM3, 3)} м³ (${results.washCycles} цикл.)`)
+  );
+  children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: processParamsRows }));
   children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: processParamsRows }));
 
   // ─── 14. Process Description ───
