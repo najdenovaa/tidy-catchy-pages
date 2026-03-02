@@ -278,9 +278,12 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
 
   const boreArea = area(boreDiam);
 
-  // Spacer heights
+  // Spacer heights — distributed between annulus and pipe at same height for balance
+  const padTotalArea = annA + pipeA;
   const effectiveSpacerBelowVol = (input.useViscousPad ?? false) ? spacerVolumeBelowM3 : 0;
-  const spacerBelowHeightAnn = boreArea > 0 ? effectiveSpacerBelowVol / boreArea : 0;
+  const spacerBelowHeightAnn = padTotalArea > 0 ? effectiveSpacerBelowVol / padTotalArea : 0;
+  const spacerBelowVolAnn = annA * spacerBelowHeightAnn;   // annular portion of pad
+  const spacerBelowVolPipe = pipeA * spacerBelowHeightAnn;  // pipe portion of pad
   // Upper spacer: total input volume is split between annulus and pipe at same height
   const spacerAboveTotalArea = annA + pipeA; // both annulus and pipe share same height
   const spacerAboveHeightAnn = spacerAboveTotalArea > 0 ? spacerVolumeAboveM3 / spacerAboveTotalArea : 0;
@@ -404,6 +407,13 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     topTVD: cementTopTVD, bottomTVD: plugBottomTVD,
     densityGcm3: cement.density, color: cementColor, location: 'pipe',
   });
+  if (spacerBelowHeightAnn > 0 && (input.useViscousPad ?? false)) {
+    fluidColumns.push({
+      label: padFluid.name + " (труб. низ)", topMD: plug.bottomMD, bottomMD: spacerBelowBottomMD,
+      topTVD: plugBottomTVD, bottomTVD: spacerBelowBottomTVD,
+      densityGcm3: padFluid.density, color: "#AB47BC", location: 'pipe',
+    });
+  }
 
   // Pull-out and wash (with pipe-section-aware volumes)
   const pullOutDepthMD = Math.max(0, plug.topMD - pullOutAbovePlugM);
@@ -438,7 +448,9 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
 
   // ─── Viscous pad calculations ───
   const padBottomMD = useViscousPad ? plug.bottomMD + spacerBelowHeightAnn : plug.bottomMD;
-  const padDisplacementVol = useViscousPad ? volumeInInterval(0, padBottomMD, boreDiam, effectiveSections).pipeVol : 0;
+  // Pad displacement: pipe volume from surface to top of pad in pipe (plug.bottomMD)
+  const padTopInPipeMD = plug.bottomMD; // pad top in pipe = plug bottom (balance)
+  const padDisplacementVol = useViscousPad ? volumeInInterval(0, padTopInPipeMD, boreDiam, effectiveSections).pipeVol : 0;
   const padDisplacementTimeMin = useViscousPad ? volToMin(padDisplacementVol, pumpRateDisplacementLs) : 0;
   const padPullUpDistance = useViscousPad ? Math.max(spacerBelowHeightAnn, 10) + 5 : 0;
   const padPullUpMD = useViscousPad ? Math.max(0, plug.bottomMD - padPullUpDistance) : plug.bottomMD;
@@ -464,14 +476,14 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
       fluid: `${padFluid.name} (${padFluid.density} г/см³)`,
       volumeM3: spacerVolumeBelowM3,
       timeMin: pumpTimeSpacerBelowMin,
-      description: `Вязкая пачка ниже моста. Высота: ${spacerBelowHeightAnn.toFixed(1)} м`,
+      description: `Вязкая пачка на равновесии. Высота: ${spacerBelowHeightAnn.toFixed(1)} м. Затрубье: ${spacerBelowVolAnn.toFixed(3)} м³, трубы: ${spacerBelowVolPipe.toFixed(3)} м³`,
     });
     pumpingStages.push({
       name: "Продавка вязкой пачки",
       fluid: `${wellFluid.name} (${wellFluid.density} г/см³)`,
       volumeM3: padDisplacementVol,
       timeMin: padDisplacementTimeMin,
-      description: `Продавка пачки скважинной жидкостью до выхода в затрубье (${padDisplacementVol.toFixed(3)} м³). Q=${pumpRateDisplacementLs} л/с`,
+      description: `Продавка до равновесия пачки (${padDisplacementVol.toFixed(3)} м³). Пачка остаётся в затрубье и трубах на одной высоте. Q=${pumpRateDisplacementLs} л/с`,
     });
     pumpingStages.push({
       name: "Подъём над пачкой",
@@ -600,13 +612,15 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
 
   let processDescription: string;
   if (useViscousPad && spacerVolumeBelowM3 > 0) {
-    const padBottomMD = plug.bottomMD + spacerBelowHeightAnn;
+    const padBottomMDDesc = plug.bottomMD + spacerBelowHeightAnn;
     processDescription = [
-      `1. Спуск бурильного инструмента (∅${well.pipeOD} мм) до забоя вязкой пачки ${padBottomMD.toFixed(1)} м MD (подошва моста ${plug.bottomMD} м + высота пачки ${spacerBelowHeightAnn.toFixed(1)} м).${pipeSectionsInfo}`,
-      `2. Закачка нижней вязкой пачки: ${padFluid.name} (${spacerVolumeBelowM3.toFixed(2)} м³, ρ=${padFluid.density} г/см³, высота ${spacerBelowHeightAnn.toFixed(1)} м). Интервал: ${padBottomMD.toFixed(1)}–${plug.bottomMD} м MD. Q=${pumpRateSpacerLs} л/с, t=${pumpTimeSpacerBelowMin.toFixed(1)} мин.`,
-      `3. Продавка вязкой пачки скважинной жидкостью (${padDisplacementVol.toFixed(3)} м³) до полного выхода пачки в затрубное пространство. Q=${pumpRateDisplacementLs} л/с, t=${padDisplacementTimeMin.toFixed(1)} мин.`,
+      `1. Спуск бурильного инструмента (∅${well.pipeOD} мм) до забоя вязкой пачки ${padBottomMDDesc.toFixed(1)} м MD (подошва моста ${plug.bottomMD} м + высота пачки ${spacerBelowHeightAnn.toFixed(1)} м).${pipeSectionsInfo}`,
+      `2. Закачка вязкой пачки на равновесие: ${padFluid.name} (${spacerVolumeBelowM3.toFixed(2)} м³, ρ=${padFluid.density} г/см³).`,
+      `   Распределение: затрубье ${spacerBelowVolAnn.toFixed(3)} м³ + трубы ${spacerBelowVolPipe.toFixed(3)} м³. Высота столба: ${spacerBelowHeightAnn.toFixed(1)} м.`,
+      `   Интервал: ${padBottomMDDesc.toFixed(1)}–${plug.bottomMD} м MD. Q=${pumpRateSpacerLs} л/с, t=${pumpTimeSpacerBelowMin.toFixed(1)} мин.`,
+      `3. Продавка вязкой пачки скважинной жидкостью (${padDisplacementVol.toFixed(3)} м³) до установки на равновесие. Пачка в затрубье и трубах на одной высоте. Q=${pumpRateDisplacementLs} л/с, t=${padDisplacementTimeMin.toFixed(1)} мин.`,
       `4. Подъём инструмента над пачкой до ${padPullUpMD.toFixed(0)} м MD (+${padPullUpDistance.toFixed(0)} м выше кровли пачки). V=${effectiveTripSpeed.toFixed(2)} м/с, t=${padTripUpTimeMin.toFixed(1)} мин.`,
-      `5. Обратная промывка для очистки труб от остатков вязкой пачки (${reverseFlushVol.toFixed(3)} м³). Q=${pumpRateWashLs} л/с, t=${reverseFlushTimeMin.toFixed(1)} мин.`,
+      `5. Обратная промывка для вымыва остатков вязкой пачки из труб (${reverseFlushVol.toFixed(3)} м³). Q=${pumpRateWashLs} л/с, t=${reverseFlushTimeMin.toFixed(1)} мин.`,
       `6. Спуск инструмента на кровлю вязкой пачки / подошву моста (${plug.bottomMD} м MD). V=${effectiveTripSpeed.toFixed(2)} м/с, t=${padTripDownTimeMin.toFixed(1)} мин.`,
       spacerAboveVolAnn > 0 ? `7. Закачка верхнего буфера в затрубье (${spacerAboveVolAnn.toFixed(3)} м³ из ${spacerVolumeAboveM3.toFixed(3)} м³, высота ${spacerAboveHeightAnn.toFixed(1)} м). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerAboveVolAnn, pumpRateSpacerLs).toFixed(1)} мин.` : null,
       `8. Закачка тампонажного раствора (${cementVolTotal.toFixed(3)} м³, ρ=${cement.density} г/см³). Q=${pumpRateCementLs} л/с, t=${pumpTimeCementMin.toFixed(1)} мин.`,
