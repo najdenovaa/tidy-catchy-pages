@@ -125,7 +125,7 @@ export default function Home() {
 
       <footer className="w-full">
         <div className="bg-card border-t border-border py-6">
-          <div className="max-w-5xl mx-auto px-4 text-center">
+          <div className="max-w-5xl mx-auto px-4 text-center space-y-3">
             <p className="text-sm text-muted-foreground">
               Мы открыты к сотрудничеству! По всем вопросам обращайтесь в{" "}
               <a
@@ -138,6 +138,25 @@ export default function Home() {
               </a>
               .
             </p>
+            <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
+              <a
+                href="https://t.me/deallbiz_bot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-foreground transition-colors"
+              >
+                🧪 Бот химической продукции DeAll
+              </a>
+              <span className="text-border">|</span>
+              <a
+                href="https://t.me/deallbiz"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-foreground transition-colors"
+              >
+                📢 Новостной канал DeAll
+              </a>
+            </div>
           </div>
         </div>
         <img
