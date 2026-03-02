@@ -67,6 +67,7 @@ interface SessionState {
   useViscousPad: boolean;
   viscousPadFluid?: PlugFluid;
   viscousPadAdditives?: { name: string; percent: number }[];
+  padPullUpAbove?: number;
 }
 
 function loadSession(): Partial<SessionState> {
@@ -140,14 +141,15 @@ export default function CementPlug() {
   const [useViscousPad, setUseViscousPad] = useState(saved.useViscousPad ?? false);
   const [viscousPadFluid, setViscousPadFluid] = useState<PlugFluid>(saved.viscousPadFluid || { name: "Вязкая пачка", density: 1.15, rheology: { pv: 30, yp: 15 }, gel10sec: 0, gel10min: 0 });
   const [viscousPadAdditives, setViscousPadAdditives] = useState<{ name: string; percent: number }[]>(saved.viscousPadAdditives || []);
+  const [padPullUpAbove, setPadPullUpAbove] = useState(saved.padPullUpAbove ?? 5);
 
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove]);
 
   /* ── Spacer height preview (real-time) ── */
   const isOpenHole = plug.bottomMD > well.casingShoe;
@@ -236,6 +238,7 @@ export default function CementPlug() {
     pumpRateWashLs: pumpRateWash,
     useViscousPad,
     viscousPadFluid: useViscousPad ? viscousPadFluid : undefined,
+    padPullUpAboveM: useViscousPad ? padPullUpAbove : undefined,
   });
 
   const calculate = () => {
@@ -306,6 +309,7 @@ export default function CementPlug() {
       if (typeof p.useViscousPad === "boolean") setUseViscousPad(p.useViscousPad);
       if (p.viscousPadFluid) setViscousPadFluid(p.viscousPadFluid);
       if (Array.isArray(p.viscousPadAdditives)) setViscousPadAdditives(p.viscousPadAdditives);
+      if (typeof p.padPullUpAbove === "number") setPadPullUpAbove(p.padPullUpAbove);
 
       // Restore results if present
       if (data.results) {
@@ -434,6 +438,7 @@ export default function CementPlug() {
     setUseViscousPad(false);
     setViscousPadFluid({ name: "", density: 0, rheology: { pv: 0, yp: 0 } });
     setViscousPadAdditives([]);
+    setPadPullUpAbove(5);
   }, []);
 
   /* ── Collapsible state ── */
@@ -734,7 +739,10 @@ export default function CementPlug() {
                               <Field label="СНС 10 сек" value={viscousPadFluid.gel10sec || 0} onChange={v => setViscousPadFluid(f => ({ ...f, gel10sec: num(v) }))} unit="Па" />
                               <Field label="СНС 10 мин" value={viscousPadFluid.gel10min || 0} onChange={v => setViscousPadFluid(f => ({ ...f, gel10min: num(v) }))} unit="Па" />
                             </div>
-                            <Field label="Объём вязкой пачки" value={spacerVolumeBelow} onChange={v => setSpacerVolumeBelow(num(v))} unit="м³" />
+                            <div className="grid grid-cols-2 gap-2">
+                              <Field label="Объём вязкой пачки" value={spacerVolumeBelow} onChange={v => setSpacerVolumeBelow(num(v))} unit="м³" />
+                              <Field label="Подъём над пачкой" value={padPullUpAbove} onChange={v => setPadPullUpAbove(num(v))} unit="м" />
+                            </div>
                             <p className="text-[10px] text-muted-foreground">↕ Высота в затрубье: {spacerBelowHeight.toFixed(2)} м</p>
                             <p className="text-[10px] text-amber-400">⚠ Вязкая пачка будет установлена отдельной стадией с подъёмом и обратной промывкой</p>
                             <div className="mt-1">

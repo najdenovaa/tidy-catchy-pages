@@ -65,6 +65,8 @@ export interface PlugInputs {
   useViscousPad?: boolean;
   /** Separate fluid for viscous pad (if not set, spacer is used) */
   viscousPadFluid?: PlugFluid;
+  /** Distance to pull up above pad top before reverse flush, meters */
+  padPullUpAboveM?: number;
 }
 
 /* ───── Geometry helpers ───── */
@@ -452,7 +454,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const padTopInPipeMD = plug.bottomMD; // pad top in pipe = plug bottom (balance)
   const padDisplacementVol = useViscousPad ? volumeInInterval(0, padTopInPipeMD, boreDiam, effectiveSections).pipeVol : 0;
   const padDisplacementTimeMin = useViscousPad ? volToMin(padDisplacementVol, pumpRateDisplacementLs) : 0;
-  const padPullUpDistance = useViscousPad ? Math.max(spacerBelowHeightAnn, 10) + 5 : 0;
+  const padPullUpDistance = useViscousPad ? Math.max(input.padPullUpAboveM ?? 5, 1) : 0;
   const padPullUpMD = useViscousPad ? Math.max(0, plug.bottomMD - padPullUpDistance) : plug.bottomMD;
   const reverseFlushVol = useViscousPad ? volumeInInterval(0, padPullUpMD, boreDiam, effectiveSections).pipeVol : 0;
   const padTripUpTimeMin = useViscousPad ? padPullUpDistance / effectiveTripSpeed / 60 : 0;
