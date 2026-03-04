@@ -561,7 +561,8 @@ export function calculateHydraulics(
   fractureGradientKpaM: number,
   drillingFluidRheology?: Rheology,
   displacementRheology?: Rheology,
-  pumpRateLps?: number
+  pumpRateLps?: number,
+  drillingFluidDensityGcm3?: number // г/см³ бурового раствора
 ): HydraulicResults {
   const traj = getEffectiveTrajectory(data);
   const bottomTVD = interpolateTVD(data.casingDepthMD, traj);
@@ -584,7 +585,8 @@ export function calculateHydraulics(
     }
   });
   const mudHeightTVD = Math.max(0, bottomTVD - cementTVDtotal);
-  annulusPressure += hydrostaticPressure(1.1, mudHeightTVD); // fallback плотность бур. раствора
+  const mudDensity = drillingFluidDensityGcm3 && drillingFluidDensityGcm3 > 0 ? drillingFluidDensityGcm3 : 1.1;
+  annulusPressure += hydrostaticPressure(mudDensity, mudHeightTVD);
 
   const fracturePressure = (fractureGradientKpaM * bottomTVD) / 1000;
 
