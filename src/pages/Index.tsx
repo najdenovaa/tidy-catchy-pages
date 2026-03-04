@@ -580,6 +580,8 @@ export default function Index() {
                   volumes={volumes}
                   displacementFluids={calcSnapshot.displacementFluids}
                   drillingFluid={calcSnapshot.drillingFluid}
+                  dynamicMaxBHP={pressureResult ? Math.max(...pressureResult.points.map(p => p.bottomholePressure)) : undefined}
+                  dynamicFracP={pressureResult ? pressureResult.points[0]?.fracturePressure : undefined}
                 />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
