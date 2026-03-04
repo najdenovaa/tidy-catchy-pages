@@ -109,7 +109,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <Line yAxisId="pressure" type="monotone" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="pressure" type="monotone" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="rate" type="stepAfter" dataKey="pumpRateLps" name="Производительность" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
-                <Line yAxisId="density" type="stepAfter" dataKey="densityGcm3" name="Плотность закачки" stroke="hsl(35, 85%, 50%)" strokeWidth={2.5} dot={false} />
+                <Line yAxisId="density" type="stepAfter" dataKey="densityGcm3" name="Плотность закачки" stroke="hsl(345, 80%, 35%)" strokeWidth={2.5} dot={false} />
                 <Line yAxisId="rate" type="monotone" dataKey="annularReturnRate" name="Выход на устье" stroke="hsl(30, 80%, 50%)" strokeWidth={1.5} dot={false} />
               </LineChart>
             </ResponsiveContainer>
