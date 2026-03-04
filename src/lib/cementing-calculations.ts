@@ -265,9 +265,45 @@ export interface MaterialSummary {
 
 // === Интерполяция TVD из траектории ===
 
+/**
+ * Проверяет, является ли траектория "реальной" (содержит хотя бы 2 точки с ненулевой MD).
+ * Одна точка {md:0, tvd:0} считается дефолтной (нет инклинометрии).
+ */
+function isRealTrajectory(trajectory: TrajectoryPoint[]): boolean {
+  if (!trajectory || trajectory.length < 2) return false;
+  // Если все точки на md=0, траектория не задана
+  return trajectory.some(p => p.md > 0);
+}
+
+/**
+ * Строит fallback-траекторию для вертикальной скважины на основе wellData.
+ * Если задана wellDepthTVD > 0, используется пропорция TVD/MD.
+ * Иначе TVD = MD (вертикальная скважина).
+ */
+export function buildFallbackTrajectory(wellDepthMD: number, wellDepthTVD: number): TrajectoryPoint[] {
+  const tvd = wellDepthTVD > 0 ? wellDepthTVD : wellDepthMD;
+  if (wellDepthMD <= 0) return [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }];
+  return [
+    { md: 0, azimuth: 0, zenith: 0, tvd: 0 },
+    { md: wellDepthMD, azimuth: 0, zenith: 0, tvd },
+  ];
+}
+
+/**
+ * Возвращает рабочую траекторию: реальную если есть, иначе fallback.
+ */
+export function getEffectiveTrajectory(wellData: { trajectory: TrajectoryPoint[]; wellDepthMD: number; wellDepthTVD: number }): TrajectoryPoint[] {
+  if (isRealTrajectory(wellData.trajectory)) return wellData.trajectory;
+  return buildFallbackTrajectory(wellData.wellDepthMD, wellData.wellDepthTVD);
+}
+
 export function interpolateTVD(md: number, trajectory: TrajectoryPoint[]): number {
   if (!trajectory || trajectory.length === 0) return md;
-  if (trajectory.length === 1) return trajectory[0].tvd;
+  if (trajectory.length === 1) {
+    // Единственная точка: если md=0 и tvd=0 — нет данных, возвращаем md
+    if (trajectory[0].md === 0 && trajectory[0].tvd === 0) return md;
+    return trajectory[0].tvd;
+  }
   
   // Сортируем по MD
   const sorted = [...trajectory].sort((a, b) => a.md - b.md);
@@ -527,7 +563,7 @@ export function calculateHydraulics(
   displacementRheology?: Rheology,
   pumpRateLps?: number
 ): HydraulicResults {
-  const traj = data.trajectory;
+  const traj = getEffectiveTrajectory(data);
   const bottomTVD = interpolateTVD(data.casingDepthMD, traj);
 
   // Трубное — продавочная жидкость по вертикали
@@ -739,7 +775,7 @@ export function calculatePressureProfile(
   flushVolumeM3: number = 0
 ): PressureProfileResult {
   const points: PressurePoint[] = [];
-  const traj = wellData.trajectory;
+  const traj = getEffectiveTrajectory(wellData);
   const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);
   const fracP = (fractureGradient * bottomTVD) / 1000;
   const casingID = weightedAverageCasingID(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
