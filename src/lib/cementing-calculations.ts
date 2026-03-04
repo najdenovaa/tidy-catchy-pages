@@ -881,22 +881,24 @@ export function calculatePressureProfile(
   let cementStartTime = 0;
   let equilibriumTimeMin = 0; // время выхода на равновесие после остановки, мин
 
-  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: calcMaxSafeRate(hydroMudFull, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density), densityGcm3: mudDensityGcm3 });
+  const mudRheo = effectiveRheology(drillingFluid.rheology, 'mud');
+  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: calcMaxSafeRate(hydroMudFull, mudRheo.pv, mudRheo.yp, drillingFluid.density, mudRheo.pv, mudRheo.yp, drillingFluid.density), densityGcm3: mudDensityGcm3 });
 
   interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean; compressionCoeff: number; durationMin?: number; isFlushPause?: boolean }
   const stages: Stage[] = [];
 
   // Буферы — по шагам
   buffers.forEach(b => {
+    const bRheo = effectiveRheology(b.rheology, 'buffer');
     if (b.flowRateSteps.length > 1) {
       b.flowRateSteps.forEach(step => {
         if (step.volumeM3 > 0) {
-          stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: b.rheology.pv, yp: b.rheology.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: 1.0 });
+          stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: 1.0 });
         }
       });
     } else {
       const rate = b.flowRateSteps.length > 0 ? b.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: b.name, volume: b.volume, densityGcm3: b.density / 1000, pv: b.rheology.pv, yp: b.rheology.yp, rateLps: rate, isCement: false, compressionCoeff: 1.0 });
+      stages.push({ name: b.name, volume: b.volume, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, rateLps: rate, isCement: false, compressionCoeff: 1.0 });
     }
   });
 
@@ -908,15 +910,16 @@ export function calculatePressureProfile(
     const mdBot = origIdx === lastIdx ? wellData.casingDepthMD : slurries[origIdx + 1].topDepthMD;
     const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
     if (vol <= 0) return;
+    const sRheo = effectiveRheology(s.rheology, cementCategory(s.density));
     if (s.flowRateSteps.length > 1) {
       s.flowRateSteps.forEach(step => {
         if (step.volumeM3 > 0) {
-          stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: s.rheology.pv, yp: s.rheology.yp, rateLps: step.rateLps, isCement: true, compressionCoeff: 1.0 });
+          stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, rateLps: step.rateLps, isCement: true, compressionCoeff: 1.0 });
         }
       });
     } else {
       const rate = s.flowRateSteps.length > 0 ? s.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: s.name, volume: vol, densityGcm3: s.density, pv: s.rheology.pv, yp: s.rheology.yp, rateLps: rate, isCement: true, compressionCoeff: 1.0 });
+      stages.push({ name: s.name, volume: vol, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, rateLps: rate, isCement: true, compressionCoeff: 1.0 });
     }
   });
 
@@ -925,8 +928,8 @@ export function calculatePressureProfile(
     name: "Промывка ЛВД",
     volume: flushVolumeM3,
     densityGcm3: mudDensityGcm3,
-    pv: drillingFluid.rheology.pv,
-    yp: drillingFluid.rheology.yp,
+    pv: mudRheo.pv,
+    yp: mudRheo.yp,
     rateLps: flushVolumeM3 > 0 && flushTimeMin > 0 ? (flushVolumeM3 / (flushTimeMin * 60)) * 1000 : 0,
     isCement: false,
     compressionCoeff: 1.0,
@@ -938,13 +941,14 @@ export function calculatePressureProfile(
   let remainingDispVol = displacementVol;
   displacementFluids.forEach(df => {
     const cc = df.compressionCoeff || 1.0;
+    const dfRheo = effectiveRheology(df.rheology, 'displacement');
     const totalStepVol = df.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
     if (totalStepVol > 0) {
       df.flowRateSteps.forEach(step => {
         if (step.volumeM3 > 0) {
           const vol = Math.min(step.volumeM3, remainingDispVol);
           if (vol > 0) {
-            stages.push({ name: df.name, volume: vol, densityGcm3: df.density / 1000, pv: df.rheology.pv, yp: df.rheology.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc });
+            stages.push({ name: df.name, volume: vol, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc });
             remainingDispVol -= vol;
           }
         }
@@ -953,7 +957,7 @@ export function calculatePressureProfile(
       const perStep = remainingDispVol / Math.max(df.flowRateSteps.length, 1);
       df.flowRateSteps.forEach(step => {
         if (perStep > 0 && step.rateLps > 0) {
-          stages.push({ name: df.name, volume: perStep, densityGcm3: df.density / 1000, pv: df.rheology.pv, yp: df.rheology.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc });
+          stages.push({ name: df.name, volume: perStep, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc });
         }
       });
       remainingDispVol = 0;
