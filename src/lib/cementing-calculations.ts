@@ -623,13 +623,13 @@ export function calculateHydraulics(
     const flowRateM3min = rate * 0.06;
 
     // Трубное — продавочная жидкость
-    const dispPv = displacementRheology?.pv ?? 1;
-    const dispYp = displacementRheology?.yp ?? 0;
-    frictionPipe = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydPipe, dispPv, dispYp, pipeAreaM2, displacementDensity * 1000).pressureMPa;
+    const dispRheo = displacementRheology ? effectiveRheology(displacementRheology, 'displacement') : DEFAULT_RHEOLOGY.displacement;
+    frictionPipe = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydPipe, dispRheo.pv, dispRheo.yp, pipeAreaM2, displacementDensity * 1000).pressureMPa;
 
     // Затрубное — двухсекционное (межколонное + открытый ствол)
-    const avgPv = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.pv, 0) / slurries.length : (drillingFluidRheology?.pv ?? 25);
-    const avgYp = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.yp, 0) / slurries.length : (drillingFluidRheology?.yp ?? 18);
+    const mudRheoH = drillingFluidRheology ? effectiveRheology(drillingFluidRheology, 'mud') : DEFAULT_RHEOLOGY.mud;
+    const avgPv = slurries.length > 0 ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).pv, 0) / slurries.length : mudRheoH.pv;
+    const avgYp = slurries.length > 0 ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).yp, 0) / slurries.length : mudRheoH.yp;
     const avgDensity = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.density * 1000, 0) / slurries.length : 1100;
     const annFrictionMultiplier = 0.8;
 
