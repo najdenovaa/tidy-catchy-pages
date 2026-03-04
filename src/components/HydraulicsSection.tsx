@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { calculateHydraulics, calculateSafeTime, calculateBHCT, interpolateTVD, getFlowRateLps } from "@/lib/cementing-calculations";
+import { calculateHydraulics, calculateSafeTime, calculateBHCT, interpolateTVD, getEffectiveTrajectory, getFlowRateLps } from "@/lib/cementing-calculations";
 import type { WellData, SlurryInput, VolumeResults, DisplacementFluid, DrillingFluid } from "@/lib/cementing-calculations";
 
 interface Props {
