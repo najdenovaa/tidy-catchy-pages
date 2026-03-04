@@ -1159,8 +1159,8 @@ export function calculatePressureProfile(
 
         if (drivingPressureMPa > 0.01) {
           // Средние свойства цемента для трения
-          const cPv = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.pv, 0) / slurries.length : 30;
-          const cYp = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.yp, 0) / slurries.length : 5;
+          const cPv = slurries.length > 0 ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).pv, 0) / slurries.length : 30;
+          const cYp = slurries.length > 0 ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).yp, 0) / slurries.length : 5;
           const cDensity = heavyDensity * 1000;
 
           // Бинарный поиск: friction_pipe(Q) + friction_ann(Q) = ΔP_driving
@@ -1168,7 +1168,7 @@ export function calculatePressureProfile(
           for (let iter = 0; iter < 15; iter++) {
             const mid = (lo + hi) / 2;
             const fP = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydPipe, cPv, cYp, pipeAreaM2, cDensity).pressureMPa;
-            const fA = calcAnnFriction(mid, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density).pressureMPa * 0.8;
+            const fA = calcAnnFriction(mid, mudRheo.pv, mudRheo.yp, drillingFluid.density).pressureMPa * 0.8;
             if (fP + fA < drivingPressureMPa) lo = mid; else hi = mid;
           }
           const settlingRateM3min = (lo + hi) / 2;
@@ -1229,7 +1229,7 @@ export function calculatePressureProfile(
           surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP,
           cumulativeVolume: savedCumVol, pumpRateLps: 0, annularReturnRate: returnRateLps,
           flowRegimeAnn: 0, reynoldsAnn: 0,
-          maxSafeRateLps: calcMaxSafeRate(annHydro, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density),
+          maxSafeRateLps: calcMaxSafeRate(annHydro, mudRheo.pv, mudRheo.yp, drillingFluid.density, mudRheo.pv, mudRheo.yp, drillingFluid.density),
           densityGcm3: mudDensityGcm3,
         });
       }
