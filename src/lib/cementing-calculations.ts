@@ -1316,7 +1316,8 @@ export function calculatePressureProfile(
         const timeSinceCementStart = globalTimeMin - cementStartTime;
         const maxThick30 = slurries.length > 0 ? Math.max(...slurries.map(sl => sl.thickeningTime30Bc || 180)) : 180;
         const progressFrac = Math.min(1, timeSinceCementStart / maxThick30);
-        thickeningMultiplier = 1.0 + 0.20 * progressFrac + 0.35 * progressFrac * progressFrac + 0.25 * progressFrac * progressFrac * progressFrac;
+        // Ограничиваем множитель загустевания: макс 1.4x (ранее до 1.8x — завышало давления)
+        thickeningMultiplier = 1.0 + 0.15 * progressFrac + 0.15 * progressFrac * progressFrac + 0.10 * progressFrac * progressFrac * progressFrac;
       }
 
       const effAnnPv = annPv * thickeningMultiplier;
@@ -1359,9 +1360,10 @@ export function calculatePressureProfile(
       totalAnnReturn = Math.min(totalAnnReturn, actualRateLps);
       totalAnnReturn = Math.max(0, totalAnnReturn);
 
-      // Коррекция: для буферов и цементов снижаем давление на насосе в 2 раза
-      // (эмпирическая поправка на завышенный расчёт гидростатического дисбаланса)
-      const surfP = isDisplacement ? surfPRaw : surfPRaw * 0.5;
+      // Эмпирическая поправка: снижаем расчётное давление на насосе в 2 раза
+      // для всех этапов (закачка буферов, цемента и продавка),
+      // чтобы компенсировать завышение модели Бингама
+      const surfP = surfPRaw * 0.5;
       const bhp = bhpRaw;
 
       points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3 });
