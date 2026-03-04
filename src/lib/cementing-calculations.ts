@@ -5,6 +5,28 @@ export interface Rheology {
   yp: number; // ДНС (динамическое напряжение сдвига), Па
 }
 
+/** Default rheology values when user hasn't provided them (pv=0 & yp=0) */
+type FluidCategory = 'mud' | 'heavy_cement' | 'light_cement' | 'buffer' | 'displacement';
+
+const DEFAULT_RHEOLOGY: Record<FluidCategory, Rheology> = {
+  mud:          { pv: 25, yp: 25 },
+  heavy_cement: { pv: 80, yp: 8 },
+  light_cement: { pv: 65, yp: 6 },
+  buffer:       { pv: 25, yp: 25 },
+  displacement: { pv: 25, yp: 25 },
+};
+
+/** Returns user rheology if filled (pv or yp > 0), otherwise returns defaults for the category */
+export function effectiveRheology(r: Rheology, category: FluidCategory): Rheology {
+  if (r.pv > 0 || r.yp > 0) return r;
+  return DEFAULT_RHEOLOGY[category];
+}
+
+/** Determine cement category by density: >= 1.65 g/cm³ → heavy, otherwise light */
+export function cementCategory(densityGcm3: number): FluidCategory {
+  return densityGcm3 >= 1.65 ? 'heavy_cement' : 'light_cement';
+}
+
 export type AdditivePercentageType = 'bwoc' | 'bwob';
 
 export interface Additive {
