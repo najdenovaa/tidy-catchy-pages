@@ -1216,23 +1216,18 @@ export function calculatePressureProfile(
       // Доля трубы, заполненная закачанным флюидом
       const filledFraction = Math.min(totalPumped / Math.max(pipeCapacity, 0.01), 1);
 
-      // === Soft start: насосы выходят на режим за первые ~5 мин от начала закачки ===
-      const globalTimeMin = tNow;
-      const softStartFactor = Math.min(1, globalTimeMin / 5.0);
-      // Кривая разгона: очень плавное нарастание (5-я степень для более пологого старта)
-      const rampFactor = softStartFactor * softStartFactor * softStartFactor * softStartFactor * softStartFactor;
-
-      // Фактическая производительность с учётом разгона
-      const actualRateLps = s.rateLps * rampFactor;
+      // Производительность = номинальная (объёмы уже распределены по номинальному расходу)
+      const actualRateLps = s.rateLps;
       const actualFlowRateM3min = actualRateLps * 0.06;
 
-      // Пересчёт трения с ФАКТИЧЕСКОЙ производительностью (а не номинальной)
+      // Пересчёт трения
       const frPipePumpedActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3);
       const frPipeMudActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, drillingFluid.rheology.pv, drillingFluid.rheology.yp, pipeAreaM2, drillingFluid.density);
       const frPipe = frPipePumpedActual.pressureMPa * filledFraction + frPipeMudActual.pressureMPa * (1 - filledFraction);
 
       // === Загустевание цемента: увеличение эффективной вязкости с течением времени ===
       let thickeningMultiplier = 1.0;
+      const globalTimeMin = tNow;
       if (cementStartFound && globalTimeMin > cementStartTime) {
         const timeSinceCementStart = globalTimeMin - cementStartTime;
         const maxThick30 = slurries.length > 0 ? Math.max(...slurries.map(sl => sl.thickeningTime30Bc || 180)) : 180;
@@ -1250,15 +1245,8 @@ export function calculatePressureProfile(
       const pipeHydro = calcPipeHydrostatic();
       const annHydro = calcAnnularHydrostatic();
 
-      const isCatchingUp = isDisplacement && cementFreefallVol > 0 && cumDisplacementVol < cementFreefallVol;
-      const catchUpFrac = isDisplacement && cementFreefallVol > 0
-        ? Math.min(1, cumDisplacementVol / cementFreefallVol)
-        : 1;
-
-      const effectiveFrAnn = isCatchingUp ? frAnnNow * catchUpFrac * catchUpFrac : frAnnNow;
-
-      const surfPRaw = Math.max(0, (annHydro - pipeHydro) + frPipe + effectiveFrAnn);
-      const bhpRaw = annHydro + effectiveFrAnn;
+      const surfPRaw = Math.max(0, (annHydro - pipeHydro) + frPipe + frAnnNow);
+      const bhpRaw = annHydro + frAnnNow;
 
       // === Выход на устье ===
       // На длинных промывках перед продавкой возможна задержка циркуляции:
