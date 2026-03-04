@@ -11,11 +11,13 @@ interface Props {
   volumes: VolumeResults;
   displacementFluids?: DisplacementFluid[];
   drillingFluid?: DrillingFluid;
+  dynamicMaxBHP?: number; // макс. забойное из динамической симуляции
+  dynamicFracP?: number;  // давление ГРП из динамической симуляции
 }
 
 const fmt = (v: number, dec: number = 2) => v.toFixed(dec);
 
-export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes, displacementFluids, drillingFluid }: Props) {
+export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes, displacementFluids, drillingFluid, dynamicMaxBHP, dynamicFracP }: Props) {
   const dispFluid = displacementFluids?.[0];
   const pumpRate = dispFluid ? getFlowRateLps(dispFluid.flowRateSteps) : 0;
   const results = calculateHydraulics(
@@ -54,7 +56,20 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
     { label: "BHCT", value: fmt(bhct, 1), unit: "°C" },
   ];
 
-  const safetyOk = results.safetyCoefficient < 1;
+  // Используем динамический макс. BHP если доступен, иначе статический
+  const effectiveMaxBHP = dynamicMaxBHP && dynamicMaxBHP > results.maxBHP ? dynamicMaxBHP : results.maxBHP;
+  const effectiveFracP = dynamicFracP && dynamicFracP > 0 ? dynamicFracP : results.fracturePressure;
+  const dynamicSafetyCoeff = effectiveFracP > 0 ? effectiveMaxBHP / effectiveFracP : 0;
+  const safetyOk = dynamicSafetyCoeff < 1;
+
+  // Обновляем строку коэффициента безопасности с динамическим значением
+  const pressureRowsWithDynamic = pressureRows.map(r => 
+    r.label.includes("Коэффициент безопасности") 
+      ? { ...r, value: fmt(dynamicSafetyCoeff, 3) }
+      : r.label.includes("Макс. забойное давление")
+      ? { ...r, value: fmt(effectiveMaxBHP) }
+      : r
+  );
 
   return (
     <div className="space-y-6">
@@ -82,7 +97,7 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1">
-            {pressureRows.map((r, i) => (
+            {pressureRowsWithDynamic.map((r, i) => (
               <div key={i} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                 <span className="text-sm text-muted-foreground">{r.label}</span>
                 <span className="text-sm font-semibold">{r.value} <span className="text-muted-foreground font-normal">{r.unit}</span></span>
