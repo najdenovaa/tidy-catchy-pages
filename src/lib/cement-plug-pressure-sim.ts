@@ -3,7 +3,7 @@
  * Generates data points for the combined pressure/volume chart.
  */
 
-import { interpolateTVD, type TrajectoryPoint, type Rheology } from "./cementing-calculations";
+import { interpolateTVD, effectiveRheology, type TrajectoryPoint, type Rheology } from "./cementing-calculations";
 import type { PlugInputs, PlugResults } from "./cement-plug-calculations";
 
 /* ───── Output ───── */
@@ -105,9 +105,9 @@ export function simulatePlugPressures(
   // Define fluid properties lookup
   const fluidProps = (f: 'mud' | 'spacer' | 'cement') => {
     switch (f) {
-      case 'cement': return { density: cement.density, pv: cement.rheology.pv, yp: cement.rheology.yp };
-      case 'spacer': return { density: spacer.density, pv: spacer.rheology.pv, yp: spacer.rheology.yp };
-      default: return { density: wellFluid.density, pv: wellFluid.rheology.pv, yp: wellFluid.rheology.yp };
+      case 'cement': { const r = effectiveRheology(cement.rheology, cement.density >= 1.65 ? 'heavy_cement' : 'light_cement'); return { density: cement.density, pv: r.pv, yp: r.yp }; }
+      case 'spacer': { const r = effectiveRheology(spacer.rheology, 'buffer'); return { density: spacer.density, pv: r.pv, yp: r.yp }; }
+      default: { const r = effectiveRheology(wellFluid.rheology, 'mud'); return { density: wellFluid.density, pv: r.pv, yp: r.yp }; }
     }
   };
 
