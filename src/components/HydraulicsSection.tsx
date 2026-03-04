@@ -56,9 +56,9 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
     { label: "BHCT", value: fmt(bhct, 1), unit: "°C" },
   ];
 
-  // Используем динамический макс. BHP если доступен, иначе статический
-  const effectiveMaxBHP = dynamicMaxBHP && dynamicMaxBHP > results.maxBHP ? dynamicMaxBHP : results.maxBHP;
-  const effectiveFracP = dynamicFracP && dynamicFracP > 0 ? dynamicFracP : results.fracturePressure;
+  // Используем максимум из статического и динамического BHP
+  const effectiveMaxBHP = Math.max(results.maxBHP, dynamicMaxBHP ?? 0);
+  const effectiveFracP = (dynamicFracP && dynamicFracP > 0) ? dynamicFracP : results.fracturePressure;
   const dynamicSafetyCoeff = effectiveFracP > 0 ? effectiveMaxBHP / effectiveFracP : 0;
   const safetyOk = dynamicSafetyCoeff < 1;
 
