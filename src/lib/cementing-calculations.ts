@@ -747,6 +747,7 @@ export interface PressurePoint {
   flowRegimeAnn: number; // 0 = ламинарный, 1 = турбулентный (затрубье)
   reynoldsAnn: number; // число Рейнольдса затрубья
   maxSafeRateLps: number; // макс. производительность без ГРП, л/с
+  densityGcm3: number; // плотность закачиваемой жидкости, г/см³
 }
 
 export interface StageBoundary {
@@ -811,7 +812,7 @@ export function calculatePressureProfile(
   let cementStartTime = 0;
   let equilibriumTimeMin = 0; // время выхода на равновесие после остановки, мин
 
-  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: calcMaxSafeRate(hydroMudFull, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density) });
+  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: calcMaxSafeRate(hydroMudFull, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density), densityGcm3: mudDensityGcm3 });
 
   interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean; compressionCoeff: number; durationMin?: number; isFlushPause?: boolean }
   const stages: Stage[] = [];
@@ -1143,6 +1144,7 @@ export function calculatePressureProfile(
           cumulativeVolume: savedCumVol, pumpRateLps: 0, annularReturnRate: returnRateLps,
           flowRegimeAnn: 0, reynoldsAnn: 0,
           maxSafeRateLps: calcMaxSafeRate(annHydro, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density),
+          densityGcm3: mudDensityGcm3,
         });
       }
       if (!equilibriumReached) equilibriumTimeMin = pauseMin;
@@ -1295,7 +1297,7 @@ export function calculatePressureProfile(
         bhp = prev.bottomholePressure + (bhpRaw - prev.bottomholePressure) * blend;
       }
 
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3) });
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3 });
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;
@@ -1322,7 +1324,7 @@ export function calculatePressureProfile(
     stage: "СТОП (пробка в ЦКОД)", time: cumTime + 0.5,
     surfacePressure: lastSurfP + stopIncrease, bottomholePressure: staticAnnHydro,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: lastRate,
-    annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0,
+    annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
   });
 
   // Удержание давления СТОП
@@ -1330,7 +1332,7 @@ export function calculatePressureProfile(
     stage: "СТОП (удержание)", time: cumTime + 5,
     surfacePressure: lastSurfP + stopIncrease, bottomholePressure: staticAnnHydro,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
-    annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0,
+    annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
   });
 
   const cementToStop = stopTime - cementStartTime;
