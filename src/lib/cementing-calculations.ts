@@ -945,13 +945,15 @@ export function calculatePressureProfile(
 
   // === Динамическое отслеживание флюидов в ТРУБЕ и ЗАТРУБЬЕ ===
   const avgCasingID = weightedAverageCasingID(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
-  const pipeVPM = pipeVolumePerMeter(avgCasingID);
   const pipeCapacity = totalPipeVolumeForRange(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
+  // CRITICAL: pipeVPM must be consistent with pipeCapacity to avoid hydrostatic errors
+  const pipeVPM = wellData.casingDepthMD > 0 ? pipeCapacity / wellData.casingDepthMD : pipeVolumePerMeter(avgCasingID);
 
   // История закачки: [{densityGcm3, volumeM3}] в порядке закачки
   interface FluidBatch { densityGcm3: number; volumeM3: number; }
   const pumpHistory: FluidBatch[] = [];
   let totalPumped = 0;
+  let _dbgPipeCount = 0;
 
   // Вычисляет гидростатику ТРУБЫ с учётом текущих флюидов
   // Труба заполняется сверху: последний закачанный флюид — у устья, старый — у забоя
@@ -960,6 +962,7 @@ export function calculatePressureProfile(
     let depthMD = 0; // от устья вниз
     let remaining = pipeCapacity;
 
+    const _dbgBatches: string[] = [];
     // Идём от последнего закачанного (сверху) к первому (снизу)
     for (let i = pumpHistory.length - 1; i >= 0 && remaining > 0; i--) {
       const batch = pumpHistory[i];
@@ -970,17 +973,27 @@ export function calculatePressureProfile(
       const botMD = Math.min(depthMD + heightM, wellData.casingDepthMD);
       const tvdTop = interpolateTVD(topMD, traj);
       const tvdBot = interpolateTVD(botMD, traj);
-      pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
+      const dp = batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
+      pressure += dp;
+      _dbgBatches.push(`i=${i} d=${batch.densityGcm3} v=${take.toFixed(3)} h=${heightM.toFixed(1)} md=${topMD.toFixed(0)}-${botMD.toFixed(0)} tvd=${tvdTop.toFixed(0)}-${tvdBot.toFixed(0)} dp=${dp.toFixed(2)}`);
       depthMD = botMD;
       remaining -= take;
     }
 
     // Если осталось место — внизу трубы исходный буровой раствор
+    let mudDp = 0;
     if (remaining > 0 && depthMD < wellData.casingDepthMD) {
       const botMD = wellData.casingDepthMD;
       const tvdTop = interpolateTVD(depthMD, traj);
       const tvdBot = interpolateTVD(botMD, traj);
-      pressure += mudDensityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
+      mudDp = mudDensityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
+      pressure += mudDp;
+    }
+
+    if (_dbgPipeCount < 3) {
+      console.log(`[PIPE_HYDRO] pipeCapacity=${pipeCapacity.toFixed(2)} pipeVPM=${pipeVPM.toFixed(5)} casingDepthMD=${wellData.casingDepthMD} mudDens=${mudDensityGcm3} remaining=${remaining.toFixed(2)} depthMD=${depthMD.toFixed(1)} mudDp=${mudDp.toFixed(2)} total=${pressure.toFixed(2)}`);
+      _dbgBatches.forEach(b => console.log(`  batch: ${b}`));
+      _dbgPipeCount++;
     }
 
     return pressure;
