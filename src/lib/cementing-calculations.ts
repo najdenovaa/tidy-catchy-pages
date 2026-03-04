@@ -1287,15 +1287,8 @@ export function calculatePressureProfile(
       totalAnnReturn = Math.min(totalAnnReturn, actualRateLps);
       totalAnnReturn = Math.max(0, totalAnnReturn);
 
-      // Сглаживаем кривые давления на этапе цемента — без резких "ломаных" падений
-      let surfP = surfPRaw;
-      let bhp = bhpRaw;
-      if (s.isCement && points.length > 0) {
-        const prev = points[points.length - 1];
-        const blend = 0.35;
-        surfP = prev.surfacePressure + (surfPRaw - prev.surfacePressure) * blend;
-        bhp = prev.bottomholePressure + (bhpRaw - prev.bottomholePressure) * blend;
-      }
+      const surfP = surfPRaw;
+      const bhp = bhpRaw;
 
       points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3 });
     }
