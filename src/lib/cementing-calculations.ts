@@ -595,10 +595,6 @@ export function calculateHydraulics(
   if (rate > 0) {
     const casingID = weightedAverageCasingID(0, data.casingDepthMD, data.casingOD, data.casingWall, data.casingSections);
     const dHydPipe = casingID;
-    const dHydAnn = Math.max(data.holeDiameter - data.casingOD, 10);
-    const dHoleM = data.holeDiameter / 1000;
-    const dCasM = data.casingOD / 1000;
-    const annAreaM2 = (Math.PI / 4) * (dHoleM * dHoleM - dCasM * dCasM);
     const pipeAreaM2 = (Math.PI / 4) * (casingID / 1000) * (casingID / 1000);
     const flowRateM3min = rate * 0.06;
 
@@ -607,12 +603,28 @@ export function calculateHydraulics(
     const dispYp = displacementRheology?.yp ?? 0;
     frictionPipe = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydPipe, dispPv, dispYp, pipeAreaM2, displacementDensity * 1000).pressureMPa;
 
-    // Затрубное — средние свойства цементного раствора (после закачки цемент в затрубье)
+    // Затрубное — двухсекционное (межколонное + открытый ствол)
     const avgPv = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.pv, 0) / slurries.length : (drillingFluidRheology?.pv ?? 25);
     const avgYp = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.rheology.yp, 0) / slurries.length : (drillingFluidRheology?.yp ?? 18);
     const avgDensity = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.density * 1000, 0) / slurries.length : 1100;
     const annFrictionMultiplier = 0.8;
-    frictionAnn = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydAnn, avgPv, avgYp, annAreaM2, avgDensity).pressureMPa * annFrictionMultiplier;
+
+    const prevShoeH = data.prevCasingDepth || 0;
+    const upperLenH = Math.min(prevShoeH, data.casingDepthMD);
+    const lowerLenH = Math.max(0, data.casingDepthMD - upperLenH);
+    const prevIDH = data.prevCasingID || data.holeDiameter;
+    const dHydAnnUpperH = Math.max(prevIDH - data.casingOD, 10);
+    const prevIDmH = prevIDH / 1000;
+    const casODmH = data.casingOD / 1000;
+    const annAreaUpperH = (Math.PI / 4) * (prevIDmH * prevIDmH - casODmH * casODmH);
+    const dHydAnnLowerH = Math.max(data.holeDiameter - data.casingOD, 10);
+    const dHoleMH = data.holeDiameter / 1000;
+    const annAreaLowerH = (Math.PI / 4) * (dHoleMH * dHoleMH - casODmH * casODmH);
+
+    let frAnnTotal = 0;
+    if (upperLenH > 0) frAnnTotal += frictionLossWithRegime(flowRateM3min, upperLenH, dHydAnnUpperH, avgPv, avgYp, annAreaUpperH, avgDensity).pressureMPa;
+    if (lowerLenH > 0) frAnnTotal += frictionLossWithRegime(flowRateM3min, lowerLenH, dHydAnnLowerH, avgPv, avgYp, annAreaLowerH, avgDensity).pressureMPa;
+    frictionAnn = frAnnTotal * annFrictionMultiplier;
   }
 
   const maxBHP = annulusPressure + frictionAnn;
@@ -780,14 +792,47 @@ export function calculatePressureProfile(
   const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);
   const fracP = (fractureGradient * bottomTVD) / 1000;
   const casingID = weightedAverageCasingID(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
-  const dHydAnn = Math.max(wellData.holeDiameter - wellData.casingOD, 10);
   const dHydPipe = casingID;
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
-  // Фактические площади сечений для расчёта скорости
-  const dHoleM = wellData.holeDiameter / 1000;
-  const dCasM = wellData.casingOD / 1000;
-  const annAreaM2 = (Math.PI / 4) * (dHoleM * dHoleM - dCasM * dCasM);
   const pipeAreaM2 = (Math.PI / 4) * (casingID / 1000) * (casingID / 1000);
+
+  // === Двухсекционная модель затрубья ===
+  // Верх: от устья до башмака предыдущей колонны — межколонное пространство (prevCasingID × casingOD)
+  // Низ: от башмака предыдущей колонны до забоя — открытый ствол (holeDiameter × casingOD)
+  const prevShoe = wellData.prevCasingDepth || 0;
+  const upperLen = Math.min(prevShoe, wellData.casingDepthMD); // межколонное
+  const lowerLen = Math.max(0, wellData.casingDepthMD - upperLen); // открытый ствол
+
+  // Верхняя секция (межколонное)
+  const prevID = wellData.prevCasingID || wellData.holeDiameter; // если нет предыдущей колонны — используем дырку
+  const dHydAnnUpper = Math.max(prevID - wellData.casingOD, 10); // мм
+  const prevIDm = prevID / 1000;
+  const casODm = wellData.casingOD / 1000;
+  const annAreaUpper = (Math.PI / 4) * (prevIDm * prevIDm - casODm * casODm);
+
+  // Нижняя секция (открытый ствол)
+  const dHydAnnLower = Math.max(wellData.holeDiameter - wellData.casingOD, 10); // мм
+  const dHoleM = wellData.holeDiameter / 1000;
+  const annAreaLower = (Math.PI / 4) * (dHoleM * dHoleM - casODm * casODm);
+
+  // Функция суммарного затрубного трения для обеих секций
+  function calcAnnFriction(flowRateM3min: number, pv: number, yp: number, densKgM3: number): FrictionResult {
+    let totalP = 0;
+    let totalRe = 0;
+    let totalRegime = 0;
+    if (upperLen > 0) {
+      const r = frictionLossWithRegime(flowRateM3min, upperLen, dHydAnnUpper, pv, yp, annAreaUpper, densKgM3);
+      totalP += r.pressureMPa;
+      totalRe = r.reynolds;
+      totalRegime = r.regime;
+    }
+    if (lowerLen > 0) {
+      const r = frictionLossWithRegime(flowRateM3min, lowerLen, dHydAnnLower, pv, yp, annAreaLower, densKgM3);
+      totalP += r.pressureMPa;
+      if (lowerLen >= upperLen) { totalRe = r.reynolds; totalRegime = r.regime; }
+    }
+    return { pressureMPa: totalP, reynolds: totalRe, regime: totalRegime };
+  }
 
   const mudDensityGcm3 = drillingFluid.density / 1000;
   // Начальная гидростатика — затрубье заполнено буровым раствором
@@ -801,7 +846,7 @@ export function calculatePressureProfile(
     let lo = 0, hi = 50 * 0.06; // до 50 л/с
     for (let iter = 0; iter < 20; iter++) {
       const mid = (lo + hi) / 2;
-      const fAnn = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydAnn, annPv, annYp, annAreaM2, annDensity).pressureMPa * 0.8;
+      const fAnn = calcAnnFriction(mid, annPv, annYp, annDensity).pressureMPa * 0.8;
       if (fAnn < margin) lo = mid; else hi = mid;
     }
     return ((lo + hi) / 2) / 0.06; // convert m³/min to l/s
@@ -1082,7 +1127,7 @@ export function calculatePressureProfile(
           for (let iter = 0; iter < 15; iter++) {
             const mid = (lo + hi) / 2;
             const fP = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydPipe, cPv, cYp, pipeAreaM2, cDensity).pressureMPa;
-            const fA = frictionLossWithRegime(mid, wellData.casingDepthMD, dHydAnn, drillingFluid.rheology.pv, drillingFluid.rheology.yp, annAreaM2, drillingFluid.density).pressureMPa * 0.8;
+            const fA = calcAnnFriction(mid, drillingFluid.rheology.pv, drillingFluid.rheology.yp, drillingFluid.density).pressureMPa * 0.8;
             if (fP + fA < drivingPressureMPa) lo = mid; else hi = mid;
           }
           const settlingRateM3min = (lo + hi) / 2;
@@ -1237,7 +1282,7 @@ export function calculatePressureProfile(
 
       const effAnnPv = annPv * thickeningMultiplier;
       const effAnnYp = annYp * thickeningMultiplier;
-      const frAnnDynamic = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydAnn, effAnnPv, effAnnYp, annAreaM2, annDensity);
+      const frAnnDynamic = calcAnnFriction(actualFlowRateM3min, effAnnPv, effAnnYp, annDensity);
       const frAnnNow = frAnnDynamic.pressureMPa * annFrictionMultiplier;
       const reAnnNow = frAnnDynamic.reynolds;
       const flowRegimeAnnNow = frAnnDynamic.regime;
