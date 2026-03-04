@@ -22,7 +22,8 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
     wellData, slurries, displacementDensity / 1000, fractureGradient,
     drillingFluid?.rheology, dispFluid?.rheology, pumpRate
   );
-  const bottomTVD = interpolateTVD(wellData.casingDepthMD, wellData.trajectory);
+  const traj = getEffectiveTrajectory(wellData);
+  const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);
   const bhct = calculateBHCT(wellData.bottomTempStatic, 20, bottomTVD);
 
   const maxThickening30 = Math.max(...slurries.map(s => s.thickeningTime30Bc || 0));
