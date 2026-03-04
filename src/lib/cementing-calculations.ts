@@ -1252,7 +1252,7 @@ export function calculatePressureProfile(
     // Часть трубы занята новым флюидом, остальное — буровым раствором
     const densityKgM3 = s.densityGcm3 * 1000;
     const frPipePumped = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3);
-    const frPipeMud = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, drillingFluid.rheology.pv, drillingFluid.rheology.yp, pipeAreaM2, drillingFluid.density);
+    const frPipeMud = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, mudRheo.pv, mudRheo.yp, pipeAreaM2, drillingFluid.density);
 
     // Затрубное трение — по свойствам флюида В ЗАТРУБЬЕ (не закачиваемого!)
     // До продавки: в затрубье буровой раствор. Во время продавки: цемент + буровой.
@@ -1260,18 +1260,16 @@ export function calculatePressureProfile(
     if (!s.isCement && cementStartFound && !s.isFlushPause) {
       // Продавка — в затрубье поднимается цемент (средние свойства растворов)
       const totalCementSlurries = slurries.length || 1;
-      annPv = slurries.reduce((sum, sl) => sum + sl.rheology.pv, 0) / totalCementSlurries;
-      annYp = slurries.reduce((sum, sl) => sum + sl.rheology.yp, 0) / totalCementSlurries;
+      annPv = slurries.reduce((sum, sl) => sum + effectiveRheology(sl.rheology, cementCategory(sl.density)).pv, 0) / totalCementSlurries;
+      annYp = slurries.reduce((sum, sl) => sum + effectiveRheology(sl.rheology, cementCategory(sl.density)).yp, 0) / totalCementSlurries;
       annDensity = slurries.reduce((sum, sl) => sum + sl.density * 1000, 0) / totalCementSlurries;
     } else if (s.isCement) {
-      // Закачка цемента — в затрубье пока буровой раствор
-      annPv = drillingFluid.rheology.pv;
-      annYp = drillingFluid.rheology.yp;
+      annPv = mudRheo.pv;
+      annYp = mudRheo.yp;
       annDensity = drillingFluid.density;
     } else {
-      // Буферы — в затрубье буровой раствор
-      annPv = drillingFluid.rheology.pv;
-      annYp = drillingFluid.rheology.yp;
+      annPv = mudRheo.pv;
+      annYp = mudRheo.yp;
       annDensity = drillingFluid.density;
     }
     // Множитель трения затрубья: эксцентриситет (~0.8x от концентрического)
@@ -1308,7 +1306,7 @@ export function calculatePressureProfile(
 
       // Пересчёт трения
       const frPipePumpedActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3);
-      const frPipeMudActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, drillingFluid.rheology.pv, drillingFluid.rheology.yp, pipeAreaM2, drillingFluid.density);
+      const frPipeMudActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, mudRheo.pv, mudRheo.yp, pipeAreaM2, drillingFluid.density);
       const frPipe = frPipePumpedActual.pressureMPa * filledFraction + frPipeMudActual.pressureMPa * (1 - filledFraction);
 
       // === Загустевание цемента: увеличение эффективной вязкости с течением времени ===
