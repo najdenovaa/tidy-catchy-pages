@@ -1360,10 +1360,9 @@ export function calculatePressureProfile(
       totalAnnReturn = Math.min(totalAnnReturn, actualRateLps);
       totalAnnReturn = Math.max(0, totalAnnReturn);
 
-      // Эмпирическая поправка: снижаем расчётное давление на насосе в 2 раза
-      // для всех этапов (закачка буферов, цемента и продавка),
-      // чтобы компенсировать завышение модели Бингама
-      const surfP = surfPRaw * 0.5;
+      // Эмпирическая поправка: снижаем расчётное давление на насосе
+      // для буферов/цемента — 0.5, для продавки — 0.75
+      const surfP = surfPRaw * (isDisplacement ? 0.75 : 0.5);
       const bhp = bhpRaw;
 
       points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3 });
