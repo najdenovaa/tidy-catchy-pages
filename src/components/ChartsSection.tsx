@@ -99,8 +99,8 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
                 <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" />
                 <YAxis yAxisId="pressure" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.15)]} label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
-                <YAxis yAxisId="rate" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
-                <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => { if (name === "Производительность" || name === "Выход на устье") return [value.toFixed(1) + " л/с", name]; return [value.toFixed(2) + " МПа", name]; }} />
+                <YAxis yAxisId="rate" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} label={{ value: "Q, л/с  /  ρ, г/см³", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
+                <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => { if (name === "Производительность" || name === "Выход на устье") return [value.toFixed(1) + " л/с", name]; if (name === "Плотность закачки") return [value.toFixed(2) + " г/см³", name]; return [value.toFixed(2) + " МПа", name]; }} />
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
                 {safeTimeEnd > 0 && <ReferenceLine yAxisId="pressure" x={safeTimeEnd} stroke="hsl(45, 90%, 45%)" strokeDasharray="4 4" strokeWidth={2} label={{ value: "75% безоп.", position: "top", fontSize: 10, fill: "hsl(45, 90%, 45%)" }} />}
                 {stageBoundaries.map((b, i) => <ReferenceLine key={`stage-${i}`} yAxisId="pressure" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />)}
@@ -108,6 +108,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <Line yAxisId="pressure" type="monotone" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="pressure" type="monotone" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="rate" type="stepAfter" dataKey="pumpRateLps" name="Производительность" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
+                <Line yAxisId="rate" type="stepAfter" dataKey="densityGcm3" name="Плотность закачки" stroke="hsl(35, 85%, 50%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="rate" type="monotone" dataKey="annularReturnRate" name="Выход на устье" stroke="hsl(30, 80%, 50%)" strokeWidth={1.5} dot={false} />
               </LineChart>
             </ResponsiveContainer>
