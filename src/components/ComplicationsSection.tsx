@@ -23,26 +23,29 @@ function num(v: string): number {
   return isNaN(n) ? 0 : n;
 }
 
+interface FluidData {
+  density: number;
+  pv: number;
+  yp: number;
+  gel10min: number;
+}
+
 interface Props {
   results: PlugResults | null;
-  cementDensity: number;
-  spacerDensity: number;
-  wellFluidDensity: number;
-  cementGel10min: number;
-  spacerGel10min: number;
+  cement: FluidData;
+  spacer: FluidData;
+  wellFluid: FluidData;
+  viscousPad: FluidData;
+  hasViscousPad: boolean;
   spacerVolumeBelow: number;
-  cementPV: number;
-  cementYP: number;
-  spacerYP: number;
   thickeningTimeMin: number;
   settingTimeStartMin: number;
   settingTimeEndMin: number;
 }
 
 export default function ComplicationsSection({
-  results, cementDensity, spacerDensity, wellFluidDensity,
-  cementGel10min, spacerGel10min, spacerVolumeBelow,
-  cementPV, cementYP, spacerYP, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin,
+  results, cement, spacer, wellFluid, viscousPad, hasViscousPad,
+  spacerVolumeBelow, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin,
 }: Props) {
   const [type, setType] = useState<ComplicationType>('loss');
   const [lossRate, setLossRate] = useState(10);
@@ -51,6 +54,13 @@ export default function ComplicationsSection({
   const [zoneThickness, setZoneThickness] = useState(10);
   const [formationPressure, setFormationPressure] = useState(0);
   const [fluidType, setFluidType] = useState<'gas' | 'oil' | 'water'>('water');
+
+  const toFluidProps = (f: FluidData) => ({
+    densityGcm3: f.density,
+    pvMPas: f.pv,
+    ypPa: f.yp,
+    gel10minPa: f.gel10min > 0 ? f.gel10min : f.yp * 3,
+  });
 
   const complicationResult = useMemo<ComplicationResult | null>(() => {
     if (!results) return null;
@@ -67,9 +77,6 @@ export default function ComplicationsSection({
       formationFluidType: fluidType,
     };
 
-    const gel10minCement = cementGel10min > 0 ? cementGel10min : cementYP * 3;
-    const gel10minSpacer = spacerGel10min > 0 ? spacerGel10min : spacerYP * 3;
-
     const params: ComplicationCalcParams = {
       annAreaM2: results.annArea,
       pipeAreaM2: results.pipeArea,
@@ -78,24 +85,24 @@ export default function ComplicationsSection({
       plugLengthMD: results.plugLengthMD,
       plugTopMD: results.plugTopTVD,
       plugBottomMD: results.plugBottomTVD,
-      cementDensityGcm3: cementDensity,
-      spacerDensityGcm3: spacerDensity,
-      wellFluidDensityGcm3: wellFluidDensity,
       cementVolumeTotalM3: results.cementVolumeTotal,
       totalOperationTimeMin: results.totalOperationTimeMin,
-      cementGel10minPa: gel10minCement,
-      spacerGel10minPa: gel10minSpacer,
       spacerVolumeBelowM3: spacerVolumeBelow,
       plugBottomTVD: results.plugBottomTVD,
       thickeningTimeMin,
       settingTimeStartMin,
       settingTimeEndMin,
-      cementPV,
-      cementYP,
+      hasViscousPad,
+      cement: toFluidProps(cement),
+      spacer: toFluidProps(spacer),
+      wellFluid: toFluidProps(wellFluid),
+      viscousPad: toFluidProps(viscousPad),
     };
 
     return calculateComplications(inputs, params);
-  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType, cementDensity, spacerDensity, wellFluidDensity, cementGel10min, spacerGel10min, spacerVolumeBelow, cementPV, cementYP, spacerYP, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
+  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType,
+      cement, spacer, wellFluid, viscousPad, hasViscousPad,
+      spacerVolumeBelow, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">

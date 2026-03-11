@@ -320,6 +320,7 @@ export function calculateComplications(
     if (Math.abs(rheologyFactor - 1) > 0.05) factors.push(`реол.×${rheologyFactor.toFixed(2)}`);
     if (Math.abs(gelFactor - 1) > 0.05) factors.push(`СНС×${gelFactor.toFixed(2)}`);
     if (Math.abs(thickeningFactor - 1) > 0.05) factors.push(`загуст.×${thickeningFactor.toFixed(2)}`);
+    if (Math.abs(padBarrierFactor - 1) > 0.05) factors.push(`пачка×${padBarrierFactor.toFixed(2)}`);
     const factorsNote = factors.length > 0 ? ` (эфф. ${effectiveLossRateM3h.toFixed(1)} м³/ч: ${factors.join(', ')})` : '';
     if (intensity === 'partial') {
       if (riskLevel === 'low') riskLevel = 'medium';
