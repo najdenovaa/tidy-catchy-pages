@@ -13,6 +13,7 @@ interface Props {
   drillingFluid?: DrillingFluid;
   dynamicMaxBHP?: number; // макс. забойное из динамической симуляции
   dynamicFracP?: number;  // давление ГРП из динамической симуляции
+  dynamicStopP?: number;  // давление СТОП из динамической симуляции
 }
 
 const fmt = (v: number, dec: number = 2) => v.toFixed(dec);
