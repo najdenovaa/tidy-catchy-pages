@@ -221,7 +221,7 @@ export function calculateComplications(
 
   // ── Factor 5: Viscous pad barrier ──
   let padBarrierFactor = 1.0;
-  if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
+  if (usePadInZone) {
     const padVolume = params.spacerVolumeBelowM3;
     padBarrierFactor = Math.max(0.3, 1 - 0.35 * Math.min(padVolume / 1.0, 1.5));
   }
