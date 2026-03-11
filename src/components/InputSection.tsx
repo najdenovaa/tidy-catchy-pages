@@ -94,14 +94,19 @@ const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolu
               )}
             </div>
             {fc && step.rateLps > 0 && (
-              <div className={`text-xs px-2 py-1 rounded space-y-0.5 ${fc.risk ? "bg-destructive/10 text-destructive" : "bg-green-500/10 text-green-700"}`}>
+              <div className={`text-xs px-2 py-1 rounded space-y-0.5 ${fc.risk ? "bg-destructive/10 text-destructive" : "bg-green-500/10 text-green-700 dark:text-green-400"}`}>
                 <div className="font-medium">
                   {fc.risk
-                    ? `⚠ Риск ГРП! ECD ≈ ${fc.ecd.toFixed(2)} МПа > Pгрп ${fc.fracP.toFixed(2)} МПа`
-                    : `✓ Нет риска ГРП (ECD ≈ ${fc.ecd.toFixed(2)} МПа < Pгрп ${fc.fracP.toFixed(2)} МПа)`}
+                    ? `⚠ Риск ГРП! ECD ${isDynamic ? "=" : "≈"} ${fc.ecd.toFixed(2)} МПа > Pгрп ${fc.fracP.toFixed(2)} МПа`
+                    : `✓ Нет риска ГРП (ECD ${isDynamic ? "=" : "≈"} ${fc.ecd.toFixed(2)} МПа < Pгрп ${fc.fracP.toFixed(2)} МПа)`}
                 </div>
-                <div className="opacity-75">
-                  Гидростатика: {fc.hydroStatic.toFixed(2)} МПа &nbsp;|&nbsp; Трение: {fc.frictionLoss.toFixed(3)} МПа
+                {!isDynamic && (
+                  <div className="opacity-75">
+                    Гидростатика: {fc.hydroStatic.toFixed(2)} МПа &nbsp;|&nbsp; Трение: {fc.frictionLoss.toFixed(3)} МПа
+                  </div>
+                )}
+                <div className={`text-[10px] italic ${isDynamic ? "opacity-90 font-medium" : "opacity-60"}`}>
+                  {isDynamic ? "📊 Точные данные из динамической симуляции" : "⏳ Приближённо. Точные значения — после нажатия «РАССЧИТАТЬ»"}
                 </div>
               </div>
             )}
