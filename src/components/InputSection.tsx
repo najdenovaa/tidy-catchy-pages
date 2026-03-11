@@ -26,6 +26,7 @@ interface Props {
   flushVolumeM3: number;
   onFlushVolumeM3Change: (v: number) => void;
   displacementVolume?: number;
+  dynamicBHPMap?: Record<string, { bhp: number; fracP: number }>; // ключ = "stageName|rateLps"
 }
 
 type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals'>;
