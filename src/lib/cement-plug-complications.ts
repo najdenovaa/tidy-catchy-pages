@@ -5,11 +5,14 @@
 
 export type ComplicationType = 'loss' | 'kick' | 'both';
 export type LossIntensity = 'partial' | 'intense' | 'catastrophic';
+export type LossBehavior = 'stable' | 'progressive' | 'regressive';
 
 export interface ComplicationInputs {
   type: ComplicationType;
   /** Lost circulation intensity, m³/h */
   lossRateM3h: number;
+  /** Loss behavior over time */
+  lossBehavior: LossBehavior;
   /** Depth of the loss/kick zone, m MD */
   zoneDepthMD: number;
   /** TVD of the loss/kick zone, m */
@@ -139,7 +142,7 @@ export function calculateComplications(
   inputs: ComplicationInputs,
   params: ComplicationCalcParams
 ): ComplicationResult {
-  const { type, lossRateM3h, zoneDepthTVD, formationPressureMPa, formationFluidType } = inputs;
+  const { type, lossRateM3h, zoneDepthTVD, formationPressureMPa, formationFluidType, lossBehavior } = inputs;
   const intensity = classifyLossIntensity(lossRateM3h);
 
   // ═══ LOSS CALCULATIONS ═══
@@ -150,30 +153,38 @@ export function calculateComplications(
 
   const { cement, spacer, wellFluid, viscousPad } = params;
 
-  // ── Factor 1: Density ratio ──
-  // Heavier fluid in the loss zone → higher hydrostatic → more losses
-  // Weight by what actually sits in the loss zone: viscous pad if present, otherwise cement
+  // ── Factor 1: Hydrostatic pressure ratio ──
+  // The driving force for losses is the EXCESS hydrostatic pressure of the cement column
+  // above what was there before (well fluid). Shorter plug = less excess pressure = less losses.
+  // ΔP = (ρ_cement - ρ_wellfluid) × g × h_plug
+  // Normalize to a reference plug height (100m) for the input loss rate
   const zoneFluid = params.hasViscousPad ? viscousPad : cement;
-  const densityRatio = wellFluid.densityGcm3 > 0 ? zoneFluid.densityGcm3 / wellFluid.densityGcm3 : 1;
+  const deltaRho = zoneFluid.densityGcm3 - wellFluid.densityGcm3; // g/cm³
+  const refPlugHeight = 100; // m — reference height for which loss rate was measured
+  let hydrostaticFactor = 1.0;
+  if (deltaRho > 0 && plugLenAnn > 0) {
+    // Losses scale with excess pressure, which scales with plug height
+    // If plug is shorter → less excess pressure → fewer losses
+    hydrostaticFactor = plugLenAnn / refPlugHeight;
+    // Clamp: even with very short plug, some losses still occur (minimum 10%)
+    hydrostaticFactor = Math.max(0.1, Math.min(hydrostaticFactor, 3.0));
+  } else if (deltaRho <= 0) {
+    // Cement is lighter than well fluid — no excess hydrostatic driving losses
+    // Losses are only from dynamic pressure during pumping (reduced to 30%)
+    hydrostaticFactor = 0.3;
+  }
 
   // ── Factor 2: Rheology resistance (all fluids weighted) ──
-  // The fluid at the loss zone resists flow into the formation
-  // Consider both the main zone fluid AND the viscous pad barrier
   const refPV = 80;
   const refYP = 8;
-
-  // Weighted rheology: zone fluid dominates, but viscous pad adds barrier if present
   const zonePV = zoneFluid.pvMPas > 0 ? zoneFluid.pvMPas : refPV;
   const zoneYP = zoneFluid.ypPa > 0 ? zoneFluid.ypPa : refYP;
   let effectivePV = zonePV;
   let effectiveYP = zoneYP;
 
   if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
-    // Viscous pad sits directly in the loss zone — it acts as primary barrier
-    // Its rheology dominates the resistance to flow into formation
     const padPV = viscousPad.pvMPas > 0 ? viscousPad.pvMPas : refPV;
     const padYP = viscousPad.ypPa > 0 ? viscousPad.ypPa : refYP;
-    // Use the higher resistance (the pad is specifically designed to block losses)
     effectivePV = Math.max(padPV, zonePV);
     effectiveYP = Math.max(padYP, zoneYP);
   }
@@ -183,20 +194,15 @@ export function calculateComplications(
   const rheologyFactor = refRheologyMetric / Math.max(rheologyMetric, 1);
 
   // ── Factor 3: Gel strength (SNS) resistance ──
-  // All fluids in the system contribute to gel resistance
-  // The fluid closest to the loss zone has the most effect
   const cementGel = cement.gel10minPa > 0 ? cement.gel10minPa : cement.ypPa * 3;
   const spacerGel = spacer.gel10minPa > 0 ? spacer.gel10minPa : spacer.ypPa * 3;
   const wellFluidGel = wellFluid.gel10minPa > 0 ? wellFluid.gel10minPa : wellFluid.ypPa * 3;
   const padGel = viscousPad.gel10minPa > 0 ? viscousPad.gel10minPa : viscousPad.ypPa * 3;
 
-  // Effective gel: weighted average with zone fluid having most influence
   let effectiveGel: number;
   if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
-    // Viscous pad in loss zone: its gel is the primary resistance + cement above
     effectiveGel = padGel * 0.5 + cementGel * 0.3 + spacerGel * 0.1 + wellFluidGel * 0.1;
   } else {
-    // No pad: cement gel is primary, spacer and well fluid contribute
     effectiveGel = cementGel * 0.5 + spacerGel * 0.25 + wellFluidGel * 0.25;
   }
 
@@ -212,18 +218,35 @@ export function calculateComplications(
   }
 
   // ── Factor 5: Viscous pad barrier ──
-  // If viscous pad is placed in the loss zone, it physically blocks losses
-  // The thicker the pad volume relative to annular volume, the more it blocks
   let padBarrierFactor = 1.0;
   if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
-    // Pad volume creates a physical seal; larger pad = better seal
-    // At 0.5 m³ pad → ~20% reduction; at 1.0 m³ → ~35% reduction
     const padVolume = params.spacerVolumeBelowM3;
     padBarrierFactor = Math.max(0.3, 1 - 0.35 * Math.min(padVolume / 1.0, 1.5));
   }
 
+  // ── Factor 6: Loss behavior over time ──
+  // Stable: constant rate (factor = 1.0)
+  // Progressive: losses increase over time (fracture widens) — average factor > 1
+  // Regressive: losses decrease over time (natural bridging/plugging) — average factor < 1
+  let behaviorFactor = 1.0;
+  switch (lossBehavior) {
+    case 'progressive':
+      // Losses grow ~linearly: average over operation = 1.3× the initial rate
+      behaviorFactor = 1.3;
+      break;
+    case 'regressive':
+      // Losses decay: natural bridging/cuttings plug the zone
+      // Average over operation ≈ 0.5× initial rate
+      behaviorFactor = 0.5;
+      break;
+    case 'stable':
+    default:
+      behaviorFactor = 1.0;
+      break;
+  }
+
   // ── Combined effective loss rate ──
-  const effectiveLossRateM3h = lossRateM3h * densityRatio * rheologyFactor * gelFactor * thickeningFactor * padBarrierFactor;
+  const effectiveLossRateM3h = lossRateM3h * hydrostaticFactor * rheologyFactor * gelFactor * thickeningFactor * padBarrierFactor * behaviorFactor;
 
   // Volume lost during placement
   const lossRateM3s = effectiveLossRateM3h / 3600;
@@ -316,11 +339,12 @@ export function calculateComplications(
   if (type === 'loss' || type === 'both') {
     // Build factors note
     const factors: string[] = [];
-    if (Math.abs(densityRatio - 1) > 0.05) factors.push(`ρ×${densityRatio.toFixed(2)}`);
+    if (Math.abs(hydrostaticFactor - 1) > 0.05) factors.push(`ΔPh×${hydrostaticFactor.toFixed(2)}`);
     if (Math.abs(rheologyFactor - 1) > 0.05) factors.push(`реол.×${rheologyFactor.toFixed(2)}`);
     if (Math.abs(gelFactor - 1) > 0.05) factors.push(`СНС×${gelFactor.toFixed(2)}`);
     if (Math.abs(thickeningFactor - 1) > 0.05) factors.push(`загуст.×${thickeningFactor.toFixed(2)}`);
     if (Math.abs(padBarrierFactor - 1) > 0.05) factors.push(`пачка×${padBarrierFactor.toFixed(2)}`);
+    if (Math.abs(behaviorFactor - 1) > 0.05) factors.push(`${lossBehavior === 'progressive' ? 'прогр.' : 'регр.'}×${behaviorFactor.toFixed(2)}`);
     const factorsNote = factors.length > 0 ? ` (эфф. ${effectiveLossRateM3h.toFixed(1)} м³/ч: ${factors.join(', ')})` : '';
     if (intensity === 'partial') {
       if (riskLevel === 'low') riskLevel = 'medium';

@@ -15,6 +15,7 @@ import {
   type ComplicationCalcParams,
   type ComplicationResult,
   type ComplicationType,
+  type LossBehavior,
 } from "@/lib/cement-plug-complications";
 import type { PlugResults } from "@/lib/cement-plug-calculations";
 
@@ -54,6 +55,7 @@ export default function ComplicationsSection({
   const [zoneThickness, setZoneThickness] = useState(10);
   const [formationPressure, setFormationPressure] = useState(0);
   const [fluidType, setFluidType] = useState<'gas' | 'oil' | 'water'>('water');
+  const [lossBehavior, setLossBehavior] = useState<LossBehavior>('stable');
 
   const toFluidProps = (f: FluidData) => ({
     densityGcm3: f.density,
@@ -70,6 +72,7 @@ export default function ComplicationsSection({
     const inputs: ComplicationInputs = {
       type,
       lossRateM3h: lossRate,
+      lossBehavior,
       zoneDepthMD,
       zoneDepthTVD: zoneDepthTVD || zoneDepthMD,
       zoneThicknessM: zoneThickness,
@@ -100,7 +103,7 @@ export default function ComplicationsSection({
     };
 
     return calculateComplications(inputs, params);
-  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType,
+  }, [results, type, lossRate, lossBehavior, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType,
       cement, spacer, wellFluid, viscousPad, hasViscousPad,
       spacerVolumeBelow, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
 
@@ -184,13 +187,30 @@ export default function ComplicationsSection({
           {(type === 'loss' || type === 'both') && (
             <div className="space-y-2">
               <p className="text-[10px] font-semibold text-muted-foreground">Поглощение</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Field label="Интенсивность" value={lossRate} onChange={v => setLossRate(num(v))} unit="м³/ч" />
                 <div className="space-y-1">
                   <Label className="text-xs">Категория</Label>
                   <div className={`h-8 flex items-center text-xs font-semibold ${
                     intensityLabel === 'partial' ? 'text-amber-400' : intensityLabel === 'intense' ? 'text-orange-500' : 'text-destructive'
                   }`}>{intensityText}</div>
+                </div>
+                <div className="space-y-1 col-span-2 sm:col-span-2">
+                  <Label className="text-xs">Характер поглощения</Label>
+                  <RadioGroup value={lossBehavior} onValueChange={v => setLossBehavior(v as LossBehavior)} className="flex flex-wrap gap-3 h-8 items-center">
+                    <div className="flex items-center space-x-1">
+                      <RadioGroupItem value="stable" id="loss-stable" />
+                      <Label htmlFor="loss-stable" className="text-[11px] cursor-pointer">Стабильное</Label>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <RadioGroupItem value="progressive" id="loss-progressive" />
+                      <Label htmlFor="loss-progressive" className="text-[11px] cursor-pointer">Прогрессирующее</Label>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <RadioGroupItem value="regressive" id="loss-regressive" />
+                      <Label htmlFor="loss-regressive" className="text-[11px] cursor-pointer">Регрессирующее</Label>
+                    </div>
+                  </RadioGroup>
                 </div>
               </div>
             </div>
