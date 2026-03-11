@@ -55,6 +55,7 @@ export default function ComplicationsSection({
   const [zoneThickness, setZoneThickness] = useState(10);
   const [formationPressure, setFormationPressure] = useState(0);
   const [fluidType, setFluidType] = useState<'gas' | 'oil' | 'water'>('water');
+  const [lossBehavior, setLossBehavior] = useState<LossBehavior>('stable');
 
   const toFluidProps = (f: FluidData) => ({
     densityGcm3: f.density,
@@ -71,6 +72,7 @@ export default function ComplicationsSection({
     const inputs: ComplicationInputs = {
       type,
       lossRateM3h: lossRate,
+      lossBehavior,
       zoneDepthMD,
       zoneDepthTVD: zoneDepthTVD || zoneDepthMD,
       zoneThicknessM: zoneThickness,
