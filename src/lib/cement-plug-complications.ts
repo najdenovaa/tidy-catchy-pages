@@ -145,59 +145,85 @@ export function calculateComplications(
   // ═══ LOSS CALCULATIONS ═══
   const annArea = params.annAreaM2;
   const plugLenAnn = params.plugLengthMD;
-
-  // Total time of the entire operation (all stages: spacer, cement, displacement, trip, wash)
   const totalOpTimeSec = params.totalOperationTimeMin * 60;
+  const totalOpTimeMin = params.totalOperationTimeMin;
+
+  const { cement, spacer, wellFluid, viscousPad } = params;
 
   // ── Factor 1: Density ratio ──
-  // Heavier cement → higher hydrostatic → more losses
-  const wellFluidDensity = params.wellFluidDensityGcm3;
-  const cementDensity = params.cementDensityGcm3;
-  const densityRatio = wellFluidDensity > 0 ? cementDensity / wellFluidDensity : 1;
+  // Heavier fluid in the loss zone → higher hydrostatic → more losses
+  // Weight by what actually sits in the loss zone: viscous pad if present, otherwise cement
+  const zoneFluid = params.hasViscousPad ? viscousPad : cement;
+  const densityRatio = wellFluid.densityGcm3 > 0 ? zoneFluid.densityGcm3 / wellFluid.densityGcm3 : 1;
 
-  // ── Factor 2: Rheology resistance ──
-  // Higher PV and YP → cement is more viscous → harder to flow into formation → fewer losses
-  // Reference: typical cement PV=80, YP=8 → factor=1.0
+  // ── Factor 2: Rheology resistance (all fluids weighted) ──
+  // The fluid at the loss zone resists flow into the formation
+  // Consider both the main zone fluid AND the viscous pad barrier
   const refPV = 80;
   const refYP = 8;
-  const pvVal = params.cementPV > 0 ? params.cementPV : refPV;
-  const ypVal = params.cementYP > 0 ? params.cementYP : refYP;
-  // Rheology factor: higher rheology = lower losses (inverse)
-  // Combined rheology metric = PV + 5*YP (YP has stronger effect on flow resistance)
-  const rheologyMetric = pvVal + 5 * ypVal;
+
+  // Weighted rheology: zone fluid dominates, but viscous pad adds barrier if present
+  const zonePV = zoneFluid.pvMPas > 0 ? zoneFluid.pvMPas : refPV;
+  const zoneYP = zoneFluid.ypPa > 0 ? zoneFluid.ypPa : refYP;
+  let effectivePV = zonePV;
+  let effectiveYP = zoneYP;
+
+  if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
+    // Viscous pad sits directly in the loss zone — it acts as primary barrier
+    // Its rheology dominates the resistance to flow into formation
+    const padPV = viscousPad.pvMPas > 0 ? viscousPad.pvMPas : refPV;
+    const padYP = viscousPad.ypPa > 0 ? viscousPad.ypPa : refYP;
+    // Use the higher resistance (the pad is specifically designed to block losses)
+    effectivePV = Math.max(padPV, zonePV);
+    effectiveYP = Math.max(padYP, zoneYP);
+  }
+
+  const rheologyMetric = effectivePV + 5 * effectiveYP;
   const refRheologyMetric = refPV + 5 * refYP;
-  const rheologyFactor = refRheologyMetric / Math.max(rheologyMetric, 1); // <1 if cement is thicker
+  const rheologyFactor = refRheologyMetric / Math.max(rheologyMetric, 1);
 
   // ── Factor 3: Gel strength (SNS) resistance ──
-  // High gel strength builds "plug" resistance over time, reducing effective loss rate
-  // Gel builds progressively: at time t, resistance ≈ gel10min × (t/10min)
-  // Average gel resistance factor over operation time
-  const gel10min = params.cementGel10minPa;
-  const spacerGel10min = params.spacerGel10minPa;
-  const avgGel = (gel10min + spacerGel10min) / 2;
-  // Gel resistance reduces losses: higher gel → lower factor
-  // Reference gel = 15 Pa (typical). Factor = ref / max(actual, ref)
+  // All fluids in the system contribute to gel resistance
+  // The fluid closest to the loss zone has the most effect
+  const cementGel = cement.gel10minPa > 0 ? cement.gel10minPa : cement.ypPa * 3;
+  const spacerGel = spacer.gel10minPa > 0 ? spacer.gel10minPa : spacer.ypPa * 3;
+  const wellFluidGel = wellFluid.gel10minPa > 0 ? wellFluid.gel10minPa : wellFluid.ypPa * 3;
+  const padGel = viscousPad.gel10minPa > 0 ? viscousPad.gel10minPa : viscousPad.ypPa * 3;
+
+  // Effective gel: weighted average with zone fluid having most influence
+  let effectiveGel: number;
+  if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
+    // Viscous pad in loss zone: its gel is the primary resistance + cement above
+    effectiveGel = padGel * 0.5 + cementGel * 0.3 + spacerGel * 0.1 + wellFluidGel * 0.1;
+  } else {
+    // No pad: cement gel is primary, spacer and well fluid contribute
+    effectiveGel = cementGel * 0.5 + spacerGel * 0.25 + wellFluidGel * 0.25;
+  }
+
   const refGel = 15;
-  const gelFactor = avgGel > refGel ? refGel / avgGel : 1.0;
+  const gelFactor = effectiveGel > refGel ? refGel / effectiveGel : 1.0;
 
   // ── Factor 4: Thickening time ──
-  // As cement approaches thickening, viscosity increases exponentially
-  // This reduces loss rate over time. We model this as an average reduction.
   const thickTime = params.thickeningTimeMin;
-  const totalOpTimeMin = params.totalOperationTimeMin;
   let thickeningFactor = 1.0;
   if (thickTime > 0 && totalOpTimeMin > 0) {
-    // Ratio of operation time to thickening time
-    // As operation approaches thickening, cement gets thicker → fewer losses
-    // At t/Tt=0 → factor=1.0 (fully fluid); at t/Tt=0.75 → factor≈0.6; at t/Tt=1.0 → factor≈0.3
     const ratio = Math.min(totalOpTimeMin / thickTime, 1.0);
-    // Average viscosity multiplier over operation: integral of (1 / (1 + 2*(t/Tt)^2)) from 0 to ratio
-    // Simplified: average factor ≈ 1 - 0.7 * ratio²
     thickeningFactor = Math.max(0.3, 1 - 0.7 * ratio * ratio);
   }
 
+  // ── Factor 5: Viscous pad barrier ──
+  // If viscous pad is placed in the loss zone, it physically blocks losses
+  // The thicker the pad volume relative to annular volume, the more it blocks
+  let padBarrierFactor = 1.0;
+  if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
+    // Pad volume creates a physical seal; larger pad = better seal
+    // At 0.5 m³ pad → ~20% reduction; at 1.0 m³ → ~35% reduction
+    const padVolume = params.spacerVolumeBelowM3;
+    padBarrierFactor = Math.max(0.3, 1 - 0.35 * Math.min(padVolume / 1.0, 1.5));
+  }
+
   // ── Combined effective loss rate ──
-  const effectiveLossRateM3h = lossRateM3h * densityRatio * rheologyFactor * gelFactor * thickeningFactor;
+  const effectiveLossRateM3h = lossRateM3h * densityRatio * rheologyFactor * gelFactor * thickeningFactor * padBarrierFactor;
 
   // Volume lost during placement
   const lossRateM3s = effectiveLossRateM3h / 3600;
@@ -211,7 +237,7 @@ export function calculateComplications(
     ? (volumeLostM3 / params.cementVolumeTotalM3) * 100
     : 0;
 
-  // Contamination depth at bottom: cement diluted by formation water
+  // Contamination depth at bottom
   const contaminationDepth = Math.min(
     volumeLostM3 > 0 ? (volumeLostM3 / annArea) * 0.5 : 0,
     plugLenAnn * 0.3
@@ -219,17 +245,15 @@ export function calculateComplications(
 
   // ═══ KICK CALCULATIONS ═══
   const plugBottomTVD = params.plugBottomTVD;
-  const cementHydro = params.cementDensityGcm3 * 1000 * G * plugLenAnn / 1e6; // Simplified
-  const cementHydroAtZone = params.cementDensityGcm3 * 1000 * G * plugBottomTVD / 1e6;
+  const cementHydro = cement.densityGcm3 * 1000 * G * plugLenAnn / 1e6;
+  const cementHydroAtZone = cement.densityGcm3 * 1000 * G * plugBottomTVD / 1e6;
 
-  // Net: formation pressure vs hydrostatic at zone
   const pressureDiff = formationPressureMPa - cementHydroAtZone;
   const kickBreakThrough = type !== 'loss' && pressureDiff > 0;
 
-  // Required density to hold formation pressure
   const requiredDensity = plugBottomTVD > 0
     ? (formationPressureMPa * 1e6) / (1000 * G * plugBottomTVD) / 1000
-    : params.cementDensityGcm3;
+    : cement.densityGcm3;
 
   // ═══ CORRECTED VOLUMES ═══
   const compensationFactor = 1.3; // 30% extra
