@@ -86,10 +86,13 @@ export default function ComplicationsSection({
       spacerGel10minPa: gel10minSpacer,
       spacerVolumeBelowM3: spacerVolumeBelow,
       plugBottomTVD: results.plugBottomTVD,
+      thickeningTimeMin,
+      settingTimeStartMin,
+      settingTimeEndMin,
     };
 
     return calculateComplications(inputs, params);
-  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType, cementDensity, spacerDensity, wellFluidDensity, cementGel10min, spacerGel10min, spacerVolumeBelow, cementYP, spacerYP]);
+  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType, cementDensity, spacerDensity, wellFluidDensity, cementGel10min, spacerGel10min, spacerVolumeBelow, cementYP, spacerYP, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">
