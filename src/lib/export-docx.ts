@@ -14,7 +14,7 @@ import type {
 import {
   calculateVolumes, calculateHydraulics, calculateSafeTime, calculateBHCT,
   calculateMaterials, calculatePressureProfile,
-  getSlurryHeight, getCasingID, interpolateTVD, getFlowRateLps,
+  getSlurryHeight, getCasingID, interpolateTVD, getFlowRateLps, getEffectiveTrajectory,
   annularVolumePerMeter, pipeVolumePerMeter,
 } from "./cementing-calculations";
 
