@@ -144,8 +144,17 @@ export function calculateComplications(
   // Total time of the entire operation (all stages: spacer, cement, displacement, trip, wash)
   const fillTimeSec = params.totalOperationTimeMin * 60;
 
+  // Adjust loss rate based on pressure differential:
+  // Heavier cement → higher hydrostatic → more losses
+  // Reference: the well fluid density (what was in the well before cementing)
+  // Effective loss rate ≈ input_rate × (ρ_cement / ρ_wellfluid)
+  const wellFluidDensity = params.wellFluidDensityGcm3;
+  const cementDensity = params.cementDensityGcm3;
+  const densityRatio = wellFluidDensity > 0 ? cementDensity / wellFluidDensity : 1;
+  const effectiveLossRateM3h = lossRateM3h * densityRatio;
+
   // Volume lost during placement
-  const lossRateM3s = lossRateM3h / 3600;
+  const lossRateM3s = effectiveLossRateM3h / 3600;
   const volumeLostM3 = lossRateM3s * fillTimeSec;
 
   // Real cement volume
