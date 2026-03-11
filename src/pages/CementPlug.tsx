@@ -506,6 +506,8 @@ export default function CementPlug() {
     setSpacerVolumeAbove(0);
     setSpacerVolumeBelow(0);
     setThickeningTime(0);
+    setSettingTimeStartMin(0);
+    setSettingTimeEndMin(0);
     setWocTimeHours(0);
     setPullOutAbove(0);
     setWashType('direct');
