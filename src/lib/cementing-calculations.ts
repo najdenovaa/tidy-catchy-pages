@@ -1316,8 +1316,8 @@ export function calculatePressureProfile(
         const timeSinceCementStart = globalTimeMin - cementStartTime;
         const maxThick30 = slurries.length > 0 ? Math.max(...slurries.map(sl => sl.thickeningTime30Bc || 180)) : 180;
         const progressFrac = Math.min(1, timeSinceCementStart / maxThick30);
-        // Ограничиваем множитель загустевания: макс 1.4x (ранее до 1.8x — завышало давления)
-        thickeningMultiplier = 1.0 + 0.15 * progressFrac + 0.15 * progressFrac * progressFrac + 0.10 * progressFrac * progressFrac * progressFrac;
+        // Ограничиваем множитель загустевания: макс 1.2x
+        thickeningMultiplier = 1.0 + 0.2 * progressFrac;
       }
 
       const effAnnPv = annPv * thickeningMultiplier;
