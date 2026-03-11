@@ -184,7 +184,7 @@ export function calculateComplications(
   let effectivePV = zonePV;
   let effectiveYP = zoneYP;
 
-  if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
+  if (usePadInZone) {
     const padPV = viscousPad.pvMPas > 0 ? viscousPad.pvMPas : refPV;
     const padYP = viscousPad.ypPa > 0 ? viscousPad.ypPa : refYP;
     effectivePV = Math.max(padPV, zonePV);
