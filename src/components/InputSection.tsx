@@ -245,6 +245,14 @@ export default function InputSection(props: Props) {
       if (maxCementYp > annYp) annYp = maxCementYp;
     }
 
+    // Учитываем загустевание цемента: к концу продавки цемент уже
+    // находится в затрубье и его эффективная вязкость возрастает (~1.3x)
+    // Это консервативная оценка для предупреждения о ГРП
+    const isDisplacementCheck = slurries.length > 0 && (fluidPv < annPv || fluidYp < annYp);
+    const thickeningFactor = isDisplacementCheck ? 1.3 : 1.0;
+    annPv *= thickeningFactor;
+    annYp *= thickeningFactor;
+
     const dHole = wellData.holeDiameter / 1000;
     const dCas = wellData.casingOD / 1000;
     const dHyd = dHole - dCas;
