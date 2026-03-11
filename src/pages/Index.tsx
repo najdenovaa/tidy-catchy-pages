@@ -578,6 +578,7 @@ export default function Index() {
                 onFlushTimeMinChange={setFlushTimeMin}
                 flushVolumeM3={flushVolumeM3}
                 onFlushVolumeM3Change={setFlushVolumeM3}
+                dynamicBHPMap={dynamicBHPMap}
               />
             </div>
           </TabsContent>
