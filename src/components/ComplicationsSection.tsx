@@ -282,21 +282,26 @@ export default function ComplicationsSection({
                   {complicationResult.settingTimeStartMin > 0 && (
                     <>
                       <Separator className="col-span-2 my-1" />
-                      <span className="text-muted-foreground">Начало схватывания:</span>
+                      <span className="text-muted-foreground">Начало схватывания (в статике):</span>
                       <span>{complicationResult.settingTimeStartMin.toFixed(0)} мин</span>
                       {complicationResult.settingTimeEndMin > 0 && (
                         <>
-                          <span className="text-muted-foreground">Конец схватывания:</span>
+                          <span className="text-muted-foreground">Конец схватывания (в статике):</span>
                           <span>{complicationResult.settingTimeEndMin.toFixed(0)} мин</span>
                         </>
                       )}
-                      <span className="text-muted-foreground font-semibold">До начала схватывания:</span>
-                      <span className={`font-bold ${
-                        complicationResult.operationOverlapsSetting ? 'text-destructive' :
-                        (complicationResult.settingTimeStartMin - complicationResult.totalOperationTimeMin) < 30 ? 'text-amber-400' : 'text-green-500'
-                      }`}>
-                        {(complicationResult.settingTimeStartMin - complicationResult.totalOperationTimeMin).toFixed(0)} мин
+                      <span className="text-muted-foreground">От замеса до начала схватывания:</span>
+                      <span className="font-semibold">
+                        {(complicationResult.totalOperationTimeMin + complicationResult.settingTimeStartMin).toFixed(0)} мин
                       </span>
+                      {complicationResult.settingTimeStartMin < 30 && (
+                        <>
+                          <span className="text-muted-foreground font-semibold">⚠ Запас в статике:</span>
+                          <span className="font-bold text-amber-400">
+                            {complicationResult.settingTimeStartMin.toFixed(0)} мин — мало!
+                          </span>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
