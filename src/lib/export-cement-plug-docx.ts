@@ -428,7 +428,6 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
     kvRow("Промывка", `${fmt(results.washVolumeM3, 3)} м³ (${results.washCycles} цикл.)`)
   );
   children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: processParamsRows }));
-  children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: processParamsRows }));
 
   // ─── 14. Process Description ───
   children.push(heading("14. Описание процесса"));
@@ -448,7 +447,7 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
   if (data.visualizationImage) {
     children.push(new Paragraph({ children: [new PageBreak()] }));
     children.push(heading("16. Продольное сечение"));
-    children.push(imageFromDataUrl(data.visualizationImage, 450, 600));
+    children.push(imageFromDataUrl(data.visualizationImage, 580, 380));
   }
 
   const doc = new Document({
