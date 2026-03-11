@@ -246,7 +246,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                       if (name === "Производительность") return [value.toFixed(1) + " л/с", name];
                       if (name === "Re (затрубье)") {
                         const re = Math.round(value);
-                        const regime = re < 2100 ? "Ламинарный" : re < 4000 ? "Переходный" : "Турбулентный";
+                        const regime = re < 2100 ? "Ламинарный" : re < 3000 ? "Переходный" : "Турбулентный";
                         return [`${re} (${regime})`, name];
                       }
                       return [value.toString(), name];
