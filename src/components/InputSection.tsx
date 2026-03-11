@@ -56,11 +56,12 @@ function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: bool
   );
 }
 
-const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
+const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck, isDynamic }: {
   steps: FlowRateStep[];
   totalVolume: number;
   onChange: (s: FlowRateStep[]) => void;
   fracCheck?: (rateLps: number) => { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null;
+  isDynamic?: boolean;
 }) {
   const usedVolume = steps.reduce((s, st) => s + st.volumeM3, 0);
   const remaining = totalVolume - usedVolume;
