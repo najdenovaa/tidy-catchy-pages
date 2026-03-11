@@ -61,6 +61,10 @@ export interface ComplicationCalcParams {
   settingTimeStartMin: number;
   /** Setting time end, min */
   settingTimeEndMin: number;
+  /** Cement PV, mPa·s */
+  cementPV: number;
+  /** Cement YP, Pa */
+  cementYP: number;
 }
 
 export interface ComplicationResult {
