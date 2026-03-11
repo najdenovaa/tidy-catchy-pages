@@ -15,6 +15,7 @@ import {
   type ComplicationCalcParams,
   type ComplicationResult,
   type ComplicationType,
+  type LossBehavior,
 } from "@/lib/cement-plug-complications";
 import type { PlugResults } from "@/lib/cement-plug-calculations";
 
