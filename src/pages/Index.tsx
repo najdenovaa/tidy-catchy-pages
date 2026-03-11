@@ -211,7 +211,7 @@ export default function Index() {
     setExporting(true);
     try {
       const { exportToDocx } = await import("@/lib/export-docx");
-      const snap = calcSnapshot ?? { wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient };
+      const snap = calcSnapshot ?? { wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 };
 
       // Capture chart images from the DOM
       const chartImages: Record<string, string> = {};
@@ -320,7 +320,13 @@ export default function Index() {
       const images = (Object.keys(chartImages).length > 0 || Object.keys(visualImages).length > 0 || Object.keys(centralizationImages).length > 0)
         ? { chartImages, visualImages, centralizationImages } : undefined;
 
-      await exportToDocx(snap.wellData, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient, images, centralizationResults ?? undefined);
+      await exportToDocx(snap.wellData, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient, images, centralizationResults ?? undefined, {
+        volumes: volumes ?? undefined,
+        pressureResult: pressureResult ?? undefined,
+        materials: materials ?? undefined,
+        flushTimeMin: snap.flushTimeMin,
+        flushVolumeM3: snap.flushVolumeM3,
+      });
     } catch (e) {
       console.error("DOCX export error:", e);
     } finally {
