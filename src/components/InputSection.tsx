@@ -929,7 +929,7 @@ export default function InputSection(props: Props) {
                   steps={df.flowRateSteps}
                   totalVolume={calcDispVol}
                   onChange={(steps) => { const u = [...displacementFluids]; u[idx] = { ...u[idx], flowRateSteps: steps }; onDisplacementFluidsChange(u); }}
-                  fracCheck={(rateLps) => fracCheck(rateLps, df.density, df.rheology.pv, df.rheology.yp, true)}
+                  fracCheck={(rateLps) => fracCheck(rateLps, df.density, df.rheology.pv, df.rheology.yp, true, df.name)}
                 />
               </div>
             ))}
