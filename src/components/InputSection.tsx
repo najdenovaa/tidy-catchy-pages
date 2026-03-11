@@ -209,114 +209,27 @@ export default function InputSection(props: Props) {
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
 
-  // Fracture risk checker — единый расчёт: полное затрубное давление (цементы + буровой раствор) + трение при данной производительности
+  // Fracture risk checker — использует calculateHydraulics для 100% совпадения с вкладкой Гидравлика
   const fracCheck = (rateLps: number, _fluidDensity: number, fluidPv: number, fluidYp: number): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
     const bottomTVD = interpolateTVD(wellData.casingDepthMD, wellData.trajectory);
     if (fractureGradient <= 0 || bottomTVD <= 0 || rateLps <= 0) return null;
-    const fracP = (fractureGradient * bottomTVD) / 1000;
 
-    // Полное гидростатическое давление в затрубье = цементные столбы + бур. раствор сверху
-    let annHydrostatic = 0;
-    let cementTVDtotal = 0;
-    slurries.forEach((s, i) => {
-      const hMD = getSlurryHeight(slurries, i, wellData.casingDepthMD);
-      if (hMD > 0) {
-        const lastIdx = slurries.length - 1;
-        const bottomMD = i === lastIdx ? wellData.casingDepthMD : slurries[i + 1].topDepthMD;
-        const hTVD = bottomMD > s.topDepthMD ? interpolateTVD(bottomMD, wellData.trajectory) - interpolateTVD(s.topDepthMD, wellData.trajectory) : 0;
-        annHydrostatic += hydrostaticPressure(s.density, Math.max(0, hTVD));
-        cementTVDtotal += Math.max(0, hTVD);
-      }
-    });
-    const mudHeightTVD = Math.max(0, bottomTVD - cementTVDtotal);
-    const mudDensityGcm3 = drillingFluid.density / 1000;
-    annHydrostatic += hydrostaticPressure(mudDensityGcm3 > 0 ? mudDensityGcm3 : 1.1, mudHeightTVD);
+    const displacementDensityGcm3 = _fluidDensity / 1000;
+    const displacementRheology = { pv: fluidPv, yp: fluidYp };
+    const mudDensityGcm3 = drillingFluid.density > 0 ? drillingFluid.density / 1000 : 1.1;
 
-    // Потери на трение в затрубье — двухсекционная модель:
-    // Верх: межколонное (prevCasingID × casingOD) от 0 до prevCasingDepth
-    // Низ: открытый ствол (holeDiameter × casingOD) от prevCasingDepth до забоя
-    const dCas = wellData.casingOD / 1000;
-    const prevShoe = wellData.prevCasingDepth || 0;
-    const upperLen = Math.min(prevShoe, wellData.casingDepthMD);
-    const lowerLen = Math.max(0, wellData.casingDepthMD - upperLen);
+    const results = calculateHydraulics(
+      wellData, slurries, displacementDensityGcm3, fractureGradient,
+      drillingFluid.rheology, displacementRheology, rateLps, mudDensityGcm3
+    );
 
-    // Верхняя секция (межколонное)
-    const prevID = (wellData.prevCasingID || wellData.holeDiameter) / 1000;
-    const dHydUpper = Math.max(prevID - dCas, 0.01);
-    const areaUpper = (Math.PI / 4) * (prevID * prevID - dCas * dCas);
-    const velUpper = areaUpper > 0 ? (rateLps / 1000) / areaUpper : 0;
-
-    // Нижняя секция (открытый ствол)
-    const dHole = wellData.holeDiameter / 1000;
-    const dHydLower = Math.max(dHole - dCas, 0.01);
-    const areaLower = (Math.PI / 4) * (dHole * dHole - dCas * dCas);
-    const velLower = areaLower > 0 ? (rateLps / 1000) / areaLower : 0;
-
-    // Хелпер расчёта трения сегмента с учётом режима потока (ламинар/турбулент)
-    const segFriction = (pv: number, yp: number, length: number, dHyd: number, vel: number, flowArea: number, densKgM3: number): number => {
-      if (length <= 0 || vel <= 0 || dHyd <= 0) return 0;
-      const pvPas = pv / 1000;
-      const muEff = pvPas + yp * dHyd / (6 * vel);
-      const Re = densKgM3 * vel * dHyd / muEff;
-      // Ламинарные потери (Бингам)
-      const frLam = (32 * pvPas * vel * length) / (dHyd * dHyd) / 1e6;
-      const yieldTerm = (16 * yp * length) / (3 * dHyd) / 1e6;
-      const laminar = frLam + yieldTerm;
-      // Турбулентные потери (Блазиус)
-      const f = 0.0791 / Math.pow(Math.max(Re, 100), 0.25);
-      const turbulent = (2 * f * densKgM3 * vel * vel * length) / dHyd / 1e6;
-      if (Re < 2100) return laminar;
-      if (Re > 4000) return turbulent;
-      const blend = (Re - 2100) / 1900;
-      return laminar * (1 - blend) + turbulent * blend;
+    return {
+      risk: results.maxBHP > results.fracturePressure,
+      ecd: results.maxBHP,
+      fracP: results.fracturePressure,
+      hydroStatic: results.hydrostaticPressureAnnulus,
+      frictionLoss: results.frictionAnn,
     };
-
-    let frictionLoss = 0;
-    // Средние параметры цемента (как в calculateHydraulics)
-    const avgCementPv = slurries.length > 0
-      ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).pv, 0) / slurries.length
-      : (drillingFluid.rheology.pv || 25);
-    const avgCementYp = slurries.length > 0
-      ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).yp, 0) / slurries.length
-      : (drillingFluid.rheology.yp || 25);
-    const avgCementDens = slurries.length > 0
-      ? slurries.reduce((s, sl) => s + sl.density * 1000, 0) / slurries.length
-      : 1100;
-
-    // Трение в цементных интервалах
-    let cementMDTotal = 0;
-    slurries.forEach((s, i) => {
-      const hMD = getSlurryHeight(slurries, i, wellData.casingDepthMD);
-      if (hMD > 0) {
-        const lastIdx = slurries.length - 1;
-        const mdBot = i === lastIdx ? wellData.casingDepthMD : slurries[i + 1].topDepthMD;
-        const mdTop = s.topDepthMD;
-        cementMDTotal += hMD;
-        const segRheo = effectiveRheology(s.rheology, cementCategory(s.density));
-        const segDens = s.density * 1000;
-        // Часть в верхней секции (межколонное)
-        const upTop = Math.max(mdTop, 0);
-        const upBot = Math.min(mdBot, upperLen);
-        const upLen = Math.max(0, upBot - upTop);
-        frictionLoss += segFriction(segRheo.pv, segRheo.yp, upLen, dHydUpper, velUpper, areaUpper, segDens);
-        // Часть в нижней секции (открытый ствол)
-        const loTop = Math.max(mdTop, upperLen);
-        const loBot = Math.min(mdBot, wellData.casingDepthMD);
-        const loLen = Math.max(0, loBot - loTop);
-        frictionLoss += segFriction(segRheo.pv, segRheo.yp, loLen, dHydLower, velLower, areaLower, segDens);
-      }
-    });
-    // Буровой раствор в оставшихся интервалах
-    const mudRheo = effectiveRheology(drillingFluid.rheology, 'mud');
-    const mudDens = drillingFluid.density > 0 ? drillingFluid.density : 1100;
-    const mudUpperLen = Math.max(0, upperLen - Math.min(cementMDTotal, upperLen));
-    const mudLowerLen = Math.max(0, lowerLen - Math.max(0, cementMDTotal - upperLen));
-    frictionLoss += segFriction(mudRheo.pv, mudRheo.yp, mudUpperLen, dHydUpper, velUpper, areaUpper, mudDens);
-    frictionLoss += segFriction(mudRheo.pv, mudRheo.yp, mudLowerLen, dHydLower, velLower, areaLower, mudDens);
-    frictionLoss *= 0.8; // коэфф. затрубного трения
-
-    const ecd = annHydrostatic + frictionLoss;
-    return { risk: ecd > fracP, ecd, fracP, hydroStatic: annHydrostatic, frictionLoss };
   };
 
   const handleWellChange = (key: WellNumericKey, value: string) => {
