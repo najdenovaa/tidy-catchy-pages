@@ -447,7 +447,7 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
   if (data.visualizationImage) {
     children.push(new Paragraph({ children: [new PageBreak()] }));
     children.push(heading("16. Продольное сечение"));
-    children.push(imageFromDataUrl(data.visualizationImage, 450, 600));
+    children.push(imageFromDataUrl(data.visualizationImage, 580, 380));
   }
 
   const doc = new Document({
