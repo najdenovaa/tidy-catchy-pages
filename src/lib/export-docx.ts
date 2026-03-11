@@ -845,7 +845,7 @@ export async function exportToDocx(
     }),
   ];
 
-  const inputContent = buildInputPage(wellData, drillingFluid, slurries, buffers, displacementFluids);
+  const inputContent = buildInputPage(wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
   const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult);
   const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolume, displacementFluids, wellData.casingDepthMD);
   const materialsContent = buildMaterialsPage(materials);
