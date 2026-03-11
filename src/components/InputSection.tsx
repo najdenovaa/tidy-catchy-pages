@@ -932,7 +932,7 @@ export default function InputSection(props: Props) {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label><DebouncedInput type="number" step="1" value={df.density || ""} onChange={(e) => handleDispFluidChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">PV, сПз</Label><DebouncedInput type="number" value={df.rheology.pv || ""} onChange={(e) => handleDispFluidChange(idx, "pv", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><DebouncedInput type="number" step="0.1" value={df.rheology.yp || ""} onChange={(e) => handleDispFluidChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Коэфф. сжатия</Label><DebouncedInput type="number" step="0.01" value={df.compressionCoeff || ""} onChange={(e) => handleDispFluidChange(idx, "compressionCoeff", e.target.value)} className="h-8 text-sm" placeholder="1.05" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Коэфф. сжатия</Label><DebouncedInput type="number" step="0.01" value={df.compressionCoeff || ""} onChange={(e) => handleDispFluidChange(idx, "compressionCoeff", e.target.value)} className="h-8 text-sm" placeholder="1.00" /></div>
                 </div>
                 <FlowRateStepsEditor
                   steps={df.flowRateSteps}
