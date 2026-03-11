@@ -55,6 +55,12 @@ export interface ComplicationCalcParams {
   spacerVolumeBelowM3: number;
   /** Plug bottom TVD, m */
   plugBottomTVD: number;
+  /** Thickening time (50Bc), min */
+  thickeningTimeMin: number;
+  /** Setting time start, min */
+  settingTimeStartMin: number;
+  /** Setting time end, min */
+  settingTimeEndMin: number;
 }
 
 export interface ComplicationResult {
