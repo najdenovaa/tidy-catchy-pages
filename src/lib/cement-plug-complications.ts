@@ -185,19 +185,51 @@ export function calculateComplications(
       ? Math.max(params.spacerVolumeBelowM3, 0.3)
       : params.spacerVolumeBelowM3;
 
+  // ═══ TIME ANALYSIS ═══
+  const totalOpTime = params.totalOperationTimeMin;
+  const thickTime = params.thickeningTimeMin;
+  const safeTime = thickTime * 0.75;
+  const settingStart = params.settingTimeStartMin;
+  const settingEnd = params.settingTimeEndMin;
+  const timeMargin = safeTime - totalOpTime;
+  const isTimeWithinThickening = totalOpTime <= safeTime;
+  const operationOverlapsSetting = settingStart > 0 && totalOpTime > settingStart;
+
   // ═══ RECOMMENDATIONS ═══
   const recs: string[] = [];
   let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
 
+  // Time-based recommendations
+  if (thickTime > 0) {
+    if (!isTimeWithinThickening) {
+      riskLevel = 'critical';
+      recs.push(`⛔ ВРЕМЯ ОПЕРАЦИИ (${totalOpTime.toFixed(0)} мин) ПРЕВЫШАЕТ безопасное время загустевания (${safeTime.toFixed(0)} мин, 0.75×${thickTime.toFixed(0)})!`);
+      recs.push(`Цемент начнёт загустевать ДО завершения операции. Необходимо ускорить процесс или использовать замедлитель.`);
+    } else if (timeMargin < 15) {
+      if (riskLevel !== 'critical') riskLevel = 'high';
+      recs.push(`⚠ Запас времени до загустевания КРИТИЧЕСКИ МАЛ: ${timeMargin.toFixed(0)} мин (операция: ${totalOpTime.toFixed(0)} мин, безопасное: ${safeTime.toFixed(0)} мин).`);
+    }
+  }
+
+  if (operationOverlapsSetting) {
+    riskLevel = 'critical';
+    recs.push(`⛔ ВРЕМЯ ОПЕРАЦИИ (${totalOpTime.toFixed(0)} мин) ВХОДИТ в зону схватывания (начало: ${settingStart.toFixed(0)} мин${settingEnd > 0 ? `, конец: ${settingEnd.toFixed(0)} мин` : ''})!`);
+    recs.push(`Цемент начнёт схватываться во время закачки/продавки. Мост будет дефектным.`);
+    recs.push(`Используйте замедлитель или рассмотрите установку в 2 ступени.`);
+  } else if (settingStart > 0 && settingStart - totalOpTime < 30) {
+    if (riskLevel !== 'critical') riskLevel = 'high';
+    recs.push(`⚠ До начала схватывания остаётся ${(settingStart - totalOpTime).toFixed(0)} мин после завершения операции. Рекомендуется увеличить замедление.`);
+  }
+
   if (type === 'loss' || type === 'both') {
     if (intensity === 'partial') {
-      riskLevel = 'medium';
+      if (riskLevel === 'low') riskLevel = 'medium';
       recs.push(`Частичное поглощение (${lossRateM3h.toFixed(1)} м³/ч). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
       recs.push(`Снизьте плотность промывочной жидкости до минимально допустимой перед закачкой моста.`);
       recs.push(`Увеличьте объём цемента на ${(volumeLostM3 * compensationFactor).toFixed(2)} м³ для компенсации потерь.`);
       recs.push(`Снизьте скорость закачки для уменьшения динамических потерь давления.`);
     } else if (intensity === 'intense') {
-      riskLevel = 'high';
+      if (riskLevel !== 'critical') riskLevel = 'high';
       recs.push(`Интенсивное поглощение (${lossRateM3h.toFixed(1)} м³/ч). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
       recs.push(`Реальная длина моста: ${realPlugLength.toFixed(1)} м вместо ${plugLenAnn.toFixed(0)} м — потеряно ${lossPercent.toFixed(0)}%.`);
       recs.push(`ОБЯЗАТЕЛЬНО: закачайте ВИР/кольматант перед установкой моста.`);
@@ -228,7 +260,6 @@ export function calculateComplications(
         recs.push(`Газовое проявление — особо опасно: газ мигрирует через незатвердевший цемент. Рекомендуется добавка-блокатор газа.`);
       }
     } else if (type === 'kick') {
-      riskLevel = Math.max(riskLevel === 'low' ? 0 : riskLevel === 'medium' ? 1 : 2, 0) === 0 ? 'low' : riskLevel;
       recs.push(`Гидростатика цемента (${cementHydroAtZone.toFixed(2)} МПа) > пластовое давление (${formationPressureMPa.toFixed(2)} МПа). Мост удержит приток.`);
       recs.push(`Запас по давлению: ${Math.abs(pressureDiff).toFixed(2)} МПа.`);
     }
@@ -241,7 +272,7 @@ export function calculateComplications(
   return {
     type,
     lossIntensity: intensity,
-    fillTimeMin: Math.round(params.totalOperationTimeMin * 10) / 10,
+    fillTimeMin: Math.round(totalOpTime * 10) / 10,
     volumeLostM3: Math.round(volumeLostM3 * 1000) / 1000,
     realCementVolumeM3: Math.round(realCementVol * 1000) / 1000,
     realPlugLengthM: Math.round(realPlugLength * 10) / 10,
@@ -254,6 +285,14 @@ export function calculateComplications(
     requiredCementDensityGcm3: Math.round(requiredDensity * 100) / 100,
     correctedCementVolumeM3: Math.round(correctedCement * 1000) / 1000,
     correctedSpacerBelowM3: Math.round(correctedSpacerBelow * 1000) / 1000,
+    totalOperationTimeMin: Math.round(totalOpTime * 10) / 10,
+    safeTimeMin: Math.round(safeTime * 10) / 10,
+    thickeningTimeMin: thickTime,
+    settingTimeStartMin: settingStart,
+    settingTimeEndMin: settingEnd,
+    isTimeWithinThickening,
+    operationOverlapsSetting,
+    timeMarginMin: Math.round(timeMargin * 10) / 10,
     recommendations: recs,
     riskLevel,
   };
