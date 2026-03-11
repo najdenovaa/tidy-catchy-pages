@@ -1361,8 +1361,8 @@ export function calculatePressureProfile(
       totalAnnReturn = Math.max(0, totalAnnReturn);
 
       // Эмпирическая поправка: снижаем расчётное давление на насосе
-      // для буферов/цемента — 0.825, для продавки — 0.75
-      const surfP = surfPRaw * (isDisplacement ? 0.75 : 0.825);
+      // для буферов/цемента — 0.825, для продавки — 0.8625
+      const surfP = surfPRaw * (isDisplacement ? 0.8625 : 0.825);
       const bhp = bhpRaw;
 
       points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3 });
