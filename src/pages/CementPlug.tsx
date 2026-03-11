@@ -952,6 +952,9 @@ export default function CementPlug() {
                       spacerVolumeBelow={useViscousPad ? spacerVolumeBelow : 0}
                       cementYP={cement.rheology.yp}
                       spacerYP={useViscousPad ? viscousPadFluid.rheology.yp : spacer.rheology.yp}
+                      thickeningTimeMin={thickeningTime}
+                      settingTimeStartMin={settingTimeStartMin}
+                      settingTimeEndMin={settingTimeEndMin}
                     />
                   </CardContent>
                 </CollapsibleContent>
