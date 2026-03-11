@@ -99,6 +99,24 @@ export interface ComplicationResult {
   /** Recommended extra spacer below, m³ */
   correctedSpacerBelowM3: number;
 
+  // Time analysis
+  /** Total operation time, min */
+  totalOperationTimeMin: number;
+  /** Safe time (0.75 × thickening), min */
+  safeTimeMin: number;
+  /** Thickening time, min */
+  thickeningTimeMin: number;
+  /** Setting time start, min */
+  settingTimeStartMin: number;
+  /** Setting time end, min */
+  settingTimeEndMin: number;
+  /** Is operation within safe thickening time? */
+  isTimeWithinThickening: boolean;
+  /** Is operation within setting time window? */
+  operationOverlapsSetting: boolean;
+  /** Time margin before thickening, min */
+  timeMarginMin: number;
+
   // Recommendations
   recommendations: string[];
   riskLevel: 'low' | 'medium' | 'high' | 'critical';
