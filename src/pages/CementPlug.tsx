@@ -769,13 +769,17 @@ export default function CementPlug() {
                         <Field label="СНС 10 сек" value={cement.gel10sec || 0} onChange={v => setCement(c => ({ ...c, gel10sec: num(v) }))} unit="Па" />
                         <Field label="СНС 10 мин" value={cement.gel10min || 0} onChange={v => setCement(c => ({ ...c, gel10min: num(v) }))} unit="Па" />
                       </div>
-                      <div className="grid grid-cols-3 gap-2 mt-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
                         <Field label="Загустевание (50Bc)" value={thickeningTime} onChange={v => setThickeningTime(num(v))} unit="мин" />
                         <div className="space-y-1">
                           <Label className="text-xs">Безопасн. время (0.75×50Bc)</Label>
                           <div className="h-8 flex items-center text-xs font-semibold text-amber-400">{(thickeningTime * 0.75).toFixed(0)} мин</div>
                         </div>
                         <Field label="Время ОЗЦ" value={wocTimeHours} onChange={v => setWocTimeHours(num(v))} unit="ч" />
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
+                        <Field label="Начало схватывания" value={settingTimeStartMin} onChange={v => setSettingTimeStartMin(num(v))} unit="мин" />
+                        <Field label="Конец схватывания" value={settingTimeEndMin} onChange={v => setSettingTimeEndMin(num(v))} unit="мин" />
                       </div>
                       <Separator className="my-2" />
                       <p className="text-[10px] font-medium text-muted-foreground mb-1">Рецептура</p>
