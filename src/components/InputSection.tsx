@@ -233,15 +233,27 @@ export default function InputSection(props: Props) {
     annHydrostatic += hydrostaticPressure(mudDensityGcm3 > 0 ? mudDensityGcm3 : 1.1, mudHeightTVD);
 
     // Потери на трение в затрубье
+    // Используем максимальную реологию из затрубья (цемент, если есть) — 
+    // при продавке в затрубье находится цемент, а не продавочная жидкость
+    let annPv = fluidPv;
+    let annYp = fluidYp;
+    if (slurries.length > 0) {
+      // Берём максимальные PV/YP из цементных растворов — они в затрубье
+      const maxCementPv = Math.max(...slurries.map(s => s.rheology.pv || 0));
+      const maxCementYp = Math.max(...slurries.map(s => s.rheology.yp || 0));
+      if (maxCementPv > annPv) annPv = maxCementPv;
+      if (maxCementYp > annYp) annYp = maxCementYp;
+    }
+
     const dHole = wellData.holeDiameter / 1000;
     const dCas = wellData.casingOD / 1000;
     const dHyd = dHole - dCas;
     if (dHyd <= 0) return null;
     const area = (Math.PI / 4) * (dHole * dHole - dCas * dCas);
     const velocity = (rateLps / 1000) / area;
-    const pvPas = fluidPv / 1000;
+    const pvPas = annPv / 1000;
     const frLoss = (32 * pvPas * velocity * wellData.casingDepthMD) / (dHyd * dHyd) / 1e6;
-    const ypLoss = (16 * fluidYp * wellData.casingDepthMD) / (3 * dHyd) / 1e6;
+    const ypLoss = (16 * annYp * wellData.casingDepthMD) / (3 * dHyd) / 1e6;
     const frictionLoss = (frLoss + ypLoss) * 0.8; // коэфф. затрубного трения
 
     const ecd = annHydrostatic + frictionLoss;
