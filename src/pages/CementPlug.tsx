@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Send, Home, Calculator, ArrowLeft, FileDown, Save, Loader2, LayoutDashboard, LogOut, RotateCcw, Plus, Trash2, AlertTriangle, ShieldCheck, ShieldAlert } from "lucide-react";
+import ComplicationsSection from "@/components/ComplicationsSection";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { BlurInput } from "@/components/BlurInput";
 import { Label } from "@/components/ui/label";
