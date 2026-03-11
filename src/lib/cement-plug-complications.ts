@@ -45,8 +45,8 @@ export interface ComplicationCalcParams {
   wellFluidDensityGcm3: number;
   /** Cement volume total, m³ */
   cementVolumeTotalM3: number;
-  /** Pump rate for cement, l/s */
-  pumpRateCementLs: number;
+  /** Total operation time (all stages), min */
+  totalOperationTimeMin: number;
   /** Cement gel 10min, Pa */
   cementGel10minPa: number;
   /** Spacer gel 10min, Pa */
