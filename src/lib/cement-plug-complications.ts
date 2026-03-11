@@ -154,26 +154,33 @@ export function calculateComplications(
   const { cement, spacer, wellFluid, viscousPad } = params;
 
   // ── Factor 1: Hydrostatic pressure factor ──
-  // Driving force = EXCESS hydrostatic: ΔP = (ρ_zone - ρ_wellfluid) × g × h_plug
-  // Two components: density difference AND plug height
-  // Normalize to reference: ΔP_ref = (1.9 - 1.1) × g × 100m (typical heavy cement, 100m plug)
+  // Losses are driven by TOTAL hydrostatic pressure at the loss zone.
+  // Total P = ρ_wellfluid × g × (zoneTVD - plugLen) + ρ_cement × g × plugLen
+  // Higher density of ANY fluid → more pressure → more losses.
+  // Normalize to a reference condition (1.1 g/cm³ well fluid, no cement plug).
   const usePadInZone = params.hasViscousPad && params.spacerVolumeBelowM3 > 0;
-  // In the loss zone, pad dominates but cement column still contributes to hydrostatic profile
-  const zoneFluidDensity = usePadInZone
+  const zoneFluid = usePadInZone ? viscousPad : cement;
+
+  // Effective density of the plug interval (pad + cement weighted)
+  const plugDensity = usePadInZone
     ? (viscousPad.densityGcm3 * 0.7 + cement.densityGcm3 * 0.3)
     : cement.densityGcm3;
-  const zoneFluid = usePadInZone ? viscousPad : cement;
-  const deltaRho = zoneFluidDensity - wellFluid.densityGcm3; // g/cm³
-  const refDeltaRho = 0.8; // reference: 1.9 cement - 1.1 well fluid
-  const refPlugHeight = 100; // m
+
+  // Total hydrostatic at zone bottom (simplified: well fluid above plug + plug column)
+  const zoneTVD = params.plugBottomTVD > 0 ? params.plugBottomTVD : plugLenAnn;
+  const wellFluidColumnLen = Math.max(0, zoneTVD - plugLenAnn);
+  const totalHydrostatic = wellFluid.densityGcm3 * wellFluidColumnLen + plugDensity * plugLenAnn;
+
+  // Reference: the same depth filled only with reference well fluid (1.1 g/cm³)
+  const refDensity = 1.1; // g/cm³ — typical light well fluid
+  const refHydrostatic = refDensity * zoneTVD;
+
   let hydrostaticFactor = 1.0;
-  if (deltaRho > 0 && plugLenAnn > 0) {
-    // Factor = (ΔP_actual / ΔP_ref) = (deltaRho × h) / (refDeltaRho × refH)
-    hydrostaticFactor = (deltaRho * plugLenAnn) / (refDeltaRho * refPlugHeight);
+  if (refHydrostatic > 0) {
+    // Factor > 1 when total pressure exceeds reference → more losses
+    // Factor < 1 when lighter column → fewer losses
+    hydrostaticFactor = totalHydrostatic / refHydrostatic;
     hydrostaticFactor = Math.max(0.1, Math.min(hydrostaticFactor, 5.0));
-  } else if (deltaRho <= 0) {
-    // Cement lighter than well fluid — minimal losses (only dynamic pressure)
-    hydrostaticFactor = 0.2;
   }
 
   // ── Factor 2: Rheology resistance (all fluids weighted) ──
