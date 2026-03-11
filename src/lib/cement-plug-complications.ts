@@ -157,8 +157,13 @@ export function calculateComplications(
   // Driving force = EXCESS hydrostatic: ΔP = (ρ_zone - ρ_wellfluid) × g × h_plug
   // Two components: density difference AND plug height
   // Normalize to reference: ΔP_ref = (1.9 - 1.1) × g × 100m (typical heavy cement, 100m plug)
-  const zoneFluid = params.hasViscousPad ? viscousPad : cement;
-  const deltaRho = zoneFluid.densityGcm3 - wellFluid.densityGcm3; // g/cm³
+  const usePadInZone = params.hasViscousPad && params.spacerVolumeBelowM3 > 0;
+  // In the loss zone, pad dominates but cement column still contributes to hydrostatic profile
+  const zoneFluidDensity = usePadInZone
+    ? (viscousPad.densityGcm3 * 0.7 + cement.densityGcm3 * 0.3)
+    : cement.densityGcm3;
+  const zoneFluid = usePadInZone ? viscousPad : cement;
+  const deltaRho = zoneFluidDensity - wellFluid.densityGcm3; // g/cm³
   const refDeltaRho = 0.8; // reference: 1.9 cement - 1.1 well fluid
   const refPlugHeight = 100; // m
   let hydrostaticFactor = 1.0;
@@ -179,7 +184,7 @@ export function calculateComplications(
   let effectivePV = zonePV;
   let effectiveYP = zoneYP;
 
-  if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
+  if (usePadInZone) {
     const padPV = viscousPad.pvMPas > 0 ? viscousPad.pvMPas : refPV;
     const padYP = viscousPad.ypPa > 0 ? viscousPad.ypPa : refYP;
     effectivePV = Math.max(padPV, zonePV);
@@ -197,7 +202,7 @@ export function calculateComplications(
   const padGel = viscousPad.gel10minPa > 0 ? viscousPad.gel10minPa : viscousPad.ypPa * 3;
 
   let effectiveGel: number;
-  if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
+  if (usePadInZone) {
     effectiveGel = padGel * 0.5 + cementGel * 0.3 + spacerGel * 0.1 + wellFluidGel * 0.1;
   } else {
     effectiveGel = cementGel * 0.5 + spacerGel * 0.25 + wellFluidGel * 0.25;
@@ -216,7 +221,7 @@ export function calculateComplications(
 
   // ── Factor 5: Viscous pad barrier ──
   let padBarrierFactor = 1.0;
-  if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
+  if (usePadInZone) {
     const padVolume = params.spacerVolumeBelowM3;
     padBarrierFactor = Math.max(0.3, 1 - 0.35 * Math.min(padVolume / 1.0, 1.5));
   }
