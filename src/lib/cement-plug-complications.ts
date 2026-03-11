@@ -304,7 +304,7 @@ export function calculateComplications(
       recs.push(`Снизьте скорость закачки для уменьшения динамических потерь давления.`);
     } else if (intensity === 'intense') {
       if (riskLevel !== 'critical') riskLevel = 'high';
-      recs.push(`Интенсивное поглощение (${lossRateM3h.toFixed(1)} м³/ч${densityNote}). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
+      recs.push(`Интенсивное поглощение (${lossRateM3h.toFixed(1)} м³/ч${factorsNote}). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
       recs.push(`Реальная длина моста: ${realPlugLength.toFixed(1)} м вместо ${plugLenAnn.toFixed(0)} м — потеряно ${lossPercent.toFixed(0)}%.`);
       recs.push(`ОБЯЗАТЕЛЬНО: закачайте ВИР/кольматант перед установкой моста.`);
       recs.push(`Увеличьте объём цемента на ${(volumeLostM3 * compensationFactor).toFixed(2)} м³.`);
