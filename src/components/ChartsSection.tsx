@@ -237,8 +237,8 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
                     {/* Цветные зоны режимов */}
                     <ReferenceArea yAxisId="re" y1={0} y2={2100} fill="hsla(120, 50%, 50%, 0.08)" />
-                    <ReferenceArea yAxisId="re" y1={2100} y2={4000} fill="hsla(45, 80%, 50%, 0.08)" />
-                    <ReferenceArea yAxisId="re" y1={4000} y2={reYMax} fill="hsla(0, 70%, 50%, 0.06)" />
+                    <ReferenceArea yAxisId="re" y1={2100} y2={3000} fill="hsla(45, 80%, 50%, 0.08)" />
+                    <ReferenceArea yAxisId="re" y1={3000} y2={reYMax} fill="hsla(0, 70%, 50%, 0.06)" />
                     <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" />
                     <YAxis yAxisId="re" domain={[0, reYMax]} label={{ value: "Re", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
                     <YAxis yAxisId="rate" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
