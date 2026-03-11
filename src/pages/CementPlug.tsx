@@ -48,6 +48,8 @@ interface SessionState {
   spacerVolumeAbove: number;
   spacerVolumeBelow: number;
   thickeningTime: number;
+  settingTimeStartMin: number;
+  settingTimeEndMin: number;
   wocTimeHours: number;
   pullOutAbove: number;
   washType: WashType;
