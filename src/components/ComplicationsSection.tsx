@@ -79,7 +79,7 @@ export default function ComplicationsSection({
       spacerDensityGcm3: spacerDensity,
       wellFluidDensityGcm3: wellFluidDensity,
       cementVolumeTotalM3: results.cementVolumeTotal,
-      pumpRateCementLs,
+      totalOperationTimeMin: results.totalOperationTimeMin,
       cementGel10minPa: gel10minCement,
       spacerGel10minPa: gel10minSpacer,
       spacerVolumeBelowM3: spacerVolumeBelow,

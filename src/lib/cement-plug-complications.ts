@@ -115,13 +115,10 @@ export function calculateComplications(
 
   // ═══ LOSS CALCULATIONS ═══
   const annArea = params.annAreaM2;
-  const pumpRateM3s = params.pumpRateCementLs / 1000;
   const plugLenAnn = params.plugLengthMD;
-  const cementVolInAnn = annArea * plugLenAnn;
 
-  // Time to fill cement in annulus
-  const fillTimeSec = pumpRateM3s > 0 ? cementVolInAnn / pumpRateM3s : 0;
-  const fillTimeMin = fillTimeSec / 60;
+  // Total time of the entire operation (all stages: spacer, cement, displacement, trip, wash)
+  const fillTimeSec = params.totalOperationTimeMin * 60;
 
   // Volume lost during placement
   const lossRateM3s = lossRateM3h / 3600;
