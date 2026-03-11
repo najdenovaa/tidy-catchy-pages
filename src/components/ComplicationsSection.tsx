@@ -64,6 +64,11 @@ export default function ComplicationsSection({
     gel10minPa: f.gel10min > 0 ? f.gel10min : f.yp * 3,
   });
 
+  const cementProps = toFluidProps(cement);
+  const spacerProps = toFluidProps(spacer);
+  const wellFluidProps = toFluidProps(wellFluid);
+  const viscousPadProps = toFluidProps(viscousPad);
+
   const complicationResult = useMemo<ComplicationResult | null>(() => {
     if (!results) return null;
     if (type === 'loss' && lossRate <= 0) return null;
@@ -96,16 +101,19 @@ export default function ComplicationsSection({
       settingTimeStartMin,
       settingTimeEndMin,
       hasViscousPad,
-      cement: toFluidProps(cement),
-      spacer: toFluidProps(spacer),
-      wellFluid: toFluidProps(wellFluid),
-      viscousPad: toFluidProps(viscousPad),
+      cement: cementProps,
+      spacer: spacerProps,
+      wellFluid: wellFluidProps,
+      viscousPad: viscousPadProps,
     };
 
     return calculateComplications(inputs, params);
   }, [results, type, lossRate, lossBehavior, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType,
-      cement, spacer, wellFluid, viscousPad, hasViscousPad,
-      spacerVolumeBelow, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
+      cement.density, cement.pv, cement.yp, cement.gel10min,
+      spacer.density, spacer.pv, spacer.yp, spacer.gel10min,
+      wellFluid.density, wellFluid.pv, wellFluid.yp, wellFluid.gel10min,
+      viscousPad.density, viscousPad.pv, viscousPad.yp, viscousPad.gel10min,
+      hasViscousPad, spacerVolumeBelow, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">
