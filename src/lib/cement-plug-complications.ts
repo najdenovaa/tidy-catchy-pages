@@ -189,11 +189,19 @@ export function calculateComplications(
   const totalOpTime = params.totalOperationTimeMin;
   const thickTime = params.thickeningTimeMin;
   const safeTime = thickTime * 0.75;
-  const settingStart = params.settingTimeStartMin;
-  const settingEnd = params.settingTimeEndMin;
+  // Setting time is measured from STATIC (after operation stops), not from mixing
+  const settingStartStatic = params.settingTimeStartMin; // minutes after cement stops moving
+  const settingEndStatic = params.settingTimeEndMin;
+  // Absolute timeline: setting starts at totalOpTime + settingStartStatic
+  const settingStartAbsolute = settingStartStatic > 0 ? totalOpTime + settingStartStatic : 0;
+  const settingEndAbsolute = settingEndStatic > 0 ? totalOpTime + settingEndStatic : 0;
   const timeMargin = safeTime - totalOpTime;
   const isTimeWithinThickening = totalOpTime <= safeTime;
-  const operationOverlapsSetting = settingStart > 0 && totalOpTime > settingStart;
+  // Check if thickening happens before cement even starts to set (dangerous - cement thickens but doesn't set)
+  const thickeningBeforeSetting = thickTime > 0 && settingStartStatic > 0 && thickTime < settingStartAbsolute;
+  // Check if operation time is so long that cement may start setting in static zones while still pumping
+  // This is NOT an issue since setting = static time, operation = dynamic time
+  const operationOverlapsSetting = false; // Setting only starts AFTER operation ends, so no overlap possible
 
   // ═══ RECOMMENDATIONS ═══
   const recs: string[] = [];
@@ -206,19 +214,24 @@ export function calculateComplications(
       recs.push(`⛔ ВРЕМЯ ОПЕРАЦИИ (${totalOpTime.toFixed(0)} мин) ПРЕВЫШАЕТ безопасное время загустевания (${safeTime.toFixed(0)} мин, 0.75×${thickTime.toFixed(0)})!`);
       recs.push(`Цемент начнёт загустевать ДО завершения операции. Необходимо ускорить процесс или использовать замедлитель.`);
     } else if (timeMargin < 15) {
-      if (riskLevel !== 'critical') riskLevel = 'high';
+      riskLevel = 'high';
       recs.push(`⚠ Запас времени до загустевания КРИТИЧЕСКИ МАЛ: ${timeMargin.toFixed(0)} мин (операция: ${totalOpTime.toFixed(0)} мин, безопасное: ${safeTime.toFixed(0)} мин).`);
     }
   }
 
-  if (operationOverlapsSetting) {
-    riskLevel = 'critical';
-    recs.push(`⛔ ВРЕМЯ ОПЕРАЦИИ (${totalOpTime.toFixed(0)} мин) ВХОДИТ в зону схватывания (начало: ${settingStart.toFixed(0)} мин${settingEnd > 0 ? `, конец: ${settingEnd.toFixed(0)} мин` : ''})!`);
-    recs.push(`Цемент начнёт схватываться во время закачки/продавки. Мост будет дефектным.`);
-    recs.push(`Используйте замедлитель или рассмотрите установку в 2 ступени.`);
-  } else if (settingStart > 0 && settingStart - totalOpTime < 30) {
-    if (riskLevel !== 'critical') riskLevel = 'high';
-    recs.push(`⚠ До начала схватывания остаётся ${(settingStart - totalOpTime).toFixed(0)} мин после завершения операции. Рекомендуется увеличить замедление.`);
+  if (settingStartStatic > 0) {
+    if (thickeningBeforeSetting) {
+      // Thickening happens before setting even starts — cement may not properly harden
+      riskLevel = 'critical';
+      recs.push(`⛔ Загустевание (${thickTime.toFixed(0)} мин от замеса) наступит РАНЬШЕ начала схватывания (${settingStartAbsolute.toFixed(0)} мин от замеса = операция ${totalOpTime.toFixed(0)} + статика ${settingStartStatic.toFixed(0)} мин).`);
+      recs.push(`Цемент потеряет подвижность, но не начнёт набирать прочность. Проверьте рецептуру!`);
+    } else if (settingStartStatic < 30) {
+      // Very short static time before setting — risky if need to re-do something
+      if (riskLevel !== 'critical') riskLevel = 'medium';
+      recs.push(`⚠ Начало схватывания через ${settingStartStatic.toFixed(0)} мин после остановки — мало времени на корректировку.`);
+    }
+    // Info about setting window
+    recs.push(`🕐 Схватывание: начало через ${settingStartStatic.toFixed(0)} мин в статике (${settingStartAbsolute.toFixed(0)} мин от замеса)${settingEndStatic > 0 ? `, конец через ${settingEndStatic.toFixed(0)} мин (${settingEndAbsolute.toFixed(0)} мин от замеса)` : ''}.`);
   }
 
   if (type === 'loss' || type === 'both') {
