@@ -77,65 +77,197 @@ function kvTable(rows: { label: string; value: string }[]): Table {
 
 // ======== Page builders ========
 
-function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurries: SlurryInput[], buffers: BufferFluid[], displacementFluids: DisplacementFluid[]): Paragraph[] {
+function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurries: SlurryInput[], buffers: BufferFluid[], displacementFluids: DisplacementFluid[], fractureGradient?: number, flushTimeMin?: number, flushVolumeM3?: number): Paragraph[] {
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
   const wellRows = [
     { label: "Глубина скважины (по стволу)", value: `${wellData.wellDepthMD} м` },
     { label: "Глубина скважины (по вертикали)", value: `${wellData.wellDepthTVD} м` },
     { label: "Глубина спуска ОК (по стволу)", value: `${wellData.casingDepthMD} м` },
-    { label: "Диаметр ствола", value: `${wellData.holeDiameter} мм` },
+    { label: "Номинальный диаметр ствола", value: `${wellData.holeDiameter} мм` },
     { label: "Наружный диаметр ОК", value: `${wellData.casingOD} мм` },
     { label: "Толщина стенки ОК", value: `${wellData.casingWall} мм` },
-    { label: "Внутренний диаметр ОК", value: `${fmt(casingID, 1)} мм` },
-    { label: "Глубина предыдущей колонны", value: `${wellData.prevCasingDepth} м` },
-    { label: "Диаметр предыдущей колонны (OD/ID)", value: `${wellData.prevCasingOD}/${wellData.prevCasingID} мм` },
-    { label: "Глубина ЦКОД", value: `${wellData.ckodDepth} м` },
+    { label: "Внутренний диаметр ОК (расчёт)", value: `${fmt(casingID, 1)} мм` },
+    { label: "Глубина пред. колонны (по стволу)", value: `${wellData.prevCasingDepth} м` },
+    { label: "Наружный диам. пред. колонны", value: `${wellData.prevCasingOD} мм` },
+    { label: "Внутр. диам. пред. колонны", value: `${wellData.prevCasingID} мм` },
+    { label: "Глубина ЦКОД (по стволу)", value: `${wellData.ckodDepth} м` },
+    { label: "Высота подъёма цемента", value: `${wellData.cementRiseHeight ?? 0} м` },
     { label: "Коэффициент кавернозности", value: `${wellData.cavernCoeff}` },
-    { label: "Температура забоя (статическая)", value: `${wellData.bottomTempStatic} °C` },
-  ];
-
-  const fluidRows = [
-    { label: "Наименование", value: drillingFluid.name },
-    { label: "Плотность", value: `${drillingFluid.density} кг/м³` },
-    { label: "PV / YP", value: `${drillingFluid.rheology.pv} сПз / ${drillingFluid.rheology.yp} Па` },
+    { label: "BHST (статическая t°)", value: `${wellData.bottomTempStatic} °C` },
+    { label: "BHCT (циркуляционная t°)", value: `${wellData.bottomTempCirc ?? 0} °C` },
   ];
 
   const result: Paragraph[] = [
     sectionTitle("1. Данные о скважине"),
   ];
-  // @ts-ignore — adding Table as content element
   result.push(kvTable(wellRows) as any);
 
+  // Casing sections
+  if (wellData.casingSections && wellData.casingSections.length > 0) {
+    result.push(new Paragraph({ spacing: { before: 150, after: 80 }, children: [new TextRun({ text: "Секции ОК (разная толщина стенки):", bold: true, size: 20, font: "Calibri" })] }));
+    const csHeaders = ["От (MD), м", "До (MD), м", "Стенка, мм"];
+    const csRows = [
+      new TableRow({ children: csHeaders.map(h => headerCell(h)) }),
+      ...wellData.casingSections.map(sec => new TableRow({
+        children: [
+          cell(fmt(sec.fromMD, 0), { align: AlignmentType.CENTER }),
+          cell(fmt(sec.toMD, 0), { align: AlignmentType.CENTER }),
+          cell(fmt(sec.wallThickness, 1), { align: AlignmentType.CENTER }),
+        ],
+      })),
+    ];
+    result.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, layout: TableLayoutType.FIXED, rows: csRows }) as any);
+  }
+
+  // Cavern intervals
+  if (wellData.cavernIntervals && wellData.cavernIntervals.length > 0) {
+    result.push(new Paragraph({ spacing: { before: 150, after: 80 }, children: [new TextRun({ text: "Интервалы кавернозности (открытый ствол):", bold: true, size: 20, font: "Calibri" })] }));
+    const ciHeaders = ["От (MD), м", "До (MD), м", "Коэфф. каверн."];
+    const ciRows = [
+      new TableRow({ children: ciHeaders.map(h => headerCell(h)) }),
+      ...wellData.cavernIntervals.map(iv => new TableRow({
+        children: [
+          cell(fmt(iv.fromMD, 0), { align: AlignmentType.CENTER }),
+          cell(fmt(iv.toMD, 0), { align: AlignmentType.CENTER }),
+          cell(fmt(iv.coeff, 2), { align: AlignmentType.CENTER }),
+        ],
+      })),
+    ];
+    result.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, layout: TableLayoutType.FIXED, rows: ciRows }) as any);
+  }
+
+  // Trajectory
+  if (wellData.trajectory && wellData.trajectory.length > 1) {
+    result.push(new Paragraph({ spacing: { before: 150, after: 80 }, children: [new TextRun({ text: "Профиль скважины (инклинометрия):", bold: true, size: 20, font: "Calibri" })] }));
+    const trajHeaders = ["MD, м", "Азимут, °", "Зенит, °", "TVD, м"];
+    const sorted = [...wellData.trajectory].sort((a, b) => a.md - b.md);
+    const trajRows = [
+      new TableRow({ children: trajHeaders.map(h => headerCell(h)) }),
+      ...sorted.map(p => new TableRow({
+        children: [
+          cell(fmt(p.md, 1), { align: AlignmentType.RIGHT }),
+          cell(fmt(p.azimuth, 1), { align: AlignmentType.RIGHT }),
+          cell(fmt(p.zenith, 1), { align: AlignmentType.RIGHT }),
+          cell(p.tvd ? fmt(p.tvd, 2) : "—", { align: AlignmentType.RIGHT }),
+        ],
+      })),
+    ];
+    result.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, layout: TableLayoutType.FIXED, rows: trajRows }) as any);
+  }
+
+  // Drilling fluid
   result.push(sectionTitle("2. Буровой раствор"));
+  const fluidRows = [
+    { label: "Тип бурового раствора", value: drillingFluid.name },
+    { label: "Плотность", value: `${drillingFluid.density} кг/м³` },
+    { label: "Водоотдача", value: `${drillingFluid.fluidLoss ?? 0} мл/30мин` },
+    { label: "PV (поверхность)", value: `${drillingFluid.rheology.pv} сПз` },
+    { label: "YP (поверхность)", value: `${drillingFluid.rheology.yp} Па` },
+  ];
+  if (drillingFluid.rheologyBottomhole && (drillingFluid.rheologyBottomhole.pv > 0 || drillingFluid.rheologyBottomhole.yp > 0)) {
+    fluidRows.push(
+      { label: "PV (забой)", value: `${drillingFluid.rheologyBottomhole.pv} сПз` },
+      { label: "YP (забой)", value: `${drillingFluid.rheologyBottomhole.yp} Па` },
+    );
+  }
   result.push(kvTable(fluidRows) as any);
 
-  // Slurries
-  result.push(sectionTitle("3. Цементные растворы"));
-  slurries.forEach((s, i) => {
-    const height = getSlurryHeight(slurries, i, wellData.casingDepthMD);
-    const sRows = [
-      { label: "Наименование", value: s.name },
-      { label: "Плотность", value: `${s.density} г/см³` },
-      { label: "Интервал (верх)", value: `${s.topDepthMD} м` },
-      { label: "Высота столба", value: `${fmt(height, 1)} м` },
-      { label: "В/Ц", value: `${s.waterRatio}` },
-      { label: "Загустевание 30/50 Вс", value: `${s.thickeningTime30Bc} / ${s.thickeningTime50Bc} мин` },
-    ];
-    result.push(kvTable(sRows) as any);
-    result.push(new Paragraph({ spacing: { after: 100 }, children: [] }));
-  });
-
   // Buffers
-  result.push(sectionTitle("4. Буферные жидкости"));
+  result.push(sectionTitle("3. Буферные жидкости"));
   buffers.forEach(b => {
     const bRows = [
       { label: "Наименование", value: b.name },
       { label: "Плотность", value: `${b.density} кг/м³` },
       { label: "Объём", value: `${b.volume} м³` },
+      { label: "PV / YP", value: `${b.rheology.pv} сПз / ${b.rheology.yp} Па` },
     ];
     result.push(kvTable(bRows) as any);
+    // Flow rate steps
+    if (b.flowRateSteps && b.flowRateSteps.length > 0) {
+      b.flowRateSteps.forEach((step, si) => {
+        result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  Режим ${si + 1}: ${fmt(step.rateLps, 1)} л/с × ${fmt(step.volumeM3, 2)} м³`, size: 18, font: "Calibri" })] }));
+      });
+    }
+    // Additives
+    if (b.additives && b.additives.length > 0) {
+      const bufferMassKg = b.volume * b.density;
+      b.additives.forEach(a => {
+        if (a.name) {
+          const computedMass = a.percentage > 0 ? (a.percentage / 100) * bufferMassKg : a.massKg;
+          result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  ${a.name}: ${a.percentage}% = ${computedMass > 0 ? computedMass.toFixed(1) : "—"} кг`, size: 18, font: "Calibri" })] }));
+        }
+      });
+    }
     result.push(new Paragraph({ spacing: { after: 100 }, children: [] }));
   });
+
+  // Slurries
+  result.push(sectionTitle("4. Тампонажные растворы (цемент)"));
+  slurries.forEach((s, i) => {
+    const height = getSlurryHeight(slurries, i, wellData.casingDepthMD);
+    const sRows = [
+      { label: "Наименование", value: s.name },
+      { label: "Плотность", value: `${s.density} г/см³` },
+      { label: "Верх цемента от устья", value: `${s.topDepthMD} м` },
+      { label: "Высота столба (расчёт)", value: `${fmt(height, 0)} м` },
+      { label: "В/Ц отношение", value: `${s.waterRatio}` },
+      { label: "Выход, м³/т", value: `${s.yieldPerTon ?? 0}` },
+      { label: "PV / YP", value: `${s.rheology.pv} сПз / ${s.rheology.yp} Па` },
+      { label: "Загустевание 30 Вс", value: `${s.thickeningTime30Bc || "—"} мин` },
+      { label: "Загустевание 50 Вс", value: `${s.thickeningTime50Bc || "—"} мин` },
+    ];
+    result.push(kvTable(sRows) as any);
+    // Flow rate steps
+    if (s.flowRateSteps && s.flowRateSteps.length > 0) {
+      s.flowRateSteps.forEach((step, si) => {
+        result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  Режим ${si + 1}: ${fmt(step.rateLps, 1)} л/с × ${fmt(step.volumeM3, 2)} м³`, size: 18, font: "Calibri" })] }));
+      });
+    }
+    // Additives
+    if (s.additives && s.additives.length > 0) {
+      s.additives.forEach(a => {
+        if (a.name) {
+          const pctType = a.percentageType || 'bwoc';
+          result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  ${a.name}: ${a.percentage}% ${pctType}`, size: 18, font: "Calibri" })] }));
+        }
+      });
+    }
+    result.push(new Paragraph({ spacing: { after: 100 }, children: [] }));
+  });
+
+  // Displacement fluids
+  result.push(sectionTitle("5. Продавочная жидкость"));
+  displacementFluids.forEach((df, idx) => {
+    const label = displacementFluids.length > 1 ? `${df.name} (порция ${idx + 1})` : df.name;
+    const dfRows = [
+      { label: "Наименование", value: label },
+      { label: "Плотность", value: `${df.density} кг/м³` },
+      { label: "PV / YP", value: `${df.rheology.pv} сПз / ${df.rheology.yp} Па` },
+      { label: "Коэфф. сжатия", value: `${df.compressionCoeff ?? 1.0}` },
+    ];
+    result.push(kvTable(dfRows) as any);
+    if (df.flowRateSteps && df.flowRateSteps.length > 0) {
+      df.flowRateSteps.forEach((step, si) => {
+        result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  Режим ${si + 1}: ${fmt(step.rateLps, 1)} л/с × ${fmt(step.volumeM3, 2)} м³`, size: 18, font: "Calibri" })] }));
+      });
+    }
+    result.push(new Paragraph({ spacing: { after: 100 }, children: [] }));
+  });
+
+  // Fracture gradient
+  if (fractureGradient && fractureGradient > 0) {
+    result.push(sectionTitle("6. Параметры гидроразрыва"));
+    result.push(kvTable([{ label: "Градиент гидроразрыва", value: `${fractureGradient} кПа/м` }]) as any);
+  }
+
+  // Flush parameters
+  if ((flushTimeMin && flushTimeMin > 0) || (flushVolumeM3 && flushVolumeM3 > 0)) {
+    result.push(sectionTitle("7. Промывка линии перед продавкой"));
+    const flushRows = [];
+    if (flushTimeMin) flushRows.push({ label: "Время промывки", value: `${flushTimeMin} мин` });
+    if (flushVolumeM3) flushRows.push({ label: "Объём промывки", value: `${flushVolumeM3} м³` });
+    result.push(kvTable(flushRows) as any);
+  }
 
   return result;
 }
