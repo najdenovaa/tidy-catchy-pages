@@ -666,10 +666,17 @@ export async function exportToDocx(
   fractureGradient: number,
   images?: DocxImages,
   centralizationResults?: CentralizationResult[],
+  preComputed?: {
+    volumes?: VolumeResults;
+    pressureResult?: PressureProfileResult;
+    materials?: MaterialSummary;
+    flushTimeMin?: number;
+    flushVolumeM3?: number;
+  },
 ) {
-  const volumes = calculateVolumes(wellData);
-  const pressureResult = calculatePressureProfile(wellData, slurries, buffers, drillingFluid, displacementFluids, fractureGradient, volumes.displacementVolume);
-  const materials = calculateMaterials(slurries, buffers, wellData);
+  const volumes = preComputed?.volumes ?? calculateVolumes(wellData);
+  const pressureResult = preComputed?.pressureResult ?? calculatePressureProfile(wellData, slurries, buffers, drillingFluid, displacementFluids, fractureGradient, volumes.displacementVolume, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
+  const materials = preComputed?.materials ?? calculateMaterials(slurries, buffers, wellData);
   const workTimeWithCement = pressureResult.stopTime - pressureResult.cementStartTime;
 
   const titlePage: Paragraph[] = [
@@ -707,7 +714,7 @@ export async function exportToDocx(
   ];
 
   const inputContent = buildInputPage(wellData, drillingFluid, slurries, buffers, displacementFluids);
-  const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement);
+  const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult);
   const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolume, displacementFluids, wellData.casingDepthMD);
   const materialsContent = buildMaterialsPage(materials);
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
