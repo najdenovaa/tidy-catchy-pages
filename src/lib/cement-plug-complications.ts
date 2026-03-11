@@ -312,7 +312,7 @@ export function calculateComplications(
       recs.push(`Снизьте скорость закачки до минимума (1.5–2 л/с).`);
     } else {
       riskLevel = 'critical';
-      recs.push(`⛔ Катастрофическое поглощение (${lossRateM3h.toFixed(1)} м³/ч${densityNote})! Потери: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
+      recs.push(`⛔ Катастрофическое поглощение (${lossRateM3h.toFixed(1)} м³/ч${factorsNote})! Потери: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
       recs.push(`Реальная длина моста: ${realPlugLength.toFixed(1)} м — потеряно ${lossPercent.toFixed(0)}% цемента.`);
       recs.push(`Установка моста без предварительных мероприятий НЕВОЗМОЖНА.`);
       recs.push(`1. Закачайте ВИР/кольматант для ликвидации поглощения.`);
