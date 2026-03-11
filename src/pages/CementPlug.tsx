@@ -48,6 +48,8 @@ interface SessionState {
   spacerVolumeAbove: number;
   spacerVolumeBelow: number;
   thickeningTime: number;
+  settingTimeStartMin: number;
+  settingTimeEndMin: number;
   wocTimeHours: number;
   pullOutAbove: number;
   washType: WashType;
@@ -119,6 +121,8 @@ export default function CementPlug() {
   const [spacerVolumeAbove, setSpacerVolumeAbove] = useState(saved.spacerVolumeAbove ?? 0.3);
   const [spacerVolumeBelow, setSpacerVolumeBelow] = useState(saved.spacerVolumeBelow ?? 0.3);
   const [thickeningTime, setThickeningTime] = useState(saved.thickeningTime ?? 120);
+  const [settingTimeStartMin, setSettingTimeStartMin] = useState(saved.settingTimeStartMin ?? 0);
+  const [settingTimeEndMin, setSettingTimeEndMin] = useState(saved.settingTimeEndMin ?? 0);
   const [wocTimeHours, setWocTimeHours] = useState(saved.wocTimeHours ?? 24);
   const [pullOutAbove, setPullOutAbove] = useState(saved.pullOutAbove ?? 50);
   const [washType, setWashType] = useState<WashType>(saved.washType || 'direct');
@@ -147,10 +151,10 @@ export default function CementPlug() {
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove]);
 
   /* ── Spacer height preview (real-time) ── */
   const isOpenHole = plug.bottomMD > well.casingShoe;
@@ -291,6 +295,8 @@ export default function CementPlug() {
       if (typeof p.spacerVolumeAbove === "number") setSpacerVolumeAbove(p.spacerVolumeAbove);
       if (typeof p.spacerVolumeBelow === "number") setSpacerVolumeBelow(p.spacerVolumeBelow);
       if (typeof p.thickeningTime === "number") setThickeningTime(p.thickeningTime);
+      if (typeof p.settingTimeStartMin === "number") setSettingTimeStartMin(p.settingTimeStartMin);
+      if (typeof p.settingTimeEndMin === "number") setSettingTimeEndMin(p.settingTimeEndMin);
       if (typeof p.wocTimeHours === "number") setWocTimeHours(p.wocTimeHours);
       if (typeof p.pullOutAbove === "number") setPullOutAbove(p.pullOutAbove);
       if (p.washType) setWashType(p.washType);
@@ -502,6 +508,8 @@ export default function CementPlug() {
     setSpacerVolumeAbove(0);
     setSpacerVolumeBelow(0);
     setThickeningTime(0);
+    setSettingTimeStartMin(0);
+    setSettingTimeEndMin(0);
     setWocTimeHours(0);
     setPullOutAbove(0);
     setWashType('direct');
@@ -763,13 +771,17 @@ export default function CementPlug() {
                         <Field label="СНС 10 сек" value={cement.gel10sec || 0} onChange={v => setCement(c => ({ ...c, gel10sec: num(v) }))} unit="Па" />
                         <Field label="СНС 10 мин" value={cement.gel10min || 0} onChange={v => setCement(c => ({ ...c, gel10min: num(v) }))} unit="Па" />
                       </div>
-                      <div className="grid grid-cols-3 gap-2 mt-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
                         <Field label="Загустевание (50Bc)" value={thickeningTime} onChange={v => setThickeningTime(num(v))} unit="мин" />
                         <div className="space-y-1">
                           <Label className="text-xs">Безопасн. время (0.75×50Bc)</Label>
                           <div className="h-8 flex items-center text-xs font-semibold text-amber-400">{(thickeningTime * 0.75).toFixed(0)} мин</div>
                         </div>
                         <Field label="Время ОЗЦ" value={wocTimeHours} onChange={v => setWocTimeHours(num(v))} unit="ч" />
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
+                        <Field label="Начало схватывания" value={settingTimeStartMin} onChange={v => setSettingTimeStartMin(num(v))} unit="мин" />
+                        <Field label="Конец схватывания" value={settingTimeEndMin} onChange={v => setSettingTimeEndMin(num(v))} unit="мин" />
                       </div>
                       <Separator className="my-2" />
                       <p className="text-[10px] font-medium text-muted-foreground mb-1">Рецептура</p>
@@ -942,6 +954,9 @@ export default function CementPlug() {
                       spacerVolumeBelow={useViscousPad ? spacerVolumeBelow : 0}
                       cementYP={cement.rheology.yp}
                       spacerYP={useViscousPad ? viscousPadFluid.rheology.yp : spacer.rheology.yp}
+                      thickeningTimeMin={thickeningTime}
+                      settingTimeStartMin={settingTimeStartMin}
+                      settingTimeEndMin={settingTimeEndMin}
                     />
                   </CardContent>
                 </CollapsibleContent>

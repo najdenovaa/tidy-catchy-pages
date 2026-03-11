@@ -33,12 +33,15 @@ interface Props {
   spacerVolumeBelow: number;
   cementYP: number;
   spacerYP: number;
+  thickeningTimeMin: number;
+  settingTimeStartMin: number;
+  settingTimeEndMin: number;
 }
 
 export default function ComplicationsSection({
   results, cementDensity, spacerDensity, wellFluidDensity,
   cementGel10min, spacerGel10min, spacerVolumeBelow,
-  cementYP, spacerYP,
+  cementYP, spacerYP, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin,
 }: Props) {
   const [type, setType] = useState<ComplicationType>('loss');
   const [lossRate, setLossRate] = useState(10);
@@ -83,10 +86,13 @@ export default function ComplicationsSection({
       spacerGel10minPa: gel10minSpacer,
       spacerVolumeBelowM3: spacerVolumeBelow,
       plugBottomTVD: results.plugBottomTVD,
+      thickeningTimeMin,
+      settingTimeStartMin,
+      settingTimeEndMin,
     };
 
     return calculateComplications(inputs, params);
-  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType, cementDensity, spacerDensity, wellFluidDensity, cementGel10min, spacerGel10min, spacerVolumeBelow, cementYP, spacerYP]);
+  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType, cementDensity, spacerDensity, wellFluidDensity, cementGel10min, spacerGel10min, spacerVolumeBelow, cementYP, spacerYP, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">
@@ -246,6 +252,56 @@ export default function ComplicationsSection({
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0 space-y-3">
+            {/* Time analysis */}
+            {(complicationResult.thickeningTimeMin > 0 || complicationResult.settingTimeStartMin > 0) && (
+              <div className={`rounded-lg border p-3 space-y-2 ${
+                complicationResult.operationOverlapsSetting || !complicationResult.isTimeWithinThickening
+                  ? 'border-destructive/50 bg-destructive/5'
+                  : complicationResult.timeMarginMin < 15
+                    ? 'border-amber-500/50 bg-amber-500/5'
+                    : 'border-border'
+              }`}>
+                <p className="text-[10px] font-semibold text-muted-foreground flex items-center gap-1">
+                  ⏱ Анализ времени операции
+                </p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
+                  <span className="text-muted-foreground">Время операции:</span>
+                  <span className="font-semibold">{complicationResult.totalOperationTimeMin.toFixed(1)} мин</span>
+                  {complicationResult.thickeningTimeMin > 0 && (
+                    <>
+                      <span className="text-muted-foreground">Загустевание (50Bc):</span>
+                      <span>{complicationResult.thickeningTimeMin.toFixed(0)} мин</span>
+                      <span className="text-muted-foreground">Безопасное время (0.75×):</span>
+                      <span>{complicationResult.safeTimeMin.toFixed(0)} мин</span>
+                      <span className="text-muted-foreground font-semibold">Запас времени:</span>
+                      <span className={`font-bold ${complicationResult.timeMarginMin < 0 ? 'text-destructive' : complicationResult.timeMarginMin < 15 ? 'text-amber-400' : 'text-green-500'}`}>
+                        {complicationResult.timeMarginMin.toFixed(0)} мин
+                      </span>
+                    </>
+                  )}
+                  {complicationResult.settingTimeStartMin > 0 && (
+                    <>
+                      <Separator className="col-span-2 my-1" />
+                      <span className="text-muted-foreground">Начало схватывания:</span>
+                      <span>{complicationResult.settingTimeStartMin.toFixed(0)} мин</span>
+                      {complicationResult.settingTimeEndMin > 0 && (
+                        <>
+                          <span className="text-muted-foreground">Конец схватывания:</span>
+                          <span>{complicationResult.settingTimeEndMin.toFixed(0)} мин</span>
+                        </>
+                      )}
+                      <span className="text-muted-foreground font-semibold">До начала схватывания:</span>
+                      <span className={`font-bold ${
+                        complicationResult.operationOverlapsSetting ? 'text-destructive' :
+                        (complicationResult.settingTimeStartMin - complicationResult.totalOperationTimeMin) < 30 ? 'text-amber-400' : 'text-green-500'
+                      }`}>
+                        {(complicationResult.settingTimeStartMin - complicationResult.totalOperationTimeMin).toFixed(0)} мин
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
             {/* Loss analysis */}
             {(type === 'loss' || type === 'both') && (
               <div className="rounded-lg border border-border p-3 space-y-2">
