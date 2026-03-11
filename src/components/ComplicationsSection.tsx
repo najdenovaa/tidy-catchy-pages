@@ -31,6 +31,7 @@ interface Props {
   cementGel10min: number;
   spacerGel10min: number;
   spacerVolumeBelow: number;
+  cementPV: number;
   cementYP: number;
   spacerYP: number;
   thickeningTimeMin: number;
