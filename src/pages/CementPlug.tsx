@@ -295,6 +295,8 @@ export default function CementPlug() {
       if (typeof p.spacerVolumeAbove === "number") setSpacerVolumeAbove(p.spacerVolumeAbove);
       if (typeof p.spacerVolumeBelow === "number") setSpacerVolumeBelow(p.spacerVolumeBelow);
       if (typeof p.thickeningTime === "number") setThickeningTime(p.thickeningTime);
+      if (typeof p.settingTimeStartMin === "number") setSettingTimeStartMin(p.settingTimeStartMin);
+      if (typeof p.settingTimeEndMin === "number") setSettingTimeEndMin(p.settingTimeEndMin);
       if (typeof p.wocTimeHours === "number") setWocTimeHours(p.wocTimeHours);
       if (typeof p.pullOutAbove === "number") setPullOutAbove(p.pullOutAbove);
       if (p.washType) setWashType(p.washType);
