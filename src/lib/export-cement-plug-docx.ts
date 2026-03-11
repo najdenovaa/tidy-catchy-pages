@@ -428,7 +428,6 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
     kvRow("Промывка", `${fmt(results.washVolumeM3, 3)} м³ (${results.washCycles} цикл.)`)
   );
   children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: processParamsRows }));
-  children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: processParamsRows }));
 
   // ─── 14. Process Description ───
   children.push(heading("14. Описание процесса"));
