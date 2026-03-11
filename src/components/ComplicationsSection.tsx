@@ -103,7 +103,7 @@ export default function ComplicationsSection({
     };
 
     return calculateComplications(inputs, params);
-  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType,
+  }, [results, type, lossRate, lossBehavior, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType,
       cement, spacer, wellFluid, viscousPad, hasViscousPad,
       spacerVolumeBelow, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
 
