@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Send, Home, Calculator, ArrowLeft, FileDown, Save, Loader2, LayoutDashboard, LogOut, RotateCcw, Plus, Trash2, AlertTriangle, ShieldCheck, ShieldAlert } from "lucide-react";
+import ComplicationsSection from "@/components/ComplicationsSection";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { BlurInput } from "@/components/BlurInput";
 import { Label } from "@/components/ui/label";
@@ -525,7 +526,7 @@ export default function CementPlug() {
   }, []);
 
   /* ── Collapsible state ── */
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: false, plug: false, fluids: false, process: false, pipeSec: false });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: false, plug: false, fluids: false, process: false, pipeSec: false, complications: false });
   const toggle = (k: string) => setOpenSections(s => ({ ...s, [k]: !s[k] }));
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
@@ -915,6 +916,34 @@ export default function CementPlug() {
                         </div>
                       </RadioGroup>
                     </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+
+            {/* Complications analysis */}
+            <Collapsible open={openSections.complications} onOpenChange={() => toggle("complications")}>
+              <Card>
+                <CollapsibleTrigger className="w-full">
+                  <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
+                    <CardTitle className="text-sm">⚠️ Осложнения (поглощение / проявление)</CardTitle>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${openSections.complications ? "rotate-180" : ""}`} />
+                  </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0">
+                    <ComplicationsSection
+                      results={results}
+                      cementDensity={cement.density}
+                      spacerDensity={spacer.density}
+                      wellFluidDensity={wellFluid.density}
+                      pumpRateCementLs={pumpRateCement}
+                      cementGel10min={cement.gel10min || 0}
+                      spacerGel10min={spacer.gel10min || 0}
+                      spacerVolumeBelow={spacerVolumeBelow}
+                      cementYP={cement.rheology.yp}
+                      spacerYP={spacer.rheology.yp}
+                    />
                   </CardContent>
                 </CollapsibleContent>
               </Card>
