@@ -220,15 +220,15 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             </div>
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "hsla(45, 80%, 50%, 0.15)", border: "1px solid hsla(45, 80%, 50%, 0.4)" }} />
-              <span className="text-muted-foreground">Переходный: <span className="font-semibold text-foreground">2100 ≤ Re &lt; 4000</span></span>
+              <span className="text-muted-foreground">Переходный: <span className="font-semibold text-foreground">2100 ≤ Re &lt; 3000</span></span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "hsla(0, 70%, 50%, 0.12)", border: "1px solid hsla(0, 70%, 50%, 0.4)" }} />
-              <span className="text-muted-foreground">Турбулентный: <span className="font-semibold text-foreground">Re ≥ 4000</span></span>
+              <span className="text-muted-foreground">Турбулентный: <span className="font-semibold text-foreground">Re ≥ 3000</span></span>
             </div>
           </div>
           {(() => {
-            const maxRe = Math.max(...pressureData.map(p => p.reynoldsAnn || 0), 4500);
+            const maxRe = Math.max(...pressureData.map(p => p.reynoldsAnn || 0), 3500);
             const reYMax = Math.ceil(maxRe * 1.2);
             return (
               <ScrollableChart chartRef={chartRef5} height="h-[400px]">
@@ -237,8 +237,8 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
                     {/* Цветные зоны режимов */}
                     <ReferenceArea yAxisId="re" y1={0} y2={2100} fill="hsla(120, 50%, 50%, 0.08)" />
-                    <ReferenceArea yAxisId="re" y1={2100} y2={4000} fill="hsla(45, 80%, 50%, 0.08)" />
-                    <ReferenceArea yAxisId="re" y1={4000} y2={reYMax} fill="hsla(0, 70%, 50%, 0.06)" />
+                    <ReferenceArea yAxisId="re" y1={2100} y2={3000} fill="hsla(45, 80%, 50%, 0.08)" />
+                    <ReferenceArea yAxisId="re" y1={3000} y2={reYMax} fill="hsla(0, 70%, 50%, 0.06)" />
                     <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" />
                     <YAxis yAxisId="re" domain={[0, reYMax]} label={{ value: "Re", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
                     <YAxis yAxisId="rate" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
@@ -246,14 +246,14 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                       if (name === "Производительность") return [value.toFixed(1) + " л/с", name];
                       if (name === "Re (затрубье)") {
                         const re = Math.round(value);
-                        const regime = re < 2100 ? "Ламинарный" : re < 4000 ? "Переходный" : "Турбулентный";
+                        const regime = re < 2100 ? "Ламинарный" : re < 3000 ? "Переходный" : "Турбулентный";
                         return [`${re} (${regime})`, name];
                       }
                       return [value.toString(), name];
                     }} />
                     <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
                     <ReferenceLine yAxisId="re" y={2100} stroke="hsl(45, 80%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re = 2100", position: "right", fontSize: 10, fill: "hsl(45, 80%, 40%)" }} />
-                    <ReferenceLine yAxisId="re" y={4000} stroke="hsl(0, 70%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re = 4000", position: "right", fontSize: 10, fill: "hsl(0, 70%, 50%)" }} />
+                    <ReferenceLine yAxisId="re" y={3000} stroke="hsl(0, 70%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re = 3000", position: "right", fontSize: 10, fill: "hsl(0, 70%, 50%)" }} />
                     {stageBoundaries.map((b, i) => <ReferenceLine key={`regime-stage-${i}`} yAxisId="re" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} />)}
                     <Line yAxisId="re" type="linear" dataKey="reynoldsAnn" name="Re (затрубье)" stroke="hsl(200, 60%, 50%)" strokeWidth={2.5} dot={false} />
                     <Line yAxisId="rate" type="stepAfter" dataKey="pumpRateLps" name="Производительность" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
