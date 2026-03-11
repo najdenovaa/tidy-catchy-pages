@@ -289,7 +289,13 @@ export function calculateComplications(
   }
 
   if (type === 'loss' || type === 'both') {
-    const densityNote = densityRatio > 1.05 ? ` (скорр. по плотности: ${effectiveLossRateM3h.toFixed(1)} м³/ч, ρц/ρпж=${densityRatio.toFixed(2)})` : '';
+    // Build factors note
+    const factors: string[] = [];
+    if (Math.abs(densityRatio - 1) > 0.05) factors.push(`ρ×${densityRatio.toFixed(2)}`);
+    if (Math.abs(rheologyFactor - 1) > 0.05) factors.push(`реол.×${rheologyFactor.toFixed(2)}`);
+    if (Math.abs(gelFactor - 1) > 0.05) factors.push(`СНС×${gelFactor.toFixed(2)}`);
+    if (Math.abs(thickeningFactor - 1) > 0.05) factors.push(`загуст.×${thickeningFactor.toFixed(2)}`);
+    const factorsNote = factors.length > 0 ? ` (эфф. ${effectiveLossRateM3h.toFixed(1)} м³/ч: ${factors.join(', ')})` : '';
     if (intensity === 'partial') {
       if (riskLevel === 'low') riskLevel = 'medium';
       recs.push(`Частичное поглощение (${lossRateM3h.toFixed(1)} м³/ч${densityNote}). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
