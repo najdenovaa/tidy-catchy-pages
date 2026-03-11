@@ -144,8 +144,17 @@ export function calculateComplications(
   // Total time of the entire operation (all stages: spacer, cement, displacement, trip, wash)
   const fillTimeSec = params.totalOperationTimeMin * 60;
 
+  // Adjust loss rate based on pressure differential:
+  // Heavier cement → higher hydrostatic → more losses
+  // Reference: the well fluid density (what was in the well before cementing)
+  // Effective loss rate ≈ input_rate × (ρ_cement / ρ_wellfluid)
+  const wellFluidDensity = params.wellFluidDensityGcm3;
+  const cementDensity = params.cementDensityGcm3;
+  const densityRatio = wellFluidDensity > 0 ? cementDensity / wellFluidDensity : 1;
+  const effectiveLossRateM3h = lossRateM3h * densityRatio;
+
   // Volume lost during placement
-  const lossRateM3s = lossRateM3h / 3600;
+  const lossRateM3s = effectiveLossRateM3h / 3600;
   const volumeLostM3 = lossRateM3s * fillTimeSec;
 
   // Real cement volume
@@ -235,15 +244,16 @@ export function calculateComplications(
   }
 
   if (type === 'loss' || type === 'both') {
+    const densityNote = densityRatio > 1.05 ? ` (скорр. по плотности: ${effectiveLossRateM3h.toFixed(1)} м³/ч, ρц/ρпж=${densityRatio.toFixed(2)})` : '';
     if (intensity === 'partial') {
       if (riskLevel === 'low') riskLevel = 'medium';
-      recs.push(`Частичное поглощение (${lossRateM3h.toFixed(1)} м³/ч). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
+      recs.push(`Частичное поглощение (${lossRateM3h.toFixed(1)} м³/ч${densityNote}). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
       recs.push(`Снизьте плотность промывочной жидкости до минимально допустимой перед закачкой моста.`);
       recs.push(`Увеличьте объём цемента на ${(volumeLostM3 * compensationFactor).toFixed(2)} м³ для компенсации потерь.`);
       recs.push(`Снизьте скорость закачки для уменьшения динамических потерь давления.`);
     } else if (intensity === 'intense') {
       if (riskLevel !== 'critical') riskLevel = 'high';
-      recs.push(`Интенсивное поглощение (${lossRateM3h.toFixed(1)} м³/ч). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
+      recs.push(`Интенсивное поглощение (${lossRateM3h.toFixed(1)} м³/ч${densityNote}). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
       recs.push(`Реальная длина моста: ${realPlugLength.toFixed(1)} м вместо ${plugLenAnn.toFixed(0)} м — потеряно ${lossPercent.toFixed(0)}%.`);
       recs.push(`ОБЯЗАТЕЛЬНО: закачайте ВИР/кольматант перед установкой моста.`);
       recs.push(`Увеличьте объём цемента на ${(volumeLostM3 * compensationFactor).toFixed(2)} м³.`);
@@ -251,7 +261,7 @@ export function calculateComplications(
       recs.push(`Снизьте скорость закачки до минимума (1.5–2 л/с).`);
     } else {
       riskLevel = 'critical';
-      recs.push(`⛔ Катастрофическое поглощение (${lossRateM3h.toFixed(1)} м³/ч)! Потери: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
+      recs.push(`⛔ Катастрофическое поглощение (${lossRateM3h.toFixed(1)} м³/ч${densityNote})! Потери: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
       recs.push(`Реальная длина моста: ${realPlugLength.toFixed(1)} м — потеряно ${lossPercent.toFixed(0)}% цемента.`);
       recs.push(`Установка моста без предварительных мероприятий НЕВОЗМОЖНА.`);
       recs.push(`1. Закачайте ВИР/кольматант для ликвидации поглощения.`);
