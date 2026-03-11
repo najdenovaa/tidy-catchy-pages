@@ -22,6 +22,13 @@ export interface ComplicationInputs {
   formationFluidType: 'gas' | 'oil' | 'water';
 }
 
+export interface FluidProps {
+  densityGcm3: number;
+  pvMPas: number;
+  ypPa: number;
+  gel10minPa: number;
+}
+
 export interface ComplicationCalcParams {
   /** Annular area at plug, m² */
   annAreaM2: number;
@@ -37,34 +44,28 @@ export interface ComplicationCalcParams {
   plugTopMD: number;
   /** Plug bottom MD */
   plugBottomMD: number;
-  /** Cement density, g/cm³ */
-  cementDensityGcm3: number;
-  /** Spacer density, g/cm³ */
-  spacerDensityGcm3: number;
-  /** Well fluid density (= flush density), g/cm³ */
-  wellFluidDensityGcm3: number;
   /** Cement volume total, m³ */
   cementVolumeTotalM3: number;
   /** Total operation time (all stages), min */
   totalOperationTimeMin: number;
-  /** Cement gel 10min, Pa */
-  cementGel10minPa: number;
-  /** Spacer gel 10min, Pa */
-  spacerGel10minPa: number;
   /** Spacer volume below (viscous pad), m³ */
   spacerVolumeBelowM3: number;
   /** Plug bottom TVD, m */
   plugBottomTVD: number;
   /** Thickening time (50Bc), min */
   thickeningTimeMin: number;
-  /** Setting time start, min */
+  /** Setting time start (static), min */
   settingTimeStartMin: number;
-  /** Setting time end, min */
+  /** Setting time end (static), min */
   settingTimeEndMin: number;
-  /** Cement PV, mPa·s */
-  cementPV: number;
-  /** Cement YP, Pa */
-  cementYP: number;
+  /** Is viscous pad used? */
+  hasViscousPad: boolean;
+
+  // Fluid properties
+  cement: FluidProps;
+  spacer: FluidProps;
+  wellFluid: FluidProps;
+  viscousPad: FluidProps;
 }
 
 export interface ComplicationResult {
