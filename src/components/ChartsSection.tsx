@@ -253,7 +253,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                     }} />
                     <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
                     <ReferenceLine yAxisId="re" y={2100} stroke="hsl(45, 80%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re = 2100", position: "right", fontSize: 10, fill: "hsl(45, 80%, 40%)" }} />
-                    <ReferenceLine yAxisId="re" y={4000} stroke="hsl(0, 70%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re = 4000", position: "right", fontSize: 10, fill: "hsl(0, 70%, 50%)" }} />
+                    <ReferenceLine yAxisId="re" y={3000} stroke="hsl(0, 70%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re = 3000", position: "right", fontSize: 10, fill: "hsl(0, 70%, 50%)" }} />
                     {stageBoundaries.map((b, i) => <ReferenceLine key={`regime-stage-${i}`} yAxisId="re" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} />)}
                     <Line yAxisId="re" type="linear" dataKey="reynoldsAnn" name="Re (затрубье)" stroke="hsl(200, 60%, 50%)" strokeWidth={2.5} dot={false} />
                     <Line yAxisId="rate" type="stepAfter" dataKey="pumpRateLps" name="Производительность" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
