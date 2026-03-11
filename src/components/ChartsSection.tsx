@@ -228,7 +228,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             </div>
           </div>
           {(() => {
-            const maxRe = Math.max(...pressureData.map(p => p.reynoldsAnn || 0), 4500);
+            const maxRe = Math.max(...pressureData.map(p => p.reynoldsAnn || 0), 3500);
             const reYMax = Math.ceil(maxRe * 1.2);
             return (
               <ScrollableChart chartRef={chartRef5} height="h-[400px]">
