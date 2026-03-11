@@ -140,15 +140,28 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
   return result;
 }
 
-function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volumes: VolumeResults, displacementFluids: DisplacementFluid[], drillingFluid: DrillingFluid, fractureGradient: number, workTimeWithCement: number): Paragraph[] {
+function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volumes: VolumeResults, displacementFluids: DisplacementFluid[], drillingFluid: DrillingFluid, fractureGradient: number, workTimeWithCement: number, pressureResult?: PressureProfileResult): Paragraph[] {
   const dispFluid = displacementFluids[0];
   const pumpRate = dispFluid ? getFlowRateLps(dispFluid.flowRateSteps) : 0;
-  const results = calculateHydraulics(wellData, slurries, (dispFluid?.density ?? 1000) / 1000, fractureGradient, drillingFluid.rheology, dispFluid?.rheology, pumpRate);
-  const bottomTVD = interpolateTVD(wellData.casingDepthMD, wellData.trajectory);
+  const results = calculateHydraulics(wellData, slurries, (dispFluid?.density ?? 1000) / 1000, fractureGradient, drillingFluid.rheology, dispFluid?.rheology, pumpRate,
+    drillingFluid ? drillingFluid.density / 1000 : undefined
+  );
+  const traj = getEffectiveTrajectory(wellData);
+  const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);
   const bhct = calculateBHCT(wellData.bottomTempStatic, 20, bottomTVD);
   const maxThickening30 = Math.max(...slurries.map(s => s.thickeningTime30Bc || 0));
   const maxThickening50 = Math.max(...slurries.map(s => s.thickeningTime50Bc || 0));
   const safeTime = calculateSafeTime(workTimeWithCement, maxThickening30, maxThickening50);
+
+  // Dynamic values from pressure simulation (exactly as UI shows)
+  const dynamicMaxBHP = pressureResult ? Math.max(...pressureResult.points.map(p => p.bottomholePressure)) : undefined;
+  const dynamicFracP = pressureResult ? pressureResult.points[0]?.fracturePressure : undefined;
+  const dynamicStopP = pressureResult ? pressureResult.points.find(p => p.stage.includes('СТОП'))?.surfacePressure : undefined;
+  const dynamicPreStopP = pressureResult ? (() => { const pts = pressureResult.points; const stopIdx = pts.findIndex(p => p.stage.includes('СТОП')); return stopIdx > 0 ? pts[stopIdx - 1].surfacePressure : undefined; })() : undefined;
+
+  const effectiveMaxBHP = Math.max(results.maxBHP, dynamicMaxBHP ?? 0);
+  const effectiveFracP = (dynamicFracP && dynamicFracP > 0) ? dynamicFracP : results.fracturePressure;
+  const dynamicSafetyCoeff = effectiveFracP > 0 ? effectiveMaxBHP / effectiveFracP : 0;
 
   const volRows = [
     { label: "Внутренний диаметр ОК", value: `${fmt(volumes.casingID, 1)} мм` },
@@ -161,23 +174,27 @@ function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volume
   ];
 
   const pressRows = [
-    { label: "Гидростатика ЦР (затрубье)", value: `${fmt(results.hydrostaticPressureAnnulus)} МПа` },
-    { label: "Гидростатика продавочной", value: `${fmt(results.hydrostaticPressurePipe)} МПа` },
-    { label: "Трение в трубе", value: `${fmt(results.frictionPipe)} МПа` },
-    { label: "Трение в затрубье", value: `${fmt(results.frictionAnn)} МПа` },
-    { label: "Макс. забойное давление", value: `${fmt(results.maxBHP)} МПа` },
+    { label: "Гидростатическое давление ЦР (затрубное)", value: `${fmt(results.hydrostaticPressureAnnulus)} МПа` },
+    { label: "Гидростатическое давление продавочной жидкости", value: `${fmt(results.hydrostaticPressurePipe)} МПа` },
+    { label: "Потери на трение в трубе", value: `${fmt(results.frictionPipe)} МПа` },
+    { label: "Потери на трение в затрубье", value: `${fmt(results.frictionAnn)} МПа` },
+    { label: "Макс. забойное давление (гидростатика + трение)", value: `${fmt(effectiveMaxBHP)} МПа` },
     { label: "Разница давлений на ЦКОД", value: `${fmt(results.differentialPressure)} МПа` },
     { label: "Давление ГРП", value: `${fmt(results.fracturePressure)} МПа` },
-    { label: "Коэфф. безопасности", value: `${fmt(results.safetyCoefficient, 3)}` },
-    { label: "Давление «СТОП»", value: `${fmt(results.stopPressure)} МПа` },
+    { label: "Коэффициент безопасности (макс. ЗД / ГРП)", value: `${fmt(dynamicSafetyCoeff, 3)}` },
+    { label: "Давление на насосе перед посадкой пробки", value: `${fmt(dynamicPreStopP ?? 0)} МПа` },
+    { label: "Скачок давления посадки пробки", value: `2.75 МПа` },
+    { label: "Расчётное давление «СТОП»", value: `${fmt(dynamicStopP ?? results.stopPressure)} МПа` },
     { label: "BHCT", value: `${fmt(bhct, 1)} °C` },
   ];
 
+  const safetyOk = dynamicSafetyCoeff < 1;
+
   const safeRows = [
-    { label: "Время работы с цементом", value: `${fmt(workTimeWithCement, 0)} мин` },
-    { label: "Безопасное время (75%)", value: `${safeTime.safeTime75} мин` },
-    { label: "Загустевание до 30 Вс", value: maxThickening30 ? `${maxThickening30} мин` : "—" },
-    { label: "Загустевание до 50 Вс", value: maxThickening50 ? `${maxThickening50} мин` : "—" },
+    { label: "Расчётное время работы с цементом", value: `${fmt(safeTime.workTimeWithCement, 0)} мин` },
+    { label: "Безопасное время (75% от загуст.)", value: `${safeTime.safeTime75} мин` },
+    { label: "Загустевание до 30 Вс (лаб.)", value: maxThickening30 ? `${maxThickening30} мин` : "—" },
+    { label: "Загустевание до 50 Вс (лаб.)", value: maxThickening50 ? `${maxThickening50} мин` : "—" },
   ];
 
   const content: Paragraph[] = [
@@ -186,8 +203,30 @@ function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volume
   content.push(kvTable(volRows) as any);
   content.push(sectionTitle("6. Гидравлический расчёт"));
   content.push(kvTable(pressRows) as any);
-  content.push(sectionTitle("7. Безопасное время работы"));
+  content.push(new Paragraph({
+    spacing: { after: 100 },
+    children: [new TextRun({
+      text: safetyOk
+        ? "✓ Коэффициент безопасности в норме (< 1.0)"
+        : "⚠ Коэффициент безопасности превышает 1.0 — риск гидроразрыва!",
+      size: 18, font: "Calibri", bold: true,
+      color: safetyOk ? "228B22" : "CC0000",
+    })],
+  }));
+  content.push(sectionTitle("7. Безопасное время работы с цементом"));
   content.push(kvTable(safeRows) as any);
+  if (maxThickening30 > 0) {
+    content.push(new Paragraph({
+      spacing: { after: 100 },
+      children: [new TextRun({
+        text: safeTime.isSafe
+          ? `✓ Загустевание (${maxThickening30} мин) > безопасное время (${safeTime.safeTime75} мин)`
+          : `⚠ Загустевание (${maxThickening30} мин) < безопасное время (${safeTime.safeTime75} мин) — ОПАСНО!`,
+        size: 18, font: "Calibri", bold: true,
+        color: safeTime.isSafe ? "228B22" : "CC0000",
+      })],
+    }));
+  }
 
   return content;
 }
