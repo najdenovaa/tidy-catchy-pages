@@ -197,7 +197,7 @@ export function calculateComplications(
 
   // ═══ RECOMMENDATIONS ═══
   const recs: string[] = [];
-  let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
+  let riskLevel = 'low' as 'low' | 'medium' | 'high' | 'critical';
 
   // Time-based recommendations
   if (thickTime > 0) {
