@@ -211,7 +211,7 @@ export default function Index() {
     setExporting(true);
     try {
       const { exportToDocx } = await import("@/lib/export-docx");
-      const snap = calcSnapshot ?? { wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient };
+      const snap = calcSnapshot ?? { wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 };
 
       // Capture chart images from the DOM
       const chartImages: Record<string, string> = {};
