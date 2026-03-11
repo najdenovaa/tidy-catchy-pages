@@ -27,6 +27,7 @@ interface Props {
   onFlushVolumeM3Change: (v: number) => void;
   displacementVolume?: number;
   dynamicBHPMap?: Record<string, { bhp: number; fracP: number }>; // ключ = "stageName|rateLps"
+  onCalculate?: () => void;
 }
 
 type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals'>;
@@ -56,11 +57,12 @@ function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: bool
   );
 }
 
-const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck }: {
+const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck, isDynamic }: {
   steps: FlowRateStep[];
   totalVolume: number;
   onChange: (s: FlowRateStep[]) => void;
   fracCheck?: (rateLps: number) => { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null;
+  isDynamic?: boolean;
 }) {
   const usedVolume = steps.reduce((s, st) => s + st.volumeM3, 0);
   const remaining = totalVolume - usedVolume;
@@ -93,14 +95,19 @@ const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolu
               )}
             </div>
             {fc && step.rateLps > 0 && (
-              <div className={`text-xs px-2 py-1 rounded space-y-0.5 ${fc.risk ? "bg-destructive/10 text-destructive" : "bg-green-500/10 text-green-700"}`}>
+              <div className={`text-xs px-2 py-1 rounded space-y-0.5 ${fc.risk ? "bg-destructive/10 text-destructive" : "bg-green-500/10 text-green-700 dark:text-green-400"}`}>
                 <div className="font-medium">
                   {fc.risk
-                    ? `⚠ Риск ГРП! ECD ≈ ${fc.ecd.toFixed(2)} МПа > Pгрп ${fc.fracP.toFixed(2)} МПа`
-                    : `✓ Нет риска ГРП (ECD ≈ ${fc.ecd.toFixed(2)} МПа < Pгрп ${fc.fracP.toFixed(2)} МПа)`}
+                    ? `⚠ Риск ГРП! ECD ${isDynamic ? "=" : "≈"} ${fc.ecd.toFixed(2)} МПа > Pгрп ${fc.fracP.toFixed(2)} МПа`
+                    : `✓ Нет риска ГРП (ECD ${isDynamic ? "=" : "≈"} ${fc.ecd.toFixed(2)} МПа < Pгрп ${fc.fracP.toFixed(2)} МПа)`}
                 </div>
-                <div className="opacity-75">
-                  Гидростатика: {fc.hydroStatic.toFixed(2)} МПа &nbsp;|&nbsp; Трение: {fc.frictionLoss.toFixed(3)} МПа
+                {!isDynamic && (
+                  <div className="opacity-75">
+                    Гидростатика: {fc.hydroStatic.toFixed(2)} МПа &nbsp;|&nbsp; Трение: {fc.frictionLoss.toFixed(3)} МПа
+                  </div>
+                )}
+                <div className={`text-[10px] italic ${isDynamic ? "opacity-90 font-medium" : "opacity-60"}`}>
+                  {isDynamic ? "📊 Точные данные из динамической симуляции" : "⏳ Приближённо. Точные значения — после нажатия «РАССЧИТАТЬ»"}
                 </div>
               </div>
             )}
@@ -125,7 +132,7 @@ export default function InputSection(props: Props) {
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacementFluids, onDisplacementFluidsChange, fractureGradient, onFractureGradientChange, flushTimeMin, onFlushTimeMinChange, flushVolumeM3, onFlushVolumeM3Change, displacementVolume, dynamicBHPMap } = props;
+  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacementFluids, onDisplacementFluidsChange, fractureGradient, onFractureGradientChange, flushTimeMin, onFlushTimeMinChange, flushVolumeM3, onFlushVolumeM3Change, displacementVolume, dynamicBHPMap, onCalculate } = props;
 
   // Обновить траекторию: автоматически пересчитывает TVD по методу минимальной кривизны
   const updateTrajectory = (newTraj: TrajectoryPoint[], autoCalcTVD: boolean = true) => {
@@ -736,6 +743,7 @@ export default function InputSection(props: Props) {
                   totalVolume={b.volume}
                   onChange={(steps) => { const u = [...buffers]; u[idx] = { ...u[idx], flowRateSteps: steps }; onBuffersChange(u); }}
                   fracCheck={(rateLps) => fracCheck(rateLps, b.density, b.rheology.pv, b.rheology.yp, false, b.name)}
+                  isDynamic={!!dynamicBHPMap}
                 />
                 {/* Добавки */}
                 <div className="space-y-1">
@@ -833,6 +841,7 @@ export default function InputSection(props: Props) {
                     totalVolume={height > 0 ? annVPM * height : 0}
                     onChange={(steps) => { const u = [...slurries]; u[idx] = { ...u[idx], flowRateSteps: steps }; onSlurriesChange(u); }}
                     fracCheck={(rateLps) => fracCheck(rateLps, s.density * 1000, s.rheology.pv, s.rheology.yp, false, s.name)}
+                    isDynamic={!!dynamicBHPMap}
                   />
                   {/* Добавки */}
                   <div className="space-y-1">
@@ -930,7 +939,16 @@ export default function InputSection(props: Props) {
                   totalVolume={calcDispVol}
                   onChange={(steps) => { const u = [...displacementFluids]; u[idx] = { ...u[idx], flowRateSteps: steps }; onDisplacementFluidsChange(u); }}
                   fracCheck={(rateLps) => fracCheck(rateLps, df.density, df.rheology.pv, df.rheology.yp, true, df.name)}
+                  isDynamic={!!dynamicBHPMap}
                 />
+                {onCalculate && !dynamicBHPMap && (
+                  <button
+                    onClick={onCalculate}
+                    className="mt-2 w-full px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors border border-primary/20"
+                  >
+                    📊 Проверить давление (запустить расчёт)
+                  </button>
+                )}
               </div>
             ))}
           </CardContent>
