@@ -232,40 +232,65 @@ export default function InputSection(props: Props) {
     const mudDensityGcm3 = drillingFluid.density / 1000;
     annHydrostatic += hydrostaticPressure(mudDensityGcm3 > 0 ? mudDensityGcm3 : 1.1, mudHeightTVD);
 
-    // Потери на трение в затрубье — посегментный расчёт:
-    // цемент создаёт трение только в своём интервале, выше — буровой раствор
-    const dHole = wellData.holeDiameter / 1000;
+    // Потери на трение в затрубье — двухсекционная модель:
+    // Верх: межколонное (prevCasingID × casingOD) от 0 до prevCasingDepth
+    // Низ: открытый ствол (holeDiameter × casingOD) от prevCasingDepth до забоя
     const dCas = wellData.casingOD / 1000;
-    const dHyd = dHole - dCas;
-    if (dHyd <= 0) return null;
-    const area = (Math.PI / 4) * (dHole * dHole - dCas * dCas);
-    const velocity = (rateLps / 1000) / area;
+    const prevShoe = wellData.prevCasingDepth || 0;
+    const upperLen = Math.min(prevShoe, wellData.casingDepthMD);
+    const lowerLen = Math.max(0, wellData.casingDepthMD - upperLen);
+
+    // Верхняя секция (межколонное)
+    const prevID = (wellData.prevCasingID || wellData.holeDiameter) / 1000;
+    const dHydUpper = Math.max(prevID - dCas, 0.01);
+    const areaUpper = (Math.PI / 4) * (prevID * prevID - dCas * dCas);
+    const velUpper = areaUpper > 0 ? (rateLps / 1000) / areaUpper : 0;
+
+    // Нижняя секция (открытый ствол)
+    const dHole = wellData.holeDiameter / 1000;
+    const dHydLower = Math.max(dHole - dCas, 0.01);
+    const areaLower = (Math.PI / 4) * (dHole * dHole - dCas * dCas);
+    const velLower = areaLower > 0 ? (rateLps / 1000) / areaLower : 0;
+
+    // Хелпер расчёта трения сегмента
+    const segFriction = (pv: number, yp: number, length: number, dHyd: number, vel: number): number => {
+      if (length <= 0 || vel <= 0) return 0;
+      const pvPas = pv / 1000;
+      return (32 * pvPas * vel * length) / (dHyd * dHyd) / 1e6
+           + (16 * yp * length) / (3 * dHyd) / 1e6;
+    };
 
     let frictionLoss = 0;
-    // Трение в цементных интервалах
+    // Для каждого цементного интервала — определяем какая часть в верхней/нижней секции
     let cementMDTotal = 0;
     slurries.forEach((s, i) => {
       const hMD = getSlurryHeight(slurries, i, wellData.casingDepthMD);
       if (hMD > 0) {
+        const lastIdx = slurries.length - 1;
+        const mdBot = i === lastIdx ? wellData.casingDepthMD : slurries[i + 1].topDepthMD;
+        const mdTop = s.topDepthMD;
         cementMDTotal += hMD;
-        const segPv = s.rheology.pv || fluidPv;
-        const segYp = s.rheology.yp || fluidYp;
-        const pvPas = segPv / 1000;
-        const frSeg = (32 * pvPas * velocity * hMD) / (dHyd * dHyd) / 1e6;
-        const ypSeg = (16 * segYp * hMD) / (3 * dHyd) / 1e6;
-        frictionLoss += (frSeg + ypSeg);
+        const segPv = s.rheology.pv || 0;
+        const segYp = s.rheology.yp || 0;
+        // Часть в верхней секции (межколонное)
+        const upTop = Math.max(mdTop, 0);
+        const upBot = Math.min(mdBot, upperLen);
+        const upLen = Math.max(0, upBot - upTop);
+        frictionLoss += segFriction(segPv, segYp, upLen, dHydUpper, velUpper);
+        // Часть в нижней секции (открытый ствол)
+        const loTop = Math.max(mdTop, upperLen);
+        const loBot = Math.min(mdBot, wellData.casingDepthMD);
+        const loLen = Math.max(0, loBot - loTop);
+        frictionLoss += segFriction(segPv, segYp, loLen, dHydLower, velLower);
       }
     });
-    // Трение в интервале бурового раствора (выше цемента)
-    const mudMD = Math.max(0, wellData.casingDepthMD - cementMDTotal);
-    if (mudMD > 0) {
-      const mudPv = drillingFluid.rheology.pv || fluidPv;
-      const mudYp = drillingFluid.rheology.yp || fluidYp;
-      const pvPas = mudPv / 1000;
-      const frMud = (32 * pvPas * velocity * mudMD) / (dHyd * dHyd) / 1e6;
-      const ypMud = (16 * mudYp * mudMD) / (3 * dHyd) / 1e6;
-      frictionLoss += (frMud + ypMud);
-    }
+    // Буровой раствор в оставшихся интервалах
+    const mudPv = drillingFluid.rheology.pv || 0;
+    const mudYp = drillingFluid.rheology.yp || 0;
+    const mudUpperLen = Math.max(0, upperLen - Math.min(cementMDTotal, upperLen));
+    const mudLowerLen = Math.max(0, lowerLen - Math.max(0, cementMDTotal - upperLen));
+    frictionLoss += segFriction(mudPv, mudYp, mudUpperLen, dHydUpper, velUpper);
+    frictionLoss += segFriction(mudPv, mudYp, mudLowerLen, dHydLower, velLower);
     frictionLoss *= 0.8; // коэфф. затрубного трения
 
     const ecd = annHydrostatic + frictionLoss;
