@@ -381,6 +381,89 @@ export default function CementPlug() {
     window.location.href = "/";
   }, []);
 
+  const captureSvgAsDataUrl = async (container: HTMLElement): Promise<string | undefined> => {
+    const svgEls = container.querySelectorAll('svg');
+    if (svgEls.length === 0) return undefined;
+
+    // Capture all SVGs and combine them side by side
+    const images: string[] = [];
+    const dims: { w: number; h: number }[] = [];
+
+    for (const svgEl of Array.from(svgEls)) {
+      try {
+        const vb = svgEl.viewBox?.baseVal;
+        const svgW = (vb && vb.width > 0) ? vb.width : (svgEl.clientWidth || parseInt(svgEl.getAttribute('width') || '440') || 440);
+        const svgH = (vb && vb.height > 0) ? vb.height : (svgEl.clientHeight || parseInt(svgEl.getAttribute('height') || '580') || 580);
+
+        const clonedSvg = svgEl.cloneNode(true) as SVGSVGElement;
+        clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        if (!clonedSvg.getAttribute('width')) clonedSvg.setAttribute('width', String(svgW));
+        if (!clonedSvg.getAttribute('height')) clonedSvg.setAttribute('height', String(svgH));
+        if (!clonedSvg.getAttribute('viewBox')) clonedSvg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+
+        // Inline computed styles for text elements
+        const textEls = clonedSvg.querySelectorAll('text');
+        textEls.forEach(t => {
+          if (!t.getAttribute('font-family')) t.setAttribute('font-family', 'system-ui, sans-serif');
+        });
+
+        const serializer = new XMLSerializer();
+        const svgStr = serializer.serializeToString(clonedSvg);
+        const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+        const img = new Image();
+        const scale = 2;
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = svgW * scale;
+            canvas.height = svgH * scale;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.fillStyle = '#1a1a2e';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              images.push(canvas.toDataURL('image/png'));
+              dims.push({ w: svgW * scale, h: svgH * scale });
+            }
+            URL.revokeObjectURL(url);
+            resolve();
+          };
+          img.onerror = () => { URL.revokeObjectURL(url); reject(); };
+          img.src = url;
+        });
+      } catch {}
+    }
+
+    if (images.length === 0) return undefined;
+    if (images.length === 1) return images[0];
+
+    // Combine multiple SVGs side by side
+    const totalW = dims.reduce((s, d) => s + d.w, 0) + (dims.length - 1) * 20;
+    const maxH = Math.max(...dims.map(d => d.h));
+    const combo = document.createElement('canvas');
+    combo.width = totalW;
+    combo.height = maxH;
+    const ctx = combo.getContext('2d');
+    if (!ctx) return images[0];
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, totalW, maxH);
+    let xOff = 0;
+    for (let i = 0; i < images.length; i++) {
+      const imgEl = new Image();
+      await new Promise<void>(resolve => {
+        imgEl.onload = () => {
+          ctx.drawImage(imgEl, xOff, 0);
+          xOff += dims[i].w + 20;
+          resolve();
+        };
+        imgEl.onerror = () => resolve();
+        imgEl.src = images[i];
+      });
+    }
+    return combo.toDataURL('image/png');
+  };
+
   const handleExportDocx = async () => {
     if (!results) return;
     try {
@@ -388,7 +471,7 @@ export default function CementPlug() {
       let vizImage: string | undefined;
       let chartImage: string | undefined;
       if (vizRef.current) {
-        try { vizImage = await captureElementAsDataUrl(vizRef.current); } catch {}
+        try { vizImage = await captureSvgAsDataUrl(vizRef.current); } catch (e) { console.warn('Viz capture failed:', e); }
       }
       if (chartRef.current) {
         try { chartImage = await captureElementAsDataUrl(chartRef.current); } catch {}
