@@ -582,6 +582,7 @@ export default function Index() {
                   drillingFluid={calcSnapshot.drillingFluid}
                   dynamicMaxBHP={pressureResult ? Math.max(...pressureResult.points.map(p => p.bottomholePressure)) : undefined}
                   dynamicFracP={pressureResult ? pressureResult.points[0]?.fracturePressure : undefined}
+                  dynamicStopP={pressureResult ? pressureResult.points.find(p => p.stage.includes('СТОП'))?.surfacePressure : undefined}
                 />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
