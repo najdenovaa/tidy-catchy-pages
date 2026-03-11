@@ -1273,7 +1273,7 @@ export function calculatePressureProfile(
       annDensity = drillingFluid.density;
     }
     // Множитель трения затрубья: эксцентриситет (~0.8x от концентрического)
-    const annFrictionMultiplier = 0.8;
+    const annFrictionMultiplier = 0.7;
 
     pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0 });
     const batchIdx = pumpHistory.length - 1;
