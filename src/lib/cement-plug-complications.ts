@@ -153,25 +153,22 @@ export function calculateComplications(
 
   const { cement, spacer, wellFluid, viscousPad } = params;
 
-  // ── Factor 1: Hydrostatic pressure ratio ──
-  // The driving force for losses is the EXCESS hydrostatic pressure of the cement column
-  // above what was there before (well fluid). Shorter plug = less excess pressure = less losses.
-  // ΔP = (ρ_cement - ρ_wellfluid) × g × h_plug
-  // Normalize to a reference plug height (100m) for the input loss rate
+  // ── Factor 1: Hydrostatic pressure factor ──
+  // Driving force = EXCESS hydrostatic: ΔP = (ρ_zone - ρ_wellfluid) × g × h_plug
+  // Two components: density difference AND plug height
+  // Normalize to reference: ΔP_ref = (1.9 - 1.1) × g × 100m (typical heavy cement, 100m plug)
   const zoneFluid = params.hasViscousPad ? viscousPad : cement;
   const deltaRho = zoneFluid.densityGcm3 - wellFluid.densityGcm3; // g/cm³
-  const refPlugHeight = 100; // m — reference height for which loss rate was measured
+  const refDeltaRho = 0.8; // reference: 1.9 cement - 1.1 well fluid
+  const refPlugHeight = 100; // m
   let hydrostaticFactor = 1.0;
   if (deltaRho > 0 && plugLenAnn > 0) {
-    // Losses scale with excess pressure, which scales with plug height
-    // If plug is shorter → less excess pressure → fewer losses
-    hydrostaticFactor = plugLenAnn / refPlugHeight;
-    // Clamp: even with very short plug, some losses still occur (minimum 10%)
-    hydrostaticFactor = Math.max(0.1, Math.min(hydrostaticFactor, 3.0));
+    // Factor = (ΔP_actual / ΔP_ref) = (deltaRho × h) / (refDeltaRho × refH)
+    hydrostaticFactor = (deltaRho * plugLenAnn) / (refDeltaRho * refPlugHeight);
+    hydrostaticFactor = Math.max(0.1, Math.min(hydrostaticFactor, 5.0));
   } else if (deltaRho <= 0) {
-    // Cement is lighter than well fluid — no excess hydrostatic driving losses
-    // Losses are only from dynamic pressure during pumping (reduced to 30%)
-    hydrostaticFactor = 0.3;
+    // Cement lighter than well fluid — minimal losses (only dynamic pressure)
+    hydrostaticFactor = 0.2;
   }
 
   // ── Factor 2: Rheology resistance (all fluids weighted) ──
