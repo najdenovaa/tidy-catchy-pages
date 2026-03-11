@@ -90,6 +90,8 @@ export default function ComplicationsSection({
       thickeningTimeMin,
       settingTimeStartMin,
       settingTimeEndMin,
+      cementPV,
+      cementYP,
     };
 
     return calculateComplications(inputs, params);
