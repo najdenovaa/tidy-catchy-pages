@@ -202,7 +202,7 @@ export function calculateComplications(
   const padGel = viscousPad.gel10minPa > 0 ? viscousPad.gel10minPa : viscousPad.ypPa * 3;
 
   let effectiveGel: number;
-  if (params.hasViscousPad && params.spacerVolumeBelowM3 > 0) {
+  if (usePadInZone) {
     effectiveGel = padGel * 0.5 + cementGel * 0.3 + spacerGel * 0.1 + wellFluidGel * 0.1;
   } else {
     effectiveGel = cementGel * 0.5 + spacerGel * 0.25 + wellFluidGel * 0.25;
