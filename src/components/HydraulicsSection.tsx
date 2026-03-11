@@ -11,14 +11,15 @@ interface Props {
   volumes: VolumeResults;
   displacementFluids?: DisplacementFluid[];
   drillingFluid?: DrillingFluid;
-  dynamicMaxBHP?: number; // макс. забойное из динамической симуляции
-  dynamicFracP?: number;  // давление ГРП из динамической симуляции
-  dynamicStopP?: number;  // давление СТОП из динамической симуляции
+  dynamicMaxBHP?: number;
+  dynamicFracP?: number;
+  dynamicStopP?: number;
+  dynamicPreStopP?: number; // давление на насосе перед посадкой пробки
 }
 
 const fmt = (v: number, dec: number = 2) => v.toFixed(dec);
 
-export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes, displacementFluids, drillingFluid, dynamicMaxBHP, dynamicFracP, dynamicStopP }: Props) {
+export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes, displacementFluids, drillingFluid, dynamicMaxBHP, dynamicFracP, dynamicStopP, dynamicPreStopP }: Props) {
   const dispFluid = displacementFluids?.[0];
   const pumpRate = dispFluid ? getFlowRateLps(dispFluid.flowRateSteps) : 0;
   const results = calculateHydraulics(
@@ -53,6 +54,8 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
     { label: "Разница давлений на ЦКОД", value: fmt(results.differentialPressure), unit: "МПа" },
     { label: "Давление ГРП", value: fmt(results.fracturePressure), unit: "МПа" },
     { label: "Коэффициент безопасности (макс. ЗД / ГРП)", value: fmt(results.safetyCoefficient, 3), unit: "" },
+    { label: "Давление на насосе перед посадкой пробки", value: fmt(dynamicPreStopP ?? 0), unit: "МПа" },
+    { label: "Скачок давления посадки пробки", value: "2.75", unit: "МПа" },
     { label: "Расчётное давление «СТОП»", value: fmt(dynamicStopP ?? results.stopPressure), unit: "МПа" },
     { label: "BHCT", value: fmt(bhct, 1), unit: "°C" },
   ];

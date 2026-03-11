@@ -583,6 +583,7 @@ export default function Index() {
                   dynamicMaxBHP={pressureResult ? Math.max(...pressureResult.points.map(p => p.bottomholePressure)) : undefined}
                   dynamicFracP={pressureResult ? pressureResult.points[0]?.fracturePressure : undefined}
                   dynamicStopP={pressureResult ? pressureResult.points.find(p => p.stage.includes('СТОП'))?.surfacePressure : undefined}
+                  dynamicPreStopP={pressureResult ? (() => { const pts = pressureResult.points; const stopIdx = pts.findIndex(p => p.stage.includes('СТОП')); return stopIdx > 0 ? pts[stopIdx - 1].surfacePressure : undefined; })() : undefined}
                 />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
