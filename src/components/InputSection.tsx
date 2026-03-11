@@ -939,7 +939,16 @@ export default function InputSection(props: Props) {
                   totalVolume={calcDispVol}
                   onChange={(steps) => { const u = [...displacementFluids]; u[idx] = { ...u[idx], flowRateSteps: steps }; onDisplacementFluidsChange(u); }}
                   fracCheck={(rateLps) => fracCheck(rateLps, df.density, df.rheology.pv, df.rheology.yp, true, df.name)}
+                  isDynamic={!!dynamicBHPMap}
                 />
+                {onCalculate && !dynamicBHPMap && (
+                  <button
+                    onClick={onCalculate}
+                    className="mt-2 w-full px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors border border-primary/20"
+                  >
+                    📊 Проверить давление (запустить расчёт)
+                  </button>
+                )}
               </div>
             ))}
           </CardContent>
