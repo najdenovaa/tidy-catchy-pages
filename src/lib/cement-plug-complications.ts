@@ -154,34 +154,38 @@ export function calculateComplications(
   const { cement, spacer, wellFluid, viscousPad } = params;
 
   // ── Factor 1: Hydrostatic pressure factor ──
-  // Losses are driven by TOTAL hydrostatic pressure at the loss zone.
-  // Total P = ρ_wellfluid × g × (zoneTVD - plugLen) + ρ_cement × g × plugLen
-  // Higher density of ANY fluid → more pressure → more losses.
-  // Normalize to a reference condition (1.1 g/cm³ well fluid, no cement plug).
+  // The user-input loss rate is measured at the CURRENT well fluid density.
+  // Cementing ADDS excess pressure: ΔP_extra = (ρ_plug - ρ_wellfluid) × g × h_plug
+  // This extra pressure increases losses proportionally.
+  // Factor = 1 + k × (ρ_plug - ρ_wf) × h_plug / reference
+  // Where reference = 0.8 g/cm³ × 100m (typical excess from heavy cement in long plug)
   const usePadInZone = params.hasViscousPad && params.spacerVolumeBelowM3 > 0;
   const zoneFluid = usePadInZone ? viscousPad : cement;
 
-  // Effective density of the plug interval (pad + cement weighted)
+  // Effective density of the plug interval
   const plugDensity = usePadInZone
     ? (viscousPad.densityGcm3 * 0.7 + cement.densityGcm3 * 0.3)
     : cement.densityGcm3;
 
-  // Total hydrostatic at zone bottom (simplified: well fluid above plug + plug column)
-  const zoneTVD = params.plugBottomTVD > 0 ? params.plugBottomTVD : plugLenAnn;
-  const wellFluidColumnLen = Math.max(0, zoneTVD - plugLenAnn);
-  const totalHydrostatic = wellFluid.densityGcm3 * wellFluidColumnLen + plugDensity * plugLenAnn;
+  // Excess pressure from replacing well fluid with heavier cement
+  const excessDeltaRho = plugDensity - wellFluid.densityGcm3; // g/cm³ (can be negative if cement lighter)
+  const excessPressureProduct = excessDeltaRho * plugLenAnn; // g/cm³ × m
 
-  // Reference: the same depth filled only with reference well fluid (1.1 g/cm³)
-  const refDensity = 1.1; // g/cm³ — typical light well fluid
-  const refHydrostatic = refDensity * zoneTVD;
+  // Reference: standard excess = 0.8 g/cm³ × 100m = 80
+  const refExcess = 80;
 
   let hydrostaticFactor = 1.0;
-  if (refHydrostatic > 0) {
-    // Factor > 1 when total pressure exceeds reference → more losses
-    // Factor < 1 when lighter column → fewer losses
-    hydrostaticFactor = totalHydrostatic / refHydrostatic;
-    hydrostaticFactor = Math.max(0.1, Math.min(hydrostaticFactor, 5.0));
+  if (excessPressureProduct > 0) {
+    // Cement heavier than well fluid → adds pressure → increases losses
+    // factor = 1 + extra/ref. At reference conditions (1.9 cement, 1.1 wf, 100m) → factor = 2.0
+    hydrostaticFactor = 1.0 + excessPressureProduct / refExcess;
+    hydrostaticFactor = Math.min(hydrostaticFactor, 5.0);
+  } else if (excessPressureProduct < 0) {
+    // Cement lighter than well fluid → reduces pressure → fewer losses
+    // At most can reduce to 30% of base rate
+    hydrostaticFactor = Math.max(0.3, 1.0 + excessPressureProduct / refExcess);
   }
+  // When excessDeltaRho ≈ 0 (same density), factor stays 1.0 = base loss rate unchanged
 
   // ── Factor 2: Rheology resistance (all fluids weighted) ──
   const refPV = 80;
