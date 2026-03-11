@@ -1436,9 +1436,9 @@ function frictionLossWithRegime(flowRateM3min: number, lengthM: number, dHydMm: 
 
   if (Re < 2100) {
     return { pressureMPa: laminarLoss, reynolds: Re, regime: 0 }; // ламинарный
-  } else if (Re < 4000) {
+  } else if (Re < 3000) {
     // Переходная зона — интерполяция
-    const blend = (Re - 2100) / 1900;
+    const blend = (Re - 2100) / 900;
     const loss = laminarLoss * (1 - blend) + turbulentLoss * blend;
     return { pressureMPa: loss, reynolds: Re, regime: 0.5 }; // переходный
   } else {

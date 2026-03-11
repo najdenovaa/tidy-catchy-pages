@@ -224,7 +224,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             </div>
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "hsla(0, 70%, 50%, 0.12)", border: "1px solid hsla(0, 70%, 50%, 0.4)" }} />
-              <span className="text-muted-foreground">Турбулентный: <span className="font-semibold text-foreground">Re ≥ 4000</span></span>
+              <span className="text-muted-foreground">Турбулентный: <span className="font-semibold text-foreground">Re ≥ 3000</span></span>
             </div>
           </div>
           {(() => {
