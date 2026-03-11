@@ -743,6 +743,7 @@ export default function InputSection(props: Props) {
                   totalVolume={b.volume}
                   onChange={(steps) => { const u = [...buffers]; u[idx] = { ...u[idx], flowRateSteps: steps }; onBuffersChange(u); }}
                   fracCheck={(rateLps) => fracCheck(rateLps, b.density, b.rheology.pv, b.rheology.yp, false, b.name)}
+                  isDynamic={!!dynamicBHPMap}
                 />
                 {/* Добавки */}
                 <div className="space-y-1">
