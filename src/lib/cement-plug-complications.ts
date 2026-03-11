@@ -146,20 +146,61 @@ export function calculateComplications(
   const plugLenAnn = params.plugLengthMD;
 
   // Total time of the entire operation (all stages: spacer, cement, displacement, trip, wash)
-  const fillTimeSec = params.totalOperationTimeMin * 60;
+  const totalOpTimeSec = params.totalOperationTimeMin * 60;
 
-  // Adjust loss rate based on pressure differential:
+  // ── Factor 1: Density ratio ──
   // Heavier cement → higher hydrostatic → more losses
-  // Reference: the well fluid density (what was in the well before cementing)
-  // Effective loss rate ≈ input_rate × (ρ_cement / ρ_wellfluid)
   const wellFluidDensity = params.wellFluidDensityGcm3;
   const cementDensity = params.cementDensityGcm3;
   const densityRatio = wellFluidDensity > 0 ? cementDensity / wellFluidDensity : 1;
-  const effectiveLossRateM3h = lossRateM3h * densityRatio;
+
+  // ── Factor 2: Rheology resistance ──
+  // Higher PV and YP → cement is more viscous → harder to flow into formation → fewer losses
+  // Reference: typical cement PV=80, YP=8 → factor=1.0
+  const refPV = 80;
+  const refYP = 8;
+  const pvVal = params.cementPV > 0 ? params.cementPV : refPV;
+  const ypVal = params.cementYP > 0 ? params.cementYP : refYP;
+  // Rheology factor: higher rheology = lower losses (inverse)
+  // Combined rheology metric = PV + 5*YP (YP has stronger effect on flow resistance)
+  const rheologyMetric = pvVal + 5 * ypVal;
+  const refRheologyMetric = refPV + 5 * refYP;
+  const rheologyFactor = refRheologyMetric / Math.max(rheologyMetric, 1); // <1 if cement is thicker
+
+  // ── Factor 3: Gel strength (SNS) resistance ──
+  // High gel strength builds "plug" resistance over time, reducing effective loss rate
+  // Gel builds progressively: at time t, resistance ≈ gel10min × (t/10min)
+  // Average gel resistance factor over operation time
+  const gel10min = params.cementGel10minPa;
+  const spacerGel10min = params.spacerGel10minPa;
+  const avgGel = (gel10min + spacerGel10min) / 2;
+  // Gel resistance reduces losses: higher gel → lower factor
+  // Reference gel = 15 Pa (typical). Factor = ref / max(actual, ref)
+  const refGel = 15;
+  const gelFactor = avgGel > refGel ? refGel / avgGel : 1.0;
+
+  // ── Factor 4: Thickening time ──
+  // As cement approaches thickening, viscosity increases exponentially
+  // This reduces loss rate over time. We model this as an average reduction.
+  const thickTime = params.thickeningTimeMin;
+  const totalOpTimeMin = params.totalOperationTimeMin;
+  let thickeningFactor = 1.0;
+  if (thickTime > 0 && totalOpTimeMin > 0) {
+    // Ratio of operation time to thickening time
+    // As operation approaches thickening, cement gets thicker → fewer losses
+    // At t/Tt=0 → factor=1.0 (fully fluid); at t/Tt=0.75 → factor≈0.6; at t/Tt=1.0 → factor≈0.3
+    const ratio = Math.min(totalOpTimeMin / thickTime, 1.0);
+    // Average viscosity multiplier over operation: integral of (1 / (1 + 2*(t/Tt)^2)) from 0 to ratio
+    // Simplified: average factor ≈ 1 - 0.7 * ratio²
+    thickeningFactor = Math.max(0.3, 1 - 0.7 * ratio * ratio);
+  }
+
+  // ── Combined effective loss rate ──
+  const effectiveLossRateM3h = lossRateM3h * densityRatio * rheologyFactor * gelFactor * thickeningFactor;
 
   // Volume lost during placement
   const lossRateM3s = effectiveLossRateM3h / 3600;
-  const volumeLostM3 = lossRateM3s * fillTimeSec;
+  const volumeLostM3 = lossRateM3s * totalOpTimeSec;
 
   // Real cement volume
   const realCementVol = Math.max(0, params.cementVolumeTotalM3 - volumeLostM3);
