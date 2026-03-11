@@ -298,7 +298,7 @@ export function calculateComplications(
     const factorsNote = factors.length > 0 ? ` (эфф. ${effectiveLossRateM3h.toFixed(1)} м³/ч: ${factors.join(', ')})` : '';
     if (intensity === 'partial') {
       if (riskLevel === 'low') riskLevel = 'medium';
-      recs.push(`Частичное поглощение (${lossRateM3h.toFixed(1)} м³/ч${densityNote}). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
+      recs.push(`Частичное поглощение (${lossRateM3h.toFixed(1)} м³/ч${factorsNote}). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
       recs.push(`Снизьте плотность промывочной жидкости до минимально допустимой перед закачкой моста.`);
       recs.push(`Увеличьте объём цемента на ${(volumeLostM3 * compensationFactor).toFixed(2)} м³ для компенсации потерь.`);
       recs.push(`Снизьте скорость закачки для уменьшения динамических потерь давления.`);
