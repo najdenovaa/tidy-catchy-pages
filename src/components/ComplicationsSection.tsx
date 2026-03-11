@@ -28,7 +28,6 @@ interface Props {
   cementDensity: number;
   spacerDensity: number;
   wellFluidDensity: number;
-  pumpRateCementLs: number;
   cementGel10min: number;
   spacerGel10min: number;
   spacerVolumeBelow: number;
@@ -38,7 +37,7 @@ interface Props {
 
 export default function ComplicationsSection({
   results, cementDensity, spacerDensity, wellFluidDensity,
-  pumpRateCementLs, cementGel10min, spacerGel10min, spacerVolumeBelow,
+  cementGel10min, spacerGel10min, spacerVolumeBelow,
   cementYP, spacerYP,
 }: Props) {
   const [type, setType] = useState<ComplicationType>('loss');
