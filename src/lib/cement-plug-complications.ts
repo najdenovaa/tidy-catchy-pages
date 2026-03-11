@@ -45,8 +45,8 @@ export interface ComplicationCalcParams {
   wellFluidDensityGcm3: number;
   /** Cement volume total, m³ */
   cementVolumeTotalM3: number;
-  /** Pump rate for cement, l/s */
-  pumpRateCementLs: number;
+  /** Total operation time (all stages), min */
+  totalOperationTimeMin: number;
   /** Cement gel 10min, Pa */
   cementGel10minPa: number;
   /** Spacer gel 10min, Pa */
@@ -115,13 +115,10 @@ export function calculateComplications(
 
   // ═══ LOSS CALCULATIONS ═══
   const annArea = params.annAreaM2;
-  const pumpRateM3s = params.pumpRateCementLs / 1000;
   const plugLenAnn = params.plugLengthMD;
-  const cementVolInAnn = annArea * plugLenAnn;
 
-  // Time to fill cement in annulus
-  const fillTimeSec = pumpRateM3s > 0 ? cementVolInAnn / pumpRateM3s : 0;
-  const fillTimeMin = fillTimeSec / 60;
+  // Total time of the entire operation (all stages: spacer, cement, displacement, trip, wash)
+  const fillTimeSec = params.totalOperationTimeMin * 60;
 
   // Volume lost during placement
   const lossRateM3s = lossRateM3h / 3600;
@@ -220,7 +217,7 @@ export function calculateComplications(
   return {
     type,
     lossIntensity: intensity,
-    fillTimeMin: Math.round(fillTimeMin * 10) / 10,
+    fillTimeMin: Math.round(params.totalOperationTimeMin * 10) / 10,
     volumeLostM3: Math.round(volumeLostM3 * 1000) / 1000,
     realCementVolumeM3: Math.round(realCementVol * 1000) / 1000,
     realPlugLengthM: Math.round(realPlugLength * 10) / 10,

@@ -28,7 +28,6 @@ interface Props {
   cementDensity: number;
   spacerDensity: number;
   wellFluidDensity: number;
-  pumpRateCementLs: number;
   cementGel10min: number;
   spacerGel10min: number;
   spacerVolumeBelow: number;
@@ -38,7 +37,7 @@ interface Props {
 
 export default function ComplicationsSection({
   results, cementDensity, spacerDensity, wellFluidDensity,
-  pumpRateCementLs, cementGel10min, spacerGel10min, spacerVolumeBelow,
+  cementGel10min, spacerGel10min, spacerVolumeBelow,
   cementYP, spacerYP,
 }: Props) {
   const [type, setType] = useState<ComplicationType>('loss');
@@ -79,7 +78,7 @@ export default function ComplicationsSection({
       spacerDensityGcm3: spacerDensity,
       wellFluidDensityGcm3: wellFluidDensity,
       cementVolumeTotalM3: results.cementVolumeTotal,
-      pumpRateCementLs,
+      totalOperationTimeMin: results.totalOperationTimeMin,
       cementGel10minPa: gel10minCement,
       spacerGel10minPa: gel10minSpacer,
       spacerVolumeBelowM3: spacerVolumeBelow,
@@ -87,7 +86,7 @@ export default function ComplicationsSection({
     };
 
     return calculateComplications(inputs, params);
-  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType, cementDensity, spacerDensity, wellFluidDensity, pumpRateCementLs, cementGel10min, spacerGel10min, spacerVolumeBelow, cementYP, spacerYP]);
+  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType, cementDensity, spacerDensity, wellFluidDensity, cementGel10min, spacerGel10min, spacerVolumeBelow, cementYP, spacerYP]);
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">

@@ -937,7 +937,6 @@ export default function CementPlug() {
                       cementDensity={cement.density}
                       spacerDensity={useViscousPad ? viscousPadFluid.density : spacer.density}
                       wellFluidDensity={wellFluid.density}
-                      pumpRateCementLs={pumpRateCement}
                       cementGel10min={cement.gel10min || 0}
                       spacerGel10min={useViscousPad ? (viscousPadFluid.gel10min || 0) : (spacer.gel10min || 0)}
                       spacerVolumeBelow={useViscousPad ? spacerVolumeBelow : 0}
