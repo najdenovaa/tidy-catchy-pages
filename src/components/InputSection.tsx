@@ -26,6 +26,7 @@ interface Props {
   flushVolumeM3: number;
   onFlushVolumeM3Change: (v: number) => void;
   displacementVolume?: number;
+  dynamicBHPMap?: Record<string, { bhp: number; fracP: number }>; // ключ = "stageName|rateLps"
 }
 
 type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals'>;
@@ -124,7 +125,7 @@ export default function InputSection(props: Props) {
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacementFluids, onDisplacementFluidsChange, fractureGradient, onFractureGradientChange, flushTimeMin, onFlushTimeMinChange, flushVolumeM3, onFlushVolumeM3Change, displacementVolume } = props;
+  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacementFluids, onDisplacementFluidsChange, fractureGradient, onFractureGradientChange, flushTimeMin, onFlushTimeMinChange, flushVolumeM3, onFlushVolumeM3Change, displacementVolume, dynamicBHPMap } = props;
 
   // Обновить траекторию: автоматически пересчитывает TVD по методу минимальной кривизны
   const updateTrajectory = (newTraj: TrajectoryPoint[], autoCalcTVD: boolean = true) => {
@@ -209,9 +210,24 @@ export default function InputSection(props: Props) {
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
 
-  // Fracture risk checker — напрямую повторяет формулы динамической симуляции:
-  // bhp = annHydrostatic + annFriction * 0.8 (с загустеванием)
-  const fracCheck = (rateLps: number, _fluidDensity: number, fluidPv: number, fluidYp: number, isDisplacement: boolean = false): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
+  // Fracture risk checker — использует динамические BHP из симуляции когда доступны,
+  // иначе вычисляет приближённо
+  const fracCheck = (rateLps: number, _fluidDensity: number, fluidPv: number, fluidYp: number, isDisplacement: boolean = false, stageName?: string): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
+    // Если есть динамические данные — используем их (100% совпадение с графиком)
+    if (dynamicBHPMap && stageName) {
+      const key = `${stageName}|${rateLps}`;
+      const dyn = dynamicBHPMap[key];
+      if (dyn) {
+        return {
+          risk: dyn.bhp > dyn.fracP,
+          ecd: dyn.bhp,
+          fracP: dyn.fracP,
+          hydroStatic: 0,
+          frictionLoss: 0,
+        };
+      }
+    }
+
     const bottomTVD = interpolateTVD(wellData.casingDepthMD, wellData.trajectory);
     if (fractureGradient <= 0 || bottomTVD <= 0 || rateLps <= 0) return null;
 
@@ -719,7 +735,7 @@ export default function InputSection(props: Props) {
                   steps={b.flowRateSteps}
                   totalVolume={b.volume}
                   onChange={(steps) => { const u = [...buffers]; u[idx] = { ...u[idx], flowRateSteps: steps }; onBuffersChange(u); }}
-                  fracCheck={(rateLps) => fracCheck(rateLps, b.density, b.rheology.pv, b.rheology.yp)}
+                  fracCheck={(rateLps) => fracCheck(rateLps, b.density, b.rheology.pv, b.rheology.yp, false, b.name)}
                 />
                 {/* Добавки */}
                 <div className="space-y-1">
@@ -816,7 +832,7 @@ export default function InputSection(props: Props) {
                     steps={s.flowRateSteps}
                     totalVolume={height > 0 ? annVPM * height : 0}
                     onChange={(steps) => { const u = [...slurries]; u[idx] = { ...u[idx], flowRateSteps: steps }; onSlurriesChange(u); }}
-                    fracCheck={(rateLps) => fracCheck(rateLps, s.density * 1000, s.rheology.pv, s.rheology.yp)}
+                    fracCheck={(rateLps) => fracCheck(rateLps, s.density * 1000, s.rheology.pv, s.rheology.yp, false, s.name)}
                   />
                   {/* Добавки */}
                   <div className="space-y-1">
@@ -913,7 +929,7 @@ export default function InputSection(props: Props) {
                   steps={df.flowRateSteps}
                   totalVolume={calcDispVol}
                   onChange={(steps) => { const u = [...displacementFluids]; u[idx] = { ...u[idx], flowRateSteps: steps }; onDisplacementFluidsChange(u); }}
-                  fracCheck={(rateLps) => fracCheck(rateLps, df.density, df.rheology.pv, df.rheology.yp, true)}
+                  fracCheck={(rateLps) => fracCheck(rateLps, df.density, df.rheology.pv, df.rheology.yp, true, df.name)}
                 />
               </div>
             ))}
