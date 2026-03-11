@@ -217,7 +217,7 @@ export function calculateComplications(
   return {
     type,
     lossIntensity: intensity,
-    fillTimeMin: Math.round(fillTimeMin * 10) / 10,
+    fillTimeMin: Math.round(params.totalOperationTimeMin * 10) / 10,
     volumeLostM3: Math.round(volumeLostM3 * 1000) / 1000,
     realCementVolumeM3: Math.round(realCementVol * 1000) / 1000,
     realPlugLengthM: Math.round(realPlugLength * 10) / 10,
