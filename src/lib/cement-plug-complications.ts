@@ -5,11 +5,14 @@
 
 export type ComplicationType = 'loss' | 'kick' | 'both';
 export type LossIntensity = 'partial' | 'intense' | 'catastrophic';
+export type LossBehavior = 'stable' | 'progressive' | 'regressive';
 
 export interface ComplicationInputs {
   type: ComplicationType;
   /** Lost circulation intensity, m³/h */
   lossRateM3h: number;
+  /** Loss behavior over time */
+  lossBehavior: LossBehavior;
   /** Depth of the loss/kick zone, m MD */
   zoneDepthMD: number;
   /** TVD of the loss/kick zone, m */
