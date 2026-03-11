@@ -33,12 +33,15 @@ interface Props {
   spacerVolumeBelow: number;
   cementYP: number;
   spacerYP: number;
+  thickeningTimeMin: number;
+  settingTimeStartMin: number;
+  settingTimeEndMin: number;
 }
 
 export default function ComplicationsSection({
   results, cementDensity, spacerDensity, wellFluidDensity,
   cementGel10min, spacerGel10min, spacerVolumeBelow,
-  cementYP, spacerYP,
+  cementYP, spacerYP, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin,
 }: Props) {
   const [type, setType] = useState<ComplicationType>('loss');
   const [lossRate, setLossRate] = useState(10);
