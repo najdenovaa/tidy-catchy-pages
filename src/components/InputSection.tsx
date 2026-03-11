@@ -210,23 +210,19 @@ export default function InputSection(props: Props) {
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
 
   // Fracture risk checker — использует calculateHydraulics + загустевание для совпадения с динамикой
-  const fracCheck = (rateLps: number, _fluidDensity: number, fluidPv: number, fluidYp: number): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
+  const fracCheck = (rateLps: number, _fluidDensity: number, fluidPv: number, fluidYp: number, isDisplacement: boolean = false): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
     const bottomTVD = interpolateTVD(wellData.casingDepthMD, wellData.trajectory);
     if (fractureGradient <= 0 || bottomTVD <= 0 || rateLps <= 0) return null;
 
     const displacementDensityGcm3 = _fluidDensity / 1000;
     const mudDensityGcm3 = drillingFluid.density > 0 ? drillingFluid.density / 1000 : 1.1;
 
-    // Определяем, это продавка или цемент/буфер
-    const isDisplacement = slurries.length > 0 && (fluidPv < Math.max(...slurries.map(s => (effectiveRheology(s.rheology, cementCategory(s.density))).pv), 0));
-
-    // Оценка времени от начала закачки цемента до конца текущего этапа продавки
+    // Оценка загустевания цемента (только при продавке)
     let thickeningMultiplier = 1.0;
-    if (isDisplacement) {
+    if (isDisplacement && slurries.length > 0) {
       // Время закачки цемента
       let cementTimeMin = 0;
       slurries.forEach(s => {
-        const totalVol = s.flowRateSteps.reduce((sum, st) => sum + st.volumeM3, 0);
         s.flowRateSteps.forEach(st => {
           if (st.rateLps > 0 && st.volumeM3 > 0) {
             cementTimeMin += (st.volumeM3 * 1000 / st.rateLps) / 60;
@@ -243,14 +239,13 @@ export default function InputSection(props: Props) {
         });
       });
       const totalTimeFromCementStart = cementTimeMin + dispTimeMin;
-      const maxThick30 = slurries.length > 0 ? Math.max(...slurries.map(sl => sl.thickeningTime30Bc || 180)) : 180;
+      const maxThick30 = Math.max(...slurries.map(sl => sl.thickeningTime30Bc || 180));
       const progressFrac = Math.min(1, totalTimeFromCementStart / maxThick30);
       // Та же формула что в динамической симуляции (макс ~1.4x)
       thickeningMultiplier = 1.0 + 0.15 * progressFrac + 0.15 * progressFrac * progressFrac + 0.10 * progressFrac * progressFrac * progressFrac;
     }
 
-    // Подготавливаем реологию с учётом загустевания для расчёта
-    // calculateHydraulics использует среднюю реологию цемента — применяем множитель к ней
+    // Подготавливаем реологию с учётом загустевания
     const adjustedSlurries = thickeningMultiplier > 1.0
       ? slurries.map(s => ({
           ...s,
