@@ -230,8 +230,8 @@ export default function ComplicationsSection({
                 </div>
               </div>
               <p className="text-[10px] text-muted-foreground">
-                Плотность промывки (из данных): {wellFluidDensity.toFixed(2)} г/см³ →
-                давление на забое: {(wellFluidDensity * 1000 * 9.81 * (zoneDepthTVD || zoneDepthMD) / 1e6).toFixed(2)} МПа
+                Плотность промывки (из данных): {wellFluid.density.toFixed(2)} г/см³ →
+                давление на забое: {(wellFluid.density * 1000 * 9.81 * (zoneDepthTVD || zoneDepthMD) / 1e6).toFixed(2)} МПа
               </p>
             </div>
           )}

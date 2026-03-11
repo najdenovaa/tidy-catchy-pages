@@ -946,15 +946,12 @@ export default function CementPlug() {
                   <CardContent className="pt-0">
                     <ComplicationsSection
                       results={results}
-                      cementDensity={cement.density}
-                      spacerDensity={useViscousPad ? viscousPadFluid.density : spacer.density}
-                      wellFluidDensity={wellFluid.density}
-                      cementGel10min={cement.gel10min || 0}
-                      spacerGel10min={useViscousPad ? (viscousPadFluid.gel10min || 0) : (spacer.gel10min || 0)}
+                      cement={{ density: cement.density, pv: cement.rheology.pv, yp: cement.rheology.yp, gel10min: cement.gel10min || 0 }}
+                      spacer={{ density: spacer.density, pv: spacer.rheology.pv, yp: spacer.rheology.yp, gel10min: spacer.gel10min || 0 }}
+                      wellFluid={{ density: wellFluid.density, pv: wellFluid.rheology.pv, yp: wellFluid.rheology.yp, gel10min: wellFluid.gel10min || 0 }}
+                      viscousPad={{ density: viscousPadFluid.density, pv: viscousPadFluid.rheology.pv, yp: viscousPadFluid.rheology.yp, gel10min: viscousPadFluid.gel10min || 0 }}
+                      hasViscousPad={useViscousPad}
                       spacerVolumeBelow={useViscousPad ? spacerVolumeBelow : 0}
-                      cementPV={cement.rheology.pv}
-                      cementYP={cement.rheology.yp}
-                      spacerYP={useViscousPad ? viscousPadFluid.rheology.yp : spacer.rheology.yp}
                       thickeningTimeMin={thickeningTime}
                       settingTimeStartMin={settingTimeStartMin}
                       settingTimeEndMin={settingTimeEndMin}
