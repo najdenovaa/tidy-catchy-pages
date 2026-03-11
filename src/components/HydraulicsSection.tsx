@@ -53,7 +53,7 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
     { label: "Разница давлений на ЦКОД", value: fmt(results.differentialPressure), unit: "МПа" },
     { label: "Давление ГРП", value: fmt(results.fracturePressure), unit: "МПа" },
     { label: "Коэффициент безопасности (макс. ЗД / ГРП)", value: fmt(results.safetyCoefficient, 3), unit: "" },
-    { label: "Расчётное давление «СТОП»", value: fmt(results.stopPressure), unit: "МПа" },
+    { label: "Расчётное давление «СТОП»", value: fmt(dynamicStopP ?? results.stopPressure), unit: "МПа" },
     { label: "BHCT", value: fmt(bhct, 1), unit: "°C" },
   ];
 
