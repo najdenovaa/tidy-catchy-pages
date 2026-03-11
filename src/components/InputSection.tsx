@@ -132,7 +132,7 @@ export default function InputSection(props: Props) {
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacementFluids, onDisplacementFluidsChange, fractureGradient, onFractureGradientChange, flushTimeMin, onFlushTimeMinChange, flushVolumeM3, onFlushVolumeM3Change, displacementVolume, dynamicBHPMap } = props;
+  const { wellData, onWellDataChange, drillingFluid, onDrillingFluidChange, buffers, onBuffersChange, slurries, onSlurriesChange, displacementFluids, onDisplacementFluidsChange, fractureGradient, onFractureGradientChange, flushTimeMin, onFlushTimeMinChange, flushVolumeM3, onFlushVolumeM3Change, displacementVolume, dynamicBHPMap, onCalculate } = props;
 
   // Обновить траекторию: автоматически пересчитывает TVD по методу минимальной кривизны
   const updateTrajectory = (newTraj: TrajectoryPoint[], autoCalcTVD: boolean = true) => {
