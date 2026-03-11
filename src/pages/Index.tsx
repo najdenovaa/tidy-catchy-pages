@@ -182,7 +182,21 @@ export default function Index() {
     [calcSnapshot, volumes]
   );
 
-  const tabOrder = ["input", "hydraulics", "schedule", "materials", "charts", "visual", "centralization"] as const;
+  // Карта макс. BHP по этапам/режимам из динамической симуляции
+  const dynamicBHPMap = useMemo(() => {
+    if (!pressureResult) return undefined;
+    const map: Record<string, { bhp: number; fracP: number }> = {};
+    for (const p of pressureResult.points) {
+      if (p.pumpRateLps <= 0) continue;
+      const key = `${p.stage}|${p.pumpRateLps}`;
+      const existing = map[key];
+      if (!existing || p.bottomholePressure > existing.bhp) {
+        map[key] = { bhp: p.bottomholePressure, fracP: p.fracturePressure };
+      }
+    }
+    return map;
+  }, [pressureResult]);
+
   const tabNames: Record<string, string> = {
     input: "Исходные данные",
     hydraulics: "Гидравлика",
