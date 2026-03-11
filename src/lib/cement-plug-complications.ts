@@ -157,8 +157,13 @@ export function calculateComplications(
   // Driving force = EXCESS hydrostatic: ΔP = (ρ_zone - ρ_wellfluid) × g × h_plug
   // Two components: density difference AND plug height
   // Normalize to reference: ΔP_ref = (1.9 - 1.1) × g × 100m (typical heavy cement, 100m plug)
-  const zoneFluid = params.hasViscousPad ? viscousPad : cement;
-  const deltaRho = zoneFluid.densityGcm3 - wellFluid.densityGcm3; // g/cm³
+  const usePadInZone = params.hasViscousPad && params.spacerVolumeBelowM3 > 0;
+  // In the loss zone, pad dominates but cement column still contributes to hydrostatic profile
+  const zoneFluidDensity = usePadInZone
+    ? (viscousPad.densityGcm3 * 0.7 + cement.densityGcm3 * 0.3)
+    : cement.densityGcm3;
+  const zoneFluid = usePadInZone ? viscousPad : cement;
+  const deltaRho = zoneFluidDensity - wellFluid.densityGcm3; // g/cm³
   const refDeltaRho = 0.8; // reference: 1.9 cement - 1.1 well fluid
   const refPlugHeight = 100; // m
   let hydrostaticFactor = 1.0;
