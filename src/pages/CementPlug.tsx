@@ -121,6 +121,8 @@ export default function CementPlug() {
   const [spacerVolumeAbove, setSpacerVolumeAbove] = useState(saved.spacerVolumeAbove ?? 0.3);
   const [spacerVolumeBelow, setSpacerVolumeBelow] = useState(saved.spacerVolumeBelow ?? 0.3);
   const [thickeningTime, setThickeningTime] = useState(saved.thickeningTime ?? 120);
+  const [settingTimeStartMin, setSettingTimeStartMin] = useState(saved.settingTimeStartMin ?? 0);
+  const [settingTimeEndMin, setSettingTimeEndMin] = useState(saved.settingTimeEndMin ?? 0);
   const [wocTimeHours, setWocTimeHours] = useState(saved.wocTimeHours ?? 24);
   const [pullOutAbove, setPullOutAbove] = useState(saved.pullOutAbove ?? 50);
   const [washType, setWashType] = useState<WashType>(saved.washType || 'direct');
