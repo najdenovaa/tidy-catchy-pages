@@ -935,14 +935,14 @@ export default function CementPlug() {
                     <ComplicationsSection
                       results={results}
                       cementDensity={cement.density}
-                      spacerDensity={spacer.density}
+                      spacerDensity={useViscousPad ? viscousPadFluid.density : spacer.density}
                       wellFluidDensity={wellFluid.density}
                       pumpRateCementLs={pumpRateCement}
                       cementGel10min={cement.gel10min || 0}
-                      spacerGel10min={spacer.gel10min || 0}
-                      spacerVolumeBelow={spacerVolumeBelow}
+                      spacerGel10min={useViscousPad ? (viscousPadFluid.gel10min || 0) : (spacer.gel10min || 0)}
+                      spacerVolumeBelow={useViscousPad ? spacerVolumeBelow : 0}
                       cementYP={cement.rheology.yp}
-                      spacerYP={spacer.rheology.yp}
+                      spacerYP={useViscousPad ? viscousPadFluid.rheology.yp : spacer.rheology.yp}
                     />
                   </CardContent>
                 </CollapsibleContent>
