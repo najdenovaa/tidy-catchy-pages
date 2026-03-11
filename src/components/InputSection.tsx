@@ -832,7 +832,7 @@ export default function InputSection(props: Props) {
                     steps={s.flowRateSteps}
                     totalVolume={height > 0 ? annVPM * height : 0}
                     onChange={(steps) => { const u = [...slurries]; u[idx] = { ...u[idx], flowRateSteps: steps }; onSlurriesChange(u); }}
-                    fracCheck={(rateLps) => fracCheck(rateLps, s.density * 1000, s.rheology.pv, s.rheology.yp)}
+                    fracCheck={(rateLps) => fracCheck(rateLps, s.density * 1000, s.rheology.pv, s.rheology.yp, false, s.name)}
                   />
                   {/* Добавки */}
                   <div className="space-y-1">
