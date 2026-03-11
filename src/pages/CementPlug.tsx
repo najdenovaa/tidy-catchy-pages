@@ -780,8 +780,8 @@ export default function CementPlug() {
                         <Field label="Время ОЗЦ" value={wocTimeHours} onChange={v => setWocTimeHours(num(v))} unit="ч" />
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
-                        <Field label="Начало схватывания" value={settingTimeStartMin} onChange={v => setSettingTimeStartMin(num(v))} unit="мин" />
-                        <Field label="Конец схватывания" value={settingTimeEndMin} onChange={v => setSettingTimeEndMin(num(v))} unit="мин" />
+                        <Field label="Нач. схватывания (стат.)" value={settingTimeStartMin} onChange={v => setSettingTimeStartMin(num(v))} unit="мин" />
+                        <Field label="Кон. схватывания (стат.)" value={settingTimeEndMin} onChange={v => setSettingTimeEndMin(num(v))} unit="мин" />
                       </div>
                       <Separator className="my-2" />
                       <p className="text-[10px] font-medium text-muted-foreground mb-1">Рецептура</p>
