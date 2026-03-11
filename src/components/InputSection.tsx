@@ -210,9 +210,24 @@ export default function InputSection(props: Props) {
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
 
-  // Fracture risk checker — напрямую повторяет формулы динамической симуляции:
-  // bhp = annHydrostatic + annFriction * 0.8 (с загустеванием)
-  const fracCheck = (rateLps: number, _fluidDensity: number, fluidPv: number, fluidYp: number, isDisplacement: boolean = false): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
+  // Fracture risk checker — использует динамические BHP из симуляции когда доступны,
+  // иначе вычисляет приближённо
+  const fracCheck = (rateLps: number, _fluidDensity: number, fluidPv: number, fluidYp: number, isDisplacement: boolean = false, stageName?: string): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
+    // Если есть динамические данные — используем их (100% совпадение с графиком)
+    if (dynamicBHPMap && stageName) {
+      const key = `${stageName}|${rateLps}`;
+      const dyn = dynamicBHPMap[key];
+      if (dyn) {
+        return {
+          risk: dyn.bhp > dyn.fracP,
+          ecd: dyn.bhp,
+          fracP: dyn.fracP,
+          hydroStatic: 0,
+          frictionLoss: 0,
+        };
+      }
+    }
+
     const bottomTVD = interpolateTVD(wellData.casingDepthMD, wellData.trajectory);
     if (fractureGradient <= 0 || bottomTVD <= 0 || rateLps <= 0) return null;
 
