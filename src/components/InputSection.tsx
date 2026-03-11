@@ -232,37 +232,41 @@ export default function InputSection(props: Props) {
     const mudDensityGcm3 = drillingFluid.density / 1000;
     annHydrostatic += hydrostaticPressure(mudDensityGcm3 > 0 ? mudDensityGcm3 : 1.1, mudHeightTVD);
 
-    // Потери на трение в затрубье
-    // Используем максимальную реологию из затрубья (цемент, если есть) — 
-    // при продавке в затрубье находится цемент, а не продавочная жидкость
-    let annPv = fluidPv;
-    let annYp = fluidYp;
-    if (slurries.length > 0) {
-      // Берём максимальные PV/YP из цементных растворов — они в затрубье
-      const maxCementPv = Math.max(...slurries.map(s => s.rheology.pv || 0));
-      const maxCementYp = Math.max(...slurries.map(s => s.rheology.yp || 0));
-      if (maxCementPv > annPv) annPv = maxCementPv;
-      if (maxCementYp > annYp) annYp = maxCementYp;
-    }
-
-    // Учитываем загустевание цемента: к концу продавки цемент уже
-    // находится в затрубье и его эффективная вязкость возрастает (~1.3x)
-    // Это консервативная оценка для предупреждения о ГРП
-    const isDisplacementCheck = slurries.length > 0 && (fluidPv < annPv || fluidYp < annYp);
-    const thickeningFactor = isDisplacementCheck ? 1.3 : 1.0;
-    annPv *= thickeningFactor;
-    annYp *= thickeningFactor;
-
+    // Потери на трение в затрубье — посегментный расчёт:
+    // цемент создаёт трение только в своём интервале, выше — буровой раствор
     const dHole = wellData.holeDiameter / 1000;
     const dCas = wellData.casingOD / 1000;
     const dHyd = dHole - dCas;
     if (dHyd <= 0) return null;
     const area = (Math.PI / 4) * (dHole * dHole - dCas * dCas);
     const velocity = (rateLps / 1000) / area;
-    const pvPas = annPv / 1000;
-    const frLoss = (32 * pvPas * velocity * wellData.casingDepthMD) / (dHyd * dHyd) / 1e6;
-    const ypLoss = (16 * annYp * wellData.casingDepthMD) / (3 * dHyd) / 1e6;
-    const frictionLoss = (frLoss + ypLoss) * 0.8; // коэфф. затрубного трения
+
+    let frictionLoss = 0;
+    // Трение в цементных интервалах
+    let cementMDTotal = 0;
+    slurries.forEach((s, i) => {
+      const hMD = getSlurryHeight(slurries, i, wellData.casingDepthMD);
+      if (hMD > 0) {
+        cementMDTotal += hMD;
+        const segPv = s.rheology.pv || fluidPv;
+        const segYp = s.rheology.yp || fluidYp;
+        const pvPas = segPv / 1000;
+        const frSeg = (32 * pvPas * velocity * hMD) / (dHyd * dHyd) / 1e6;
+        const ypSeg = (16 * segYp * hMD) / (3 * dHyd) / 1e6;
+        frictionLoss += (frSeg + ypSeg);
+      }
+    });
+    // Трение в интервале бурового раствора (выше цемента)
+    const mudMD = Math.max(0, wellData.casingDepthMD - cementMDTotal);
+    if (mudMD > 0) {
+      const mudPv = drillingFluid.rheology.pv || fluidPv;
+      const mudYp = drillingFluid.rheology.yp || fluidYp;
+      const pvPas = mudPv / 1000;
+      const frMud = (32 * pvPas * velocity * mudMD) / (dHyd * dHyd) / 1e6;
+      const ypMud = (16 * mudYp * mudMD) / (3 * dHyd) / 1e6;
+      frictionLoss += (frMud + ypMud);
+    }
+    frictionLoss *= 0.8; // коэфф. затрубного трения
 
     const ecd = annHydrostatic + frictionLoss;
     return { risk: ecd > fracP, ecd, fracP, hydroStatic: annHydrostatic, frictionLoss };
