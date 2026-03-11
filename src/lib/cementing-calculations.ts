@@ -631,7 +631,7 @@ export function calculateHydraulics(
     const avgPv = slurries.length > 0 ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).pv, 0) / slurries.length : mudRheoH.pv;
     const avgYp = slurries.length > 0 ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).yp, 0) / slurries.length : mudRheoH.yp;
     const avgDensity = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.density * 1000, 0) / slurries.length : 1100;
-    const annFrictionMultiplier = 0.5;
+    const annFrictionMultiplier = 0.4;
 
     const prevShoeH = data.prevCasingDepth || 0;
     const upperLenH = Math.min(prevShoeH, data.casingDepthMD);
@@ -1273,7 +1273,7 @@ export function calculatePressureProfile(
       annDensity = drillingFluid.density;
     }
     // Множитель трения затрубья: эксцентриситет (~0.8x от концентрического)
-    const annFrictionMultiplier = 0.5;
+    const annFrictionMultiplier = 0.4;
 
     pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0 });
     const batchIdx = pumpHistory.length - 1;
