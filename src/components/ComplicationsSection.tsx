@@ -31,6 +31,7 @@ interface Props {
   cementGel10min: number;
   spacerGel10min: number;
   spacerVolumeBelow: number;
+  cementPV: number;
   cementYP: number;
   spacerYP: number;
   thickeningTimeMin: number;
@@ -41,7 +42,7 @@ interface Props {
 export default function ComplicationsSection({
   results, cementDensity, spacerDensity, wellFluidDensity,
   cementGel10min, spacerGel10min, spacerVolumeBelow,
-  cementYP, spacerYP, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin,
+  cementPV, cementYP, spacerYP, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin,
 }: Props) {
   const [type, setType] = useState<ComplicationType>('loss');
   const [lossRate, setLossRate] = useState(10);
@@ -89,10 +90,12 @@ export default function ComplicationsSection({
       thickeningTimeMin,
       settingTimeStartMin,
       settingTimeEndMin,
+      cementPV,
+      cementYP,
     };
 
     return calculateComplications(inputs, params);
-  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType, cementDensity, spacerDensity, wellFluidDensity, cementGel10min, spacerGel10min, spacerVolumeBelow, cementYP, spacerYP, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
+  }, [results, type, lossRate, zoneDepthMD, zoneDepthTVD, zoneThickness, formationPressure, fluidType, cementDensity, spacerDensity, wellFluidDensity, cementGel10min, spacerGel10min, spacerVolumeBelow, cementPV, cementYP, spacerYP, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">

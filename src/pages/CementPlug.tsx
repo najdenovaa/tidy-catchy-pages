@@ -952,6 +952,7 @@ export default function CementPlug() {
                       cementGel10min={cement.gel10min || 0}
                       spacerGel10min={useViscousPad ? (viscousPadFluid.gel10min || 0) : (spacer.gel10min || 0)}
                       spacerVolumeBelow={useViscousPad ? spacerVolumeBelow : 0}
+                      cementPV={cement.rheology.pv}
                       cementYP={cement.rheology.yp}
                       spacerYP={useViscousPad ? viscousPadFluid.rheology.yp : spacer.rheology.yp}
                       thickeningTimeMin={thickeningTime}
