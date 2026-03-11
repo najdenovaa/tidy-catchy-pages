@@ -240,8 +240,8 @@ export function calculateComplications(
       : params.spacerVolumeBelowM3;
 
   // ═══ TIME ANALYSIS ═══
-  const totalOpTime = params.totalOperationTimeMin;
-  const thickTime = params.thickeningTimeMin;
+  const totalOpTime = totalOpTimeMin;
+  // thickTime and safeTime reuse values from loss section
   const safeTime = thickTime * 0.75;
   // Setting time is measured from STATIC (after operation stops), not from mixing
   const settingStartStatic = params.settingTimeStartMin; // minutes after cement stops moving
