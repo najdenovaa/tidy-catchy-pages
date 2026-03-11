@@ -252,16 +252,38 @@ export default function InputSection(props: Props) {
     const areaLower = (Math.PI / 4) * (dHole * dHole - dCas * dCas);
     const velLower = areaLower > 0 ? (rateLps / 1000) / areaLower : 0;
 
-    // Хелпер расчёта трения сегмента
-    const segFriction = (pv: number, yp: number, length: number, dHyd: number, vel: number): number => {
-      if (length <= 0 || vel <= 0) return 0;
+    // Хелпер расчёта трения сегмента с учётом режима потока (ламинар/турбулент)
+    const segFriction = (pv: number, yp: number, length: number, dHyd: number, vel: number, flowArea: number, densKgM3: number): number => {
+      if (length <= 0 || vel <= 0 || dHyd <= 0) return 0;
       const pvPas = pv / 1000;
-      return (32 * pvPas * vel * length) / (dHyd * dHyd) / 1e6
-           + (16 * yp * length) / (3 * dHyd) / 1e6;
+      const muEff = pvPas + yp * dHyd / (6 * vel);
+      const Re = densKgM3 * vel * dHyd / muEff;
+      // Ламинарные потери (Бингам)
+      const frLam = (32 * pvPas * vel * length) / (dHyd * dHyd) / 1e6;
+      const yieldTerm = (16 * yp * length) / (3 * dHyd) / 1e6;
+      const laminar = frLam + yieldTerm;
+      // Турбулентные потери (Блазиус)
+      const f = 0.0791 / Math.pow(Math.max(Re, 100), 0.25);
+      const turbulent = (2 * f * densKgM3 * vel * vel * length) / dHyd / 1e6;
+      if (Re < 2100) return laminar;
+      if (Re > 4000) return turbulent;
+      const blend = (Re - 2100) / 1900;
+      return laminar * (1 - blend) + turbulent * blend;
     };
 
     let frictionLoss = 0;
-    // Для каждого цементного интервала — определяем какая часть в верхней/нижней секции
+    // Средние параметры цемента (как в calculateHydraulics)
+    const avgCementPv = slurries.length > 0
+      ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).pv, 0) / slurries.length
+      : (drillingFluid.rheology.pv || 25);
+    const avgCementYp = slurries.length > 0
+      ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).yp, 0) / slurries.length
+      : (drillingFluid.rheology.yp || 25);
+    const avgCementDens = slurries.length > 0
+      ? slurries.reduce((s, sl) => s + sl.density * 1000, 0) / slurries.length
+      : 1100;
+
+    // Трение в цементных интервалах
     let cementMDTotal = 0;
     slurries.forEach((s, i) => {
       const hMD = getSlurryHeight(slurries, i, wellData.casingDepthMD);
@@ -270,27 +292,27 @@ export default function InputSection(props: Props) {
         const mdBot = i === lastIdx ? wellData.casingDepthMD : slurries[i + 1].topDepthMD;
         const mdTop = s.topDepthMD;
         cementMDTotal += hMD;
-        const segPv = s.rheology.pv || 0;
-        const segYp = s.rheology.yp || 0;
+        const segRheo = effectiveRheology(s.rheology, cementCategory(s.density));
+        const segDens = s.density * 1000;
         // Часть в верхней секции (межколонное)
         const upTop = Math.max(mdTop, 0);
         const upBot = Math.min(mdBot, upperLen);
         const upLen = Math.max(0, upBot - upTop);
-        frictionLoss += segFriction(segPv, segYp, upLen, dHydUpper, velUpper);
+        frictionLoss += segFriction(segRheo.pv, segRheo.yp, upLen, dHydUpper, velUpper, areaUpper, segDens);
         // Часть в нижней секции (открытый ствол)
         const loTop = Math.max(mdTop, upperLen);
         const loBot = Math.min(mdBot, wellData.casingDepthMD);
         const loLen = Math.max(0, loBot - loTop);
-        frictionLoss += segFriction(segPv, segYp, loLen, dHydLower, velLower);
+        frictionLoss += segFriction(segRheo.pv, segRheo.yp, loLen, dHydLower, velLower, areaLower, segDens);
       }
     });
     // Буровой раствор в оставшихся интервалах
-    const mudPv = drillingFluid.rheology.pv || 0;
-    const mudYp = drillingFluid.rheology.yp || 0;
+    const mudRheo = effectiveRheology(drillingFluid.rheology, 'mud');
+    const mudDens = drillingFluid.density > 0 ? drillingFluid.density : 1100;
     const mudUpperLen = Math.max(0, upperLen - Math.min(cementMDTotal, upperLen));
     const mudLowerLen = Math.max(0, lowerLen - Math.max(0, cementMDTotal - upperLen));
-    frictionLoss += segFriction(mudPv, mudYp, mudUpperLen, dHydUpper, velUpper);
-    frictionLoss += segFriction(mudPv, mudYp, mudLowerLen, dHydLower, velLower);
+    frictionLoss += segFriction(mudRheo.pv, mudRheo.yp, mudUpperLen, dHydUpper, velUpper, areaUpper, mudDens);
+    frictionLoss += segFriction(mudRheo.pv, mudRheo.yp, mudLowerLen, dHydLower, velLower, areaLower, mudDens);
     frictionLoss *= 0.8; // коэфф. затрубного трения
 
     const ecd = annHydrostatic + frictionLoss;
