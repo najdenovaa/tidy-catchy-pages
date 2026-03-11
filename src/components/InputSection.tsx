@@ -941,12 +941,12 @@ export default function InputSection(props: Props) {
                   fracCheck={(rateLps) => fracCheck(rateLps, df.density, df.rheology.pv, df.rheology.yp, true, df.name)}
                   isDynamic={!!dynamicBHPMap}
                 />
-                {onCalculate && !dynamicBHPMap && (
+                {onCalculate && (
                   <button
                     onClick={onCalculate}
                     className="mt-2 w-full px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors border border-primary/20"
                   >
-                    📊 Проверить давление (запустить расчёт)
+                    {dynamicBHPMap ? "🔄 Пересчитать давление" : "📊 Проверить давление (запустить расчёт)"}
                   </button>
                 )}
               </div>
