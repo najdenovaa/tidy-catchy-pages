@@ -735,7 +735,7 @@ export default function InputSection(props: Props) {
                   steps={b.flowRateSteps}
                   totalVolume={b.volume}
                   onChange={(steps) => { const u = [...buffers]; u[idx] = { ...u[idx], flowRateSteps: steps }; onBuffersChange(u); }}
-                  fracCheck={(rateLps) => fracCheck(rateLps, b.density, b.rheology.pv, b.rheology.yp)}
+                  fracCheck={(rateLps) => fracCheck(rateLps, b.density, b.rheology.pv, b.rheology.yp, false, b.name)}
                 />
                 {/* Добавки */}
                 <div className="space-y-1">
