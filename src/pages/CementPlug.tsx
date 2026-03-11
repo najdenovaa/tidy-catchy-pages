@@ -921,6 +921,34 @@ export default function CementPlug() {
               </Card>
             </Collapsible>
 
+            {/* Complications analysis */}
+            <Collapsible open={openSections.complications} onOpenChange={() => toggle("complications")}>
+              <Card>
+                <CollapsibleTrigger className="w-full">
+                  <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
+                    <CardTitle className="text-sm">⚠️ Осложнения (поглощение / проявление)</CardTitle>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${openSections.complications ? "rotate-180" : ""}`} />
+                  </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0">
+                    <ComplicationsSection
+                      results={results}
+                      cementDensity={cement.density}
+                      spacerDensity={spacer.density}
+                      wellFluidDensity={wellFluid.density}
+                      pumpRateCementLs={pumpRateCement}
+                      cementGel10min={cement.gel10min || 0}
+                      spacerGel10min={spacer.gel10min || 0}
+                      spacerVolumeBelow={spacerVolumeBelow}
+                      cementYP={cement.rheology.yp}
+                      spacerYP={spacer.rheology.yp}
+                    />
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+
             {/* Results */}
             {results && (
               <>
