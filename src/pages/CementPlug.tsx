@@ -526,7 +526,7 @@ export default function CementPlug() {
   }, []);
 
   /* ── Collapsible state ── */
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: false, plug: false, fluids: false, process: false, pipeSec: false });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: false, plug: false, fluids: false, process: false, pipeSec: false, complications: false });
   const toggle = (k: string) => setOpenSections(s => ({ ...s, [k]: !s[k] }));
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
