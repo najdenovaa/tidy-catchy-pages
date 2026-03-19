@@ -316,6 +316,7 @@ export default function CoiledTubing() {
     await exportCTDocx({
       ct, well, fluid, pump, tools, friction, reelSize, prevTrips,
       forces, limits, hydraulics, fatigue, risks,
+      trajPoints,
       chartImages: { forces: forcesImg, limits: limitsImg, hydraulics: hydraulicsImg, fatigue: fatigueImg },
     });
 
