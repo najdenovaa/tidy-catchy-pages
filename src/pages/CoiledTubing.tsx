@@ -636,12 +636,14 @@ export default function CoiledTubing() {
             </Card>
           ) : forces && limits && hydraulics && fatigue && (
             <Tabs value={tab} onValueChange={setTab}>
-              <TabsList className="mb-3 w-full flex">
-                <TabsTrigger value="forces" className="flex-1 gap-1 text-xs">⚡ Силы</TabsTrigger>
-                <TabsTrigger value="limits" className="flex-1 gap-1 text-xs">🛡 Пределы</TabsTrigger>
-                <TabsTrigger value="hydraulics" className="flex-1 gap-1 text-xs">💧 Гидравлика</TabsTrigger>
-                <TabsTrigger value="fatigue" className="flex-1 gap-1 text-xs">🔄 Усталость</TabsTrigger>
-              </TabsList>
+              <div className="overflow-x-auto scrollbar-hide mb-3">
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-4">
+                  <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Силы</TabsTrigger>
+                  <TabsTrigger value="limits" className="gap-1 text-xs whitespace-nowrap">🛡 Пределы</TabsTrigger>
+                  <TabsTrigger value="hydraulics" className="gap-1 text-xs whitespace-nowrap">💧 Гидравлика</TabsTrigger>
+                  <TabsTrigger value="fatigue" className="gap-1 text-xs whitespace-nowrap">🔄 Усталость</TabsTrigger>
+                </TabsList>
+              </div>
 
               {/* Forces */}
               <TabsContent value="forces">
