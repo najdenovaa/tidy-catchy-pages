@@ -819,6 +819,12 @@ export default function InputSection(props: Props) {
                       <Label className="text-xs text-muted-foreground">Высота столба (расчёт), м</Label>
                       <div className="h-8 flex items-center px-3 rounded-md bg-muted text-sm font-semibold border border-border">{height.toFixed(0)}</div>
                     </div>
+                    {idx === 0 && (
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Объём на вымыв, м³</Label>
+                        <DebouncedInput type="number" step="0.1" value={s.washVolume || ""} onChange={(e) => handleSlurryChange(idx, "washVolume", e.target.value)} className="h-8 text-sm" placeholder="0" />
+                      </div>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="space-y-1"><Label className="text-xs text-muted-foreground">В/Ц отношение</Label><DebouncedInput type="number" step="0.001" value={s.waterRatio || ""} onChange={(e) => handleSlurryChange(idx, "waterRatio", e.target.value)} className="h-8 text-sm" /></div>
