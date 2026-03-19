@@ -669,20 +669,24 @@ export default function CoiledTubing() {
 
                     <div ref={forcesChartRef} className="mt-4 bg-card rounded-lg p-2">
                       <p className="text-xs font-semibold text-center mb-2">📊 Осевая нагрузка по глубине (MD)</p>
-                      <ResponsiveContainer width="100%" height={320}>
-                        <LineChart data={forceProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis dataKey="depth" label={{ value: "Глубина MD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <YAxis label={{ value: "кН", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <Tooltip contentStyle={{ fontSize: 11 }} />
-                          <Legend wrapperStyle={{ fontSize: 10 }} />
-                          <Line type="monotone" dataKey="axialRIH" name="СПО ↓" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                          <Line type="monotone" dataKey="axialPOOH" name="СПО ↑" stroke="#ef4444" strokeWidth={2} dot={false} />
-                          <Line type="monotone" dataKey="bucklingLimit" name="Синус. изгиб" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
-                          <Line type="monotone" dataKey="helicalLimit" name="Спирал. изгиб" stroke="#a855f7" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
-                          <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
-                        </LineChart>
-                      </ResponsiveContainer>
+                      <div className="overflow-x-auto -mx-2 px-2">
+                        <div className="min-w-[600px]">
+                          <ResponsiveContainer width="100%" height={320}>
+                            <LineChart data={forceProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <XAxis dataKey="depth" label={{ value: "Глубина MD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <YAxis label={{ value: "кН", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <Tooltip contentStyle={{ fontSize: 11 }} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Line type="monotone" dataKey="axialRIH" name="СПО ↓" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                              <Line type="monotone" dataKey="axialPOOH" name="СПО ↑" stroke="#ef4444" strokeWidth={2} dot={false} />
+                              <Line type="monotone" dataKey="bucklingLimit" name="Синус. изгиб" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
+                              <Line type="monotone" dataKey="helicalLimit" name="Спирал. изгиб" stroke="#a855f7" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
+                              <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
