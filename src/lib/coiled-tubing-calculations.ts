@@ -77,7 +77,7 @@ const GUIDE_ARCH_DIAMETER = 1.83;
 
 // ─── Utility ───
 
-function ctID(od: number, wall: number): number {
+export function ctID(od: number, wall: number): number {
   return od - 2 * wall;
 }
 
