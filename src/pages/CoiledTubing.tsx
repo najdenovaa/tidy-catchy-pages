@@ -771,7 +771,7 @@ export default function CoiledTubing() {
                         </AreaChart>
                       </ResponsiveContainer>
 
-                      <p className="text-xs font-semibold text-center mt-4 mb-2">Распределение ΔP при Q={pump.flowRate} л/мин</p>
+                      <p className="text-xs font-semibold text-center mt-4 mb-2">Распределение ΔP при Q={pump.flowRate} л/с</p>
                       <ResponsiveContainer width="100%" height={120}>
                         <BarChart data={[{ name: "ΔP", ct: hydraulics.dpInsideCT, ann: hydraulics.dpAnnulus, nozzle: hydraulics.dpNozzle }]} layout="vertical" margin={{ left: 10, right: 20 }}>
                           <XAxis type="number" tick={{ fontSize: 10 }} />

@@ -309,7 +309,7 @@ export function generateForceDepthProfile(
   const points: DepthForcePoint[] = [];
   const maxD = Math.min(ct.length, well.md);
   const stepSize = maxD / steps;
-  const traj = well.trajectory;
+  const traj = well.trajectory.length > 1 ? well.trajectory : buildSyntheticTrajectory(well.md, well.tvd);
 
   for (let s = 0; s <= steps; s++) {
     const depth = s * stepSize;
