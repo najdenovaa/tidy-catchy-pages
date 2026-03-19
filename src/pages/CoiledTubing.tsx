@@ -377,21 +377,23 @@ export default function CoiledTubing() {
                 <Send className="w-4 h-4" /> <span>Поддержка</span>
               </a>
             </div>
-            <div className="flex items-center gap-1.5 sm:gap-3 flex-1 sm:flex-none justify-end flex-wrap">
-              <button onClick={handleReset} title="Обнулить" className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors shadow-sm flex items-center gap-1">
-                <RotateCcw className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">Обнулить</span>
-              </button>
-              <button onClick={handleSave} className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-colors shadow-sm flex items-center gap-1">
-                <Save className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">Сохранить</span>
-              </button>
-              {calculated && (
-                <button onClick={handleExportDocx} className="px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-[10px] sm:text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-1">
-                  <FileDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> DOCX
+            <div className="overflow-x-auto scrollbar-hide flex-1 sm:flex-none">
+              <div className="flex items-center gap-1.5 sm:gap-3 min-w-max justify-end">
+                <button onClick={handleReset} title="Обнулить" className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors shadow-sm flex items-center gap-1">
+                  <RotateCcw className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">Обнулить</span>
                 </button>
-              )}
-              <button onClick={runCalculation} className="px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-[10px] sm:text-sm hover:bg-primary/90 transition-colors shadow-md whitespace-nowrap">
-                РАСЧЁТ
-              </button>
+                <button onClick={handleSave} className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-colors shadow-sm flex items-center gap-1">
+                  <Save className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">Сохранить</span>
+                </button>
+                {calculated && (
+                  <button onClick={handleExportDocx} className="px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-[10px] sm:text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-1">
+                    <FileDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> DOCX
+                  </button>
+                )}
+                <button onClick={runCalculation} className="px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-[10px] sm:text-sm hover:bg-primary/90 transition-colors shadow-md whitespace-nowrap">
+                  РАСЧЁТ
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -635,12 +637,14 @@ export default function CoiledTubing() {
             </Card>
           ) : forces && limits && hydraulics && fatigue && (
             <Tabs value={tab} onValueChange={setTab}>
-              <TabsList className="mb-3 w-full flex">
-                <TabsTrigger value="forces" className="flex-1 gap-1 text-xs">⚡ Силы</TabsTrigger>
-                <TabsTrigger value="limits" className="flex-1 gap-1 text-xs">🛡 Пределы</TabsTrigger>
-                <TabsTrigger value="hydraulics" className="flex-1 gap-1 text-xs">💧 Гидравлика</TabsTrigger>
-                <TabsTrigger value="fatigue" className="flex-1 gap-1 text-xs">🔄 Усталость</TabsTrigger>
-              </TabsList>
+              <div className="overflow-x-auto scrollbar-hide mb-3">
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-4">
+                  <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Силы</TabsTrigger>
+                  <TabsTrigger value="limits" className="gap-1 text-xs whitespace-nowrap">🛡 Пределы</TabsTrigger>
+                  <TabsTrigger value="hydraulics" className="gap-1 text-xs whitespace-nowrap">💧 Гидравлика</TabsTrigger>
+                  <TabsTrigger value="fatigue" className="gap-1 text-xs whitespace-nowrap">🔄 Усталость</TabsTrigger>
+                </TabsList>
+              </div>
 
               {/* Forces */}
               <TabsContent value="forces">
@@ -666,20 +670,24 @@ export default function CoiledTubing() {
 
                     <div ref={forcesChartRef} className="mt-4 bg-card rounded-lg p-2">
                       <p className="text-xs font-semibold text-center mb-2">📊 Осевая нагрузка по глубине (MD)</p>
-                      <ResponsiveContainer width="100%" height={320}>
-                        <LineChart data={forceProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis dataKey="depth" label={{ value: "Глубина MD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <YAxis label={{ value: "кН", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <Tooltip contentStyle={{ fontSize: 11 }} />
-                          <Legend wrapperStyle={{ fontSize: 10 }} />
-                          <Line type="monotone" dataKey="axialRIH" name="СПО ↓" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                          <Line type="monotone" dataKey="axialPOOH" name="СПО ↑" stroke="#ef4444" strokeWidth={2} dot={false} />
-                          <Line type="monotone" dataKey="bucklingLimit" name="Синус. изгиб" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
-                          <Line type="monotone" dataKey="helicalLimit" name="Спирал. изгиб" stroke="#a855f7" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
-                          <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
-                        </LineChart>
-                      </ResponsiveContainer>
+                      <div className="overflow-x-auto -mx-2 px-2">
+                        <div className="min-w-[600px]">
+                          <ResponsiveContainer width="100%" height={320}>
+                            <LineChart data={forceProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <XAxis dataKey="depth" label={{ value: "Глубина MD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <YAxis label={{ value: "кН", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <Tooltip contentStyle={{ fontSize: 11 }} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Line type="monotone" dataKey="axialRIH" name="СПО ↓" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                              <Line type="monotone" dataKey="axialPOOH" name="СПО ↑" stroke="#ef4444" strokeWidth={2} dot={false} />
+                              <Line type="monotone" dataKey="bucklingLimit" name="Синус. изгиб" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
+                              <Line type="monotone" dataKey="helicalLimit" name="Спирал. изгиб" stroke="#a855f7" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
+                              <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -706,21 +714,25 @@ export default function CoiledTubing() {
 
                     <div ref={limitsChartRef} className="mt-4 bg-card rounded-lg p-2">
                       <p className="text-xs font-semibold text-center mb-2">📊 Диаграмма пределов (Давление vs Нагрузка)</p>
-                      <ResponsiveContainer width="100%" height={350}>
-                        <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis type="number" dataKey="axialLoad" name="Нагрузка" unit=" кН" tick={{ fontSize: 10 }}
-                            label={{ value: "Осевая нагрузка, кН", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} />
-                          <YAxis type="number" dataKey="pressure" name="Давление" unit=" МПа" tick={{ fontSize: 10 }}
-                            label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
-                          <Tooltip contentStyle={{ fontSize: 11 }} />
-                          <Scatter name="Предельная оболочка" data={pressureEnvelope} fill="#3b82f6" line={{ stroke: "#3b82f6", strokeWidth: 2 }} shape="circle" legendType="line" />
-                          <Scatter name="Рабочая точка" data={[{ axialLoad: forces.surfaceLoadPOOH, pressure: hydraulics.dpTotal }]} fill="#ef4444" shape="star" legendType="star" />
-                          <ZAxis range={[15, 15]} />
-                          <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
-                          <ReferenceLine x={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
-                        </ScatterChart>
-                      </ResponsiveContainer>
+                      <div className="overflow-x-auto -mx-2 px-2">
+                        <div className="min-w-[600px]">
+                          <ResponsiveContainer width="100%" height={350}>
+                            <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <XAxis type="number" dataKey="axialLoad" name="Нагрузка" unit=" кН" tick={{ fontSize: 10 }}
+                                label={{ value: "Осевая нагрузка, кН", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} />
+                              <YAxis type="number" dataKey="pressure" name="Давление" unit=" МПа" tick={{ fontSize: 10 }}
+                                label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
+                              <Tooltip contentStyle={{ fontSize: 11 }} />
+                              <Scatter name="Предельная оболочка" data={pressureEnvelope} fill="#3b82f6" line={{ stroke: "#3b82f6", strokeWidth: 2 }} shape="circle" legendType="line" />
+                              <Scatter name="Рабочая точка" data={[{ axialLoad: forces.surfaceLoadPOOH, pressure: hydraulics.dpTotal }]} fill="#ef4444" shape="star" legendType="star" />
+                              <ZAxis range={[15, 15]} />
+                              <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
+                              <ReferenceLine x={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
+                            </ScatterChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
                       <p className="text-[10px] text-muted-foreground text-center mt-1">⭐ Красная звезда = текущая рабочая точка</p>
                     </div>
                   </CardContent>
@@ -757,51 +769,55 @@ export default function CoiledTubing() {
 
                     <div ref={hydraulicsChartRef} className="mt-4 bg-card rounded-lg p-2">
                       <p className="text-xs font-semibold text-center mb-2">📊 Потери давления vs Расход</p>
-                      <ResponsiveContainer width="100%" height={300}>
-                        <AreaChart data={hydraulicsCurve} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis dataKey="flowRate" label={{ value: "Расход, л/с", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <Tooltip contentStyle={{ fontSize: 11 }} />
-                          <Legend wrapperStyle={{ fontSize: 10 }} />
-                          <Area type="monotone" dataKey="dpCT" name="ΔP ГНКТ" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
-                          <Area type="monotone" dataKey="dpAnn" name="ΔP Затрубье" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
-                          <Area type="monotone" dataKey="dpNozzle" name="ΔP Насадки" stackId="1" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.6} />
-                          <Line type="monotone" dataKey="dpTotal" name="Общее ΔP" stroke="#ef4444" strokeWidth={2} dot={false} />
-                          <ReferenceLine y={limits.maxWorkingPressure} stroke="#dc2626" strokeDasharray="6 3" label={{ value: `Макс. ${limits.maxWorkingPressure.toFixed(0)} МПа`, position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-
-                      <p className="text-xs font-semibold text-center mt-4 mb-2">Распределение ΔP при Q={pump.flowRate} л/с</p>
-                      <ResponsiveContainer width="100%" height={120}>
-                        <BarChart data={[{ name: "ΔP", ct: hydraulics.dpInsideCT, ann: hydraulics.dpAnnulus, nozzle: hydraulics.dpNozzle }]} layout="vertical" margin={{ left: 10, right: 20 }}>
-                          <XAxis type="number" tick={{ fontSize: 10 }} />
-                          <YAxis type="category" dataKey="name" hide />
-                          <Tooltip contentStyle={{ fontSize: 11 }} />
-                          <Legend wrapperStyle={{ fontSize: 10 }} />
-                          <Bar dataKey="ct" name="ГНКТ" stackId="a" fill="#3b82f6" />
-                          <Bar dataKey="ann" name="Затрубье" stackId="a" fill="#10b981" />
-                          <Bar dataKey="nozzle" name="Насадки" stackId="a" fill="#f59e0b" />
-                        </BarChart>
-                      </ResponsiveContainer>
-
-                      {/* Temperature profile */}
-                      {tempProfile.length > 0 && (
-                        <>
-                          <p className="text-xs font-semibold text-center mt-4 mb-2">🌡 Температурный профиль по глубине (TVD)</p>
-                          <ResponsiveContainer width="100%" height={250}>
-                            <LineChart data={tempProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                      <div className="overflow-x-auto -mx-2 px-2">
+                        <div className="min-w-[600px]">
+                          <ResponsiveContainer width="100%" height={300}>
+                            <AreaChart data={hydraulicsCurve} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                              <XAxis dataKey="tvd" label={{ value: "TVD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                              <YAxis label={{ value: "°C", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <XAxis dataKey="flowRate" label={{ value: "Расход, л/с", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
                               <Tooltip contentStyle={{ fontSize: 11 }} />
                               <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Line type="monotone" dataKey="tempStatic" name="BHST (стат.)" stroke="#ef4444" strokeWidth={2} dot={false} />
-                              <Line type="monotone" dataKey="tempCirculating" name="BHCT (цирк.)" stroke="#3b82f6" strokeWidth={2} strokeDasharray="5 3" dot={false} />
-                            </LineChart>
+                              <Area type="monotone" dataKey="dpCT" name="ΔP ГНКТ" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
+                              <Area type="monotone" dataKey="dpAnn" name="ΔP Затрубье" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
+                              <Area type="monotone" dataKey="dpNozzle" name="ΔP Насадки" stackId="1" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.6} />
+                              <Line type="monotone" dataKey="dpTotal" name="Общее ΔP" stroke="#ef4444" strokeWidth={2} dot={false} />
+                              <ReferenceLine y={limits.maxWorkingPressure} stroke="#dc2626" strokeDasharray="6 3" label={{ value: `Макс. ${limits.maxWorkingPressure.toFixed(0)} МПа`, position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
+                            </AreaChart>
                           </ResponsiveContainer>
-                        </>
-                      )}
+
+                          <p className="text-xs font-semibold text-center mt-4 mb-2">Распределение ΔP при Q={pump.flowRate} л/с</p>
+                          <ResponsiveContainer width="100%" height={120}>
+                            <BarChart data={[{ name: "ΔP", ct: hydraulics.dpInsideCT, ann: hydraulics.dpAnnulus, nozzle: hydraulics.dpNozzle }]} layout="vertical" margin={{ left: 10, right: 20 }}>
+                              <XAxis type="number" tick={{ fontSize: 10 }} />
+                              <YAxis type="category" dataKey="name" hide />
+                              <Tooltip contentStyle={{ fontSize: 11 }} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Bar dataKey="ct" name="ГНКТ" stackId="a" fill="#3b82f6" />
+                              <Bar dataKey="ann" name="Затрубье" stackId="a" fill="#10b981" />
+                              <Bar dataKey="nozzle" name="Насадки" stackId="a" fill="#f59e0b" />
+                            </BarChart>
+                          </ResponsiveContainer>
+
+                          {/* Temperature profile */}
+                          {tempProfile.length > 0 && (
+                            <>
+                              <p className="text-xs font-semibold text-center mt-4 mb-2">🌡 Температурный профиль по глубине (TVD)</p>
+                              <ResponsiveContainer width="100%" height={250}>
+                                <LineChart data={tempProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                                  <XAxis dataKey="tvd" label={{ value: "TVD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                                  <YAxis label={{ value: "°C", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                                  <Tooltip contentStyle={{ fontSize: 11 }} />
+                                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                                  <Line type="monotone" dataKey="tempStatic" name="BHST (стат.)" stroke="#ef4444" strokeWidth={2} dot={false} />
+                                  <Line type="monotone" dataKey="tempCirculating" name="BHCT (цирк.)" stroke="#3b82f6" strokeWidth={2} strokeDasharray="5 3" dot={false} />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -827,21 +843,25 @@ export default function CoiledTubing() {
 
                     <div ref={fatigueChartRef} className="mt-4 bg-card rounded-lg p-2">
                       <p className="text-xs font-semibold text-center mb-2">📊 Кривая ресурса усталости</p>
-                      <ResponsiveContainer width="100%" height={300}>
-                        <LineChart data={fatigueCurve} margin={{ top: 5, right: 30, bottom: 5, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis dataKey="trips" label={{ value: "Рейсы", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <YAxis yAxisId="left" label={{ value: "Ресурс, %", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} domain={[0, 120]} />
-                          <YAxis yAxisId="right" orientation="right" label={{ value: "МПа", angle: 90, position: "insideRight", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <Tooltip contentStyle={{ fontSize: 11 }} />
-                          <Legend wrapperStyle={{ fontSize: 10 }} />
-                          <Line yAxisId="left" type="monotone" dataKey="lifeUsed" name="Ресурс, %" stroke="#ef4444" strokeWidth={2} dot={false} />
-                          <Line yAxisId="right" type="monotone" dataKey="effectiveBurst" name="Эфф. P разрыва, МПа" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                          <ReferenceLine yAxisId="left" y={100} stroke="#dc2626" strokeDasharray="6 3" label={{ value: "100%", position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
-                          <ReferenceLine yAxisId="left" y={50} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "50%", position: "right", style: { fontSize: 9, fill: "#d97706" } }} />
-                          {prevTrips > 0 && <ReferenceLine x={prevTrips} stroke="#a855f7" strokeWidth={2} label={{ value: `Сейчас: ${prevTrips}`, position: "top", style: { fontSize: 9, fill: "#7c3aed" } }} />}
-                        </LineChart>
-                      </ResponsiveContainer>
+                      <div className="overflow-x-auto -mx-2 px-2">
+                        <div className="min-w-[600px]">
+                          <ResponsiveContainer width="100%" height={300}>
+                            <LineChart data={fatigueCurve} margin={{ top: 5, right: 30, bottom: 5, left: 10 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <XAxis dataKey="trips" label={{ value: "Рейсы", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <YAxis yAxisId="left" label={{ value: "Ресурс, %", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} domain={[0, 120]} />
+                              <YAxis yAxisId="right" orientation="right" label={{ value: "МПа", angle: 90, position: "insideRight", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <Tooltip contentStyle={{ fontSize: 11 }} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Line yAxisId="left" type="monotone" dataKey="lifeUsed" name="Ресурс, %" stroke="#ef4444" strokeWidth={2} dot={false} />
+                              <Line yAxisId="right" type="monotone" dataKey="effectiveBurst" name="Эфф. P разрыва, МПа" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                              <ReferenceLine yAxisId="left" y={100} stroke="#dc2626" strokeDasharray="6 3" label={{ value: "100%", position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
+                              <ReferenceLine yAxisId="left" y={50} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "50%", position: "right", style: { fontSize: 9, fill: "#d97706" } }} />
+                              {prevTrips > 0 && <ReferenceLine x={prevTrips} stroke="#a855f7" strokeWidth={2} label={{ value: `Сейчас: ${prevTrips}`, position: "top", style: { fontSize: 9, fill: "#7c3aed" } }} />}
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
