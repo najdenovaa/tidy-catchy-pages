@@ -66,9 +66,25 @@ export default function AdminPanel() {
 
   const formatDate = (iso: string) => new Date(iso).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-  const getWellSummary = (wd: any) => {
+  const moduleLabel = (m: string) => {
+    if (m === "cementing") return "Цементирование";
+    if (m === "cement-plug") return "Цем. мосты";
+    if (m === "coiled-tubing") return "ГНКТ";
+    return m;
+  };
+
+  const getWellSummary = (wd: any, module?: string) => {
     if (!wd) return "—";
     const parts: string[] = [];
+    if (module === "coiled-tubing") {
+      // ГНКТ: well_data содержит {ct, well, fluid, ...}
+      const w = wd.well;
+      if (w?.md) parts.push(`MD:${w.md}`);
+      if (w?.tvd) parts.push(`TVD:${w.tvd}`);
+      const ct = wd.ct;
+      if (ct?.od) parts.push(`CT OD:${ct.od}"`);
+      return parts.length > 0 ? parts.join(", ") : "—";
+    }
     if (wd.wellDepthMD) parts.push(`MD:${wd.wellDepthMD}`);
     if (wd.casingOD) parts.push(`ОК:${wd.casingOD}`);
     if (wd.holeDiameter) parts.push(`Dскв:${wd.holeDiameter}`);
