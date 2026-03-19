@@ -201,6 +201,7 @@ export interface SlurryInput {
   flowRateSteps: FlowRateStep[];
   waterRatio: number; // В/Ц (водоцементное отношение)
   yieldPerTon: number; // Выход раствора, м³/т
+  washVolume?: number; // м³ — объём раствора на вымыв (только для первого/верхнего раствора)
 }
 
 // Вычислить высоту столба цемента для i-го раствора
