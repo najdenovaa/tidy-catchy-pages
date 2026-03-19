@@ -300,9 +300,9 @@ export default function AdminPanel() {
                           {userCalcs.map(c => (
                             <TableRow key={c.id}>
                               <TableCell className="text-xs whitespace-nowrap">{formatDate(c.created_at)}</TableCell>
-                              <TableCell className="text-xs">{c.module}</TableCell>
+                              <TableCell className="text-xs">{moduleLabel(c.module)}</TableCell>
                               <TableCell className="text-xs">{c.title}</TableCell>
-                              <TableCell className="text-xs max-w-[300px] truncate">{getWellSummary(c.well_data)}</TableCell>
+                              <TableCell className="text-xs max-w-[300px] truncate">{getWellSummary(c.well_data, c.module)}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
