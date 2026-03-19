@@ -581,7 +581,7 @@ export default function CoiledTubing() {
               <CollapsibleContent>
                 <CardContent className="pt-0 space-y-3">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <Field label="Расход" value={pump.flowRate} onChange={v => { setPump(p => ({ ...p, flowRate: num(v) })); markDirty(); }} unit="л/мин" />
+                    <Field label="Расход" value={pump.flowRate} onChange={v => { setPump(p => ({ ...p, flowRate: num(v) })); markDirty(); }} unit="л/с" />
                     <Field label="Вес КНБК" value={tools.bhaWeight} onChange={v => { setTools(t => ({ ...t, bhaWeight: num(v) })); markDirty(); }} unit="кг" />
                     <Field label="Длина КНБК" value={tools.bhaLength} onChange={v => { setTools(t => ({ ...t, bhaLength: num(v) })); markDirty(); }} unit="м" />
                     <Field label="Ø КНБК" value={tools.bhaOD} onChange={v => { setTools(t => ({ ...t, bhaOD: num(v) })); markDirty(); }} unit="мм" />
