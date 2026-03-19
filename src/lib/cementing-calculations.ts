@@ -723,7 +723,9 @@ export function calculateMaterials(
     if (h > 0) {
       const lastIdx = slurries.length - 1;
       const mdBot = i === lastIdx ? wellData.casingDepthMD : slurries[i + 1].topDepthMD;
-      const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
+      let vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
+      // Добавляем объём на вымыв для первого (верхнего) раствора
+      if (i === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
       const res = calculateCement(vol, s.density);
       const dryMassKg = res.dryMass * 1000; // тонны → кг
       cementItems.push({ name: s.name, amount: res.dryMass, unit: "т" });
