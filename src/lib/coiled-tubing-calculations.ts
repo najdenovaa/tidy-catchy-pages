@@ -566,7 +566,7 @@ export function generateHydraulicsCurve(
     const fr = (maxFlowRate / steps) * i;
     const r = calculateHydraulics(ct, well, fluid, { flowRate: fr, surfacePressure: 0 }, tools);
     points.push({
-      flowRate: Math.round(fr),
+      flowRate: Math.round(fr * 100) / 100,
       dpCT: r.dpInsideCT,
       dpAnn: r.dpAnnulus,
       dpNozzle: r.dpNozzle,
