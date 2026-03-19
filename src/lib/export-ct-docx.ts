@@ -131,6 +131,11 @@ export async function exportCTDocx(input: CTDocxInput) {
     ["ID НКТ", well.tubingID > 0 ? `${well.tubingID} мм` : "—"],
     ["Устьевое давление", `${well.wellheadPressure} МПа`],
     ["Коэффициент трения", `${friction}`],
+    ["BHST (стат. t°)", `${(well as any).bhst ?? "—"} °C`],
+    ["BHCT (цирк. t°)", `${(well as any).bhct ?? "—"} °C`],
+    ["T° на устье", `${well.whTemp} °C`],
+    ["Градиент ГРП", `${(well as any).fracGradient ?? "—"} МПа/м`],
+    ["Давление ГРП на TVD", `${(well as any).fracGradient && well.tvd ? fmt((well as any).fracGradient * well.tvd, 1) : "—"} МПа`],
   ]));
 
   children.push(...twoColTable("💧 Жидкость", [
@@ -138,6 +143,8 @@ export async function exportCTDocx(input: CTDocxInput) {
     ["Плотность", `${fluid.density} г/см³`],
     ["PV", `${fluid.pv} сП`],
     ["YP", `${fluid.yp} Па`],
+    ["n (индекс потока)", `${fluid.nIndex}`],
+    ["K (конс. индекс)", `${fluid.kIndex} Па·сⁿ`],
   ]));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
