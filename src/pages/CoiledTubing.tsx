@@ -50,7 +50,7 @@ const defaultWell: WellGeometry = {
   trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }],
 };
 const defaultFluid: FluidData = { name: "Вода", density: 1.0, pv: 1, yp: 0, nIndex: 1, kIndex: 0.001 };
-const defaultPump: PumpData = { flowRate: 300, surfacePressure: 0 };
+const defaultPump: PumpData = { flowRate: 5, surfacePressure: 0 };
 const defaultTools: ToolsData = { bhaWeight: 200, bhaLength: 5, bhaOD: 48, nozzleDiam: 4, nozzleCount: 3 };
 const defaultTraj: TrajectoryPoint[] = [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }];
 
