@@ -169,10 +169,7 @@ export function calculateTubingForces(
   const buoyancyFactor = 1 - fluidDensity / STEEL_DENSITY;
   const weightInFluid = (totalWeightAir + bhaWeightN) * buoyancyFactor;
 
-  const traj = well.trajectory.length > 1 ? well.trajectory : [
-    { md: 0, azimuth: 0, zenith: 0, tvd: 0 },
-    { md: well.md, azimuth: 0, zenith: 0, tvd: well.tvd },
-  ];
+  const traj = well.trajectory.length > 1 ? well.trajectory : buildSyntheticTrajectory(well.md, well.tvd);
 
   let totalDragRIH = 0;
   let totalDragPOOH = 0;
