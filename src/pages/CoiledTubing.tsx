@@ -713,21 +713,25 @@ export default function CoiledTubing() {
 
                     <div ref={limitsChartRef} className="mt-4 bg-card rounded-lg p-2">
                       <p className="text-xs font-semibold text-center mb-2">📊 Диаграмма пределов (Давление vs Нагрузка)</p>
-                      <ResponsiveContainer width="100%" height={350}>
-                        <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis type="number" dataKey="axialLoad" name="Нагрузка" unit=" кН" tick={{ fontSize: 10 }}
-                            label={{ value: "Осевая нагрузка, кН", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} />
-                          <YAxis type="number" dataKey="pressure" name="Давление" unit=" МПа" tick={{ fontSize: 10 }}
-                            label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
-                          <Tooltip contentStyle={{ fontSize: 11 }} />
-                          <Scatter name="Предельная оболочка" data={pressureEnvelope} fill="#3b82f6" line={{ stroke: "#3b82f6", strokeWidth: 2 }} shape="circle" legendType="line" />
-                          <Scatter name="Рабочая точка" data={[{ axialLoad: forces.surfaceLoadPOOH, pressure: hydraulics.dpTotal }]} fill="#ef4444" shape="star" legendType="star" />
-                          <ZAxis range={[15, 15]} />
-                          <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
-                          <ReferenceLine x={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
-                        </ScatterChart>
-                      </ResponsiveContainer>
+                      <div className="overflow-x-auto -mx-2 px-2">
+                        <div className="min-w-[600px]">
+                          <ResponsiveContainer width="100%" height={350}>
+                            <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <XAxis type="number" dataKey="axialLoad" name="Нагрузка" unit=" кН" tick={{ fontSize: 10 }}
+                                label={{ value: "Осевая нагрузка, кН", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} />
+                              <YAxis type="number" dataKey="pressure" name="Давление" unit=" МПа" tick={{ fontSize: 10 }}
+                                label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
+                              <Tooltip contentStyle={{ fontSize: 11 }} />
+                              <Scatter name="Предельная оболочка" data={pressureEnvelope} fill="#3b82f6" line={{ stroke: "#3b82f6", strokeWidth: 2 }} shape="circle" legendType="line" />
+                              <Scatter name="Рабочая точка" data={[{ axialLoad: forces.surfaceLoadPOOH, pressure: hydraulics.dpTotal }]} fill="#ef4444" shape="star" legendType="star" />
+                              <ZAxis range={[15, 15]} />
+                              <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
+                              <ReferenceLine x={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
+                            </ScatterChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
                       <p className="text-[10px] text-muted-foreground text-center mt-1">⭐ Красная звезда = текущая рабочая точка</p>
                     </div>
                   </CardContent>
