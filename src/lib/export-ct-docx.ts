@@ -131,6 +131,11 @@ export async function exportCTDocx(input: CTDocxInput) {
     ["ID НКТ", well.tubingID > 0 ? `${well.tubingID} мм` : "—"],
     ["Устьевое давление", `${well.wellheadPressure} МПа`],
     ["Коэффициент трения", `${friction}`],
+    ["BHST (стат. t°)", `${(well as any).bhst ?? "—"} °C`],
+    ["BHCT (цирк. t°)", `${(well as any).bhct ?? "—"} °C`],
+    ["T° на устье", `${well.whTemp} °C`],
+    ["Градиент ГРП", `${(well as any).fracGradient ?? "—"} МПа/м`],
+    ["Давление ГРП на TVD", `${(well as any).fracGradient && well.tvd ? fmt((well as any).fracGradient * well.tvd, 1) : "—"} МПа`],
   ]));
 
   children.push(...twoColTable("💧 Жидкость", [
@@ -138,6 +143,8 @@ export async function exportCTDocx(input: CTDocxInput) {
     ["Плотность", `${fluid.density} г/см³`],
     ["PV", `${fluid.pv} сП`],
     ["YP", `${fluid.yp} Па`],
+    ["n (индекс потока)", `${fluid.nIndex}`],
+    ["K (конс. индекс)", `${fluid.kIndex} Па·сⁿ`],
   ]));
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
@@ -202,8 +209,10 @@ export async function exportCTDocx(input: CTDocxInput) {
     ["ΔP в затрубье", `${fmt(hydraulics.dpAnnulus)} МПа`],
     ["ΔP на насадках", `${fmt(hydraulics.dpNozzle)} МПа`],
     ["Общее ΔP", `${fmt(hydraulics.dpTotal)} МПа`, hydraulics.dpTotal > limits.maxWorkingPressure],
-    ["ECD на забое", `${fmt(hydraulics.ecdAtTD, 3)} г/см³`],
-    ["Забойное давление (цирк.)", `${fmt(hydraulics.bhCircPressure)} МПа`],
+    ["ECD на забое (TVD)", `${fmt(hydraulics.ecdAtTD, 3)} г/см³`],
+    ["BHP (цирк., TVD)", `${fmt(hydraulics.bhCircPressure)} МПа`],
+    ["Давление ГРП (TVD)", `${fmt((hydraulics as any).fracPressureAtTD ?? 0)} МПа`],
+    ["BHP / P_грп", `${fmt((hydraulics as any).fracSafetyFactor ?? 0)}`, (hydraulics as any).fracSafetyFactor >= 0.85],
     ["Мин. скорость транспорта", `${fmt(hydraulics.minTransportVelocity)} м/с`],
     ["Транспорт шлама", hydraulics.transportOk ? "✅ Достаточно" : "⚠ Недостаточно", !hydraulics.transportOk],
   ]));

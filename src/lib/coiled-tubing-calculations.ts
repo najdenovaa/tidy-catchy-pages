@@ -2,7 +2,15 @@
  * Coiled Tubing (ГНКТ) Engineering Calculations
  * Based on CoilCADE methodology (Schlumberger)
  * Modules: Tubing Forces, CoilLIMIT, Hydraulics, CoilLIFE
+ * 
+ * All depth-dependent pressures use TVD (True Vertical Depth).
+ * Trajectory: MD / Azimuth / Zenith / TVD (same as Cementing & Cement Plug modules).
  */
+
+import { calculateTVDFromSurvey, interpolateTVD, type TrajectoryPoint } from "./cementing-calculations";
+
+export type { TrajectoryPoint };
+export { calculateTVDFromSurvey, interpolateTVD };
 
 // ─── Data Types ───
 
@@ -16,20 +24,15 @@ export interface CTStringData {
 
 export interface WellGeometry {
   md: number;          // Measured depth, m
-  tvd: number;         // True vertical depth, m
+  tvd: number;         // True vertical depth, m (auto-calculated from trajectory)
   casingID: number;    // Casing inner diameter, mm
   tubingID: number;    // Tubing inner diameter (if inside tubing), mm — 0 if open hole / casing
   wellheadPressure: number; // Wellhead pressure, MPa
-  bhTemp: number;      // Bottom hole temperature, °C
+  bhst: number;        // Bottom hole static temperature, °C
+  bhct: number;        // Bottom hole circulating temperature, °C
   whTemp: number;      // Wellhead temperature, °C
+  fracGradient: number; // Frac gradient, MPa/m
   trajectory: TrajectoryPoint[];
-}
-
-export interface TrajectoryPoint {
-  md: number;
-  inc: number;   // inclination, degrees
-  azi: number;   // azimuth, degrees
-  tvd: number;
 }
 
 export interface FluidData {
@@ -92,14 +95,39 @@ function ctInternalArea(od: number, wall: number): number {
   return (Math.PI / 4) * idM * idM;
 }
 
-function ctOuterArea(od: number): number {
-  const odM = od / 1000;
-  return (Math.PI / 4) * odM * odM;
-}
-
 /** Linear weight of CT in air, kg/m */
 export function ctWeightPerMeter(od: number, wall: number): number {
   return ctCrossSectionArea(od, wall) * STEEL_DENSITY;
+}
+
+/** Get TVD at a given MD from trajectory (linear interpolation) */
+function getTVDatMD(trajectory: TrajectoryPoint[], md: number): number {
+  if (!trajectory || trajectory.length === 0) return md;
+  const sorted = [...trajectory].sort((a, b) => a.md - b.md);
+  if (md <= sorted[0].md) return sorted[0].tvd;
+  if (md >= sorted[sorted.length - 1].md) return sorted[sorted.length - 1].tvd;
+  for (let i = 1; i < sorted.length; i++) {
+    if (md <= sorted[i].md) {
+      const frac = (md - sorted[i - 1].md) / (sorted[i].md - sorted[i - 1].md);
+      return sorted[i - 1].tvd + frac * (sorted[i].tvd - sorted[i - 1].tvd);
+    }
+  }
+  return sorted[sorted.length - 1].tvd;
+}
+
+/** Get inclination (zenith) at a given MD */
+function getIncAtMD(trajectory: TrajectoryPoint[], md: number): number {
+  if (!trajectory || trajectory.length < 2) return 0;
+  const sorted = [...trajectory].sort((a, b) => a.md - b.md);
+  if (md <= sorted[0].md) return sorted[0].zenith;
+  if (md >= sorted[sorted.length - 1].md) return sorted[sorted.length - 1].zenith;
+  for (let i = 1; i < sorted.length; i++) {
+    if (md <= sorted[i].md) {
+      const frac = (md - sorted[i - 1].md) / (sorted[i].md - sorted[i - 1].md);
+      return sorted[i - 1].zenith + frac * (sorted[i].zenith - sorted[i - 1].zenith);
+    }
+  }
+  return sorted[sorted.length - 1].zenith;
 }
 
 // ─── Module 1: Tubing Forces ───
@@ -117,13 +145,13 @@ export interface ForceResult {
   lockUpDepth: number;
 }
 
-/** Depth profile point for charts */
 export interface DepthForcePoint {
-  depth: number;        // m MD
-  axialRIH: number;     // kN
-  axialPOOH: number;    // kN
-  bucklingLimit: number; // kN (negative = compression limit)
-  helicalLimit: number;  // kN
+  depth: number;
+  tvd: number;
+  axialRIH: number;
+  axialPOOH: number;
+  bucklingLimit: number;
+  helicalLimit: number;
 }
 
 export function calculateTubingForces(
@@ -139,12 +167,11 @@ export function calculateTubingForces(
 
   const fluidDensity = fluid.density * 1000;
   const buoyancyFactor = 1 - fluidDensity / STEEL_DENSITY;
-
   const weightInFluid = (totalWeightAir + bhaWeightN) * buoyancyFactor;
 
   const traj = well.trajectory.length > 1 ? well.trajectory : [
-    { md: 0, inc: 0, azi: 0, tvd: 0 },
-    { md: well.md, inc: 0, azi: 0, tvd: well.tvd },
+    { md: 0, azimuth: 0, zenith: 0, tvd: 0 },
+    { md: well.md, azimuth: 0, zenith: 0, tvd: well.tvd },
   ];
 
   let totalDragRIH = 0;
@@ -153,7 +180,7 @@ export function calculateTubingForces(
 
   for (let i = traj.length - 1; i > 0; i--) {
     const segLen = traj[i].md - traj[i - 1].md;
-    const incRad = (traj[i].inc * Math.PI) / 180;
+    const incRad = (traj[i].zenith * Math.PI) / 180;
     const segWeight = linearWeight * segLen * GRAVITY / 1000 * buoyancyFactor;
 
     const normalForce = Math.abs(cumulativeWeight * Math.sin(incRad));
@@ -174,9 +201,10 @@ export function calculateTubingForces(
   const E = 207000;
 
   const buoyedWeightPerM = linearWeight * GRAVITY * buoyancyFactor;
+  const bottomZenith = traj[traj.length - 1]?.zenith || 0;
 
   const Fsin = radialClearance > 0
-    ? 2 * Math.sqrt(E * 1e6 * momentOfInertia * buoyedWeightPerM * Math.sin(Math.max((traj[traj.length - 1]?.inc || 0) * Math.PI / 180, 0.01)) / radialClearance)
+    ? 2 * Math.sqrt(E * 1e6 * momentOfInertia * buoyedWeightPerM * Math.sin(Math.max(bottomZenith * Math.PI / 180, 0.01)) / radialClearance)
     : 0;
   const Fhel = Fsin * 1.41;
 
@@ -187,7 +215,7 @@ export function calculateTubingForces(
     let axialLoad = surfaceLoadRIH * 1000;
     for (let i = 1; i < traj.length; i++) {
       const segLen = traj[i].md - traj[i - 1].md;
-      const incRad = (traj[i].inc * Math.PI) / 180;
+      const incRad = (traj[i].zenith * Math.PI) / 180;
       const segWeight = linearWeight * segLen * GRAVITY * buoyancyFactor;
       const normalF = Math.abs(axialLoad * Math.sin(incRad));
       const frictionF = frictionCoeff * normalF;
@@ -237,17 +265,16 @@ export function generateForceDepthProfile(
   const points: DepthForcePoint[] = [];
   const maxD = Math.min(ct.length, well.md);
   const stepSize = maxD / steps;
+  const traj = well.trajectory;
 
   for (let s = 0; s <= steps; s++) {
     const depth = s * stepSize;
+    const tvd = getTVDatMD(traj, depth);
     const depthWeight = linearWeight * depth * GRAVITY / 1000 * buoyancyFactor;
     const totalWeight = depthWeight + bhaWeightN * buoyancyFactor;
 
-    // Avg inc for this depth
-    const avgInc = well.trajectory.length > 1
-      ? well.trajectory[well.trajectory.length - 1].inc * (depth / maxD)
-      : 0;
-    const incRad = (avgInc * Math.PI) / 180;
+    const zenith = getIncAtMD(traj, depth);
+    const incRad = (zenith * Math.PI) / 180;
 
     const normalForce = Math.abs(totalWeight * Math.sin(Math.max(incRad, 0.01)));
     const drag = frictionCoeff * normalForce;
@@ -262,6 +289,7 @@ export function generateForceDepthProfile(
 
     points.push({
       depth: Math.round(depth),
+      tvd: Math.round(tvd * 10) / 10,
       axialRIH: Math.round(axialRIH * 10) / 10,
       axialPOOH: Math.round(axialPOOH * 10) / 10,
       bucklingLimit: Math.round(sinBuckle * 10) / 10,
@@ -340,8 +368,8 @@ export function calculateLimits(
 
 /** Generate pressure-load envelope for chart */
 export interface EnvelopePoint {
-  pressure: number;  // MPa
-  axialLoad: number; // kN
+  pressure: number;
+  axialLoad: number;
   type: string;
 }
 
@@ -359,22 +387,18 @@ export function generatePressureLoadEnvelope(ct: CTStringData): EnvelopePoint[] 
   const tensionKN = yieldStrength * steelAreaM2 * 1000;
   const compressionKN = tensionKN;
 
-  // Build the envelope polygon
   const points: EnvelopePoint[] = [];
   const steps = 20;
 
-  // Top-right: burst + tension quadrant (Von Mises ellipse)
   for (let i = 0; i <= steps; i++) {
     const ratio = i / steps;
     const axial = tensionKN * (1 - ratio);
-    // At this axial load, what's the max internal pressure?
     const axialStress = (axial * 1000) / steelAreaM2 / 1e6;
     const remaining = Math.sqrt(Math.max(0, yieldStrength * yieldStrength - axialStress * axialStress));
     const pMax = remaining * 2 * wall / od;
     points.push({ pressure: Math.round(pMax * 10) / 10, axialLoad: Math.round(axial * 10) / 10, type: "burst" });
   }
 
-  // Bottom-right: collapse + tension
   for (let i = steps; i >= 0; i--) {
     const ratio = i / steps;
     const axial = tensionKN * (1 - ratio);
@@ -384,7 +408,6 @@ export function generatePressureLoadEnvelope(ct: CTStringData): EnvelopePoint[] 
     points.push({ pressure: Math.round(pMin * 10) / 10, axialLoad: Math.round(axial * 10) / 10, type: "collapse" });
   }
 
-  // Bottom-left: collapse + compression
   for (let i = 0; i <= steps; i++) {
     const ratio = i / steps;
     const axial = -compressionKN * ratio;
@@ -394,7 +417,6 @@ export function generatePressureLoadEnvelope(ct: CTStringData): EnvelopePoint[] 
     points.push({ pressure: Math.round(pMin * 10) / 10, axialLoad: Math.round(axial * 10) / 10, type: "collapse" });
   }
 
-  // Top-left: burst + compression
   for (let i = steps; i >= 0; i--) {
     const ratio = i / steps;
     const axial = -compressionKN * ratio;
@@ -423,21 +445,19 @@ export interface HydraulicsResult {
   reynoldsAnnulus: number;
   flowRegimeCT: string;
   flowRegimeAnnulus: string;
-  /** ECD at TD, g/cm³ */
   ecdAtTD: number;
-  /** Minimum annular velocity for solids transport, m/s */
   minTransportVelocity: number;
-  /** Whether current annular velocity is sufficient for transport */
   transportOk: boolean;
+  fracPressureAtTD: number;
+  fracSafetyFactor: number;
 }
 
-/** Flow rate vs pressure drop data for hydraulics chart */
 export interface HydraulicsChartPoint {
-  flowRate: number;   // l/min
-  dpCT: number;       // MPa
-  dpAnn: number;      // MPa
-  dpNozzle: number;   // MPa
-  dpTotal: number;    // MPa
+  flowRate: number;
+  dpCT: number;
+  dpAnn: number;
+  dpNozzle: number;
+  dpTotal: number;
 }
 
 export function calculateHydraulics(
@@ -488,19 +508,24 @@ export function calculateHydraulics(
     dpNozzle = (rho * velNozzle * velNozzle) / (2 * Cd * Cd) / 1e6;
   }
 
-  const hydroIn = rho * GRAVITY * well.tvd / 1e6;
+  // *** TVD-based hydrostatics ***
+  const tvd = well.tvd;
+  const hydroIn = rho * GRAVITY * tvd / 1e6;
   const hydroAnn = hydroIn;
 
   const bhCircPressure = hydroAnn + dpAnn + well.wellheadPressure;
-
   const dpTotal = dpCT + dpAnn + dpNozzle;
 
-  // ECD
-  const ecdAtTD = well.tvd > 0 ? bhCircPressure / (GRAVITY * well.tvd / 1e6) / 1000 : fluid.density;
+  // ECD at TVD
+  const ecdAtTD = tvd > 0 ? bhCircPressure / (GRAVITY * tvd / 1e6) / 1000 : fluid.density;
 
-  // Solids transport: min velocity ≈ 0.5 m/s for vertical, higher for deviated
-  const avgInc = well.trajectory.length > 1 ? well.trajectory[well.trajectory.length - 1].inc : 0;
-  const incFactor = 1 + Math.sin((avgInc * Math.PI) / 180) * 0.6;
+  // Frac pressure at TVD
+  const fracPressureAtTD = well.fracGradient * tvd;
+  const fracSafetyFactor = fracPressureAtTD > 0 ? bhCircPressure / fracPressureAtTD : 0;
+
+  // Solids transport
+  const avgZenith = well.trajectory.length > 1 ? well.trajectory[well.trajectory.length - 1].zenith : 0;
+  const incFactor = 1 + Math.sin((avgZenith * Math.PI) / 180) * 0.6;
   const minTransportVelocity = 0.5 * incFactor;
   const transportOk = velAnn >= minTransportVelocity;
 
@@ -521,6 +546,8 @@ export function calculateHydraulics(
     ecdAtTD: Math.round(ecdAtTD * 1000) / 1000,
     minTransportVelocity: Math.round(minTransportVelocity * 100) / 100,
     transportOk,
+    fracPressureAtTD: Math.round(fracPressureAtTD * 100) / 100,
+    fracSafetyFactor: Math.round(fracSafetyFactor * 100) / 100,
   };
 }
 
@@ -560,12 +587,11 @@ export interface FatigueResult {
   maxSafeTrips: number;
 }
 
-/** S-N curve point for fatigue chart */
 export interface FatigueChartPoint {
   trips: number;
-  lifeUsed: number;     // %
-  burstDerate: number;  // %
-  effectiveBurst: number; // MPa
+  lifeUsed: number;
+  burstDerate: number;
+  effectiveBurst: number;
 }
 
 export function calculateFatigue(
@@ -580,7 +606,6 @@ export function calculateFatigue(
 
   const strainReel = (odM / reelDiam) * 100;
   const strainGuideArch = (odM / guideArchDiam) * 100;
-
   const totalStrainPerTrip = 2 * strainReel + 2 * strainGuideArch;
 
   const yieldStr = GRADE_YIELD[ct.grade] || 552;
@@ -635,6 +660,37 @@ export function generateFatigueCurve(
   return points;
 }
 
+// ─── Temperature Profile ───
+
+export interface TempProfilePoint {
+  depth: number;
+  tvd: number;
+  tempStatic: number;
+  tempCirculating: number;
+}
+
+export function generateTempProfile(well: WellGeometry, steps: number = 30): TempProfilePoint[] {
+  const points: TempProfilePoint[] = [];
+  const maxMD = well.md;
+  const traj = well.trajectory;
+
+  for (let i = 0; i <= steps; i++) {
+    const md = (maxMD / steps) * i;
+    const tvd = getTVDatMD(traj, md);
+    const tvdRatio = well.tvd > 0 ? tvd / well.tvd : 0;
+    const tempStatic = well.whTemp + (well.bhst - well.whTemp) * tvdRatio;
+    const tempCirc = well.whTemp + (well.bhct - well.whTemp) * tvdRatio;
+    points.push({
+      depth: Math.round(md),
+      tvd: Math.round(tvd * 10) / 10,
+      tempStatic: Math.round(tempStatic * 10) / 10,
+      tempCirculating: Math.round(tempCirc * 10) / 10,
+    });
+  }
+
+  return points;
+}
+
 // ─── Risk Assessment ───
 
 export interface RiskItem {
@@ -652,7 +708,6 @@ export function assessRisks(
 ): RiskItem[] {
   const risks: RiskItem[] = [];
 
-  // Force risks
   if (forces.lockUpDepth > 0) {
     risks.push({ level: "critical", emoji: "🔒", message: `Запирание ГНКТ на глубине ${forces.lockUpDepth.toFixed(0)} м — невозможно продвижение` });
   }
@@ -663,7 +718,6 @@ export function assessRisks(
     risks.push({ level: "critical", emoji: "💥", message: "Нагрузка при подъёме превышает рабочий предел натяжения" });
   }
 
-  // Pressure risks
   if (hydraulics.dpTotal > limits.maxWorkingPressure) {
     risks.push({ level: "critical", emoji: "🔴", message: `Давление циркуляции (${hydraulics.dpTotal.toFixed(1)} МПа) > макс. рабочее (${limits.maxWorkingPressure.toFixed(1)} МПа)` });
   }
@@ -673,12 +727,17 @@ export function assessRisks(
     risks.push({ level: "warning", emoji: "🟡", message: `Коэффициент Мизеса ${limits.vonMisesRatio.toFixed(3)} — близко к пределу` });
   }
 
-  // Collapse
   if (limits.collapseWithOvality < well.wellheadPressure) {
     risks.push({ level: "warning", emoji: "📉", message: "Давление смятия ниже устьевого давления" });
   }
 
-  // Hydraulics
+  // Frac check
+  if (hydraulics.fracSafetyFactor >= 1.0 && hydraulics.fracPressureAtTD > 0) {
+    risks.push({ level: "critical", emoji: "🌋", message: `BHP (${hydraulics.bhCircPressure.toFixed(1)} МПа) превышает давление ГРП (${hydraulics.fracPressureAtTD.toFixed(1)} МПа) — риск поглощения!` });
+  } else if (hydraulics.fracSafetyFactor >= 0.85 && hydraulics.fracPressureAtTD > 0) {
+    risks.push({ level: "warning", emoji: "⚡", message: `BHP = ${(hydraulics.fracSafetyFactor * 100).toFixed(0)}% от давления ГРП — осторожно` });
+  }
+
   if (!hydraulics.transportOk) {
     risks.push({ level: "warning", emoji: "🔄", message: `Скорость в затрубье (${hydraulics.velocityAnnulus.toFixed(2)} м/с) недостаточна для транспорта шлама (мин. ${hydraulics.minTransportVelocity.toFixed(2)} м/с)` });
   }
@@ -686,7 +745,6 @@ export function assessRisks(
     risks.push({ level: "info", emoji: "📊", message: `ECD на забое: ${hydraulics.ecdAtTD.toFixed(3)} г/см³ — проверьте совместимость с пластовым давлением` });
   }
 
-  // Fatigue
   if (fatigue.fatigueLifeUsed > 80) {
     risks.push({ level: "critical", emoji: "💀", message: `Ресурс ГНКТ критически исчерпан (${fatigue.fatigueLifeUsed.toFixed(0)}%)` });
   } else if (fatigue.fatigueLifeUsed > 50) {
@@ -696,7 +754,6 @@ export function assessRisks(
     risks.push({ level: "warning", emoji: "📉", message: `Давление разрыва снижено на ${fatigue.pressureDerate.toFixed(1)}% из-за усталости` });
   }
 
-  // All OK
   if (risks.length === 0) {
     risks.push({ level: "info", emoji: "✅", message: "Все параметры в допустимых пределах" });
   }
@@ -719,8 +776,14 @@ export const CT_PRESETS: { label: string; od: number; wall: number }[] = [
 
 export const FLUID_PRESETS: { label: string; data: FluidData }[] = [
   { label: "Вода", data: { name: "Вода", density: 1.0, pv: 1, yp: 0, nIndex: 1, kIndex: 0.001 } },
-  { label: "Солевой раствор (1.05)", data: { name: "Солевой раствор", density: 1.05, pv: 1.5, yp: 0, nIndex: 1, kIndex: 0.0015 } },
+  { label: "Солевой раствор (NaCl)", data: { name: "Солевой раствор NaCl", density: 1.05, pv: 1.5, yp: 0, nIndex: 1, kIndex: 0.0015 } },
+  { label: "Солевой раствор (CaCl₂)", data: { name: "Солевой раствор CaCl₂", density: 1.20, pv: 2.0, yp: 0, nIndex: 1, kIndex: 0.002 } },
   { label: "КМЦ раствор", data: { name: "КМЦ раствор", density: 1.02, pv: 15, yp: 5, nIndex: 0.6, kIndex: 0.5 } },
   { label: "Кислота 15% HCl", data: { name: "HCl 15%", density: 1.07, pv: 1.2, yp: 0, nIndex: 1, kIndex: 0.0012 } },
+  { label: "Кислота 28% HCl", data: { name: "HCl 28%", density: 1.14, pv: 1.8, yp: 0, nIndex: 1, kIndex: 0.0018 } },
+  { label: "Глинокислота", data: { name: "Глинокислота (HCl+HF)", density: 1.08, pv: 1.3, yp: 0, nIndex: 1, kIndex: 0.0013 } },
   { label: "Гель (ГПГ)", data: { name: "Гуаровый гель", density: 1.01, pv: 25, yp: 10, nIndex: 0.45, kIndex: 2.0 } },
+  { label: "Биополимер (ксантан)", data: { name: "Биополимерный раствор", density: 1.01, pv: 20, yp: 8, nIndex: 0.5, kIndex: 1.5 } },
+  { label: "Нефть (0.85)", data: { name: "Нефть", density: 0.85, pv: 5, yp: 0, nIndex: 1, kIndex: 0.005 } },
+  { label: "Азот (газ)", data: { name: "Азот", density: 0.15, pv: 0.02, yp: 0, nIndex: 1, kIndex: 0.00002 } },
 ];
