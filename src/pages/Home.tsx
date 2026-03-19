@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle } from "lucide-react";
+import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 const modules = [
   { title: "Цементирование скважин", description: "Расчёт обсадных колонн, гидравлика, материалы", icon: FlaskConical, to: "/cementing", available: true },
   { title: "Цементные мосты", description: "Расчёт установки цементных мостов", icon: Shield, to: "/cement-plug", available: true },
+  { title: "ГНКТ (Coiled Tubing)", description: "Силы, пределы, гидравлика, ресурс усталости", icon: Cable, to: "/coiled-tubing", available: true },
   { title: "Буровые растворы", description: "Подбор и расчёт буровых растворов", icon: Droplets, to: "/drilling-fluids", available: false },
   { title: "Гидроразрыв пласта", description: "Проектирование и расчёт ГРП", icon: Zap, to: "/fracturing", available: false },
 ];
