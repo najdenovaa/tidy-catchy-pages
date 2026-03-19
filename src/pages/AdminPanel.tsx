@@ -66,9 +66,25 @@ export default function AdminPanel() {
 
   const formatDate = (iso: string) => new Date(iso).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-  const getWellSummary = (wd: any) => {
+  const moduleLabel = (m: string) => {
+    if (m === "cementing") return "Цементирование";
+    if (m === "cement-plug") return "Цем. мосты";
+    if (m === "coiled-tubing") return "ГНКТ";
+    return m;
+  };
+
+  const getWellSummary = (wd: any, module?: string) => {
     if (!wd) return "—";
     const parts: string[] = [];
+    if (module === "coiled-tubing") {
+      // ГНКТ: well_data содержит {ct, well, fluid, ...}
+      const w = wd.well;
+      if (w?.md) parts.push(`MD:${w.md}`);
+      if (w?.tvd) parts.push(`TVD:${w.tvd}`);
+      const ct = wd.ct;
+      if (ct?.od) parts.push(`CT OD:${ct.od}"`);
+      return parts.length > 0 ? parts.join(", ") : "—";
+    }
     if (wd.wellDepthMD) parts.push(`MD:${wd.wellDepthMD}`);
     if (wd.casingOD) parts.push(`ОК:${wd.casingOD}`);
     if (wd.holeDiameter) parts.push(`Dскв:${wd.holeDiameter}`);
@@ -94,8 +110,12 @@ export default function AdminPanel() {
   };
 
   const homeVisits = visitLogs.filter(v => v.page_url === "/" || v.page_url === "" || v.module === "home" || v.page_url?.endsWith("/"));
+  const cementingVisits = visitLogs.filter(v => v.page_url?.includes("/cementing") || v.module === "cementing");
+  const cementingCalcs = calcLogs.filter(l => l.module === "cementing");
   const cementPlugVisits = visitLogs.filter(v => v.page_url?.includes("/cement-plug") || v.module === "cement-plug");
   const cementPlugCalcs = calcLogs.filter(l => l.module === "cement-plug");
+  const ctVisits = visitLogs.filter(v => v.page_url?.includes("/coiled-tubing") || v.module === "coiled-tubing");
+  const ctCalcs = calcLogs.filter(l => l.module === "coiled-tubing");
 
   if (!authenticated) return null;
 
@@ -113,13 +133,24 @@ export default function AdminPanel() {
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         {/* Stats cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Расчётов</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{calcLogs.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Посещений</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{visitLogs.length}</p></CardContent></Card>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Всего расчётов</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{calcLogs.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Всего посещений</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{visitLogs.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Пользователей</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{profiles.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Уникальных IP</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{new Set([...calcLogs, ...visitLogs].map(l => l.ip_address).filter(Boolean)).size}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Главная (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{homeVisits.length}</p></CardContent></Card>
+
+          {/* Цементирование */}
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Цементаж (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementingVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Цементаж (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementingCalcs.length}</p></CardContent></Card>
+
+          {/* Цем. мосты */}
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Цем. мосты (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementPlugVisits.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Цем. мосты (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementPlugCalcs.length}</p></CardContent></Card>
+
+          {/* ГНКТ */}
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">ГНКТ (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{ctVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">ГНКТ (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{ctCalcs.length}</p></CardContent></Card>
         </div>
 
         <div className="flex justify-end mb-4">
@@ -152,8 +183,8 @@ export default function AdminPanel() {
                   ) : calcLogs.map(log => (
                     <TableRow key={log.id}>
                       <TableCell className="whitespace-nowrap text-xs">{formatDate(log.created_at)}</TableCell>
-                      <TableCell className="text-xs">{log.module}</TableCell>
-                      <TableCell className="text-xs max-w-[200px] truncate">{getWellSummary(log.well_data)}</TableCell>
+                      <TableCell className="text-xs">{moduleLabel(log.module)}</TableCell>
+                      <TableCell className="text-xs max-w-[200px] truncate">{getWellSummary(log.well_data, log.module)}</TableCell>
                       <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
                       <TableCell className="text-xs">{log.location || "—"}</TableCell>
                       <TableCell className="text-xs max-w-[200px] truncate">{log.user_agent || "—"}</TableCell>
@@ -178,7 +209,7 @@ export default function AdminPanel() {
                   ) : visitLogs.map(log => (
                     <TableRow key={log.id}>
                       <TableCell className="whitespace-nowrap text-xs">{formatDate(log.created_at)}</TableCell>
-                      <TableCell className="text-xs">{log.module}</TableCell>
+                      <TableCell className="text-xs">{moduleLabel(log.module)}</TableCell>
                       <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
                       <TableCell className="text-xs">{log.location || "—"}</TableCell>
                       <TableCell className="text-xs max-w-[200px] truncate">{log.user_agent || "—"}</TableCell>
@@ -269,9 +300,9 @@ export default function AdminPanel() {
                           {userCalcs.map(c => (
                             <TableRow key={c.id}>
                               <TableCell className="text-xs whitespace-nowrap">{formatDate(c.created_at)}</TableCell>
-                              <TableCell className="text-xs">{c.module}</TableCell>
+                              <TableCell className="text-xs">{moduleLabel(c.module)}</TableCell>
                               <TableCell className="text-xs">{c.title}</TableCell>
-                              <TableCell className="text-xs max-w-[300px] truncate">{getWellSummary(c.well_data)}</TableCell>
+                              <TableCell className="text-xs max-w-[300px] truncate">{getWellSummary(c.well_data, c.module)}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
