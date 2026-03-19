@@ -768,51 +768,55 @@ export default function CoiledTubing() {
 
                     <div ref={hydraulicsChartRef} className="mt-4 bg-card rounded-lg p-2">
                       <p className="text-xs font-semibold text-center mb-2">📊 Потери давления vs Расход</p>
-                      <ResponsiveContainer width="100%" height={300}>
-                        <AreaChart data={hydraulicsCurve} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis dataKey="flowRate" label={{ value: "Расход, л/с", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <Tooltip contentStyle={{ fontSize: 11 }} />
-                          <Legend wrapperStyle={{ fontSize: 10 }} />
-                          <Area type="monotone" dataKey="dpCT" name="ΔP ГНКТ" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
-                          <Area type="monotone" dataKey="dpAnn" name="ΔP Затрубье" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
-                          <Area type="monotone" dataKey="dpNozzle" name="ΔP Насадки" stackId="1" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.6} />
-                          <Line type="monotone" dataKey="dpTotal" name="Общее ΔP" stroke="#ef4444" strokeWidth={2} dot={false} />
-                          <ReferenceLine y={limits.maxWorkingPressure} stroke="#dc2626" strokeDasharray="6 3" label={{ value: `Макс. ${limits.maxWorkingPressure.toFixed(0)} МПа`, position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-
-                      <p className="text-xs font-semibold text-center mt-4 mb-2">Распределение ΔP при Q={pump.flowRate} л/с</p>
-                      <ResponsiveContainer width="100%" height={120}>
-                        <BarChart data={[{ name: "ΔP", ct: hydraulics.dpInsideCT, ann: hydraulics.dpAnnulus, nozzle: hydraulics.dpNozzle }]} layout="vertical" margin={{ left: 10, right: 20 }}>
-                          <XAxis type="number" tick={{ fontSize: 10 }} />
-                          <YAxis type="category" dataKey="name" hide />
-                          <Tooltip contentStyle={{ fontSize: 11 }} />
-                          <Legend wrapperStyle={{ fontSize: 10 }} />
-                          <Bar dataKey="ct" name="ГНКТ" stackId="a" fill="#3b82f6" />
-                          <Bar dataKey="ann" name="Затрубье" stackId="a" fill="#10b981" />
-                          <Bar dataKey="nozzle" name="Насадки" stackId="a" fill="#f59e0b" />
-                        </BarChart>
-                      </ResponsiveContainer>
-
-                      {/* Temperature profile */}
-                      {tempProfile.length > 0 && (
-                        <>
-                          <p className="text-xs font-semibold text-center mt-4 mb-2">🌡 Температурный профиль по глубине (TVD)</p>
-                          <ResponsiveContainer width="100%" height={250}>
-                            <LineChart data={tempProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                      <div className="overflow-x-auto -mx-2 px-2">
+                        <div className="min-w-[600px]">
+                          <ResponsiveContainer width="100%" height={300}>
+                            <AreaChart data={hydraulicsCurve} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                              <XAxis dataKey="tvd" label={{ value: "TVD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                              <YAxis label={{ value: "°C", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <XAxis dataKey="flowRate" label={{ value: "Расход, л/с", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
                               <Tooltip contentStyle={{ fontSize: 11 }} />
                               <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Line type="monotone" dataKey="tempStatic" name="BHST (стат.)" stroke="#ef4444" strokeWidth={2} dot={false} />
-                              <Line type="monotone" dataKey="tempCirculating" name="BHCT (цирк.)" stroke="#3b82f6" strokeWidth={2} strokeDasharray="5 3" dot={false} />
-                            </LineChart>
+                              <Area type="monotone" dataKey="dpCT" name="ΔP ГНКТ" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
+                              <Area type="monotone" dataKey="dpAnn" name="ΔP Затрубье" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
+                              <Area type="monotone" dataKey="dpNozzle" name="ΔP Насадки" stackId="1" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.6} />
+                              <Line type="monotone" dataKey="dpTotal" name="Общее ΔP" stroke="#ef4444" strokeWidth={2} dot={false} />
+                              <ReferenceLine y={limits.maxWorkingPressure} stroke="#dc2626" strokeDasharray="6 3" label={{ value: `Макс. ${limits.maxWorkingPressure.toFixed(0)} МПа`, position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
+                            </AreaChart>
                           </ResponsiveContainer>
-                        </>
-                      )}
+
+                          <p className="text-xs font-semibold text-center mt-4 mb-2">Распределение ΔP при Q={pump.flowRate} л/с</p>
+                          <ResponsiveContainer width="100%" height={120}>
+                            <BarChart data={[{ name: "ΔP", ct: hydraulics.dpInsideCT, ann: hydraulics.dpAnnulus, nozzle: hydraulics.dpNozzle }]} layout="vertical" margin={{ left: 10, right: 20 }}>
+                              <XAxis type="number" tick={{ fontSize: 10 }} />
+                              <YAxis type="category" dataKey="name" hide />
+                              <Tooltip contentStyle={{ fontSize: 11 }} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Bar dataKey="ct" name="ГНКТ" stackId="a" fill="#3b82f6" />
+                              <Bar dataKey="ann" name="Затрубье" stackId="a" fill="#10b981" />
+                              <Bar dataKey="nozzle" name="Насадки" stackId="a" fill="#f59e0b" />
+                            </BarChart>
+                          </ResponsiveContainer>
+
+                          {/* Temperature profile */}
+                          {tempProfile.length > 0 && (
+                            <>
+                              <p className="text-xs font-semibold text-center mt-4 mb-2">🌡 Температурный профиль по глубине (TVD)</p>
+                              <ResponsiveContainer width="100%" height={250}>
+                                <LineChart data={tempProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                                  <XAxis dataKey="tvd" label={{ value: "TVD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                                  <YAxis label={{ value: "°C", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                                  <Tooltip contentStyle={{ fontSize: 11 }} />
+                                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                                  <Line type="monotone" dataKey="tempStatic" name="BHST (стат.)" stroke="#ef4444" strokeWidth={2} dot={false} />
+                                  <Line type="monotone" dataKey="tempCirculating" name="BHCT (цирк.)" stroke="#3b82f6" strokeWidth={2} strokeDasharray="5 3" dot={false} />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
