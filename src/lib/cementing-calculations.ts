@@ -201,6 +201,7 @@ export interface SlurryInput {
   flowRateSteps: FlowRateStep[];
   waterRatio: number; // В/Ц (водоцементное отношение)
   yieldPerTon: number; // Выход раствора, м³/т
+  washVolume?: number; // м³ — объём раствора на вымыв (только для первого/верхнего раствора)
 }
 
 // Вычислить высоту столба цемента для i-го раствора
@@ -722,7 +723,9 @@ export function calculateMaterials(
     if (h > 0) {
       const lastIdx = slurries.length - 1;
       const mdBot = i === lastIdx ? wellData.casingDepthMD : slurries[i + 1].topDepthMD;
-      const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
+      let vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
+      // Добавляем объём на вымыв для первого (верхнего) раствора
+      if (i === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
       const res = calculateCement(vol, s.density);
       const dryMassKg = res.dryMass * 1000; // тонны → кг
       cementItems.push({ name: s.name, amount: res.dryMass, unit: "т" });
@@ -908,7 +911,9 @@ export function calculatePressureProfile(
     if (h <= 0) return;
     const lastIdx = slurries.length - 1;
     const mdBot = origIdx === lastIdx ? wellData.casingDepthMD : slurries[origIdx + 1].topDepthMD;
-    const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
+    let vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
+    // Добавляем объём на вымыв для первого (верхнего) раствора
+    if (origIdx === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
     if (vol <= 0) return;
     const sRheo = effectiveRheology(s.rheology, cementCategory(s.density));
     if (s.flowRateSteps.length > 1) {

@@ -42,7 +42,9 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
   // 3. Цементные растворы — в порядке списка (первый по списку качается первым)
   slurries.forEach((s, origIdx) => {
     const height = getSlurryHeight(slurries, origIdx, casingDepthMD);
-    const vol = annularVPM * height;
+    let vol = annularVPM * height;
+    // Добавляем объём на вымыв для первого (верхнего) раствора
+    if (origIdx === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
     if (vol > 0) {
       if (s.flowRateSteps.length > 1) {
         s.flowRateSteps.forEach((step, si) => {

@@ -210,6 +210,7 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
       { label: "Плотность", value: `${s.density} г/см³` },
       { label: "Верх цемента от устья", value: `${s.topDepthMD} м` },
       { label: "Высота столба (расчёт)", value: `${fmt(height, 0)} м` },
+      ...(i === 0 && s.washVolume && s.washVolume > 0 ? [{ label: "Объём на вымыв", value: `${fmt(s.washVolume, 2)} м³` }] : []),
       { label: "В/Ц отношение", value: `${s.waterRatio}` },
       { label: "Выход, м³/т", value: `${s.yieldPerTon ?? 0}` },
       { label: "PV / YP", value: `${s.rheology.pv} сПз / ${s.rheology.yp} Па` },
@@ -385,7 +386,9 @@ function buildSchedulePage(buffers: BufferFluid[], slurries: SlurryInput[], annu
 
   slurries.forEach((s, origIdx) => {
     const height = getSlurryHeight(slurries, origIdx, casingDepthMD);
-    const vol = annularVPM * height;
+    let vol = annularVPM * height;
+    // Добавляем объём на вымыв для первого (верхнего) раствора
+    if (origIdx === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
     if (vol > 0) {
       if (s.flowRateSteps.length > 1) {
         s.flowRateSteps.forEach((step, si) => {
