@@ -759,7 +759,7 @@ export default function CoiledTubing() {
                       <ResponsiveContainer width="100%" height={300}>
                         <AreaChart data={hydraulicsCurve} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis dataKey="flowRate" label={{ value: "Расход, л/мин", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                          <XAxis dataKey="flowRate" label={{ value: "Расход, л/с", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
                           <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
                           <Tooltip contentStyle={{ fontSize: 11 }} />
                           <Legend wrapperStyle={{ fontSize: 10 }} />
