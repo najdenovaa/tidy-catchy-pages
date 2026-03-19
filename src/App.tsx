@@ -14,6 +14,7 @@ import AdminLogin from "./pages/AdminLogin";
 import AdminPanel from "./pages/AdminPanel";
 import CalcDetail from "./pages/CalcDetail";
 import CementPlug from "./pages/CementPlug";
+import CoiledTubing from "./pages/CoiledTubing";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
