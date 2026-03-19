@@ -209,7 +209,7 @@ export default function AdminPanel() {
                   ) : visitLogs.map(log => (
                     <TableRow key={log.id}>
                       <TableCell className="whitespace-nowrap text-xs">{formatDate(log.created_at)}</TableCell>
-                      <TableCell className="text-xs">{log.module}</TableCell>
+                      <TableCell className="text-xs">{moduleLabel(log.module)}</TableCell>
                       <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
                       <TableCell className="text-xs">{log.location || "—"}</TableCell>
                       <TableCell className="text-xs max-w-[200px] truncate">{log.user_agent || "—"}</TableCell>
