@@ -117,13 +117,24 @@ export default function AdminPanel() {
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         {/* Stats cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Расчётов</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{calcLogs.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Посещений</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{visitLogs.length}</p></CardContent></Card>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Всего расчётов</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{calcLogs.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Всего посещений</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{visitLogs.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Пользователей</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{profiles.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Уникальных IP</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{new Set([...calcLogs, ...visitLogs].map(l => l.ip_address).filter(Boolean)).size}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Главная (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{homeVisits.length}</p></CardContent></Card>
+
+          {/* Цементирование */}
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Цементаж (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementingVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Цементаж (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementingCalcs.length}</p></CardContent></Card>
+
+          {/* Цем. мосты */}
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Цем. мосты (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementPlugVisits.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">Цем. мосты (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementPlugCalcs.length}</p></CardContent></Card>
+
+          {/* ГНКТ */}
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">ГНКТ (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{ctVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">ГНКТ (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{ctCalcs.length}</p></CardContent></Card>
         </div>
 
         <div className="flex justify-end mb-4">
