@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle } from "lucide-react";
+import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
