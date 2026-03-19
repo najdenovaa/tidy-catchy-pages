@@ -573,7 +573,7 @@ export default function CoiledTubing() {
                 <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
                   <CardTitle className="text-sm">⚙️ Насос и инструмент (КНБК)</CardTitle>
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-[10px]">Q={pump.flowRate} л/мин · КНБК {tools.bhaWeight} кг</Badge>
+                    <Badge variant="secondary" className="text-[10px]">Q={pump.flowRate} л/с · КНБК {tools.bhaWeight} кг</Badge>
                     <ChevronDown className={`w-4 h-4 transition-transform ${openSections.pump ? "rotate-180" : ""}`} />
                   </div>
                 </CardHeader>
