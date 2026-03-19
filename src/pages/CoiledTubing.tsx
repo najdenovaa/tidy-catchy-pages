@@ -50,7 +50,7 @@ const defaultWell: WellGeometry = {
   trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }],
 };
 const defaultFluid: FluidData = { name: "Вода", density: 1.0, pv: 1, yp: 0, nIndex: 1, kIndex: 0.001 };
-const defaultPump: PumpData = { flowRate: 300, surfacePressure: 0 };
+const defaultPump: PumpData = { flowRate: 5, surfacePressure: 0 };
 const defaultTools: ToolsData = { bhaWeight: 200, bhaLength: 5, bhaOD: 48, nozzleDiam: 4, nozzleCount: 3 };
 const defaultTraj: TrajectoryPoint[] = [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }];
 
@@ -573,7 +573,7 @@ export default function CoiledTubing() {
                 <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
                   <CardTitle className="text-sm">⚙️ Насос и инструмент (КНБК)</CardTitle>
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-[10px]">Q={pump.flowRate} л/мин · КНБК {tools.bhaWeight} кг</Badge>
+                    <Badge variant="secondary" className="text-[10px]">Q={pump.flowRate} л/с · КНБК {tools.bhaWeight} кг</Badge>
                     <ChevronDown className={`w-4 h-4 transition-transform ${openSections.pump ? "rotate-180" : ""}`} />
                   </div>
                 </CardHeader>
@@ -581,7 +581,7 @@ export default function CoiledTubing() {
               <CollapsibleContent>
                 <CardContent className="pt-0 space-y-3">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <Field label="Расход" value={pump.flowRate} onChange={v => { setPump(p => ({ ...p, flowRate: num(v) })); markDirty(); }} unit="л/мин" />
+                    <Field label="Расход" value={pump.flowRate} onChange={v => { setPump(p => ({ ...p, flowRate: num(v) })); markDirty(); }} unit="л/с" />
                     <Field label="Вес КНБК" value={tools.bhaWeight} onChange={v => { setTools(t => ({ ...t, bhaWeight: num(v) })); markDirty(); }} unit="кг" />
                     <Field label="Длина КНБК" value={tools.bhaLength} onChange={v => { setTools(t => ({ ...t, bhaLength: num(v) })); markDirty(); }} unit="м" />
                     <Field label="Ø КНБК" value={tools.bhaOD} onChange={v => { setTools(t => ({ ...t, bhaOD: num(v) })); markDirty(); }} unit="мм" />
@@ -759,7 +759,7 @@ export default function CoiledTubing() {
                       <ResponsiveContainer width="100%" height={300}>
                         <AreaChart data={hydraulicsCurve} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis dataKey="flowRate" label={{ value: "Расход, л/мин", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                          <XAxis dataKey="flowRate" label={{ value: "Расход, л/с", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
                           <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
                           <Tooltip contentStyle={{ fontSize: 11 }} />
                           <Legend wrapperStyle={{ fontSize: 10 }} />
@@ -771,7 +771,7 @@ export default function CoiledTubing() {
                         </AreaChart>
                       </ResponsiveContainer>
 
-                      <p className="text-xs font-semibold text-center mt-4 mb-2">Распределение ΔP при Q={pump.flowRate} л/мин</p>
+                      <p className="text-xs font-semibold text-center mt-4 mb-2">Распределение ΔP при Q={pump.flowRate} л/с</p>
                       <ResponsiveContainer width="100%" height={120}>
                         <BarChart data={[{ name: "ΔP", ct: hydraulics.dpInsideCT, ann: hydraulics.dpAnnulus, nozzle: hydraulics.dpNozzle }]} layout="vertical" margin={{ left: 10, right: 20 }}>
                           <XAxis type="number" tick={{ fontSize: 10 }} />
