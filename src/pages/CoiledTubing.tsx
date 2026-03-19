@@ -396,6 +396,7 @@ export default function CoiledTubing() {
               </div>
             </div>
           </div>
+        </div>
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto px-3 py-4 w-full">
