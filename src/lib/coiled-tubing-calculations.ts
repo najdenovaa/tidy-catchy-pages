@@ -467,7 +467,8 @@ export function calculateHydraulics(
   pump: PumpData,
   tools: ToolsData
 ): HydraulicsResult {
-  const Q = pump.flowRate / 1000 / 60;
+  // flowRate is in l/s → convert to m³/s
+  const Q = pump.flowRate / 1000;
   const idCT = ctID(ct.od, ct.wall) / 1000;
   const odCT = ct.od / 1000;
   const idCasing = (well.tubingID > 0 ? well.tubingID : well.casingID) / 1000;
