@@ -377,23 +377,24 @@ export default function CoiledTubing() {
                 <Send className="w-4 h-4" /> <span>Поддержка</span>
               </a>
             </div>
-            <div className="flex items-center gap-1.5 sm:gap-3 flex-1 sm:flex-none justify-end flex-wrap">
-              <button onClick={handleReset} title="Обнулить" className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors shadow-sm flex items-center gap-1">
-                <RotateCcw className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">Обнулить</span>
-              </button>
-              <button onClick={handleSave} className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-colors shadow-sm flex items-center gap-1">
-                <Save className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">Сохранить</span>
-              </button>
-              {calculated && (
-                <button onClick={handleExportDocx} className="px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-[10px] sm:text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-1">
-                  <FileDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> DOCX
+            <div className="overflow-x-auto scrollbar-hide flex-1 sm:flex-none">
+              <div className="flex items-center gap-1.5 sm:gap-3 min-w-max justify-end">
+                <button onClick={handleReset} title="Обнулить" className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors shadow-sm flex items-center gap-1">
+                  <RotateCcw className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">Обнулить</span>
                 </button>
-              )}
-              <button onClick={runCalculation} className="px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-[10px] sm:text-sm hover:bg-primary/90 transition-colors shadow-md whitespace-nowrap">
-                РАСЧЁТ
-              </button>
+                <button onClick={handleSave} className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-colors shadow-sm flex items-center gap-1">
+                  <Save className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">Сохранить</span>
+                </button>
+                {calculated && (
+                  <button onClick={handleExportDocx} className="px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-[10px] sm:text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-1">
+                    <FileDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> DOCX
+                  </button>
+                )}
+                <button onClick={runCalculation} className="px-3 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-primary text-primary-foreground font-bold text-[10px] sm:text-sm hover:bg-primary/90 transition-colors shadow-md whitespace-nowrap">
+                  РАСЧЁТ
+                </button>
+              </div>
             </div>
-          </div>
         </div>
       </header>
 
