@@ -911,7 +911,9 @@ export function calculatePressureProfile(
     if (h <= 0) return;
     const lastIdx = slurries.length - 1;
     const mdBot = origIdx === lastIdx ? wellData.casingDepthMD : slurries[origIdx + 1].topDepthMD;
-    const vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
+    let vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
+    // Добавляем объём на вымыв для первого (верхнего) раствора
+    if (origIdx === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
     if (vol <= 0) return;
     const sRheo = effectiveRheology(s.rheology, cementCategory(s.density));
     if (s.flowRateSteps.length > 1) {
