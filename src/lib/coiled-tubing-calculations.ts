@@ -56,8 +56,8 @@ export interface ToolsData {
 
 // ─── Constants ───
 
-const GRAVITY = 9.81; // m/s²
-const STEEL_DENSITY = 7850; // kg/m³
+const GRAVITY = 9.81;
+const STEEL_DENSITY = 7850;
 
 /** Yield strength by grade, MPa */
 const GRADE_YIELD: Record<string, number> = {
@@ -69,11 +69,11 @@ const GRADE_YIELD: Record<string, number> = {
 
 /** Reel & guide arch diameters for fatigue, m */
 const REEL_DIAMETERS: Record<string, number> = {
-  "small": 1.37,
-  "medium": 1.83,
-  "large": 2.44,
+  small: 1.37,
+  medium: 1.83,
+  large: 2.44,
 };
-const GUIDE_ARCH_DIAMETER = 1.83; // m typical
+const GUIDE_ARCH_DIAMETER = 1.83;
 
 // ─── Utility ───
 
@@ -82,7 +82,6 @@ function ctID(od: number, wall: number): number {
 }
 
 function ctCrossSectionArea(od: number, wall: number): number {
-  // Steel cross-section, mm² → m²
   const odM = od / 1000;
   const idM = ctID(od, wall) / 1000;
   return (Math.PI / 4) * (odM * odM - idM * idM);
@@ -106,16 +105,25 @@ export function ctWeightPerMeter(od: number, wall: number): number {
 // ─── Module 1: Tubing Forces ───
 
 export interface ForceResult {
-  weightInAir: number;       // kN — total string weight
-  buoyancyFactor: number;    // dimensionless
-  weightInFluid: number;     // kN — buoyed weight
-  dragForceRIH: number;      // kN — drag during run-in-hole
-  dragForcePOOH: number;     // kN — drag during pull-out
-  surfaceLoadRIH: number;    // kN — surface weight indicator RIH
-  surfaceLoadPOOH: number;   // kN — surface weight indicator POOH
-  helicalBucklingLoad: number; // kN — critical helical buckling load
-  sinusoidalBucklingLoad: number; // kN — sinusoidal buckling
-  lockUpDepth: number;       // m — estimated lock-up depth (0 if no lock-up)
+  weightInAir: number;
+  buoyancyFactor: number;
+  weightInFluid: number;
+  dragForceRIH: number;
+  dragForcePOOH: number;
+  surfaceLoadRIH: number;
+  surfaceLoadPOOH: number;
+  helicalBucklingLoad: number;
+  sinusoidalBucklingLoad: number;
+  lockUpDepth: number;
+}
+
+/** Depth profile point for charts */
+export interface DepthForcePoint {
+  depth: number;        // m MD
+  axialRIH: number;     // kN
+  axialPOOH: number;    // kN
+  bucklingLimit: number; // kN (negative = compression limit)
+  helicalLimit: number;  // kN
 }
 
 export function calculateTubingForces(
@@ -125,17 +133,15 @@ export function calculateTubingForces(
   tools: ToolsData,
   frictionCoeff: number = 0.25
 ): ForceResult {
-  const linearWeight = ctWeightPerMeter(ct.od, ct.wall); // kg/m
-  const totalWeightAir = linearWeight * ct.length * GRAVITY / 1000; // kN
-  const bhaWeightN = tools.bhaWeight * GRAVITY / 1000; // kN
+  const linearWeight = ctWeightPerMeter(ct.od, ct.wall);
+  const totalWeightAir = linearWeight * ct.length * GRAVITY / 1000;
+  const bhaWeightN = tools.bhaWeight * GRAVITY / 1000;
 
-  // Buoyancy factor
-  const fluidDensity = fluid.density * 1000; // kg/m³
+  const fluidDensity = fluid.density * 1000;
   const buoyancyFactor = 1 - fluidDensity / STEEL_DENSITY;
 
   const weightInFluid = (totalWeightAir + bhaWeightN) * buoyancyFactor;
 
-  // Simplified drag calculation using trajectory
   const traj = well.trajectory.length > 1 ? well.trajectory : [
     { md: 0, inc: 0, azi: 0, tvd: 0 },
     { md: well.md, inc: 0, azi: 0, tvd: well.tvd },
@@ -143,9 +149,8 @@ export function calculateTubingForces(
 
   let totalDragRIH = 0;
   let totalDragPOOH = 0;
-  let cumulativeWeight = bhaWeightN * buoyancyFactor; // Start from bottom
+  let cumulativeWeight = bhaWeightN * buoyancyFactor;
 
-  // Walk from bottom to surface
   for (let i = traj.length - 1; i > 0; i--) {
     const segLen = traj[i].md - traj[i - 1].md;
     const incRad = (traj[i].inc * Math.PI) / 180;
@@ -154,48 +159,38 @@ export function calculateTubingForces(
     const normalForce = Math.abs(cumulativeWeight * Math.sin(incRad));
     const frictionForce = frictionCoeff * normalForce;
 
-    totalDragRIH += frictionForce; // assists going down, but friction opposes
+    totalDragRIH += frictionForce;
     totalDragPOOH += frictionForce;
     cumulativeWeight += segWeight;
   }
 
-  // Surface loads
-  const surfaceLoadRIH = weightInFluid - totalDragRIH; // lighter when running in
-  const surfaceLoadPOOH = weightInFluid + totalDragPOOH; // heavier when pulling out
+  const surfaceLoadRIH = weightInFluid - totalDragRIH;
+  const surfaceLoadPOOH = weightInFluid + totalDragPOOH;
 
-  // Buckling loads (Dawson-Paslay)
-  const idCasing = well.casingID / 1000; // m
-  const odCT = ct.od / 1000; // m
+  const idCasing = well.casingID / 1000;
+  const odCT = ct.od / 1000;
   const radialClearance = (idCasing - odCT) / 2;
   const momentOfInertia = (Math.PI / 64) * (Math.pow(odCT, 4) - Math.pow(ctID(ct.od, ct.wall) / 1000, 4));
-  const yieldStr = GRADE_YIELD[ct.grade] || 552;
-  const E = 207000; // MPa — Young's modulus
+  const E = 207000;
 
-  const buoyedWeightPerM = linearWeight * GRAVITY * buoyancyFactor; // N/m
+  const buoyedWeightPerM = linearWeight * GRAVITY * buoyancyFactor;
 
-  // Sinusoidal buckling critical load (Dawson-Paslay)
   const Fsin = radialClearance > 0
     ? 2 * Math.sqrt(E * 1e6 * momentOfInertia * buoyedWeightPerM * Math.sin(Math.max((traj[traj.length - 1]?.inc || 0) * Math.PI / 180, 0.01)) / radialClearance)
     : 0;
-
-  // Helical buckling ≈ 1.4 × sinusoidal
   const Fhel = Fsin * 1.41;
 
-  // Lock-up estimation: depth where cumulative compression exceeds helical buckling
   let lockUpDepth = 0;
   if (surfaceLoadRIH < 0) {
-    // String is in compression at surface — lock-up occurred
-    lockUpDepth = well.md; // full depth
+    lockUpDepth = well.md;
   } else {
-    // Walk from surface down to find where axial load goes to -Fhel
-    let axialLoad = surfaceLoadRIH * 1000; // N
+    let axialLoad = surfaceLoadRIH * 1000;
     for (let i = 1; i < traj.length; i++) {
       const segLen = traj[i].md - traj[i - 1].md;
       const incRad = (traj[i].inc * Math.PI) / 180;
       const segWeight = linearWeight * segLen * GRAVITY * buoyancyFactor;
       const normalF = Math.abs(axialLoad * Math.sin(incRad));
       const frictionF = frictionCoeff * normalF;
-
       axialLoad = axialLoad - segWeight * Math.cos(incRad) - frictionF;
       if (axialLoad < -Fhel) {
         lockUpDepth = traj[i].md;
@@ -218,60 +213,109 @@ export function calculateTubingForces(
   };
 }
 
-// ─── Module 2: CoilLIMIT — Pressure & Load Limits ───
+/** Generate depth profile for force chart */
+export function generateForceDepthProfile(
+  ct: CTStringData,
+  well: WellGeometry,
+  fluid: FluidData,
+  tools: ToolsData,
+  frictionCoeff: number = 0.25,
+  steps: number = 50
+): DepthForcePoint[] {
+  const linearWeight = ctWeightPerMeter(ct.od, ct.wall);
+  const fluidDensity = fluid.density * 1000;
+  const buoyancyFactor = 1 - fluidDensity / STEEL_DENSITY;
+  const bhaWeightN = tools.bhaWeight * GRAVITY / 1000;
+  const buoyedWeightPerM = linearWeight * GRAVITY * buoyancyFactor;
+
+  const odCT = ct.od / 1000;
+  const idCasing = well.casingID / 1000;
+  const radialClearance = Math.max((idCasing - odCT) / 2, 0.001);
+  const momentOfInertia = (Math.PI / 64) * (Math.pow(odCT, 4) - Math.pow(ctID(ct.od, ct.wall) / 1000, 4));
+  const E = 207000;
+
+  const points: DepthForcePoint[] = [];
+  const maxD = Math.min(ct.length, well.md);
+  const stepSize = maxD / steps;
+
+  for (let s = 0; s <= steps; s++) {
+    const depth = s * stepSize;
+    const depthWeight = linearWeight * depth * GRAVITY / 1000 * buoyancyFactor;
+    const totalWeight = depthWeight + bhaWeightN * buoyancyFactor;
+
+    // Avg inc for this depth
+    const avgInc = well.trajectory.length > 1
+      ? well.trajectory[well.trajectory.length - 1].inc * (depth / maxD)
+      : 0;
+    const incRad = (avgInc * Math.PI) / 180;
+
+    const normalForce = Math.abs(totalWeight * Math.sin(Math.max(incRad, 0.01)));
+    const drag = frictionCoeff * normalForce;
+
+    const axialRIH = totalWeight - drag;
+    const axialPOOH = totalWeight + drag;
+
+    const sinBuckle = radialClearance > 0
+      ? -2 * Math.sqrt(E * 1e6 * momentOfInertia * buoyedWeightPerM * Math.sin(Math.max(incRad, 0.01)) / radialClearance) / 1000
+      : 0;
+    const helBuckle = sinBuckle * 1.41;
+
+    points.push({
+      depth: Math.round(depth),
+      axialRIH: Math.round(axialRIH * 10) / 10,
+      axialPOOH: Math.round(axialPOOH * 10) / 10,
+      bucklingLimit: Math.round(sinBuckle * 10) / 10,
+      helicalLimit: Math.round(helBuckle * 10) / 10,
+    });
+  }
+
+  return points;
+}
+
+// ─── Module 2: CoilLIMIT ───
 
 export interface LimitResult {
-  burstPressure: number;     // MPa — internal yield (Barlow)
-  collapsePressure: number;  // MPa — external collapse
-  collapseWithOvality: number; // MPa — collapse adjusted for ovality
-  yieldTension: number;      // kN — axial yield
-  yieldCompression: number;  // kN — axial yield (compression)
-  vonMisesRatio: number;     // ratio at given conditions (0-1, >1 = failure)
-  maxWorkingPressure: number; // MPa — 80% of burst
-  maxWorkingTension: number; // kN — 80% of yield
+  burstPressure: number;
+  collapsePressure: number;
+  collapseWithOvality: number;
+  yieldTension: number;
+  yieldCompression: number;
+  vonMisesRatio: number;
+  maxWorkingPressure: number;
+  maxWorkingTension: number;
 }
 
 export function calculateLimits(
   ct: CTStringData,
   internalPressure: number = 0,
   externalPressure: number = 0,
-  axialLoad: number = 0 // kN, positive = tension
+  axialLoad: number = 0
 ): LimitResult {
-  const yieldStrength = GRADE_YIELD[ct.grade] || 552; // MPa
+  const yieldStrength = GRADE_YIELD[ct.grade] || 552;
   const od = ct.od;
   const wall = ct.wall;
-  const id = ctID(od, wall);
 
-  // Barlow burst pressure
   const burstPressure = (2 * yieldStrength * wall) / od;
 
-  // Collapse pressure (API simplified, thin-wall)
   const dOverT = od / wall;
   let collapsePressure: number;
   if (dOverT < 15) {
-    // Yield collapse
     collapsePressure = 2 * yieldStrength * ((dOverT - 1) / (dOverT * dOverT));
   } else {
-    // Plastic collapse (simplified)
     collapsePressure = yieldStrength * (1 / dOverT) * 2;
   }
 
-  // Ovality correction (Timoshenko)
   const ovalityFraction = ct.ovality / 100;
-  const collapseWithOvality = collapsePressure * (1 - 3 * ovalityFraction * (dOverT - 1));
-  const collapseAdj = Math.max(0, collapseWithOvality);
+  const collapseWithOvality = Math.max(0, collapsePressure * (1 - 3 * ovalityFraction * (dOverT - 1)));
 
-  // Axial yield
-  const steelArea = ctCrossSectionArea(od, wall) * 1e6; // m² → mm²
-  const steelAreaM2 = ctCrossSectionArea(od, wall); // m²
-  const yieldTension = (yieldStrength * steelAreaM2 * 1000); // kN
-  const yieldCompression = yieldTension; // same magnitude
+  const steelAreaM2 = ctCrossSectionArea(od, wall);
+  const yieldTension = yieldStrength * steelAreaM2 * 1000;
+  const yieldCompression = yieldTension;
 
-  // Von Mises triaxial check
-  const axialStress = (axialLoad * 1000) / steelAreaM2 / 1e6; // MPa
+  const axialStress = (axialLoad * 1000) / steelAreaM2 / 1e6;
   const deltaPressure = internalPressure - externalPressure;
-  const hoopStress = (deltaPressure * od) / (2 * wall); // MPa (thin wall)
-  const radialStress = -(internalPressure + externalPressure) / 2; // MPa approx
+  const hoopStress = (deltaPressure * od) / (2 * wall);
+  const radialStress = -(internalPressure + externalPressure) / 2;
 
   const vonMises = Math.sqrt(
     0.5 * (
@@ -285,7 +329,7 @@ export function calculateLimits(
   return {
     burstPressure: Math.round(burstPressure * 100) / 100,
     collapsePressure: Math.round(collapsePressure * 100) / 100,
-    collapseWithOvality: Math.round(collapseAdj * 100) / 100,
+    collapseWithOvality: Math.round(Math.max(0, collapseWithOvality) * 100) / 100,
     yieldTension: Math.round(yieldTension * 100) / 100,
     yieldCompression: Math.round(yieldCompression * 100) / 100,
     vonMisesRatio: Math.round(vonMisesRatio * 1000) / 1000,
@@ -294,22 +338,106 @@ export function calculateLimits(
   };
 }
 
+/** Generate pressure-load envelope for chart */
+export interface EnvelopePoint {
+  pressure: number;  // MPa
+  axialLoad: number; // kN
+  type: string;
+}
+
+export function generatePressureLoadEnvelope(ct: CTStringData): EnvelopePoint[] {
+  const yieldStrength = GRADE_YIELD[ct.grade] || 552;
+  const od = ct.od;
+  const wall = ct.wall;
+  const steelAreaM2 = ctCrossSectionArea(od, wall);
+
+  const burstP = (2 * yieldStrength * wall) / od;
+  const dOverT = od / wall;
+  let collapseP = dOverT < 15
+    ? 2 * yieldStrength * ((dOverT - 1) / (dOverT * dOverT))
+    : yieldStrength * (1 / dOverT) * 2;
+  const tensionKN = yieldStrength * steelAreaM2 * 1000;
+  const compressionKN = tensionKN;
+
+  // Build the envelope polygon
+  const points: EnvelopePoint[] = [];
+  const steps = 20;
+
+  // Top-right: burst + tension quadrant (Von Mises ellipse)
+  for (let i = 0; i <= steps; i++) {
+    const ratio = i / steps;
+    const axial = tensionKN * (1 - ratio);
+    // At this axial load, what's the max internal pressure?
+    const axialStress = (axial * 1000) / steelAreaM2 / 1e6;
+    const remaining = Math.sqrt(Math.max(0, yieldStrength * yieldStrength - axialStress * axialStress));
+    const pMax = remaining * 2 * wall / od;
+    points.push({ pressure: Math.round(pMax * 10) / 10, axialLoad: Math.round(axial * 10) / 10, type: "burst" });
+  }
+
+  // Bottom-right: collapse + tension
+  for (let i = steps; i >= 0; i--) {
+    const ratio = i / steps;
+    const axial = tensionKN * (1 - ratio);
+    const axialStress = (axial * 1000) / steelAreaM2 / 1e6;
+    const remaining = Math.sqrt(Math.max(0, yieldStrength * yieldStrength - axialStress * axialStress));
+    const pMin = -(remaining * 2 * wall / od) * (collapseP / burstP);
+    points.push({ pressure: Math.round(pMin * 10) / 10, axialLoad: Math.round(axial * 10) / 10, type: "collapse" });
+  }
+
+  // Bottom-left: collapse + compression
+  for (let i = 0; i <= steps; i++) {
+    const ratio = i / steps;
+    const axial = -compressionKN * ratio;
+    const axialStress = (axial * 1000) / steelAreaM2 / 1e6;
+    const remaining = Math.sqrt(Math.max(0, yieldStrength * yieldStrength - axialStress * axialStress));
+    const pMin = -(remaining * 2 * wall / od) * (collapseP / burstP);
+    points.push({ pressure: Math.round(pMin * 10) / 10, axialLoad: Math.round(axial * 10) / 10, type: "collapse" });
+  }
+
+  // Top-left: burst + compression
+  for (let i = steps; i >= 0; i--) {
+    const ratio = i / steps;
+    const axial = -compressionKN * ratio;
+    const axialStress = (axial * 1000) / steelAreaM2 / 1e6;
+    const remaining = Math.sqrt(Math.max(0, yieldStrength * yieldStrength - axialStress * axialStress));
+    const pMax = remaining * 2 * wall / od;
+    points.push({ pressure: Math.round(pMax * 10) / 10, axialLoad: Math.round(axial * 10) / 10, type: "burst" });
+  }
+
+  return points;
+}
+
 // ─── Module 3: Hydraulics ───
 
 export interface HydraulicsResult {
-  dpInsideCT: number;       // MPa — friction inside CT
-  dpAnnulus: number;        // MPa — friction in annulus
-  dpNozzle: number;         // MPa — pressure drop across nozzles
-  dpTotal: number;          // MPa — total surface pressure needed
-  hydrostaticInside: number;  // MPa
-  hydrostaticAnnulus: number; // MPa
-  bhCircPressure: number;   // MPa — bottom hole circulating pressure
-  velocityInCT: number;     // m/s
-  velocityAnnulus: number;  // m/s
+  dpInsideCT: number;
+  dpAnnulus: number;
+  dpNozzle: number;
+  dpTotal: number;
+  hydrostaticInside: number;
+  hydrostaticAnnulus: number;
+  bhCircPressure: number;
+  velocityInCT: number;
+  velocityAnnulus: number;
   reynoldsInCT: number;
   reynoldsAnnulus: number;
   flowRegimeCT: string;
   flowRegimeAnnulus: string;
+  /** ECD at TD, g/cm³ */
+  ecdAtTD: number;
+  /** Minimum annular velocity for solids transport, m/s */
+  minTransportVelocity: number;
+  /** Whether current annular velocity is sufficient for transport */
+  transportOk: boolean;
+}
+
+/** Flow rate vs pressure drop data for hydraulics chart */
+export interface HydraulicsChartPoint {
+  flowRate: number;   // l/min
+  dpCT: number;       // MPa
+  dpAnn: number;      // MPa
+  dpNozzle: number;   // MPa
+  dpTotal: number;    // MPa
 }
 
 export function calculateHydraulics(
@@ -319,60 +447,62 @@ export function calculateHydraulics(
   pump: PumpData,
   tools: ToolsData
 ): HydraulicsResult {
-  const Q = pump.flowRate / 1000 / 60; // m³/s
-  const idCT = ctID(ct.od, ct.wall) / 1000; // m
+  const Q = pump.flowRate / 1000 / 60;
+  const idCT = ctID(ct.od, ct.wall) / 1000;
   const odCT = ct.od / 1000;
-  const idCasing = (well.tubingID > 0 ? well.tubingID : well.casingID) / 1000; // m
+  const idCasing = (well.tubingID > 0 ? well.tubingID : well.casingID) / 1000;
 
   const areaCT = (Math.PI / 4) * idCT * idCT;
   const areaAnnulus = (Math.PI / 4) * (idCasing * idCasing - odCT * odCT);
 
-  const velCT = Q / areaCT;
+  const velCT = areaCT > 0 ? Q / areaCT : 0;
   const velAnn = areaAnnulus > 0 ? Q / areaAnnulus : 0;
 
-  const rho = fluid.density * 1000; // kg/m³
-  const mu = fluid.pv / 1000; // Pa·s
+  const rho = fluid.density * 1000;
+  const mu = fluid.pv / 1000;
 
-  // Reynolds numbers
   const ReCT = mu > 0 ? (rho * velCT * idCT) / mu : 0;
   const dhAnn = idCasing - odCT;
   const ReAnn = mu > 0 && dhAnn > 0 ? (rho * velAnn * dhAnn) / mu : 0;
 
   const getRegime = (Re: number) => Re < 2100 ? "Ламинарный" : Re < 3000 ? "Переходный" : "Турбулентный";
 
-  // Friction factor (Fanning)
   const fanningF = (Re: number) => {
     if (Re <= 0) return 0;
     if (Re < 2100) return 16 / Re;
-    // Blasius
     return 0.079 / Math.pow(Re, 0.25);
   };
 
   const fCT = fanningF(ReCT);
   const fAnn = fanningF(ReAnn);
 
-  // Pressure drops (Darcy-Weisbach style)
   const ctLength = Math.min(ct.length, well.md);
-  const dpCT = idCT > 0 ? (4 * fCT * ctLength * rho * velCT * velCT) / (2 * idCT) / 1e6 : 0; // MPa
+  const dpCT = idCT > 0 ? (4 * fCT * ctLength * rho * velCT * velCT) / (2 * idCT) / 1e6 : 0;
   const dpAnn = dhAnn > 0 ? (4 * fAnn * ctLength * rho * velAnn * velAnn) / (2 * dhAnn) / 1e6 : 0;
 
-  // Nozzle pressure drop
   let dpNozzle = 0;
   if (tools.nozzleDiam > 0 && tools.nozzleCount > 0) {
     const nozzleArea = tools.nozzleCount * (Math.PI / 4) * Math.pow(tools.nozzleDiam / 1000, 2);
     const velNozzle = Q / nozzleArea;
-    const Cd = 0.95; // discharge coefficient
+    const Cd = 0.95;
     dpNozzle = (rho * velNozzle * velNozzle) / (2 * Cd * Cd) / 1e6;
   }
 
-  // Hydrostatic
   const hydroIn = rho * GRAVITY * well.tvd / 1e6;
-  const hydroAnn = hydroIn; // same fluid assumed
+  const hydroAnn = hydroIn;
 
-  // BHP
   const bhCircPressure = hydroAnn + dpAnn + well.wellheadPressure;
 
   const dpTotal = dpCT + dpAnn + dpNozzle;
+
+  // ECD
+  const ecdAtTD = well.tvd > 0 ? bhCircPressure / (GRAVITY * well.tvd / 1e6) / 1000 : fluid.density;
+
+  // Solids transport: min velocity ≈ 0.5 m/s for vertical, higher for deviated
+  const avgInc = well.trajectory.length > 1 ? well.trajectory[well.trajectory.length - 1].inc : 0;
+  const incFactor = 1 + Math.sin((avgInc * Math.PI) / 180) * 0.6;
+  const minTransportVelocity = 0.5 * incFactor;
+  const transportOk = velAnn >= minTransportVelocity;
 
   return {
     dpInsideCT: Math.round(dpCT * 100) / 100,
@@ -388,56 +518,83 @@ export function calculateHydraulics(
     reynoldsAnnulus: Math.round(ReAnn),
     flowRegimeCT: getRegime(ReCT),
     flowRegimeAnnulus: getRegime(ReAnn),
+    ecdAtTD: Math.round(ecdAtTD * 1000) / 1000,
+    minTransportVelocity: Math.round(minTransportVelocity * 100) / 100,
+    transportOk,
   };
 }
 
-// ─── Module 4: CoilLIFE — Fatigue Life ───
+/** Generate flow rate vs pressure drop curve for chart */
+export function generateHydraulicsCurve(
+  ct: CTStringData,
+  well: WellGeometry,
+  fluid: FluidData,
+  tools: ToolsData,
+  maxFlowRate: number = 600,
+  steps: number = 30
+): HydraulicsChartPoint[] {
+  const points: HydraulicsChartPoint[] = [];
+  for (let i = 1; i <= steps; i++) {
+    const fr = (maxFlowRate / steps) * i;
+    const r = calculateHydraulics(ct, well, fluid, { flowRate: fr, surfacePressure: 0 }, tools);
+    points.push({
+      flowRate: Math.round(fr),
+      dpCT: r.dpInsideCT,
+      dpAnn: r.dpAnnulus,
+      dpNozzle: r.dpNozzle,
+      dpTotal: r.dpTotal,
+    });
+  }
+  return points;
+}
+
+// ─── Module 4: CoilLIFE ───
 
 export interface FatigueResult {
-  bendingStrainReel: number;      // % — bending strain on reel
-  bendingStrainGuideArch: number; // %
-  totalStrainPerTrip: number;     // % — total cycling strain per trip (4 bends)
-  estimatedCycles: number;        // trips before fatigue failure
-  fatigueLifeUsed: number;        // % — cumulative usage (per trip / total)
-  pressureDerate: number;         // % — burst pressure derating due to fatigue
-  maxSafeTrips: number;           // conservative (SF=2)
+  bendingStrainReel: number;
+  bendingStrainGuideArch: number;
+  totalStrainPerTrip: number;
+  estimatedCycles: number;
+  fatigueLifeUsed: number;
+  pressureDerate: number;
+  maxSafeTrips: number;
+}
+
+/** S-N curve point for fatigue chart */
+export interface FatigueChartPoint {
+  trips: number;
+  lifeUsed: number;     // %
+  burstDerate: number;  // %
+  effectiveBurst: number; // MPa
 }
 
 export function calculateFatigue(
   ct: CTStringData,
   reelSize: "small" | "medium" | "large" = "medium",
-  operatingPressure: number = 0, // MPa internal
+  operatingPressure: number = 0,
   previousTrips: number = 0
 ): FatigueResult {
   const odM = ct.od / 1000;
   const reelDiam = REEL_DIAMETERS[reelSize];
   const guideArchDiam = GUIDE_ARCH_DIAMETER;
 
-  // Bending strain = OD / Bend_Diameter (for thin wall tube)
-  const strainReel = (odM / reelDiam) * 100; // %
+  const strainReel = (odM / reelDiam) * 100;
   const strainGuideArch = (odM / guideArchDiam) * 100;
 
-  // Each trip: reel→guide→well→guide→reel = 4 bending events
   const totalStrainPerTrip = 2 * strainReel + 2 * strainGuideArch;
 
-  // Fatigue life estimation (Coffin-Manson simplified for CT)
-  // N_f ≈ C / (strain_amplitude)^b
-  // Typical CT: C ≈ 0.5, b ≈ 2.0 for strain in %
   const yieldStr = GRADE_YIELD[ct.grade] || 552;
-  const strainAmplitude = totalStrainPerTrip / 4; // per cycle
-  
-  // Pressure effect: internal pressure reduces fatigue life
+  const strainAmplitude = totalStrainPerTrip / 4;
+
   const pressureRatio = operatingPressure / ((2 * yieldStr * ct.wall) / ct.od);
   const pressureFactor = Math.max(0.2, 1 - pressureRatio * 0.6);
 
-  const C = 0.6; // empirical constant
+  const C = 0.6;
   const b = 2.0;
   const baseCycles = strainAmplitude > 0 ? C / Math.pow(strainAmplitude, b) * 1000 : 99999;
   const adjustedCycles = Math.round(baseCycles * pressureFactor);
 
   const fatigueUsed = previousTrips > 0 ? (previousTrips / adjustedCycles) * 100 : 0;
-
-  // Burst pressure derating
   const pressureDerate = Math.min(30, fatigueUsed * 0.5);
 
   return {
@@ -447,21 +604,117 @@ export function calculateFatigue(
     estimatedCycles: adjustedCycles,
     fatigueLifeUsed: Math.round(fatigueUsed * 10) / 10,
     pressureDerate: Math.round(pressureDerate * 10) / 10,
-    maxSafeTrips: Math.round(adjustedCycles / 2), // SF=2
+    maxSafeTrips: Math.round(adjustedCycles / 2),
   };
+}
+
+/** Generate fatigue life curve */
+export function generateFatigueCurve(
+  ct: CTStringData,
+  reelSize: "small" | "medium" | "large",
+  operatingPressure: number
+): FatigueChartPoint[] {
+  const fatigue = calculateFatigue(ct, reelSize, operatingPressure, 0);
+  const maxTrips = fatigue.estimatedCycles;
+  const burstP = (2 * (GRADE_YIELD[ct.grade] || 552) * ct.wall) / ct.od;
+  const points: FatigueChartPoint[] = [];
+  const steps = 40;
+
+  for (let i = 0; i <= steps; i++) {
+    const trips = Math.round((maxTrips * 1.2 / steps) * i);
+    const used = (trips / maxTrips) * 100;
+    const derate = Math.min(30, used * 0.5);
+    points.push({
+      trips,
+      lifeUsed: Math.round(used * 10) / 10,
+      burstDerate: Math.round(derate * 10) / 10,
+      effectiveBurst: Math.round((burstP * (1 - derate / 100)) * 10) / 10,
+    });
+  }
+
+  return points;
+}
+
+// ─── Risk Assessment ───
+
+export interface RiskItem {
+  level: "info" | "warning" | "critical";
+  emoji: string;
+  message: string;
+}
+
+export function assessRisks(
+  forces: ForceResult,
+  limits: LimitResult,
+  hydraulics: HydraulicsResult,
+  fatigue: FatigueResult,
+  well: WellGeometry
+): RiskItem[] {
+  const risks: RiskItem[] = [];
+
+  // Force risks
+  if (forces.lockUpDepth > 0) {
+    risks.push({ level: "critical", emoji: "🔒", message: `Запирание ГНКТ на глубине ${forces.lockUpDepth.toFixed(0)} м — невозможно продвижение` });
+  }
+  if (forces.surfaceLoadRIH < 0) {
+    risks.push({ level: "critical", emoji: "⚠️", message: "Колтюбинг в сжатии на устье — риск спирального изгиба" });
+  }
+  if (forces.surfaceLoadPOOH > limits.maxWorkingTension) {
+    risks.push({ level: "critical", emoji: "💥", message: "Нагрузка при подъёме превышает рабочий предел натяжения" });
+  }
+
+  // Pressure risks
+  if (hydraulics.dpTotal > limits.maxWorkingPressure) {
+    risks.push({ level: "critical", emoji: "🔴", message: `Давление циркуляции (${hydraulics.dpTotal.toFixed(1)} МПа) > макс. рабочее (${limits.maxWorkingPressure.toFixed(1)} МПа)` });
+  }
+  if (limits.vonMisesRatio >= 1.0) {
+    risks.push({ level: "critical", emoji: "⛔", message: "Критерий Мизеса превышен — деформация неизбежна!" });
+  } else if (limits.vonMisesRatio >= 0.8) {
+    risks.push({ level: "warning", emoji: "🟡", message: `Коэффициент Мизеса ${limits.vonMisesRatio.toFixed(3)} — близко к пределу` });
+  }
+
+  // Collapse
+  if (limits.collapseWithOvality < well.wellheadPressure) {
+    risks.push({ level: "warning", emoji: "📉", message: "Давление смятия ниже устьевого давления" });
+  }
+
+  // Hydraulics
+  if (!hydraulics.transportOk) {
+    risks.push({ level: "warning", emoji: "🔄", message: `Скорость в затрубье (${hydraulics.velocityAnnulus.toFixed(2)} м/с) недостаточна для транспорта шлама (мин. ${hydraulics.minTransportVelocity.toFixed(2)} м/с)` });
+  }
+  if (hydraulics.ecdAtTD > 1.5) {
+    risks.push({ level: "info", emoji: "📊", message: `ECD на забое: ${hydraulics.ecdAtTD.toFixed(3)} г/см³ — проверьте совместимость с пластовым давлением` });
+  }
+
+  // Fatigue
+  if (fatigue.fatigueLifeUsed > 80) {
+    risks.push({ level: "critical", emoji: "💀", message: `Ресурс ГНКТ критически исчерпан (${fatigue.fatigueLifeUsed.toFixed(0)}%)` });
+  } else if (fatigue.fatigueLifeUsed > 50) {
+    risks.push({ level: "warning", emoji: "⏳", message: `Использовано ${fatigue.fatigueLifeUsed.toFixed(0)}% ресурса — усиленный контроль` });
+  }
+  if (fatigue.pressureDerate > 15) {
+    risks.push({ level: "warning", emoji: "📉", message: `Давление разрыва снижено на ${fatigue.pressureDerate.toFixed(1)}% из-за усталости` });
+  }
+
+  // All OK
+  if (risks.length === 0) {
+    risks.push({ level: "info", emoji: "✅", message: "Все параметры в допустимых пределах" });
+  }
+
+  return risks;
 }
 
 // ─── Presets ───
 
 export const CT_PRESETS: { label: string; od: number; wall: number }[] = [
-  { label: "1\" (25.4 мм)", od: 25.4, wall: 2.77 },
-  { label: "1.25\" (31.75 мм)", od: 31.75, wall: 3.18 },
-  { label: "1.5\" (38.1 мм)", od: 38.1, wall: 3.40 },
-  { label: "1.75\" (44.45 мм)", od: 44.45, wall: 3.68 },
-  { label: "2\" (50.8 мм)", od: 50.8, wall: 3.96 },
-  { label: "2.375\" (60.33 мм)", od: 60.33, wall: 4.44 },
-  { label: "2.875\" (73.03 мм)", od: 73.03, wall: 4.78 },
-  { label: "3.5\" (88.9 мм)", od: 88.9, wall: 5.51 },
+  { label: '1" (25.4 мм)', od: 25.4, wall: 2.77 },
+  { label: '1.25" (31.75 мм)', od: 31.75, wall: 3.18 },
+  { label: '1.5" (38.1 мм)', od: 38.1, wall: 3.40 },
+  { label: '1.75" (44.45 мм)', od: 44.45, wall: 3.68 },
+  { label: '2" (50.8 мм)', od: 50.8, wall: 3.96 },
+  { label: '2.375" (60.33 мм)', od: 60.33, wall: 4.44 },
+  { label: '2.875" (73.03 мм)', od: 73.03, wall: 5.51 },
+  { label: '3.5" (88.9 мм)', od: 88.9, wall: 5.51 },
 ];
 
 export const FLUID_PRESETS: { label: string; data: FluidData }[] = [
