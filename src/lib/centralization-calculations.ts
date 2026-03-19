@@ -34,18 +34,27 @@ export interface CentralizationResult {
 
 // ─── Physics helpers ─────────────────────────────────────────────
 
+const STEEL_E = 210e9; // Модуль Юнга стали, Па
+const STEEL_DENSITY = 7850; // кг/м³
+
+/** Moment of inertia for hollow cylinder, m⁴ */
+function casingMomentOfInertia(casingOD_mm: number, casingWall_mm: number): number {
+  const od = casingOD_mm / 1000;
+  const id = (casingOD_mm - 2 * casingWall_mm) / 1000;
+  return (Math.PI / 64) * (Math.pow(od, 4) - Math.pow(id, 4));
+}
+
 /** Weight per meter of casing in air, N/m */
 function casingWeightPerMeter(casingOD_mm: number, casingWall_mm: number): number {
   const od = casingOD_mm / 1000;
   const id = (casingOD_mm - 2 * casingWall_mm) / 1000;
   const area = Math.PI / 4 * (od * od - id * id);
-  const steelDensity = 7850; // кг/м³
-  return area * steelDensity * 9.81; // N/m
+  return area * STEEL_DENSITY * 9.81; // N/m
 }
 
 /** Buoyant weight factor (simplified, mud density in kg/m³) */
 function buoyancyFactor(mudDensity: number): number {
-  return 1 - mudDensity / 7850;
+  return 1 - mudDensity / STEEL_DENSITY;
 }
 
 /** Radial clearance in mm */
