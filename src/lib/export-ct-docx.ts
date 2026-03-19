@@ -209,8 +209,10 @@ export async function exportCTDocx(input: CTDocxInput) {
     ["ΔP в затрубье", `${fmt(hydraulics.dpAnnulus)} МПа`],
     ["ΔP на насадках", `${fmt(hydraulics.dpNozzle)} МПа`],
     ["Общее ΔP", `${fmt(hydraulics.dpTotal)} МПа`, hydraulics.dpTotal > limits.maxWorkingPressure],
-    ["ECD на забое", `${fmt(hydraulics.ecdAtTD, 3)} г/см³`],
-    ["Забойное давление (цирк.)", `${fmt(hydraulics.bhCircPressure)} МПа`],
+    ["ECD на забое (TVD)", `${fmt(hydraulics.ecdAtTD, 3)} г/см³`],
+    ["BHP (цирк., TVD)", `${fmt(hydraulics.bhCircPressure)} МПа`],
+    ["Давление ГРП (TVD)", `${fmt((hydraulics as any).fracPressureAtTD ?? 0)} МПа`],
+    ["BHP / P_грп", `${fmt((hydraulics as any).fracSafetyFactor ?? 0)}`, (hydraulics as any).fracSafetyFactor >= 0.85],
     ["Мин. скорость транспорта", `${fmt(hydraulics.minTransportVelocity)} м/с`],
     ["Транспорт шлама", hydraulics.transportOk ? "✅ Достаточно" : "⚠ Недостаточно", !hydraulics.transportOk],
   ]));
