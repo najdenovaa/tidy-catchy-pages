@@ -94,8 +94,12 @@ export default function AdminPanel() {
   };
 
   const homeVisits = visitLogs.filter(v => v.page_url === "/" || v.page_url === "" || v.module === "home" || v.page_url?.endsWith("/"));
+  const cementingVisits = visitLogs.filter(v => v.page_url?.includes("/cementing") || v.module === "cementing");
+  const cementingCalcs = calcLogs.filter(l => l.module === "cementing");
   const cementPlugVisits = visitLogs.filter(v => v.page_url?.includes("/cement-plug") || v.module === "cement-plug");
   const cementPlugCalcs = calcLogs.filter(l => l.module === "cement-plug");
+  const ctVisits = visitLogs.filter(v => v.page_url?.includes("/coiled-tubing") || v.module === "coiled-tubing");
+  const ctCalcs = calcLogs.filter(l => l.module === "coiled-tubing");
 
   if (!authenticated) return null;
 
