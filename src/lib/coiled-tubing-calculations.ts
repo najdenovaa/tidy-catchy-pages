@@ -80,7 +80,54 @@ const GUIDE_ARCH_DIAMETER = 1.83;
 
 // ─── Utility ───
 
-export function ctID(od: number, wall: number): number {
+/**
+ * Build a synthetic J-type trajectory when no survey is entered.
+ * If MD > TVD, calculates an average inclination to honour the TVD input.
+ * This ensures friction forces differ between RIH and POOH.
+ */
+function buildSyntheticTrajectory(md: number, tvd: number): TrajectoryPoint[] {
+  if (md <= 0) return [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }];
+  if (tvd >= md || tvd <= 0) {
+    // Vertical well
+    return [
+      { md: 0, azimuth: 0, zenith: 0, tvd: 0 },
+      { md, azimuth: 0, zenith: 0, tvd: md },
+    ];
+  }
+  // J-type: vertical section then build angle
+  // Average inclination = acos(TVD / MD)
+  const avgIncDeg = Math.acos(tvd / md) * (180 / Math.PI);
+  // KOP at ~30% of MD (kick-off point)
+  const kop = md * 0.3;
+  const tvdAtKop = kop; // vertical above KOP
+  const remainingMD = md - kop;
+  const remainingTVD = tvd - tvdAtKop;
+  const incDeg = remainingTVD > 0 && remainingMD > 0
+    ? Math.acos(Math.min(1, remainingTVD / remainingMD)) * (180 / Math.PI)
+    : avgIncDeg;
+  const steps = 10;
+  const pts: TrajectoryPoint[] = [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }];
+  for (let i = 1; i <= steps; i++) {
+    const frac = i / steps;
+    const curMD = md * frac;
+    let curZenith: number;
+    let curTVD: number;
+    if (curMD <= kop) {
+      curZenith = 0;
+      curTVD = curMD;
+    } else {
+      const buildFrac = (curMD - kop) / remainingMD;
+      curZenith = incDeg * Math.min(1, buildFrac * 1.5); // ramp up
+      curTVD = tvdAtKop + (curMD - kop) * Math.cos(curZenith * Math.PI / 180);
+    }
+    pts.push({ md: Math.round(curMD), azimuth: 0, zenith: Math.round(curZenith * 10) / 10, tvd: Math.round(curTVD * 10) / 10 });
+  }
+  // Correct last point TVD to match input
+  pts[pts.length - 1].tvd = tvd;
+  return pts;
+}
+
+
   return od - 2 * wall;
 }
 
