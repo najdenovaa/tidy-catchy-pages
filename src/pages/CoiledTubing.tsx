@@ -842,21 +842,25 @@ export default function CoiledTubing() {
 
                     <div ref={fatigueChartRef} className="mt-4 bg-card rounded-lg p-2">
                       <p className="text-xs font-semibold text-center mb-2">📊 Кривая ресурса усталости</p>
-                      <ResponsiveContainer width="100%" height={300}>
-                        <LineChart data={fatigueCurve} margin={{ top: 5, right: 30, bottom: 5, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                          <XAxis dataKey="trips" label={{ value: "Рейсы", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <YAxis yAxisId="left" label={{ value: "Ресурс, %", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} domain={[0, 120]} />
-                          <YAxis yAxisId="right" orientation="right" label={{ value: "МПа", angle: 90, position: "insideRight", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                          <Tooltip contentStyle={{ fontSize: 11 }} />
-                          <Legend wrapperStyle={{ fontSize: 10 }} />
-                          <Line yAxisId="left" type="monotone" dataKey="lifeUsed" name="Ресурс, %" stroke="#ef4444" strokeWidth={2} dot={false} />
-                          <Line yAxisId="right" type="monotone" dataKey="effectiveBurst" name="Эфф. P разрыва, МПа" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                          <ReferenceLine yAxisId="left" y={100} stroke="#dc2626" strokeDasharray="6 3" label={{ value: "100%", position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
-                          <ReferenceLine yAxisId="left" y={50} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "50%", position: "right", style: { fontSize: 9, fill: "#d97706" } }} />
-                          {prevTrips > 0 && <ReferenceLine x={prevTrips} stroke="#a855f7" strokeWidth={2} label={{ value: `Сейчас: ${prevTrips}`, position: "top", style: { fontSize: 9, fill: "#7c3aed" } }} />}
-                        </LineChart>
-                      </ResponsiveContainer>
+                      <div className="overflow-x-auto -mx-2 px-2">
+                        <div className="min-w-[600px]">
+                          <ResponsiveContainer width="100%" height={300}>
+                            <LineChart data={fatigueCurve} margin={{ top: 5, right: 30, bottom: 5, left: 10 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <XAxis dataKey="trips" label={{ value: "Рейсы", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <YAxis yAxisId="left" label={{ value: "Ресурс, %", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} domain={[0, 120]} />
+                              <YAxis yAxisId="right" orientation="right" label={{ value: "МПа", angle: 90, position: "insideRight", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <Tooltip contentStyle={{ fontSize: 11 }} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Line yAxisId="left" type="monotone" dataKey="lifeUsed" name="Ресурс, %" stroke="#ef4444" strokeWidth={2} dot={false} />
+                              <Line yAxisId="right" type="monotone" dataKey="effectiveBurst" name="Эфф. P разрыва, МПа" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                              <ReferenceLine yAxisId="left" y={100} stroke="#dc2626" strokeDasharray="6 3" label={{ value: "100%", position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
+                              <ReferenceLine yAxisId="left" y={50} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "50%", position: "right", style: { fontSize: 9, fill: "#d97706" } }} />
+                              {prevTrips > 0 && <ReferenceLine x={prevTrips} stroke="#a855f7" strokeWidth={2} label={{ value: `Сейчас: ${prevTrips}`, position: "top", style: { fontSize: 9, fill: "#7c3aed" } }} />}
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
