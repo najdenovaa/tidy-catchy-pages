@@ -552,13 +552,13 @@ export function calculateHydraulics(
   };
 }
 
-/** Generate flow rate vs pressure drop curve for chart */
+/** Generate flow rate vs pressure drop curve for chart (flowRate in l/s) */
 export function generateHydraulicsCurve(
   ct: CTStringData,
   well: WellGeometry,
   fluid: FluidData,
   tools: ToolsData,
-  maxFlowRate: number = 600,
+  maxFlowRate: number = 10,
   steps: number = 30
 ): HydraulicsChartPoint[] {
   const points: HydraulicsChartPoint[] = [];
