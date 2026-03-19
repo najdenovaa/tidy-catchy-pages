@@ -235,7 +235,7 @@ export async function exportCTDocx(input: CTDocxInput) {
     children.push(new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { before: 200, after: 200 },
-      children: [new ImageRun({ type: ext as any, data: buffer, transformation: { width: 550, height: 300 }, altText: { title: "Fatigue", description: "Fatigue life curve", name: "fatigue-chart" } })],
+      children: [new ImageRun({ data: buffer, transformation: { width: 550, height: 300 }, altText: { title: "Fatigue", description: "Fatigue life curve", name: "fatigue-chart" } })],
     }));
   }
 
