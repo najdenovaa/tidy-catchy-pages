@@ -34,18 +34,27 @@ export interface CentralizationResult {
 
 // ─── Physics helpers ─────────────────────────────────────────────
 
+const STEEL_E = 210e9; // Модуль Юнга стали, Па
+const STEEL_DENSITY = 7850; // кг/м³
+
+/** Moment of inertia for hollow cylinder, m⁴ */
+function casingMomentOfInertia(casingOD_mm: number, casingWall_mm: number): number {
+  const od = casingOD_mm / 1000;
+  const id = (casingOD_mm - 2 * casingWall_mm) / 1000;
+  return (Math.PI / 64) * (Math.pow(od, 4) - Math.pow(id, 4));
+}
+
 /** Weight per meter of casing in air, N/m */
 function casingWeightPerMeter(casingOD_mm: number, casingWall_mm: number): number {
   const od = casingOD_mm / 1000;
   const id = (casingOD_mm - 2 * casingWall_mm) / 1000;
   const area = Math.PI / 4 * (od * od - id * id);
-  const steelDensity = 7850; // кг/м³
-  return area * steelDensity * 9.81; // N/m
+  return area * STEEL_DENSITY * 9.81; // N/m
 }
 
 /** Buoyant weight factor (simplified, mud density in kg/m³) */
 function buoyancyFactor(mudDensity: number): number {
-  return 1 - mudDensity / 7850;
+  return 1 - mudDensity / STEEL_DENSITY;
 }
 
 /** Radial clearance in mm */
@@ -96,6 +105,7 @@ export function calculateCentralization(
   const wpm = casingWeightPerMeter(wellData.casingOD, wellData.casingWall);
   const bf = buoyancyFactor(mudDensity);
   const rc = radialClearance(wellData.holeDiameter, wellData.casingOD);
+  const EI = STEEL_E * casingMomentOfInertia(wellData.casingOD, wellData.casingWall); // Н·м²
 
   if (rc <= 0) return results;
 
@@ -105,7 +115,6 @@ export function calculateCentralization(
     // Find matching interval
     const interval = intervals.find(iv => md >= iv.fromMD && md <= iv.toMD);
 
-    // Lateral force on a span between centralizers
     let spanLength: number;
     let centralizerRestoring = 0;
     let hasCentralizer = false;
@@ -118,29 +127,31 @@ export function calculateCentralization(
       spanLength = 12; // длина трубы по умолчанию
     }
 
-    const lateralF = lateralForcePerMeter(wpm, bf, zenith);
-    // Distributed load on span (beam on two supports) → max deflection at midspan
-    // Simplified: treat as simply-supported beam with UDL
-    // δmax = 5·w·L⁴ / (384·E·I) but we use force-balance approach:
-    // Total lateral force on span = w·L
-    // Centralizer restoring force resists this
-    // Eccentricity ratio = lateral_force_on_span / (restoring_force + lateral_force_on_span * correction)
-
-    const totalLateralOnSpan = lateralF * spanLength; // N
+    const lateralF = lateralForcePerMeter(wpm, bf, zenith); // N/m
 
     let eccentricity: number;
     if (zenith < 0.5) {
       // Nearly vertical — casing hangs centered
       eccentricity = hasCentralizer ? 0 : 0.05;
-    } else if (hasCentralizer && centralizerRestoring > 0) {
-      // Deflection model: beam sag between centralizers
-      // Using catenary-like approximation: e = (w·L²) / (8·F_restoring) normalized to clearance
-      const sag_mm = (lateralF * spanLength * spanLength) / (8 * centralizerRestoring) * 1000;
-      eccentricity = Math.min(1, Math.max(0, sag_mm / rc));
+    } else if (hasCentralizer && EI > 0) {
+      // ═══ Beam deflection model (simply-supported beam with UDL) ═══
+      // δmax = 5·w·L⁴ / (384·E·I), м — максимальный прогиб балки
+      const L = spanLength;
+      const sag_m = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
+      
+      // Центратор создает сосредоточенную силу в середине пролёта,
+      // которая поднимает колонну: δ_lift = F·L³ / (48·E·I)
+      let lift_m = 0;
+      if (centralizerRestoring > 0) {
+        lift_m = (centralizerRestoring * Math.pow(L, 3)) / (48 * EI);
+      }
+      
+      // Результирующий прогиб (не может быть отрицательным)
+      const net_sag_mm = Math.max(0, sag_m - lift_m) * 1000;
+      eccentricity = Math.min(1, Math.max(0, net_sag_mm / rc));
     } else {
       // No centralizer — casing rests on low side
-      // Some residual standoff from stiffness
-      const stiffnessFactor = Math.min(1, totalLateralOnSpan / (wpm * 0.5));
+      const stiffnessFactor = Math.min(1, lateralF * spanLength / (wpm * 0.5));
       eccentricity = Math.min(1, 0.7 + 0.3 * stiffnessFactor);
     }
 
