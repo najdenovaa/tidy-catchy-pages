@@ -127,7 +127,7 @@ function buildSyntheticTrajectory(md: number, tvd: number): TrajectoryPoint[] {
   return pts;
 }
 
-
+export function ctID(od: number, wall: number): number {
   return od - 2 * wall;
 }
 
