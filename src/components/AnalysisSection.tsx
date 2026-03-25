@@ -252,7 +252,21 @@ export default function AnalysisSection({
   const [error, setError] = useState<string>("");
   const [useOwnProgram, setUseOwnProgram] = useState(true);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  // Get current user email
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setUserEmail(data.session?.user?.email ?? null);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserEmail(session?.user?.email ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const isAlgorithmicAllowed = useMemo(() => userEmail === "info@igchem.ru", [userEmail]);
 
   // Elapsed time timer
   useEffect(() => {
