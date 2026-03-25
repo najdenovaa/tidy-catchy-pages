@@ -2,10 +2,11 @@ import { useState, useCallback, useRef, useEffect, DragEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight, FolderOpen } from "lucide-react";
+import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight, FolderOpen, Cpu } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
+import { runAlgorithmicAnalysis } from "@/lib/cement-analysis-engine";
 
 interface AnalysisSectionProps {
   wellData: WellData;
@@ -410,6 +411,19 @@ export default function AnalysisSection({
     }
   }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram]);
 
+  const runLocalAnalysis = useCallback(() => {
+    setError("");
+    try {
+      const result = runAlgorithmicAnalysis(wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults);
+      setReport(result.markdown);
+      if (reportRef.current) {
+        setTimeout(() => reportRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      }
+    } catch (e: any) {
+      setError("Ошибка алгоритмического анализа: " + (e.message || "Неизвестная ошибка"));
+    }
+  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults]);
+
   const akcFiles = files.filter(f => f.type === "akc");
   const reportFiles = files.filter(f => f.type === "report");
   const otherFiles = files.filter(f => f.type === "other");
@@ -539,19 +553,31 @@ export default function AnalysisSection({
             </div>
           )}
 
-          <Button onClick={runAnalysis} disabled={!hasAnyInput || analyzing} className="w-full" size="lg">
-            {analyzing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Анализирую... {formatTime(elapsedSeconds)}
-              </>
-            ) : (
-              <>
-                <Brain className="w-4 h-4" />
-                🚀 Запустить анализ
-              </>
-            )}
-          </Button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Button onClick={runLocalAnalysis} disabled={wellData.wellDepthMD <= 0 || slurries.length === 0} variant="outline" size="lg" className="w-full">
+              <Cpu className="w-4 h-4" />
+              📐 Алгоритмический анализ
+            </Button>
+
+            <Button onClick={runAnalysis} disabled={!hasAnyInput || analyzing} className="w-full" size="lg">
+              {analyzing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Анализирую... {formatTime(elapsedSeconds)}
+                </>
+              ) : (
+                <>
+                  <Brain className="w-4 h-4" />
+                  🚀 AI-анализ (документы)
+                </>
+              )}
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-2">
+            <Cpu className="w-3.5 h-3.5 shrink-0" />
+            <span><strong>Алгоритмический</strong> — мгновенный, по данным расчёта, без кредитов. <strong>AI</strong> — с анализом документов, расходует кредиты.</span>
+          </div>
 
           {analyzing && (
             <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground bg-muted/50 rounded-lg p-2.5 animate-pulse">
