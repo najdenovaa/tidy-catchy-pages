@@ -65,6 +65,10 @@ interface AnalysisReport {
   markdown: string;
 }
 
+interface NumericExtractedValue extends ExtractedValue {
+  numeric: number | null;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────
 
 function d(v: number): number { return v < 100 ? v * 1000 : v; } // to kg/m3
@@ -434,6 +438,158 @@ function checkSedimentation(w: WellData): AnalysisCheck[] {
   return c;
 }
 
+function extractNumeric(value: ExtractedValue): NumericExtractedValue {
+  const source = `${value.value} ${value.raw}`;
+  const match = source.match(/-?\d+(?:[.,]\d+)?/);
+  if (!match) return { ...value, numeric: null };
+
+  let numeric = Number.parseFloat(match[0].replace(",", "."));
+  if (!Number.isFinite(numeric)) numeric = NaN;
+  if (!Number.isFinite(numeric)) return { ...value, numeric: null };
+
+  if (value.category === "density" && numeric > 0 && numeric < 10) numeric *= 1000;
+  return { ...value, numeric };
+}
+
+function formatZoneSummary(doc: DocumentInfo): string {
+  const zones = doc.imageAnalysis?.zones ?? [];
+  if (zones.length === 0) return "Выраженные интервалы по глубине автоматически не выделены.";
+
+  return zones
+    .slice(0, 4)
+    .map(zone => `${zone.fromPercent.toFixed(0)}–${zone.toPercent.toFixed(0)}%: ${zone.label.toLowerCase()} (однородность ${(zone.uniformity * 100).toFixed(0)}%)`)
+    .join("; ");
+}
+
+function getGeophysicsVerdict(doc: DocumentInfo): { status: AnalysisCheck["status"]; verdict: string } {
+  const image = doc.imageAnalysis;
+  if (!image) return { status: "info", verdict: "Недостаточно графических признаков для инженерной интерпретации." };
+
+  const dark = image.colorProfile.darkAreaPercent;
+  const poorZones = image.zones.filter(zone => zone.type === "light" || zone.type === "gradient");
+
+  if (dark >= 55 && poorZones.length <= 1) {
+    return { status: "ok", verdict: "По визуальным признакам сцепление преимущественно качественное, критичных интервалов мало." };
+  }
+  if (dark >= 30) {
+    return { status: "warning", verdict: "Картина неоднородная: присутствуют интервалы удовлетворительного и ослабленного сцепления." };
+  }
+  return { status: "critical", verdict: "Преобладают признаки слабого сцепления или отсутствия качественного цементного контакта." };
+}
+
+function buildDocumentDrivenChecks(
+  wellData: WellData,
+  drillingFluid: DrillingFluid,
+  slurries: SlurryInput[],
+  buffers: BufferFluid[],
+  docs: DocumentInfo[],
+  extractedValues: ExtractedValue[]
+): AnalysisCheck[] {
+  const checks: AnalysisCheck[] = [];
+  if (docs.length === 0) return checks;
+
+  const numericValues = extractedValues.map(extractNumeric);
+  const densities = numericValues.filter(v => v.category === "density" && v.numeric !== null);
+  const depths = numericValues.filter(v => v.category === "depth" && v.numeric !== null);
+  const thickening = numericValues.filter(v => v.category === "thickening" && v.numeric !== null);
+  const pressures = numericValues.filter(v => (v.category === "pressure" || v.category === "frac_pressure") && v.numeric !== null);
+
+  const referenceDensities = [d(drillingFluid.density), ...buffers.map(b => d(b.density)), ...slurries.map(s => d(s.density))]
+    .filter(v => v > 0);
+  const referenceDepths = [wellData.wellDepthMD, wellData.wellDepthTVD, wellData.casingDepthMD].filter(v => v > 0);
+  const referenceThickening = slurries.map(s => s.thickeningTime50Bc).filter(v => v > 0);
+
+  if (densities.length > 0 && referenceDensities.length > 0) {
+    const matched = densities.filter(v => referenceDensities.some(ref => Math.abs(ref - (v.numeric || 0)) <= 120));
+    checks.push({
+      section: "Документный анализ",
+      title: matched.length > 0 ? "Плотности из документов сопоставлены" : "Плотности из документов не подтверждены расчётом",
+      status: matched.length > 0 ? "ok" : "warning",
+      detail: matched.length > 0
+        ? `Найдены значения плотности, близкие к расчётным: ${matched.slice(0, 4).map(v => `${v.raw}`).join(", ")}. Это значит, что распознанные документы реально участвуют в анализе программы цементирования.`
+        : `Документы содержат плотности (${densities.slice(0, 5).map(v => v.raw).join(", ")}), но они заметно расходятся с текущим расчётом. Требуется проверить, соответствует ли загруженная программа текущей компоновке и рецептуре.`
+    });
+  }
+
+  if (depths.length > 0 && referenceDepths.length > 0) {
+    const matched = depths.filter(v => referenceDepths.some(ref => Math.abs(ref - (v.numeric || 0)) <= Math.max(50, ref * 0.05)));
+    checks.push({
+      section: "Документный анализ",
+      title: matched.length > 0 ? "Глубины из документов подтверждают расчёт" : "Глубины из документов требуют проверки",
+      status: matched.length > 0 ? "ok" : "warning",
+      detail: matched.length > 0
+        ? `Распознаны глубины, совпадающие с расчётными параметрами скважины: ${matched.slice(0, 4).map(v => v.raw).join(", ")}.`
+        : `В документах присутствуют глубины (${depths.slice(0, 5).map(v => v.raw).join(", ")}), но они не привязались к MD/TVD/спуску обсадной колонны из формы. Проверьте исходные данные и формат документа.`
+    });
+  }
+
+  if (thickening.length > 0 && referenceThickening.length > 0) {
+    const matched = thickening.filter(v => referenceThickening.some(ref => Math.abs(ref - (v.numeric || 0)) <= 30));
+    checks.push({
+      section: "Документный анализ",
+      title: matched.length > 0 ? "Лабораторные времена загустевания учтены" : "Лабораторные времена загустевания не согласованы",
+      status: matched.length > 0 ? "ok" : "warning",
+      detail: matched.length > 0
+        ? `Из документов извлечены времена загустевания, которые согласуются с расчётными растворами: ${matched.slice(0, 4).map(v => v.raw).join(", ")}.`
+        : `Найдены значения загустевания (${thickening.slice(0, 4).map(v => v.raw).join(", ")}), но они не совпадают с параметрами растворов в форме. Это может влиять на корректность вывода по безопасному времени.`
+    });
+  }
+
+  if (pressures.length > 0) {
+    checks.push({
+      section: "Документный анализ",
+      title: "Гидравлические параметры найдены в документах",
+      status: "info",
+      detail: `В документах распознаны давления/ограничения: ${pressures.slice(0, 5).map(v => v.raw).join(", ")}. Они включены в документный контекст отчёта и используются для инженерной сверки.`
+    });
+  }
+
+  const geophysicsDocs = docs.filter(doc => {
+    const type = doc.imageAnalysis?.chartType.type;
+    const byImageType = type === "akc_cbl" || type === "vdl" || type === "log_diagram";
+    const byText = /акц|cbl|vdl|сгдт|cement bond|variable density/i.test(`${doc.name}\n${doc.text}`);
+    return byImageType || byText;
+  });
+
+  if (geophysicsDocs.length > 0) {
+    for (const doc of geophysicsDocs) {
+      const verdict = getGeophysicsVerdict(doc);
+      const chartLabel = doc.imageAnalysis?.chartType.description || "Геофизический документ";
+      const dark = doc.imageAnalysis?.colorProfile.darkAreaPercent;
+      const light = doc.imageAnalysis?.colorProfile.lightAreaPercent;
+
+      checks.push({
+        section: "Геофизика (АКЦ/CBL/VDL)",
+        title: `${doc.name}: ${chartLabel}`,
+        status: verdict.status,
+        detail: [
+          verdict.verdict,
+          dark !== undefined && light !== undefined ? `Тёмные зоны: ${dark.toFixed(1)}%, светлые зоны: ${light.toFixed(1)}%.` : "",
+          formatZoneSummary(doc),
+        ].filter(Boolean).join("\n\n")
+      });
+    }
+  } else if (docs.length > 0) {
+    checks.push({
+      section: "Геофизика (АКЦ/CBL/VDL)",
+      title: "Геофизические файлы не идентифицированы уверенно",
+      status: "warning",
+      detail: "Документы загружены, но система не увидела устойчивых признаков АКЦ/CBL/VDL. Для геофизического отчёта лучше загружать сами диаграммы, скриншоты хорошего качества или файлы с понятными названиями (АКЦ, CBL, VDL, СГДТ)."
+    });
+  }
+
+  if (extractedValues.length === 0 && geophysicsDocs.length === 0) {
+    checks.push({
+      section: "Документный анализ",
+      title: "Документы распознаны слабо",
+      status: "warning",
+      detail: "В загруженных документах не удалось уверенно извлечь числовые параметры и геофизические признаки. Нужны более чёткие файлы или текстовые/PDF-версии отчётов вместо фотографий низкого качества."
+    });
+  }
+
+  return checks;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Document Intelligence
 // ═══════════════════════════════════════════════════════════════════
@@ -484,6 +640,28 @@ function analyzeDocuments(docs: DocumentInfo[]): { md: string; extractedValues: 
         if (ocr.scaleInfo) imageFindings.push(`  - ${getTemplate(IMAGE_INTERPRETATION_TEMPLATES.scale_detected, h(doc.name))}`);
         if (ocr.keywords.length > 0) imageFindings.push(`  - Элементы: ${ocr.keywords.map(k => k.keyword).join(", ")}`);
       }
+    }
+  }
+
+  const geophysicsDocs = docs.filter(doc => {
+    const type = doc.imageAnalysis?.chartType.type;
+    return type === "akc_cbl" || type === "vdl" || /акц|cbl|vdl|сгдт/i.test(`${doc.name}\n${doc.text}`);
+  });
+
+  if (geophysicsDocs.length > 0) {
+    md += `## 🛰 Геофизический отчёт (АКЦ / CBL / VDL)\n\n`;
+    md += `| Файл | Тип | Тёмные зоны | Светлые зоны | Предварительный вывод |\n|---|---|---:|---:|---|\n`;
+    for (const doc of geophysicsDocs) {
+      const verdict = getGeophysicsVerdict(doc);
+      const image = doc.imageAnalysis;
+      md += `| ${doc.name} | ${image?.chartType.description || "геофизика"} | ${image ? `${image.colorProfile.darkAreaPercent.toFixed(1)}%` : "—"} | ${image ? `${image.colorProfile.lightAreaPercent.toFixed(1)}%` : "—"} | ${verdict.verdict} |\n`;
+    }
+    md += `\n`;
+
+    for (const doc of geophysicsDocs) {
+      md += `### ${doc.name}\n\n`;
+      md += `${getGeophysicsVerdict(doc).verdict}\n\n`;
+      md += `${formatZoneSummary(doc)}\n\n`;
     }
   }
 
@@ -660,6 +838,7 @@ export function runAlgorithmicAnalysis(
 
   // Document intelligence
   const { md: docSection, extractedValues, imageFindings } = analyzeDocuments(documentTexts || []);
+  checks.push(...buildDocumentDrivenChecks(wellData, drillingFluid, slurries, buffers, documentTexts || [], extractedValues));
 
   const markdown = buildReport(wellData, slurries, checks, docSection, !!documentTexts?.length, extractedValues, imageFindings);
 
