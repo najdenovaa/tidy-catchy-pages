@@ -249,6 +249,29 @@ export default function AnalysisSection({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const reportRef = useRef<HTMLDivElement>(null);
 
+  // Elapsed time timer
+  useEffect(() => {
+    if (!analyzing) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [analyzing]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins > 0) return `${mins}:${secs.toString().padStart(2, "0")}`;
+    return `${secs} сек`;
+  };
+
+  const estimatedFiles = files.length;
+  const estimatedMinutes = Math.max(1, Math.ceil((estimatedFiles * 0.5) + 1));
+
+
   const uploadFile = useCallback(async (file: File, docType: "akc" | "program" | "report" | "other") => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
