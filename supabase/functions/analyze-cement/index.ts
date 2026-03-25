@@ -656,6 +656,7 @@ ${docsContext}
         document_names: docNames,
         ip_address: ip,
         user_agent: userAgent,
+        location,
       });
     } catch (logErr) {
       console.error("Failed to log analysis:", logErr);
