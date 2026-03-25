@@ -166,7 +166,7 @@ export default function AnalysisSection({
     } finally {
       setAnalyzing(false);
     }
-  }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults]);
+  }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram]);
 
   const docTypes = [
     { type: "akc" as const, label: "📊 АКЦ / СГДТ / CBL-VDL", desc: "Геофизические данные" },
