@@ -418,18 +418,33 @@ export default function AnalysisSection({
     }
   }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram]);
 
-  const runLocalAnalysis = useCallback(() => {
+  const runLocalAnalysis = useCallback(async () => {
     setError("");
+    setParsing(true);
     try {
-      const result = runAlgorithmicAnalysis(wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults);
+      // Parse all uploaded raw files
+      const filesToParse = Array.from(rawFiles.values());
+      let docTexts: { name: string; text: string; error?: string }[] = [];
+      
+      if (filesToParse.length > 0) {
+        const parsed = await Promise.all(filesToParse.map(f => parseDocument(f)));
+        setParsedDocs(parsed);
+        docTexts = parsed.map(p => ({ name: p.name, text: p.text, error: p.error }));
+      }
+
+      const result = runAlgorithmicAnalysis(
+        wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, docTexts
+      );
       setReport(result.markdown);
       if (reportRef.current) {
         setTimeout(() => reportRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
       }
     } catch (e: any) {
       setError("Ошибка алгоритмического анализа: " + (e.message || "Неизвестная ошибка"));
+    } finally {
+      setParsing(false);
     }
-  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults]);
+  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, rawFiles]);
 
   const akcFiles = files.filter(f => f.type === "akc");
   const reportFiles = files.filter(f => f.type === "report");
