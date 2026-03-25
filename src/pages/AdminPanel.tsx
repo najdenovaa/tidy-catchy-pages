@@ -350,6 +350,58 @@ export default function AdminPanel() {
             </CardContent></Card>
           </TabsContent>
 
+          {/* АНАЛИЗЫ */}
+          <TabsContent value="analyses">
+            <Card><CardContent className="p-0 overflow-x-auto">
+              <Table>
+                <TableHeader><TableRow>
+                  <TableHead className="w-[140px]">Дата/время</TableHead>
+                  <TableHead>Пользователь</TableHead>
+                  <TableHead>Скважина</TableHead>
+                  <TableHead>Документы</TableHead>
+                  <TableHead>Названия файлов</TableHead>
+                  <TableHead>Устройство</TableHead>
+                  <TableHead>IP</TableHead>
+                  <TableHead><MapPin className="w-3 h-3 inline mr-1"/>Регион</TableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {analysisLogs.length === 0 ? (
+                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
+                  ) : analysisLogs.map(log => (
+                    <TableRow key={log.id}>
+                      <TableCell className="whitespace-nowrap text-xs">{formatShortDate(log.created_at)}</TableCell>
+                      <TableCell className="text-xs">
+                        {log.user_email ? (
+                          <span className="font-medium">{log.user_email}</span>
+                        ) : (
+                          <span className="text-muted-foreground">Аноним</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs max-w-[200px] truncate">{log.well_summary || "—"}</TableCell>
+                      <TableCell className="text-xs text-center">
+                        <Badge variant="outline" className="text-[10px]">{log.documents_count}</Badge>
+                      </TableCell>
+                      <TableCell className="text-xs max-w-[250px]">
+                        {log.document_names?.length ? (
+                          <div className="space-y-0.5">
+                            {log.document_names.map((name, i) => (
+                              <div key={i} className="truncate text-[10px] text-muted-foreground">{name}</div>
+                            ))}
+                          </div>
+                        ) : "—"}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {getDeviceFromUA(log.user_agent)} {getBrowserFromUA(log.user_agent)}
+                      </TableCell>
+                      <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
+                      <TableCell className="text-xs">{log.location || "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent></Card>
+          </TabsContent>
+
           {/* ПОИСК */}
           <TabsContent value="lookup">
             <Card>
