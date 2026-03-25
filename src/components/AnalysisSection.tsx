@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, DragEvent } from "react";
+import { useState, useCallback, useRef, useEffect, DragEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -246,7 +246,31 @@ export default function AnalysisSection({
   const [report, setReport] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [useOwnProgram, setUseOwnProgram] = useState(true);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  // Elapsed time timer
+  useEffect(() => {
+    if (!analyzing) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [analyzing]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins > 0) return `${mins}:${secs.toString().padStart(2, "0")}`;
+    return `${secs} сек`;
+  };
+
+  const estimatedFiles = files.length;
+  const estimatedMinutes = Math.max(1, Math.ceil((estimatedFiles * 0.5) + 1));
+
 
   const uploadFile = useCallback(async (file: File, docType: "akc" | "program" | "report" | "other") => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -519,7 +543,7 @@ export default function AnalysisSection({
             {analyzing ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Анализирую...
+                Анализирую... {formatTime(elapsedSeconds)}
               </>
             ) : (
               <>
@@ -528,6 +552,14 @@ export default function AnalysisSection({
               </>
             )}
           </Button>
+
+          {analyzing && (
+            <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground bg-muted/50 rounded-lg p-2.5 animate-pulse">
+              <span>⏱ Прошло: <strong className="text-foreground">{formatTime(elapsedSeconds)}</strong></span>
+              <span className="text-border">|</span>
+              <span>Ожидаемое время: ~{estimatedMinutes} мин</span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
