@@ -137,7 +137,7 @@ export default function AnalysisSection({
             "Content-Type": "application/json",
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
-          body: JSON.stringify({ documentTexts, calcData }),
+          body: JSON.stringify({ documentFiles, calcData }),
         }
       );
 
