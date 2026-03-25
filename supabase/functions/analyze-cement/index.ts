@@ -10,7 +10,6 @@ async function extractTextFromFile(
   file: { base64: string; mimeType: string; name: string },
   apiKey: string
 ): Promise<string> {
-  // For plain text files, just decode
   if (file.mimeType === "text/plain") {
     try {
       const bytes = Uint8Array.from(atob(file.base64), c => c.charCodeAt(0));
@@ -20,8 +19,7 @@ async function extractTextFromFile(
     }
   }
 
-  // For PDFs, images, and office docs — use Gemini Vision API
-  console.log(`Extracting text from ${file.name} (${file.mimeType}) via Vision API...`);
+  console.log(`Extracting from ${file.name} (${file.mimeType})...`);
 
   const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -37,7 +35,19 @@ async function extractTextFromFile(
           content: [
             {
               type: "text",
-              text: "Извлеки весь текст из этого документа/изображения. Верни только извлечённый текст, сохраняя структуру (заголовки, таблицы, списки). Если это геофизический лог или график, опиши данные которые видишь: интервалы глубин, значения амплитуд, качество сцепления и т.д.",
+              text: `Извлеки ВСЕ данные из этого документа/изображения максимально точно. Сохраняй структуру: заголовки, таблицы, числовые данные.
+Если это геофизический лог (АКЦ, СГДТ, CBL, VDL):
+- Опиши интервалы глубин и амплитуды
+- Качество сцепления по интервалам  
+- Контакты цемент-колонна и цемент-порода
+- Центрацию колонны если видна
+Если это лабораторные данные / реология:
+- Все числовые значения, плотности, вязкости, водоотдачу
+- Результаты тестов, температуры
+Если это протокол / план / рапорт:
+- Все ключевые параметры и факты
+- Давления, объёмы, режимы, время операций
+Верни ТОЛЬКО извлечённые данные без комментариев.`,
             },
             {
               type: "image_url",
@@ -53,11 +63,41 @@ async function extractTextFromFile(
 
   if (!response.ok) {
     console.error(`Vision API error for ${file.name}:`, response.status);
-    return `[Не удалось распознать файл: ${file.name}]`;
+    return `[Не удалось распознать: ${file.name}]`;
   }
 
   const result = await response.json();
   return result.choices?.[0]?.message?.content || "";
+}
+
+function buildCalcContext(calcData: any): string {
+  let ctx = "";
+  const wd = calcData?.wellData;
+  if (wd) {
+    ctx += `\n## Данные скважины:\n`;
+    ctx += `- Глубина MD: ${wd.wellDepthMD} м, TVD: ${wd.wellDepthTVD} м\n`;
+    ctx += `- Глубина спуска колонны MD: ${wd.casingDepthMD} м\n`;
+    ctx += `- Диаметр долота: ${wd.holeDiameter} мм\n`;
+    ctx += `- Обсадная колонна OD: ${wd.casingOD} мм, стенка: ${wd.casingWall} мм\n`;
+    ctx += `- Высота подъёма цемента: ${wd.cementRiseHeight} м\n`;
+    ctx += `- Коэффициент кавернозности: ${wd.cavernCoeff}\n`;
+  }
+  if (calcData?.slurries?.length) {
+    ctx += `\n## Тампонажные растворы:\n`;
+    calcData.slurries.forEach((s: any, i: number) => {
+      ctx += `- Раствор ${i + 1}: ${s.name || "Без названия"}, плотность ${s.density} кг/м³, объём ${s.volume?.toFixed(2) || "?"} м³\n`;
+    });
+  }
+  if (calcData?.drillingFluid) {
+    ctx += `\n## Буровой раствор: плотность ${calcData.drillingFluid.density} кг/м³\n`;
+  }
+  if (calcData?.centralizationResults?.length) {
+    const avg = calcData.centralizationResults.reduce((s: number, r: any) => s + r.standoff, 0) / calcData.centralizationResults.length;
+    ctx += `\n## Центрирование: средний стандофф ${avg.toFixed(1)}%\n`;
+    const poor = calcData.centralizationResults.filter((r: any) => r.standoff < 67);
+    if (poor.length) ctx += `- Зон с стандоффом < 67%: ${poor.length}\n`;
+  }
+  return ctx;
 }
 
 serve(async (req) => {
@@ -69,93 +109,78 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    // Build context from calculation data
-    let calcContext = "";
-    if (calcData) {
-      const wd = calcData.wellData;
-      if (wd) {
-        calcContext += `\n## Данные скважины:\n`;
-        calcContext += `- Глубина MD: ${wd.wellDepthMD} м, TVD: ${wd.wellDepthTVD} м\n`;
-        calcContext += `- Глубина спуска колонны MD: ${wd.casingDepthMD} м\n`;
-        calcContext += `- Диаметр долота: ${wd.holeDiameter} мм\n`;
-        calcContext += `- Обсадная колонна OD: ${wd.casingOD} мм, стенка: ${wd.casingWall} мм\n`;
-        calcContext += `- Высота подъёма цемента: ${wd.cementRiseHeight} м\n`;
-        calcContext += `- Коэффициент кавернозности: ${wd.cavernCoeff}\n`;
-      }
-      if (calcData.slurries?.length) {
-        calcContext += `\n## Тампонажные растворы:\n`;
-        calcData.slurries.forEach((s: any, i: number) => {
-          calcContext += `- Раствор ${i + 1}: ${s.name || "Без названия"}, плотность ${s.density} кг/м³, объём ${s.volume?.toFixed(2) || "?"} м³\n`;
-        });
-      }
-      if (calcData.drillingFluid) {
-        calcContext += `\n## Буровой раствор: плотность ${calcData.drillingFluid.density} кг/м³\n`;
-      }
-      if (calcData.centralizationResults?.length) {
-        const avgStandoff = calcData.centralizationResults.reduce((s: number, r: any) => s + r.standoff, 0) / calcData.centralizationResults.length;
-        calcContext += `\n## Центрирование: средний стандофф ${avgStandoff.toFixed(1)}%\n`;
-        const poorZones = calcData.centralizationResults.filter((r: any) => r.standoff < 67);
-        if (poorZones.length) {
-          calcContext += `- Зон с стандоффом < 67%: ${poorZones.length}\n`;
-        }
-      }
-    }
+    const calcContext = buildCalcContext(calcData);
 
-    // Extract text from uploaded files using Vision API
     let docsContext = "";
     const usesOwnProgram = calcData?.useOwnProgram !== false;
 
     if (usesOwnProgram && calcData) {
-      docsContext += `\n## Программа цементирования (данные расчёта — наша программа):\n`;
-      docsContext += calcContext;
+      docsContext += `\n## Программа цементирования (данные расчёта):\n${calcContext}\n`;
     }
 
     if (documentFiles) {
+      const labels: Record<string, string> = {
+        akc: "АКЦ/СГДТ (геофизические данные)",
+        program: "Программа цементирования",
+        report: "Отчёт по цементированию",
+      };
+
       for (const [docType, fileData] of Object.entries(documentFiles)) {
-        const file = fileData as { base64: string; mimeType: string; name: string };
-        const extractedText = await extractTextFromFile(file, LOVABLE_API_KEY);
-        const labels: Record<string, string> = {
-          akc: "АКЦ/СГДТ (геофизические данные)",
-          program: "Программа цементирования",
-          report: "Отчёт по цементированию",
-        };
-        docsContext += `\n## Документ ${labels[docType] || docType}:\n${extractedText.substring(0, 15000)}\n`;
+        if (docType === "other" && Array.isArray(fileData)) {
+          for (const otherFile of fileData as any[]) {
+            const text = await extractTextFromFile(otherFile, LOVABLE_API_KEY);
+            docsContext += `\n## Документ: ${otherFile.name}:\n${text.substring(0, 15000)}\n`;
+          }
+        } else {
+          const file = fileData as { base64: string; mimeType: string; name: string };
+          const text = await extractTextFromFile(file, LOVABLE_API_KEY);
+          docsContext += `\n## Документ ${labels[docType] || docType}:\n${text.substring(0, 15000)}\n`;
+        }
       }
     }
 
-    const systemPrompt = `Ты — опытный инженер по цементированию скважин с 20-летним стажем. Ты анализируешь качество цементирования на основе данных АКЦ (акустической цементометрии), СГДТ (сканирующей гамма-дефектометрии), CBL/VDL логов, программы и отчёта по цементированию.
+    const systemPrompt = `Ты — виртуальный инженерный помощник DeAllsoft по анализу качества цементирования скважин.
 
-Твоя задача — дать ПОЛНЫЙ инженерный анализ:
+Правила ответа:
+- Минимум лишних слов, максимум фактов и цифр
+- Используй таблицы (markdown) для сравнений и интервалов
+- Конкретные глубины, значения, проценты
+- Структурируй по разделам с заголовками ##
 
-1. **Оценка качества сцепления** — проанализируй данные АКЦ/СГДТ, определи интервалы хорошего, частичного и плохого сцепления цемента с колонной и породой.
+Анализируй и включи в отчёт:
 
-2. **Корневые причины дефектов** — для каждого интервала с плохим сцеплением определи возможные причины:
-   - Недостаточная центрация (стандофф < 67%)
-   - Каверны и вымывы (кавернозность)
-   - Неправильная плотность раствора
-   - Недостаточная скорость продавки (плохое вытеснение)
-   - Контаминация раствора буровым раствором
-   - Недостаточный объём буферной жидкости
-   - Температурные проблемы (преждевременное схватывание или наоборот)
+## 1. Оценка качества сцепления (АКЦ/СГДТ)
+Таблица интервалов: глубина от-до | амплитуда CBL | контакт цемент-колонна | контакт цемент-порода | оценка
+Учитывай центрацию колонны и её влияние на качество сцепления.
 
-3. **Сравнение ПЛАН vs ФАКТ** — если есть программа и отчёт, сравни:
-   - Плановые и фактические объёмы
-   - Плотности растворов
-   - Давления
-   - Режимы продавки
-   - Время операции
+## 2. Анализ центрирования
+Стандофф по интервалам, влияние на каналообразование, корреляция с данными АКЦ.
 
-4. **Рекомендации** — конкретные инженерные рекомендации для улучшения качества цементирования на аналогичных скважинах.
+## 3. Анализ траектории и углов
+Если есть данные об отходах и зенитных углах — оцени влияние на качество цементирования в наклонных/горизонтальных участках.
 
-5. **Общее заключение** — итоговая оценка качества цементирования (отлично / хорошо / удовлетворительно / неудовлетворительно) с обоснованием.
+## 4. Лабораторные данные и реология
+Если предоставлены — проанализируй плотность, растекаемость, водоотдачу, реологию, время загустевания. Соответствие условиям скважины.
 
-Используй профессиональную терминологию. Давай конкретные числа и интервалы. Структурируй ответ с заголовками и списками.`;
+## 5. ПЛАН vs ФАКТ
+Таблица: параметр | план | факт | отклонение
+Объёмы, плотности, давления, режимы, время.
 
-    const userMessage = `Проанализируй качество цементирования скважины на основе следующих данных:
+## 6. Корневые причины дефектов
+Для каждого проблемного интервала — конкретная причина:
+- Центрация < 67%, каверны, контаминация, скорость продавки, объём буфера, температура
+
+## 7. Рекомендации
+Конкретные инженерные решения для аналогичных скважин.
+
+## 8. Итоговая оценка
+Одна из: ОТЛИЧНО / ХОРОШО / УДОВЛЕТВОРИТЕЛЬНО / НЕУДОВЛЕТВОРИТЕЛЬНО — с кратким обоснованием.`;
+
+    const userMessage = `Проанализируй качество цементирования:
 ${calcContext}
 ${docsContext}
 
-Дай полный инженерный отчёт по качеству цементирования.`;
+Дай структурированный инженерный отчёт. Используй таблицы для числовых данных.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -176,21 +201,18 @@ ${docsContext}
     if (!response.ok) {
       if (response.status === 429) {
         return new Response(JSON.stringify({ error: "Превышен лимит запросов. Подождите минуту." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (response.status === 402) {
         return new Response(JSON.stringify({ error: "Необходимо пополнить баланс." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const t = await response.text();
       console.error("AI gateway error:", response.status, t);
       return new Response(JSON.stringify({ error: "Ошибка сервиса анализа" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
