@@ -760,8 +760,7 @@ function buildReport(
     }
   }
 
-  // Document analysis
-  if (docSection) md += docSection;
+  // Document findings are already integrated into checks — no separate section needed
 
   // Recommendations
   md += `## 📝 Рекомендации\n\n`;
