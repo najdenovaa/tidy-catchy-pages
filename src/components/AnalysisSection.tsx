@@ -283,7 +283,7 @@ export default function AnalysisSection({
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              📄 Отчёт AI-анализа
+              📄 Отчёт анализа
             </CardTitle>
           </CardHeader>
           <CardContent>
