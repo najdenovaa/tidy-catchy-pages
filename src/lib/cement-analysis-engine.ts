@@ -599,6 +599,37 @@ function generateMarkdownReport(
   return md;
 }
 
+// ─── Document content section ────────────────────────────────────
+
+function generateDocumentSection(documentTexts: { name: string; text: string; error?: string }[]): string {
+  if (!documentTexts || documentTexts.length === 0) return "";
+
+  let md = `## 📄 Извлечённые данные из документов\n\n`;
+
+  const successful = documentTexts.filter(d => d.text.trim().length > 0);
+  const failed = documentTexts.filter(d => d.error);
+
+  if (failed.length > 0) {
+    md += `**Не удалось прочитать:**\n\n`;
+    failed.forEach(d => {
+      md += `- ⚠️ ${d.name}: ${d.error}\n`;
+    });
+    md += `\n`;
+  }
+
+  for (const doc of successful) {
+    md += `### 📎 ${doc.name}\n\n`;
+    // Truncate very long texts
+    const maxLen = 3000;
+    const text = doc.text.length > maxLen
+      ? doc.text.slice(0, maxLen) + `\n\n... (обрезано, всего ${doc.text.length} символов)`
+      : doc.text;
+    md += `${text}\n\n`;
+  }
+
+  return md;
+}
+
 // ─── Main entry point ────────────────────────────────────────────
 
 export function runAlgorithmicAnalysis(
@@ -607,7 +638,8 @@ export function runAlgorithmicAnalysis(
   slurries: SlurryInput[],
   buffers: BufferFluid[],
   displacementFluids: DisplacementFluid[],
-  centralizationResults: CentralizationResult[] | null
+  centralizationResults: CentralizationResult[] | null,
+  documentTexts?: { name: string; text: string; error?: string }[]
 ): AnalysisReport {
   const checks: AnalysisCheck[] = [];
 
@@ -620,7 +652,12 @@ export function runAlgorithmicAnalysis(
   checks.push(...checkThickeningTime(slurries, wellData, buffers, displacementFluids));
   checks.push(...checkDisplacement(displacementFluids));
 
-  const markdown = generateMarkdownReport(wellData, slurries, checks);
+  let markdown = generateMarkdownReport(wellData, slurries, checks);
+
+  // Append document content if available
+  if (documentTexts && documentTexts.length > 0) {
+    markdown += "\n" + generateDocumentSection(documentTexts);
+  }
 
   return {
     timestamp: new Date().toISOString(),

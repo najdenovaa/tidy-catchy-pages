@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { runAlgorithmicAnalysis } from "@/lib/cement-analysis-engine";
+import { parseDocument, type ParsedDocument } from "@/lib/document-parser";
 
 interface AnalysisSectionProps {
   wellData: WellData;
@@ -241,6 +242,9 @@ export default function AnalysisSection({
   centralizationResults,
 }: AnalysisSectionProps) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [rawFiles, setRawFiles] = useState<Map<string, File>>(new Map()); // path -> raw File
+  const [parsedDocs, setParsedDocs] = useState<ParsedDocument[]>([]);
+  const [parsing, setParsing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingType, setUploadingType] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -292,6 +296,9 @@ export default function AnalysisSection({
         .upload(path, file);
 
       if (uploadError) throw uploadError;
+
+      // Store raw file for local parsing
+      setRawFiles(prev => new Map(prev).set(path, file));
 
       setFiles(prev => {
         if (docType === "other" || docType === "akc") {
@@ -411,18 +418,33 @@ export default function AnalysisSection({
     }
   }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram]);
 
-  const runLocalAnalysis = useCallback(() => {
+  const runLocalAnalysis = useCallback(async () => {
     setError("");
+    setParsing(true);
     try {
-      const result = runAlgorithmicAnalysis(wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults);
+      // Parse all uploaded raw files
+      const filesToParse = Array.from(rawFiles.values());
+      let docTexts: { name: string; text: string; error?: string }[] = [];
+      
+      if (filesToParse.length > 0) {
+        const parsed = await Promise.all(filesToParse.map(f => parseDocument(f)));
+        setParsedDocs(parsed);
+        docTexts = parsed.map(p => ({ name: p.name, text: p.text, error: p.error }));
+      }
+
+      const result = runAlgorithmicAnalysis(
+        wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, docTexts
+      );
       setReport(result.markdown);
       if (reportRef.current) {
         setTimeout(() => reportRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
       }
     } catch (e: any) {
       setError("Ошибка алгоритмического анализа: " + (e.message || "Неизвестная ошибка"));
+    } finally {
+      setParsing(false);
     }
-  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults]);
+  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, rawFiles]);
 
   const akcFiles = files.filter(f => f.type === "akc");
   const reportFiles = files.filter(f => f.type === "report");
@@ -554,9 +576,18 @@ export default function AnalysisSection({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Button onClick={runLocalAnalysis} disabled={wellData.wellDepthMD <= 0 || slurries.length === 0} variant="outline" size="lg" className="w-full">
-              <Cpu className="w-4 h-4" />
-              📐 Алгоритмический анализ
+            <Button onClick={runLocalAnalysis} disabled={parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)} variant="outline" size="lg" className="w-full">
+              {parsing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Читаю документы...
+                </>
+              ) : (
+                <>
+                  <Cpu className="w-4 h-4" />
+                  📐 Алгоритмический анализ
+                </>
+              )}
             </Button>
 
             <Button onClick={runAnalysis} disabled={!hasAnyInput || analyzing} className="w-full" size="lg">
@@ -576,7 +607,7 @@ export default function AnalysisSection({
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-2">
             <Cpu className="w-3.5 h-3.5 shrink-0" />
-            <span><strong>Алгоритмический</strong> — мгновенный, по данным расчёта, без кредитов. <strong>AI</strong> — с анализом документов, расходует кредиты.</span>
+            <span><strong>Алгоритмический</strong> — мгновенный, читает документы (PDF/Word/Excel) + данные расчёта, без кредитов. <strong>AI</strong> — глубокий анализ с компьютерным зрением, расходует кредиты.</span>
           </div>
 
           {analyzing && (
