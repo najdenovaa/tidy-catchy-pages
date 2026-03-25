@@ -543,7 +543,7 @@ export default function AnalysisSection({
             {analyzing ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Анализирую...
+                Анализирую... {formatTime(elapsedSeconds)}
               </>
             ) : (
               <>
@@ -552,6 +552,14 @@ export default function AnalysisSection({
               </>
             )}
           </Button>
+
+          {analyzing && (
+            <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground bg-muted/50 rounded-lg p-2.5 animate-pulse">
+              <span>⏱ Прошло: <strong className="text-foreground">{formatTime(elapsedSeconds)}</strong></span>
+              <span className="text-border">|</span>
+              <span>Ожидаемое время: ~{estimatedMinutes} мин</span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
