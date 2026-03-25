@@ -424,12 +424,12 @@ export default function AnalysisSection({
     try {
       // Parse all uploaded raw files
       const filesToParse = Array.from(rawFiles.values());
-      let docTexts: { name: string; text: string; error?: string }[] = [];
+      let docTexts: { name: string; text: string; error?: string; imageAnalysis?: any; ocrResult?: any }[] = [];
       
       if (filesToParse.length > 0) {
         const parsed = await Promise.all(filesToParse.map(f => parseDocument(f)));
         setParsedDocs(parsed);
-        docTexts = parsed.map(p => ({ name: p.name, text: p.text, error: p.error }));
+        docTexts = parsed.map(p => ({ name: p.name, text: p.text, error: p.error, imageAnalysis: p.imageAnalysis, ocrResult: p.ocrResult }));
       }
 
       const result = runAlgorithmicAnalysis(
