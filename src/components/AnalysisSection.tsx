@@ -91,6 +91,8 @@ export default function AnalysisSection({
       // Extract text from uploaded files
       const documentTexts: Record<string, string> = {};
       for (const file of files) {
+        // Skip program file if using own calc data
+        if (file.type === "program" && useOwnProgram) continue;
         try {
           documentTexts[file.type] = await extractTextFromFile(file);
         } catch {
@@ -98,6 +100,7 @@ export default function AnalysisSection({
         }
       }
 
+      // If using own program — pass current calc data as program context
       const calcData = {
         wellData,
         drillingFluid,
@@ -105,6 +108,7 @@ export default function AnalysisSection({
         buffers,
         displacementFluids,
         centralizationResults,
+        useOwnProgram,
       };
 
       const response = await fetch(
