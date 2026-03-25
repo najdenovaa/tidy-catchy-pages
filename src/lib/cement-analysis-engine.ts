@@ -591,123 +591,31 @@ function buildDocumentDrivenChecks(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Document Intelligence
+// Document Intelligence — silent extraction, no raw output
 // ═══════════════════════════════════════════════════════════════════
 
 function analyzeDocuments(docs: DocumentInfo[]): { md: string; extractedValues: ExtractedValue[]; imageFindings: string[] } {
   if (!docs || docs.length === 0) return { md: "", extractedValues: [], imageFindings: [] };
 
-  let md = "";
   const allValues: ExtractedValue[] = [];
   const imageFindings: string[] = [];
   const successful = docs.filter(d => d.text.trim().length > 0);
-  const failed = docs.filter(d => d.error);
 
-  // Text extraction
+  // Silently extract values — no raw text output
   for (const doc of successful) allValues.push(...extractValuesFromText(doc.text));
 
-  // Image analysis
+  // Image analysis — collect findings for checks, don't dump raw
   for (const doc of docs) {
     if (doc.imageAnalysis) {
       const ia = doc.imageAnalysis;
-      const cp = ia.colorProfile;
-
       if (ia.chartType.type === "akc_cbl" || ia.chartType.type === "vdl") {
-        if (cp.darkAreaPercent > 50) imageFindings.push(`📊 **${doc.name}**: ${getTemplate(AKC_TEMPLATES.good_bond, h(doc.name))}`);
-        else if (cp.darkAreaPercent > 25) imageFindings.push(`📊 **${doc.name}**: ${getTemplate(AKC_TEMPLATES.partial_bond, h(doc.name))}`);
-        else imageFindings.push(`📊 **${doc.name}**: ${getTemplate(AKC_TEMPLATES.poor_bond, h(doc.name))}`);
-
-        for (const zone of ia.zones) imageFindings.push(`  - ${zone.fromPercent.toFixed(0)}–${zone.toPercent.toFixed(0)}%: ${zone.label} (однородность ${(zone.uniformity * 100).toFixed(0)}%)`);
-        if (ia.curveDetection.hasColorBands) imageFindings.push(`  - ${getTemplate(AKC_TEMPLATES.vdl_chevron, h(doc.name))}`);
-
-        // Bond index interpretation
-        imageFindings.push(`  - ${getTemplate(AKC_TEMPLATES.bond_index, h(doc.name))}`);
-        if (cp.darkAreaPercent < 50) imageFindings.push(`  - ${getTemplate(AKC_TEMPLATES.casing_eccentricity, h(doc.name))}`);
-      } else if (ia.chartType.type === "pressure_chart") {
-        imageFindings.push(`📈 **${doc.name}**: График давлений/закачки. ~${ia.curveDetection.estimatedCurveCount} кривых.`);
-      } else if (ia.chartType.type === "table") {
-        imageFindings.push(`📋 **${doc.name}**: Табличная структура.`);
-      } else {
-        imageFindings.push(`🖼 **${doc.name}**: ${ia.chartType.description}`);
-      }
-
-      // OCR findings
-      if (doc.ocrResult) {
-        const ocr = doc.ocrResult;
-        if (ocr.textRegions.length > 5) imageFindings.push(`  - ${getTemplate(IMAGE_INTERPRETATION_TEMPLATES.text_detected, h(doc.name))}`);
-        if (ocr.detectedNumbers.length > 0) imageFindings.push(`  - ${getTemplate(IMAGE_INTERPRETATION_TEMPLATES.numbers_detected, h(doc.name))}`);
-        if (ocr.tableRegions.length > 0) imageFindings.push(`  - ${getTemplate(IMAGE_INTERPRETATION_TEMPLATES.table_detected, h(doc.name))}`);
-        if (ocr.scaleInfo) imageFindings.push(`  - ${getTemplate(IMAGE_INTERPRETATION_TEMPLATES.scale_detected, h(doc.name))}`);
-        if (ocr.keywords.length > 0) imageFindings.push(`  - Элементы: ${ocr.keywords.map(k => k.keyword).join(", ")}`);
+        imageFindings.push(doc.name);
       }
     }
   }
 
-  const geophysicsDocs = docs.filter(doc => {
-    const type = doc.imageAnalysis?.chartType.type;
-    return type === "akc_cbl" || type === "vdl" || /акц|cbl|vdl|сгдт/i.test(`${doc.name}\n${doc.text}`);
-  });
-
-  if (geophysicsDocs.length > 0) {
-    md += `## 🛰 Геофизический отчёт (АКЦ / CBL / VDL)\n\n`;
-    md += `| Файл | Тип | Тёмные зоны | Светлые зоны | Предварительный вывод |\n|---|---|---:|---:|---|\n`;
-    for (const doc of geophysicsDocs) {
-      const verdict = getGeophysicsVerdict(doc);
-      const image = doc.imageAnalysis;
-      md += `| ${doc.name} | ${image?.chartType.description || "геофизика"} | ${image ? `${image.colorProfile.darkAreaPercent.toFixed(1)}%` : "—"} | ${image ? `${image.colorProfile.lightAreaPercent.toFixed(1)}%` : "—"} | ${verdict.verdict} |\n`;
-    }
-    md += `\n`;
-
-    for (const doc of geophysicsDocs) {
-      md += `### ${doc.name}\n\n`;
-      md += `${getGeophysicsVerdict(doc).verdict}\n\n`;
-      md += `${formatZoneSummary(doc)}\n\n`;
-    }
-  }
-
-  // Build extracted values section
-  if (allValues.length > 0) {
-    md += `## 📄 Извлечённые данные из документов\n\n`;
-    md += `${getTemplate(DOCUMENT_TEMPLATES.values_extracted)}\n\n`;
-    const categories = [...new Set(allValues.map(v => v.category))];
-    md += `| Категория | Параметр | Значение |\n|---|---|---|\n`;
-    for (const cat of categories) {
-      for (const v of allValues.filter(v => v.category === cat).slice(0, 8)) {
-        md += `| ${v.label} | ${v.raw} | ${v.value} |\n`;
-      }
-    }
-    md += "\n";
-
-    if (allValues.some(v => v.category === "density" || v.category === "pressure" || v.category === "depth")) md += `${getTemplate(DOCUMENT_TEMPLATES.program_found)}\n\n`;
-    if (allValues.some(v => v.category === "bond" || v.category === "bond_log")) md += `${getTemplate(DOCUMENT_TEMPLATES.akc_report_found)}\n\n`;
-    if (allValues.some(v => v.category === "thickening" || v.category === "fluid_loss" || v.category === "strength")) md += `${getTemplate(DOCUMENT_TEMPLATES.lab_data_found)}\n\n`;
-
-    md += `${getTemplate(DOCUMENT_TEMPLATES.cross_reference)}\n\n`;
-  }
-
-  if (imageFindings.length > 0) {
-    md += `## 🖼 Анализ изображений и графиков\n\n`;
-    for (const f of imageFindings) md += `${f}\n\n`;
-  }
-
-  if (failed.length > 0) {
-    md += `### ⚠️ Ошибки чтения\n\n`;
-    for (const d of failed) md += `- ${d.name}: ${d.error}\n`;
-    md += "\n";
-  }
-
-  // Raw document text
-  const textDocs = successful.filter(d => !d.imageAnalysis);
-  if (textDocs.length > 0) {
-    md += `## 📎 Извлечённый текст\n\n`;
-    for (const doc of textDocs) {
-      md += `### ${doc.name}\n\n`;
-      const t = doc.text.length > 2000 ? doc.text.slice(0, 2000) + `\n\n... (${doc.text.length} символов)` : doc.text;
-      md += `${t}\n\n`;
-    }
-  }
-
-  return { md, extractedValues: allValues, imageFindings };
+  // No markdown output — everything goes through buildDocumentDrivenChecks
+  return { md: "", extractedValues: allValues, imageFindings };
 }
 
 // ═══════════════════════════════════════════════════════════════════
