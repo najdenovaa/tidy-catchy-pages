@@ -607,7 +607,7 @@ export default function AnalysisSection({
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-2">
             <Cpu className="w-3.5 h-3.5 shrink-0" />
-            <span><strong>Алгоритмический</strong> — мгновенный, по данным расчёта, без кредитов. <strong>AI</strong> — с анализом документов, расходует кредиты.</span>
+            <span><strong>Алгоритмический</strong> — мгновенный, читает документы (PDF/Word/Excel) + данные расчёта, без кредитов. <strong>AI</strong> — глубокий анализ с компьютерным зрением, расходует кредиты.</span>
           </div>
 
           {analyzing && (
