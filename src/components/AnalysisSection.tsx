@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle } from "lucide-react";
+import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
