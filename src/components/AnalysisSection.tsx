@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { runAlgorithmicAnalysis } from "@/lib/cement-analysis-engine";
+import { parseDocument, type ParsedDocument } from "@/lib/document-parser";
 
 interface AnalysisSectionProps {
   wellData: WellData;
