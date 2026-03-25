@@ -4,6 +4,7 @@
  */
 
 import * as XLSX from "xlsx";
+import { analyzeImage, imageAnalysisToMarkdown } from "./image-analysis-engine";
 
 export interface ParsedDocument {
   name: string;
