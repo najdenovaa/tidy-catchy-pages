@@ -38,8 +38,9 @@ import {
   SEDIMENTATION_TEMPLATES, PIPE_MOVEMENT_TEMPLATES, ZONAL_ISOLATION_TEMPLATES,
   MICROANNULUS_TEMPLATES, PRE_JOB_TEMPLATES, TEMPERATURE_TEMPLATES,
   RECIPE_TEMPLATES, MULTISTAGE_TEMPLATES, LINER_TEMPLATES, STANDARDS_TEMPLATES,
-  getTemplate, extractValuesFromText, type ExtractedValue
+  getTemplate,
 } from "./analysis-templates";
+import { extractAllValues, type ExtractedValue, type QualitativeFinding } from "./document-extraction-engine";
 import type { ImageAnalysisResult } from "./image-analysis-engine";
 import type { OcrResult } from "./ocr-engine";
 
