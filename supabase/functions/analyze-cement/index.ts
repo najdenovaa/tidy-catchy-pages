@@ -255,6 +255,27 @@ function buildCalcContext(calcData: any): string {
     ctx += `\n## Буровой раствор: плотность ${calcData.drillingFluid.density} кг/м³\n`;
     if (calcData.drillingFluid.yieldPoint) ctx += `  ДНС: ${calcData.drillingFluid.yieldPoint} Па, ПВ: ${calcData.drillingFluid.plasticViscosity || "?"} мПа·с\n`;
   }
+  // Inclination / trajectory data
+  if (calcData?.inclination?.length) {
+    ctx += `\n## Инклинометрия (траектория скважины):\n`;
+    ctx += `| Глубина MD (м) | Зенитный угол (°) | Азимут (°) | DLS (°/30м) | Влияние на заполнение |\n`;
+    ctx += `|---|---|---|---|---|\n`;
+    const incl = calcData.inclination;
+    for (let i = 0; i < incl.length; i++) {
+      const p = incl[i];
+      const dls = i > 0 && incl[i - 1]
+        ? (Math.abs((p.inclination || 0) - (incl[i - 1].inclination || 0)) / Math.max(1, (p.md || 0) - (incl[i - 1].md || 0)) * 30).toFixed(1)
+        : "—";
+      const angle = p.inclination || p.zenith || 0;
+      let impact = "нормальное";
+      if (angle > 60) impact = "⚠ горизонтальный — высокий риск каналообразования, сегрегация цемента";
+      else if (angle > 30) impact = "⚠ наклонный — риск неполного вытеснения с нижней стороны";
+      else if (angle > 15) impact = "умеренно наклонный — рекомендуется контроль центрации";
+      ctx += `| ${p.md || "?"} | ${angle.toFixed(1)} | ${(p.azimuth || 0).toFixed(1)} | ${dls} | ${impact} |\n`;
+    }
+  }
+
+  // Centralization with correlation to angles
   if (calcData?.centralizationResults?.length) {
     const results = calcData.centralizationResults;
     const avg = results.reduce((s: number, r: any) => s + r.standoff, 0) / results.length;
@@ -263,11 +284,39 @@ function buildCalcContext(calcData: any): string {
     ctx += `\n## Центрирование:\n`;
     ctx += `- Средний стандофф: ${avg.toFixed(1)}%\n`;
     ctx += `- Мин / Макс: ${min.toFixed(1)}% / ${max.toFixed(1)}%\n`;
+
+    // Detailed table
+    ctx += `\n| Глубина (м) | Стандофф (%) | Зенитный угол (°) | Оценка заполнения |\n`;
+    ctx += `|---|---|---|---|\n`;
+    for (const r of results) {
+      const angle = r.inclination || r.zenith || 0;
+      let fillAssessment = "хорошее";
+      if (r.standoff < 50) {
+        fillAssessment = angle > 30 ? "⚠ КРИТИЧЕСКОЕ — канал на нижней стенке" : "⚠ плохое — вероятны каналы";
+      } else if (r.standoff < 67) {
+        fillAssessment = angle > 30 ? "⚠ неудовлетворительное — риск неполного заполнения" : "удовлетворительное";
+      }
+      ctx += `| ${r.depth} | ${r.standoff.toFixed(1)} | ${angle.toFixed?.(1) || "—"} | ${fillAssessment} |\n`;
+    }
+
     const poor = results.filter((r: any) => r.standoff < 67);
     if (poor.length) {
-      ctx += `- Зон с стандоффом < 67%: ${poor.length}\n`;
-      poor.forEach((r: any) => ctx += `  · Глубина ${r.depth}м — стандофф ${r.standoff.toFixed(1)}%\n`);
+      ctx += `\n⚠ Зон с стандоффом < 67%: ${poor.length} — рекомендуется увеличить количество центраторов\n`;
+      const critical = results.filter((r: any) => r.standoff < 50);
+      if (critical.length) {
+        ctx += `⚠ КРИТИЧЕСКИХ зон (стандофф < 50%): ${critical.length} — высокий риск каналообразования\n`;
+      }
     }
+
+    // Displacement efficiency estimate based on standoff
+    ctx += `\n## Оценка эффективности вытеснения:\n`;
+    ctx += `| Стандофф (%) | Ожидаемая эффективность вытеснения | Качество заполнения |\n`;
+    ctx += `|---|---|---|\n`;
+    ctx += `| > 80% | 90–98% | Отличное |\n`;
+    ctx += `| 67–80% | 80–90% | Хорошее |\n`;
+    ctx += `| 50–67% | 60–80% | Удовлетворительное |\n`;
+    ctx += `| < 50% | < 60% | Неудовлетворительное — каналы |\n`;
+    ctx += `\nПо данным центрирования средний стандофф ${avg.toFixed(1)}% → ожидаемая эффективность вытеснения ~${avg > 80 ? "90–98" : avg > 67 ? "80–90" : avg > 50 ? "60–80" : "<60"}%\n`;
   }
   return ctx;
 }
