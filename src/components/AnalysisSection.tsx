@@ -170,7 +170,6 @@ export default function AnalysisSection({
 
   const docTypes = [
     { type: "akc" as const, label: "📊 АКЦ / СГДТ / CBL-VDL", desc: "Геофизические данные" },
-    { type: "program" as const, label: "📋 Программа цементирования", desc: "Плановый документ" },
     { type: "report" as const, label: "📝 Отчёт по цементированию", desc: "Фактические данные" },
   ];
 
