@@ -4,14 +4,16 @@
  */
 
 import * as XLSX from "xlsx";
+import { analyzeImage, imageAnalysisToMarkdown } from "./image-analysis-engine";
 
 export interface ParsedDocument {
   name: string;
   type: string;
   text: string;
   pages?: number;
-  tables?: string[][][]; // array of tables, each table = rows of cells
+  tables?: string[][][];
   error?: string;
+  imageAnalysis?: import("./image-analysis-engine").ImageAnalysisResult;
 }
 
 // ─── PDF Parsing ─────────────────────────────────────────────────
@@ -186,12 +188,23 @@ export async function parseDocument(file: File): Promise<ParsedDocument> {
   }
 
   if (mime.startsWith("image/")) {
-    return {
-      name: file.name,
-      type: "image",
-      text: "",
-      error: "Извлечение текста из изображений требует AI. Используйте AI-анализ для изображений АКЦ/СГДТ.",
-    };
+    try {
+      const analysis = await analyzeImage(file);
+      const analysisText = imageAnalysisToMarkdown(analysis);
+      return {
+        name: file.name,
+        type: "image",
+        text: analysisText,
+        imageAnalysis: analysis,
+      };
+    } catch (e: any) {
+      return {
+        name: file.name,
+        type: "image",
+        text: "",
+        error: `Ошибка анализа изображения: ${e.message}`,
+      };
+    }
   }
 
   return {
