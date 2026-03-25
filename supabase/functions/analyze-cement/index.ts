@@ -596,6 +596,59 @@ ${docsContext}
 - В конце — КОНКРЕТНЫЕ мероприятия с обоснованием
 - Дай структурированный инженерный отчёт с таблицами (14 разделов).`;
 
+    // Log analysis to analysis_logs
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const sb = createClient(supabaseUrl, supabaseKey);
+
+      const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || "unknown";
+      const userAgent = req.headers.get("user-agent") || "unknown";
+
+      // Collect document names
+      const docNames: string[] = [];
+      let docsCount = 0;
+      if (documentFiles) {
+        for (const [docType, fileData] of Object.entries(documentFiles)) {
+          if (docType === "other" && Array.isArray(fileData)) {
+            for (const f of fileData as any[]) { docNames.push(f.name); docsCount++; }
+          } else if (Array.isArray(fileData)) {
+            for (const f of fileData as any[]) { docNames.push(f.name); docsCount++; }
+          } else {
+            const f = fileData as any;
+            if (f?.name) { docNames.push(f.name); docsCount++; }
+          }
+        }
+      }
+
+      const wd = calcData?.wellData;
+      const wellSummary = wd ? `MD:${wd.wellDepthMD || "?"} TVD:${wd.wellDepthTVD || "?"} ОК:${wd.casingOD || "?"}×${wd.casingWall || "?"} Dскв:${wd.holeDiameter || "?"}` : null;
+
+      // Try to get user from auth header
+      let userId: string | null = null;
+      let userEmail: string | null = null;
+      const authHeader = req.headers.get("authorization");
+      if (authHeader) {
+        try {
+          const { data: { user } } = await sb.auth.getUser(authHeader.replace("Bearer ", ""));
+          if (user) { userId = user.id; userEmail = user.email || null; }
+        } catch {}
+      }
+
+      await sb.from("analysis_logs").insert({
+        user_id: userId,
+        user_email: userEmail,
+        module: "cementing",
+        well_summary: wellSummary,
+        documents_count: docsCount,
+        document_names: docNames,
+        ip_address: ip,
+        user_agent: userAgent,
+      });
+    } catch (logErr) {
+      console.error("Failed to log analysis:", logErr);
+    }
+
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
