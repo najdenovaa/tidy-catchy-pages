@@ -447,7 +447,7 @@ function detectSections(text: string): DocumentSection[] {
 // 5. КАЧЕСТВЕННЫЕ ВЫВОДЫ ИЗ ТЕКСТА
 // ═══════════════════════════════════════════════════════════════════
 
-interface QualitativeFinding {
+export interface QualitativeFinding {
   category: string;
   finding: string;
   confidence: number;
