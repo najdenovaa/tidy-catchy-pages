@@ -408,12 +408,13 @@ export default function AnalysisSection({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <DropZone
               label="📊 АКЦ / СГДТ / CBL-VDL"
-              desc="Геофизика, графики, скриншоты"
+              desc="Геофизика, графики, скриншоты, Word, PDF"
               existingFiles={akcFiles}
               onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "akc"))}
               onRemove={removeFile}
               uploading={uploading}
               uploadingType={uploadingType}
+              multi
               type="akc"
             />
             <DropZone
