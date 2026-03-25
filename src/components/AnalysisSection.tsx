@@ -242,6 +242,9 @@ export default function AnalysisSection({
   centralizationResults,
 }: AnalysisSectionProps) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [rawFiles, setRawFiles] = useState<Map<string, File>>(new Map()); // path -> raw File
+  const [parsedDocs, setParsedDocs] = useState<ParsedDocument[]>([]);
+  const [parsing, setParsing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingType, setUploadingType] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
