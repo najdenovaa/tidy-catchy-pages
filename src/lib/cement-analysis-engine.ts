@@ -687,15 +687,20 @@ function buildDocumentDrivenChecks(
 // Document Intelligence — silent extraction, no raw output
 // ═══════════════════════════════════════════════════════════════════
 
-function analyzeDocuments(docs: DocumentInfo[]): { md: string; extractedValues: ExtractedValue[]; imageFindings: string[] } {
-  if (!docs || docs.length === 0) return { md: "", extractedValues: [], imageFindings: [] };
+function analyzeDocuments(docs: DocumentInfo[]): { md: string; extractedValues: ExtractedValue[]; imageFindings: string[]; qualitative: QualitativeFinding[] } {
+  if (!docs || docs.length === 0) return { md: "", extractedValues: [], imageFindings: [], qualitative: [] };
 
   const allValues: ExtractedValue[] = [];
+  const allQualitative: QualitativeFinding[] = [];
   const imageFindings: string[] = [];
   const successful = docs.filter(d => d.text.trim().length > 0);
 
-  // Silently extract values — no raw text output
-  for (const doc of successful) allValues.push(...extractValuesFromText(doc.text));
+  // Use new extraction engine — deep multi-strategy parsing
+  for (const doc of successful) {
+    const { values, qualitative } = extractAllValues(doc.text);
+    allValues.push(...values);
+    allQualitative.push(...qualitative);
+  }
 
   // Image analysis — collect findings for checks, don't dump raw
   for (const doc of docs) {
@@ -708,7 +713,7 @@ function analyzeDocuments(docs: DocumentInfo[]): { md: string; extractedValues: 
   }
 
   // No markdown output — everything goes through buildDocumentDrivenChecks
-  return { md: "", extractedValues: allValues, imageFindings };
+  return { md: "", extractedValues: allValues, imageFindings, qualitative: allQualitative };
 }
 
 // ═══════════════════════════════════════════════════════════════════
