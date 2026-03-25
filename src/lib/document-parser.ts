@@ -187,12 +187,23 @@ export async function parseDocument(file: File): Promise<ParsedDocument> {
   }
 
   if (mime.startsWith("image/")) {
-    return {
-      name: file.name,
-      type: "image",
-      text: "",
-      error: "Извлечение текста из изображений требует AI. Используйте AI-анализ для изображений АКЦ/СГДТ.",
-    };
+    try {
+      const analysis = await analyzeImage(file);
+      const analysisText = imageAnalysisToMarkdown(analysis);
+      return {
+        name: file.name,
+        type: "image",
+        text: analysisText,
+        imageAnalysis: analysis,
+      };
+    } catch (e: any) {
+      return {
+        name: file.name,
+        type: "image",
+        text: "",
+        error: `Ошибка анализа изображения: ${e.message}`,
+      };
+    }
   }
 
   return {
