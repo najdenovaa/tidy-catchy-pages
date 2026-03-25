@@ -145,6 +145,18 @@ async function extractTextFromFile(
   return content;
 }
 
+function calcReynolds(density: number, velocity: number, dHyd: number, pv: number, yp: number): { re: number; regime: string } {
+  // Bingham plastic Reynolds number: Re = ρ·v·Dh / (PV + YP·Dh/(6·v))
+  if (!velocity || velocity <= 0 || !dHyd || dHyd <= 0) return { re: 0, regime: "нет данных" };
+  const pvPas = (pv || 25) / 1000; // mPa·s → Pa·s
+  const ypPa = yp || 25;
+  const denominator = pvPas + (ypPa * dHyd) / (6 * velocity);
+  if (denominator <= 0) return { re: 0, regime: "нет данных" };
+  const re = (density * velocity * dHyd) / denominator;
+  const regime = re < 2100 ? "ламинарный" : re < 3000 ? "переходный" : "турбулентный";
+  return { re: Math.round(re), regime };
+}
+
 function buildCalcContext(calcData: any): string {
   let ctx = "";
   const wd = calcData?.wellData;
@@ -158,6 +170,72 @@ function buildCalcContext(calcData: any): string {
     ctx += `- Коэффициент кавернозности: ${wd.cavernCoeff}\n`;
     if (wd.previousCasingDepth) ctx += `- Башмак предыдущей колонны: ${wd.previousCasingDepth} м\n`;
     if (wd.previousCasingOD) ctx += `- Предыдущая колонна OD: ${wd.previousCasingOD} мм\n`;
+
+    // Calculate annular hydraulic diameter and flow regimes
+    const holeDia = wd.holeDiameter / 1000; // mm → m
+    const casingOD = wd.casingOD / 1000;
+    const dHydAnnulus = (holeDia * (wd.cavernCoeff || 1)) - casingOD;
+    const annArea = (Math.PI / 4) * ((holeDia * (wd.cavernCoeff || 1)) ** 2 - casingOD ** 2);
+
+    if (dHydAnnulus > 0 && annArea > 0) {
+      ctx += `\n## Расчёт режимов течения в затрубье:\n`;
+      ctx += `- Гидравлический диаметр затрубья: ${(dHydAnnulus * 1000).toFixed(1)} мм\n`;
+      ctx += `- Площадь затрубного сечения: ${(annArea * 10000).toFixed(2)} см²\n`;
+
+      const allFluids: { name: string; density: number; pv: number; yp: number; flowRate?: number }[] = [];
+
+      if (calcData?.drillingFluid) {
+        allFluids.push({
+          name: "Буровой раствор",
+          density: calcData.drillingFluid.density,
+          pv: calcData.drillingFluid.plasticViscosity || 25,
+          yp: calcData.drillingFluid.yieldPoint || 25,
+          flowRate: calcData.drillingFluid.flowRate,
+        });
+      }
+      if (calcData?.buffers?.length) {
+        calcData.buffers.forEach((b: any, i: number) => {
+          allFluids.push({
+            name: `Буфер ${i + 1}`,
+            density: b.density,
+            pv: b.plasticViscosity || 25,
+            yp: b.yieldPoint || 25,
+            flowRate: b.flowRate,
+          });
+        });
+      }
+      if (calcData?.slurries?.length) {
+        calcData.slurries.forEach((s: any, i: number) => {
+          allFluids.push({
+            name: s.name || `Раствор ${i + 1}`,
+            density: s.density,
+            pv: s.plasticViscosity || (s.density >= 1650 ? 80 : 65),
+            yp: s.yieldPoint || (s.density >= 1650 ? 8 : 6),
+            flowRate: s.flowRate,
+          });
+        });
+      }
+
+      // Try typical flow rates if not provided: 8, 12, 16, 20 л/с
+      const defaultRates = [8, 12, 16, 20];
+
+      ctx += `\n| Жидкость | Плотность (кг/м³) | ПВ (мПа·с) | ДНС (Па) | Расход (л/с) | Скорость (м/с) | Re | Режим |\n`;
+      ctx += `|---|---|---|---|---|---|---|---|\n`;
+
+      for (const f of allFluids) {
+        const rates = f.flowRate ? [f.flowRate] : defaultRates;
+        for (const rate of rates) {
+          const qM3s = rate / 1000;
+          const velocity = qM3s / annArea;
+          const { re, regime } = calcReynolds(f.density, velocity, dHydAnnulus, f.pv, f.yp);
+          ctx += `| ${f.name} | ${f.density} | ${f.pv} | ${f.yp} | ${rate} | ${velocity.toFixed(2)} | ${re} | ${regime} |\n`;
+        }
+      }
+
+      // Recommendation
+      ctx += `\nПримечание: для качественного вытеснения рекомендуется турбулентный режим (Re > 3000). `;
+      ctx += `При невозможности — переходный (Re 2100–3000) с увеличением времени контакта буфера.\n`;
+    }
   }
   if (calcData?.slurries?.length) {
     ctx += `\n## Тампонажные растворы:\n`;
@@ -170,6 +248,7 @@ function buildCalcContext(calcData: any): string {
     ctx += `\n## Буферные жидкости:\n`;
     calcData.buffers.forEach((b: any, i: number) => {
       ctx += `- Буфер ${i + 1}: плотность ${b.density} кг/м³, объём ${b.volume?.toFixed(2) || "?"} м³\n`;
+      if (b.yieldPoint) ctx += `  ДНС: ${b.yieldPoint} Па, ПВ: ${b.plasticViscosity || "?"} мПа·с\n`;
     });
   }
   if (calcData?.drillingFluid) {
