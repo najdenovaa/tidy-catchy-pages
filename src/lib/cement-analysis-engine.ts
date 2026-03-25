@@ -38,8 +38,9 @@ import {
   SEDIMENTATION_TEMPLATES, PIPE_MOVEMENT_TEMPLATES, ZONAL_ISOLATION_TEMPLATES,
   MICROANNULUS_TEMPLATES, PRE_JOB_TEMPLATES, TEMPERATURE_TEMPLATES,
   RECIPE_TEMPLATES, MULTISTAGE_TEMPLATES, LINER_TEMPLATES, STANDARDS_TEMPLATES,
-  getTemplate, extractValuesFromText, type ExtractedValue
+  getTemplate,
 } from "./analysis-templates";
+import { extractAllValues, type ExtractedValue, type QualitativeFinding } from "./document-extraction-engine";
 import type { ImageAnalysisResult } from "./image-analysis-engine";
 import type { OcrResult } from "./ocr-engine";
 
@@ -686,15 +687,20 @@ function buildDocumentDrivenChecks(
 // Document Intelligence — silent extraction, no raw output
 // ═══════════════════════════════════════════════════════════════════
 
-function analyzeDocuments(docs: DocumentInfo[]): { md: string; extractedValues: ExtractedValue[]; imageFindings: string[] } {
-  if (!docs || docs.length === 0) return { md: "", extractedValues: [], imageFindings: [] };
+function analyzeDocuments(docs: DocumentInfo[]): { md: string; extractedValues: ExtractedValue[]; imageFindings: string[]; qualitative: QualitativeFinding[] } {
+  if (!docs || docs.length === 0) return { md: "", extractedValues: [], imageFindings: [], qualitative: [] };
 
   const allValues: ExtractedValue[] = [];
+  const allQualitative: QualitativeFinding[] = [];
   const imageFindings: string[] = [];
   const successful = docs.filter(d => d.text.trim().length > 0);
 
-  // Silently extract values — no raw text output
-  for (const doc of successful) allValues.push(...extractValuesFromText(doc.text));
+  // Use new extraction engine — deep multi-strategy parsing
+  for (const doc of successful) {
+    const { values, qualitative } = extractAllValues(doc.text);
+    allValues.push(...values);
+    allQualitative.push(...qualitative);
+  }
 
   // Image analysis — collect findings for checks, don't dump raw
   for (const doc of docs) {
@@ -707,7 +713,7 @@ function analyzeDocuments(docs: DocumentInfo[]): { md: string; extractedValues: 
   }
 
   // No markdown output — everything goes through buildDocumentDrivenChecks
-  return { md: "", extractedValues: allValues, imageFindings };
+  return { md: "", extractedValues: allValues, imageFindings, qualitative: allQualitative };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -834,9 +840,51 @@ export function runAlgorithmicAnalysis(
   checks.push(...checkSedimentation(wellData));
   checks.push(...checkPreJob());
 
-  // Document intelligence
-  const { md: docSection, extractedValues, imageFindings } = analyzeDocuments(documentTexts || []);
+  // Document intelligence — new multi-strategy extraction engine
+  const { md: docSection, extractedValues, imageFindings, qualitative } = analyzeDocuments(documentTexts || []);
   checks.push(...buildDocumentDrivenChecks(wellData, drillingFluid, slurries, buffers, documentTexts || [], extractedValues));
+
+  // Add qualitative findings as checks
+  if (qualitative.length > 0) {
+    const bondFindings = qualitative.filter(q => q.category === "bond_quality");
+    const problemFindings = qualitative.filter(q => q.category === "problems");
+    const recoFindings = qualitative.filter(q => q.category === "recommendations");
+    const flowFindings = qualitative.filter(q => q.category === "flow_regime");
+    const compFindings = qualitative.filter(q => q.category === "complications");
+
+    if (bondFindings.length > 0) {
+      const hasBad = bondFindings.some(f => /неудовлетв|отсутств|плох|слаб|дефект/.test(f.finding));
+      const hasGood = bondFindings.some(f => /хорош|качественн|отличн|полное/.test(f.finding));
+      checks.push({ section: "Выводы из документов", title: `Качество сцепления: ${bondFindings.map(f => f.finding).join("; ")}`,
+        status: hasBad ? "critical" : hasGood ? "ok" : "warning",
+        detail: `Из текста документов извлечены заключения о качестве сцепления:\n\n${bondFindings.map(f => `- **${f.finding}** _(«${f.context}»)_`).join("\n")}`
+      });
+    }
+    if (problemFindings.length > 0) {
+      checks.push({ section: "Выводы из документов", title: `Обнаружены проблемы: ${problemFindings.length}`,
+        status: "warning",
+        detail: `В документах выявлены следующие проблемы:\n\n${problemFindings.map(f => `- **${f.finding}** _(«${f.context}»)_`).join("\n")}`
+      });
+    }
+    if (recoFindings.length > 0) {
+      checks.push({ section: "Выводы из документов", title: `Рекомендации из документов`,
+        status: "info",
+        detail: recoFindings.map(f => `- **${f.finding}** _(«${f.context}»)_`).join("\n")
+      });
+    }
+    if (flowFindings.length > 0) {
+      checks.push({ section: "Выводы из документов", title: `Режимы течения из отчёта`,
+        status: "info",
+        detail: flowFindings.map(f => `- **${f.finding}** _(«${f.context}»)_`).join("\n")
+      });
+    }
+    if (compFindings.length > 0) {
+      checks.push({ section: "Выводы из документов", title: `Осложнения при бурении: ${compFindings.length}`,
+        status: "warning",
+        detail: `Из документов извлечена информация об осложнениях:\n\n${compFindings.map(f => `- **${f.finding}** _(«${f.context}»)_`).join("\n")}`
+      });
+    }
+  }
 
   const markdown = buildReport(wellData, slurries, checks, docSection, !!documentTexts?.length, extractedValues, imageFindings);
 
