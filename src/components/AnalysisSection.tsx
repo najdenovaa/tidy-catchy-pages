@@ -271,7 +271,7 @@ export default function AnalysisSection({
             ) : (
               <>
                 <Brain className="w-4 h-4" />
-                🚀 Запустить AI-анализ
+                🚀 Запустить анализ
               </>
             )}
           </Button>
