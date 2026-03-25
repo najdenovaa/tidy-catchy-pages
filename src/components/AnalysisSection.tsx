@@ -411,6 +411,19 @@ export default function AnalysisSection({
     }
   }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram]);
 
+  const runLocalAnalysis = useCallback(() => {
+    setError("");
+    try {
+      const result = runAlgorithmicAnalysis(wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults);
+      setReport(result.markdown);
+      if (reportRef.current) {
+        setTimeout(() => reportRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      }
+    } catch (e: any) {
+      setError("Ошибка алгоритмического анализа: " + (e.message || "Неизвестная ошибка"));
+    }
+  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults]);
+
   const akcFiles = files.filter(f => f.type === "akc");
   const reportFiles = files.filter(f => f.type === "report");
   const otherFiles = files.filter(f => f.type === "other");
