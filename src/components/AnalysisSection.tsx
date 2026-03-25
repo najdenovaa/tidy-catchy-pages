@@ -590,24 +590,22 @@ export default function AnalysisSection({
               )}
             </Button>
 
-            <Button onClick={runAnalysis} disabled={!hasAnyInput || analyzing} className="w-full" size="lg">
-              {analyzing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Анализирую... {formatTime(elapsedSeconds)}
-                </>
-              ) : (
-                <>
-                  <Brain className="w-4 h-4" />
-                  🚀 AI-анализ (документы)
-                </>
-              )}
+            <Button
+              onClick={() => {
+                setError("🚧 AI-анализ находится в разработке и пока недоступен. Данная услуга будет платной после окончательной реализации. Используйте алгоритмический анализ — он мало чем уступает AI-анализу и работает бесплатно.");
+              }}
+              variant="outline"
+              className="w-full opacity-60"
+              size="lg"
+            >
+              <Brain className="w-4 h-4" />
+              🚀 AI-анализ (в разработке)
             </Button>
           </div>
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-2">
             <Cpu className="w-3.5 h-3.5 shrink-0" />
-            <span><strong>Алгоритмический</strong> — мгновенный, читает документы (PDF/Word/Excel) + данные расчёта, без кредитов. <strong>AI</strong> — глубокий анализ с компьютерным зрением, расходует кредиты.</span>
+            <span><strong>Алгоритмический анализ</strong> — мгновенный, читает документы (PDF/Word/Excel/изображения) + данные расчёта, полностью бесплатный. Мало чем уступает AI-анализу.</span>
           </div>
 
           {analyzing && (
