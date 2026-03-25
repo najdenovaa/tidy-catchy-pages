@@ -1,10 +1,12 @@
 /**
  * Client-side document parser — extracts text from PDF, DOCX, TXT, XLSX
+ * + Image analysis with OCR
  * without any AI or external API calls.
  */
 
 import * as XLSX from "xlsx";
 import { analyzeImage, imageAnalysisToMarkdown } from "./image-analysis-engine";
+import { performOCR, ocrToMarkdown } from "./ocr-engine";
 
 export interface ParsedDocument {
   name: string;
@@ -14,6 +16,7 @@ export interface ParsedDocument {
   tables?: string[][][];
   error?: string;
   imageAnalysis?: import("./image-analysis-engine").ImageAnalysisResult;
+  ocrResult?: import("./ocr-engine").OcrResult;
 }
 
 // ─── PDF Parsing ─────────────────────────────────────────────────
@@ -21,8 +24,6 @@ export interface ParsedDocument {
 async function parsePDF(file: File): Promise<ParsedDocument> {
   try {
     const pdfjsLib = await import("pdfjs-dist");
-    
-    // Set worker source
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
     const arrayBuffer = await file.arrayBuffer();
@@ -33,27 +34,15 @@ async function parsePDF(file: File): Promise<ParsedDocument> {
     for (let i = 1; i <= numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item: any) => item.str)
-        .join(" ");
+      const pageText = content.items.map((item: any) => item.str).join(" ");
       if (pageText.trim()) {
         textParts.push(`--- Страница ${i} ---\n${pageText}`);
       }
     }
 
-    return {
-      name: file.name,
-      type: "pdf",
-      text: textParts.join("\n\n"),
-      pages: numPages,
-    };
+    return { name: file.name, type: "pdf", text: textParts.join("\n\n"), pages: numPages };
   } catch (e: any) {
-    return {
-      name: file.name,
-      type: "pdf",
-      text: "",
-      error: `Ошибка чтения PDF: ${e.message}`,
-    };
+    return { name: file.name, type: "pdf", text: "", error: `Ошибка чтения PDF: ${e.message}` };
   }
 }
 
@@ -64,19 +53,9 @@ async function parseDOCX(file: File): Promise<ParsedDocument> {
     const mammoth = await import("mammoth");
     const arrayBuffer = await file.arrayBuffer();
     const result = await mammoth.extractRawText({ arrayBuffer });
-    
-    return {
-      name: file.name,
-      type: "docx",
-      text: result.value,
-    };
+    return { name: file.name, type: "docx", text: result.value };
   } catch (e: any) {
-    return {
-      name: file.name,
-      type: "docx",
-      text: "",
-      error: `Ошибка чтения DOCX: ${e.message}`,
-    };
+    return { name: file.name, type: "docx", text: "", error: `Ошибка чтения DOCX: ${e.message}` };
   }
 }
 
@@ -95,11 +74,9 @@ function parseExcel(file: File): Promise<ParsedDocument> {
         for (const sheetName of workbook.SheetNames) {
           const sheet = workbook.Sheets[sheetName];
           const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
-          
           if (jsonData.length > 0) {
             textParts.push(`--- Лист: ${sheetName} ---`);
             const tableRows: string[][] = [];
-            
             for (const row of jsonData) {
               if (Array.isArray(row) && row.some(cell => cell !== undefined && cell !== null && String(cell).trim())) {
                 const textRow = row.map(cell => String(cell ?? ""));
@@ -107,24 +84,13 @@ function parseExcel(file: File): Promise<ParsedDocument> {
                 textParts.push(textRow.join(" | "));
               }
             }
-            
             if (tableRows.length > 0) tables.push(tableRows);
           }
         }
 
-        resolve({
-          name: file.name,
-          type: "excel",
-          text: textParts.join("\n"),
-          tables,
-        });
+        resolve({ name: file.name, type: "excel", text: textParts.join("\n"), tables });
       } catch (err: any) {
-        resolve({
-          name: file.name,
-          type: "excel",
-          text: "",
-          error: `Ошибка чтения Excel: ${err.message}`,
-        });
+        resolve({ name: file.name, type: "excel", text: "", error: `Ошибка чтения Excel: ${err.message}` });
       }
     };
     reader.readAsArrayBuffer(file);
@@ -137,22 +103,38 @@ function parseTXT(file: File): Promise<ParsedDocument> {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      resolve({
-        name: file.name,
-        type: "text",
-        text: (e.target?.result as string) || "",
-      });
+      resolve({ name: file.name, type: "text", text: (e.target?.result as string) || "" });
     };
     reader.onerror = () => {
-      resolve({
-        name: file.name,
-        type: "text",
-        text: "",
-        error: "Не удалось прочитать текстовый файл",
-      });
+      resolve({ name: file.name, type: "text", text: "", error: "Не удалось прочитать текстовый файл" });
     };
     reader.readAsText(file);
   });
+}
+
+// ─── Image Parsing (Visual + OCR) ────────────────────────────────
+
+async function parseImage(file: File): Promise<ParsedDocument> {
+  try {
+    // Run visual analysis and OCR in parallel
+    const [analysis, ocrResult] = await Promise.all([
+      analyzeImage(file),
+      performOCR(file),
+    ]);
+
+    let text = imageAnalysisToMarkdown(analysis);
+    text += "\n" + ocrToMarkdown(ocrResult, file.name);
+
+    return {
+      name: file.name,
+      type: "image",
+      text,
+      imageAnalysis: analysis,
+      ocrResult,
+    };
+  } catch (e: any) {
+    return { name: file.name, type: "image", text: "", error: `Ошибка анализа изображения: ${e.message}` };
+  }
 }
 
 // ─── Main entry point ────────────────────────────────────────────
@@ -161,58 +143,18 @@ export async function parseDocument(file: File): Promise<ParsedDocument> {
   const ext = file.name.split(".").pop()?.toLowerCase() || "";
   const mime = file.type.toLowerCase();
 
-  if (ext === "pdf" || mime === "application/pdf") {
-    return parsePDF(file);
-  }
-
-  if (ext === "docx" || mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-    return parseDOCX(file);
-  }
-
+  if (ext === "pdf" || mime === "application/pdf") return parsePDF(file);
+  if (ext === "docx" || mime.includes("wordprocessingml")) return parseDOCX(file);
   if (ext === "doc" || mime === "application/msword") {
-    // .doc (legacy) — try as text extraction
-    return parseDOCX(file).then(result => {
-      if (!result.text && !result.error) {
-        return { ...result, error: "Формат .doc не полностью поддерживается. Рекомендуется конвертировать в .docx или .pdf." };
-      }
-      return result;
-    });
+    return parseDOCX(file).then(r =>
+      !r.text && !r.error ? { ...r, error: "Формат .doc не полностью поддерживается. Рекомендуется .docx или .pdf." } : r
+    );
   }
+  if (["xlsx", "xls"].includes(ext) || mime.includes("spreadsheet") || mime.includes("excel")) return parseExcel(file);
+  if (["txt", "csv", "log"].includes(ext) || mime.startsWith("text/")) return parseTXT(file);
+  if (mime.startsWith("image/") || ["jpg", "jpeg", "png", "bmp", "tiff", "tif", "webp"].includes(ext)) return parseImage(file);
 
-  if (["xlsx", "xls"].includes(ext) || mime.includes("spreadsheet") || mime.includes("excel")) {
-    return parseExcel(file);
-  }
-
-  if (["txt", "csv", "log"].includes(ext) || mime.startsWith("text/")) {
-    return parseTXT(file);
-  }
-
-  if (mime.startsWith("image/")) {
-    try {
-      const analysis = await analyzeImage(file);
-      const analysisText = imageAnalysisToMarkdown(analysis);
-      return {
-        name: file.name,
-        type: "image",
-        text: analysisText,
-        imageAnalysis: analysis,
-      };
-    } catch (e: any) {
-      return {
-        name: file.name,
-        type: "image",
-        text: "",
-        error: `Ошибка анализа изображения: ${e.message}`,
-      };
-    }
-  }
-
-  return {
-    name: file.name,
-    type: "unknown",
-    text: "",
-    error: `Неподдерживаемый формат: .${ext}`,
-  };
+  return { name: file.name, type: "unknown", text: "", error: `Неподдерживаемый формат: .${ext}` };
 }
 
 /** Parse multiple documents */
