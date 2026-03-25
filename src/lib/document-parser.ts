@@ -11,8 +11,9 @@ export interface ParsedDocument {
   type: string;
   text: string;
   pages?: number;
-  tables?: string[][][]; // array of tables, each table = rows of cells
+  tables?: string[][][];
   error?: string;
+  imageAnalysis?: import("./image-analysis-engine").ImageAnalysisResult;
 }
 
 // ─── PDF Parsing ─────────────────────────────────────────────────
