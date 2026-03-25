@@ -178,10 +178,10 @@ export default function AnalysisSection({
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Brain className="w-5 h-5 text-primary" />
-            🔬 AI-Анализ качества цементирования
+            🔬 Анализ качества цементирования
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Загрузите документы геофизики и отчёты — AI проанализирует качество цементирования с учётом данных вашего расчёта
+            Загрузите документы геофизики и отчёты — система проанализирует качество цементирования с учётом данных вашего расчёта
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
