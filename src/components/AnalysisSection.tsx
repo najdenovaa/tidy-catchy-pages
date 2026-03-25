@@ -34,6 +34,7 @@ export default function AnalysisSection({
   const [analyzing, setAnalyzing] = useState(false);
   const [report, setReport] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [useOwnProgram, setUseOwnProgram] = useState(true); // true = данные текущего расчёта, false = сторонний файл
   const reportRef = useRef<HTMLDivElement>(null);
 
   const uploadFile = useCallback(async (file: File, docType: "akc" | "program" | "report") => {
