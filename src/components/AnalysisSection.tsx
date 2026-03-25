@@ -72,14 +72,32 @@ export default function AnalysisSection({
     setFiles(prev => prev.filter(f => f.path !== file.path));
   }, []);
 
-  const extractTextFromFile = async (file: UploadedFile): Promise<string> => {
+  const fileToBase64 = async (file: UploadedFile): Promise<{ base64: string; mimeType: string; name: string } | null> => {
     const { data } = await supabase.storage
       .from("analysis-docs")
       .download(file.path);
-    if (!data) return "";
-    const text = await data.text();
-    // For PDF binary, we still send the raw text — the AI will extract what it can
-    return text.substring(0, 20000);
+    if (!data) return null;
+    const arrayBuffer = await data.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    let mimeType = "application/octet-stream";
+    if (ext === "pdf") mimeType = "application/pdf";
+    else if (ext === "png") mimeType = "image/png";
+    else if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
+    else if (ext === "bmp") mimeType = "image/bmp";
+    else if (ext === "tiff" || ext === "tif") mimeType = "image/tiff";
+    else if (ext === "webp") mimeType = "image/webp";
+    else if (ext === "txt") mimeType = "text/plain";
+    else if (ext === "docx") mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    else if (ext === "doc") mimeType = "application/msword";
+    else if (ext === "xlsx") mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    else if (ext === "xls") mimeType = "application/vnd.ms-excel";
+    return { base64, mimeType, name: file.name };
   };
 
   const runAnalysis = useCallback(async () => {
@@ -88,15 +106,15 @@ export default function AnalysisSection({
     setReport("");
 
     try {
-      // Extract text from uploaded files
-      const documentTexts: Record<string, string> = {};
+      // Convert uploaded files to base64
+      const documentFiles: Record<string, { base64: string; mimeType: string; name: string }> = {};
       for (const file of files) {
-        // Skip program file if using own calc data
         if (file.type === "program" && useOwnProgram) continue;
         try {
-          documentTexts[file.type] = await extractTextFromFile(file);
+          const fileData = await fileToBase64(file);
+          if (fileData) documentFiles[file.type] = fileData;
         } catch {
-          documentTexts[file.type] = `[Файл: ${file.name} — не удалось извлечь текст]`;
+          // skip failed files
         }
       }
 
@@ -119,7 +137,7 @@ export default function AnalysisSection({
             "Content-Type": "application/json",
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
-          body: JSON.stringify({ documentTexts, calcData }),
+          body: JSON.stringify({ documentFiles, calcData }),
         }
       );
 
@@ -214,7 +232,7 @@ export default function AnalysisSection({
                       <input
                         type="file"
                         className="hidden"
-                        accept=".pdf,.docx,.doc,.txt,.xlsx,.xls"
+           accept=".pdf,.docx,.doc,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.webp"
                         onChange={(e) => {
                           const f = e.target.files?.[0];
                           if (f) uploadFile(f, type);
@@ -272,7 +290,7 @@ export default function AnalysisSection({
                     <input
                       type="file"
                       className="hidden"
-                      accept=".pdf,.docx,.doc,.txt,.xlsx,.xls"
+                       accept=".pdf,.docx,.doc,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.webp"
                       onChange={(e) => {
                         const f = e.target.files?.[0];
                         if (f) uploadFile(f, "program");
