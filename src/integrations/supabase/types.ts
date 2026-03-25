@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      analysis_logs: {
+        Row: {
+          created_at: string
+          document_names: string[] | null
+          documents_count: number | null
+          id: string
+          ip_address: string | null
+          location: string | null
+          module: string
+          user_agent: string | null
+          user_email: string | null
+          user_id: string | null
+          well_summary: string | null
+        }
+        Insert: {
+          created_at?: string
+          document_names?: string[] | null
+          documents_count?: number | null
+          id?: string
+          ip_address?: string | null
+          location?: string | null
+          module?: string
+          user_agent?: string | null
+          user_email?: string | null
+          user_id?: string | null
+          well_summary?: string | null
+        }
+        Update: {
+          created_at?: string
+          document_names?: string[] | null
+          documents_count?: number | null
+          id?: string
+          ip_address?: string | null
+          location?: string | null
+          module?: string
+          user_agent?: string | null
+          user_email?: string | null
+          user_id?: string | null
+          well_summary?: string | null
+        }
+        Relationships: []
+      }
       calculation_logs: {
         Row: {
           calc_params: Json | null
