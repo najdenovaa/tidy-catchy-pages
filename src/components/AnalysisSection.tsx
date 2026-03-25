@@ -269,7 +269,7 @@ export default function AnalysisSection({
       if (uploadError) throw uploadError;
 
       setFiles(prev => {
-        if (docType === "other") {
+        if (docType === "other" || docType === "akc") {
           return [...prev, { name: file.name, path, type: docType }];
         }
         const filtered = prev.filter(f => f.type !== docType);
@@ -306,8 +306,9 @@ export default function AnalysisSection({
     setReport("");
 
     try {
-      const documentFiles: Record<string, { base64: string; mimeType: string; name: string } | { base64: string; mimeType: string; name: string }[]> = {};
+      const documentFiles: Record<string, any> = {};
       const otherDocs: { base64: string; mimeType: string; name: string }[] = [];
+      const akcDocs: { base64: string; mimeType: string; name: string }[] = [];
 
       for (const file of files) {
         if (file.type === "program" && useOwnProgram) continue;
@@ -316,15 +317,16 @@ export default function AnalysisSection({
           if (!fileData) continue;
           if (file.type === "other") {
             otherDocs.push(fileData);
+          } else if (file.type === "akc") {
+            akcDocs.push(fileData);
           } else {
             documentFiles[file.type] = fileData;
           }
         } catch {}
       }
 
-      if (otherDocs.length > 0) {
-        documentFiles["other"] = otherDocs;
-      }
+      if (otherDocs.length > 0) documentFiles["other"] = otherDocs;
+      if (akcDocs.length > 0) documentFiles["akc"] = akcDocs;
 
       const calcData = {
         wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram,
@@ -408,12 +410,13 @@ export default function AnalysisSection({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <DropZone
               label="📊 АКЦ / СГДТ / CBL-VDL"
-              desc="Геофизика, графики, скриншоты"
+              desc="Геофизика, графики, скриншоты, Word, PDF"
               existingFiles={akcFiles}
               onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "akc"))}
               onRemove={removeFile}
               uploading={uploading}
               uploadingType={uploadingType}
+              multi
               type="akc"
             />
             <DropZone
