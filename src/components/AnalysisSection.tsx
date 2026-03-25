@@ -232,7 +232,7 @@ export default function AnalysisSection({
                       <input
                         type="file"
                         className="hidden"
-                        accept=".pdf,.docx,.doc,.txt,.xlsx,.xls"
+           accept=".pdf,.docx,.doc,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.webp"
                         onChange={(e) => {
                           const f = e.target.files?.[0];
                           if (f) uploadFile(f, type);
