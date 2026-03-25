@@ -130,14 +130,16 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     setLoading(true);
-    const [calcRes, visitRes, profilesRes] = await Promise.all([
+    const [calcRes, visitRes, profilesRes, analysisRes] = await Promise.all([
       supabase.from("calculation_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("visit_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
+      supabase.from("analysis_logs").select("*").order("created_at", { ascending: false }).limit(10000),
     ]);
     if (calcRes.data) setCalcLogs(calcRes.data as CalcLog[]);
     if (visitRes.data) setVisitLogs(visitRes.data as VisitLog[]);
     if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
+    if (analysisRes.data) setAnalysisLogs(analysisRes.data as AnalysisLog[]);
     setLoading(false);
   };
 
