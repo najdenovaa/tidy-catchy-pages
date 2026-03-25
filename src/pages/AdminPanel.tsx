@@ -219,6 +219,7 @@ export default function AdminPanel() {
               <TabsTrigger value="visits">👁️ Визиты ({visitLogs.length})</TabsTrigger>
               <TabsTrigger value="calculations">📊 Расчёты ({calcLogs.length})</TabsTrigger>
               <TabsTrigger value="users">👤 Пользователи ({profiles.length})</TabsTrigger>
+              <TabsTrigger value="analyses">🔬 Анализы ({analysisLogs.length})</TabsTrigger>
               <TabsTrigger value="lookup">🔍 Поиск</TabsTrigger>
             </TabsList>
           </div>
