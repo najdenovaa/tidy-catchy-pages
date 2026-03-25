@@ -605,6 +605,18 @@ ${docsContext}
       const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || "unknown";
       const userAgent = req.headers.get("user-agent") || "unknown";
 
+      // Resolve location
+      let location: string | null = null;
+      if (ip && ip !== "unknown") {
+        try {
+          const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city&lang=ru`);
+          const geoData = await geoRes.json();
+          if (geoData.status === "success") {
+            location = [geoData.city, geoData.regionName, geoData.country].filter(Boolean).join(", ") || null;
+          }
+        } catch {}
+      }
+
       // Collect document names
       const docNames: string[] = [];
       let docsCount = 0;
