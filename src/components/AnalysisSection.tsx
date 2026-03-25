@@ -72,14 +72,32 @@ export default function AnalysisSection({
     setFiles(prev => prev.filter(f => f.path !== file.path));
   }, []);
 
-  const extractTextFromFile = async (file: UploadedFile): Promise<string> => {
+  const fileToBase64 = async (file: UploadedFile): Promise<{ base64: string; mimeType: string; name: string } | null> => {
     const { data } = await supabase.storage
       .from("analysis-docs")
       .download(file.path);
-    if (!data) return "";
-    const text = await data.text();
-    // For PDF binary, we still send the raw text — the AI will extract what it can
-    return text.substring(0, 20000);
+    if (!data) return null;
+    const arrayBuffer = await data.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    let mimeType = "application/octet-stream";
+    if (ext === "pdf") mimeType = "application/pdf";
+    else if (ext === "png") mimeType = "image/png";
+    else if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
+    else if (ext === "bmp") mimeType = "image/bmp";
+    else if (ext === "tiff" || ext === "tif") mimeType = "image/tiff";
+    else if (ext === "webp") mimeType = "image/webp";
+    else if (ext === "txt") mimeType = "text/plain";
+    else if (ext === "docx") mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    else if (ext === "doc") mimeType = "application/msword";
+    else if (ext === "xlsx") mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    else if (ext === "xls") mimeType = "application/vnd.ms-excel";
+    return { base64, mimeType, name: file.name };
   };
 
   const runAnalysis = useCallback(async () => {
