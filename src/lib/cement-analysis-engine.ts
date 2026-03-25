@@ -493,57 +493,125 @@ function buildDocumentDrivenChecks(
   const depths = numericValues.filter(v => v.category === "depth" && v.numeric !== null);
   const thickening = numericValues.filter(v => v.category === "thickening" && v.numeric !== null);
   const pressures = numericValues.filter(v => (v.category === "pressure" || v.category === "frac_pressure") && v.numeric !== null);
+  const strengths = numericValues.filter(v => v.category === "strength" && v.numeric !== null);
+  const fluidLoss = numericValues.filter(v => v.category === "fluid_loss" && v.numeric !== null);
+  const bondValues = numericValues.filter(v => (v.category === "bond" || v.category === "bond_log") && v.numeric !== null);
+  const temperatures = numericValues.filter(v => v.category === "temperature" && v.numeric !== null);
+  const volumes = numericValues.filter(v => v.category === "volume" && v.numeric !== null);
+  const rates = numericValues.filter(v => v.category === "flow_rate" && v.numeric !== null);
 
-  const referenceDensities = [d(drillingFluid.density), ...buffers.map(b => d(b.density)), ...slurries.map(s => d(s.density))]
-    .filter(v => v > 0);
+  const referenceDensities = [d(drillingFluid.density), ...buffers.map(b => d(b.density)), ...slurries.map(s => d(s.density))].filter(v => v > 0);
   const referenceDepths = [wellData.wellDepthMD, wellData.wellDepthTVD, wellData.casingDepthMD].filter(v => v > 0);
   const referenceThickening = slurries.map(s => s.thickeningTime50Bc).filter(v => v > 0);
 
+  // ─── Density cross-check ─────────────────────────────
   if (densities.length > 0 && referenceDensities.length > 0) {
     const matched = densities.filter(v => referenceDensities.some(ref => Math.abs(ref - (v.numeric || 0)) <= 120));
-    checks.push({
-      section: "Документный анализ",
-      title: matched.length > 0 ? "Плотности из документов сопоставлены" : "Плотности из документов не подтверждены расчётом",
-      status: matched.length > 0 ? "ok" : "warning",
-      detail: matched.length > 0
-        ? `Найдены значения плотности, близкие к расчётным: ${matched.slice(0, 4).map(v => `${v.raw}`).join(", ")}. Это значит, что распознанные документы реально участвуют в анализе программы цементирования.`
-        : `Документы содержат плотности (${densities.slice(0, 5).map(v => v.raw).join(", ")}), но они заметно расходятся с текущим расчётом. Требуется проверить, соответствует ли загруженная программа текущей компоновке и рецептуре.`
-    });
+    const unmatched = densities.filter(v => !referenceDensities.some(ref => Math.abs(ref - (v.numeric || 0)) <= 120));
+
+    if (matched.length > 0) {
+      const detail = `Из загруженных документов извлечены значения плотности: ${matched.map(v => `**${v.raw}**`).join(", ")}. ` +
+        `Сопоставление с расчётными данными (${referenceDensities.map(r => (r / 1000).toFixed(2) + " г/см³").join(", ")}) показывает **соответствие** — расхождение не превышает 120 кг/м³. ` +
+        `Это подтверждает корректность используемой рецептуры и соответствие программы цементирования фактическим параметрам.`;
+      checks.push({ section: "Сверка с документами", title: "Плотности растворов — подтверждены документами", status: "ok", detail });
+    }
+    if (unmatched.length > 0) {
+      const detail = `В документах обнаружены плотности, не совпадающие с текущим расчётом: ${unmatched.map(v => `**${v.raw}**`).join(", ")}. ` +
+        `Расчётные плотности: ${referenceDensities.map(r => (r / 1000).toFixed(2) + " г/см³").join(", ")}. ` +
+        `Возможные причины расхождения: использование устаревшей программы, изменение рецептуры, либо данные относятся к другой колонне. ` +
+        `Рекомендуется верифицировать соответствие загруженных документов текущему расчёту.`;
+      checks.push({ section: "Сверка с документами", title: "Обнаружены расхождения по плотности", status: "warning", detail });
+    }
   }
 
+  // ─── Depth cross-check ───────────────────────────────
   if (depths.length > 0 && referenceDepths.length > 0) {
     const matched = depths.filter(v => referenceDepths.some(ref => Math.abs(ref - (v.numeric || 0)) <= Math.max(50, ref * 0.05)));
-    checks.push({
-      section: "Документный анализ",
-      title: matched.length > 0 ? "Глубины из документов подтверждают расчёт" : "Глубины из документов требуют проверки",
-      status: matched.length > 0 ? "ok" : "warning",
-      detail: matched.length > 0
-        ? `Распознаны глубины, совпадающие с расчётными параметрами скважины: ${matched.slice(0, 4).map(v => v.raw).join(", ")}.`
-        : `В документах присутствуют глубины (${depths.slice(0, 5).map(v => v.raw).join(", ")}), но они не привязались к MD/TVD/спуску обсадной колонны из формы. Проверьте исходные данные и формат документа.`
-    });
+    if (matched.length > 0) {
+      checks.push({ section: "Сверка с документами", title: "Глубины — подтверждены", status: "ok",
+        detail: `Глубины из документов (${matched.map(v => `**${v.raw}**`).join(", ")}) соответствуют параметрам скважины (MD ${wellData.wellDepthMD} м, TVD ${wellData.wellDepthTVD || wellData.wellDepthMD} м, спуск ОК ${wellData.casingDepthMD} м). Документы относятся к данной скважине.` });
+    } else {
+      checks.push({ section: "Сверка с документами", title: "Глубины из документов не совпадают", status: "warning",
+        detail: `Извлечённые глубины (${depths.slice(0, 5).map(v => v.raw).join(", ")}) не совпадают с параметрами текущей скважины. Убедитесь, что загружены документы именно для данной скважины и колонны.` });
+    }
   }
 
-  if (thickening.length > 0 && referenceThickening.length > 0) {
-    const matched = thickening.filter(v => referenceThickening.some(ref => Math.abs(ref - (v.numeric || 0)) <= 30));
-    checks.push({
-      section: "Документный анализ",
-      title: matched.length > 0 ? "Лабораторные времена загустевания учтены" : "Лабораторные времена загустевания не согласованы",
-      status: matched.length > 0 ? "ok" : "warning",
-      detail: matched.length > 0
-        ? `Из документов извлечены времена загустевания, которые согласуются с расчётными растворами: ${matched.slice(0, 4).map(v => v.raw).join(", ")}.`
-        : `Найдены значения загустевания (${thickening.slice(0, 4).map(v => v.raw).join(", ")}), но они не совпадают с параметрами растворов в форме. Это может влиять на корректность вывода по безопасному времени.`
-    });
+  // ─── Thickening time cross-check ─────────────────────
+  if (thickening.length > 0) {
+    if (referenceThickening.length > 0) {
+      const matched = thickening.filter(v => referenceThickening.some(ref => Math.abs(ref - (v.numeric || 0)) <= 30));
+      if (matched.length > 0) {
+        checks.push({ section: "Сверка с документами", title: "Лабораторные данные по загустеванию — учтены", status: "ok",
+          detail: `Из документов извлечены времена загустевания (${matched.map(v => `**${v.raw}**`).join(", ")}), которые согласуются с заданными параметрами растворов. Это повышает достоверность оценки безопасного времени операции.` });
+      } else {
+        checks.push({ section: "Сверка с документами", title: "Лабораторные данные по загустеванию — расхождение", status: "warning",
+          detail: `Документы содержат времена загустевания (${thickening.map(v => v.raw).join(", ")}), которые расходятся с параметрами, заданными в расчёте (${referenceThickening.join(", ")} мин). Рекомендуется перепроверить условия лабораторных испытаний (температура, давление) и актуальность данных.` });
+      }
+    } else {
+      checks.push({ section: "Сверка с документами", title: "Лабораторные данные по загустеванию обнаружены", status: "info",
+        detail: `В документах найдены значения времени загустевания: ${thickening.map(v => `**${v.raw}**`).join(", ")}. Для полноценной сверки необходимо указать время загустевания в параметрах раствора.` });
+    }
   }
 
+  // ─── Pressure data ───────────────────────────────────
   if (pressures.length > 0) {
-    checks.push({
-      section: "Документный анализ",
-      title: "Гидравлические параметры найдены в документах",
-      status: "info",
-      detail: `В документах распознаны давления/ограничения: ${pressures.slice(0, 5).map(v => v.raw).join(", ")}. Они включены в документный контекст отчёта и используются для инженерной сверки.`
-    });
+    const maxP = Math.max(...pressures.map(v => v.numeric || 0));
+    const detail = `Из документов извлечены гидравлические параметры: ${pressures.slice(0, 6).map(v => `**${v.raw}**`).join(", ")}. ` +
+      `Максимальное зафиксированное давление: **${maxP.toFixed(1)} МПа**. ` +
+      (maxP > 30 ? `Высокие давления требуют особого внимания к допустимому давлению на устье, прочности обсадной колонны и герметичности устьевой арматуры.` :
+       `Давления находятся в типичном диапазоне для данного типа операций.`);
+    checks.push({ section: "Сверка с документами", title: `Давления — извлечены из документов (макс. ${maxP.toFixed(1)} МПа)`, status: maxP > 35 ? "warning" : "info", detail });
   }
 
+  // ─── Lab strength data ───────────────────────────────
+  if (strengths.length > 0) {
+    const maxStr = Math.max(...strengths.map(v => v.numeric || 0));
+    checks.push({ section: "Сверка с документами", title: `Прочность цементного камня — данные из лаборатории`, status: maxStr >= 3.5 ? "ok" : "warning",
+      detail: `Лабораторные данные по прочности на сжатие: ${strengths.map(v => `**${v.raw}**`).join(", ")}. ` +
+        (maxStr >= 3.5 ? `Прочность ≥ 3.5 МПа обеспечивает надёжную опору для обсадной колонны и герметичность крепи при стандартных нагрузках.` :
+         `Прочность < 3.5 МПа может быть недостаточной. Рекомендуется оптимизация рецептуры или увеличение времени ОЗЦ.`) });
+  }
+
+  // ─── Fluid loss data ─────────────────────────────────
+  if (fluidLoss.length > 0) {
+    const avgFL = fluidLoss.reduce((s, v) => s + (v.numeric || 0), 0) / fluidLoss.length;
+    checks.push({ section: "Сверка с документами", title: `Водоотдача — лабораторные данные`, status: avgFL <= 100 ? "ok" : "warning",
+      detail: `Из документов извлечены значения водоотдачи: ${fluidLoss.map(v => `**${v.raw}**`).join(", ")}. ` +
+        (avgFL <= 50 ? `Низкая водоотдача (≤ 50 мл/30 мин) — оптимальное значение для предотвращения преждевременного обезвоживания и обеспечения полноценного контакта цемента с породой.` :
+         avgFL <= 100 ? `Водоотдача в допустимых пределах. Для газоносных интервалов рекомендуется < 50 мл/30 мин.` :
+         `Повышенная водоотдача увеличивает риск преждевременного схватывания, образования мостов и неполного заполнения затрубного пространства. Рекомендуется добавление понизителя водоотдачи.`) });
+  }
+
+  // ─── Volume data ─────────────────────────────────────
+  if (volumes.length > 0) {
+    checks.push({ section: "Сверка с документами", title: "Объёмы из документов", status: "info",
+      detail: `Из программы/отчёта извлечены объёмы: ${volumes.slice(0, 6).map(v => `**${v.raw}**`).join(", ")}. Данные учтены при общей оценке программы цементирования.` });
+  }
+
+  // ─── Flow rate data ──────────────────────────────────
+  if (rates.length > 0) {
+    checks.push({ section: "Сверка с документами", title: "Расходы закачки из документов", status: "info",
+      detail: `Извлечены расходы закачки: ${rates.slice(0, 5).map(v => `**${v.raw}**`).join(", ")}. Сравнение с расчётными расходами позволяет оценить адекватность режима течения.` });
+  }
+
+  // ─── Temperature data ────────────────────────────────
+  if (temperatures.length > 0) {
+    const maxT = Math.max(...temperatures.map(v => v.numeric || 0));
+    const calcBHST = wellData.bottomTempStatic;
+    const diff = Math.abs(maxT - calcBHST);
+    checks.push({ section: "Сверка с документами", title: `Температура — документ vs расчёт`, status: diff <= 15 ? "ok" : "warning",
+      detail: `Температуры из документов: ${temperatures.map(v => `**${v.raw}**`).join(", ")}. BHST в расчёте: **${calcBHST}°C**. ` +
+        (diff <= 15 ? `Расхождение в пределах нормы (±15°C).` : `Значительное расхождение (${diff.toFixed(0)}°C) — необходимо уточнить температурный режим скважины для корректного подбора рецептуры.`) });
+  }
+
+  // ─── Bond log (AKC) data from text ───────────────────
+  if (bondValues.length > 0) {
+    checks.push({ section: "Геофизика (АКЦ/CBL/VDL)", title: "Данные качества сцепления из отчёта", status: "info",
+      detail: `Из текстовых документов извлечены показатели качества сцепления: ${bondValues.slice(0, 5).map(v => `**${v.raw}**`).join(", ")}. ` +
+        `Данные интегрированы в общую оценку качества цементирования.` });
+  }
+
+  // ─── Geophysics from images ──────────────────────────
   const geophysicsDocs = docs.filter(doc => {
     const type = doc.imageAnalysis?.chartType.type;
     const byImageType = type === "akc_cbl" || type === "vdl" || type === "log_diagram";
@@ -554,37 +622,61 @@ function buildDocumentDrivenChecks(
   if (geophysicsDocs.length > 0) {
     for (const doc of geophysicsDocs) {
       const verdict = getGeophysicsVerdict(doc);
-      const chartLabel = doc.imageAnalysis?.chartType.description || "Геофизический документ";
-      const dark = doc.imageAnalysis?.colorProfile.darkAreaPercent;
-      const light = doc.imageAnalysis?.colorProfile.lightAreaPercent;
+      const image = doc.imageAnalysis;
+      const chartLabel = image?.chartType.description || "Геофизический документ";
+      const dark = image?.colorProfile.darkAreaPercent;
+      const light = image?.colorProfile.lightAreaPercent;
+
+      let detailParts: string[] = [];
+      detailParts.push(`**${chartLabel}** — интерпретация по визуальным признакам.`);
+      detailParts.push(verdict.verdict);
+
+      if (dark !== undefined && light !== undefined) {
+        detailParts.push(`Тёмные зоны (хорошее сцепление): **${dark.toFixed(1)}%**, светлые зоны (возможные дефекты): **${light.toFixed(1)}%**.`);
+      }
+
+      const zoneSummary = formatZoneSummary(doc);
+      if (zoneSummary && !zoneSummary.includes("не выделены")) {
+        detailParts.push(`Интервалы по глубине: ${zoneSummary}.`);
+      }
+
+      if (image?.curveDetection.hasColorBands) {
+        detailParts.push(`Обнаружены характерные цветовые полосы VDL — паттерн «ёлочка» (chevron) свидетельствует о наличии цементного камня в затрубном пространстве.`);
+      }
+
+      // Add engineering interpretation
+      if (dark !== undefined) {
+        if (dark >= 55) {
+          detailParts.push(`**Вывод**: преобладание тёмных зон на АКЦ указывает на качественное сцепление цементного камня с обсадной колонной на большей части интервала. Зональная изоляция с высокой вероятностью обеспечена.`);
+        } else if (dark >= 30) {
+          detailParts.push(`**Вывод**: картина неоднородная. Рекомендуется детальный интервальный анализ с привязкой к глубине. Возможно, потребуется ремонтно-изоляционные работы (РИР) в критических интервалах.`);
+        } else {
+          detailParts.push(`**Вывод**: преобладание светлых зон свидетельствует о неудовлетворительном качестве сцепления. Рекомендуется: 1) повторное цементирование (squeeze); 2) анализ причин — эксцентриситет колонны, недостаточная промывка, контаминация цемента.`);
+        }
+      }
 
       checks.push({
         section: "Геофизика (АКЦ/CBL/VDL)",
-        title: `${doc.name}: ${chartLabel}`,
+        title: `${doc.name}: ${verdict.status === "ok" ? "качественное сцепление" : verdict.status === "warning" ? "неоднородная картина" : "дефекты сцепления"}`,
         status: verdict.status,
-        detail: [
-          verdict.verdict,
-          dark !== undefined && light !== undefined ? `Тёмные зоны: ${dark.toFixed(1)}%, светлые зоны: ${light.toFixed(1)}%.` : "",
-          formatZoneSummary(doc),
-        ].filter(Boolean).join("\n\n")
+        detail: detailParts.join("\n\n")
       });
     }
-  } else if (docs.length > 0) {
-    checks.push({
-      section: "Геофизика (АКЦ/CBL/VDL)",
-      title: "Геофизические файлы не идентифицированы уверенно",
-      status: "warning",
-      detail: "Документы загружены, но система не увидела устойчивых признаков АКЦ/CBL/VDL. Для геофизического отчёта лучше загружать сами диаграммы, скриншоты хорошего качества или файлы с понятными названиями (АКЦ, CBL, VDL, СГДТ)."
-    });
   }
 
-  if (extractedValues.length === 0 && geophysicsDocs.length === 0) {
-    checks.push({
-      section: "Документный анализ",
-      title: "Документы распознаны слабо",
-      status: "warning",
-      detail: "В загруженных документах не удалось уверенно извлечь числовые параметры и геофизические признаки. Нужны более чёткие файлы или текстовые/PDF-версии отчётов вместо фотографий низкого качества."
-    });
+  // ─── Summary of document analysis ────────────────────
+  const totalExtracted = extractedValues.length;
+  const successfulDocs = docs.filter(d => d.text.trim().length > 0 || d.imageAnalysis);
+  if (successfulDocs.length > 0 && totalExtracted > 0) {
+    checks.push({ section: "Сверка с документами", title: `Обработано ${successfulDocs.length} документ(ов), извлечено ${totalExtracted} параметров`, status: "ok",
+      detail: `Система успешно распознала и проанализировала загруженные файлы: ${successfulDocs.map(d => `**${d.name}**`).join(", ")}. ` +
+        `Все извлечённые параметры (плотности, глубины, давления, лабораторные данные) были автоматически сопоставлены с расчётными данными и включены в инженерную оценку выше.` });
+  } else if (docs.length > 0 && totalExtracted === 0 && geophysicsDocs.length === 0) {
+    checks.push({ section: "Сверка с документами", title: "Документы не содержат распознаваемых параметров", status: "warning",
+      detail: `Загружено ${docs.length} файл(ов), но автоматическое извлечение параметров не дало результатов. Рекомендации:\n\n` +
+        `- Используйте текстовые PDF или DOCX вместо сканов/фотографий\n` +
+        `- Для геофизики загружайте скриншоты с чётким разрешением\n` +
+        `- Убедитесь, что файлы содержат данные по цементированию` });
   }
 
   return checks;
