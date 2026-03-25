@@ -540,19 +540,31 @@ export default function AnalysisSection({
             </div>
           )}
 
-          <Button onClick={runAnalysis} disabled={!hasAnyInput || analyzing} className="w-full" size="lg">
-            {analyzing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Анализирую... {formatTime(elapsedSeconds)}
-              </>
-            ) : (
-              <>
-                <Brain className="w-4 h-4" />
-                🚀 Запустить анализ
-              </>
-            )}
-          </Button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Button onClick={runLocalAnalysis} disabled={wellData.wellDepthMD <= 0 || slurries.length === 0} variant="outline" size="lg" className="w-full">
+              <Cpu className="w-4 h-4" />
+              📐 Алгоритмический анализ
+            </Button>
+
+            <Button onClick={runAnalysis} disabled={!hasAnyInput || analyzing} className="w-full" size="lg">
+              {analyzing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Анализирую... {formatTime(elapsedSeconds)}
+                </>
+              ) : (
+                <>
+                  <Brain className="w-4 h-4" />
+                  🚀 AI-анализ (документы)
+                </>
+              )}
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-2">
+            <Cpu className="w-3.5 h-3.5 shrink-0" />
+            <span><strong>Алгоритмический</strong> — мгновенный, по данным расчёта, без кредитов. <strong>AI</strong> — с анализом документов, расходует кредиты.</span>
+          </div>
 
           {analyzing && (
             <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground bg-muted/50 rounded-lg p-2.5 animate-pulse">
