@@ -576,9 +576,18 @@ export default function AnalysisSection({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Button onClick={runLocalAnalysis} disabled={wellData.wellDepthMD <= 0 || slurries.length === 0} variant="outline" size="lg" className="w-full">
-              <Cpu className="w-4 h-4" />
-              📐 Алгоритмический анализ
+            <Button onClick={runLocalAnalysis} disabled={parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)} variant="outline" size="lg" className="w-full">
+              {parsing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Читаю документы...
+                </>
+              ) : (
+                <>
+                  <Cpu className="w-4 h-4" />
+                  📐 Алгоритмический анализ
+                </>
+              )}
             </Button>
 
             <Button onClick={runAnalysis} disabled={!hasAnyInput || analyzing} className="w-full" size="lg">
