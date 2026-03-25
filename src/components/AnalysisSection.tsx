@@ -1,7 +1,8 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, DragEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight, FolderOpen } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
@@ -18,7 +19,216 @@ interface AnalysisSectionProps {
 interface UploadedFile {
   name: string;
   path: string;
-  type: "akc" | "program" | "report";
+  type: "akc" | "program" | "report" | "other";
+}
+
+const ACCEPTED_EXTENSIONS = ".pdf,.docx,.doc,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.webp";
+
+function getMimeType(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  const map: Record<string, string> = {
+    pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+    bmp: "image/bmp", tiff: "image/tiff", tif: "image/tiff", webp: "image/webp",
+    txt: "text/plain",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    doc: "application/msword",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xls: "application/vnd.ms-excel",
+  };
+  return map[ext] || "application/octet-stream";
+}
+
+function DropZone({
+  label,
+  desc,
+  existingFiles,
+  onDrop,
+  onRemove,
+  uploading,
+  uploadingType,
+  multi = false,
+  type,
+}: {
+  label: string;
+  desc: string;
+  existingFiles: UploadedFile[];
+  onDrop: (files: File[]) => void;
+  onRemove: (file: UploadedFile) => void;
+  uploading: boolean;
+  uploadingType: string | null;
+  multi?: boolean;
+  type: string;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleDragOver = (e: DragEvent) => { e.preventDefault(); setDragOver(true); };
+  const handleDragLeave = () => setDragOver(false);
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (droppedFiles.length) onDrop(multi ? droppedFiles : [droppedFiles[0]]);
+  };
+
+  const isUploading = uploading && uploadingType === type;
+
+  return (
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      onClick={() => !isUploading && inputRef.current?.click()}
+      className={`border-2 border-dashed rounded-lg p-4 text-center space-y-2 transition-all cursor-pointer
+        ${dragOver ? "border-primary bg-primary/10 scale-[1.02]" : "border-border hover:border-primary/50"}`}
+    >
+      <p className="text-sm font-medium">{label}</p>
+      <p className="text-xs text-muted-foreground">{desc}</p>
+
+      {isUploading && (
+        <div className="flex items-center justify-center gap-2 py-2">
+          <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          <span className="text-xs text-muted-foreground">Загрузка...</span>
+        </div>
+      )}
+
+      {existingFiles.length > 0 && (
+        <div className="space-y-1">
+          {existingFiles.map(f => (
+            <div key={f.path} className="flex items-center justify-center gap-2">
+              <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+              <span className="text-xs truncate max-w-[150px]">{f.name}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); onRemove(f); }}
+                className="text-destructive hover:text-destructive/80"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!isUploading && existingFiles.length === 0 && (
+        <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          <Upload className="w-3.5 h-3.5" />
+          <span>Перетащите или нажмите</span>
+        </div>
+      )}
+
+      <input
+        ref={inputRef}
+        type="file"
+        className="hidden"
+        accept={ACCEPTED_EXTENSIONS}
+        multiple={multi}
+        onChange={(e) => {
+          const chosen = Array.from(e.target.files || []);
+          if (chosen.length) onDrop(multi ? chosen : [chosen[0]]);
+          e.target.value = "";
+        }}
+        disabled={uploading}
+      />
+    </div>
+  );
+}
+
+/** Render markdown-like report with tables, bold, headers */
+function ReportRenderer({ text }: { text: string }) {
+  const lines = text.split("\n");
+  const elements: JSX.Element[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Detect markdown table
+    if (line.includes("|") && i + 1 < lines.length && lines[i + 1]?.match(/^\|[\s\-:|]+\|/)) {
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].includes("|")) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      // Parse table
+      const rows = tableLines
+        .filter(l => !l.match(/^\|[\s\-:|]+\|$/))
+        .map(l => l.split("|").map(c => c.trim()).filter(Boolean));
+
+      if (rows.length > 0) {
+        const headers = rows[0];
+        const dataRows = rows.slice(1);
+        elements.push(
+          <div key={`table-${i}`} className="my-3 overflow-x-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  {headers.map((h, hi) => (
+                    <TableHead key={hi} className="font-semibold text-xs">{renderInline(h)}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dataRows.map((row, ri) => (
+                  <TableRow key={ri}>
+                    {row.map((cell, ci) => (
+                      <TableCell key={ci} className="text-xs py-2">{renderInline(cell)}</TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        );
+      }
+      continue;
+    }
+
+    // Headers
+    if (line.startsWith("### ")) {
+      elements.push(<h4 key={i} className="text-sm font-bold mt-4 mb-1 text-primary">{renderInline(line.slice(4))}</h4>);
+    } else if (line.startsWith("## ")) {
+      elements.push(<h3 key={i} className="text-base font-bold mt-5 mb-2 text-foreground border-b pb-1">{renderInline(line.slice(3))}</h3>);
+    } else if (line.startsWith("# ")) {
+      elements.push(<h2 key={i} className="text-lg font-bold mt-5 mb-2 text-foreground">{renderInline(line.slice(2))}</h2>);
+    } else if (line.startsWith("- ") || line.startsWith("* ")) {
+      elements.push(
+        <div key={i} className="flex gap-2 text-sm ml-2 my-0.5">
+          <span className="text-primary mt-0.5">•</span>
+          <span>{renderInline(line.slice(2))}</span>
+        </div>
+      );
+    } else if (line.match(/^\d+\.\s/)) {
+      const num = line.match(/^(\d+)\.\s/)?.[1];
+      elements.push(
+        <div key={i} className="flex gap-2 text-sm ml-2 my-0.5">
+          <span className="text-primary font-semibold min-w-[1.2rem]">{num}.</span>
+          <span>{renderInline(line.replace(/^\d+\.\s/, ""))}</span>
+        </div>
+      );
+    } else if (line.trim() === "") {
+      elements.push(<div key={i} className="h-2" />);
+    } else {
+      elements.push(<p key={i} className="text-sm leading-relaxed my-0.5">{renderInline(line)}</p>);
+    }
+    i++;
+  }
+
+  return <>{elements}</>;
+}
+
+function renderInline(text: string): (string | JSX.Element)[] {
+  const parts: (string | JSX.Element)[] = [];
+  const regex = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    parts.push(<strong key={key++} className="font-semibold">{match[1]}</strong>);
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
 }
 
 export default function AnalysisSection({
@@ -31,13 +241,14 @@ export default function AnalysisSection({
 }: AnalysisSectionProps) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadingType, setUploadingType] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [report, setReport] = useState<string>("");
   const [error, setError] = useState<string>("");
-  const [useOwnProgram, setUseOwnProgram] = useState(true); // true = данные текущего расчёта, false = сторонний файл
+  const [useOwnProgram, setUseOwnProgram] = useState(true);
   const reportRef = useRef<HTMLDivElement>(null);
 
-  const uploadFile = useCallback(async (file: File, docType: "akc" | "program" | "report") => {
+  const uploadFile = useCallback(async (file: File, docType: "akc" | "program" | "report" | "other") => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       setError("Войдите в аккаунт для загрузки файлов");
@@ -45,6 +256,7 @@ export default function AnalysisSection({
     }
 
     setUploading(true);
+    setUploadingType(docType);
     setError("");
     try {
       const ext = file.name.split(".").pop() || "pdf";
@@ -57,6 +269,9 @@ export default function AnalysisSection({
       if (uploadError) throw uploadError;
 
       setFiles(prev => {
+        if (docType === "other") {
+          return [...prev, { name: file.name, path, type: docType }];
+        }
         const filtered = prev.filter(f => f.type !== docType);
         return [...filtered, { name: file.name, path, type: docType }];
       });
@@ -64,6 +279,7 @@ export default function AnalysisSection({
       setError("Ошибка загрузки: " + e.message);
     } finally {
       setUploading(false);
+      setUploadingType(null);
     }
   }, []);
 
@@ -73,9 +289,7 @@ export default function AnalysisSection({
   }, []);
 
   const fileToBase64 = async (file: UploadedFile): Promise<{ base64: string; mimeType: string; name: string } | null> => {
-    const { data } = await supabase.storage
-      .from("analysis-docs")
-      .download(file.path);
+    const { data } = await supabase.storage.from("analysis-docs").download(file.path);
     if (!data) return null;
     const arrayBuffer = await data.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
@@ -83,21 +297,7 @@ export default function AnalysisSection({
     for (let i = 0; i < bytes.byteLength; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
-    const base64 = btoa(binary);
-    const ext = file.name.split(".").pop()?.toLowerCase() || "";
-    let mimeType = "application/octet-stream";
-    if (ext === "pdf") mimeType = "application/pdf";
-    else if (ext === "png") mimeType = "image/png";
-    else if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
-    else if (ext === "bmp") mimeType = "image/bmp";
-    else if (ext === "tiff" || ext === "tif") mimeType = "image/tiff";
-    else if (ext === "webp") mimeType = "image/webp";
-    else if (ext === "txt") mimeType = "text/plain";
-    else if (ext === "docx") mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    else if (ext === "doc") mimeType = "application/msword";
-    else if (ext === "xlsx") mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    else if (ext === "xls") mimeType = "application/vnd.ms-excel";
-    return { base64, mimeType, name: file.name };
+    return { base64: btoa(binary), mimeType: getMimeType(file.name), name: file.name };
   };
 
   const runAnalysis = useCallback(async () => {
@@ -106,27 +306,28 @@ export default function AnalysisSection({
     setReport("");
 
     try {
-      // Convert uploaded files to base64
-      const documentFiles: Record<string, { base64: string; mimeType: string; name: string }> = {};
+      const documentFiles: Record<string, { base64: string; mimeType: string; name: string } | { base64: string; mimeType: string; name: string }[]> = {};
+      const otherDocs: { base64: string; mimeType: string; name: string }[] = [];
+
       for (const file of files) {
         if (file.type === "program" && useOwnProgram) continue;
         try {
           const fileData = await fileToBase64(file);
-          if (fileData) documentFiles[file.type] = fileData;
-        } catch {
-          // skip failed files
-        }
+          if (!fileData) continue;
+          if (file.type === "other") {
+            otherDocs.push(fileData);
+          } else {
+            documentFiles[file.type] = fileData;
+          }
+        } catch {}
       }
 
-      // If using own program — pass current calc data as program context
+      if (otherDocs.length > 0) {
+        documentFiles["other"] = otherDocs;
+      }
+
       const calcData = {
-        wellData,
-        drillingFluid,
-        slurries,
-        buffers,
-        displacementFluids,
-        centralizationResults,
-        useOwnProgram,
+        wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram,
       };
 
       const response = await fetch(
@@ -146,7 +347,6 @@ export default function AnalysisSection({
         throw new Error(err.error || `HTTP ${response.status}`);
       }
 
-      // Stream SSE
       const reader = response.body?.getReader();
       if (!reader) throw new Error("No response body");
       const decoder = new TextDecoder();
@@ -172,9 +372,7 @@ export default function AnalysisSection({
             if (content) {
               fullText += content;
               setReport(fullText);
-              if (reportRef.current) {
-                reportRef.current.scrollTop = reportRef.current.scrollHeight;
-              }
+              if (reportRef.current) reportRef.current.scrollTop = reportRef.current.scrollHeight;
             }
           } catch {}
         }
@@ -186,16 +384,15 @@ export default function AnalysisSection({
     }
   }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram]);
 
-  const docTypes = [
-    { type: "akc" as const, label: "📊 АКЦ / СГДТ / CBL-VDL", desc: "Геофизические данные" },
-    { type: "report" as const, label: "📝 Отчёт по цементированию", desc: "Фактические данные" },
-  ];
+  const akcFiles = files.filter(f => f.type === "akc");
+  const reportFiles = files.filter(f => f.type === "report");
+  const otherFiles = files.filter(f => f.type === "other");
+  const programFile = files.filter(f => f.type === "program");
 
   const hasAnyInput = files.length > 0 || (wellData.wellDepthMD > 0 && slurries.length > 0);
 
   return (
     <div className="space-y-4">
-      {/* Upload Section */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -203,49 +400,46 @@ export default function AnalysisSection({
             🔬 Анализ качества цементирования
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Загрузите документы геофизики и отчёты — система проанализирует качество цементирования с учётом данных вашего расчёта
+            Загрузите документы — система проанализирует качество цементирования. Поддерживаются PDF, Word, Excel, изображения.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Main upload areas */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {docTypes.map(({ type, label, desc }) => {
-              const existing = files.find(f => f.type === type);
-              return (
-                <div
-                  key={type}
-                  className="border-2 border-dashed border-border rounded-lg p-4 text-center space-y-2 hover:border-primary/50 transition-colors"
-                >
-                  <p className="text-sm font-medium">{label}</p>
-                  <p className="text-xs text-muted-foreground">{desc}</p>
-                  {existing ? (
-                    <div className="flex items-center justify-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                      <span className="text-xs truncate max-w-[120px]">{existing.name}</span>
-                      <button onClick={() => removeFile(existing)} className="text-destructive hover:text-destructive/80">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ) : (
-                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-xs font-medium transition-colors">
-                      <Upload className="w-3.5 h-3.5" />
-                      Загрузить
-                      <input
-                        type="file"
-                        className="hidden"
-           accept=".pdf,.docx,.doc,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.webp"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) uploadFile(f, type);
-                          e.target.value = "";
-                        }}
-                        disabled={uploading}
-                      />
-                    </label>
-                  )}
-                </div>
-              );
-            })}
+            <DropZone
+              label="📊 АКЦ / СГДТ / CBL-VDL"
+              desc="Геофизика, графики, скриншоты"
+              existingFiles={akcFiles}
+              onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "akc"))}
+              onRemove={removeFile}
+              uploading={uploading}
+              uploadingType={uploadingType}
+              type="akc"
+            />
+            <DropZone
+              label="📝 Отчёт по цементированию"
+              desc="Фактические данные, рапорт"
+              existingFiles={reportFiles}
+              onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "report"))}
+              onRemove={removeFile}
+              uploading={uploading}
+              uploadingType={uploadingType}
+              type="report"
+            />
           </div>
+
+          {/* Other documents */}
+          <DropZone
+            label="📁 Дополнительные документы"
+            desc="Планы, ГТИ, протоколы бурового раствора, реология, лабораторные тесты, особые мнения и др."
+            existingFiles={otherFiles}
+            onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "other"))}
+            onRemove={removeFile}
+            uploading={uploading}
+            uploadingType={uploadingType}
+            multi
+            type="other"
+          />
 
           {/* Program source toggle */}
           <div className="border rounded-lg p-4 space-y-3">
@@ -273,34 +467,16 @@ export default function AnalysisSection({
                 <span>Используются данные текущего расчёта (скважина, растворы, центрирование)</span>
               </div>
             ) : (
-              (() => {
-                const existing = files.find(f => f.type === "program");
-                return existing ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                    <span className="text-xs truncate max-w-[180px]">{existing.name}</span>
-                    <button onClick={() => removeFile(existing)} className="text-destructive hover:text-destructive/80">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-xs font-medium transition-colors">
-                    <Upload className="w-3.5 h-3.5" />
-                    Загрузить стороннюю программу
-                    <input
-                      type="file"
-                      className="hidden"
-                       accept=".pdf,.docx,.doc,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.webp"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) uploadFile(f, "program");
-                        e.target.value = "";
-                      }}
-                      disabled={uploading}
-                    />
-                  </label>
-                );
-              })()
+              <DropZone
+                label="📋 Сторонняя программа"
+                desc="Загрузите программу цементирования"
+                existingFiles={programFile}
+                onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "program"))}
+                onRemove={removeFile}
+                uploading={uploading}
+                uploadingType={uploadingType}
+                type="program"
+              />
             )}
           </div>
 
@@ -336,12 +512,7 @@ export default function AnalysisSection({
             </div>
           )}
 
-          <Button
-            onClick={runAnalysis}
-            disabled={!hasAnyInput || analyzing}
-            className="w-full"
-            size="lg"
-          >
+          <Button onClick={runAnalysis} disabled={!hasAnyInput || analyzing} className="w-full" size="lg">
             {analyzing ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -359,18 +530,19 @@ export default function AnalysisSection({
 
       {/* Report */}
       {report && (
-        <Card>
-          <CardHeader>
+        <Card className="border-primary/20">
+          <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
-              📄 Отчёт анализа
+              📄 Отчёт анализа качества цементирования
             </CardTitle>
+            <p className="text-xs text-muted-foreground">DeAllsoft — виртуальный инженерный помощник</p>
           </CardHeader>
           <CardContent>
             <div
               ref={reportRef}
-              className="prose prose-sm dark:prose-invert max-w-none max-h-[600px] overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed"
+              className="max-h-[700px] overflow-y-auto pr-2 space-y-0"
             >
-              {report}
+              <ReportRenderer text={report} />
             </div>
           </CardContent>
         </Card>
