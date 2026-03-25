@@ -269,7 +269,7 @@ export default function AnalysisSection({
       if (uploadError) throw uploadError;
 
       setFiles(prev => {
-        if (docType === "other") {
+        if (docType === "other" || docType === "akc") {
           return [...prev, { name: file.name, path, type: docType }];
         }
         const filtered = prev.filter(f => f.type !== docType);
