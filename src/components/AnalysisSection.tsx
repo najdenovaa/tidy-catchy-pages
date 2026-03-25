@@ -106,15 +106,15 @@ export default function AnalysisSection({
     setReport("");
 
     try {
-      // Extract text from uploaded files
-      const documentTexts: Record<string, string> = {};
+      // Convert uploaded files to base64
+      const documentFiles: Record<string, { base64: string; mimeType: string; name: string }> = {};
       for (const file of files) {
-        // Skip program file if using own calc data
         if (file.type === "program" && useOwnProgram) continue;
         try {
-          documentTexts[file.type] = await extractTextFromFile(file);
+          const fileData = await fileToBase64(file);
+          if (fileData) documentFiles[file.type] = fileData;
         } catch {
-          documentTexts[file.type] = `[Файл: ${file.name} — не удалось извлечь текст]`;
+          // skip failed files
         }
       }
 
