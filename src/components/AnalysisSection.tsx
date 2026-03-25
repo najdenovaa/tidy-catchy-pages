@@ -297,6 +297,9 @@ export default function AnalysisSection({
 
       if (uploadError) throw uploadError;
 
+      // Store raw file for local parsing
+      setRawFiles(prev => new Map(prev).set(path, file));
+
       setFiles(prev => {
         if (docType === "other" || docType === "akc") {
           return [...prev, { name: file.name, path, type: docType }];
