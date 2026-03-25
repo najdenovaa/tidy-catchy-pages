@@ -6,11 +6,65 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+async function extractTextFromFile(
+  file: { base64: string; mimeType: string; name: string },
+  apiKey: string
+): Promise<string> {
+  // For plain text files, just decode
+  if (file.mimeType === "text/plain") {
+    try {
+      const bytes = Uint8Array.from(atob(file.base64), c => c.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return "";
+    }
+  }
+
+  // For PDFs, images, and office docs — use Gemini Vision API
+  console.log(`Extracting text from ${file.name} (${file.mimeType}) via Vision API...`);
+
+  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Извлеки весь текст из этого документа/изображения. Верни только извлечённый текст, сохраняя структуру (заголовки, таблицы, списки). Если это геофизический лог или график, опиши данные которые видишь: интервалы глубин, значения амплитуд, качество сцепления и т.д.",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${file.mimeType};base64,${file.base64}`,
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    console.error(`Vision API error for ${file.name}:`, response.status);
+    return `[Не удалось распознать файл: ${file.name}]`;
+  }
+
+  const result = await response.json();
+  return result.choices?.[0]?.message?.content || "";
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { documentTexts, calcData } = await req.json();
+    const { documentFiles, calcData } = await req.json();
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
@@ -47,23 +101,25 @@ serve(async (req) => {
       }
     }
 
-    // Build document context
+    // Extract text from uploaded files using Vision API
     let docsContext = "";
     const usesOwnProgram = calcData?.useOwnProgram !== false;
 
     if (usesOwnProgram && calcData) {
       docsContext += `\n## Программа цементирования (данные расчёта — наша программа):\n`;
-      docsContext += calcContext; // already includes well data, slurries, centralization
+      docsContext += calcContext;
     }
-    if (documentTexts) {
-      if (documentTexts.akc) {
-        docsContext += `\n## Документ АКЦ/СГДТ (геофизические данные):\n${documentTexts.akc.substring(0, 15000)}\n`;
-      }
-      if (documentTexts.program) {
-        docsContext += `\n## Программа цементирования:\n${documentTexts.program.substring(0, 10000)}\n`;
-      }
-      if (documentTexts.report) {
-        docsContext += `\n## Отчёт по цементированию:\n${documentTexts.report.substring(0, 10000)}\n`;
+
+    if (documentFiles) {
+      for (const [docType, fileData] of Object.entries(documentFiles)) {
+        const file = fileData as { base64: string; mimeType: string; name: string };
+        const extractedText = await extractTextFromFile(file, LOVABLE_API_KEY);
+        const labels: Record<string, string> = {
+          akc: "АКЦ/СГДТ (геофизические данные)",
+          program: "Программа цементирования",
+          report: "Отчёт по цементированию",
+        };
+        docsContext += `\n## Документ ${labels[docType] || docType}:\n${extractedText.substring(0, 15000)}\n`;
       }
     }
 
@@ -125,14 +181,14 @@ ${docsContext}
         });
       }
       if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Необходимо пополнить баланс AI." }), {
+        return new Response(JSON.stringify({ error: "Необходимо пополнить баланс." }), {
           status: 402,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const t = await response.text();
       console.error("AI gateway error:", response.status, t);
-      return new Response(JSON.stringify({ error: "Ошибка AI сервиса" }), {
+      return new Response(JSON.stringify({ error: "Ошибка сервиса анализа" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
