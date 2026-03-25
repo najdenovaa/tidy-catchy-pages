@@ -246,6 +246,7 @@ export default function AnalysisSection({
   const [report, setReport] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [useOwnProgram, setUseOwnProgram] = useState(true);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const reportRef = useRef<HTMLDivElement>(null);
 
   const uploadFile = useCallback(async (file: File, docType: "akc" | "program" | "report" | "other") => {
