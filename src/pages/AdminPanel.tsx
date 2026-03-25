@@ -25,6 +25,11 @@ interface SavedCalc {
   id: string; user_id: string; module: string; title: string; created_at: string; well_data: any; calc_params: any; results: any;
   well_id: string;
 }
+interface AnalysisLog {
+  id: string; created_at: string; user_id: string | null; user_email: string | null;
+  module: string; well_summary: string | null; documents_count: number;
+  document_names: string[] | null; ip_address: string | null; user_agent: string | null; location: string | null;
+}
 
 const moduleLabel = (m: string) => {
   if (m === "cementing") return "Цементирование";
