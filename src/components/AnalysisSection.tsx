@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle } from "lucide-react";
+import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
@@ -34,6 +34,7 @@ export default function AnalysisSection({
   const [analyzing, setAnalyzing] = useState(false);
   const [report, setReport] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [useOwnProgram, setUseOwnProgram] = useState(true); // true = данные текущего расчёта, false = сторонний файл
   const reportRef = useRef<HTMLDivElement>(null);
 
   const uploadFile = useCallback(async (file: File, docType: "akc" | "program" | "report") => {
@@ -90,6 +91,8 @@ export default function AnalysisSection({
       // Extract text from uploaded files
       const documentTexts: Record<string, string> = {};
       for (const file of files) {
+        // Skip program file if using own calc data
+        if (file.type === "program" && useOwnProgram) continue;
         try {
           documentTexts[file.type] = await extractTextFromFile(file);
         } catch {
@@ -97,6 +100,7 @@ export default function AnalysisSection({
         }
       }
 
+      // If using own program — pass current calc data as program context
       const calcData = {
         wellData,
         drillingFluid,
@@ -104,6 +108,7 @@ export default function AnalysisSection({
         buffers,
         displacementFluids,
         centralizationResults,
+        useOwnProgram,
       };
 
       const response = await fetch(
@@ -161,11 +166,10 @@ export default function AnalysisSection({
     } finally {
       setAnalyzing(false);
     }
-  }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults]);
+  }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram]);
 
   const docTypes = [
     { type: "akc" as const, label: "📊 АКЦ / СГДТ / CBL-VDL", desc: "Геофизические данные" },
-    { type: "program" as const, label: "📋 Программа цементирования", desc: "Плановый документ" },
     { type: "report" as const, label: "📝 Отчёт по цементированию", desc: "Фактические данные" },
   ];
 
@@ -185,7 +189,7 @@ export default function AnalysisSection({
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {docTypes.map(({ type, label, desc }) => {
               const existing = files.find(f => f.type === type);
               return (
@@ -223,6 +227,63 @@ export default function AnalysisSection({
                 </div>
               );
             })}
+          </div>
+
+          {/* Program source toggle */}
+          <div className="border rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">📋 Программа цементирования</p>
+                <p className="text-xs text-muted-foreground">Источник данных программы</p>
+              </div>
+              <button
+                onClick={() => setUseOwnProgram(prev => !prev)}
+                className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 transition-colors"
+              >
+                {useOwnProgram ? (
+                  <ToggleRight className="w-5 h-5 text-primary" />
+                ) : (
+                  <ToggleLeft className="w-5 h-5 text-muted-foreground" />
+                )}
+                {useOwnProgram ? "Текущий расчёт" : "Сторонний файл"}
+              </button>
+            </div>
+
+            {useOwnProgram ? (
+              <div className="flex items-center gap-2 text-xs bg-primary/5 rounded-md p-2.5">
+                <CheckCircle className="w-4 h-4 text-primary shrink-0" />
+                <span>Используются данные текущего расчёта (скважина, растворы, центрирование)</span>
+              </div>
+            ) : (
+              (() => {
+                const existing = files.find(f => f.type === "program");
+                return existing ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" />
+                    <span className="text-xs truncate max-w-[180px]">{existing.name}</span>
+                    <button onClick={() => removeFile(existing)} className="text-destructive hover:text-destructive/80">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-xs font-medium transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    Загрузить стороннюю программу
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.docx,.doc,.txt,.xlsx,.xls"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) uploadFile(f, "program");
+                        e.target.value = "";
+                      }}
+                      disabled={uploading}
+                    />
+                  </label>
+                );
+              })()
+            )}
           </div>
 
           {/* Calc data status */}

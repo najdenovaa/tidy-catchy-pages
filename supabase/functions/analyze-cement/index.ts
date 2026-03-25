@@ -49,6 +49,12 @@ serve(async (req) => {
 
     // Build document context
     let docsContext = "";
+    const usesOwnProgram = calcData?.useOwnProgram !== false;
+
+    if (usesOwnProgram && calcData) {
+      docsContext += `\n## Программа цементирования (данные расчёта — наша программа):\n`;
+      docsContext += calcContext; // already includes well data, slurries, centralization
+    }
     if (documentTexts) {
       if (documentTexts.akc) {
         docsContext += `\n## Документ АКЦ/СГДТ (геофизические данные):\n${documentTexts.akc.substring(0, 15000)}\n`;
