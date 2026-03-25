@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, DragEvent } from "react";
+import { useState, useCallback, useRef, useEffect, DragEvent, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -252,7 +252,21 @@ export default function AnalysisSection({
   const [error, setError] = useState<string>("");
   const [useOwnProgram, setUseOwnProgram] = useState(true);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  // Get current user email
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setUserEmail(data.session?.user?.email ?? null);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserEmail(session?.user?.email ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const isAlgorithmicAllowed = useMemo(() => userEmail === "info@igchem.ru", [userEmail]);
 
   // Elapsed time timer
   useEffect(() => {
@@ -576,11 +590,23 @@ export default function AnalysisSection({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Button onClick={runLocalAnalysis} disabled={parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)} variant="outline" size="lg" className="w-full">
+            <Button
+              onClick={isAlgorithmicAllowed ? runLocalAnalysis : undefined}
+              disabled={!isAlgorithmicAllowed || parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)}
+              variant="outline"
+              size="lg"
+              className={`w-full ${!isAlgorithmicAllowed ? 'opacity-60' : ''}`}
+              title={!isAlgorithmicAllowed ? "Функция в разработке" : undefined}
+            >
               {parsing ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Читаю документы...
+                </>
+              ) : !isAlgorithmicAllowed ? (
+                <>
+                  <Cpu className="w-4 h-4" />
+                  📐 Алгоритмический анализ (в разработке)
                 </>
               ) : (
                 <>
