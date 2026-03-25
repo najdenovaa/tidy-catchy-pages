@@ -205,6 +205,7 @@ export default function AdminPanel() {
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🧱 Мосты (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementPlugCalcs.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔧 ГНКТ (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{ctVisits.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔧 ГНКТ (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{ctCalcs.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔬 Анализы</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{analysisLogs.length}</p></CardContent></Card>
         </div>
 
         <div className="flex justify-end mb-4">
