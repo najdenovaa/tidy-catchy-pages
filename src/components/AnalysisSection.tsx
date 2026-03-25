@@ -189,7 +189,7 @@ export default function AnalysisSection({
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {docTypes.map(({ type, label, desc }) => {
               const existing = files.find(f => f.type === type);
               return (
@@ -227,6 +227,63 @@ export default function AnalysisSection({
                 </div>
               );
             })}
+          </div>
+
+          {/* Program source toggle */}
+          <div className="border rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">📋 Программа цементирования</p>
+                <p className="text-xs text-muted-foreground">Источник данных программы</p>
+              </div>
+              <button
+                onClick={() => setUseOwnProgram(prev => !prev)}
+                className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 transition-colors"
+              >
+                {useOwnProgram ? (
+                  <ToggleRight className="w-5 h-5 text-primary" />
+                ) : (
+                  <ToggleLeft className="w-5 h-5 text-muted-foreground" />
+                )}
+                {useOwnProgram ? "Текущий расчёт" : "Сторонний файл"}
+              </button>
+            </div>
+
+            {useOwnProgram ? (
+              <div className="flex items-center gap-2 text-xs bg-primary/5 rounded-md p-2.5">
+                <CheckCircle className="w-4 h-4 text-primary shrink-0" />
+                <span>Используются данные текущего расчёта (скважина, растворы, центрирование)</span>
+              </div>
+            ) : (
+              (() => {
+                const existing = files.find(f => f.type === "program");
+                return existing ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-500" />
+                    <span className="text-xs truncate max-w-[180px]">{existing.name}</span>
+                    <button onClick={() => removeFile(existing)} className="text-destructive hover:text-destructive/80">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-xs font-medium transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    Загрузить стороннюю программу
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.docx,.doc,.txt,.xlsx,.xls"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) uploadFile(f, "program");
+                        e.target.value = "";
+                      }}
+                      disabled={uploading}
+                    />
+                  </label>
+                );
+              })()
+            )}
           </div>
 
           {/* Calc data status */}
