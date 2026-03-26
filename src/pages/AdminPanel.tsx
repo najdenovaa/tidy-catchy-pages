@@ -111,6 +111,8 @@ export default function AdminPanel() {
   const [visitLogs, setVisitLogs] = useState<VisitLog[]>([]);
   const [analysisLogs, setAnalysisLogs] = useState<AnalysisLog[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [userCredits, setUserCredits] = useState<UserCredit[]>([]);
+  const [creditEdits, setCreditEdits] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [searchUserId, setSearchUserId] = useState("");
