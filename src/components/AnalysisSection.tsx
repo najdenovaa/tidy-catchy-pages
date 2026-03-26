@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, DragEvent, useMemo } from "react";
+import { useState, useCallback, useRef, useEffect, DragEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -253,20 +253,44 @@ export default function AnalysisSection({
   const [useOwnProgram, setUseOwnProgram] = useState(true);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [aiCredits, setAiCredits] = useState<{ used: number; limit: number } | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
-  // Get current user email
+  // Get current user info and credits
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setUserEmail(data.session?.user?.email ?? null);
+      setUserId(data.session?.user?.id ?? null);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserEmail(session?.user?.email ?? null);
+      setUserId(session?.user?.id ?? null);
     });
     return () => subscription.unsubscribe();
   }, []);
 
-  const isAlgorithmicAllowed = useMemo(() => userEmail === "info@igchem.ru", [userEmail]);
+  // Load AI credits
+  const loadCredits = useCallback(async () => {
+    if (!userId) { setAiCredits(null); return; }
+    const { data } = await supabase
+      .from("user_credits")
+      .select("ai_analyses_used, ai_analyses_limit")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (data) {
+      setAiCredits({ used: data.ai_analyses_used, limit: data.ai_analyses_limit });
+    } else {
+      // Create initial credits row
+      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_used: 0, ai_analyses_limit: 3 });
+      setAiCredits({ used: 0, limit: 3 });
+    }
+  }, [userId]);
+
+  useEffect(() => { loadCredits(); }, [loadCredits]);
+
+  const aiAnalysesRemaining = aiCredits ? aiCredits.limit - aiCredits.used : 0;
+  const canUseAiAnalysis = aiAnalysesRemaining > 0;
 
   // Elapsed time timer
   useEffect(() => {
@@ -347,6 +371,11 @@ export default function AnalysisSection({
   };
 
   const runAnalysis = useCallback(async () => {
+    if (!canUseAiAnalysis || !userId) {
+      setError("У вас закончились бесплатные AI-анализы. В будущем будет доступна покупка дополнительных анализов.");
+      return;
+    }
+
     setAnalyzing(true);
     setError("");
     setReport("");
@@ -395,6 +424,13 @@ export default function AnalysisSection({
         throw new Error(err.error || `HTTP ${response.status}`);
       }
 
+      // Decrement credits
+      await supabase
+        .from("user_credits")
+        .update({ ai_analyses_used: (aiCredits?.used ?? 0) + 1 })
+        .eq("user_id", userId);
+      await loadCredits();
+
       const reader = response.body?.getReader();
       if (!reader) throw new Error("No response body");
       const decoder = new TextDecoder();
@@ -430,7 +466,7 @@ export default function AnalysisSection({
     } finally {
       setAnalyzing(false);
     }
-  }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram]);
+  }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram, canUseAiAnalysis, userId, aiCredits, loadCredits]);
 
   const runLocalAnalysis = useCallback(async () => {
     setError("");
@@ -589,24 +625,31 @@ export default function AnalysisSection({
             </div>
           )}
 
+          {/* Credits info */}
+          {userEmail && aiCredits && (
+            <div className={`flex items-center gap-2 text-xs rounded-lg p-2.5 ${
+              aiAnalysesRemaining > 0 ? 'bg-primary/5 text-primary' : 'bg-amber-500/10 text-amber-700'
+            }`}>
+              <Brain className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                <strong>AI-анализ:</strong> осталось {aiAnalysesRemaining} из {aiCredits.limit} бесплатных анализов.
+                {aiAnalysesRemaining === 0 && " Дополнительные анализы будут доступны на коммерческой основе."}
+              </span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Button
-              onClick={isAlgorithmicAllowed ? runLocalAnalysis : undefined}
-              disabled={!isAlgorithmicAllowed || parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)}
+              onClick={runLocalAnalysis}
+              disabled={parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)}
               variant="outline"
               size="lg"
-              className={`w-full ${!isAlgorithmicAllowed ? 'opacity-60' : ''}`}
-              title={!isAlgorithmicAllowed ? "Функция в разработке" : undefined}
+              className="w-full"
             >
               {parsing ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Читаю документы...
-                </>
-              ) : !isAlgorithmicAllowed ? (
-                <>
-                  <Cpu className="w-4 h-4" />
-                  📐 Алгоритмический анализ (в разработке)
                 </>
               ) : (
                 <>
@@ -617,21 +660,29 @@ export default function AnalysisSection({
             </Button>
 
             <Button
-              onClick={() => {
-                setError("🚧 AI-анализ находится в разработке и пока недоступен. Данная услуга будет платной после окончательной реализации. Используйте алгоритмический анализ — он мало чем уступает AI-анализу и работает бесплатно.");
-              }}
-              variant="outline"
-              className="w-full opacity-60"
+              onClick={canUseAiAnalysis ? runAnalysis : () => setError("У вас закончились бесплатные AI-анализы. Дополнительные анализы будут доступны позже на коммерческой основе.")}
+              disabled={analyzing || !hasAnyInput || !userEmail}
+              variant={canUseAiAnalysis ? "default" : "outline"}
               size="lg"
+              className={`w-full ${!canUseAiAnalysis ? 'opacity-60' : ''}`}
             >
-              <Brain className="w-4 h-4" />
-              🚀 AI-анализ (в разработке)
+              {analyzing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Анализирую...
+                </>
+              ) : (
+                <>
+                  <Brain className="w-4 h-4" />
+                  🚀 AI-анализ {canUseAiAnalysis ? `(${aiAnalysesRemaining})` : '(лимит исчерпан)'}
+                </>
+              )}
             </Button>
           </div>
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-2">
             <Cpu className="w-3.5 h-3.5 shrink-0" />
-            <span><strong>Алгоритмический анализ</strong> — мгновенный, читает документы (PDF/Word/Excel/изображения) + данные расчёта, полностью бесплатный. Мало чем уступает AI-анализу.</span>
+            <span><strong>Алгоритмический анализ</strong> — мгновенный, бесплатный. <strong>AI-анализ</strong> — глубокий, доступно {aiCredits?.limit ?? 3} бесплатных запросов. Большее количество будет реализовано позже на коммерческой основе.</span>
           </div>
 
           {analyzing && (
