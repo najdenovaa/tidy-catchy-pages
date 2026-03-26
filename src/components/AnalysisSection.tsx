@@ -371,6 +371,11 @@ export default function AnalysisSection({
   };
 
   const runAnalysis = useCallback(async () => {
+    if (!canUseAiAnalysis || !userId) {
+      setError("У вас закончились бесплатные AI-анализы. В будущем будет доступна покупка дополнительных анализов.");
+      return;
+    }
+
     setAnalyzing(true);
     setError("");
     setReport("");
@@ -419,6 +424,13 @@ export default function AnalysisSection({
         throw new Error(err.error || `HTTP ${response.status}`);
       }
 
+      // Decrement credits
+      await supabase
+        .from("user_credits")
+        .update({ ai_analyses_used: (aiCredits?.used ?? 0) + 1 })
+        .eq("user_id", userId);
+      await loadCredits();
+
       const reader = response.body?.getReader();
       if (!reader) throw new Error("No response body");
       const decoder = new TextDecoder();
@@ -454,7 +466,7 @@ export default function AnalysisSection({
     } finally {
       setAnalyzing(false);
     }
-  }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram]);
+  }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram, canUseAiAnalysis, userId, aiCredits, loadCredits]);
 
   const runLocalAnalysis = useCallback(async () => {
     setError("");
