@@ -670,7 +670,7 @@ export default function AnalysisSection({
             </Button>
 
             <Button
-              onClick={canUseAiAnalysis ? runAnalysis : () => setError("У вас закончились бесплатные AI-анализы. Дополнительные анализы будут доступны позже на коммерческой основе.")}
+              onClick={canUseAiAnalysis ? runAnalysis : () => setError("Анализы исчерпаны. Для продолжения — обратитесь в Поддержку: info@igchem.ru")}
               disabled={analyzing || !hasAnyInput || !userEmail}
               variant={canUseAiAnalysis ? "default" : "outline"}
               size="lg"
@@ -684,7 +684,7 @@ export default function AnalysisSection({
               ) : (
                 <>
                   <Brain className="w-4 h-4" />
-                  🚀 AI-анализ {canUseAiAnalysis ? `(${aiAnalysesRemaining})` : '(лимит исчерпан)'}
+                  🚀 Подробный анализ {canUseAiAnalysis ? `(${aiAnalysesRemaining})` : '(лимит исчерпан)'}
                 </>
               )}
             </Button>
