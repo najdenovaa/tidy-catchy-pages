@@ -446,7 +446,7 @@ serve(async (req) => {
           if (text.startsWith("[Не удалось")) {
             extractionErrors.push(file.name);
           }
-          docsContext += `\n## ${labels[docType] || docType} — ${file.name}:\n${text.substring(0, 20000)}\n`;
+          docsContext += `\n## ${labels[docType] || docType} — ${file.name}:\n${text.substring(0, 60000)}\n`;
         }
       }
     }
