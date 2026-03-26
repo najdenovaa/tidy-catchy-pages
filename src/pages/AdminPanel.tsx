@@ -30,6 +30,10 @@ interface AnalysisLog {
   module: string; well_summary: string | null; documents_count: number;
   document_names: string[] | null; ip_address: string | null; user_agent: string | null; location: string | null;
 }
+interface UserCredit {
+  id: string; user_id: string; ai_analyses_used: number; ai_analyses_limit: number;
+  created_at: string; updated_at: string;
+}
 
 const moduleLabel = (m: string) => {
   if (m === "cementing") return "Цементирование";
