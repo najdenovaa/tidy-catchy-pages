@@ -478,7 +478,67 @@ export default function AdminPanel() {
                       <p className="text-sm"><strong>🆔 ID:</strong> <code className="text-xs font-mono">{viewingUser.user_id}</code></p>
                       <p className="text-sm"><strong>📅 Дата регистрации:</strong> {formatDate(viewingUser.created_at)}</p>
                       <p className="text-sm"><strong>📊 Сохранённых расчётов:</strong> {userCalcs.length}</p>
+                      {(() => {
+                        const credit = getUserCredit(viewingUser.user_id);
+                        const used = credit?.ai_analyses_used ?? 0;
+                        const limit = credit?.ai_analyses_limit ?? 3;
+                        const actual = getUserAnalysisCount(viewingUser.user_id);
+                        return (
+                          <>
+                            <p className="text-sm"><strong>🔬 Анализов:</strong> {used} / {limit} (фактически: {actual})</p>
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className="text-sm text-muted-foreground">Изменить лимит:</span>
+                              <div className="flex items-center gap-1">
+                                <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setCreditEdits(prev => ({ ...prev, [viewingUser.user_id]: Math.max(0, (creditEdits[viewingUser.user_id] ?? limit) - 1) }))}>
+                                  <Minus className="w-3 h-3" />
+                                </Button>
+                                <Input
+                                  type="number"
+                                  value={creditEdits[viewingUser.user_id] ?? limit}
+                                  onChange={(e) => setCreditEdits(prev => ({ ...prev, [viewingUser.user_id]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                  className="h-6 w-16 text-xs text-center px-1"
+                                />
+                                <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setCreditEdits(prev => ({ ...prev, [viewingUser.user_id]: (creditEdits[viewingUser.user_id] ?? limit) + 1 }))}>
+                                  <Plus className="w-3 h-3" />
+                                </Button>
+                                {creditEdits[viewingUser.user_id] !== undefined && (
+                                  <Button variant="default" size="sm" className="h-6 text-xs px-2 ml-1" onClick={() => updateUserLimit(viewingUser.user_id, creditEdits[viewingUser.user_id]!)}>
+                                    <Save className="w-3 h-3 mr-1" /> Сохранить
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
+
+                    {/* История анализов пользователя */}
+                    {(() => {
+                      const userAnalyses = getUserAnalyses(viewingUser.user_id);
+                      return userAnalyses.length > 0 ? (
+                        <>
+                          <h3 className="font-medium text-sm flex items-center gap-1"><FlaskConical className="w-4 h-4" /> История анализов ({userAnalyses.length})</h3>
+                          <Table>
+                            <TableHeader><TableRow>
+                              <TableHead>Дата</TableHead><TableHead>Скважина</TableHead><TableHead>Документы</TableHead><TableHead>Файлы</TableHead>
+                            </TableRow></TableHeader>
+                            <TableBody>
+                              {userAnalyses.map(a => (
+                                <TableRow key={a.id}>
+                                  <TableCell className="text-xs whitespace-nowrap">{formatShortDate(a.created_at)}</TableCell>
+                                  <TableCell className="text-xs">{a.well_summary || "—"}</TableCell>
+                                  <TableCell className="text-xs text-center"><Badge variant="outline" className="text-[10px]">{a.documents_count}</Badge></TableCell>
+                                  <TableCell className="text-xs max-w-[250px]">
+                                    {a.document_names?.length ? a.document_names.map((n, i) => <div key={i} className="truncate text-[10px] text-muted-foreground">{n}</div>) : "—"}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </>
+                      ) : <p className="text-sm text-muted-foreground">У пользователя нет запусков анализа</p>;
+                    })()}
 
                     <h3 className="font-medium text-sm flex items-center gap-1"><Calculator className="w-4 h-4" /> Расчёты пользователя ({userCalcs.length})</h3>
                     {userCalcs.length === 0 ? (
