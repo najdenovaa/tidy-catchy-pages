@@ -641,16 +641,22 @@ export default function AnalysisSection({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Button
-              onClick={runLocalAnalysis}
-              disabled={parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)}
+              onClick={isAlgorithmicAllowed ? runLocalAnalysis : undefined}
+              disabled={!isAlgorithmicAllowed || parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)}
               variant="outline"
               size="lg"
-              className="w-full"
+              className={`w-full ${!isAlgorithmicAllowed ? 'opacity-60' : ''}`}
+              title={!isAlgorithmicAllowed ? "Функция в разработке" : undefined}
             >
               {parsing ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Читаю документы...
+                </>
+              ) : !isAlgorithmicAllowed ? (
+                <>
+                  <Cpu className="w-4 h-4" />
+                  📐 Алгоритмический анализ (в разработке)
                 </>
               ) : (
                 <>
