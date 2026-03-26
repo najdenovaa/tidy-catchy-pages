@@ -2,7 +2,8 @@ import { useState, useCallback, useRef, useEffect, DragEvent, useMemo } from "re
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight, FolderOpen, Cpu } from "lucide-react";
+import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight, FolderOpen, Cpu, Download } from "lucide-react";
+import { exportAnalysisToDocx } from "@/lib/export-analysis-docx";
 import { supabase } from "@/integrations/supabase/client";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
@@ -373,7 +374,7 @@ export default function AnalysisSection({
 
   const runAnalysis = useCallback(async () => {
     if (!canUseAiAnalysis || !userId) {
-      setError("У вас закончились бесплатные AI-анализы. В будущем будет доступна покупка дополнительных анализов.");
+      setError("Анализы исчерпаны. Для продолжения — обратитесь в Поддержку: info@igchem.ru");
       return;
     }
 
@@ -512,9 +513,9 @@ export default function AnalysisSection({
             <Brain className="w-5 h-5 text-primary" />
             🔬 Анализ качества цементирования
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Загрузите документы — система проанализирует качество цементирования. Поддерживаются PDF, Word, Excel, изображения.
-          </p>
+           <p className="text-sm text-muted-foreground">
+            Загрузите любые документы (программы, отчёты, геофизику, лабораторные протоколы) — система проанализирует качество цементирования. Поддерживаются PDF, Word, Excel, изображения.
+           </p>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Main upload areas */}
@@ -633,8 +634,10 @@ export default function AnalysisSection({
             }`}>
               <Brain className="w-3.5 h-3.5 shrink-0" />
               <span>
-                <strong>AI-анализ:</strong> осталось {aiAnalysesRemaining} из {aiCredits.limit} бесплатных анализов.
-                {aiAnalysesRemaining === 0 && " Дополнительные анализы будут доступны на коммерческой основе."}
+                <strong>Подробный анализ:</strong> осталось {aiAnalysesRemaining} из {aiCredits.limit} анализов (доступно при регистрации).
+                {aiAnalysesRemaining === 0 && (
+                  <> Для продолжения — обратитесь в <a href="mailto:info@igchem.ru" className="underline font-semibold hover:opacity-80">Поддержку</a>.</>
+                )}
               </span>
             </div>
           )}
@@ -667,7 +670,7 @@ export default function AnalysisSection({
             </Button>
 
             <Button
-              onClick={canUseAiAnalysis ? runAnalysis : () => setError("У вас закончились бесплатные AI-анализы. Дополнительные анализы будут доступны позже на коммерческой основе.")}
+              onClick={canUseAiAnalysis ? runAnalysis : () => setError("Анализы исчерпаны. Для продолжения — обратитесь в Поддержку: info@igchem.ru")}
               disabled={analyzing || !hasAnyInput || !userEmail}
               variant={canUseAiAnalysis ? "default" : "outline"}
               size="lg"
@@ -681,7 +684,7 @@ export default function AnalysisSection({
               ) : (
                 <>
                   <Brain className="w-4 h-4" />
-                  🚀 AI-анализ {canUseAiAnalysis ? `(${aiAnalysesRemaining})` : '(лимит исчерпан)'}
+                  🚀 Подробный анализ {canUseAiAnalysis ? `(${aiAnalysesRemaining})` : '(лимит исчерпан)'}
                 </>
               )}
             </Button>
@@ -689,7 +692,7 @@ export default function AnalysisSection({
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-2">
             <Cpu className="w-3.5 h-3.5 shrink-0" />
-            <span><strong>Алгоритмический анализ</strong> — мгновенный, бесплатный. <strong>AI-анализ</strong> — глубокий, доступно {aiCredits?.limit ?? 3} бесплатных запросов. Большее количество будет реализовано позже на коммерческой основе.</span>
+            <span><strong>Алгоритмический анализ</strong> — мгновенный. <strong>Подробный анализ</strong> — глубокий, доступно {aiCredits?.limit ?? 3} анализов при регистрации. Для увеличения лимита — обратитесь в <a href="mailto:info@igchem.ru" className="underline font-semibold hover:opacity-80">Поддержку</a>.</span>
           </div>
 
           {analyzing && (
@@ -706,10 +709,23 @@ export default function AnalysisSection({
       {report && (
         <Card className="border-primary/20">
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              📄 Отчёт анализа качества цементирования
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">DeAllsoft — виртуальный инженерный помощник</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  📄 Отчёт анализа качества цементирования
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">DeAllsoft — виртуальный инженерный помощник</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportAnalysisToDocx(report)}
+                className="gap-2 shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                Скачать Word
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div
