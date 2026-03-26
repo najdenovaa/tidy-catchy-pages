@@ -2,7 +2,8 @@ import { useState, useCallback, useRef, useEffect, DragEvent, useMemo } from "re
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight, FolderOpen, Cpu } from "lucide-react";
+import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight, FolderOpen, Cpu, Download } from "lucide-react";
+import { exportAnalysisToDocx } from "@/lib/export-analysis-docx";
 import { supabase } from "@/integrations/supabase/client";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
