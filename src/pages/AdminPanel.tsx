@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Home, LogOut, RefreshCw, Search, Users, Eye, ExternalLink, Globe, Calculator, MapPin, FlaskConical } from "lucide-react";
+import { Home, LogOut, RefreshCw, Search, Users, Eye, ExternalLink, Globe, Calculator, MapPin, FlaskConical, Plus, Minus, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 
@@ -29,6 +29,10 @@ interface AnalysisLog {
   id: string; created_at: string; user_id: string | null; user_email: string | null;
   module: string; well_summary: string | null; documents_count: number;
   document_names: string[] | null; ip_address: string | null; user_agent: string | null; location: string | null;
+}
+interface UserCredit {
+  id: string; user_id: string; ai_analyses_used: number; ai_analyses_limit: number;
+  created_at: string; updated_at: string;
 }
 
 const moduleLabel = (m: string) => {
@@ -107,6 +111,8 @@ export default function AdminPanel() {
   const [visitLogs, setVisitLogs] = useState<VisitLog[]>([]);
   const [analysisLogs, setAnalysisLogs] = useState<AnalysisLog[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [userCredits, setUserCredits] = useState<UserCredit[]>([]);
+  const [creditEdits, setCreditEdits] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [searchUserId, setSearchUserId] = useState("");
@@ -129,17 +135,44 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     setLoading(true);
-    const [calcRes, visitRes, profilesRes, analysisRes] = await Promise.all([
+    const [calcRes, visitRes, profilesRes, analysisRes, creditsRes] = await Promise.all([
       supabase.from("calculation_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("visit_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("analysis_logs").select("*").order("created_at", { ascending: false }).limit(10000),
+      supabase.from("user_credits").select("*"),
     ]);
     if (calcRes.data) setCalcLogs(calcRes.data as CalcLog[]);
     if (visitRes.data) setVisitLogs(visitRes.data as VisitLog[]);
     if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
     if (analysisRes.data) setAnalysisLogs(analysisRes.data as AnalysisLog[]);
+    if (creditsRes.data) setUserCredits(creditsRes.data as UserCredit[]);
     setLoading(false);
+  };
+
+  const getUserCredit = (userId: string): UserCredit | undefined => {
+    return userCredits.find(c => c.user_id === userId);
+  };
+
+  const getUserAnalysisCount = (userId: string): number => {
+    return analysisLogs.filter(l => l.user_id === userId).length;
+  };
+
+  const getUserAnalyses = (userId: string): AnalysisLog[] => {
+    return analysisLogs.filter(l => l.user_id === userId);
+  };
+
+  const updateUserLimit = async (userId: string, newLimit: number) => {
+    const credit = getUserCredit(userId);
+    if (credit) {
+      await supabase.from("user_credits").update({ ai_analyses_limit: newLimit }).eq("user_id", userId);
+    } else {
+      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_limit: newLimit, ai_analyses_used: 0 });
+    }
+    toast({ title: "Лимит обновлён", description: `Новый лимит: ${newLimit} анализов` });
+    const { data } = await supabase.from("user_credits").select("*");
+    if (data) setUserCredits(data as UserCredit[]);
+    setCreditEdits(prev => { const n = { ...prev }; delete n[userId]; return n; });
   };
 
   const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
@@ -316,23 +349,48 @@ export default function AdminPanel() {
                 <TableHeader><TableRow>
                   <TableHead>Дата регистрации</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Последняя активность</TableHead>
+                  <TableHead>Анализов (исп./лимит)</TableHead>
+                  <TableHead>Лимит</TableHead>
                   <TableHead>Действия</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {profiles.length === 0 ? (
                     <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Нет пользователей</TableCell></TableRow>
                   ) : profiles.map(p => {
-                    // Count user's saved calculations
-                    const userVisitsCount = visitLogs.filter(v => v.page_url?.includes("from=dashboard")).length; // rough
+                    const credit = getUserCredit(p.user_id);
+                    const used = credit?.ai_analyses_used ?? 0;
+                    const limit = creditEdits[p.user_id] ?? credit?.ai_analyses_limit ?? 3;
+                    const actualAnalyses = getUserAnalysisCount(p.user_id);
                     return (
                       <TableRow key={p.user_id}>
-                        <TableCell className="whitespace-nowrap text-xs">{formatDate(p.created_at)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{formatShortDate(p.created_at)}</TableCell>
                         <TableCell className="text-xs font-medium">{p.email}</TableCell>
-                        <TableCell className="text-xs font-mono text-muted-foreground">{p.user_id.slice(0, 8)}...</TableCell>
                         <TableCell className="text-xs">
-                          <span className="text-muted-foreground">Зарегистрирован {formatShortDate(p.created_at)}</span>
+                          <Badge variant={used >= limit ? "destructive" : "default"} className="text-[10px]">
+                            {used} / {credit?.ai_analyses_limit ?? 3}
+                          </Badge>
+                          <span className="text-muted-foreground ml-2 text-[10px]">(факт: {actualAnalyses})</span>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex items-center gap-1">
+                            <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setCreditEdits(prev => ({ ...prev, [p.user_id]: Math.max(0, limit - 1) }))}>
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                            <Input
+                              type="number"
+                              value={limit}
+                              onChange={(e) => setCreditEdits(prev => ({ ...prev, [p.user_id]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                              className="h-6 w-16 text-xs text-center px-1"
+                            />
+                            <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setCreditEdits(prev => ({ ...prev, [p.user_id]: limit + 1 }))}>
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                            {creditEdits[p.user_id] !== undefined && (
+                              <Button variant="default" size="sm" className="h-6 text-xs px-2 ml-1" onClick={() => updateUserLimit(p.user_id, limit)}>
+                                <Save className="w-3 h-3 mr-1" /> Сохр.
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-xs">
                           <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => {
@@ -340,7 +398,7 @@ export default function AdminPanel() {
                             setViewingUser(p);
                             supabase.from("saved_calculations").select("*").eq("user_id", p.user_id).order("created_at", { ascending: false }).then(({ data }) => setUserCalcs((data || []) as SavedCalc[]));
                           }}>
-                            <Eye className="w-3 h-3 mr-1" /> Просмотр расчётов
+                            <Eye className="w-3 h-3 mr-1" /> Детали
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -420,7 +478,67 @@ export default function AdminPanel() {
                       <p className="text-sm"><strong>🆔 ID:</strong> <code className="text-xs font-mono">{viewingUser.user_id}</code></p>
                       <p className="text-sm"><strong>📅 Дата регистрации:</strong> {formatDate(viewingUser.created_at)}</p>
                       <p className="text-sm"><strong>📊 Сохранённых расчётов:</strong> {userCalcs.length}</p>
+                      {(() => {
+                        const credit = getUserCredit(viewingUser.user_id);
+                        const used = credit?.ai_analyses_used ?? 0;
+                        const limit = credit?.ai_analyses_limit ?? 3;
+                        const actual = getUserAnalysisCount(viewingUser.user_id);
+                        return (
+                          <>
+                            <p className="text-sm"><strong>🔬 Анализов:</strong> {used} / {limit} (фактически: {actual})</p>
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className="text-sm text-muted-foreground">Изменить лимит:</span>
+                              <div className="flex items-center gap-1">
+                                <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setCreditEdits(prev => ({ ...prev, [viewingUser.user_id]: Math.max(0, (creditEdits[viewingUser.user_id] ?? limit) - 1) }))}>
+                                  <Minus className="w-3 h-3" />
+                                </Button>
+                                <Input
+                                  type="number"
+                                  value={creditEdits[viewingUser.user_id] ?? limit}
+                                  onChange={(e) => setCreditEdits(prev => ({ ...prev, [viewingUser.user_id]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                  className="h-6 w-16 text-xs text-center px-1"
+                                />
+                                <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setCreditEdits(prev => ({ ...prev, [viewingUser.user_id]: (creditEdits[viewingUser.user_id] ?? limit) + 1 }))}>
+                                  <Plus className="w-3 h-3" />
+                                </Button>
+                                {creditEdits[viewingUser.user_id] !== undefined && (
+                                  <Button variant="default" size="sm" className="h-6 text-xs px-2 ml-1" onClick={() => updateUserLimit(viewingUser.user_id, creditEdits[viewingUser.user_id]!)}>
+                                    <Save className="w-3 h-3 mr-1" /> Сохранить
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
+
+                    {/* История анализов пользователя */}
+                    {(() => {
+                      const userAnalyses = getUserAnalyses(viewingUser.user_id);
+                      return userAnalyses.length > 0 ? (
+                        <>
+                          <h3 className="font-medium text-sm flex items-center gap-1"><FlaskConical className="w-4 h-4" /> История анализов ({userAnalyses.length})</h3>
+                          <Table>
+                            <TableHeader><TableRow>
+                              <TableHead>Дата</TableHead><TableHead>Скважина</TableHead><TableHead>Документы</TableHead><TableHead>Файлы</TableHead>
+                            </TableRow></TableHeader>
+                            <TableBody>
+                              {userAnalyses.map(a => (
+                                <TableRow key={a.id}>
+                                  <TableCell className="text-xs whitespace-nowrap">{formatShortDate(a.created_at)}</TableCell>
+                                  <TableCell className="text-xs">{a.well_summary || "—"}</TableCell>
+                                  <TableCell className="text-xs text-center"><Badge variant="outline" className="text-[10px]">{a.documents_count}</Badge></TableCell>
+                                  <TableCell className="text-xs max-w-[250px]">
+                                    {a.document_names?.length ? a.document_names.map((n, i) => <div key={i} className="truncate text-[10px] text-muted-foreground">{n}</div>) : "—"}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </>
+                      ) : <p className="text-sm text-muted-foreground">У пользователя нет запусков анализа</p>;
+                    })()}
 
                     <h3 className="font-medium text-sm flex items-center gap-1"><Calculator className="w-4 h-4" /> Расчёты пользователя ({userCalcs.length})</h3>
                     {userCalcs.length === 0 ? (
