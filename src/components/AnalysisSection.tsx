@@ -291,6 +291,7 @@ export default function AnalysisSection({
 
   const aiAnalysesRemaining = aiCredits ? aiCredits.limit - aiCredits.used : 0;
   const canUseAiAnalysis = aiAnalysesRemaining > 0;
+  const isAlgorithmicAllowed = useMemo(() => userEmail === "info@igchem.ru", [userEmail]);
 
   // Elapsed time timer
   useEffect(() => {
