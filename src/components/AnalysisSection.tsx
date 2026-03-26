@@ -513,9 +513,9 @@ export default function AnalysisSection({
             <Brain className="w-5 h-5 text-primary" />
             🔬 Анализ качества цементирования
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Загрузите документы — система проанализирует качество цементирования. Поддерживаются PDF, Word, Excel, изображения.
-          </p>
+           <p className="text-sm text-muted-foreground">
+            Загрузите любые документы (программы, отчёты, геофизику, лабораторные протоколы) — система проанализирует качество цементирования. Поддерживаются PDF, Word, Excel, изображения.
+           </p>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Main upload areas */}
