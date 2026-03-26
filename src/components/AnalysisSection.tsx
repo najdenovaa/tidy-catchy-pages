@@ -634,8 +634,10 @@ export default function AnalysisSection({
             }`}>
               <Brain className="w-3.5 h-3.5 shrink-0" />
               <span>
-                <strong>AI-анализ:</strong> осталось {aiAnalysesRemaining} из {aiCredits.limit} бесплатных анализов.
-                {aiAnalysesRemaining === 0 && " Дополнительные анализы будут доступны на коммерческой основе."}
+                <strong>Подробный анализ:</strong> осталось {aiAnalysesRemaining} из {aiCredits.limit} анализов (доступно при регистрации).
+                {aiAnalysesRemaining === 0 && (
+                  <> Для продолжения — обратитесь в <a href="mailto:info@igchem.ru" className="underline font-semibold hover:opacity-80">Поддержку</a>.</>
+                )}
               </span>
             </div>
           )}
