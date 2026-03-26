@@ -625,24 +625,31 @@ export default function AnalysisSection({
             </div>
           )}
 
+          {/* Credits info */}
+          {userEmail && aiCredits && (
+            <div className={`flex items-center gap-2 text-xs rounded-lg p-2.5 ${
+              aiAnalysesRemaining > 0 ? 'bg-primary/5 text-primary' : 'bg-amber-500/10 text-amber-700'
+            }`}>
+              <Brain className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                <strong>AI-анализ:</strong> осталось {aiAnalysesRemaining} из {aiCredits.limit} бесплатных анализов.
+                {aiAnalysesRemaining === 0 && " Дополнительные анализы будут доступны на коммерческой основе."}
+              </span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Button
-              onClick={isAlgorithmicAllowed ? runLocalAnalysis : undefined}
-              disabled={!isAlgorithmicAllowed || parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)}
+              onClick={runLocalAnalysis}
+              disabled={parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)}
               variant="outline"
               size="lg"
-              className={`w-full ${!isAlgorithmicAllowed ? 'opacity-60' : ''}`}
-              title={!isAlgorithmicAllowed ? "Функция в разработке" : undefined}
+              className="w-full"
             >
               {parsing ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Читаю документы...
-                </>
-              ) : !isAlgorithmicAllowed ? (
-                <>
-                  <Cpu className="w-4 h-4" />
-                  📐 Алгоритмический анализ (в разработке)
                 </>
               ) : (
                 <>
@@ -653,21 +660,29 @@ export default function AnalysisSection({
             </Button>
 
             <Button
-              onClick={() => {
-                setError("🚧 AI-анализ находится в разработке и пока недоступен. Данная услуга будет платной после окончательной реализации. Используйте алгоритмический анализ — он мало чем уступает AI-анализу и работает бесплатно.");
-              }}
-              variant="outline"
-              className="w-full opacity-60"
+              onClick={canUseAiAnalysis ? runAnalysis : () => setError("У вас закончились бесплатные AI-анализы. Дополнительные анализы будут доступны позже на коммерческой основе.")}
+              disabled={analyzing || !hasAnyInput || !userEmail}
+              variant={canUseAiAnalysis ? "default" : "outline"}
               size="lg"
+              className={`w-full ${!canUseAiAnalysis ? 'opacity-60' : ''}`}
             >
-              <Brain className="w-4 h-4" />
-              🚀 AI-анализ (в разработке)
+              {analyzing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Анализирую...
+                </>
+              ) : (
+                <>
+                  <Brain className="w-4 h-4" />
+                  🚀 AI-анализ {canUseAiAnalysis ? `(${aiAnalysesRemaining})` : '(лимит исчерпан)'}
+                </>
+              )}
             </Button>
           </div>
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-2">
             <Cpu className="w-3.5 h-3.5 shrink-0" />
-            <span><strong>Алгоритмический анализ</strong> — мгновенный, читает документы (PDF/Word/Excel/изображения) + данные расчёта, полностью бесплатный. Мало чем уступает AI-анализу.</span>
+            <span><strong>Алгоритмический анализ</strong> — мгновенный, бесплатный. <strong>AI-анализ</strong> — глубокий, доступно {aiCredits?.limit ?? 3} бесплатных запросов. Большее количество будет реализовано позже на коммерческой основе.</span>
           </div>
 
           {analyzing && (
