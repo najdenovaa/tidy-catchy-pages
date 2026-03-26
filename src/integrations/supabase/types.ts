@@ -187,6 +187,33 @@ export type Database = {
           },
         ]
       }
+      user_credits: {
+        Row: {
+          ai_analyses_limit: number
+          ai_analyses_used: number
+          created_at: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_analyses_limit?: number
+          ai_analyses_used?: number
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_analyses_limit?: number
+          ai_analyses_used?: number
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
