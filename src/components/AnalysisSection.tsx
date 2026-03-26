@@ -253,20 +253,44 @@ export default function AnalysisSection({
   const [useOwnProgram, setUseOwnProgram] = useState(true);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [aiCredits, setAiCredits] = useState<{ used: number; limit: number } | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
-  // Get current user email
+  // Get current user info and credits
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setUserEmail(data.session?.user?.email ?? null);
+      setUserId(data.session?.user?.id ?? null);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserEmail(session?.user?.email ?? null);
+      setUserId(session?.user?.id ?? null);
     });
     return () => subscription.unsubscribe();
   }, []);
 
-  const isAlgorithmicAllowed = useMemo(() => userEmail === "info@igchem.ru", [userEmail]);
+  // Load AI credits
+  const loadCredits = useCallback(async () => {
+    if (!userId) { setAiCredits(null); return; }
+    const { data } = await supabase
+      .from("user_credits")
+      .select("ai_analyses_used, ai_analyses_limit")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (data) {
+      setAiCredits({ used: data.ai_analyses_used, limit: data.ai_analyses_limit });
+    } else {
+      // Create initial credits row
+      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_used: 0, ai_analyses_limit: 3 });
+      setAiCredits({ used: 0, limit: 3 });
+    }
+  }, [userId]);
+
+  useEffect(() => { loadCredits(); }, [loadCredits]);
+
+  const aiAnalysesRemaining = aiCredits ? aiCredits.limit - aiCredits.used : 0;
+  const canUseAiAnalysis = aiAnalysesRemaining > 0;
 
   // Elapsed time timer
   useEffect(() => {
