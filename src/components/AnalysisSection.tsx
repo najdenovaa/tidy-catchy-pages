@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, DragEvent } from "react";
+import { useState, useCallback, useRef, useEffect, DragEvent, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -291,6 +291,7 @@ export default function AnalysisSection({
 
   const aiAnalysesRemaining = aiCredits ? aiCredits.limit - aiCredits.used : 0;
   const canUseAiAnalysis = aiAnalysesRemaining > 0;
+  const isAlgorithmicAllowed = useMemo(() => userEmail === "info@igchem.ru", [userEmail]);
 
   // Elapsed time timer
   useEffect(() => {
@@ -640,16 +641,22 @@ export default function AnalysisSection({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Button
-              onClick={runLocalAnalysis}
-              disabled={parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)}
+              onClick={isAlgorithmicAllowed ? runLocalAnalysis : undefined}
+              disabled={!isAlgorithmicAllowed || parsing || (wellData.wellDepthMD <= 0 && rawFiles.size === 0)}
               variant="outline"
               size="lg"
-              className="w-full"
+              className={`w-full ${!isAlgorithmicAllowed ? 'opacity-60' : ''}`}
+              title={!isAlgorithmicAllowed ? "Функция в разработке" : undefined}
             >
               {parsing ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Читаю документы...
+                </>
+              ) : !isAlgorithmicAllowed ? (
+                <>
+                  <Cpu className="w-4 h-4" />
+                  📐 Алгоритмический анализ (в разработке)
                 </>
               ) : (
                 <>
