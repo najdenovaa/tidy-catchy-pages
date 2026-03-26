@@ -429,7 +429,7 @@ serve(async (req) => {
         if (docType === "other" && Array.isArray(fileData)) {
           for (const otherFile of fileData as any[]) {
             const text = await extractTextFromFile(otherFile, LOVABLE_API_KEY);
-            docsContext += `\n## Документ: ${otherFile.name}:\n${text.substring(0, 20000)}\n`;
+            docsContext += `\n## Документ: ${otherFile.name}:\n${text.substring(0, 60000)}\n`;
           }
         } else if (Array.isArray(fileData)) {
           // Multiple files for same type (e.g. multiple AKC files)
