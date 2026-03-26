@@ -374,7 +374,7 @@ export default function AnalysisSection({
 
   const runAnalysis = useCallback(async () => {
     if (!canUseAiAnalysis || !userId) {
-      setError("У вас закончились бесплатные AI-анализы. В будущем будет доступна покупка дополнительных анализов.");
+      setError("Анализы исчерпаны. Для продолжения — обратитесь в Поддержку: info@igchem.ru");
       return;
     }
 
