@@ -349,23 +349,48 @@ export default function AdminPanel() {
                 <TableHeader><TableRow>
                   <TableHead>Дата регистрации</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Последняя активность</TableHead>
+                  <TableHead>Анализов (исп./лимит)</TableHead>
+                  <TableHead>Лимит</TableHead>
                   <TableHead>Действия</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {profiles.length === 0 ? (
                     <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Нет пользователей</TableCell></TableRow>
                   ) : profiles.map(p => {
-                    // Count user's saved calculations
-                    const userVisitsCount = visitLogs.filter(v => v.page_url?.includes("from=dashboard")).length; // rough
+                    const credit = getUserCredit(p.user_id);
+                    const used = credit?.ai_analyses_used ?? 0;
+                    const limit = creditEdits[p.user_id] ?? credit?.ai_analyses_limit ?? 3;
+                    const actualAnalyses = getUserAnalysisCount(p.user_id);
                     return (
                       <TableRow key={p.user_id}>
-                        <TableCell className="whitespace-nowrap text-xs">{formatDate(p.created_at)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{formatShortDate(p.created_at)}</TableCell>
                         <TableCell className="text-xs font-medium">{p.email}</TableCell>
-                        <TableCell className="text-xs font-mono text-muted-foreground">{p.user_id.slice(0, 8)}...</TableCell>
                         <TableCell className="text-xs">
-                          <span className="text-muted-foreground">Зарегистрирован {formatShortDate(p.created_at)}</span>
+                          <Badge variant={used >= limit ? "destructive" : "default"} className="text-[10px]">
+                            {used} / {credit?.ai_analyses_limit ?? 3}
+                          </Badge>
+                          <span className="text-muted-foreground ml-2 text-[10px]">(факт: {actualAnalyses})</span>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex items-center gap-1">
+                            <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setCreditEdits(prev => ({ ...prev, [p.user_id]: Math.max(0, limit - 1) }))}>
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                            <Input
+                              type="number"
+                              value={limit}
+                              onChange={(e) => setCreditEdits(prev => ({ ...prev, [p.user_id]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                              className="h-6 w-16 text-xs text-center px-1"
+                            />
+                            <Button variant="outline" size="sm" className="h-6 w-6 p-0" onClick={() => setCreditEdits(prev => ({ ...prev, [p.user_id]: limit + 1 }))}>
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                            {creditEdits[p.user_id] !== undefined && (
+                              <Button variant="default" size="sm" className="h-6 text-xs px-2 ml-1" onClick={() => updateUserLimit(p.user_id, limit)}>
+                                <Save className="w-3 h-3 mr-1" /> Сохр.
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-xs">
                           <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => {
@@ -373,7 +398,7 @@ export default function AdminPanel() {
                             setViewingUser(p);
                             supabase.from("saved_calculations").select("*").eq("user_id", p.user_id).order("created_at", { ascending: false }).then(({ data }) => setUserCalcs((data || []) as SavedCalc[]));
                           }}>
-                            <Eye className="w-3 h-3 mr-1" /> Просмотр расчётов
+                            <Eye className="w-3 h-3 mr-1" /> Детали
                           </Button>
                         </TableCell>
                       </TableRow>
