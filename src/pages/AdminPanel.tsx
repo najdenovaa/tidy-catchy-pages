@@ -135,17 +135,44 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     setLoading(true);
-    const [calcRes, visitRes, profilesRes, analysisRes] = await Promise.all([
+    const [calcRes, visitRes, profilesRes, analysisRes, creditsRes] = await Promise.all([
       supabase.from("calculation_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("visit_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("analysis_logs").select("*").order("created_at", { ascending: false }).limit(10000),
+      supabase.from("user_credits").select("*"),
     ]);
     if (calcRes.data) setCalcLogs(calcRes.data as CalcLog[]);
     if (visitRes.data) setVisitLogs(visitRes.data as VisitLog[]);
     if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
     if (analysisRes.data) setAnalysisLogs(analysisRes.data as AnalysisLog[]);
+    if (creditsRes.data) setUserCredits(creditsRes.data as UserCredit[]);
     setLoading(false);
+  };
+
+  const getUserCredit = (userId: string): UserCredit | undefined => {
+    return userCredits.find(c => c.user_id === userId);
+  };
+
+  const getUserAnalysisCount = (userId: string): number => {
+    return analysisLogs.filter(l => l.user_id === userId).length;
+  };
+
+  const getUserAnalyses = (userId: string): AnalysisLog[] => {
+    return analysisLogs.filter(l => l.user_id === userId);
+  };
+
+  const updateUserLimit = async (userId: string, newLimit: number) => {
+    const credit = getUserCredit(userId);
+    if (credit) {
+      await supabase.from("user_credits").update({ ai_analyses_limit: newLimit }).eq("user_id", userId);
+    } else {
+      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_limit: newLimit, ai_analyses_used: 0 });
+    }
+    toast({ title: "Лимит обновлён", description: `Новый лимит: ${newLimit} анализов` });
+    const { data } = await supabase.from("user_credits").select("*");
+    if (data) setUserCredits(data as UserCredit[]);
+    setCreditEdits(prev => { const n = { ...prev }; delete n[userId]; return n; });
   };
 
   const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
