@@ -438,7 +438,7 @@ serve(async (req) => {
             if (text.startsWith("[Не удалось")) {
               extractionErrors.push(singleFile.name);
             }
-            docsContext += `\n## ${labels[docType] || docType} — ${singleFile.name}:\n${text.substring(0, 20000)}\n`;
+            docsContext += `\n## ${labels[docType] || docType} — ${singleFile.name}:\n${text.substring(0, 60000)}\n`;
           }
         } else {
           const file = fileData as { base64: string; mimeType: string; name: string };
