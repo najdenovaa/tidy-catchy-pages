@@ -709,10 +709,23 @@ export default function AnalysisSection({
       {report && (
         <Card className="border-primary/20">
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              📄 Отчёт анализа качества цементирования
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">DeAllsoft — виртуальный инженерный помощник</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  📄 Отчёт анализа качества цементирования
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">DeAllsoft — виртуальный инженерный помощник</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportAnalysisToDocx(report)}
+                className="gap-2 shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                Скачать Word
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div
