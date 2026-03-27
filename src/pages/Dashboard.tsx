@@ -223,14 +223,11 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Credits & Payments */}
+        {/* Credits */}
         <CreditsSection
           used={credits.used}
           limit={credits.limit}
           freeFollowups={credits.freeFollowups}
-          payments={payments}
-          onBuy={handleBuy}
-          buying={buying}
         />
 
         {/* Hierarchy browser */}
