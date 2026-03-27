@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +17,8 @@ interface Message {
 
 interface FollowUpChatProps {
   reportContext: string;
+  sessionId?: string;
+  onSessionCreated?: (sessionId: string) => void;
 }
 
 function getMimeType(name: string): string {
@@ -77,17 +79,20 @@ function renderBold(text: string): (string | JSX.Element)[] {
   return parts;
 }
 
-export default function FollowUpChat({ reportContext }: FollowUpChatProps) {
+export default function FollowUpChat({ reportContext, sessionId: initialSessionId, onSessionCreated }: FollowUpChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
   const [freeFollowups, setFreeFollowups] = useState<number | null>(null);
   const [analysesRemaining, setAnalysesRemaining] = useState<number | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(initialSessionId || null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  // Load credits
   useEffect(() => {
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -105,6 +110,30 @@ export default function FollowUpChat({ reportContext }: FollowUpChatProps) {
     load();
   }, []);
 
+  // Load existing messages if sessionId provided
+  useEffect(() => {
+    if (!initialSessionId) return;
+    const loadMessages = async () => {
+      setLoadingHistory(true);
+      const { data } = await supabase
+        .from("chat_messages")
+        .select("*")
+        .eq("session_id", initialSessionId)
+        .order("created_at", { ascending: true });
+      if (data) {
+        setMessages(data.map((m: any) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          costLabel: m.cost_label || undefined,
+          attachmentName: m.attachment_name || undefined,
+        })));
+      }
+      setLoadingHistory(false);
+    };
+    loadMessages();
+  }, [initialSessionId]);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -120,6 +149,35 @@ export default function FollowUpChat({ reportContext }: FollowUpChatProps) {
       reader.onload = () => resolve((reader.result as string).split(",")[1]);
       reader.onerror = reject;
       reader.readAsDataURL(file);
+    });
+  };
+
+  const getOrCreateSession = useCallback(async (userId: string): Promise<string> => {
+    if (currentSessionId) return currentSessionId;
+
+    // Create a new session
+    const title = reportContext.slice(0, 100).replace(/\n/g, " ").trim() || "Чат по анализу";
+    const { data, error } = await supabase
+      .from("chat_sessions")
+      .insert({ user_id: userId, title, report_context: reportContext.slice(0, 15000) })
+      .select("id")
+      .single();
+
+    if (error || !data) throw new Error("Не удалось создать сессию чата");
+
+    setCurrentSessionId(data.id);
+    onSessionCreated?.(data.id);
+    return data.id;
+  }, [currentSessionId, reportContext, onSessionCreated]);
+
+  const saveMessage = async (sessionId: string, userId: string, msg: Message) => {
+    await supabase.from("chat_messages").insert({
+      session_id: sessionId,
+      user_id: userId,
+      role: msg.role,
+      content: msg.content,
+      cost_label: msg.costLabel || null,
+      attachment_name: msg.attachmentName || null,
     });
   };
 
@@ -147,6 +205,12 @@ export default function FollowUpChat({ reportContext }: FollowUpChatProps) {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Не авторизован");
 
+      // Ensure session exists
+      const sessId = await getOrCreateSession(session.user.id);
+
+      // Save user message
+      await saveMessage(sessId, session.user.id, userMsg);
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/followup-question`,
         {
@@ -172,6 +236,12 @@ export default function FollowUpChat({ reportContext }: FollowUpChatProps) {
       setFreeFollowups(result.freeFollowups);
       setAnalysesRemaining(result.analysesRemaining);
       setAttachment(null);
+
+      // Save assistant message
+      await saveMessage(sessId, session.user.id, assistantMsg);
+
+      // Update session timestamp
+      await supabase.from("chat_sessions").update({ updated_at: new Date().toISOString() }).eq("id", sessId);
     } catch (e: any) {
       toast({ title: "Ошибка", description: e.message, variant: "destructive" });
       setMessages(prev => prev.filter(m => m.id !== userMsg.id));
@@ -203,6 +273,12 @@ export default function FollowUpChat({ reportContext }: FollowUpChatProps) {
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
+        {loadingHistory && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-4 justify-center">
+            <Loader2 className="w-4 h-4 animate-spin" /> Загрузка истории...
+          </div>
+        )}
+
         {messages.length > 0 && (
           <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
             {messages.map(msg => (

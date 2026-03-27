@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Home, LogOut, Plus, Trash2, ChevronRight, FolderOpen, FlaskConical, Droplets, Zap, Copy, Blocks } from "lucide-react";
-import CreditsSection from "@/components/CreditsSection";
+import ChatHistory from "@/components/ChatHistory";
 import { useToast } from "@/hooks/use-toast";
 import type { User } from "@supabase/supabase-js";
 
@@ -327,6 +327,11 @@ export default function Dashboard() {
               ) : <p className="text-xs text-muted-foreground">Выберите скважину</p>}
             </CardContent>
           </Card>
+        </div>
+
+        {/* Chat History */}
+        <div className="mt-6">
+          <ChatHistory />
         </div>
       </main>
     </div>
