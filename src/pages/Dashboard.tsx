@@ -314,8 +314,8 @@ export default function Dashboard() {
                     <div key={c.id} className="flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-muted group">
                       <Link to={
                         c.module === "cement-plug"
-                          ? `/cement-plug?from=dashboard&well=${selectedWell}&calc=${c.id}`
-                          : `/cementing?from=dashboard&well=${selectedWell}&calc=${c.id}`
+                          ? `/cementing/plugs?from=dashboard&well=${selectedWell}&calc=${c.id}`
+                          : `/cementing/program?from=dashboard&well=${selectedWell}&calc=${c.id}`
                       } className="flex items-center gap-1.5 flex-1 min-w-0">
                         {moduleIcon(c.module)}
                         <div className="min-w-0">
