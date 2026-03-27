@@ -72,8 +72,8 @@ export function generateCementingProgram(
 
   // Volume calculations
   const pipeVolPm = pipeVolumePerMeter(casingID);
-  const openHoleVolPm = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD);
-  const prevCasingAnnPm = wellData.prevCasingID > 0 ? annularVolumePerMeter(wellData.prevCasingID, wellData.casingOD) : 0;
+  const openHoleVolPm = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, 1.0);
+  const prevCasingAnnPm = wellData.prevCasingID > 0 ? annularVolumePerMeter(wellData.prevCasingID, wellData.casingOD, 1.0) : 0;
 
   // Zones
   const prevCasingBottom = wellData.prevCasingDepth > 0 ? wellData.prevCasingDepth : 0;
