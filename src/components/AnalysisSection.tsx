@@ -277,15 +277,14 @@ export default function AnalysisSection({
     if (!userId) { setAiCredits(null); return; }
     const { data } = await supabase
       .from("user_credits")
-      .select("ai_analyses_used, ai_analyses_limit")
+      .select("ai_analyses_used, ai_analyses_limit, free_followups_remaining")
       .eq("user_id", userId)
       .maybeSingle();
     if (data) {
-      setAiCredits({ used: data.ai_analyses_used, limit: data.ai_analyses_limit });
+      setAiCredits({ used: data.ai_analyses_used, limit: data.ai_analyses_limit, freeFollowups: (data as any).free_followups_remaining ?? 0 });
     } else {
-      // Create initial credits row
-      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_used: 0, ai_analyses_limit: 3 });
-      setAiCredits({ used: 0, limit: 3 });
+      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_used: 0, ai_analyses_limit: 3, free_followups_remaining: 9 });
+      setAiCredits({ used: 0, limit: 3, freeFollowups: 9 });
     }
   }, [userId]);
 
