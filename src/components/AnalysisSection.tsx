@@ -603,9 +603,9 @@ export default function AnalysisSection({
             <div className={`flex items-center gap-2 text-xs rounded-lg p-2.5 ${
               aiAnalysesRemaining > 0 ? 'bg-primary/5 text-primary' : 'bg-amber-500/10 text-amber-700'
             }`}>
-              <Brain className="w-3.5 h-3.5 shrink-0" />
+              <Cpu className="w-3.5 h-3.5 shrink-0" />
               <span>
-                <strong>Подробный анализ:</strong> осталось {aiAnalysesRemaining} из {aiCredits.limit} анализов (доступно при регистрации).
+                <strong>Подробный анализ:</strong> осталось {aiAnalysesRemaining} из {aiCredits.limit}. К каждому анализу включено 3 вопроса в чате.
                 {aiAnalysesRemaining === 0 && (
                   <> Для продолжения — обратитесь в <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:opacity-80">Поддержку</a>.</>
                 )}
