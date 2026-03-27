@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, DragEvent, useMemo } from "re
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Upload, FileText, Trash2, Loader2, AlertTriangle, CheckCircle, FolderOpen, Cpu, Download } from "lucide-react";
+import { Upload, FileText, Trash2, Loader2, AlertTriangle, CheckCircle, FolderOpen, Cpu, Download, FileInput } from "lucide-react";
 import { exportAnalysisToDocx } from "@/lib/export-analysis-docx";
 import FollowUpChat from "@/components/FollowUpChat";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,6 +10,8 @@ import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFlu
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { runAlgorithmicAnalysis } from "@/lib/cement-analysis-engine";
 import { parseDocument, type ParsedDocument } from "@/lib/document-parser";
+import WellDataExtractionDialog, { type ExtractedData } from "@/components/WellDataExtractionDialog";
+import { generateCementingProgram } from "@/lib/program-generator";
 
 interface AnalysisSectionProps {
   wellData: WellData;
