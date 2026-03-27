@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { FlaskConical, Shield, Brain, Home, ArrowLeft } from "lucide-react";
+import { FlaskConical, Shield, Cpu, Home, ArrowLeft } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 
 const subModules = [
@@ -17,8 +17,8 @@ const subModules = [
   },
   {
     title: "Анализ цементирования",
-    description: "Подробный AI-анализ качества цементирования по документам",
-    icon: Brain,
+    description: "Подробный анализ качества цементирования по документам",
+    icon: Cpu,
     to: "/cementing/analysis",
   },
 ];

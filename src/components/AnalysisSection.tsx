@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, DragEvent, useMemo } from "re
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight, FolderOpen, Cpu, Download } from "lucide-react";
+import { Upload, FileText, Trash2, Loader2, AlertTriangle, CheckCircle, FolderOpen, Cpu, Download } from "lucide-react";
 import { exportAnalysisToDocx } from "@/lib/export-analysis-docx";
 import FollowUpChat from "@/components/FollowUpChat";
 import { supabase } from "@/integrations/supabase/client";
@@ -252,7 +252,7 @@ export default function AnalysisSection({
   const [analyzing, setAnalyzing] = useState(false);
   const [report, setReport] = useState<string>("");
   const [error, setError] = useState<string>("");
-  const [useOwnProgram, setUseOwnProgram] = useState(true);
+  const useOwnProgram = false;
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -283,8 +283,8 @@ export default function AnalysisSection({
     if (data) {
       setAiCredits({ used: data.ai_analyses_used, limit: data.ai_analyses_limit, freeFollowups: (data as any).free_followups_remaining ?? 0 });
     } else {
-      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_used: 0, ai_analyses_limit: 3, free_followups_remaining: 9 });
-      setAiCredits({ used: 0, limit: 3, freeFollowups: 9 });
+      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_used: 0, ai_analyses_limit: 6, free_followups_remaining: 18 });
+      setAiCredits({ used: 0, limit: 6, freeFollowups: 18 });
     }
   }, [userId]);
 
@@ -513,7 +513,6 @@ export default function AnalysisSection({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Brain className="w-5 h-5 text-primary" />
             🔬 Анализ качества цементирования
           </CardTitle>
            <p className="text-sm text-muted-foreground">
@@ -521,8 +520,8 @@ export default function AnalysisSection({
            </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Main upload areas */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Upload areas — 2x2 grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <DropZone
               label="📊 АКЦ / СГДТ / CBL-VDL"
               desc="Геофизика, графики, скриншоты, Word, PDF"
@@ -544,58 +543,27 @@ export default function AnalysisSection({
               uploadingType={uploadingType}
               type="report"
             />
-          </div>
-
-          {/* Other documents */}
-          <DropZone
-            label="📁 Дополнительные документы"
-            desc="Планы, ГТИ, протоколы бурового раствора, реология, лабораторные тесты, особые мнения и др."
-            existingFiles={otherFiles}
-            onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "other"))}
-            onRemove={removeFile}
-            uploading={uploading}
-            uploadingType={uploadingType}
-            multi
-            type="other"
-          />
-
-          {/* Program source toggle */}
-          <div className="border rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">📋 Программа цементирования</p>
-                <p className="text-xs text-muted-foreground">Источник данных программы</p>
-              </div>
-              <button
-                onClick={() => setUseOwnProgram(prev => !prev)}
-                className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 transition-colors"
-              >
-                {useOwnProgram ? (
-                  <ToggleRight className="w-5 h-5 text-primary" />
-                ) : (
-                  <ToggleLeft className="w-5 h-5 text-muted-foreground" />
-                )}
-                {useOwnProgram ? "Текущий расчёт" : "Сторонний файл"}
-              </button>
-            </div>
-
-            {useOwnProgram ? (
-              <div className="flex items-center gap-2 text-xs bg-primary/5 rounded-md p-2.5">
-                <CheckCircle className="w-4 h-4 text-primary shrink-0" />
-                <span>Используются данные текущего расчёта (скважина, растворы, центрирование)</span>
-              </div>
-            ) : (
-              <DropZone
-                label="📋 Сторонняя программа"
-                desc="Загрузите программу цементирования"
-                existingFiles={programFile}
-                onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "program"))}
-                onRemove={removeFile}
-                uploading={uploading}
-                uploadingType={uploadingType}
-                type="program"
-              />
-            )}
+            <DropZone
+              label="📋 Программа цементирования"
+              desc="Загрузите программу цементирования"
+              existingFiles={programFile}
+              onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "program"))}
+              onRemove={removeFile}
+              uploading={uploading}
+              uploadingType={uploadingType}
+              type="program"
+            />
+            <DropZone
+              label="📁 Дополнительные материалы"
+              desc="ГТИ, протоколы, лабораторные тесты и др."
+              existingFiles={otherFiles}
+              onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "other"))}
+              onRemove={removeFile}
+              uploading={uploading}
+              uploadingType={uploadingType}
+              multi
+              type="other"
+            />
           </div>
 
           {/* Calc data status */}
@@ -635,9 +603,9 @@ export default function AnalysisSection({
             <div className={`flex items-center gap-2 text-xs rounded-lg p-2.5 ${
               aiAnalysesRemaining > 0 ? 'bg-primary/5 text-primary' : 'bg-amber-500/10 text-amber-700'
             }`}>
-              <Brain className="w-3.5 h-3.5 shrink-0" />
+              <Cpu className="w-3.5 h-3.5 shrink-0" />
               <span>
-                <strong>Подробный анализ:</strong> осталось {aiAnalysesRemaining} из {aiCredits.limit} анализов (доступно при регистрации).
+                <strong>Подробный анализ:</strong> осталось {aiAnalysesRemaining} из {aiCredits.limit}. К каждому анализу включено 3 вопроса в чате.
                 {aiAnalysesRemaining === 0 && (
                   <> Для продолжения — обратитесь в <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:opacity-80">Поддержку</a>.</>
                 )}
@@ -681,12 +649,12 @@ export default function AnalysisSection({
             >
               {analyzing ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Анализирую...
+              <Loader2 className="w-4 h-4 animate-spin" />
+                  Анализируем...
                 </>
               ) : (
-                <>
-                  <Brain className="w-4 h-4" />
+              <>
+                  <Cpu className="w-4 h-4" />
                   🚀 Подробный анализ {canUseAiAnalysis ? `(${aiAnalysesRemaining})` : '(лимит исчерпан)'}
                 </>
               )}
@@ -695,7 +663,7 @@ export default function AnalysisSection({
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-2">
             <Cpu className="w-3.5 h-3.5 shrink-0" />
-            <span><strong>Алгоритмический анализ</strong> — мгновенный. <strong>Подробный анализ</strong> — глубокий, доступно {aiCredits?.limit ?? 3} анализов при регистрации. Для увеличения лимита — обратитесь в <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:opacity-80">Поддержку</a>.</span>
+            <span><strong>Алгоритмический анализ</strong> — мгновенный. <strong>Подробный анализ</strong> — глубокий, доступно {aiCredits?.limit ?? 6} анализов при регистрации, к каждому анализу включено по 3 вопроса в чате с подробным ответом. Для увеличения лимита — обратитесь в <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:opacity-80">Поддержку</a>.</span>
           </div>
 
           {analyzing && (
