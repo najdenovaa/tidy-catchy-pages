@@ -261,6 +261,15 @@ export default function AnalysisSection({
   const [aiCredits, setAiCredits] = useState<{ used: number; limit: number; freeFollowups: number } | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
+  // Program generation from ТЗ
+  const [tzFile, setTzFile] = useState<File | null>(null);
+  const [tzFileName, setTzFileName] = useState<string>("");
+  const [extracting, setExtracting] = useState(false);
+  const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
+  const [showExtractionDialog, setShowExtractionDialog] = useState(false);
+  const [programReport, setProgramReport] = useState<string>("");
+  const programReportRef = useRef<HTMLDivElement>(null);
+
   // Get current user info and credits
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
