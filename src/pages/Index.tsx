@@ -680,18 +680,6 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <TabsContent value="analysis">
-            <div data-tab-content="analysis">
-              <AnalysisSection
-                wellData={wellData}
-                drillingFluid={drillingFluid}
-                slurries={slurries}
-                buffers={buffers}
-                displacementFluids={displacementFluids}
-                centralizationResults={centralizationResults}
-              />
-            </div>
-          </TabsContent>
         </main>
       </Tabs>
 
