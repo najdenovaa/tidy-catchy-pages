@@ -426,10 +426,13 @@ export default function AnalysisSection({
         throw new Error(err.error || `HTTP ${response.status}`);
       }
 
-      // Decrement credits
+      // Decrement credits + add 3 free followup questions
       await supabase
         .from("user_credits")
-        .update({ ai_analyses_used: (aiCredits?.used ?? 0) + 1 })
+        .update({
+          ai_analyses_used: (aiCredits?.used ?? 0) + 1,
+          free_followups_remaining: (aiCredits?.freeFollowups ?? 0) + 3,
+        })
         .eq("user_id", userId);
       await loadCredits();
 
