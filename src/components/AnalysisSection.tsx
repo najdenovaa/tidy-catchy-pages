@@ -653,8 +653,8 @@ export default function AnalysisSection({
                   Анализирую...
                 </>
               ) : (
-                <>
-                  <Brain className="w-4 h-4" />
+              <>
+                  <Cpu className="w-4 h-4" />
                   🚀 Подробный анализ {canUseAiAnalysis ? `(${aiAnalysesRemaining})` : '(лимит исчерпан)'}
                 </>
               )}
