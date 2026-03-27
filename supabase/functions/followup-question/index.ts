@@ -7,9 +7,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const COST_TEXT = 39.9;
-const COST_WITH_ATTACHMENT = 99.9;
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -21,7 +18,6 @@ serve(async (req) => {
     const apiKey = Deno.env.get("LOVABLE_API_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Get user from auth header
     const authHeader = req.headers.get("authorization") || "";
     const token = authHeader.replace("Bearer ", "");
 
@@ -48,20 +44,16 @@ serve(async (req) => {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
     if (question.length > 2000) {
       return new Response(JSON.stringify({ error: "Вопрос слишком длинный (макс. 2000 символов)" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const cost = hasAttachment ? COST_WITH_ATTACHMENT : COST_TEXT;
-
-    // Check balance using service role
     const adminClient = createClient(supabaseUrl, serviceKey);
     const { data: credits, error: credErr } = await adminClient
       .from("user_credits")
-      .select("balance_rub")
+      .select("ai_analyses_used, ai_analyses_limit, free_followups_remaining")
       .eq("user_id", user.id)
       .single();
 
@@ -71,15 +63,31 @@ serve(async (req) => {
       });
     }
 
-    const balance = Number(credits.balance_rub) || 0;
-    if (balance < cost) {
-      return new Response(JSON.stringify({
-        error: `Недостаточно средств. Требуется ${cost}₽, на балансе ${balance.toFixed(1)}₽. Пополните баланс для продолжения.`,
-        balance,
-        required: cost,
-      }), {
-        status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const freeFollowups = credits.free_followups_remaining || 0;
+    const analysesRemaining = credits.ai_analyses_limit - credits.ai_analyses_used;
+
+    // With attachment = costs 1 full analysis
+    // Without attachment = costs 1 free followup (or denied if none left)
+    if (hasAttachment) {
+      if (analysesRemaining <= 0) {
+        return new Response(JSON.stringify({
+          error: "Вопрос с вложением расходует 1 анализ. Анализы исчерпаны. Обратитесь в Поддержку: info@igchem.ru",
+          freeFollowups,
+          analysesRemaining: 0,
+        }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      if (freeFollowups <= 0) {
+        return new Response(JSON.stringify({
+          error: "Бесплатные уточняющие вопросы исчерпаны. Для продолжения — обратитесь в Поддержку: info@igchem.ru",
+          freeFollowups: 0,
+          analysesRemaining,
+        }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // Build AI messages
@@ -102,8 +110,8 @@ serve(async (req) => {
     }
 
     if (hasAttachment && attachmentBase64 && attachmentMime) {
-      const isImage = attachmentMime.startsWith("image/") || attachmentMime === "application/pdf";
-      if (isImage) {
+      const isVision = attachmentMime.startsWith("image/") || attachmentMime === "application/pdf";
+      if (isVision) {
         userContent.push({
           type: "image_url",
           image_url: { url: `data:${attachmentMime};base64,${attachmentBase64}` },
@@ -113,7 +121,6 @@ serve(async (req) => {
           text: `Вложение: ${attachmentName}\n\nВопрос инженера: ${question}`,
         });
       } else {
-        // Try text extraction for non-image files
         try {
           const bytes = Uint8Array.from(atob(attachmentBase64), (c) => c.charCodeAt(0));
           const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
@@ -132,7 +139,6 @@ serve(async (req) => {
       userContent.push({ type: "text", text: `Вопрос инженера: ${question}` });
     }
 
-    // Call AI
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -160,28 +166,39 @@ serve(async (req) => {
     const aiResult = await aiResponse.json();
     const answer = aiResult.choices?.[0]?.message?.content || "Нет ответа";
 
-    // Deduct balance
-    const newBalance = balance - cost;
-    await adminClient
-      .from("user_credits")
-      .update({ balance_rub: newBalance })
-      .eq("user_id", user.id);
+    // Deduct credits
+    if (hasAttachment) {
+      await adminClient
+        .from("user_credits")
+        .update({ ai_analyses_used: credits.ai_analyses_used + 1 })
+        .eq("user_id", user.id);
+    } else {
+      await adminClient
+        .from("user_credits")
+        .update({ free_followups_remaining: freeFollowups - 1 })
+        .eq("user_id", user.id);
+    }
 
-    // Log question
+    // Log
+    const costLabel = hasAttachment ? "1 анализ" : "1 бесплатный вопрос";
     await adminClient.from("followup_questions").insert({
       user_id: user.id,
       question,
       has_attachment: hasAttachment,
       attachment_name: attachmentName,
-      cost_rub: cost,
+      cost_rub: hasAttachment ? 399 : 0,
       answer,
       report_context: reportContext ? reportContext.slice(0, 5000) : null,
     });
 
+    const newFreeFollowups = hasAttachment ? freeFollowups : freeFollowups - 1;
+    const newAnalysesRemaining = hasAttachment ? analysesRemaining - 1 : analysesRemaining;
+
     return new Response(JSON.stringify({
       answer,
-      cost,
-      newBalance,
+      costLabel,
+      freeFollowups: newFreeFollowups,
+      analysesRemaining: newAnalysesRemaining,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

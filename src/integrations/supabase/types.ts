@@ -265,6 +265,7 @@ export type Database = {
           ai_analyses_used: number
           balance_rub: number
           created_at: string
+          free_followups_remaining: number
           id: string
           updated_at: string
           user_id: string
@@ -274,6 +275,7 @@ export type Database = {
           ai_analyses_used?: number
           balance_rub?: number
           created_at?: string
+          free_followups_remaining?: number
           id?: string
           updated_at?: string
           user_id: string
@@ -283,6 +285,7 @@ export type Database = {
           ai_analyses_used?: number
           balance_rub?: number
           created_at?: string
+          free_followups_remaining?: number
           id?: string
           updated_at?: string
           user_id?: string

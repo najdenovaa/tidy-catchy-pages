@@ -256,7 +256,7 @@ export default function AnalysisSection({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [aiCredits, setAiCredits] = useState<{ used: number; limit: number } | null>(null);
+  const [aiCredits, setAiCredits] = useState<{ used: number; limit: number; freeFollowups: number } | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
   // Get current user info and credits
@@ -277,15 +277,14 @@ export default function AnalysisSection({
     if (!userId) { setAiCredits(null); return; }
     const { data } = await supabase
       .from("user_credits")
-      .select("ai_analyses_used, ai_analyses_limit")
+      .select("ai_analyses_used, ai_analyses_limit, free_followups_remaining")
       .eq("user_id", userId)
       .maybeSingle();
     if (data) {
-      setAiCredits({ used: data.ai_analyses_used, limit: data.ai_analyses_limit });
+      setAiCredits({ used: data.ai_analyses_used, limit: data.ai_analyses_limit, freeFollowups: (data as any).free_followups_remaining ?? 0 });
     } else {
-      // Create initial credits row
-      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_used: 0, ai_analyses_limit: 3 });
-      setAiCredits({ used: 0, limit: 3 });
+      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_used: 0, ai_analyses_limit: 3, free_followups_remaining: 9 });
+      setAiCredits({ used: 0, limit: 3, freeFollowups: 9 });
     }
   }, [userId]);
 
@@ -427,10 +426,13 @@ export default function AnalysisSection({
         throw new Error(err.error || `HTTP ${response.status}`);
       }
 
-      // Decrement credits
+      // Decrement credits + add 3 free followup questions
       await supabase
         .from("user_credits")
-        .update({ ai_analyses_used: (aiCredits?.used ?? 0) + 1 })
+        .update({
+          ai_analyses_used: (aiCredits?.used ?? 0) + 1,
+          free_followups_remaining: (aiCredits?.freeFollowups ?? 0) + 3,
+        })
         .eq("user_id", userId);
       await loadCredits();
 
