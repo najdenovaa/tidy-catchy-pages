@@ -513,7 +513,6 @@ export default function AnalysisSection({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Brain className="w-5 h-5 text-primary" />
             🔬 Анализ качества цементирования
           </CardTitle>
            <p className="text-sm text-muted-foreground">
