@@ -259,6 +259,15 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
+        {/* Credits & Payments */}
+        <CreditsSection
+          used={credits.used}
+          limit={credits.limit}
+          payments={payments}
+          onBuy={handleBuy}
+          buying={buying}
+        />
+
         {/* Hierarchy browser */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Fields */}
