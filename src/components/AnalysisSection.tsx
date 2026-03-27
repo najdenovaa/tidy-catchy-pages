@@ -514,8 +514,7 @@ export default function AnalysisSection({
 
   // ─── Program from ТЗ ─────────────────────────────────────────
   const handleTzUpload = useCallback(async (droppedFiles: File[]) => {
-    const file = droppedFiles[0];
-    if (!file) return;
+    if (!droppedFiles.length) return;
     
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { setError("Войдите в аккаунт"); return; }
@@ -524,26 +523,49 @@ export default function AnalysisSection({
       return;
     }
 
-    setTzFile(file);
-    setTzFileName(file.name);
+    // Append new files to existing
+    setTzFiles(prev => [...prev, ...droppedFiles]);
+    setTzFileNames(prev => [...prev, ...droppedFiles.map(f => f.name)]);
+  }, [canUseAiAnalysis]);
+
+  const removeTzFile = useCallback((index: number) => {
+    setTzFiles(prev => prev.filter((_, i) => i !== index));
+    setTzFileNames(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const runTzExtraction = useCallback(async () => {
+    if (!tzFiles.length) return;
+    if (!canUseAiAnalysis) {
+      setError("Анализы исчерпаны. Обратитесь в Поддержку: https://t.me/deall_support");
+      return;
+    }
+
     setExtracting(true);
     setError("");
 
     try {
-      // Parse document locally first
-      const parsed = await parseDocument(file);
-      const parsedText = parsed.text || "";
+      // Parse all files and combine texts
+      const allTexts: string[] = [];
+      let firstVisionFile: { base64: string; mimeType: string; name: string } | null = null;
 
-      // Prepare file for AI if it's an image/pdf
-      let filePayload: { base64: string; mimeType: string; name: string } | null = null;
-      const mime = file.type.toLowerCase();
-      if (mime.startsWith("image/") || mime === "application/pdf") {
-        const ab = await file.arrayBuffer();
-        const bytes = new Uint8Array(ab);
-        let binary = "";
-        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-        filePayload = { base64: btoa(binary), mimeType: mime, name: file.name };
+      for (const file of tzFiles) {
+        const parsed = await parseDocument(file);
+        if (parsed.text) allTexts.push(`=== ${file.name} ===\n${parsed.text}`);
+
+        // Use first image/pdf for vision
+        if (!firstVisionFile) {
+          const mime = file.type.toLowerCase();
+          if (mime.startsWith("image/") || mime === "application/pdf") {
+            const ab = await file.arrayBuffer();
+            const bytes = new Uint8Array(ab);
+            let binary = "";
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+            firstVisionFile = { base64: btoa(binary), mimeType: mime, name: file.name };
+          }
+        }
       }
+
+      const combinedText = allTexts.join("\n\n");
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-well-data`,
@@ -553,7 +575,7 @@ export default function AnalysisSection({
             "Content-Type": "application/json",
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
-          body: JSON.stringify({ file: filePayload, parsedText }),
+          body: JSON.stringify({ file: firstVisionFile, parsedText: combinedText }),
         }
       );
 
@@ -572,7 +594,7 @@ export default function AnalysisSection({
     } finally {
       setExtracting(false);
     }
-  }, [canUseAiAnalysis]);
+  }, [tzFiles, canUseAiAnalysis]);
 
   const handleProgramConfirm = useCallback(async (
     wd: WellData, df: DrillingFluid, sl: SlurryInput[], bf: BufferFluid[], disp: DisplacementFluid[]
