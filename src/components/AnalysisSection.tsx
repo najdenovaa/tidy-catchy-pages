@@ -262,8 +262,8 @@ export default function AnalysisSection({
   const reportRef = useRef<HTMLDivElement>(null);
 
   // Program generation from ТЗ
-  const [tzFile, setTzFile] = useState<File | null>(null);
-  const [tzFileName, setTzFileName] = useState<string>("");
+  const [tzFiles, setTzFiles] = useState<File[]>([]);
+  const [tzFileNames, setTzFileNames] = useState<string[]>([]);
   const [extracting, setExtracting] = useState(false);
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [showExtractionDialog, setShowExtractionDialog] = useState(false);
