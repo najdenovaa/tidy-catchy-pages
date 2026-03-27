@@ -1,4 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { DebouncedInput } from "@/components/DebouncedInput";
 import { Label } from "@/components/ui/label";
