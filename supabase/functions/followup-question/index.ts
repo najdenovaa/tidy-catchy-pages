@@ -7,6 +7,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const MAX_FREE_PER_SESSION = 3;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -34,6 +36,7 @@ serve(async (req) => {
     const body = await req.json();
     const question = (body.question || "").trim();
     const reportContext = (body.reportContext || "").trim();
+    const sessionId = (body.sessionId || "").trim();
     const hasAttachment = !!body.attachment;
     const attachmentName = body.attachment?.name || null;
     const attachmentBase64 = body.attachment?.base64 || null;
@@ -51,9 +54,11 @@ serve(async (req) => {
     }
 
     const adminClient = createClient(supabaseUrl, serviceKey);
+
+    // Get analysis credits
     const { data: credits, error: credErr } = await adminClient
       .from("user_credits")
-      .select("ai_analyses_used, ai_analyses_limit, free_followups_remaining")
+      .select("ai_analyses_used, ai_analyses_limit")
       .eq("user_id", user.id)
       .single();
 
@@ -63,26 +68,36 @@ serve(async (req) => {
       });
     }
 
-    const freeFollowups = credits.free_followups_remaining || 0;
     const analysesRemaining = credits.ai_analyses_limit - credits.ai_analyses_used;
 
-    // With attachment = costs 1 full analysis
-    // Without attachment = costs 1 free followup (or denied if none left)
+    // Count free (no-attachment) user messages in this session
+    let sessionFreeUsed = 0;
+    if (sessionId) {
+      const { count } = await adminClient
+        .from("chat_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", sessionId)
+        .eq("role", "user")
+        .is("attachment_name", null);
+      sessionFreeUsed = count || 0;
+    }
+    const sessionFreeRemaining = MAX_FREE_PER_SESSION - sessionFreeUsed;
+
     if (hasAttachment) {
       if (analysesRemaining <= 0) {
         return new Response(JSON.stringify({
           error: "Вопрос с вложением расходует 1 анализ. Анализы исчерпаны. Обратитесь в Поддержку: https://t.me/deall_support",
-          freeFollowups,
+          sessionFreeRemaining,
           analysesRemaining: 0,
         }), {
           status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     } else {
-      if (freeFollowups <= 0) {
+      if (sessionFreeRemaining <= 0) {
         return new Response(JSON.stringify({
-          error: "Бесплатные уточняющие вопросы исчерпаны. Для продолжения — обратитесь в Поддержку: https://t.me/deall_support",
-          freeFollowups: 0,
+          error: "В этом чате использованы все 3 бесплатных вопроса. Для продолжения — обратитесь в Поддержку: https://t.me/deall_support",
+          sessionFreeRemaining: 0,
           analysesRemaining,
         }), {
           status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -167,21 +182,16 @@ serve(async (req) => {
     const aiResult = await aiResponse.json();
     const answer = aiResult.choices?.[0]?.message?.content || "Нет ответа";
 
-    // Deduct credits
+    // Deduct analysis credit only for attachments
     if (hasAttachment) {
       await adminClient
         .from("user_credits")
         .update({ ai_analyses_used: credits.ai_analyses_used + 1 })
         .eq("user_id", user.id);
-    } else {
-      await adminClient
-        .from("user_credits")
-        .update({ free_followups_remaining: freeFollowups - 1 })
-        .eq("user_id", user.id);
     }
 
     // Log
-    const costLabel = hasAttachment ? "1 анализ" : "1 бесплатный вопрос";
+    const costLabel = hasAttachment ? "1 анализ" : "бесплатный вопрос";
     await adminClient.from("followup_questions").insert({
       user_id: user.id,
       question,
@@ -192,13 +202,13 @@ serve(async (req) => {
       report_context: reportContext ? reportContext.slice(0, 5000) : null,
     });
 
-    const newFreeFollowups = hasAttachment ? freeFollowups : freeFollowups - 1;
+    const newSessionFreeRemaining = hasAttachment ? sessionFreeRemaining : sessionFreeRemaining - 1;
     const newAnalysesRemaining = hasAttachment ? analysesRemaining - 1 : analysesRemaining;
 
     return new Response(JSON.stringify({
       answer,
       costLabel,
-      freeFollowups: newFreeFollowups,
+      sessionFreeRemaining: newSessionFreeRemaining,
       analysesRemaining: newAnalysesRemaining,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
