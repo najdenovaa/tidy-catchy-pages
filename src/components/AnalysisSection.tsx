@@ -649,8 +649,8 @@ export default function AnalysisSection({
             >
               {analyzing ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Анализирую...
+              <Loader2 className="w-4 h-4 animate-spin" />
+                  Анализируем...
                 </>
               ) : (
               <>

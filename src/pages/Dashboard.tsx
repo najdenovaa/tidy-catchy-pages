@@ -217,7 +217,7 @@ export default function Dashboard() {
           <CardContent className="flex flex-wrap gap-3">
             <Link to={cementingLink}><Button variant="outline" size="sm"><FlaskConical className="w-4 h-4 mr-1" /> Программа цементирования</Button></Link>
             <Link to={cementPlugLink}><Button variant="outline" size="sm"><Blocks className="w-4 h-4 mr-1" /> Цементные мосты</Button></Link>
-            <Link to="/cementing/analysis"><Button variant="outline" size="sm"><Brain className="w-4 h-4 mr-1" /> Анализ цементирования</Button></Link>
+            <Link to="/cementing/analysis"><Button variant="outline" size="sm"><Cpu className="w-4 h-4 mr-1" /> Анализ цементирования</Button></Link>
             <Link to="/coiled-tubing"><Button variant="outline" size="sm"><Cable className="w-4 h-4 mr-1" /> ГНКТ</Button></Link>
             <Button variant="outline" size="sm" disabled><Droplets className="w-4 h-4 mr-1" /> Буровые растворы (скоро)</Button>
             <Button variant="outline" size="sm" disabled><Zap className="w-4 h-4 mr-1" /> ГРП (скоро)</Button>
