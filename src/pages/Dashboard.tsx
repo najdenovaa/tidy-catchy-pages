@@ -48,9 +48,6 @@ export default function Dashboard() {
       const { data: cred } = await supabase.from("user_credits").select("ai_analyses_used, ai_analyses_limit, free_followups_remaining").eq("user_id", session.user.id).single();
       if (cred) setCredits({ used: cred.ai_analyses_used, limit: cred.ai_analyses_limit, freeFollowups: (cred as any).free_followups_remaining ?? 9 });
 
-      // Load payments
-      const { data: pays } = await supabase.from("payments").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false });
-      if (pays) setPayments(pays);
 
       await loadFields();
       setLoading(false);
