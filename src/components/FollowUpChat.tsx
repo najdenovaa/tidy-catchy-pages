@@ -280,7 +280,7 @@ export default function FollowUpChat({ reportContext }: FollowUpChatProps) {
             <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-500/10 rounded-md p-2">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
               Бесплатные вопросы исчерпаны. Для продолжения — обратитесь в{" "}
-              <a href="https://t.me/deall_support" className="underline font-semibold">Поддержку</a>.
+              <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="underline font-semibold">Поддержку</a>.
             </div>
           )}
         </div>

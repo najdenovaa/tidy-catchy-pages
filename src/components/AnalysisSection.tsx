@@ -639,7 +639,7 @@ export default function AnalysisSection({
               <span>
                 <strong>Подробный анализ:</strong> осталось {aiAnalysesRemaining} из {aiCredits.limit} анализов (доступно при регистрации).
                 {aiAnalysesRemaining === 0 && (
-                  <> Для продолжения — обратитесь в <a href="https://t.me/deall_support" className="underline font-semibold hover:opacity-80">Поддержку</a>.</>
+                  <> Для продолжения — обратитесь в <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:opacity-80">Поддержку</a>.</>
                 )}
               </span>
             </div>
@@ -695,7 +695,7 @@ export default function AnalysisSection({
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-2">
             <Cpu className="w-3.5 h-3.5 shrink-0" />
-            <span><strong>Алгоритмический анализ</strong> — мгновенный. <strong>Подробный анализ</strong> — глубокий, доступно {aiCredits?.limit ?? 3} анализов при регистрации. Для увеличения лимита — обратитесь в <a href="https://t.me/deall_support" className="underline font-semibold hover:opacity-80">Поддержку</a>.</span>
+            <span><strong>Алгоритмический анализ</strong> — мгновенный. <strong>Подробный анализ</strong> — глубокий, доступно {aiCredits?.limit ?? 3} анализов при регистрации. Для увеличения лимита — обратитесь в <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="underline font-semibold hover:opacity-80">Поддержку</a>.</span>
           </div>
 
           {analyzing && (
