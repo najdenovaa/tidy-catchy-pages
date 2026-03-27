@@ -174,8 +174,8 @@ export default function Dashboard() {
   };
 
   const formatDate = (iso: string) => new Date(iso).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  const cementingLink = selectedWell ? `/cementing?from=dashboard&well=${selectedWell}` : "/cementing?from=dashboard";
-  const cementPlugLink = selectedWell ? `/cement-plug?from=dashboard&well=${selectedWell}` : "/cement-plug?from=dashboard";
+  const cementingLink = selectedWell ? `/cementing/program?from=dashboard&well=${selectedWell}` : "/cementing/program?from=dashboard";
+  const cementPlugLink = selectedWell ? `/cementing/plugs?from=dashboard&well=${selectedWell}` : "/cementing/plugs?from=dashboard";
 
   if (loading) return <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">Загрузка...</div>;
 
