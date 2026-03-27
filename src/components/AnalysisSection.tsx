@@ -256,7 +256,7 @@ export default function AnalysisSection({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [aiCredits, setAiCredits] = useState<{ used: number; limit: number } | null>(null);
+  const [aiCredits, setAiCredits] = useState<{ used: number; limit: number; freeFollowups: number } | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
   // Get current user info and credits
