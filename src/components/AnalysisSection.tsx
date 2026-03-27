@@ -252,7 +252,7 @@ export default function AnalysisSection({
   const [analyzing, setAnalyzing] = useState(false);
   const [report, setReport] = useState<string>("");
   const [error, setError] = useState<string>("");
-  const [useOwnProgram, setUseOwnProgram] = useState(true);
+  const useOwnProgram = false;
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
