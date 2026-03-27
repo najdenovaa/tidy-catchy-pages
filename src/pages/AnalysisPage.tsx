@@ -5,15 +5,17 @@ import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 
 const defaultWellData: WellData = {
-  wellDepth: 0, casingOD: 0, casingWeight: 0, holeSize: 0,
-  prevCasingOD: 0, prevCasingWeight: 0, prevCasingDepth: 0,
-  shoeJointLength: 0, ratHoleLength: 0,
-  casingShoeDepth: 0, topOfCement: 0,
-  cementingMethod: "one-stage" as const,
-  stageToolDepth: 0, dv2Depth: 0,
+  wellDepthMD: 0, wellDepthTVD: 0, casingDepthMD: 0, holeDiameter: 0,
+  casingOD: 0, casingWall: 0, prevCasingDepth: 0, prevCasingID: 0,
+  prevCasingOD: 0, ckodDepth: 0, cementRiseHeight: 0, cavernCoeff: 1.1,
+  bottomTempStatic: 0, bottomTempCirc: 0, trajectory: [],
 };
 
-const defaultDrillingFluid: DrillingFluid = { density: 0, plasticViscosity: 0, yieldPoint: 0 };
+const defaultDrillingFluid: DrillingFluid = {
+  name: "", density: 0,
+  rheology: { pv: 0, yp: 0, model: "bingham" },
+  fluidLoss: 0,
+};
 
 export default function AnalysisPage() {
   return (
