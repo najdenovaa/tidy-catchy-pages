@@ -113,6 +113,42 @@ export type Database = {
         }
         Relationships: []
       }
+      payments: {
+        Row: {
+          amount: number
+          completed_at: string | null
+          created_at: string
+          credits_purchased: number
+          id: string
+          robokassa_inv_id: string | null
+          robokassa_signature: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          completed_at?: string | null
+          created_at?: string
+          credits_purchased?: number
+          id?: string
+          robokassa_inv_id?: string | null
+          robokassa_signature?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          completed_at?: string | null
+          created_at?: string
+          credits_purchased?: number
+          id?: string
+          robokassa_inv_id?: string | null
+          robokassa_signature?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string

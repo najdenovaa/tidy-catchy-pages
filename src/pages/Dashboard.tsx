@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Home, LogOut, Plus, Trash2, ChevronRight, FolderOpen, FlaskConical, Droplets, Zap, Copy, Blocks } from "lucide-react";
+import CreditsSection from "@/components/CreditsSection";
 import { useToast } from "@/hooks/use-toast";
 import type { User } from "@supabase/supabase-js";
 
@@ -20,6 +21,9 @@ export default function Dashboard() {
   const [pads, setPads] = useState<WellPad[]>([]);
   const [wells, setWells] = useState<Well[]>([]);
   const [calcs, setCalcs] = useState<SavedCalc[]>([]);
+  const [credits, setCredits] = useState<{ used: number; limit: number }>({ used: 0, limit: 3 });
+  const [payments, setPayments] = useState<any[]>([]);
+  const [buying, setBuying] = useState(false);
 
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [selectedPad, setSelectedPad] = useState<string | null>(null);
@@ -41,6 +45,14 @@ export default function Dashboard() {
 
       const { data: p } = await supabase.from("profiles").select("email, display_name, user_id").eq("user_id", session.user.id).single();
       if (p) setProfile(p);
+
+      // Load credits
+      const { data: cred } = await supabase.from("user_credits").select("ai_analyses_used, ai_analyses_limit").eq("user_id", session.user.id).single();
+      if (cred) setCredits({ used: cred.ai_analyses_used, limit: cred.ai_analyses_limit });
+
+      // Load payments
+      const { data: pays } = await supabase.from("payments").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false });
+      if (pays) setPayments(pays);
 
       await loadFields();
       setLoading(false);
@@ -144,6 +156,38 @@ export default function Dashboard() {
     navigate("/");
   };
 
+  const handleBuy = async (quantity: number) => {
+    if (!user) return;
+    setBuying(true);
+    try {
+      // Create pending payment record
+      const amount = quantity * 399;
+      const { data: payment, error } = await supabase.from("payments").insert({
+        user_id: user.id,
+        amount,
+        credits_purchased: quantity,
+        status: "pending",
+      }).select().single();
+
+      if (error) {
+        toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+        return;
+      }
+
+      // TODO: redirect to Robokassa payment page when integrated
+      toast({
+        title: "Оплата временно недоступна",
+        description: "Платёжная система подключается. Обратитесь в поддержку для пополнения баланса.",
+      });
+
+      // Refresh payments list
+      const { data: pays } = await supabase.from("payments").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+      if (pays) setPayments(pays);
+    } finally {
+      setBuying(false);
+    }
+  };
+
   const copyId = () => {
     if (profile?.user_id) {
       navigator.clipboard.writeText(profile.user_id);
@@ -214,6 +258,15 @@ export default function Dashboard() {
             {!selectedWell && <p className="text-xs text-muted-foreground">Чтобы сохранить расчёт в нужную папку, выберите скважину справа ниже</p>}
           </CardContent>
         </Card>
+
+        {/* Credits & Payments */}
+        <CreditsSection
+          used={credits.used}
+          limit={credits.limit}
+          payments={payments}
+          onBuy={handleBuy}
+          buying={buying}
+        />
 
         {/* Hierarchy browser */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
