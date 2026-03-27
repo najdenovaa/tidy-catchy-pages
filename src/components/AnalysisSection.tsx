@@ -806,18 +806,20 @@ export default function AnalysisSection({
             Составление программы цементирования
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Загрузите ТЗ или исходные данные по скважине — система распознает параметры и составит программу цементирования. Списывается 1 анализ + 3 вопроса.
+            Загрузите ТЗ, рапорт по буровым растворам, инклинометрию и другие документы — система распознает параметры и составит программу. Списывается 1 анализ + 3 вопроса.
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
+          {/* Drop zone for adding files */}
           <div
-            className={`border-2 border-dashed rounded-lg p-6 text-center space-y-2 transition-all cursor-pointer
+            className={`border-2 border-dashed rounded-lg p-4 text-center space-y-2 transition-all cursor-pointer
               ${extracting ? "border-primary/50 bg-primary/5" : "border-border hover:border-primary/50"}`}
             onClick={() => {
               if (extracting) return;
               const input = document.createElement("input");
               input.type = "file";
               input.accept = ACCEPTED_EXTENSIONS;
+              input.multiple = true;
               input.onchange = (e) => {
                 const f = (e.target as HTMLInputElement).files;
                 if (f?.length) handleTzUpload(Array.from(f));
@@ -831,27 +833,60 @@ export default function AnalysisSection({
               if (dropped.length) handleTzUpload(dropped);
             }}
           >
-            {extracting ? (
-              <div className="flex items-center justify-center gap-2 py-3">
-                <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                <span className="text-sm text-muted-foreground">Распознаю данные из <strong>{tzFileName}</strong>...</span>
-              </div>
-            ) : tzFileName && programReport ? (
-              <div className="flex items-center justify-center gap-2">
-                <CheckCircle className="w-4 h-4 text-green-500" />
-                <span className="text-sm">{tzFileName} — программа составлена</span>
-              </div>
-            ) : (
-              <>
-                <p className="text-sm font-medium">📄 Исходные данные / ТЗ</p>
-                <p className="text-xs text-muted-foreground">Загрузите документ с данными по скважине (PDF, Word, Excel, изображение)</p>
-                <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Перетащите или нажмите</span>
-                </div>
-              </>
-            )}
+            <p className="text-sm font-medium">📄 Исходные данные / ТЗ</p>
+            <p className="text-xs text-muted-foreground">ТЗ, рапорт по буровым растворам, таблица инклинометра, программа и др.</p>
+            <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+              <Upload className="w-3.5 h-3.5" />
+              <span>Перетащите или нажмите (можно несколько файлов)</span>
+            </div>
           </div>
+
+          {/* List of uploaded TZ files */}
+          {tzFileNames.length > 0 && (
+            <div className="space-y-1.5">
+              {tzFileNames.map((name, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm bg-muted/50 rounded-md px-3 py-1.5">
+                  <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <span className="truncate flex-1">{name}</span>
+                  <button
+                    onClick={() => removeTzFile(i)}
+                    className="text-destructive hover:text-destructive/80"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Extract & generate button */}
+          {tzFileNames.length > 0 && !programReport && (
+            <Button
+              onClick={runTzExtraction}
+              disabled={extracting || !canUseAiAnalysis}
+              className="w-full"
+              size="lg"
+            >
+              {extracting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Распознаю данные из {tzFileNames.length} файл(ов)...
+                </>
+              ) : (
+                <>
+                  <Cpu className="w-4 h-4" />
+                  🚀 Распознать данные и составить программу ({tzFileNames.length} файл(ов))
+                </>
+              )}
+            </Button>
+          )}
+
+          {programReport && tzFileNames.length > 0 && (
+            <div className="flex items-center gap-2 text-sm text-green-600 bg-green-500/10 rounded-lg p-2.5">
+              <CheckCircle className="w-4 h-4" />
+              Программа составлена на основе {tzFileNames.length} документ(ов)
+            </div>
+          )}
 
           {!canUseAiAnalysis && (
             <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-500/10 rounded-lg p-2.5">
