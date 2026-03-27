@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, DragEvent, useMemo } from "re
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Upload, FileText, Trash2, Loader2, AlertTriangle, CheckCircle, FolderOpen, Cpu, Download } from "lucide-react";
+import { Upload, FileText, Trash2, Loader2, AlertTriangle, CheckCircle, FolderOpen, Cpu, Download, FileInput } from "lucide-react";
 import { exportAnalysisToDocx } from "@/lib/export-analysis-docx";
 import FollowUpChat from "@/components/FollowUpChat";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,6 +10,8 @@ import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFlu
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { runAlgorithmicAnalysis } from "@/lib/cement-analysis-engine";
 import { parseDocument, type ParsedDocument } from "@/lib/document-parser";
+import WellDataExtractionDialog, { type ExtractedData } from "@/components/WellDataExtractionDialog";
+import { generateCementingProgram } from "@/lib/program-generator";
 
 interface AnalysisSectionProps {
   wellData: WellData;
@@ -259,6 +261,15 @@ export default function AnalysisSection({
   const [aiCredits, setAiCredits] = useState<{ used: number; limit: number; freeFollowups: number } | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
+  // Program generation from ТЗ
+  const [tzFile, setTzFile] = useState<File | null>(null);
+  const [tzFileName, setTzFileName] = useState<string>("");
+  const [extracting, setExtracting] = useState(false);
+  const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
+  const [showExtractionDialog, setShowExtractionDialog] = useState(false);
+  const [programReport, setProgramReport] = useState<string>("");
+  const programReportRef = useRef<HTMLDivElement>(null);
+
   // Get current user info and credits
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -501,6 +512,95 @@ export default function AnalysisSection({
     }
   }, [wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, rawFiles]);
 
+  // ─── Program from ТЗ ─────────────────────────────────────────
+  const handleTzUpload = useCallback(async (droppedFiles: File[]) => {
+    const file = droppedFiles[0];
+    if (!file) return;
+    
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setError("Войдите в аккаунт"); return; }
+    if (!canUseAiAnalysis) {
+      setError("Анализы исчерпаны. Обратитесь в Поддержку: https://t.me/deall_support");
+      return;
+    }
+
+    setTzFile(file);
+    setTzFileName(file.name);
+    setExtracting(true);
+    setError("");
+
+    try {
+      // Parse document locally first
+      const parsed = await parseDocument(file);
+      const parsedText = parsed.text || "";
+
+      // Prepare file for AI if it's an image/pdf
+      let filePayload: { base64: string; mimeType: string; name: string } | null = null;
+      const mime = file.type.toLowerCase();
+      if (mime.startsWith("image/") || mime === "application/pdf") {
+        const ab = await file.arrayBuffer();
+        const bytes = new Uint8Array(ab);
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        filePayload = { base64: btoa(binary), mimeType: mime, name: file.name };
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-well-data`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ file: filePayload, parsedText }),
+        }
+      );
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: "Ошибка сервера" }));
+        throw new Error(err.error || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!result.success || !result.data) throw new Error("Не удалось распознать данные");
+
+      setExtractedData(result.data as ExtractedData);
+      setShowExtractionDialog(true);
+    } catch (e: any) {
+      setError("Ошибка распознавания: " + (e.message || "Неизвестная ошибка"));
+    } finally {
+      setExtracting(false);
+    }
+  }, [canUseAiAnalysis]);
+
+  const handleProgramConfirm = useCallback(async (
+    wd: WellData, df: DrillingFluid, sl: SlurryInput[], bf: BufferFluid[], disp: DisplacementFluid[]
+  ) => {
+    setShowExtractionDialog(false);
+
+    try {
+      const result = generateCementingProgram(wd, df, sl, bf, disp);
+      setProgramReport(result.markdown);
+
+      // Deduct 1 analysis credit
+      if (userId) {
+        await supabase
+          .from("user_credits")
+          .update({
+            ai_analyses_used: (aiCredits?.used ?? 0) + 1,
+            free_followups_remaining: (aiCredits?.freeFollowups ?? 0) + 3,
+          })
+          .eq("user_id", userId);
+        await loadCredits();
+      }
+
+      setTimeout(() => programReportRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
+    } catch (e: any) {
+      setError("Ошибка генерации программы: " + e.message);
+    }
+  }, [userId, aiCredits, loadCredits]);
+
   const akcFiles = files.filter(f => f.type === "akc");
   const reportFiles = files.filter(f => f.type === "report");
   const otherFiles = files.filter(f => f.type === "other");
@@ -676,6 +776,118 @@ export default function AnalysisSection({
         </CardContent>
       </Card>
 
+      {/* ─── Составление программы из ТЗ ─── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <FileInput className="w-5 h-5" />
+            Составление программы цементирования
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Загрузите ТЗ или исходные данные по скважине — система распознает параметры и составит программу цементирования. Списывается 1 анализ + 3 вопроса.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div
+            className={`border-2 border-dashed rounded-lg p-6 text-center space-y-2 transition-all cursor-pointer
+              ${extracting ? "border-primary/50 bg-primary/5" : "border-border hover:border-primary/50"}`}
+            onClick={() => {
+              if (extracting) return;
+              const input = document.createElement("input");
+              input.type = "file";
+              input.accept = ACCEPTED_EXTENSIONS;
+              input.onchange = (e) => {
+                const f = (e.target as HTMLInputElement).files;
+                if (f?.length) handleTzUpload(Array.from(f));
+              };
+              input.click();
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const dropped = Array.from(e.dataTransfer.files);
+              if (dropped.length) handleTzUpload(dropped);
+            }}
+          >
+            {extracting ? (
+              <div className="flex items-center justify-center gap-2 py-3">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground">Распознаю данные из <strong>{tzFileName}</strong>...</span>
+              </div>
+            ) : tzFileName && programReport ? (
+              <div className="flex items-center justify-center gap-2">
+                <CheckCircle className="w-4 h-4 text-green-500" />
+                <span className="text-sm">{tzFileName} — программа составлена</span>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-medium">📄 Исходные данные / ТЗ</p>
+                <p className="text-xs text-muted-foreground">Загрузите документ с данными по скважине (PDF, Word, Excel, изображение)</p>
+                <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Перетащите или нажмите</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {!canUseAiAnalysis && (
+            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-500/10 rounded-lg p-2.5">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Анализы исчерпаны. Обратитесь в <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="underline font-semibold">Поддержку</a>.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Extraction Dialog */}
+      {extractedData && (
+        <WellDataExtractionDialog
+          open={showExtractionDialog}
+          onClose={() => setShowExtractionDialog(false)}
+          extractedData={extractedData}
+          onConfirm={handleProgramConfirm}
+        />
+      )}
+
+      {/* Program Report */}
+      {programReport && (
+        <Card className="border-primary/20">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  📋 Программа цементирования
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">Составлена на основе: {tzFileName}</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportAnalysisToDocx(programReport)}
+                className="gap-2 shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                Скачать Word
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div
+              ref={programReportRef}
+              className="max-h-[700px] overflow-y-auto pr-2 space-y-0"
+            >
+              <ReportRenderer text={programReport} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Follow-up Q&A for program */}
+      {programReport && !report && (
+        <FollowUpChat reportContext={programReport} />
+      )}
+
       {/* Report */}
       {report && (
         <Card className="border-primary/20">
@@ -709,7 +921,7 @@ export default function AnalysisSection({
         </Card>
       )}
 
-      {/* Follow-up Q&A */}
+      {/* Follow-up Q&A for analysis */}
       {report && (
         <FollowUpChat reportContext={report} />
       )}
