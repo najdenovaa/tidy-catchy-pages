@@ -17,8 +17,8 @@ const subModules = [
   },
   {
     title: "Анализ цементирования",
-    description: "Подробный AI-анализ качества цементирования по документам",
-    icon: Brain,
+    description: "Подробный анализ качества цементирования по документам",
+    icon: Cpu,
     to: "/cementing/analysis",
   },
 ];
