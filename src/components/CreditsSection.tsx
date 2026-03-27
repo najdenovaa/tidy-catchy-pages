@@ -17,7 +17,7 @@ interface Payment {
 interface CreditsSectionProps {
   used: number;
   limit: number;
-  balanceRub: number;
+  freeFollowups: number;
   payments: Payment[];
   onBuy: (quantity: number) => void;
   buying: boolean;
