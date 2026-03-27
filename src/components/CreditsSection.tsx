@@ -50,14 +50,14 @@ export default function CreditsSection({ used, limit, freeFollowups }: CreditsSe
         {remaining === 0 && (
           <p className="text-xs text-muted-foreground text-center">
             Анализы закончились. Для продолжения — обратитесь в{" "}
-            <a href="mailto:info@igchem.ru" className="text-primary underline font-semibold">Поддержку</a>.
+            <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="text-primary underline font-semibold">Поддержку</a>.
           </p>
         )}
 
         {freeFollowups === 0 && remaining > 0 && (
           <p className="text-xs text-muted-foreground text-center">
             Вопросы закончились. Для продолжения — обратитесь в{" "}
-            <a href="mailto:info@igchem.ru" className="text-primary underline font-semibold">Поддержку</a>.
+            <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="text-primary underline font-semibold">Поддержку</a>.
           </p>
         )}
       </CardContent>

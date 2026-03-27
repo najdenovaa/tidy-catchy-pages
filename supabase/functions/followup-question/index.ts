@@ -71,7 +71,7 @@ serve(async (req) => {
     if (hasAttachment) {
       if (analysesRemaining <= 0) {
         return new Response(JSON.stringify({
-          error: "Вопрос с вложением расходует 1 анализ. Анализы исчерпаны. Обратитесь в Поддержку: info@igchem.ru",
+          error: "Вопрос с вложением расходует 1 анализ. Анализы исчерпаны. Обратитесь в Поддержку: https://t.me/deall_support",
           freeFollowups,
           analysesRemaining: 0,
         }), {
@@ -81,7 +81,7 @@ serve(async (req) => {
     } else {
       if (freeFollowups <= 0) {
         return new Response(JSON.stringify({
-          error: "Бесплатные уточняющие вопросы исчерпаны. Для продолжения — обратитесь в Поддержку: info@igchem.ru",
+          error: "Бесплатные уточняющие вопросы исчерпаны. Для продолжения — обратитесь в Поддержку: https://t.me/deall_support",
           freeFollowups: 0,
           analysesRemaining,
         }), {
