@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Sparkles, ShoppingCart, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { Sparkles, ShoppingCart, Clock, CheckCircle, XCircle, Loader2, Wallet } from "lucide-react";
 
 interface Payment {
   id: string;
