@@ -512,6 +512,95 @@ export default function AnalysisSection({
     }
   }, [wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, rawFiles]);
 
+  // ─── Program from ТЗ ─────────────────────────────────────────
+  const handleTzUpload = useCallback(async (droppedFiles: File[]) => {
+    const file = droppedFiles[0];
+    if (!file) return;
+    
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setError("Войдите в аккаунт"); return; }
+    if (!canUseAiAnalysis) {
+      setError("Анализы исчерпаны. Обратитесь в Поддержку: https://t.me/deall_support");
+      return;
+    }
+
+    setTzFile(file);
+    setTzFileName(file.name);
+    setExtracting(true);
+    setError("");
+
+    try {
+      // Parse document locally first
+      const parsed = await parseDocument(file);
+      const parsedText = parsed.text || "";
+
+      // Prepare file for AI if it's an image/pdf
+      let filePayload: { base64: string; mimeType: string; name: string } | null = null;
+      const mime = file.type.toLowerCase();
+      if (mime.startsWith("image/") || mime === "application/pdf") {
+        const ab = await file.arrayBuffer();
+        const bytes = new Uint8Array(ab);
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        filePayload = { base64: btoa(binary), mimeType: mime, name: file.name };
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-well-data`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ file: filePayload, parsedText }),
+        }
+      );
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: "Ошибка сервера" }));
+        throw new Error(err.error || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!result.success || !result.data) throw new Error("Не удалось распознать данные");
+
+      setExtractedData(result.data as ExtractedData);
+      setShowExtractionDialog(true);
+    } catch (e: any) {
+      setError("Ошибка распознавания: " + (e.message || "Неизвестная ошибка"));
+    } finally {
+      setExtracting(false);
+    }
+  }, [canUseAiAnalysis]);
+
+  const handleProgramConfirm = useCallback(async (
+    wd: WellData, df: DrillingFluid, sl: SlurryInput[], bf: BufferFluid[], disp: DisplacementFluid[]
+  ) => {
+    setShowExtractionDialog(false);
+
+    try {
+      const result = generateCementingProgram(wd, df, sl, bf, disp);
+      setProgramReport(result.markdown);
+
+      // Deduct 1 analysis credit
+      if (userId) {
+        await supabase
+          .from("user_credits")
+          .update({
+            ai_analyses_used: (aiCredits?.used ?? 0) + 1,
+            free_followups_remaining: (aiCredits?.freeFollowups ?? 0) + 3,
+          })
+          .eq("user_id", userId);
+        await loadCredits();
+      }
+
+      setTimeout(() => programReportRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
+    } catch (e: any) {
+      setError("Ошибка генерации программы: " + e.message);
+    }
+  }, [userId, aiCredits, loadCredits]);
+
   const akcFiles = files.filter(f => f.type === "akc");
   const reportFiles = files.filter(f => f.type === "report");
   const otherFiles = files.filter(f => f.type === "other");
