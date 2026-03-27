@@ -13,7 +13,7 @@ const defaultWellData: WellData = {
 
 const defaultDrillingFluid: DrillingFluid = {
   name: "", density: 0,
-  rheology: { pv: 0, yp: 0, model: "bingham" },
+  rheology: { pv: 0, yp: 0 },
   fluidLoss: 0,
 };
 
