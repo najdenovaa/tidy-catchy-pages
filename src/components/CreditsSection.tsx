@@ -69,16 +69,16 @@ export default function CreditsSection({ used, limit, freeFollowups, payments, o
             <p className="text-xs text-muted-foreground">доступно анализов</p>
           </div>
 
-          {/* Wallet balance */}
+          {/* Follow-up questions balance */}
           <div className="border-t pt-3">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Wallet className="w-3 h-3" /> Кошелёк (для уточняющих вопросов)
+                <MessageSquare className="w-3 h-3" /> Уточняющие вопросы
               </span>
-              <span className="text-lg font-bold text-foreground">{balanceRub.toFixed(1)}₽</span>
+              <span className="text-lg font-bold text-foreground">{freeFollowups}</span>
             </div>
             <p className="text-[10px] text-muted-foreground">
-              Текстовый вопрос — 39,9₽ · С вложением — 99,9₽
+              Бесплатные текстовые вопросы по отчётам. Вопрос с вложением расходует 1 анализ.
             </p>
           </div>
 
