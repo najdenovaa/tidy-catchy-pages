@@ -263,6 +263,7 @@ export default function Dashboard() {
         <CreditsSection
           used={credits.used}
           limit={credits.limit}
+          balanceRub={credits.balanceRub}
           payments={payments}
           onBuy={handleBuy}
           buying={buying}
