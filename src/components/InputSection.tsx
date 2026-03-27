@@ -441,6 +441,16 @@ export default function InputSection(props: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Upload hint */}
+      <div className="flex items-center justify-end">
+        <Link
+          to="/cementing/analysis"
+          className="inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
+        >
+          <span>📄</span>
+          <span className="underline underline-offset-2">Загрузить исходные данные — заполним за вас</span>
+        </Link>
+      </div>
       {/* ===== 1. Скважина ===== */}
       <Card>
         <SectionHeader title="📐 Данные скважины" isOpen={openSections.well} onClick={() => toggle("well")} />
