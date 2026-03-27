@@ -156,6 +156,38 @@ export default function Dashboard() {
     navigate("/");
   };
 
+  const handleBuy = async (quantity: number) => {
+    if (!user) return;
+    setBuying(true);
+    try {
+      // Create pending payment record
+      const amount = quantity * 399;
+      const { data: payment, error } = await supabase.from("payments").insert({
+        user_id: user.id,
+        amount,
+        credits_purchased: quantity,
+        status: "pending",
+      }).select().single();
+
+      if (error) {
+        toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+        return;
+      }
+
+      // TODO: redirect to Robokassa payment page when integrated
+      toast({
+        title: "Оплата временно недоступна",
+        description: "Платёжная система подключается. Обратитесь в поддержку для пополнения баланса.",
+      });
+
+      // Refresh payments list
+      const { data: pays } = await supabase.from("payments").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+      if (pays) setPayments(pays);
+    } finally {
+      setBuying(false);
+    }
+  };
+
   const copyId = () => {
     if (profile?.user_id) {
       navigator.clipboard.writeText(profile.user_id);
