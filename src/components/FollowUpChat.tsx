@@ -7,6 +7,8 @@ import { MessageSquare, Send, Paperclip, Loader2, X, FileText, AlertTriangle } f
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+const MAX_FREE_PER_SESSION = 3;
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -84,7 +86,7 @@ export default function FollowUpChat({ reportContext, sessionId: initialSessionI
   const [question, setQuestion] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
-  const [freeFollowups, setFreeFollowups] = useState<number | null>(null);
+  const [sessionFreeRemaining, setSessionFreeRemaining] = useState<number>(MAX_FREE_PER_SESSION);
   const [analysesRemaining, setAnalysesRemaining] = useState<number | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(initialSessionId || null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -92,23 +94,35 @@ export default function FollowUpChat({ reportContext, sessionId: initialSessionI
   const chatEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Load credits
+  // Load analysis credits + compute per-session free remaining
   useEffect(() => {
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
+
+      // Get analysis credits
       const { data } = await supabase
         .from("user_credits")
-        .select("free_followups_remaining, ai_analyses_used, ai_analyses_limit")
+        .select("ai_analyses_used, ai_analyses_limit")
         .eq("user_id", session.user.id)
         .maybeSingle();
       if (data) {
-        setFreeFollowups((data as any).free_followups_remaining ?? 0);
         setAnalysesRemaining(data.ai_analyses_limit - data.ai_analyses_used);
+      }
+
+      // Count free messages already sent in this session
+      if (initialSessionId) {
+        const { count } = await supabase
+          .from("chat_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("session_id", initialSessionId)
+          .eq("role", "user")
+          .is("attachment_name", null);
+        setSessionFreeRemaining(MAX_FREE_PER_SESSION - (count || 0));
       }
     };
     load();
-  }, []);
+  }, [initialSessionId]);
 
   // Load existing messages if sessionId provided
   useEffect(() => {
@@ -140,7 +154,7 @@ export default function FollowUpChat({ reportContext, sessionId: initialSessionI
 
   const hasFile = !!attachment;
   const canSend = question.trim().length > 0 && !sending && (
-    hasFile ? (analysesRemaining !== null && analysesRemaining > 0) : (freeFollowups !== null && freeFollowups > 0)
+    hasFile ? (analysesRemaining !== null && analysesRemaining > 0) : sessionFreeRemaining > 0
   );
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -155,7 +169,6 @@ export default function FollowUpChat({ reportContext, sessionId: initialSessionI
   const getOrCreateSession = useCallback(async (userId: string): Promise<string> => {
     if (currentSessionId) return currentSessionId;
 
-    // Create a new session
     const title = reportContext.slice(0, 100).replace(/\n/g, " ").trim() || "Чат по анализу";
     const { data, error } = await supabase
       .from("chat_sessions")
@@ -205,10 +218,9 @@ export default function FollowUpChat({ reportContext, sessionId: initialSessionI
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Не авторизован");
 
-      // Ensure session exists
       const sessId = await getOrCreateSession(session.user.id);
 
-      // Save user message
+      // Save user message first
       await saveMessage(sessId, session.user.id, userMsg);
 
       const response = await fetch(
@@ -219,7 +231,7 @@ export default function FollowUpChat({ reportContext, sessionId: initialSessionI
             "Content-Type": "application/json",
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ question: q, reportContext, attachment: attachmentPayload }),
+          body: JSON.stringify({ question: q, reportContext, sessionId: sessId, attachment: attachmentPayload }),
         }
       );
 
@@ -233,14 +245,11 @@ export default function FollowUpChat({ reportContext, sessionId: initialSessionI
         costLabel: result.costLabel,
       };
       setMessages(prev => [...prev, assistantMsg]);
-      setFreeFollowups(result.freeFollowups);
+      setSessionFreeRemaining(result.sessionFreeRemaining ?? sessionFreeRemaining);
       setAnalysesRemaining(result.analysesRemaining);
       setAttachment(null);
 
-      // Save assistant message
       await saveMessage(sessId, session.user.id, assistantMsg);
-
-      // Update session timestamp
       await supabase.from("chat_sessions").update({ updated_at: new Date().toISOString() }).eq("id", sessId);
     } catch (e: any) {
       toast({ title: "Ошибка", description: e.message, variant: "destructive" });
@@ -260,15 +269,13 @@ export default function FollowUpChat({ reportContext, sessionId: initialSessionI
             Уточняющие вопросы по отчёту
           </CardTitle>
           <div className="flex items-center gap-2">
-            {freeFollowups !== null && (
-              <Badge variant="outline" className="text-[10px]">
-                Вопросов: {freeFollowups}
-              </Badge>
-            )}
+            <Badge variant="outline" className="text-[10px]">
+              Вопросов: {sessionFreeRemaining}/{MAX_FREE_PER_SESSION}
+            </Badge>
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Текстовый вопрос — бесплатно (осталось {freeFollowups ?? "…"}).
+          В каждом чате — {MAX_FREE_PER_SESSION} бесплатных вопроса (осталось {sessionFreeRemaining}).
           Вопрос с вложением — расходует 1 анализ (осталось {analysesRemaining ?? "…"}).
         </p>
       </CardHeader>
@@ -352,10 +359,10 @@ export default function FollowUpChat({ reportContext, sessionId: initialSessionI
             </Button>
           </div>
 
-          {freeFollowups !== null && freeFollowups <= 0 && !hasFile && (
+          {sessionFreeRemaining <= 0 && !hasFile && (
             <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-500/10 rounded-md p-2">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-              Бесплатные вопросы исчерпаны. Для продолжения — обратитесь в{" "}
+              Все {MAX_FREE_PER_SESSION} вопроса в этом чате использованы. Для продолжения — обратитесь в{" "}
               <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="underline font-semibold">Поддержку</a>.
             </div>
           )}
