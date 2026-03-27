@@ -22,8 +22,6 @@ export default function Dashboard() {
   const [wells, setWells] = useState<Well[]>([]);
   const [calcs, setCalcs] = useState<SavedCalc[]>([]);
   const [credits, setCredits] = useState<{ used: number; limit: number; freeFollowups: number }>({ used: 0, limit: 3, freeFollowups: 9 });
-  const [payments, setPayments] = useState<any[]>([]);
-  const [buying, setBuying] = useState(false);
 
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [selectedPad, setSelectedPad] = useState<string | null>(null);
