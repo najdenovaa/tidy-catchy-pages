@@ -22,8 +22,6 @@ export default function Dashboard() {
   const [wells, setWells] = useState<Well[]>([]);
   const [calcs, setCalcs] = useState<SavedCalc[]>([]);
   const [credits, setCredits] = useState<{ used: number; limit: number; freeFollowups: number }>({ used: 0, limit: 3, freeFollowups: 9 });
-  const [payments, setPayments] = useState<any[]>([]);
-  const [buying, setBuying] = useState(false);
 
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [selectedPad, setSelectedPad] = useState<string | null>(null);
@@ -50,9 +48,6 @@ export default function Dashboard() {
       const { data: cred } = await supabase.from("user_credits").select("ai_analyses_used, ai_analyses_limit, free_followups_remaining").eq("user_id", session.user.id).single();
       if (cred) setCredits({ used: cred.ai_analyses_used, limit: cred.ai_analyses_limit, freeFollowups: (cred as any).free_followups_remaining ?? 9 });
 
-      // Load payments
-      const { data: pays } = await supabase.from("payments").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false });
-      if (pays) setPayments(pays);
 
       await loadFields();
       setLoading(false);
@@ -156,37 +151,6 @@ export default function Dashboard() {
     navigate("/");
   };
 
-  const handleBuy = async (quantity: number) => {
-    if (!user) return;
-    setBuying(true);
-    try {
-      // Create pending payment record
-      const amount = quantity * 399;
-      const { data: payment, error } = await supabase.from("payments").insert({
-        user_id: user.id,
-        amount,
-        credits_purchased: quantity,
-        status: "pending",
-      }).select().single();
-
-      if (error) {
-        toast({ title: "Ошибка", description: error.message, variant: "destructive" });
-        return;
-      }
-
-      // TODO: redirect to Robokassa payment page when integrated
-      toast({
-        title: "Оплата временно недоступна",
-        description: "Платёжная система подключается. Обратитесь в поддержку для пополнения баланса.",
-      });
-
-      // Refresh payments list
-      const { data: pays } = await supabase.from("payments").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
-      if (pays) setPayments(pays);
-    } finally {
-      setBuying(false);
-    }
-  };
 
   const copyId = () => {
     if (profile?.user_id) {
@@ -259,14 +223,11 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Credits & Payments */}
+        {/* Credits */}
         <CreditsSection
           used={credits.used}
           limit={credits.limit}
           freeFollowups={credits.freeFollowups}
-          payments={payments}
-          onBuy={handleBuy}
-          buying={buying}
         />
 
         {/* Hierarchy browser */}
