@@ -21,7 +21,7 @@ export default function Dashboard() {
   const [pads, setPads] = useState<WellPad[]>([]);
   const [wells, setWells] = useState<Well[]>([]);
   const [calcs, setCalcs] = useState<SavedCalc[]>([]);
-  const [credits, setCredits] = useState<{ used: number; limit: number }>({ used: 0, limit: 3 });
+  const [credits, setCredits] = useState<{ used: number; limit: number; balanceRub: number }>({ used: 0, limit: 3, balanceRub: 0 });
   const [payments, setPayments] = useState<any[]>([]);
   const [buying, setBuying] = useState(false);
 
@@ -47,8 +47,8 @@ export default function Dashboard() {
       if (p) setProfile(p);
 
       // Load credits
-      const { data: cred } = await supabase.from("user_credits").select("ai_analyses_used, ai_analyses_limit").eq("user_id", session.user.id).single();
-      if (cred) setCredits({ used: cred.ai_analyses_used, limit: cred.ai_analyses_limit });
+      const { data: cred } = await supabase.from("user_credits").select("ai_analyses_used, ai_analyses_limit, balance_rub").eq("user_id", session.user.id).single();
+      if (cred) setCredits({ used: cred.ai_analyses_used, limit: cred.ai_analyses_limit, balanceRub: Number((cred as any).balance_rub) || 0 });
 
       // Load payments
       const { data: pays } = await supabase.from("payments").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false });
@@ -263,6 +263,7 @@ export default function Dashboard() {
         <CreditsSection
           used={credits.used}
           limit={credits.limit}
+          balanceRub={credits.balanceRub}
           payments={payments}
           onBuy={handleBuy}
           buying={buying}

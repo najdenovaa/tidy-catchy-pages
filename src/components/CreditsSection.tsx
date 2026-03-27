@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Sparkles, ShoppingCart, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { Sparkles, ShoppingCart, Clock, CheckCircle, XCircle, Loader2, Wallet } from "lucide-react";
 
 interface Payment {
   id: string;
@@ -17,6 +17,7 @@ interface Payment {
 interface CreditsSectionProps {
   used: number;
   limit: number;
+  balanceRub: number;
   payments: Payment[];
   onBuy: (quantity: number) => void;
   buying: boolean;
@@ -30,7 +31,7 @@ const PACKAGES = [
   { qty: 10, label: "10 анализов", price: 3990 },
 ];
 
-export default function CreditsSection({ used, limit, payments, onBuy, buying }: CreditsSectionProps) {
+export default function CreditsSection({ used, limit, balanceRub, payments, onBuy, buying }: CreditsSectionProps) {
   const remaining = Math.max(0, limit - used);
   const progress = limit > 0 ? (used / limit) * 100 : 0;
 
@@ -68,10 +69,23 @@ export default function CreditsSection({ used, limit, payments, onBuy, buying }:
             <p className="text-xs text-muted-foreground">доступно анализов</p>
           </div>
 
+          {/* Wallet balance */}
+          <div className="border-t pt-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Wallet className="w-3 h-3" /> Кошелёк (для уточняющих вопросов)
+              </span>
+              <span className="text-lg font-bold text-foreground">{balanceRub.toFixed(1)}₽</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Текстовый вопрос — 39,9₽ · С вложением — 99,9₽
+            </p>
+          </div>
+
           {remaining === 0 && (
             <p className="text-xs text-muted-foreground text-center">
-              Анализы закончились. Приобретите дополнительные или{" "}
-              <a href="https://t.me/your_support" target="_blank" rel="noopener noreferrer" className="text-primary underline">обратитесь в Поддержку</a>.
+              Анализы закончились. Для продолжения — обратитесь в{" "}
+              <a href="mailto:info@igchem.ru" className="text-primary underline font-semibold">Поддержку</a>.
             </p>
           )}
 

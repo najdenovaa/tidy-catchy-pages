@@ -113,6 +113,42 @@ export type Database = {
         }
         Relationships: []
       }
+      followup_questions: {
+        Row: {
+          answer: string | null
+          attachment_name: string | null
+          cost_rub: number
+          created_at: string
+          has_attachment: boolean
+          id: string
+          question: string
+          report_context: string | null
+          user_id: string
+        }
+        Insert: {
+          answer?: string | null
+          attachment_name?: string | null
+          cost_rub: number
+          created_at?: string
+          has_attachment?: boolean
+          id?: string
+          question: string
+          report_context?: string | null
+          user_id: string
+        }
+        Update: {
+          answer?: string | null
+          attachment_name?: string | null
+          cost_rub?: number
+          created_at?: string
+          has_attachment?: boolean
+          id?: string
+          question?: string
+          report_context?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       payments: {
         Row: {
           amount: number
@@ -227,6 +263,7 @@ export type Database = {
         Row: {
           ai_analyses_limit: number
           ai_analyses_used: number
+          balance_rub: number
           created_at: string
           id: string
           updated_at: string
@@ -235,6 +272,7 @@ export type Database = {
         Insert: {
           ai_analyses_limit?: number
           ai_analyses_used?: number
+          balance_rub?: number
           created_at?: string
           id?: string
           updated_at?: string
@@ -243,6 +281,7 @@ export type Database = {
         Update: {
           ai_analyses_limit?: number
           ai_analyses_used?: number
+          balance_rub?: number
           created_at?: string
           id?: string
           updated_at?: string

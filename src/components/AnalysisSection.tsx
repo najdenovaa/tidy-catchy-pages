@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Upload, FileText, Trash2, Brain, Loader2, AlertTriangle, CheckCircle, ToggleLeft, ToggleRight, FolderOpen, Cpu, Download } from "lucide-react";
 import { exportAnalysisToDocx } from "@/lib/export-analysis-docx";
+import FollowUpChat from "@/components/FollowUpChat";
 import { supabase } from "@/integrations/supabase/client";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
@@ -736,6 +737,11 @@ export default function AnalysisSection({
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Follow-up Q&A */}
+      {report && (
+        <FollowUpChat reportContext={report} />
       )}
     </div>
   );
