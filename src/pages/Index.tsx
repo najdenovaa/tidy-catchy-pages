@@ -8,7 +8,7 @@ import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import CentralizationSection from "@/components/CentralizationSection";
-import AnalysisSection from "@/components/AnalysisSection";
+
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
@@ -551,7 +551,7 @@ export default function Index() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="overflow-x-auto scrollbar-hide sticky top-[80px] sm:top-[164px] z-[9] bg-background border-b border-border">
           <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2">
-            <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-8 h-auto min-w-max sm:min-w-0">
+            <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-7 h-auto min-w-max sm:min-w-0">
               <TabsTrigger value="input" className="text-xs py-2 px-3 sm:px-1">Данные</TabsTrigger>
               <TabsTrigger value="hydraulics" className="text-xs py-2 px-3 sm:px-1">Гидравлика</TabsTrigger>
               <TabsTrigger value="schedule" className="text-xs py-2 px-3 sm:px-1">Закачка</TabsTrigger>
@@ -559,7 +559,6 @@ export default function Index() {
               <TabsTrigger value="charts" className="text-xs py-2 px-3 sm:px-1">Графики</TabsTrigger>
               <TabsTrigger value="visual" className="text-xs py-2 px-3 sm:px-1">Визуал</TabsTrigger>
               <TabsTrigger value="centralization" className="text-xs py-2 px-3 sm:px-1">Центрир.</TabsTrigger>
-              <TabsTrigger value="analysis" className="text-xs py-2 px-3 sm:px-1">🔬 Анализ</TabsTrigger>
             </TabsList>
           </div>
         </div>
@@ -681,18 +680,6 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <TabsContent value="analysis">
-            <div data-tab-content="analysis">
-              <AnalysisSection
-                wellData={wellData}
-                drillingFluid={drillingFluid}
-                slurries={slurries}
-                buffers={buffers}
-                displacementFluids={displacementFluids}
-                centralizationResults={centralizationResults}
-              />
-            </div>
-          </TabsContent>
         </main>
       </Tabs>
 

@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Home, LogOut, Plus, Trash2, ChevronRight, FolderOpen, FlaskConical, Droplets, Zap, Copy, Blocks } from "lucide-react";
+import { Home, LogOut, Plus, Trash2, ChevronRight, FolderOpen, FlaskConical, Droplets, Zap, Copy, Blocks, Cable, Ruler, Brain } from "lucide-react";
 import ChatHistory from "@/components/ChatHistory";
 import { useToast } from "@/hooks/use-toast";
 import type { User } from "@supabase/supabase-js";
@@ -174,8 +174,8 @@ export default function Dashboard() {
   };
 
   const formatDate = (iso: string) => new Date(iso).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  const cementingLink = selectedWell ? `/cementing?from=dashboard&well=${selectedWell}` : "/cementing?from=dashboard";
-  const cementPlugLink = selectedWell ? `/cement-plug?from=dashboard&well=${selectedWell}` : "/cement-plug?from=dashboard";
+  const cementingLink = selectedWell ? `/cementing/program?from=dashboard&well=${selectedWell}` : "/cementing/program?from=dashboard";
+  const cementPlugLink = selectedWell ? `/cementing/plugs?from=dashboard&well=${selectedWell}` : "/cementing/plugs?from=dashboard";
 
   if (loading) return <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">Загрузка...</div>;
 
@@ -215,11 +215,14 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="py-3"><CardTitle className="text-sm text-muted-foreground">Модули</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-3">
-            <Link to={cementingLink}><Button variant="outline" size="sm"><FlaskConical className="w-4 h-4 mr-1" /> Цементирование</Button></Link>
+            <Link to={cementingLink}><Button variant="outline" size="sm"><FlaskConical className="w-4 h-4 mr-1" /> Программа цементирования</Button></Link>
             <Link to={cementPlugLink}><Button variant="outline" size="sm"><Blocks className="w-4 h-4 mr-1" /> Цементные мосты</Button></Link>
+            <Link to="/cementing/analysis"><Button variant="outline" size="sm"><Brain className="w-4 h-4 mr-1" /> Анализ цементирования</Button></Link>
+            <Link to="/coiled-tubing"><Button variant="outline" size="sm"><Cable className="w-4 h-4 mr-1" /> ГНКТ</Button></Link>
             <Button variant="outline" size="sm" disabled><Droplets className="w-4 h-4 mr-1" /> Буровые растворы (скоро)</Button>
             <Button variant="outline" size="sm" disabled><Zap className="w-4 h-4 mr-1" /> ГРП (скоро)</Button>
-            {!selectedWell && <p className="text-xs text-muted-foreground">Чтобы сохранить расчёт в нужную папку, выберите скважину справа ниже</p>}
+            <Button variant="outline" size="sm" disabled><Ruler className="w-4 h-4 mr-1" /> Проектирование (скоро)</Button>
+            {!selectedWell && <p className="text-xs text-muted-foreground">Чтобы сохранить расчёт в нужную папку, выберите скважину ниже</p>}
           </CardContent>
         </Card>
 
@@ -311,8 +314,8 @@ export default function Dashboard() {
                     <div key={c.id} className="flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-muted group">
                       <Link to={
                         c.module === "cement-plug"
-                          ? `/cement-plug?from=dashboard&well=${selectedWell}&calc=${c.id}`
-                          : `/cementing?from=dashboard&well=${selectedWell}&calc=${c.id}`
+                          ? `/cementing/plugs?from=dashboard&well=${selectedWell}&calc=${c.id}`
+                          : `/cementing/program?from=dashboard&well=${selectedWell}&calc=${c.id}`
                       } className="flex items-center gap-1.5 flex-1 min-w-0">
                         {moduleIcon(c.module)}
                         <div className="min-w-0">
