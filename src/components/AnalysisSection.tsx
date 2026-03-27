@@ -283,8 +283,8 @@ export default function AnalysisSection({
     if (data) {
       setAiCredits({ used: data.ai_analyses_used, limit: data.ai_analyses_limit, freeFollowups: (data as any).free_followups_remaining ?? 0 });
     } else {
-      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_used: 0, ai_analyses_limit: 3, free_followups_remaining: 9 });
-      setAiCredits({ used: 0, limit: 3, freeFollowups: 9 });
+      await supabase.from("user_credits").insert({ user_id: userId, ai_analyses_used: 0, ai_analyses_limit: 6, free_followups_remaining: 18 });
+      setAiCredits({ used: 0, limit: 6, freeFollowups: 18 });
     }
   }, [userId]);
 
