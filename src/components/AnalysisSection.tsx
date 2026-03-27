@@ -520,8 +520,8 @@ export default function AnalysisSection({
            </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Main upload areas */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Upload areas — 2x2 grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <DropZone
               label="📊 АКЦ / СГДТ / CBL-VDL"
               desc="Геофизика, графики, скриншоты, Word, PDF"
@@ -543,58 +543,27 @@ export default function AnalysisSection({
               uploadingType={uploadingType}
               type="report"
             />
-          </div>
-
-          {/* Other documents */}
-          <DropZone
-            label="📁 Дополнительные документы"
-            desc="Планы, ГТИ, протоколы бурового раствора, реология, лабораторные тесты, особые мнения и др."
-            existingFiles={otherFiles}
-            onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "other"))}
-            onRemove={removeFile}
-            uploading={uploading}
-            uploadingType={uploadingType}
-            multi
-            type="other"
-          />
-
-          {/* Program source toggle */}
-          <div className="border rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">📋 Программа цементирования</p>
-                <p className="text-xs text-muted-foreground">Источник данных программы</p>
-              </div>
-              <button
-                onClick={() => setUseOwnProgram(prev => !prev)}
-                className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 transition-colors"
-              >
-                {useOwnProgram ? (
-                  <ToggleRight className="w-5 h-5 text-primary" />
-                ) : (
-                  <ToggleLeft className="w-5 h-5 text-muted-foreground" />
-                )}
-                {useOwnProgram ? "Текущий расчёт" : "Сторонний файл"}
-              </button>
-            </div>
-
-            {useOwnProgram ? (
-              <div className="flex items-center gap-2 text-xs bg-primary/5 rounded-md p-2.5">
-                <CheckCircle className="w-4 h-4 text-primary shrink-0" />
-                <span>Используются данные текущего расчёта (скважина, растворы, центрирование)</span>
-              </div>
-            ) : (
-              <DropZone
-                label="📋 Сторонняя программа"
-                desc="Загрузите программу цементирования"
-                existingFiles={programFile}
-                onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "program"))}
-                onRemove={removeFile}
-                uploading={uploading}
-                uploadingType={uploadingType}
-                type="program"
-              />
-            )}
+            <DropZone
+              label="📋 Программа цементирования"
+              desc="Загрузите программу цементирования"
+              existingFiles={programFile}
+              onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "program"))}
+              onRemove={removeFile}
+              uploading={uploading}
+              uploadingType={uploadingType}
+              type="program"
+            />
+            <DropZone
+              label="📁 Дополнительные материалы"
+              desc="ГТИ, протоколы, лабораторные тесты и др."
+              existingFiles={otherFiles}
+              onDrop={(dropped) => dropped.forEach(f => uploadFile(f, "other"))}
+              onRemove={removeFile}
+              uploading={uploading}
+              uploadingType={uploadingType}
+              multi
+              type="other"
+            />
           </div>
 
           {/* Calc data status */}
