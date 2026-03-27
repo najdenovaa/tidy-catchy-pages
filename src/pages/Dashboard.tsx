@@ -215,11 +215,14 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="py-3"><CardTitle className="text-sm text-muted-foreground">Модули</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-3">
-            <Link to={cementingLink}><Button variant="outline" size="sm"><FlaskConical className="w-4 h-4 mr-1" /> Цементирование</Button></Link>
+            <Link to={cementingLink}><Button variant="outline" size="sm"><FlaskConical className="w-4 h-4 mr-1" /> Программа цементирования</Button></Link>
             <Link to={cementPlugLink}><Button variant="outline" size="sm"><Blocks className="w-4 h-4 mr-1" /> Цементные мосты</Button></Link>
+            <Link to="/cementing/analysis"><Button variant="outline" size="sm"><Brain className="w-4 h-4 mr-1" /> Анализ цементирования</Button></Link>
+            <Link to="/coiled-tubing"><Button variant="outline" size="sm"><Cable className="w-4 h-4 mr-1" /> ГНКТ</Button></Link>
             <Button variant="outline" size="sm" disabled><Droplets className="w-4 h-4 mr-1" /> Буровые растворы (скоро)</Button>
             <Button variant="outline" size="sm" disabled><Zap className="w-4 h-4 mr-1" /> ГРП (скоро)</Button>
-            {!selectedWell && <p className="text-xs text-muted-foreground">Чтобы сохранить расчёт в нужную папку, выберите скважину справа ниже</p>}
+            <Button variant="outline" size="sm" disabled><Ruler className="w-4 h-4 mr-1" /> Проектирование (скоро)</Button>
+            {!selectedWell && <p className="text-xs text-muted-foreground">Чтобы сохранить расчёт в нужную папку, выберите скважину ниже</p>}
           </CardContent>
         </Card>
 
