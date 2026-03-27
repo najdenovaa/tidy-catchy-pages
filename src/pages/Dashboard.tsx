@@ -328,6 +328,11 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Chat History */}
+        <div className="mt-6">
+          <ChatHistory />
+        </div>
       </main>
     </div>
   );
