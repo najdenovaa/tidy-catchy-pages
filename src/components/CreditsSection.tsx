@@ -31,7 +31,7 @@ const PACKAGES = [
   { qty: 10, label: "10 анализов", price: 3990 },
 ];
 
-export default function CreditsSection({ used, limit, payments, onBuy, buying }: CreditsSectionProps) {
+export default function CreditsSection({ used, limit, balanceRub, payments, onBuy, buying }: CreditsSectionProps) {
   const remaining = Math.max(0, limit - used);
   const progress = limit > 0 ? (used / limit) * 100 : 0;
 
