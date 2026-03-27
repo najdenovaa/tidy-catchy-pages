@@ -776,6 +776,118 @@ export default function AnalysisSection({
         </CardContent>
       </Card>
 
+      {/* ─── Составление программы из ТЗ ─── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <FileInput className="w-5 h-5" />
+            Составление программы цементирования
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Загрузите ТЗ или исходные данные по скважине — система распознает параметры и составит программу цементирования. Списывается 1 анализ + 3 вопроса.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div
+            className={`border-2 border-dashed rounded-lg p-6 text-center space-y-2 transition-all cursor-pointer
+              ${extracting ? "border-primary/50 bg-primary/5" : "border-border hover:border-primary/50"}`}
+            onClick={() => {
+              if (extracting) return;
+              const input = document.createElement("input");
+              input.type = "file";
+              input.accept = ACCEPTED_EXTENSIONS;
+              input.onchange = (e) => {
+                const f = (e.target as HTMLInputElement).files;
+                if (f?.length) handleTzUpload(Array.from(f));
+              };
+              input.click();
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const dropped = Array.from(e.dataTransfer.files);
+              if (dropped.length) handleTzUpload(dropped);
+            }}
+          >
+            {extracting ? (
+              <div className="flex items-center justify-center gap-2 py-3">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground">Распознаю данные из <strong>{tzFileName}</strong>...</span>
+              </div>
+            ) : tzFileName && programReport ? (
+              <div className="flex items-center justify-center gap-2">
+                <CheckCircle className="w-4 h-4 text-green-500" />
+                <span className="text-sm">{tzFileName} — программа составлена</span>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-medium">📄 Исходные данные / ТЗ</p>
+                <p className="text-xs text-muted-foreground">Загрузите документ с данными по скважине (PDF, Word, Excel, изображение)</p>
+                <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Перетащите или нажмите</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {!canUseAiAnalysis && (
+            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-500/10 rounded-lg p-2.5">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Анализы исчерпаны. Обратитесь в <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="underline font-semibold">Поддержку</a>.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Extraction Dialog */}
+      {extractedData && (
+        <WellDataExtractionDialog
+          open={showExtractionDialog}
+          onClose={() => setShowExtractionDialog(false)}
+          extractedData={extractedData}
+          onConfirm={handleProgramConfirm}
+        />
+      )}
+
+      {/* Program Report */}
+      {programReport && (
+        <Card className="border-primary/20">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  📋 Программа цементирования
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">Составлена на основе: {tzFileName}</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportAnalysisToDocx(programReport)}
+                className="gap-2 shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                Скачать Word
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div
+              ref={programReportRef}
+              className="max-h-[700px] overflow-y-auto pr-2 space-y-0"
+            >
+              <ReportRenderer text={programReport} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Follow-up Q&A for program */}
+      {programReport && !report && (
+        <FollowUpChat reportContext={programReport} />
+      )}
+
       {/* Report */}
       {report && (
         <Card className="border-primary/20">
@@ -809,7 +921,7 @@ export default function AnalysisSection({
         </Card>
       )}
 
-      {/* Follow-up Q&A */}
+      {/* Follow-up Q&A for analysis */}
       {report && (
         <FollowUpChat reportContext={report} />
       )}
