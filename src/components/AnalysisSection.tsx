@@ -738,6 +738,11 @@ export default function AnalysisSection({
           </CardContent>
         </Card>
       )}
+
+      {/* Follow-up Q&A */}
+      {report && (
+        <FollowUpChat reportContext={report} />
+      )}
     </div>
   );
 }
