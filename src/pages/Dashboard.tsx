@@ -223,12 +223,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Credits */}
-        <CreditsSection
-          used={credits.used}
-          limit={credits.limit}
-          freeFollowups={credits.freeFollowups}
-        />
 
         {/* Hierarchy browser */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
