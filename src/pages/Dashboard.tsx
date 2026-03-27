@@ -21,7 +21,7 @@ export default function Dashboard() {
   const [pads, setPads] = useState<WellPad[]>([]);
   const [wells, setWells] = useState<Well[]>([]);
   const [calcs, setCalcs] = useState<SavedCalc[]>([]);
-  const [credits, setCredits] = useState<{ used: number; limit: number; freeFollowups: number }>({ used: 0, limit: 3, freeFollowups: 9 });
+  const [credits, setCredits] = useState<{ used: number; limit: number; freeFollowups: number }>({ used: 0, limit: 6, freeFollowups: 18 });
 
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [selectedPad, setSelectedPad] = useState<string | null>(null);
