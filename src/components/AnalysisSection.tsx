@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, DragEvent, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,7 +12,6 @@ import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { runAlgorithmicAnalysis } from "@/lib/cement-analysis-engine";
 import { parseDocument, type ParsedDocument } from "@/lib/document-parser";
 import WellDataExtractionDialog, { type ExtractedData } from "@/components/WellDataExtractionDialog";
-import { generateCementingProgram } from "@/lib/program-generator";
 
 interface AnalysisSectionProps {
   wellData: WellData;
