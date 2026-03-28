@@ -742,7 +742,7 @@ export default function Index() {
 
       {/* Mobile: floating chat for analysis sessions */}
       {fromAnalysis && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 h-[50vh] bg-background border-t border-border">
+        <div className="md:hidden">
           <AnalysisChatPanel wellData={wellData} sourceDocuments={sourceDocuments} />
         </div>
       )}
