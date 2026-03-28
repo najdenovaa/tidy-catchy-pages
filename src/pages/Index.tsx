@@ -740,13 +740,13 @@ export default function Index() {
         />
       </footer>
 
-      {/* Floating side chat for analysis sessions */}
+      {/* Mobile: floating chat for analysis sessions */}
       {fromAnalysis && (
-        <AnalysisChatPanel
-          wellData={wellData}
-          sourceDocuments={sourceDocuments}
-        />
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 h-[50vh] bg-background border-t border-border">
+          <AnalysisChatPanel wellData={wellData} sourceDocuments={sourceDocuments} />
+        </div>
       )}
+      </div>{/* close flex-1 wrapper */}
     </div>
   );
 }
