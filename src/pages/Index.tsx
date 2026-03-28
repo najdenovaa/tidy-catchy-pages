@@ -9,6 +9,7 @@ import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import CentralizationSection from "@/components/CentralizationSection";
 import FollowUpChat from "@/components/FollowUpChat";
+import AnalysisChatPanel from "@/components/AnalysisChatPanel";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
