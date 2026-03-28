@@ -748,12 +748,11 @@ ${docsContext}
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
+        model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
         ],
-        stream: true,
       }),
     });
 
@@ -775,8 +774,19 @@ ${docsContext}
       });
     }
 
-    return new Response(response.body, {
-      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+    const aiData = await response.json();
+    const content = aiData.choices?.[0]?.message?.content;
+
+    if (!content) {
+      console.error("AI gateway returned empty content", aiData);
+      return new Response(JSON.stringify({ error: "Пустой ответ сервиса анализа" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ report: content }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("analyze-cement error:", e);

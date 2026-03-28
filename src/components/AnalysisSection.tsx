@@ -453,22 +453,20 @@ export default function AnalysisSection({
         console.warn("Payload exceeds 5MB, may cause issues");
       }
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-cement`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: requestBody,
-        }
-      );
+      const { data: functionData, error: functionError } = await supabase.functions.invoke("analyze-cement", {
+        body: JSON.parse(requestBody),
+      });
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: "Ошибка сервера" }));
-        throw new Error(err.error || `HTTP ${response.status}`);
+      if (functionError) {
+        throw new Error(functionError.message || "Ошибка сервера");
       }
+
+      const analysisReport = functionData?.report;
+      if (!analysisReport || typeof analysisReport !== "string") {
+        throw new Error("Сервис анализа вернул пустой ответ");
+      }
+
+      setReport(analysisReport);
 
       // Decrement credits + add 3 free followup questions
       await supabase
@@ -480,36 +478,7 @@ export default function AnalysisSection({
         .eq("user_id", userId);
       await loadCredits();
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No response body");
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let fullText = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let nlIdx: number;
-        while ((nlIdx = buffer.indexOf("\n")) !== -1) {
-          let line = buffer.slice(0, nlIdx);
-          buffer = buffer.slice(nlIdx + 1);
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") break;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              fullText += content;
-              setReport(fullText);
-              if (reportRef.current) reportRef.current.scrollTop = reportRef.current.scrollHeight;
-            }
-          } catch {}
-        }
-      }
+      if (reportRef.current) reportRef.current.scrollTop = reportRef.current.scrollHeight;
     } catch (e: any) {
       const msg = e.message || "Ошибка анализа";
       if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("Load failed")) {
