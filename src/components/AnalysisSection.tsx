@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, DragEvent, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,7 +12,6 @@ import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { runAlgorithmicAnalysis } from "@/lib/cement-analysis-engine";
 import { parseDocument, type ParsedDocument } from "@/lib/document-parser";
 import WellDataExtractionDialog, { type ExtractedData } from "@/components/WellDataExtractionDialog";
-import { generateCementingProgram } from "@/lib/program-generator";
 
 interface AnalysisSectionProps {
   wellData: WellData;
@@ -245,8 +245,9 @@ export default function AnalysisSection({
   displacementFluids,
   centralizationResults,
 }: AnalysisSectionProps) {
+  const navigate = useNavigate();
   const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [rawFiles, setRawFiles] = useState<Map<string, File>>(new Map()); // path -> raw File
+  const [rawFiles, setRawFiles] = useState<Map<string, File>>(new Map());
   const [parsedDocs, setParsedDocs] = useState<ParsedDocument[]>([]);
   const [parsing, setParsing] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -267,8 +268,6 @@ export default function AnalysisSection({
   const [extracting, setExtracting] = useState(false);
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [showExtractionDialog, setShowExtractionDialog] = useState(false);
-  const [programReport, setProgramReport] = useState<string>("");
-  const programReportRef = useRef<HTMLDivElement>(null);
 
   // Get current user info and credits
   useEffect(() => {
@@ -602,10 +601,7 @@ export default function AnalysisSection({
     setShowExtractionDialog(false);
 
     try {
-      const result = generateCementingProgram(wd, df, sl, bf, disp);
-      setProgramReport(result.markdown);
-
-      // Deduct 1 analysis credit
+      // Deduct 1 analysis credit + add 3 followup questions
       if (userId) {
         await supabase
           .from("user_credits")
@@ -617,11 +613,22 @@ export default function AnalysisSection({
         await loadCredits();
       }
 
-      setTimeout(() => programReportRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
+      // Navigate to cementing program module with extracted data
+      navigate("/cementing/program", {
+        state: {
+          fromAnalysis: true,
+          wellData: wd,
+          drillingFluid: df,
+          slurries: sl,
+          buffers: bf,
+          displacementFluids: disp,
+          sourceDocuments: tzFileNames,
+        },
+      });
     } catch (e: any) {
-      setError("Ошибка генерации программы: " + e.message);
+      setError("Ошибка: " + e.message);
     }
-  }, [userId, aiCredits, loadCredits]);
+  }, [userId, aiCredits, loadCredits, navigate, tzFileNames]);
 
   const akcFiles = files.filter(f => f.type === "akc");
   const reportFiles = files.filter(f => f.type === "report");
@@ -860,7 +867,7 @@ export default function AnalysisSection({
           )}
 
           {/* Extract & generate button */}
-          {tzFileNames.length > 0 && !programReport && (
+          {tzFileNames.length > 0 && (
             <Button
               onClick={runTzExtraction}
               disabled={extracting || !canUseAiAnalysis}
@@ -875,17 +882,10 @@ export default function AnalysisSection({
               ) : (
                 <>
                   <Cpu className="w-4 h-4" />
-                  🚀 Распознать данные и составить программу ({tzFileNames.length} файл(ов))
+                  🚀 Распознать данные и перейти к программе ({tzFileNames.length} файл(ов))
                 </>
               )}
             </Button>
-          )}
-
-          {programReport && tzFileNames.length > 0 && (
-            <div className="flex items-center gap-2 text-sm text-green-600 bg-green-500/10 rounded-lg p-2.5">
-              <CheckCircle className="w-4 h-4" />
-              Программа составлена на основе {tzFileNames.length} документ(ов)
-            </div>
           )}
 
           {!canUseAiAnalysis && (
@@ -907,43 +907,8 @@ export default function AnalysisSection({
         />
       )}
 
-      {/* Program Report */}
-      {programReport && (
-        <Card className="border-primary/20">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  📋 Программа цементирования
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">Составлена на основе: {tzFileNames.join(", ")}</p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => exportAnalysisToDocx(programReport)}
-                className="gap-2 shrink-0"
-              >
-                <Download className="w-4 h-4" />
-                Скачать Word
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div
-              ref={programReportRef}
-              className="max-h-[700px] overflow-y-auto pr-2 space-y-0"
-            >
-              <ReportRenderer text={programReport} />
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
-      {/* Follow-up Q&A for program */}
-      {programReport && !report && (
-        <FollowUpChat reportContext={programReport} />
-      )}
+
 
       {/* Report */}
       {report && (

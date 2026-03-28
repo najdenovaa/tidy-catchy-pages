@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import InputSection from "@/components/InputSection";
 import PumpingSchedule from "@/components/PumpingSchedule";
@@ -8,6 +8,7 @@ import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import CentralizationSection from "@/components/CentralizationSection";
+import FollowUpChat from "@/components/FollowUpChat";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
@@ -31,6 +32,16 @@ interface CalcSnapshot {
 }
 
 export default function Index() {
+  const location = useLocation();
+  const analysisState = location.state as {
+    fromAnalysis?: boolean;
+    wellData?: WellData;
+    drillingFluid?: DrillingFluid;
+    slurries?: SlurryInput[];
+    buffers?: BufferFluid[];
+    displacementFluids?: DisplacementFluid[];
+    sourceDocuments?: string[];
+  } | null;
   const {
     wellData, setWellData,
     drillingFluid, setDrillingFluid,
@@ -52,6 +63,25 @@ export default function Index() {
   const calcId = searchParams.get("calc");
   const selectedWellId = searchParams.get("well");
   const fromDashboard = searchParams.get("from") === "dashboard";
+
+  // Track if this session came from analysis (for showing chat)
+  const [fromAnalysis, setFromAnalysis] = useState(false);
+  const [sourceDocuments, setSourceDocuments] = useState<string[]>([]);
+
+  // Apply analysis navigation state once on mount
+  useEffect(() => {
+    if (analysisState?.fromAnalysis) {
+      if (analysisState.wellData) setWellData(analysisState.wellData);
+      if (analysisState.drillingFluid) setDrillingFluid(analysisState.drillingFluid);
+      if (analysisState.slurries?.length) setSlurries(analysisState.slurries);
+      if (analysisState.buffers?.length) setBuffers(analysisState.buffers);
+      if (analysisState.displacementFluids?.length) setDisplacementFluids(analysisState.displacementFluids);
+      if (analysisState.sourceDocuments) setSourceDocuments(analysisState.sourceDocuments);
+      setFromAnalysis(true);
+      // Clear navigation state to prevent re-applying
+      window.history.replaceState({}, document.title);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persistent counters from backend
   const [visitCount, setVisitCount] = useState<number>(0);
@@ -565,6 +595,16 @@ export default function Index() {
 
         <main className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
 
+          {fromAnalysis && (
+            <div className="flex items-center gap-2 text-sm bg-primary/10 text-primary rounded-lg p-3 border border-primary/20">
+              <span>📄</span>
+              <span>
+                Данные загружены из документов: <strong>{sourceDocuments.join(", ")}</strong>.
+                Проверьте данные и нажмите <strong>РАСЧЁТ</strong> для полной программы с графиками и гидравликой.
+              </span>
+            </div>
+          )}
+
           <TabsContent value="input">
             <div data-tab-content="input">
               <InputSection
@@ -679,6 +719,15 @@ export default function Index() {
               </div>
             </TabsContent>
           </div>
+
+          {/* Follow-up chat — only when user came via Analysis TZ recognition */}
+          {fromAnalysis && calcSnapshot && (
+            <div className="mt-6">
+              <FollowUpChat
+                reportContext={`Программа цементирования составлена на основе документов: ${sourceDocuments.join(", ")}.\n\nДанные скважины: глубина ${wellData.wellDepthMD}м, ОК ${wellData.casingOD}мм, ствол ${wellData.holeDiameter}мм.`}
+              />
+            </div>
+          )}
 
         </main>
       </Tabs>
