@@ -710,6 +710,15 @@ export default function Index() {
             </TabsContent>
           </div>
 
+          {/* Follow-up chat — only when user came via Analysis TZ recognition */}
+          {fromAnalysis && calcSnapshot && (
+            <div className="mt-6">
+              <FollowUpChat
+                reportContext={`Программа цементирования составлена на основе документов: ${sourceDocuments.join(", ")}.\n\nДанные скважины: глубина ${wellData.wellDepthMD}м, ОК ${wellData.casingOD}мм, ствол ${wellData.holeDiameter}мм.`}
+              />
+            </div>
+          )}
+
         </main>
       </Tabs>
 
