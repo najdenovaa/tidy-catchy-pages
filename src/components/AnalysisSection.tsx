@@ -907,43 +907,8 @@ export default function AnalysisSection({
         />
       )}
 
-      {/* Program Report */}
-      {programReport && (
-        <Card className="border-primary/20">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  📋 Программа цементирования
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">Составлена на основе: {tzFileNames.join(", ")}</p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => exportAnalysisToDocx(programReport)}
-                className="gap-2 shrink-0"
-              >
-                <Download className="w-4 h-4" />
-                Скачать Word
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div
-              ref={programReportRef}
-              className="max-h-[700px] overflow-y-auto pr-2 space-y-0"
-            >
-              <ReportRenderer text={programReport} />
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
-      {/* Follow-up Q&A for program */}
-      {programReport && !report && (
-        <FollowUpChat reportContext={programReport} />
-      )}
+
 
       {/* Report */}
       {report && (
