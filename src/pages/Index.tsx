@@ -487,10 +487,8 @@ export default function Index() {
   return (
     <div className={`bg-background ${fromAnalysis ? 'flex' : ''}`}>
       {/* Persistent left chat panel for analysis sessions */}
-      {fromAnalysis && (
-        <div className="hidden md:flex w-[340px] min-w-[340px] max-h-screen sticky top-0 flex-col border-r border-border">
-          <AnalysisChatPanel wellData={wellData} sourceDocuments={sourceDocuments} />
-        </div>
+      {fromAnalysis && !isMobileView && (
+        <AnalysisChatPanel wellData={wellData} sourceDocuments={sourceDocuments} />
       )}
       <div className={`flex-1 min-w-0`}>
       <header className="border-b border-border bg-card sticky top-0 z-10">
