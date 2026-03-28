@@ -115,7 +115,7 @@ serve(async (req) => {
 
     contentParts.push({ type: "text", text: userMessage });
 
-    const aiResponse = await fetch("https://api.lovable.dev/v2/chat/completions", {
+    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
