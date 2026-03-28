@@ -394,14 +394,38 @@ export default function AnalysisSection({
 
     try {
       const documentFiles: Record<string, any> = {};
-      const otherDocs: { base64: string; mimeType: string; name: string }[] = [];
-      const akcDocs: { base64: string; mimeType: string; name: string }[] = [];
+      const otherDocs: any[] = [];
+      const akcDocs: any[] = [];
 
+      // For each file: if it's a text-based format (PDF/DOCX/XLSX/TXT) — parse text on client
+      // If it's an image — send as base64 (needed for vision analysis)
       for (const file of files) {
         if (file.type === "program" && useOwnProgram) continue;
         try {
-          const fileData = await fileToBase64(file);
-          if (!fileData) continue;
+          const rawFile = rawFiles.get(file.path);
+          const mime = getMimeType(file.name);
+          const isImage = mime.startsWith("image/");
+          
+          let fileData: any;
+          
+          if (isImage) {
+            // Images: send as base64 for vision API
+            const b64 = await fileToBase64(file);
+            if (!b64) continue;
+            fileData = b64;
+          } else if (rawFile) {
+            // Text-based docs: parse on client and send only text
+            const parsed = await parseDocument(rawFile);
+            const text = parsed.text?.slice(0, 60000) || "";
+            if (!text && !parsed.error) continue;
+            fileData = { name: file.name, mimeType: mime, parsedText: text || parsed.error || "" };
+          } else {
+            // Fallback: download from storage and send as base64
+            const b64 = await fileToBase64(file);
+            if (!b64) continue;
+            fileData = b64;
+          }
+
           if (file.type === "other") {
             otherDocs.push(fileData);
           } else if (file.type === "akc") {
@@ -409,7 +433,9 @@ export default function AnalysisSection({
           } else {
             documentFiles[file.type] = fileData;
           }
-        } catch {}
+        } catch (fileErr) {
+          console.error(`Error processing file ${file.name}:`, fileErr);
+        }
       }
 
       if (otherDocs.length > 0) documentFiles["other"] = otherDocs;
@@ -419,6 +445,14 @@ export default function AnalysisSection({
         wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram,
       };
 
+      const requestBody = JSON.stringify({ documentFiles, calcData });
+      const payloadSizeMB = (requestBody.length / 1024 / 1024).toFixed(1);
+      console.log(`Отправка запроса анализа: ${payloadSizeMB} МБ`);
+
+      if (requestBody.length > 5 * 1024 * 1024) {
+        console.warn("Payload exceeds 5MB, may cause issues");
+      }
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-cement`,
         {
@@ -427,7 +461,7 @@ export default function AnalysisSection({
             "Content-Type": "application/json",
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
-          body: JSON.stringify({ documentFiles, calcData }),
+          body: requestBody,
         }
       );
 
