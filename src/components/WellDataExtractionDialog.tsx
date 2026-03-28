@@ -173,12 +173,16 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       flowRateSteps: [{ rateLps: b.flowRateLps > 0 ? b.flowRateLps : 10, volumeM3: b.volume }],
     }));
 
+    // Calculate actual displacement volume from pipe geometry
+    const casingID = getCasingID(wd.casingOD, wd.casingWall);
+    const dispVolume = totalPipeVolumeForRange(0, wd.ckodDepth || wd.casingDepthMD, wd.casingOD, wd.casingWall);
+
     const dispRateLps = dispFluid.flowRateLps > 0 ? dispFluid.flowRateLps : 10;
     const dispInputs: DisplacementFluid[] = [{
       name: dispFluid.name,
       density: dispFluid.density || df.density || 1000,
       rheology: { pv: 0, yp: 0 },
-      flowRateSteps: [{ rateLps: dispRateLps, volumeM3: 999 }],
+      flowRateSteps: [{ rateLps: dispRateLps, volumeM3: parseFloat(dispVolume.toFixed(2)) }],
       compressionCoeff: 1.0,
     }];
 

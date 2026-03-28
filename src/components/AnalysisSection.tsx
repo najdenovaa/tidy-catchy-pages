@@ -601,15 +601,23 @@ export default function AnalysisSection({
     setShowExtractionDialog(false);
 
     try {
-      // Deduct 1 analysis credit + add 3 followup questions
+      // Deduct 1 analysis credit + add 3 followup questions using current DB values
       if (userId) {
-        await supabase
+        const { data: currentCredits } = await supabase
           .from("user_credits")
-          .update({
-            ai_analyses_used: (aiCredits?.used ?? 0) + 1,
-            free_followups_remaining: (aiCredits?.freeFollowups ?? 0) + 3,
-          })
-          .eq("user_id", userId);
+          .select("ai_analyses_used, free_followups_remaining")
+          .eq("user_id", userId)
+          .maybeSingle();
+        
+        if (currentCredits) {
+          await supabase
+            .from("user_credits")
+            .update({
+              ai_analyses_used: currentCredits.ai_analyses_used + 1,
+              free_followups_remaining: currentCredits.free_followups_remaining + 3,
+            })
+            .eq("user_id", userId);
+        }
         await loadCredits();
       }
 
