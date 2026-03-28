@@ -511,7 +511,12 @@ export default function AnalysisSection({
         }
       }
     } catch (e: any) {
-      setError(e.message || "Ошибка анализа");
+      const msg = e.message || "Ошибка анализа";
+      if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("Load failed")) {
+        setError("Ошибка сети при отправке данных. Возможно, файлы слишком большие. Попробуйте загрузить меньше файлов или файлы меньшего размера (до 5 МБ каждый).");
+      } else {
+        setError(msg);
+      }
     } finally {
       setAnalyzing(false);
     }
