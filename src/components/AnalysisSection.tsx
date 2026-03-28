@@ -867,7 +867,7 @@ export default function AnalysisSection({
           )}
 
           {/* Extract & generate button */}
-          {tzFileNames.length > 0 && !programReport && (
+          {tzFileNames.length > 0 && (
             <Button
               onClick={runTzExtraction}
               disabled={extracting || !canUseAiAnalysis}
@@ -882,17 +882,10 @@ export default function AnalysisSection({
               ) : (
                 <>
                   <Cpu className="w-4 h-4" />
-                  🚀 Распознать данные и составить программу ({tzFileNames.length} файл(ов))
+                  🚀 Распознать данные и перейти к программе ({tzFileNames.length} файл(ов))
                 </>
               )}
             </Button>
-          )}
-
-          {programReport && tzFileNames.length > 0 && (
-            <div className="flex items-center gap-2 text-sm text-green-600 bg-green-500/10 rounded-lg p-2.5">
-              <CheckCircle className="w-4 h-4" />
-              Программа составлена на основе {tzFileNames.length} документ(ов)
-            </div>
           )}
 
           {!canUseAiAnalysis && (
