@@ -601,10 +601,7 @@ export default function AnalysisSection({
     setShowExtractionDialog(false);
 
     try {
-      const result = generateCementingProgram(wd, df, sl, bf, disp);
-      setProgramReport(result.markdown);
-
-      // Deduct 1 analysis credit
+      // Deduct 1 analysis credit + add 3 followup questions
       if (userId) {
         await supabase
           .from("user_credits")
@@ -616,11 +613,22 @@ export default function AnalysisSection({
         await loadCredits();
       }
 
-      setTimeout(() => programReportRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
+      // Navigate to cementing program module with extracted data
+      navigate("/cementing/program", {
+        state: {
+          fromAnalysis: true,
+          wellData: wd,
+          drillingFluid: df,
+          slurries: sl,
+          buffers: bf,
+          displacementFluids: disp,
+          sourceDocuments: tzFileNames,
+        },
+      });
     } catch (e: any) {
-      setError("Ошибка генерации программы: " + e.message);
+      setError("Ошибка: " + e.message);
     }
-  }, [userId, aiCredits, loadCredits]);
+  }, [userId, aiCredits, loadCredits, navigate, tzFileNames]);
 
   const akcFiles = files.filter(f => f.type === "akc");
   const reportFiles = files.filter(f => f.type === "report");
