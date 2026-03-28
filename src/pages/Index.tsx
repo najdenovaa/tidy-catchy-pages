@@ -8,6 +8,7 @@ import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import CentralizationSection from "@/components/CentralizationSection";
+import FollowUpChat from "@/components/FollowUpChat";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
