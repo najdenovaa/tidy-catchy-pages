@@ -64,6 +64,25 @@ export default function Index() {
   const selectedWellId = searchParams.get("well");
   const fromDashboard = searchParams.get("from") === "dashboard";
 
+  // Track if this session came from analysis (for showing chat)
+  const [fromAnalysis, setFromAnalysis] = useState(false);
+  const [sourceDocuments, setSourceDocuments] = useState<string[]>([]);
+
+  // Apply analysis navigation state once on mount
+  useEffect(() => {
+    if (analysisState?.fromAnalysis) {
+      if (analysisState.wellData) setWellData(analysisState.wellData);
+      if (analysisState.drillingFluid) setDrillingFluid(analysisState.drillingFluid);
+      if (analysisState.slurries?.length) setSlurries(analysisState.slurries);
+      if (analysisState.buffers?.length) setBuffers(analysisState.buffers);
+      if (analysisState.displacementFluids?.length) setDisplacementFluids(analysisState.displacementFluids);
+      if (analysisState.sourceDocuments) setSourceDocuments(analysisState.sourceDocuments);
+      setFromAnalysis(true);
+      // Clear navigation state to prevent re-applying
+      window.history.replaceState({}, document.title);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Persistent counters from backend
   const [visitCount, setVisitCount] = useState<number>(0);
   const [calcCount, setCalcCount] = useState<number>(0);
