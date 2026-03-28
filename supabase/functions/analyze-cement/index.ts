@@ -426,27 +426,29 @@ serve(async (req) => {
       };
 
       for (const [docType, fileData] of Object.entries(documentFiles)) {
-        if (docType === "other" && Array.isArray(fileData)) {
-          for (const otherFile of fileData as any[]) {
-            const text = await extractTextFromFile(otherFile, LOVABLE_API_KEY);
-            docsContext += `\n## Документ: ${otherFile.name}:\n${text.substring(0, 60000)}\n`;
+        const processFile = async (file: any, label: string) => {
+          // New format: client already parsed text
+          if (file.parsedText) {
+            console.log(`Using pre-parsed text for ${file.name} (${file.parsedText.length} chars)`);
+            docsContext += `\n## ${label} — ${file.name}:\n${file.parsedText.substring(0, 60000)}\n`;
+            return;
           }
-        } else if (Array.isArray(fileData)) {
-          // Multiple files for same type (e.g. multiple AKC files)
-          for (const singleFile of fileData as any[]) {
-            const text = await extractTextFromFile(singleFile, LOVABLE_API_KEY);
+          // Legacy format: base64 file
+          if (file.base64) {
+            const text = await extractTextFromFile(file, LOVABLE_API_KEY);
             if (text.startsWith("[Не удалось")) {
-              extractionErrors.push(singleFile.name);
+              extractionErrors.push(file.name);
             }
-            docsContext += `\n## ${labels[docType] || docType} — ${singleFile.name}:\n${text.substring(0, 60000)}\n`;
+            docsContext += `\n## ${label} — ${file.name}:\n${text.substring(0, 60000)}\n`;
+          }
+        };
+
+        if (Array.isArray(fileData)) {
+          for (const singleFile of fileData as any[]) {
+            await processFile(singleFile, labels[docType] || docType);
           }
         } else {
-          const file = fileData as { base64: string; mimeType: string; name: string };
-          const text = await extractTextFromFile(file, LOVABLE_API_KEY);
-          if (text.startsWith("[Не удалось")) {
-            extractionErrors.push(file.name);
-          }
-          docsContext += `\n## ${labels[docType] || docType} — ${file.name}:\n${text.substring(0, 60000)}\n`;
+          await processFile(fileData as any, labels[docType] || docType);
         }
       }
     }
