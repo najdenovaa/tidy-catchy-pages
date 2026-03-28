@@ -8,7 +8,7 @@ import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import CentralizationSection from "@/components/CentralizationSection";
-import FollowUpChat from "@/components/FollowUpChat";
+import AnalysisChatPanel from "@/components/AnalysisChatPanel";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
@@ -720,14 +720,7 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          {/* Follow-up chat — only when user came via Analysis TZ recognition */}
-          {fromAnalysis && calcSnapshot && (
-            <div className="mt-6">
-              <FollowUpChat
-                reportContext={`Программа цементирования составлена на основе документов: ${sourceDocuments.join(", ")}.\n\nДанные скважины: глубина ${wellData.wellDepthMD}м, ОК ${wellData.casingOD}мм, ствол ${wellData.holeDiameter}мм.`}
-              />
-            </div>
-          )}
+          {/* Follow-up chat removed from here — now in floating side panel */}
 
         </main>
       </Tabs>
@@ -739,6 +732,14 @@ export default function Index() {
           className="w-full h-20 sm:h-28 object-cover object-center opacity-30"
         />
       </footer>
+
+      {/* Floating side chat for analysis sessions */}
+      {fromAnalysis && (
+        <AnalysisChatPanel
+          wellData={wellData}
+          sourceDocuments={sourceDocuments}
+        />
+      )}
     </div>
   );
 }

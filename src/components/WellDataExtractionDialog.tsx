@@ -147,18 +147,21 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       fluidLoss: df.fluidLoss,
     };
 
-    const slurryInputs: SlurryInput[] = slurries.map(s => ({
-      name: s.name,
-      density: s.density,
-      topDepthMD: s.topDepthMD,
-      rheology: { pv: s.pv, yp: s.yp },
-      additives: [],
-      thickeningTime30Bc: s.thickeningTime30Bc,
-      thickeningTime50Bc: s.thickeningTime50Bc,
-      flowRateSteps: s.flowRateLps > 0 ? [{ rateLps: s.flowRateLps, volumeM3: 999 }] : [],
-      waterRatio: s.waterRatio,
-      yieldPerTon: s.yieldPerTon,
-    }));
+    const slurryInputs: SlurryInput[] = slurries.map(s => {
+      const rateLps = s.flowRateLps > 0 ? s.flowRateLps : 10; // default 10 л/с
+      return {
+        name: s.name,
+        density: s.density,
+        topDepthMD: s.topDepthMD,
+        rheology: { pv: s.pv, yp: s.yp },
+        additives: [],
+        thickeningTime30Bc: s.thickeningTime30Bc,
+        thickeningTime50Bc: s.thickeningTime50Bc,
+        flowRateSteps: [{ rateLps, volumeM3: 999 }],
+        waterRatio: s.waterRatio,
+        yieldPerTon: s.yieldPerTon,
+      };
+    });
 
     const bufferInputs: BufferFluid[] = bufs.map(b => ({
       name: b.name,
@@ -166,14 +169,15 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       volume: b.volume,
       rheology: { pv: 0, yp: 0 },
       additives: [],
-      flowRateSteps: b.flowRateLps > 0 ? [{ rateLps: b.flowRateLps, volumeM3: b.volume }] : [],
+      flowRateSteps: [{ rateLps: b.flowRateLps > 0 ? b.flowRateLps : 10, volumeM3: b.volume }],
     }));
 
+    const dispRateLps = dispFluid.flowRateLps > 0 ? dispFluid.flowRateLps : 10;
     const dispInputs: DisplacementFluid[] = [{
       name: dispFluid.name,
       density: dispFluid.density || df.density || 1000,
       rheology: { pv: 0, yp: 0 },
-      flowRateSteps: dispFluid.flowRateLps > 0 ? [{ rateLps: dispFluid.flowRateLps, volumeM3: 999 }] : [],
+      flowRateSteps: [{ rateLps: dispRateLps, volumeM3: 999 }],
       compressionCoeff: 1.0,
     }];
 
