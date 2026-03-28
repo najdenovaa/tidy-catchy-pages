@@ -32,6 +32,16 @@ interface CalcSnapshot {
 }
 
 export default function Index() {
+  const location = useLocation();
+  const analysisState = location.state as {
+    fromAnalysis?: boolean;
+    wellData?: WellData;
+    drillingFluid?: DrillingFluid;
+    slurries?: SlurryInput[];
+    buffers?: BufferFluid[];
+    displacementFluids?: DisplacementFluid[];
+    sourceDocuments?: string[];
+  } | null;
   const {
     wellData, setWellData,
     drillingFluid, setDrillingFluid,
