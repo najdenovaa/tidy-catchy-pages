@@ -245,8 +245,9 @@ export default function AnalysisSection({
   displacementFluids,
   centralizationResults,
 }: AnalysisSectionProps) {
+  const navigate = useNavigate();
   const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [rawFiles, setRawFiles] = useState<Map<string, File>>(new Map()); // path -> raw File
+  const [rawFiles, setRawFiles] = useState<Map<string, File>>(new Map());
   const [parsedDocs, setParsedDocs] = useState<ParsedDocument[]>([]);
   const [parsing, setParsing] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -267,8 +268,6 @@ export default function AnalysisSection({
   const [extracting, setExtracting] = useState(false);
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [showExtractionDialog, setShowExtractionDialog] = useState(false);
-  const [programReport, setProgramReport] = useState<string>("");
-  const programReportRef = useRef<HTMLDivElement>(null);
 
   // Get current user info and credits
   useEffect(() => {
