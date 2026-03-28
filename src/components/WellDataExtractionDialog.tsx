@@ -158,7 +158,7 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
         additives: [],
         thickeningTime30Bc: s.thickeningTime30Bc,
         thickeningTime50Bc: s.thickeningTime50Bc,
-        flowRateSteps: [{ rateLps, volumeM3: 999 }],
+        flowRateSteps: [{ rateLps, volumeM3: 0 }],
         waterRatio: s.waterRatio,
         yieldPerTon: s.yieldPerTon,
       };

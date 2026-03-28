@@ -488,7 +488,7 @@ export default function Index() {
     <div className={`bg-background ${fromAnalysis ? 'flex' : ''}`}>
       {/* Persistent left chat panel for analysis sessions */}
       {fromAnalysis && (
-        <div className="hidden md:flex w-[340px] min-w-[340px] max-h-screen sticky top-0 flex-col border-r border-border">
+        <div className="hidden md:block">
           <AnalysisChatPanel wellData={wellData} sourceDocuments={sourceDocuments} />
         </div>
       )}
@@ -742,7 +742,7 @@ export default function Index() {
 
       {/* Mobile: floating chat for analysis sessions */}
       {fromAnalysis && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 h-[50vh] bg-background border-t border-border">
+        <div className="md:hidden">
           <AnalysisChatPanel wellData={wellData} sourceDocuments={sourceDocuments} />
         </div>
       )}
