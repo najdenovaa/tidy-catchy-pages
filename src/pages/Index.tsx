@@ -732,6 +732,14 @@ export default function Index() {
           className="w-full h-20 sm:h-28 object-cover object-center opacity-30"
         />
       </footer>
+
+      {/* Floating side chat for analysis sessions */}
+      {fromAnalysis && (
+        <AnalysisChatPanel
+          wellData={wellData}
+          sourceDocuments={sourceDocuments}
+        />
+      )}
     </div>
   );
 }
