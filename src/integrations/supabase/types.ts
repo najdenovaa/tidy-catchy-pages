@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      analysis_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          credits_charged: boolean
+          document_names: string[]
+          error_message: string | null
+          id: string
+          report: string | null
+          request_payload: Json | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          credits_charged?: boolean
+          document_names?: string[]
+          error_message?: string | null
+          id?: string
+          report?: string | null
+          request_payload?: Json | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          credits_charged?: boolean
+          document_names?: string[]
+          error_message?: string | null
+          id?: string
+          report?: string | null
+          request_payload?: Json | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       analysis_logs: {
         Row: {
           created_at: string

@@ -401,11 +401,48 @@ function buildCalcContext(calcData: any): string {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  let currentJobId: string | null = null;
+
   try {
-    const { documentFiles, calcData } = await req.json();
+    const { jobId, documentFiles, calcData } = await req.json();
+    currentJobId = jobId ?? null;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const sb = createClient(supabaseUrl, supabaseKey);
+
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await sb.auth.getUser(token);
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!jobId) {
+      return new Response(JSON.stringify({ error: "Не указан jobId анализа" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    await sb
+      .from("analysis_jobs")
+      .update({ status: "processing", error_message: null })
+      .eq("id", jobId)
+      .eq("user_id", user.id);
 
     const calcContext = buildCalcContext(calcData);
 
@@ -677,10 +714,6 @@ ${docsContext}
 
     // Log analysis to analysis_logs
     try {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const sb = createClient(supabaseUrl, supabaseKey);
-
       const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || "unknown";
       const userAgent = req.headers.get("user-agent") || "unknown";
 
@@ -715,20 +748,9 @@ ${docsContext}
       const wd = calcData?.wellData;
       const wellSummary = wd ? `MD:${wd.wellDepthMD || "?"} TVD:${wd.wellDepthTVD || "?"} ОК:${wd.casingOD || "?"}×${wd.casingWall || "?"} Dскв:${wd.holeDiameter || "?"}` : null;
 
-      // Try to get user from auth header
-      let userId: string | null = null;
-      let userEmail: string | null = null;
-      const authHeader = req.headers.get("authorization");
-      if (authHeader) {
-        try {
-          const { data: { user } } = await sb.auth.getUser(authHeader.replace("Bearer ", ""));
-          if (user) { userId = user.id; userEmail = user.email || null; }
-        } catch {}
-      }
-
       await sb.from("analysis_logs").insert({
-        user_id: userId,
-        user_email: userEmail,
+        user_id: user.id,
+        user_email: user.email || null,
         module: "cementing",
         well_summary: wellSummary,
         documents_count: docsCount,
@@ -759,17 +781,20 @@ ${docsContext}
 
     if (!response.ok) {
       if (response.status === 429) {
+        await sb.from("analysis_jobs").update({ status: "failed", error_message: "Превышен лимит запросов. Подождите минуту.", completed_at: new Date().toISOString() }).eq("id", jobId);
         return new Response(JSON.stringify({ error: "Превышен лимит запросов. Подождите минуту." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (response.status === 402) {
+        await sb.from("analysis_jobs").update({ status: "failed", error_message: "Необходимо пополнить баланс.", completed_at: new Date().toISOString() }).eq("id", jobId);
         return new Response(JSON.stringify({ error: "Необходимо пополнить баланс." }), {
           status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const t = await response.text();
       console.error("AI gateway error:", response.status, t);
+      await sb.from("analysis_jobs").update({ status: "failed", error_message: "Ошибка сервиса анализа", completed_at: new Date().toISOString() }).eq("id", jobId);
       return new Response(JSON.stringify({ error: "Ошибка сервиса анализа" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -780,17 +805,53 @@ ${docsContext}
 
     if (!content) {
       console.error("AI gateway returned empty content", JSON.stringify(aiData).slice(0, 500));
+      await sb.from("analysis_jobs").update({ status: "failed", error_message: "Пустой ответ сервиса анализа", completed_at: new Date().toISOString() }).eq("id", jobId);
       return new Response(JSON.stringify({ error: "Пустой ответ сервиса анализа" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    const { data: credits } = await sb
+      .from("user_credits")
+      .select("ai_analyses_used, ai_analyses_limit")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!credits || credits.ai_analyses_used >= credits.ai_analyses_limit) {
+      await sb.from("analysis_jobs").update({ status: "failed", error_message: "Анализы исчерпаны. Для продолжения — обратитесь в Поддержку.", completed_at: new Date().toISOString() }).eq("id", jobId);
+      return new Response(JSON.stringify({ error: "Анализы исчерпаны. Для продолжения — обратитесь в Поддержку." }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    await sb.from("user_credits").update({ ai_analyses_used: credits.ai_analyses_used + 1 }).eq("user_id", user.id);
+    await sb.from("analysis_jobs").update({
+      status: "completed",
+      report: content,
+      credits_charged: true,
+      completed_at: new Date().toISOString(),
+      error_message: null,
+    }).eq("id", jobId);
+
     return new Response(JSON.stringify({ report: content }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("analyze-cement error:", e);
+    try {
+      if (currentJobId) {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+        await sb.from("analysis_jobs").update({
+          status: "failed",
+          error_message: e instanceof Error ? e.message : "Unknown error",
+          completed_at: new Date().toISOString(),
+        }).eq("id", currentJobId);
+      }
+    } catch {}
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
