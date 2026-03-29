@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, AlertTriangle, Plus, Trash2 } from "lucide-react";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
-import { getCasingID, pipeVolumePerMeter, totalPipeVolumeForRange } from "@/lib/cementing-calculations";
+import { getCasingID, pipeVolumePerMeter, totalPipeVolumeForRange, annularVolumePerMeter, getSlurryHeight } from "@/lib/cementing-calculations";
 
 export interface ExtractedData {
   wellData: Partial<Record<keyof WellData, number | null>>;
