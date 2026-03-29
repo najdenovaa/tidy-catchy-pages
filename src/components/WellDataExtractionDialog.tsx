@@ -315,6 +315,7 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
               <Button size="sm" variant="ghost" onClick={() => setSlurries(p => [...p, {
                 name: "", density: 0, topDepthMD: 0, waterRatio: 0.5, yieldPerTon: 0.63,
                 thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateLps: 0, pv: 0, yp: 0,
+                fluidLoss: 0, cementType: "",
               }])}>
                 <Plus className="w-3 h-3 mr-1" /> Добавить
               </Button>
