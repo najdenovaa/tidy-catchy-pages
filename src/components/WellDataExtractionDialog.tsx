@@ -199,29 +199,18 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       fluidLoss: df.fluidLoss,
     };
 
-    // Calculate annular volumes for slurries
-    const casingID = getCasingID(wd.casingOD, wd.casingWall);
-    const prevCasingBottom = wd.prevCasingDepth > 0 ? wd.prevCasingDepth : 0;
-    const cementTopMD = wd.cementRiseHeight > 0 ? wd.cementRiseHeight : 0;
-    const openHoleVolPm = annularVolumePerMeter(wd.holeDiameter, wd.casingOD, 1.0);
-    const prevCasingAnnPm = wd.prevCasingID > 0 ? annularVolumePerMeter(wd.prevCasingID, wd.casingOD, 1.0) : 0;
-    const cavCoeff = wd.cavernCoeff || 1.1;
+    // Calculate annular volume per meter — same formula as InputSection uses for totalVolume
+    const annVPM = annularVolumePerMeter(wd.holeDiameter, wd.casingOD, wd.cavernCoeff || 1.1);
 
     const slurryInputs: SlurryInput[] = slurries.map((s, idx) => {
       const rateLps = s.flowRateLps > 0 ? s.flowRateLps : 10;
-      // Calculate slurry volume from annular geometry
-      const slurryTop = s.topDepthMD || 0;
-      const slurryBottom = idx < slurries.length - 1 ? (slurries[idx + 1].topDepthMD || wd.casingDepthMD) : wd.casingDepthMD;
-      let vol = 0;
-      // Open hole portion
-      const ohTop = Math.max(slurryTop, prevCasingBottom);
-      const ohBot = Math.min(slurryBottom, wd.casingDepthMD);
-      if (ohBot > ohTop) vol += openHoleVolPm * (ohBot - ohTop) * cavCoeff;
-      // Previous casing portion
-      const pcTop = Math.max(slurryTop, cementTopMD);
-      const pcBot = Math.min(slurryBottom, prevCasingBottom);
-      if (pcBot > pcTop) vol += prevCasingAnnPm * (pcBot - pcTop);
-      const slurryVol = parseFloat(vol.toFixed(2));
+      // Calculate slurry height and volume matching InputSection's totalVolume formula
+      const height = getSlurryHeight(
+        slurries.map(sl => ({ ...sl, name: sl.name || "", density: sl.density, topDepthMD: sl.topDepthMD, rheology: { pv: sl.pv, yp: sl.yp }, additives: [], thickeningTime30Bc: sl.thickeningTime30Bc, thickeningTime50Bc: sl.thickeningTime50Bc, flowRateSteps: [{ rateLps: 0, volumeM3: 0 }], waterRatio: sl.waterRatio, yieldPerTon: sl.yieldPerTon })),
+        idx,
+        wd.casingDepthMD
+      );
+      const slurryVol = height > 0 ? parseFloat((annVPM * height).toFixed(2)) : 0;
 
       // Map extracted additives to Additive interface
       const extractedAdditives = extractedData.slurries?.[idx]?.additives || [];
