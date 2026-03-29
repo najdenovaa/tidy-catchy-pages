@@ -8,6 +8,12 @@ import { CheckCircle, AlertTriangle, Plus, Trash2 } from "lucide-react";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import { getCasingID, pipeVolumePerMeter, totalPipeVolumeForRange, annularVolumePerMeter, getSlurryHeight } from "@/lib/cementing-calculations";
 
+export interface ExtractedAdditive {
+  name: string;
+  percentage: number;
+  percentageType: "bwoc" | "bwob";
+}
+
 export interface ExtractedData {
   wellData: Partial<Record<keyof WellData, number | null>>;
   trajectory?: { md: number; angle: number; azimuth: number; tvd: number }[];
@@ -17,13 +23,15 @@ export interface ExtractedData {
     waterRatio?: number | null; yieldPerTon?: number | null;
     thickeningTime30Bc?: number | null; thickeningTime50Bc?: number | null;
     flowRateLps?: number | null; pv?: number | null; yp?: number | null;
-    fluidLoss?: number | null;
+    fluidLoss?: number | null; cementType?: string | null;
+    additives?: ExtractedAdditive[];
   }[];
   buffers: { name?: string | null; density?: number | null; volume?: number | null; flowRateLps?: number | null }[];
   displacementFluid: { name?: string | null; density?: number | null; flowRateLps?: number | null };
   wellName?: string | null;
   fieldName?: string | null;
   casingType?: string | null;
+  recommendations?: string[];
 }
 
 interface Props {
