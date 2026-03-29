@@ -333,11 +333,16 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {[
                     { key: "name", label: "Название", type: "text" },
+                    { key: "cementType", label: "Тип цемента", type: "text" },
                     { key: "density", label: "Плотность, г/см³", type: "number" },
                     { key: "topDepthMD", label: "Верх цемента, м", type: "number" },
                     { key: "waterRatio", label: "В/Ц", type: "number" },
                     { key: "yieldPerTon", label: "Выход, м³/т", type: "number" },
                     { key: "thickeningTime30Bc", label: "Загуст. 30Bc, мин", type: "number" },
+                    { key: "thickeningTime50Bc", label: "Загуст. 50Bc, мин", type: "number" },
+                    { key: "pv", label: "PV, сПз", type: "number" },
+                    { key: "yp", label: "YP, Па", type: "number" },
+                    { key: "fluidLoss", label: "Водоотд., мл/30мин", type: "number" },
                     { key: "flowRateLps", label: "Расход, л/с", type: "number" },
                   ].map(field => (
                     <div key={field.key} className="space-y-1">
