@@ -19,6 +19,53 @@ export interface ParsedDocument {
   ocrResult?: import("./ocr-engine").OcrResult;
 }
 
+function getVisibleSheetNames(workbook: XLSX.WorkBook): string[] {
+  const workbookSheets = workbook.Workbook?.Sheets ?? [];
+
+  return workbook.SheetNames.filter((sheetName, index) => {
+    const meta = workbookSheets[index];
+    return !meta || meta.Hidden === 0 || meta.Hidden == null;
+  });
+}
+
+function getVisibleColumnIndexes(sheet: XLSX.WorkSheet): number[] {
+  const range = XLSX.utils.decode_range(sheet["!ref"] ?? "A1:A1");
+  const hiddenCols = sheet["!cols"] ?? [];
+  const indexes: number[] = [];
+
+  for (let col = range.s.c; col <= range.e.c; col++) {
+    if (!hiddenCols[col]?.hidden) indexes.push(col);
+  }
+
+  return indexes;
+}
+
+function getVisibleRows(sheet: XLSX.WorkSheet): string[][] {
+  const ref = sheet["!ref"];
+  if (!ref) return [];
+
+  const range = XLSX.utils.decode_range(ref);
+  const hiddenRows = sheet["!rows"] ?? [];
+  const visibleCols = getVisibleColumnIndexes(sheet);
+  const rows: string[][] = [];
+
+  for (let row = range.s.r; row <= range.e.r; row++) {
+    if (hiddenRows[row]?.hidden) continue;
+
+    const values = visibleCols.map((col) => {
+      const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+      const cell = sheet[cellAddress];
+      return cell == null ? "" : String(cell.w ?? cell.v ?? "").trim();
+    });
+
+    if (values.some((value) => value.length > 0)) {
+      rows.push(values);
+    }
+  }
+
+  return rows;
+}
+
 // ─── PDF Parsing ─────────────────────────────────────────────────
 
 async function parsePDF(file: File): Promise<ParsedDocument> {
@@ -70,19 +117,18 @@ function parseExcel(file: File): Promise<ParsedDocument> {
         const workbook = XLSX.read(data, { type: "array" });
         const textParts: string[] = [];
         const tables: string[][][] = [];
+        const visibleSheetNames = getVisibleSheetNames(workbook);
 
-        for (const sheetName of workbook.SheetNames) {
+        for (const sheetName of visibleSheetNames) {
           const sheet = workbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
-          if (jsonData.length > 0) {
+          const visibleRows = getVisibleRows(sheet);
+
+          if (visibleRows.length > 0) {
             textParts.push(`--- Лист: ${sheetName} ---`);
             const tableRows: string[][] = [];
-            for (const row of jsonData) {
-              if (Array.isArray(row) && row.some(cell => cell !== undefined && cell !== null && String(cell).trim())) {
-                const textRow = row.map(cell => String(cell ?? ""));
-                tableRows.push(textRow);
-                textParts.push(textRow.join(" | "));
-              }
+            for (const row of visibleRows) {
+              tableRows.push(row);
+              textParts.push(row.join(" | "));
             }
             if (tableRows.length > 0) tables.push(tableRows);
           }
