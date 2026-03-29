@@ -373,6 +373,24 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
               </div>
             </div>
           </div>
+
+          {/* Recommendations */}
+          {extractedData.recommendations && extractedData.recommendations.length > 0 && (
+            <div className="border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 rounded-lg p-3">
+              <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                Рекомендации
+              </h3>
+              <ul className="text-xs space-y-1 text-muted-foreground">
+                {extractedData.recommendations.map((r, i) => (
+                  <li key={i} className="flex items-start gap-1">
+                    <span className="text-amber-500 mt-0.5">•</span>
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         <DialogFooter className="mt-4">
