@@ -458,24 +458,41 @@ export default function AnalysisSection({
       });
 
       if (functionError) {
-        throw new Error(functionError.message || "Ошибка сервера");
+        console.error("analyze-cement functionError:", functionError);
+        throw new Error(functionError.message || "Ошибка сервера анализа");
+      }
+
+      console.log("analyze-cement response data keys:", functionData ? Object.keys(functionData) : "null");
+
+      // Check if function returned an error in body (supabase.functions.invoke may not populate error for non-2xx)
+      if (functionData?.error) {
+        throw new Error(functionData.error);
       }
 
       const analysisReport = functionData?.report;
       if (!analysisReport || typeof analysisReport !== "string") {
-        throw new Error("Сервис анализа вернул пустой ответ");
+        console.error("analyze-cement unexpected data:", JSON.stringify(functionData)?.slice(0, 300));
+        throw new Error("Сервис анализа вернул пустой ответ. Попробуйте снова или загрузите меньше файлов.");
       }
 
       setReport(analysisReport);
 
-      // Decrement credits + add 3 free followup questions
-      await supabase
+      // Decrement credits atomically using fresh DB values (not stale state)
+      const { data: freshCredits } = await supabase
         .from("user_credits")
-        .update({
-          ai_analyses_used: (aiCredits?.used ?? 0) + 1,
-          free_followups_remaining: (aiCredits?.freeFollowups ?? 0) + 3,
-        })
-        .eq("user_id", userId);
+        .select("ai_analyses_used, free_followups_remaining")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (freshCredits) {
+        await supabase
+          .from("user_credits")
+          .update({
+            ai_analyses_used: freshCredits.ai_analyses_used + 1,
+            free_followups_remaining: freshCredits.free_followups_remaining + 3,
+          })
+          .eq("user_id", userId);
+      }
       await loadCredits();
 
       if (reportRef.current) reportRef.current.scrollTop = reportRef.current.scrollHeight;

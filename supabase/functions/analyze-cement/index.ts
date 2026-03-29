@@ -753,6 +753,7 @@ ${docsContext}
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
         ],
+      stream: false,
       }),
     });
 
@@ -778,7 +779,7 @@ ${docsContext}
     const content = aiData.choices?.[0]?.message?.content;
 
     if (!content) {
-      console.error("AI gateway returned empty content", aiData);
+      console.error("AI gateway returned empty content", JSON.stringify(aiData).slice(0, 500));
       return new Response(JSON.stringify({ error: "Пустой ответ сервиса анализа" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
