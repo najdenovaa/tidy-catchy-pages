@@ -223,6 +223,11 @@ export default function FollowUpChat({ reportContext, sessionId: initialSessionI
       // Save user message first
       await saveMessage(sessId, session.user.id, userMsg);
 
+      // Build conversation history for AI context
+      const conversationHistory = messages
+        .filter(m => m.id !== userMsg.id)
+        .map(m => ({ role: m.role, content: m.content }));
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/followup-question`,
         {
@@ -231,7 +236,7 @@ export default function FollowUpChat({ reportContext, sessionId: initialSessionI
             "Content-Type": "application/json",
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ question: q, reportContext, sessionId: sessId, attachment: attachmentPayload }),
+          body: JSON.stringify({ question: q, reportContext, sessionId: sessId, attachment: attachmentPayload, conversationHistory }),
         }
       );
 
