@@ -186,6 +186,9 @@ export default function Dashboard() {
           <h1 className="text-lg font-semibold text-foreground">Личный кабинет</h1>
           <div className="flex items-center gap-3">
             <Link to="/"><Button variant="ghost" size="sm"><Home className="w-4 h-4 mr-1" /> Главная</Button></Link>
+            <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer">
+              <Button variant="ghost" size="sm"><Send className="w-4 h-4 mr-1" /> Поддержка</Button>
+            </a>
             <Button variant="outline" size="sm" onClick={handleLogout}><LogOut className="w-4 h-4 mr-1" /> Выйти</Button>
           </div>
         </div>
