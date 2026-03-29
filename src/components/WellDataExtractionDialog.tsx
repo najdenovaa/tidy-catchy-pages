@@ -145,7 +145,9 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       cavernCoeff: wellValues.cavernCoeff || 1.1,
       bottomTempStatic: wellValues.bottomTempStatic || 0,
       bottomTempCirc: wellValues.bottomTempCirc || 0,
-      trajectory: [],
+      trajectory: (extractedData.trajectory || []).map(t => ({
+        md: t.md, angle: t.angle, azimuth: t.azimuth, tvd: t.tvd,
+      })),
     };
 
     const drillingFluid: DrillingFluid = {
