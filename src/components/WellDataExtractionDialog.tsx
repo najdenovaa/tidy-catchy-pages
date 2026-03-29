@@ -166,6 +166,12 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
   }, [extractedData]);
 
   const handleConfirm = () => {
+    // Auto-sync cementRiseHeight with first slurry's topDepthMD
+    let cementRise = wellValues.cementRiseHeight || 0;
+    if (slurries.length > 0 && slurries[0].topDepthMD > 0 && cementRise === 0) {
+      cementRise = slurries[0].topDepthMD;
+    }
+
     const wd: WellData = {
       wellDepthMD: wellValues.wellDepthMD || 0,
       wellDepthTVD: wellValues.wellDepthTVD || wellValues.wellDepthMD || 0,
@@ -177,7 +183,7 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       prevCasingID: wellValues.prevCasingID || 0,
       prevCasingOD: wellValues.prevCasingOD || 0,
       ckodDepth: wellValues.ckodDepth || 0,
-      cementRiseHeight: wellValues.cementRiseHeight || 0,
+      cementRiseHeight: cementRise,
       cavernCoeff: wellValues.cavernCoeff || 1.1,
       bottomTempStatic: wellValues.bottomTempStatic || 0,
       bottomTempCirc: wellValues.bottomTempCirc || 0,
