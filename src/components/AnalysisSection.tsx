@@ -724,31 +724,31 @@ export default function AnalysisSection({
     setError("");
 
     try {
-      // Parse all files and combine texts
-      const allTexts: string[] = [];
+      // Parse all files and combine texts with balanced per-document limits
+      const textDocs: Array<{ file: File; text: string; kind: ExtractionDocKind }> = [];
       const visionFiles: { base64: string; mimeType: string; name: string }[] = [];
 
       for (const file of tzFiles) {
         const parsed = await parseDocument(file);
-        const textLength = parsed.text ? parsed.text.trim().length : 0;
-        // Count actual letters (not spaces/symbols) to detect truly empty parses
-        const letterCount = (parsed.text || "").replace(/[^a-zA-Zа-яА-ЯёЁ0-9]/g, "").length;
+        const rawText = normalizeExtractedText(parsed.text || "");
+        const textLength = rawText.length;
+        const letterCount = rawText.replace(/[^a-zA-Zа-яА-ЯёЁ0-9]/g, "").length;
         const hasGoodText = textLength > 200 && letterCount > 100;
-        
+        const kind = detectExtractionDocKind(file);
+
         if (textLength > 0) {
-          allTexts.push(`=== ${file.name} ===\n${parsed.text}`);
+          textDocs.push({ file, text: rawText, kind });
         }
 
-        // For files with minimal/no text (scanned PDFs, images) — send as vision
+        // Для сканов и сложных PDF/изображений отправляем vision-версию,
+        // но текст из остальных файлов тоже обязательно сохраняем в общем контексте.
         const mime = file.type.toLowerCase() || getMimeType(file.name);
         const isVisionCompatible = mime.startsWith("image/") || mime === "application/pdf";
-        
-        // Send ALL files that are vision-compatible AND have poor text extraction
+
         if (isVisionCompatible && !hasGoodText) {
           try {
             const ab = await file.arrayBuffer();
             const bytes = new Uint8Array(ab);
-            // Only send files under 10MB as vision
             if (bytes.byteLength < 10 * 1024 * 1024) {
               let binary = "";
               for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
@@ -760,7 +760,7 @@ export default function AnalysisSection({
         }
       }
 
-      const combinedText = allTexts.join("\n\n");
+      const combinedText = buildCombinedExtractionText(textDocs);
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-well-data`,
@@ -771,7 +771,7 @@ export default function AnalysisSection({
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
           body: JSON.stringify({ 
-            file: visionFiles.length > 0 ? visionFiles[0] : null, 
+            file: visionFiles.length > 0 ? visionFiles[0] : null,
             files: visionFiles,
             parsedText: combinedText 
           }),
