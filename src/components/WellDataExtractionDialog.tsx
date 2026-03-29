@@ -201,8 +201,13 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
         massKg: 0, // will be auto-calculated
       }));
 
+      // Build full name including cement type
+      const fullName = s.cementType && s.name && !s.name.includes(s.cementType) 
+        ? `${s.name} (${s.cementType})` 
+        : (s.name || s.cementType || `Раствор ${idx + 1}`);
+
       return {
-        name: s.name,
+        name: fullName,
         density: s.density,
         topDepthMD: s.topDepthMD,
         rheology: { pv: s.pv, yp: s.yp },
