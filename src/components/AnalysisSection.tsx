@@ -255,6 +255,7 @@ export default function AnalysisSection({
   const [analyzing, setAnalyzing] = useState(false);
   const [report, setReport] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [activeAnalysisJobId, setActiveAnalysisJobId] = useState<string | null>(null);
   const useOwnProgram = false;
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -382,6 +383,37 @@ export default function AnalysisSection({
     return { base64: btoa(binary), mimeType: getMimeType(file.name), name: file.name };
   };
 
+  const waitForAnalysisJob = useCallback(async (jobId: string, getInvokeFailure?: () => string | null) => {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < 9 * 60 * 1000) {
+      const { data, error } = await supabase
+        .from("analysis_jobs")
+        .select("status, report, error_message")
+        .eq("id", jobId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data?.status === "completed" && data.report) {
+        return data.report;
+      }
+
+      if (data?.status === "failed") {
+        throw new Error(data.error_message || "Ошибка анализа");
+      }
+
+      const invokeFailure = getInvokeFailure?.();
+      if (invokeFailure && Date.now() - startedAt > 15000) {
+        throw new Error(invokeFailure);
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 3000));
+    }
+
+    throw new Error("Анализ выполняется дольше обычного. Попробуйте открыть его снова через минуту.");
+  }, []);
+
   const runAnalysis = useCallback(async () => {
     if (!canUseAiAnalysis || !userId) {
       setError("Анализы исчерпаны. Для продолжения — обратитесь в Поддержку: https://t.me/deall_support");
@@ -453,49 +485,48 @@ export default function AnalysisSection({
         console.warn("Payload exceeds 5MB, may cause issues");
       }
 
-      const { data: functionData, error: functionError } = await supabase.functions.invoke("analyze-cement", {
-        body: JSON.parse(requestBody),
+      const { data: createdJob, error: createJobError } = await supabase
+        .from("analysis_jobs")
+        .insert({
+          user_id: userId,
+          status: "pending",
+          document_names: files.map((file) => file.name),
+        })
+        .select("id")
+        .single();
+
+      if (createJobError || !createdJob) {
+        throw new Error("Не удалось создать задачу анализа");
+      }
+
+      setActiveAnalysisJobId(createdJob.id);
+
+      let invokeFailure: string | null = null;
+      const invokePromise = supabase.functions.invoke("analyze-cement", {
+        body: { jobId: createdJob.id, documentFiles, calcData },
+      }).then(({ data: functionData, error: functionError }) => {
+        if (functionError) {
+          throw new Error(functionError.message || "Ошибка сервера анализа");
+        }
+        if (functionData?.error) {
+          throw new Error(functionData.error);
+        }
+        return functionData;
+      }).catch((invokeError: any) => {
+        console.error("analyze-cement invoke error:", invokeError);
+        invokeFailure = invokeError?.message || "Ошибка сервера анализа";
+        return null;
       });
 
-      if (functionError) {
-        console.error("analyze-cement functionError:", functionError);
-        throw new Error(functionError.message || "Ошибка сервера анализа");
-      }
-
-      console.log("analyze-cement response data keys:", functionData ? Object.keys(functionData) : "null");
-
-      // Check if function returned an error in body (supabase.functions.invoke may not populate error for non-2xx)
-      if (functionData?.error) {
-        throw new Error(functionData.error);
-      }
-
-      const analysisReport = functionData?.report;
-      if (!analysisReport || typeof analysisReport !== "string") {
-        console.error("analyze-cement unexpected data:", JSON.stringify(functionData)?.slice(0, 300));
-        throw new Error("Сервис анализа вернул пустой ответ. Попробуйте снова или загрузите меньше файлов.");
-      }
+      const analysisReport = await waitForAnalysisJob(createdJob.id, () => invokeFailure);
+      await invokePromise;
 
       setReport(analysisReport);
-
-      // Decrement credits atomically using fresh DB values (not stale state)
-      const { data: freshCredits } = await supabase
-        .from("user_credits")
-        .select("ai_analyses_used, free_followups_remaining")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (freshCredits) {
-        await supabase
-          .from("user_credits")
-          .update({
-            ai_analyses_used: freshCredits.ai_analyses_used + 1,
-            free_followups_remaining: freshCredits.free_followups_remaining + 3,
-          })
-          .eq("user_id", userId);
-      }
       await loadCredits();
 
-      if (reportRef.current) reportRef.current.scrollTop = reportRef.current.scrollHeight;
+      if (reportRef.current) {
+        window.setTimeout(() => reportRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+      }
     } catch (e: any) {
       const msg = e.message || "Ошибка анализа";
       if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("Load failed")) {
@@ -504,9 +535,10 @@ export default function AnalysisSection({
         setError(msg);
       }
     } finally {
+      setActiveAnalysisJobId(null);
       setAnalyzing(false);
     }
-  }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram, canUseAiAnalysis, userId, aiCredits, loadCredits]);
+  }, [files, wellData, drillingFluid, slurries, buffers, displacementFluids, centralizationResults, useOwnProgram, canUseAiAnalysis, userId, loadCredits, waitForAnalysisJob]);
 
   const runLocalAnalysis = useCallback(async () => {
     setError("");
@@ -833,6 +865,12 @@ export default function AnalysisSection({
               <span>⏱ Прошло: <strong className="text-foreground">{formatTime(elapsedSeconds)}</strong></span>
               <span className="text-border">|</span>
               <span>Ожидаемое время: ~{estimatedMinutes} мин</span>
+              {activeAnalysisJobId && (
+                <>
+                  <span className="text-border">|</span>
+                  <span>Результат сохраняется автоматически</span>
+                </>
+              )}
             </div>
           )}
         </CardContent>
