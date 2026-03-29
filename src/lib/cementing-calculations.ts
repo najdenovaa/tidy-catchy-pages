@@ -1365,9 +1365,30 @@ export function calculatePressureProfile(
       totalAnnReturn = Math.min(totalAnnReturn, actualRateLps);
       totalAnnReturn = Math.max(0, totalAnnReturn);
 
-      // Эмпирическая поправка: снижаем расчётное давление на насосе
-      // для буферов/цемента — 0.825, для продавки — 0.82
-      const surfP = surfPRaw * (isDisplacement ? 0.82 : 0.825);
+      // Эмпирическая поправка давления на насосе
+      let surfP: number;
+      if (isDisplacement) {
+        // На продавке: пока догоняем объём свободного оседания цемента — давление минимальное
+        // После догонки — стандартный расчёт с плавным нарастанием
+        const catchUpRatio = cementFreefallVol > 0.01
+          ? Math.min(1, cumDisplacementVol / cementFreefallVol)
+          : 1;
+        if (catchUpRatio < 1) {
+          // Пока не догнали — околоминимальное давление (только трение трубы)
+          const minSurfP = Math.max(0, frPipe * 0.5);
+          surfP = minSurfP + (surfPRaw * 0.82 - minSurfP) * catchUpRatio * catchUpRatio;
+        } else {
+          // Догнали — стандартная продавка, плавный переход
+          const overRatio = cementFreefallVol > 0.01
+            ? Math.min(1, (cumDisplacementVol - cementFreefallVol) / Math.max(cementFreefallVol * 0.3, 0.1))
+            : 1;
+          const smoothOver = overRatio * overRatio * (3 - 2 * overRatio); // smoothstep
+          surfP = surfPRaw * 0.82 * (0.7 + 0.3 * smoothOver);
+        }
+      } else {
+        // Буферы и цемент: +10% к давлению
+        surfP = surfPRaw * 0.825 * 1.1;
+      }
       const bhp = bhpRaw;
 
       points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3 });
