@@ -401,8 +401,11 @@ function buildCalcContext(calcData: any): string {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  let currentJobId: string | null = null;
+
   try {
     const { jobId, documentFiles, calcData } = await req.json();
+    currentJobId = jobId ?? null;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
@@ -838,8 +841,7 @@ ${docsContext}
   } catch (e) {
     console.error("analyze-cement error:", e);
     try {
-      const { jobId } = await req.clone().json();
-      if (jobId) {
+      if (currentJobId) {
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
         const sb = createClient(supabaseUrl, supabaseKey);
@@ -847,7 +849,7 @@ ${docsContext}
           status: "failed",
           error_message: e instanceof Error ? e.message : "Unknown error",
           completed_at: new Date().toISOString(),
-        }).eq("id", jobId);
+        }).eq("id", currentJobId);
       }
     } catch {}
     return new Response(
