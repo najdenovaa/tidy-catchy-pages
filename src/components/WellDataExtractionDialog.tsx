@@ -8,6 +8,12 @@ import { CheckCircle, AlertTriangle, Plus, Trash2 } from "lucide-react";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import { getCasingID, pipeVolumePerMeter, totalPipeVolumeForRange, annularVolumePerMeter, getSlurryHeight } from "@/lib/cementing-calculations";
 
+export interface ExtractedAdditive {
+  name: string;
+  percentage: number;
+  percentageType: "bwoc" | "bwob";
+}
+
 export interface ExtractedData {
   wellData: Partial<Record<keyof WellData, number | null>>;
   trajectory?: { md: number; angle: number; azimuth: number; tvd: number }[];
@@ -17,13 +23,15 @@ export interface ExtractedData {
     waterRatio?: number | null; yieldPerTon?: number | null;
     thickeningTime30Bc?: number | null; thickeningTime50Bc?: number | null;
     flowRateLps?: number | null; pv?: number | null; yp?: number | null;
-    fluidLoss?: number | null;
+    fluidLoss?: number | null; cementType?: string | null;
+    additives?: ExtractedAdditive[];
   }[];
   buffers: { name?: string | null; density?: number | null; volume?: number | null; flowRateLps?: number | null }[];
   displacementFluid: { name?: string | null; density?: number | null; flowRateLps?: number | null };
   wellName?: string | null;
   fieldName?: string | null;
   casingType?: string | null;
+  recommendations?: string[];
 }
 
 interface Props {
@@ -181,12 +189,21 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       if (pcBot > pcTop) vol += prevCasingAnnPm * (pcBot - pcTop);
       const slurryVol = parseFloat(vol.toFixed(2));
 
+      // Map extracted additives to Additive interface
+      const extractedAdditives = extractedData.slurries?.[idx]?.additives || [];
+      const mappedAdditives = extractedAdditives.map(a => ({
+        name: a.name || "",
+        percentage: a.percentage || 0,
+        percentageType: (a.percentageType === "bwob" ? "bwob" : "bwoc") as "bwoc" | "bwob",
+        massKg: 0, // will be auto-calculated
+      }));
+
       return {
         name: s.name,
         density: s.density,
         topDepthMD: s.topDepthMD,
         rheology: { pv: s.pv, yp: s.yp },
-        additives: [],
+        additives: mappedAdditives,
         thickeningTime30Bc: s.thickeningTime30Bc,
         thickeningTime50Bc: s.thickeningTime50Bc,
         flowRateSteps: [{ rateLps, volumeM3: slurryVol }],
@@ -334,6 +351,19 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
                     </div>
                   ))}
                 </div>
+                {/* Show extracted additives */}
+                {extractedData.slurries?.[i]?.additives && extractedData.slurries[i].additives!.length > 0 && (
+                  <div className="mt-1">
+                    <Label className="text-[10px] text-muted-foreground">Добавки (из лаб. протокола):</Label>
+                    <div className="flex flex-wrap gap-1 mt-0.5">
+                      {extractedData.slurries[i].additives!.map((a, ai) => (
+                        <Badge key={ai} variant="secondary" className="text-[9px] px-1.5 py-0">
+                          {a.name} {a.percentage}% {a.percentageType}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -356,6 +386,24 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
               </div>
             </div>
           </div>
+
+          {/* Recommendations */}
+          {extractedData.recommendations && extractedData.recommendations.length > 0 && (
+            <div className="border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 rounded-lg p-3">
+              <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                Рекомендации
+              </h3>
+              <ul className="text-xs space-y-1 text-muted-foreground">
+                {extractedData.recommendations.map((r, i) => (
+                  <li key={i} className="flex items-start gap-1">
+                    <span className="text-amber-500 mt-0.5">•</span>
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         <DialogFooter className="mt-4">
