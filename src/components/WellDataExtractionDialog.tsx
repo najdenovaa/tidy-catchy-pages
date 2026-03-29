@@ -189,12 +189,21 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       if (pcBot > pcTop) vol += prevCasingAnnPm * (pcBot - pcTop);
       const slurryVol = parseFloat(vol.toFixed(2));
 
+      // Map extracted additives to Additive interface
+      const extractedAdditives = extractedData.slurries?.[idx]?.additives || [];
+      const mappedAdditives = extractedAdditives.map(a => ({
+        name: a.name || "",
+        percentage: a.percentage || 0,
+        percentageType: (a.percentageType === "bwob" ? "bwob" : "bwoc") as "bwoc" | "bwob",
+        massKg: 0, // will be auto-calculated
+      }));
+
       return {
         name: s.name,
         density: s.density,
         topDepthMD: s.topDepthMD,
         rheology: { pv: s.pv, yp: s.yp },
-        additives: [],
+        additives: mappedAdditives,
         thickeningTime30Bc: s.thickeningTime30Bc,
         thickeningTime50Bc: s.thickeningTime50Bc,
         flowRateSteps: [{ rateLps, volumeM3: slurryVol }],
