@@ -112,12 +112,16 @@ serve(async (req) => {
       "topDepthMD": null или число (м),
       "waterRatio": null или число (В/Ц),
       "yieldPerTon": null или число (м³/т),
-      "thickeningTime30Bc": null или число (мин),
-      "thickeningTime50Bc": null или число (мин),
+      "thickeningTime30Bc": null или число (МИНУТЫ! если в документе часы — переведи: 3ч = 180мин, 4ч30мин = 270мин),
+      "thickeningTime50Bc": null или число (МИНУТЫ!),
       "flowRateLps": null или число (л/с),
       "pv": null или число (сПз),
       "yp": null или число (Па),
-      "fluidLoss": null или число (мл/30мин)
+      "fluidLoss": null или число (мл/30мин),
+      "cementType": null или строка (напр. "ПЦТ-I-50", "ПЦТ-II-50", "ПЦТ-III-Об5"),
+      "additives": [
+        {"name": "название добавки", "percentage": число (%), "percentageType": "bwoc" или "bwob"}
+      ]
     }
   ],
   "buffers": [
@@ -135,7 +139,8 @@ serve(async (req) => {
   },
   "wellName": null или строка,
   "fieldName": null или строка,
-  "casingType": null или строка (напр. "Эксплуатационная 168мм")
+  "casingType": null или строка (напр. "Эксплуатационная 168мм"),
+  "recommendations": ["строка"] — список рекомендаций о недостающих данных для качественной программы
 }
 
 КРИТИЧЕСКИЕ ПРАВИЛА:
