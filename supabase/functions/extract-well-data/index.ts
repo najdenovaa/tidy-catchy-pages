@@ -232,7 +232,7 @@ serve(async (req) => {
           { role: "user", content: contentParts },
         ],
         temperature: 0.1,
-        max_tokens: 16000,
+        max_tokens: 32000,
       }),
     });
 
