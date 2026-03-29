@@ -44,6 +44,104 @@ function getMimeType(name: string): string {
   return map[ext] || "application/octet-stream";
 }
 
+type ExtractionDocKind = "source" | "trajectory" | "lab" | "program" | "general";
+
+function detectExtractionDocKind(file: File): ExtractionDocKind {
+  const name = file.name.toLowerCase();
+
+  if (
+    name.includes("инклин") ||
+    name.includes("inclino") ||
+    name.includes("trajectory") ||
+    name.includes("survey") ||
+    name.includes("зенит") ||
+    name.includes("azimuth") ||
+    name.includes("азимут")
+  ) {
+    return "trajectory";
+  }
+
+  if (
+    name.includes("лаб") ||
+    name.includes("labor") ||
+    name.includes("protocol") ||
+    name.includes("протокол") ||
+    name.includes("рецепт") ||
+    name.includes("design") ||
+    name.includes("цемент")
+  ) {
+    return "lab";
+  }
+
+  if (
+    name.includes("заяв") ||
+    name.includes("исход") ||
+    name.includes("тз") ||
+    name.includes("наряд") ||
+    name.includes("заказ") ||
+    name.includes("гтн") ||
+    name.includes("карточ") ||
+    name.includes("скважин")
+  ) {
+    return "source";
+  }
+
+  if (name.includes("програм")) {
+    return "program";
+  }
+
+  return "general";
+}
+
+function normalizeExtractedText(text: string): string {
+  return text
+    .replace(/\u0000/g, "")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function limitTextByDocKind(text: string, kind: ExtractionDocKind): string {
+  const normalized = normalizeExtractedText(text);
+  const maxCharsByKind: Record<ExtractionDocKind, number> = {
+    source: 22000,
+    lab: 22000,
+    program: 18000,
+    trajectory: 24000,
+    general: 14000,
+  };
+
+  return normalized.slice(0, maxCharsByKind[kind]);
+}
+
+function buildCombinedExtractionText(items: Array<{ file: File; text: string; kind: ExtractionDocKind }>): string {
+  const priority: Record<ExtractionDocKind, number> = {
+    source: 0,
+    lab: 1,
+    program: 2,
+    trajectory: 3,
+    general: 4,
+  };
+
+  const sorted = [...items].sort((a, b) => priority[a.kind] - priority[b.kind]);
+
+  return sorted
+    .filter((item) => item.text.trim().length > 0)
+    .map((item) => {
+      const titleByKind: Record<ExtractionDocKind, string> = {
+        source: "Исходные данные / заявка",
+        lab: "Лабораторный протокол",
+        program: "Программа",
+        trajectory: "Инклинометрия",
+        general: "Дополнительный документ",
+      };
+
+      return `=== ${titleByKind[item.kind]}: ${item.file.name} ===\n${limitTextByDocKind(item.text, item.kind)}`;
+    })
+    .join("\n\n");
+}
+
 function DropZone({
   label,
   desc,
