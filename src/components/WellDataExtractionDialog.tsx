@@ -81,18 +81,23 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       name: "", density: 0, topDepthMD: 0, waterRatio: 0.5, yieldPerTon: 0.63,
       thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateLps: 0, pv: 0, yp: 0,
     }];
-    return raw.map(s => ({
-      name: s.name || "",
-      density: s.density || 0,
-      topDepthMD: s.topDepthMD || 0,
-      waterRatio: s.waterRatio || 0.5,
-      yieldPerTon: s.yieldPerTon || 0.63,
-      thickeningTime30Bc: s.thickeningTime30Bc || 0,
-      thickeningTime50Bc: s.thickeningTime50Bc || 0,
-      flowRateLps: s.flowRateLps || 0,
-      pv: s.pv || 0,
-      yp: s.yp || 0,
-    }));
+    return raw.map(s => {
+      // AI returns density in kg/m³, convert to g/cm³ for internal use
+      let dens = s.density || 0;
+      if (dens > 100) dens = dens / 1000; // kg/m³ → g/cm³
+      return {
+        name: s.name || "",
+        density: dens,
+        topDepthMD: s.topDepthMD || 0,
+        waterRatio: s.waterRatio || 0.5,
+        yieldPerTon: s.yieldPerTon || 0.63,
+        thickeningTime30Bc: s.thickeningTime30Bc || 0,
+        thickeningTime50Bc: s.thickeningTime50Bc || 0,
+        flowRateLps: s.flowRateLps || 0,
+        pv: s.pv || 0,
+        yp: s.yp || 0,
+      };
+    });
   });
 
   const [bufs, setBufs] = useState(() => {
