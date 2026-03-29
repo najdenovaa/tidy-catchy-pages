@@ -104,10 +104,11 @@ export function calculateCentralization(
   const step = 5; // каждые 5 м по стволу
   const wpm = casingWeightPerMeter(wellData.casingOD, wellData.casingWall);
   const bf = buoyancyFactor(mudDensity);
-  const rc = radialClearance(wellData.holeDiameter, wellData.casingOD);
+  const rc_mm = radialClearance(wellData.holeDiameter, wellData.casingOD);
+  const rc_m = rc_mm / 1000;
   const EI = STEEL_E * casingMomentOfInertia(wellData.casingOD, wellData.casingWall); // Н·м²
 
-  if (rc <= 0) return results;
+  if (rc_mm <= 0) return results;
 
   for (let md = 0; md <= wellData.casingDepthMD; md += step) {
     const { tvd, zenith } = interpolateTrajectory(wellData.trajectory, md);
@@ -116,43 +117,62 @@ export function calculateCentralization(
     const interval = intervals.find(iv => md >= iv.fromMD && md <= iv.toMD);
 
     let spanLength: number;
-    let centralizerRestoring = 0;
     let hasCentralizer = false;
+    let centralizerMaxForce_N = 0; // max restoring force at full compression
 
     if (interval && interval.centralizersPerJoint > 0 && interval.jointLength > 0) {
       spanLength = interval.jointLength / interval.centralizersPerJoint;
-      centralizerRestoring = interval.spec.restoringForce * 1000; // кН → Н
+      centralizerMaxForce_N = interval.spec.restoringForce * 1000; // кН → Н
       hasCentralizer = true;
     } else {
-      spanLength = 12; // длина трубы по умолчанию
+      spanLength = 12; // default joint length
     }
 
     const lateralF = lateralForcePerMeter(wpm, bf, zenith); // N/m
 
     let eccentricity: number;
+
     if (zenith < 0.5) {
-      // Nearly vertical — casing hangs centered
-      eccentricity = hasCentralizer ? 0 : 0.05;
+      // Nearly vertical — casing hangs centered, minor eccentricity from imperfections
+      eccentricity = hasCentralizer ? 0.02 : 0.08;
     } else if (hasCentralizer && EI > 0) {
-      // ═══ Beam deflection model (simply-supported beam with UDL) ═══
-      // δmax = 5·w·L⁴ / (384·E·I), м — максимальный прогиб балки
+      // ═══ Beam-on-elastic-support model ═══
+      // Free sag of simply-supported beam under UDL (lateral gravity):
+      // δ₀ = 5·w·L⁴ / (384·E·I)
       const L = spanLength;
-      const sag_m = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
-      
-      // Центратор создает сосредоточенную силу в середине пролёта,
-      // которая поднимает колонну: δ_lift = F·L³ / (48·E·I)
-      let lift_m = 0;
-      if (centralizerRestoring > 0) {
-        lift_m = (centralizerRestoring * Math.pow(L, 3)) / (48 * EI);
-      }
-      
-      // Результирующий прогиб (не может быть отрицательным)
-      const net_sag_mm = Math.max(0, sag_m - lift_m) * 1000;
-      eccentricity = Math.min(1, Math.max(0, net_sag_mm / rc));
+      const sag_free_m = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
+
+      // Centralizer acts as a SPRING at mid-span, NOT a constant force.
+      // Spring stiffness: k = F_max / clearance (linear spring model)
+      // At full compression (casing on wall), force = F_max
+      // At zero deflection, force = 0
+      const k_spring = centralizerMaxForce_N / rc_m; // N/m
+
+      // Beam with central spring support:
+      // Effective deflection: δ = δ₀ / (1 + k·L³/(48·E·I))
+      const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
+      const sag_with_spring_m = sag_free_m / (1 + springFactor);
+
+      // Eccentricity = deflection / clearance, capped at 1.0
+      eccentricity = Math.min(1, Math.max(0, sag_with_spring_m / rc_m));
+
+      // Apply dogleg severity effect: in build/drop sections, additional bending increases eccentricity
+      // Minimum eccentricity even with centralizers due to practical tolerances
+      eccentricity = Math.max(eccentricity, 0.03);
     } else {
-      // No centralizer — casing rests on low side
-      const stiffnessFactor = Math.min(1, lateralF * spanLength / (wpm * 0.5));
-      eccentricity = Math.min(1, 0.7 + 0.3 * stiffnessFactor);
+      // No centralizer — casing sags under gravity
+      if (EI > 0) {
+        // Free sag without support
+        const L = spanLength;
+        const sag_free_m = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
+        eccentricity = Math.min(1, sag_free_m / rc_m);
+        // In deviated wells without centralizers, casing tends to rest on low side
+        // Apply minimum eccentricity based on inclination
+        const inclinationFactor = Math.sin(zenith * Math.PI / 180);
+        eccentricity = Math.max(eccentricity, 0.5 * inclinationFactor + 0.2 * inclinationFactor * inclinationFactor);
+      } else {
+        eccentricity = 1; // degenerate case
+      }
     }
 
     const standoff = (1 - eccentricity) * 100;
