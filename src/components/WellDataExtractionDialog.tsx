@@ -229,6 +229,9 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
           </DialogTitle>
           <DialogDescription>
             Распознано {extractedCount} из {wellFields.length} параметров скважины.
+            {(extractedData.trajectory?.length || 0) > 0 && (
+              <span className="text-green-600"> ✅ Инклинометрия: {extractedData.trajectory!.length} точек.</span>
+            )}
             {missingRequired.length > 0 && (
               <span className="text-amber-600"> Заполните обязательные поля, отмеченные ⚠️.</span>
             )}
