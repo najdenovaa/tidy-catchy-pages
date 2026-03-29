@@ -628,21 +628,35 @@ export default function AnalysisSection({
     try {
       // Parse all files and combine texts
       const allTexts: string[] = [];
-      let firstVisionFile: { base64: string; mimeType: string; name: string } | null = null;
+      let visionFile: { base64: string; mimeType: string; name: string } | null = null;
 
       for (const file of tzFiles) {
         const parsed = await parseDocument(file);
-        if (parsed.text) allTexts.push(`=== ${file.name} ===\n${parsed.text}`);
+        const hasText = parsed.text && parsed.text.trim().length > 50;
+        
+        if (hasText) {
+          allTexts.push(`=== ${file.name} ===\n${parsed.text}`);
+        }
 
-        // Use first image/pdf for vision
-        if (!firstVisionFile) {
-          const mime = file.type.toLowerCase();
-          if (mime.startsWith("image/") || mime === "application/pdf") {
-            const ab = await file.arrayBuffer();
-            const bytes = new Uint8Array(ab);
-            let binary = "";
-            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-            firstVisionFile = { base64: btoa(binary), mimeType: mime, name: file.name };
+        // For files with minimal/no text (scanned PDFs, images) — send as vision
+        const mime = file.type.toLowerCase();
+        const isVisionCompatible = mime.startsWith("image/") || mime === "application/pdf";
+        
+        if (isVisionCompatible && (!hasText || !visionFile)) {
+          // Prefer sending a file that had minimal text (likely scanned)
+          if (!visionFile || !hasText) {
+            try {
+              const ab = await file.arrayBuffer();
+              const bytes = new Uint8Array(ab);
+              // Only send files under 10MB as vision
+              if (bytes.byteLength < 10 * 1024 * 1024) {
+                let binary = "";
+                for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+                visionFile = { base64: btoa(binary), mimeType: mime, name: file.name };
+              }
+            } catch (e) {
+              console.warn("Failed to read file for vision:", file.name, e);
+            }
           }
         }
       }
@@ -657,7 +671,7 @@ export default function AnalysisSection({
             "Content-Type": "application/json",
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
-          body: JSON.stringify({ file: firstVisionFile, parsedText: combinedText }),
+          body: JSON.stringify({ file: visionFile, parsedText: combinedText }),
         }
       );
 
