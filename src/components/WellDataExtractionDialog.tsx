@@ -88,6 +88,7 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
     if (raw.length === 0) return [{
       name: "", density: 0, topDepthMD: 0, waterRatio: 0.5, yieldPerTon: 0.63,
       thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateLps: 0, pv: 0, yp: 0,
+      fluidLoss: 0, cementType: "",
     }];
     return raw.map(s => {
       // AI returns density in kg/m³, convert to g/cm³ for internal use
@@ -104,6 +105,8 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
         flowRateLps: s.flowRateLps || 0,
         pv: s.pv || 0,
         yp: s.yp || 0,
+        fluidLoss: s.fluidLoss || 0,
+        cementType: s.cementType || "",
       };
     });
   });
