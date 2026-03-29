@@ -1,7 +1,8 @@
-import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, Home, LayoutDashboard, LogOut, Send } from "lucide-react";
 import AnalysisSection from "@/components/AnalysisSection";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
+import { supabase } from "@/integrations/supabase/client";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 
 const defaultWellData: WellData = {
@@ -18,6 +19,9 @@ const defaultDrillingFluid: DrillingFluid = {
 };
 
 export default function AnalysisPage() {
+  const navigate = useNavigate();
+  const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b border-border bg-card">
@@ -28,13 +32,23 @@ export default function AnalysisPage() {
               Анализ цементирования
             </p>
           </Link>
-          <Link
-            to="/cementing"
-            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Назад</span>
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link to="/cementing" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
+              <ArrowLeft className="w-4 h-4" /> <span>Назад</span>
+            </Link>
+            <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
+              <Home className="w-4 h-4" /> <span>Главная</span>
+            </Link>
+            <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
+              <LayoutDashboard className="w-4 h-4" /> <span>Кабинет</span>
+            </Link>
+            <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
+              <Send className="w-4 h-4" /> <span>Поддержка</span>
+            </a>
+            <button onClick={handleLogout} className="flex items-center gap-1.5 text-muted-foreground hover:text-destructive transition-colors text-xs">
+              <LogOut className="w-4 h-4" /> <span>Выйти</span>
+            </button>
+          </div>
         </div>
       </header>
 

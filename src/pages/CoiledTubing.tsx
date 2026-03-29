@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Send, Gauge, Shield, Droplets, Activity, ChevronDown, ChevronRight, Calculator, Save, RotateCcw, FileDown, LogOut, User, Plus, Trash2, Home, Thermometer } from "lucide-react";
+import { ArrowLeft, Send, Gauge, Shield, Droplets, Activity, ChevronDown, ChevronRight, Calculator, Save, RotateCcw, FileDown, LogOut, User, Plus, Trash2, Home, Thermometer, LayoutDashboard } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -363,19 +363,15 @@ export default function CoiledTubing() {
               <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
                 <Home className="w-4 h-4" /> <span>Главная</span>
               </Link>
-              {userId && (
-                <>
-                  <button onClick={() => navigate("/dashboard")} className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
-                    <User className="w-4 h-4" /> <span>Кабинет</span>
-                  </button>
-                  <button onClick={handleLogout} className="flex items-center gap-1.5 text-muted-foreground hover:text-destructive transition-colors text-xs">
-                    <LogOut className="w-4 h-4" /> <span>Выйти</span>
-                  </button>
-                </>
-              )}
+              <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
+                <LayoutDashboard className="w-4 h-4" /> <span>Кабинет</span>
+              </Link>
               <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
                 <Send className="w-4 h-4" /> <span>Поддержка</span>
               </a>
+              <button onClick={handleLogout} className="flex items-center gap-1.5 text-muted-foreground hover:text-destructive transition-colors text-xs">
+                <LogOut className="w-4 h-4" /> <span>Выйти</span>
+              </button>
             </div>
             <div className="overflow-x-auto scrollbar-hide flex-1 sm:flex-none">
               <div className="flex items-center gap-1.5 sm:gap-3 min-w-max justify-end">
