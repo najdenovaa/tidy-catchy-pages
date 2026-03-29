@@ -10,12 +10,14 @@ import { getCasingID, pipeVolumePerMeter, totalPipeVolumeForRange, annularVolume
 
 export interface ExtractedData {
   wellData: Partial<Record<keyof WellData, number | null>>;
+  trajectory?: { md: number; angle: number; azimuth: number; tvd: number }[];
   drillingFluid: { name?: string | null; density?: number | null; pv?: number | null; yp?: number | null; fluidLoss?: number | null };
   slurries: {
     name?: string | null; density?: number | null; topDepthMD?: number | null;
     waterRatio?: number | null; yieldPerTon?: number | null;
     thickeningTime30Bc?: number | null; thickeningTime50Bc?: number | null;
     flowRateLps?: number | null; pv?: number | null; yp?: number | null;
+    fluidLoss?: number | null;
   }[];
   buffers: { name?: string | null; density?: number | null; volume?: number | null; flowRateLps?: number | null }[];
   displacementFluid: { name?: string | null; density?: number | null; flowRateLps?: number | null };
@@ -79,18 +81,23 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       name: "", density: 0, topDepthMD: 0, waterRatio: 0.5, yieldPerTon: 0.63,
       thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateLps: 0, pv: 0, yp: 0,
     }];
-    return raw.map(s => ({
-      name: s.name || "",
-      density: s.density || 0,
-      topDepthMD: s.topDepthMD || 0,
-      waterRatio: s.waterRatio || 0.5,
-      yieldPerTon: s.yieldPerTon || 0.63,
-      thickeningTime30Bc: s.thickeningTime30Bc || 0,
-      thickeningTime50Bc: s.thickeningTime50Bc || 0,
-      flowRateLps: s.flowRateLps || 0,
-      pv: s.pv || 0,
-      yp: s.yp || 0,
-    }));
+    return raw.map(s => {
+      // AI returns density in kg/m³, convert to g/cm³ for internal use
+      let dens = s.density || 0;
+      if (dens > 100) dens = dens / 1000; // kg/m³ → g/cm³
+      return {
+        name: s.name || "",
+        density: dens,
+        topDepthMD: s.topDepthMD || 0,
+        waterRatio: s.waterRatio || 0.5,
+        yieldPerTon: s.yieldPerTon || 0.63,
+        thickeningTime30Bc: s.thickeningTime30Bc || 0,
+        thickeningTime50Bc: s.thickeningTime50Bc || 0,
+        flowRateLps: s.flowRateLps || 0,
+        pv: s.pv || 0,
+        yp: s.yp || 0,
+      };
+    });
   });
 
   const [bufs, setBufs] = useState(() => {
@@ -138,7 +145,9 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       cavernCoeff: wellValues.cavernCoeff || 1.1,
       bottomTempStatic: wellValues.bottomTempStatic || 0,
       bottomTempCirc: wellValues.bottomTempCirc || 0,
-      trajectory: [],
+      trajectory: (extractedData.trajectory || []).map(t => ({
+        md: t.md, zenith: t.angle, azimuth: t.azimuth, tvd: t.tvd,
+      })),
     };
 
     const drillingFluid: DrillingFluid = {
@@ -220,6 +229,9 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
           </DialogTitle>
           <DialogDescription>
             Распознано {extractedCount} из {wellFields.length} параметров скважины.
+            {(extractedData.trajectory?.length || 0) > 0 && (
+              <span className="text-green-600"> ✅ Инклинометрия: {extractedData.trajectory!.length} точек.</span>
+            )}
             {missingRequired.length > 0 && (
               <span className="text-amber-600"> Заполните обязательные поля, отмеченные ⚠️.</span>
             )}
