@@ -449,8 +449,34 @@ export default function AnalysisSection({
             // Text-based docs: parse on client and send only text
             const parsed = await parseDocument(rawFile);
             const text = parsed.text?.slice(0, 60000) || "";
-            if (!text && !parsed.error) continue;
-            fileData = { name: file.name, mimeType: mime, parsedText: text || parsed.error || "" };
+            const MIN_USEFUL_TEXT = 200;
+            const isPdf = mime === "application/pdf";
+            const isDoc = mime === "application/msword";
+            
+            if (text.length >= MIN_USEFUL_TEXT && !isDoc) {
+              // Good client-side extraction — send text only
+              fileData = { name: file.name, mimeType: mime, parsedText: text };
+            } else if (isPdf || isDoc) {
+              // Poor extraction or .doc — send as base64 for server-side vision extraction
+              console.log(`Client parsing yielded ${text.length} chars for ${file.name}, falling back to base64`);
+              const b64 = await fileToBase64(file);
+              if (b64) {
+                fileData = b64;
+              } else if (text) {
+                fileData = { name: file.name, mimeType: mime, parsedText: text };
+              } else {
+                continue;
+              }
+            } else if (text) {
+              fileData = { name: file.name, mimeType: mime, parsedText: text };
+            } else if (parsed.error) {
+              fileData = { name: file.name, mimeType: mime, parsedText: parsed.error };
+            } else {
+              // No text at all — try base64 fallback
+              const b64 = await fileToBase64(file);
+              if (!b64) continue;
+              fileData = b64;
+            }
           } else {
             // Fallback: download from storage and send as base64
             const b64 = await fileToBase64(file);
