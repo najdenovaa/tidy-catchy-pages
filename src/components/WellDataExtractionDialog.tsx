@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, AlertTriangle, Plus, Trash2 } from "lucide-react";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
-import { getCasingID, pipeVolumePerMeter, totalPipeVolumeForRange } from "@/lib/cementing-calculations";
+import { getCasingID, pipeVolumePerMeter, totalPipeVolumeForRange, annularVolumePerMeter, getSlurryHeight } from "@/lib/cementing-calculations";
 
 export interface ExtractedData {
   wellData: Partial<Record<keyof WellData, number | null>>;
@@ -148,8 +148,30 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       fluidLoss: df.fluidLoss,
     };
 
-    const slurryInputs: SlurryInput[] = slurries.map(s => {
-      const rateLps = s.flowRateLps > 0 ? s.flowRateLps : 10; // default 10 л/с
+    // Calculate annular volumes for slurries
+    const casingID = getCasingID(wd.casingOD, wd.casingWall);
+    const prevCasingBottom = wd.prevCasingDepth > 0 ? wd.prevCasingDepth : 0;
+    const cementTopMD = wd.cementRiseHeight > 0 ? wd.cementRiseHeight : 0;
+    const openHoleVolPm = annularVolumePerMeter(wd.holeDiameter, wd.casingOD, 1.0);
+    const prevCasingAnnPm = wd.prevCasingID > 0 ? annularVolumePerMeter(wd.prevCasingID, wd.casingOD, 1.0) : 0;
+    const cavCoeff = wd.cavernCoeff || 1.1;
+
+    const slurryInputs: SlurryInput[] = slurries.map((s, idx) => {
+      const rateLps = s.flowRateLps > 0 ? s.flowRateLps : 10;
+      // Calculate slurry volume from annular geometry
+      const slurryTop = s.topDepthMD || 0;
+      const slurryBottom = idx < slurries.length - 1 ? (slurries[idx + 1].topDepthMD || wd.casingDepthMD) : wd.casingDepthMD;
+      let vol = 0;
+      // Open hole portion
+      const ohTop = Math.max(slurryTop, prevCasingBottom);
+      const ohBot = Math.min(slurryBottom, wd.casingDepthMD);
+      if (ohBot > ohTop) vol += openHoleVolPm * (ohBot - ohTop) * cavCoeff;
+      // Previous casing portion
+      const pcTop = Math.max(slurryTop, cementTopMD);
+      const pcBot = Math.min(slurryBottom, prevCasingBottom);
+      if (pcBot > pcTop) vol += prevCasingAnnPm * (pcBot - pcTop);
+      const slurryVol = parseFloat(vol.toFixed(2));
+
       return {
         name: s.name,
         density: s.density,
@@ -158,7 +180,7 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
         additives: [],
         thickeningTime30Bc: s.thickeningTime30Bc,
         thickeningTime50Bc: s.thickeningTime50Bc,
-        flowRateSteps: [{ rateLps, volumeM3: 0 }],
+        flowRateSteps: [{ rateLps, volumeM3: slurryVol }],
         waterRatio: s.waterRatio,
         yieldPerTon: s.yieldPerTon,
       };
@@ -174,7 +196,6 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
     }));
 
     // Calculate actual displacement volume from pipe geometry
-    const casingID = getCasingID(wd.casingOD, wd.casingWall);
     const dispVolume = totalPipeVolumeForRange(0, wd.ckodDepth || wd.casingDepthMD, wd.casingOD, wd.casingWall);
 
     const dispRateLps = dispFluid.flowRateLps > 0 ? dispFluid.flowRateLps : 10;
