@@ -88,6 +88,7 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
     if (raw.length === 0) return [{
       name: "", density: 0, topDepthMD: 0, waterRatio: 0.5, yieldPerTon: 0.63,
       thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateLps: 0, pv: 0, yp: 0,
+      fluidLoss: 0, cementType: "",
     }];
     return raw.map(s => {
       // AI returns density in kg/m³, convert to g/cm³ for internal use
@@ -104,6 +105,8 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
         flowRateLps: s.flowRateLps || 0,
         pv: s.pv || 0,
         yp: s.yp || 0,
+        fluidLoss: s.fluidLoss || 0,
+        cementType: s.cementType || "",
       };
     });
   });
@@ -198,8 +201,13 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
         massKg: 0, // will be auto-calculated
       }));
 
+      // Build full name including cement type
+      const fullName = s.cementType && s.name && !s.name.includes(s.cementType) 
+        ? `${s.name} (${s.cementType})` 
+        : (s.name || s.cementType || `Раствор ${idx + 1}`);
+
       return {
-        name: s.name,
+        name: fullName,
         density: s.density,
         topDepthMD: s.topDepthMD,
         rheology: { pv: s.pv, yp: s.yp },
@@ -312,6 +320,7 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
               <Button size="sm" variant="ghost" onClick={() => setSlurries(p => [...p, {
                 name: "", density: 0, topDepthMD: 0, waterRatio: 0.5, yieldPerTon: 0.63,
                 thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateLps: 0, pv: 0, yp: 0,
+                fluidLoss: 0, cementType: "",
               }])}>
                 <Plus className="w-3 h-3 mr-1" /> Добавить
               </Button>
@@ -329,11 +338,16 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {[
                     { key: "name", label: "Название", type: "text" },
+                    { key: "cementType", label: "Тип цемента", type: "text" },
                     { key: "density", label: "Плотность, г/см³", type: "number" },
                     { key: "topDepthMD", label: "Верх цемента, м", type: "number" },
                     { key: "waterRatio", label: "В/Ц", type: "number" },
                     { key: "yieldPerTon", label: "Выход, м³/т", type: "number" },
                     { key: "thickeningTime30Bc", label: "Загуст. 30Bc, мин", type: "number" },
+                    { key: "thickeningTime50Bc", label: "Загуст. 50Bc, мин", type: "number" },
+                    { key: "pv", label: "PV, сПз", type: "number" },
+                    { key: "yp", label: "YP, Па", type: "number" },
+                    { key: "fluidLoss", label: "Водоотд., мл/30мин", type: "number" },
                     { key: "flowRateLps", label: "Расход, л/с", type: "number" },
                   ].map(field => (
                     <div key={field.key} className="space-y-1">
