@@ -156,6 +156,35 @@ serve(async (req) => {
       userContent.push({ type: "text", text: `Вопрос инженера: ${question}` });
     }
 
+    // Build messages array with conversation history
+    const aiMessages: any[] = [
+      { role: "system", content: systemPrompt },
+    ];
+
+    // Add report context as first user message if present
+    if (reportContext) {
+      aiMessages.push({
+        role: "user",
+        content: `КОНТЕКСТ — ранее проведённый анализ цементирования:\n\n${reportContext.slice(0, 15000)}`,
+      });
+      aiMessages.push({
+        role: "assistant",
+        content: "Принял контекст анализа. Готов отвечать на вопросы.",
+      });
+    }
+
+    // Add previous conversation history (last 10 exchanges to stay within limits)
+    const recentHistory = conversationHistory.slice(-20);
+    for (const msg of recentHistory) {
+      aiMessages.push({
+        role: msg.role === "user" ? "user" : "assistant",
+        content: msg.content.slice(0, 5000),
+      });
+    }
+
+    // Add current user message
+    aiMessages.push({ role: "user", content: userContent });
+
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -164,10 +193,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent },
-        ],
+        messages: aiMessages,
         stream: false,
       }),
     });
