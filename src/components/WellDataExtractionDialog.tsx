@@ -146,7 +146,7 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       bottomTempStatic: wellValues.bottomTempStatic || 0,
       bottomTempCirc: wellValues.bottomTempCirc || 0,
       trajectory: (extractedData.trajectory || []).map(t => ({
-        md: t.md, angle: t.angle, azimuth: t.azimuth, tvd: t.tvd,
+        md: t.md, zenith: t.angle, azimuth: t.azimuth, tvd: t.tvd,
       })),
     };
 
