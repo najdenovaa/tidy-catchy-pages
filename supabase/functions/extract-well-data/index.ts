@@ -15,56 +15,33 @@ function isVisionCompatible(mimeType: string): boolean {
   return IMAGE_MIMES.has(mimeType) || mimeType === "application/pdf";
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
-
-    const { file, parsedText } = await req.json();
-
-    // Build content parts
-    const contentParts: any[] = [];
-
-    if (file && isVisionCompatible(file.mimeType)) {
-      contentParts.push({
-        type: "image_url",
-        image_url: {
-          url: `data:${file.mimeType};base64,${file.base64}`,
-        },
-      });
-    }
-
-    const textContent = parsedText || "";
-    
-    const systemPrompt = `Ты — инженер по цементированию нефтяных и газовых скважин. Из предоставленных документов извлеки ВСЕ данные, необходимые для расчёта программы цементирования.
+const systemPrompt = `Ты — инженер по цементированию нефтяных и газовых скважин. Из предоставленных документов извлеки ВСЕ данные, необходимые для расчёта программы цементирования.
 
 ТИПЫ ДОКУМЕНТОВ, которые могут быть загружены (изучай ВСЕ без исключения):
 - Заявка на цементирование / наряд-заказ на цементирование
 - ТЗ (техническое задание) / исходные данные
 - Программа / план цементирования
 - Конструкция скважины / схема обвязки / карточка скважины
-- Инклинометрия / данные инклинометра / профиль ствола
-- Протоколы лабораторных испытаний / лабораторные тесты
+- Инклинометрия / данные инклинометра / профиль ствола / таблицы MD-Angle-Azimuth-TVD
+- Протоколы лабораторных испытаний / лабораторные тесты / рецептуры растворов
 - План работ / план ГТМ
 - Геолого-технический наряд (ГТН)
 - Любые другие документы с данными о скважине
 
-Каждый документ разделен маркером "=== имя_файла ===". Ты ОБЯЗАН внимательно изучить КАЖДЫЙ документ и извлечь ВСЕ полезные данные для заполнения программы цементирования.
+ВАЖНО: Каждый загруженный документ разделен маркером "=== имя_файла ===". 
+Ты ОБЯЗАН внимательно изучить КАЖДЫЙ документ от начала до конца и извлечь ВСЕ полезные данные.
+Также тебе могут быть приложены изображения документов — изучи их ВНИМАТЕЛЬНО, это могут быть сканы заявок, инклинометрия, протоколы лабораторий.
 
 ЧТО ИСКАТЬ В КАЖДОМ ДОКУМЕНТЕ:
 1. ПАРАМЕТРЫ СКВАЖИНЫ: глубина MD/TVD, диаметр долота/ствола, диаметр и толщина стенки ОК, предыдущая колонна (глубина, диаметры), глубина ЦКОД, интервал цементирования (высота подъёма цемента), коэфф. кавернозности, температуры BHST/BHCT
 2. БУРОВОЙ РАСТВОР: название, плотность (кг/м³), PV (сПз), YP (Па), водоотдача
-3. ЦЕМЕНТНЫЕ РАСТВОРЫ: название, плотность, В/Ц, выход (м³/т), время загустевания (30Bc, 50Bc), PV, YP, водоотдача, интервал подъёма (верх цемента)
+3. ЦЕМЕНТНЫЕ РАСТВОРЫ: название, плотность, В/Ц, выход (м³/т), время загустевания (30Bc, 50Bc), PV, YP, водоотдача, интервал подъёма (верх цемента), тип цемента, добавки с дозировками
 4. БУФЕРНЫЕ ЖИДКОСТИ: название, плотность, объём, расход
 5. ПРОДАВОЧНАЯ ЖИДКОСТЬ: название, плотность, расход
-6. ИНКЛИНОМЕТРИЯ: таблица MD, угол (зенитный), азимут, TVD — ВСЕ строки
+6. ИНКЛИНОМЕТРИЯ: таблица MD, угол (зенитный), азимут, TVD — ВСЕ строки без исключения, даже если их 100+
 7. ОБЩИЕ СВЕДЕНИЯ: название скважины, месторождение, тип колонны
 
-ПРИМЕРЫ ДАННЫХ В ЗАЯВКАХ:
+ПРИМЕРЫ ДАННЫХ В ЗАЯВКАХ И ДОКУМЕНТАХ:
 - "Диаметр долота 215.9 мм" → holeDiameter: 215.9
 - "Обсадная колонна 168×8.9 мм" → casingOD: 168, casingWall: 8.9
 - "Обсадная колонна 168×7.3 мм" → casingOD: 168, casingWall: 7.3
@@ -74,8 +51,39 @@ serve(async (req) => {
 - "Плотность БР 1180 кг/м³" → drillingFluid.density: 1180
 - "Тампонажный р-р плотностью 1.85 г/см³" → slurries[].density: 1850 (переведено в кг/м³)
 - "ЦКОД на 2830м" → ckodDepth: 2830
-- "Цемент от забоя до 800м" → первый раствор topDepthMD: 800 (или cementRiseHeight: 800)
+- "Цемент от забоя до 800м" → первый раствор topDepthMD: 800
 - "Температура на забое 85°С" → bottomTempStatic: 85
+- "Расход закачки 8 л/с" → flowRateLps: 8
+
+ЛАБОРАТОРНЫЕ ПРОТОКОЛЫ — ИЗВЛЕКАЙ ВСЁ:
+- Состав / рецептура / дизайн раствора: тип цемента (ПЦТ-I-50, ПЦТ-II-50, ПЦТ-III-Об5, Class G и т.д.)
+- ВСЕ добавки с дозировками: замедлители (HR-25, СДБ, Lateite), ускорители (CaCl2, хлорид кальция), понизители водоотдачи (FL-62L, КМЦ, Halad), пеногасители (D-Air), микросфера, бентонит, диспергаторы (CFR-3, D-65), пластификаторы
+- Плотность раствора (если 1.85 г/см³ → 1850 кг/м³)
+- В/Ц (водоцементное отношение)
+- Выход раствора (м³/т)
+- Время загустевания: 30Bc и 50Bc (ВСЕГДА В МИНУТАХ!)
+- Реология: PV, YP
+- Водоотдача: мл/30мин
+- Температура и давление испытаний
+- Прочность на сжатие (если указана)
+
+КОНВЕРТАЦИЯ ЕДИНИЦ — ОБЯЗАТЕЛЬНО:
+- ВРЕМЯ ЗАГУСТЕВАНИЯ: всегда в МИНУТАХ! 
+  - "3 часа" → 180 мин
+  - "2ч 30мин" → 150 мин  
+  - "4:00" → 240 мин
+  - "3-00" → 180 мин
+  - "3:30" → 210 мин
+  - Если число < 15 и похоже на часы → умножь на 60
+- ВСЕ ПЛОТНОСТИ — ВСЕГДА В кг/м³! Если 1.85 г/см³ → 1850. Если 1180 кг/м³ → 1180.
+- Глубины в метрах, диаметры в мм
+
+ИНКЛИНОМЕТРИЯ — КРИТИЧЕСКИ ВАЖНО:
+- Извлеки ВСЕ строки таблицы инклинометрии без пропусков
+- Форматы: MD | Зенитный угол | Азимут | TVD
+- Если TVD не указан — рассчитай из MD и зенитного угла
+- Данные могут быть в Excel, PDF-таблице или на скане — извлекай ВСЁ
+- Даже если строк 50-100+ — извлекай все до единой
 
 Ответь СТРОГО в формате JSON (без markdown, без \`\`\`):
 {
@@ -112,13 +120,13 @@ serve(async (req) => {
       "topDepthMD": null или число (м),
       "waterRatio": null или число (В/Ц),
       "yieldPerTon": null или число (м³/т),
-      "thickeningTime30Bc": null или число (МИНУТЫ! если в документе часы — переведи: 3ч = 180мин, 4ч30мин = 270мин),
+      "thickeningTime30Bc": null или число (МИНУТЫ!),
       "thickeningTime50Bc": null или число (МИНУТЫ!),
       "flowRateLps": null или число (л/с),
       "pv": null или число (сПз),
       "yp": null или число (Па),
       "fluidLoss": null или число (мл/30мин),
-      "cementType": null или строка (напр. "ПЦТ-I-50", "ПЦТ-II-50", "ПЦТ-III-Об5"),
+      "cementType": null или строка,
       "additives": [
         {"name": "название добавки", "percentage": число (%), "percentageType": "bwoc" или "bwob"}
       ]
@@ -139,43 +147,75 @@ serve(async (req) => {
   },
   "wellName": null или строка,
   "fieldName": null или строка,
-  "casingType": null или строка (напр. "Эксплуатационная 168мм"),
-  "recommendations": ["строка"] — список рекомендаций о недостающих данных для качественной программы
+  "casingType": null или строка,
+  "recommendations": ["строка"]
 }
 
 КРИТИЧЕСКИЕ ПРАВИЛА:
 - Если данных нет — ставь null. НЕ ВЫДУМЫВАЙ!
-- ВСЕ ПЛОТНОСТИ — ВСЕГДА В кг/м³! Если 1.85 г/см³ → 1850. Если 1180 кг/м³ → 1180.
-- Глубины в метрах, диаметры в мм
-- "168×8.9" означает наружный диаметр 168мм, толщина стенки 8.9мм
-- Если внутренний диаметр предыдущей колонны не указан, но есть наружный и стенка — рассчитай: ID = OD - 2×wall
 - Если ЦКОД не указан: ЦКОД = глубина спуска ОК - 20м (типовое значение)
-- ИНКЛИНОМЕТРИЯ: извлеки ВСЕ строки таблицы. TVD рассчитай если не указан.
-
-КОНВЕРТАЦИЯ ЕДИНИЦ — ОБЯЗАТЕЛЬНО:
-- ВРЕМЯ ЗАГУСТЕВАНИЯ: всегда в МИНУТАХ! Если в документе "3 часа" → 180 мин. "2ч 30мин" → 150 мин. "4:00" (часы:мин) → 240 мин.
-- Если в протоколе время указано как "3-00" или "3:00" — это 3 часа = 180 минут!
-- Растекаемость: если в см — переведи в мм (×10)
-
-ЛАБОРАТОРНЫЕ ДАННЫЕ И РЕЦЕПТУРЫ:
-- Сопоставляй растворы по названию/плотности с данными из заявки/ТЗ — объединяй в один объект
-- ДОБАВКИ: если в протоколе указан состав раствора (рецептура, дизайн) — извлеки ВСЕ добавки с дозировками в массив additives
-- Примеры добавок: замедлитель (HR-25, СДБ), ускоритель (CaCl2, хлорид кальция), понизитель водоотдачи (FL-62L, КМЦ), пеногаситель (D-Air), микросфера, бентонит, диспергатор, пластификатор
-- percentageType: "bwoc" = % от массы цемента, "bwob" = % от массы сухой смеси
+- Если внутренний диаметр предыдущей колонны не указан, но есть наружный и стенка — рассчитай: ID = OD - 2×wall
+- Если указан расход закачки (л/с) — подставляй его в flowRateLps
+- Высота подъёма цемента: если "от забоя до 500м" → cementRiseHeight: 500
 
 РЕКОМЕНДАЦИИ (массив recommendations):
-- Если не указан BHCT/BHST — добавь: "Не указана температура на забое (BHST/BHCT). Рекомендуется указать для корректного подбора рецептуры."
-- Если нет данных по реологии раствора — добавь: "Нет данных по реологии цементного раствора (PV/YP). Используются стандартные значения."
-- Если нет инклинометрии — добавь: "Инклинометрия не предоставлена. Расчет будет выполнен для вертикальной скважины."
-- Если нет лабораторных данных — добавь: "Протоколы лабораторных испытаний не предоставлены. Рекомендуется провести лабораторные тесты."
-- Если нет данных по буферу — добавь: "Параметры буферной жидкости не указаны. Рекомендуется подобрать буферную систему."
-- Если нет коэфф. кавернозности — добавь: "Коэффициент кавернозности не указан. Используется значение по умолчанию (1.1)."
-- Если в заявке указан расход закачки (л/с) — подставляй его
-- Высота подъёма цемента: если "от забоя до 500м" → cementRiseHeight: 500. Если "подъём на 1500м выше башмака" — рассчитай.`;
+- Если не указан BHCT/BHST → "Не указана температура на забое (BHST/BHCT). Рекомендуется указать для корректного подбора рецептуры."
+- Если нет данных по реологии → "Нет данных по реологии цементного раствора (PV/YP). Используются стандартные значения."
+- Если нет инклинометрии → "Инклинометрия не предоставлена. Расчет будет выполнен для вертикальной скважины."
+- Если нет лабораторных данных → "Протоколы лабораторных испытаний не предоставлены. Рекомендуется провести лабораторные тесты."
+- Если нет данных по буферу → "Параметры буферной жидкости не указаны. Рекомендуется подобрать буферную систему."
+- Если нет коэфф. кавернозности → "Коэффициент кавернозности не указан. Используется значение по умолчанию (1.1)."`;
 
-    const userMessage = textContent
-      ? `Вот тексты документов (каждый документ разделен маркером ===):\n\n${textContent.slice(0, 60000)}`
-      : "Извлеки данные из прикрепленного документа.";
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
+
+    const { file, files, parsedText } = await req.json();
+
+    // Build content parts — include ALL vision files
+    const contentParts: any[] = [];
+
+    // Support array of vision files (new) + single file (backwards compat)
+    const visionFiles: { base64: string; mimeType: string; name?: string }[] = [];
+    
+    if (Array.isArray(files) && files.length > 0) {
+      for (const f of files) {
+        if (f && f.base64 && isVisionCompatible(f.mimeType)) {
+          visionFiles.push(f);
+        }
+      }
+    } else if (file && isVisionCompatible(file.mimeType)) {
+      visionFiles.push(file);
+    }
+
+    // Add ALL vision files as image_url parts
+    for (const vf of visionFiles) {
+      contentParts.push({
+        type: "image_url",
+        image_url: {
+          url: `data:${vf.mimeType};base64,${vf.base64}`,
+        },
+      });
+    }
+
+    const textContent = parsedText || "";
+    
+    let userMessage = "";
+    if (textContent) {
+      userMessage = `Вот тексты документов (каждый документ разделен маркером ===):\n\n${textContent.slice(0, 80000)}`;
+    }
+    if (visionFiles.length > 0) {
+      const fileNames = visionFiles.map(f => f.name || "документ").join(", ");
+      userMessage += `\n\nТакже приложены ${visionFiles.length} файл(ов) как изображения: ${fileNames}. Внимательно изучи КАЖДЫЙ приложенный файл — это могут быть сканы инклинометрии, лабораторных протоколов, заявок. Извлеки ВСЕ данные из каждого файла.`;
+    }
+    if (!userMessage) {
+      userMessage = "Извлеки данные из прикрепленных документов.";
+    }
 
     contentParts.push({ type: "text", text: userMessage });
 
@@ -192,13 +232,23 @@ serve(async (req) => {
           { role: "user", content: contentParts },
         ],
         temperature: 0.1,
-        max_tokens: 12000,
+        max_tokens: 16000,
       }),
     });
 
     if (!aiResponse.ok) {
       const errText = await aiResponse.text();
       console.error("AI error:", errText);
+      if (aiResponse.status === 429) {
+        return new Response(JSON.stringify({ error: "Слишком много запросов. Подождите минуту." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (aiResponse.status === 402) {
+        return new Response(JSON.stringify({ error: "Исчерпан лимит AI запросов." }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       throw new Error(`AI API error: ${aiResponse.status}`);
     }
 
@@ -212,7 +262,7 @@ serve(async (req) => {
     try {
       extracted = JSON.parse(rawContent);
     } catch {
-      console.error("Failed to parse AI response:", rawContent);
+      console.error("Failed to parse AI response:", rawContent.slice(0, 500));
       throw new Error("Не удалось распознать данные из документа");
     }
 
@@ -220,11 +270,37 @@ serve(async (req) => {
     if (extracted.slurries && Array.isArray(extracted.slurries)) {
       extracted.slurries = extracted.slurries.map((s: any) => {
         if (s.density != null && s.density > 0 && s.density < 10) {
-          // Likely in g/cm³, convert to kg/m³
           s.density = Math.round(s.density * 1000);
+        }
+        // Ensure thickening times are in minutes (catch hours)
+        if (s.thickeningTime30Bc != null && s.thickeningTime30Bc > 0 && s.thickeningTime30Bc < 15) {
+          s.thickeningTime30Bc = Math.round(s.thickeningTime30Bc * 60);
+        }
+        if (s.thickeningTime50Bc != null && s.thickeningTime50Bc > 0 && s.thickeningTime50Bc < 15) {
+          s.thickeningTime50Bc = Math.round(s.thickeningTime50Bc * 60);
         }
         return s;
       });
+    }
+
+    // Post-process: ensure drilling fluid density is in kg/m³
+    if (extracted.drillingFluid?.density != null && extracted.drillingFluid.density > 0 && extracted.drillingFluid.density < 10) {
+      extracted.drillingFluid.density = Math.round(extracted.drillingFluid.density * 1000);
+    }
+
+    // Post-process: buffer densities
+    if (extracted.buffers && Array.isArray(extracted.buffers)) {
+      extracted.buffers = extracted.buffers.map((b: any) => {
+        if (b.density != null && b.density > 0 && b.density < 10) {
+          b.density = Math.round(b.density * 1000);
+        }
+        return b;
+      });
+    }
+
+    // Post-process: displacement fluid density
+    if (extracted.displacementFluid?.density != null && extracted.displacementFluid.density > 0 && extracted.displacementFluid.density < 10) {
+      extracted.displacementFluid.density = Math.round(extracted.displacementFluid.density * 1000);
     }
 
     return new Response(JSON.stringify({ success: true, data: extracted }), {
