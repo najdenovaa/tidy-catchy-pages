@@ -262,8 +262,26 @@ serve(async (req) => {
     try {
       extracted = JSON.parse(rawContent);
     } catch {
-      console.error("Failed to parse AI response:", rawContent.slice(0, 500));
-      throw new Error("Не удалось распознать данные из документа");
+      // Try to fix truncated JSON by closing open brackets/braces
+      console.error("Failed to parse AI response, attempting repair. Length:", rawContent.length);
+      try {
+        let repaired = rawContent;
+        // Remove trailing incomplete object/array entries
+        repaired = repaired.replace(/,\s*$/, "");
+        // Count open brackets and braces
+        const openBraces = (repaired.match(/{/g) || []).length;
+        const closeBraces = (repaired.match(/}/g) || []).length;
+        const openBrackets = (repaired.match(/\[/g) || []).length;
+        const closeBrackets = (repaired.match(/\]/g) || []).length;
+        // Close arrays then objects
+        for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += "]";
+        for (let i = 0; i < openBraces - closeBraces; i++) repaired += "}";
+        extracted = JSON.parse(repaired);
+        console.log("JSON repair successful");
+      } catch {
+        console.error("JSON repair also failed:", rawContent.slice(0, 500));
+        throw new Error("Не удалось распознать данные из документа. Попробуйте загрузить меньше файлов.");
+      }
     }
 
     // Post-process: ensure slurry densities are in kg/m³
