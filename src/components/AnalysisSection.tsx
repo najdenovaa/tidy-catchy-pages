@@ -628,35 +628,36 @@ export default function AnalysisSection({
     try {
       // Parse all files and combine texts
       const allTexts: string[] = [];
-      let visionFile: { base64: string; mimeType: string; name: string } | null = null;
+      const visionFiles: { base64: string; mimeType: string; name: string }[] = [];
 
       for (const file of tzFiles) {
         const parsed = await parseDocument(file);
-        const hasText = parsed.text && parsed.text.trim().length > 50;
+        const textLength = parsed.text ? parsed.text.trim().length : 0;
+        // Count actual letters (not spaces/symbols) to detect truly empty parses
+        const letterCount = (parsed.text || "").replace(/[^a-zA-Zа-яА-ЯёЁ0-9]/g, "").length;
+        const hasGoodText = textLength > 200 && letterCount > 100;
         
-        if (hasText) {
+        if (textLength > 0) {
           allTexts.push(`=== ${file.name} ===\n${parsed.text}`);
         }
 
         // For files with minimal/no text (scanned PDFs, images) — send as vision
-        const mime = file.type.toLowerCase();
+        const mime = file.type.toLowerCase() || getMimeType(file.name);
         const isVisionCompatible = mime.startsWith("image/") || mime === "application/pdf";
         
-        if (isVisionCompatible && (!hasText || !visionFile)) {
-          // Prefer sending a file that had minimal text (likely scanned)
-          if (!visionFile || !hasText) {
-            try {
-              const ab = await file.arrayBuffer();
-              const bytes = new Uint8Array(ab);
-              // Only send files under 10MB as vision
-              if (bytes.byteLength < 10 * 1024 * 1024) {
-                let binary = "";
-                for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-                visionFile = { base64: btoa(binary), mimeType: mime, name: file.name };
-              }
-            } catch (e) {
-              console.warn("Failed to read file for vision:", file.name, e);
+        // Send ALL files that are vision-compatible AND have poor text extraction
+        if (isVisionCompatible && !hasGoodText) {
+          try {
+            const ab = await file.arrayBuffer();
+            const bytes = new Uint8Array(ab);
+            // Only send files under 10MB as vision
+            if (bytes.byteLength < 10 * 1024 * 1024) {
+              let binary = "";
+              for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+              visionFiles.push({ base64: btoa(binary), mimeType: mime, name: file.name });
             }
+          } catch (e) {
+            console.warn("Failed to read file for vision:", file.name, e);
           }
         }
       }
@@ -671,7 +672,11 @@ export default function AnalysisSection({
             "Content-Type": "application/json",
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
-          body: JSON.stringify({ file: visionFile, parsedText: combinedText }),
+          body: JSON.stringify({ 
+            file: visionFiles.length > 0 ? visionFiles[0] : null, 
+            files: visionFiles,
+            parsedText: combinedText 
+          }),
         }
       );
 
