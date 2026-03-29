@@ -196,7 +196,6 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
     }));
 
     // Calculate actual displacement volume from pipe geometry
-    const casingID = getCasingID(wd.casingOD, wd.casingWall);
     const dispVolume = totalPipeVolumeForRange(0, wd.ckodDepth || wd.casingDepthMD, wd.casingOD, wd.casingWall);
 
     const dispRateLps = dispFluid.flowRateLps > 0 ? dispFluid.flowRateLps : 10;
