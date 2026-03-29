@@ -83,7 +83,8 @@ const systemPrompt = `Ты — инженер по цементированию 
 - Форматы: MD | Зенитный угол | Азимут | TVD
 - Если TVD не указан — рассчитай из MD и зенитного угла
 - Данные могут быть в Excel, PDF-таблице или на скане — извлекай ВСЁ
-- Даже если строк 50-100+ — извлекай все до единой
+- Если строк больше 80, выбери ключевые точки (начало, конец, все изменения угла/азимута, каждые 200-300м) — максимум 80 строк
+- Обязательно включи первую (0м) и последнюю точку
 
 Ответь СТРОГО в формате JSON (без markdown, без \`\`\`):
 {
@@ -232,7 +233,7 @@ serve(async (req) => {
           { role: "user", content: contentParts },
         ],
         temperature: 0.1,
-        max_tokens: 16000,
+        max_tokens: 32000,
       }),
     });
 
@@ -262,8 +263,26 @@ serve(async (req) => {
     try {
       extracted = JSON.parse(rawContent);
     } catch {
-      console.error("Failed to parse AI response:", rawContent.slice(0, 500));
-      throw new Error("Не удалось распознать данные из документа");
+      // Try to fix truncated JSON by closing open brackets/braces
+      console.error("Failed to parse AI response, attempting repair. Length:", rawContent.length);
+      try {
+        let repaired = rawContent;
+        // Remove trailing incomplete object/array entries
+        repaired = repaired.replace(/,\s*$/, "");
+        // Count open brackets and braces
+        const openBraces = (repaired.match(/{/g) || []).length;
+        const closeBraces = (repaired.match(/}/g) || []).length;
+        const openBrackets = (repaired.match(/\[/g) || []).length;
+        const closeBrackets = (repaired.match(/\]/g) || []).length;
+        // Close arrays then objects
+        for (let i = 0; i < openBrackets - closeBrackets; i++) repaired += "]";
+        for (let i = 0; i < openBraces - closeBraces; i++) repaired += "}";
+        extracted = JSON.parse(repaired);
+        console.log("JSON repair successful");
+      } catch {
+        console.error("JSON repair also failed:", rawContent.slice(0, 500));
+        throw new Error("Не удалось распознать данные из документа. Попробуйте загрузить меньше файлов.");
+      }
     }
 
     // Post-process: ensure slurry densities are in kg/m³
