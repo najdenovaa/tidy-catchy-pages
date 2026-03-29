@@ -85,13 +85,16 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
 
   const [slurries, setSlurries] = useState(() => {
     const raw = extractedData.slurries || [];
+    const casingMD = (extractedData.wellData as any)?.casingDepthMD || 0;
+    const riseHeight = (extractedData.wellData as any)?.cementRiseHeight || 0;
+
     if (raw.length === 0) return [{
-      name: "", density: 0, topDepthMD: 0, waterRatio: 0.5, yieldPerTon: 0.63,
+      name: "", density: 0, topDepthMD: riseHeight || 0, waterRatio: 0.5, yieldPerTon: 0.63,
       thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateLps: 0, pv: 0, yp: 0,
       fluidLoss: 0, cementType: "",
     }];
-    return raw.map(s => {
-      // AI returns density in kg/m³, convert to g/cm³ for internal use
+
+    const mapped = raw.map(s => {
       let dens = s.density || 0;
       if (dens > 100) dens = dens / 1000; // kg/m³ → g/cm³
       return {
@@ -109,6 +112,28 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
         cementType: s.cementType || "",
       };
     });
+
+    // Auto-correct: sort slurries top-to-bottom by topDepthMD
+    mapped.sort((a, b) => a.topDepthMD - b.topDepthMD);
+
+    // If first slurry topDepthMD is 0 and we have cementRiseHeight, use it
+    if (mapped.length > 0 && mapped[0].topDepthMD === 0 && riseHeight > 0) {
+      mapped[0].topDepthMD = riseHeight;
+    }
+
+    // If only 1 slurry and topDepthMD > casingMD or 0, fix it
+    if (mapped.length === 1 && casingMD > 0 && mapped[0].topDepthMD >= casingMD) {
+      mapped[0].topDepthMD = riseHeight || 0;
+    }
+
+    // Validate: each slurry top must be < casingDepthMD
+    for (const s of mapped) {
+      if (casingMD > 0 && s.topDepthMD >= casingMD) {
+        s.topDepthMD = riseHeight || 0;
+      }
+    }
+
+    return mapped;
   });
 
   const [bufs, setBufs] = useState(() => {
@@ -141,6 +166,12 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
   }, [extractedData]);
 
   const handleConfirm = () => {
+    // Auto-sync cementRiseHeight with first slurry's topDepthMD
+    let cementRise = wellValues.cementRiseHeight || 0;
+    if (slurries.length > 0 && slurries[0].topDepthMD > 0 && cementRise === 0) {
+      cementRise = slurries[0].topDepthMD;
+    }
+
     const wd: WellData = {
       wellDepthMD: wellValues.wellDepthMD || 0,
       wellDepthTVD: wellValues.wellDepthTVD || wellValues.wellDepthMD || 0,
@@ -152,7 +183,7 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       prevCasingID: wellValues.prevCasingID || 0,
       prevCasingOD: wellValues.prevCasingOD || 0,
       ckodDepth: wellValues.ckodDepth || 0,
-      cementRiseHeight: wellValues.cementRiseHeight || 0,
+      cementRiseHeight: cementRise,
       cavernCoeff: wellValues.cavernCoeff || 1.1,
       bottomTempStatic: wellValues.bottomTempStatic || 0,
       bottomTempCirc: wellValues.bottomTempCirc || 0,
