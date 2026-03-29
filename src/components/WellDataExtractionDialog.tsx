@@ -351,6 +351,19 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
                     </div>
                   ))}
                 </div>
+                {/* Show extracted additives */}
+                {extractedData.slurries?.[i]?.additives && extractedData.slurries[i].additives!.length > 0 && (
+                  <div className="mt-1">
+                    <Label className="text-[10px] text-muted-foreground">Добавки (из лаб. протокола):</Label>
+                    <div className="flex flex-wrap gap-1 mt-0.5">
+                      {extractedData.slurries[i].additives!.map((a, ai) => (
+                        <Badge key={ai} variant="secondary" className="text-[9px] px-1.5 py-0">
+                          {a.name} {a.percentage}% {a.percentageType}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
