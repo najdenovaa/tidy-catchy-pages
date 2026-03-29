@@ -37,6 +37,7 @@ serve(async (req) => {
     const question = (body.question || "").trim();
     const reportContext = (body.reportContext || "").trim();
     const sessionId = (body.sessionId || "").trim();
+    const conversationHistory: Array<{ role: string; content: string }> = Array.isArray(body.conversationHistory) ? body.conversationHistory : [];
     const hasAttachment = !!body.attachment;
     const attachmentName = body.attachment?.name || null;
     const attachmentBase64 = body.attachment?.base64 || null;
