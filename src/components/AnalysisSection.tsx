@@ -50,6 +50,19 @@ function detectExtractionDocKind(file: File): ExtractionDocKind {
   const name = file.name.toLowerCase();
 
   if (
+    name.includes("заяв") ||
+    name.includes("исход") ||
+    name.includes("тз") ||
+    name.includes("наряд") ||
+    name.includes("заказ") ||
+    name.includes("гтн") ||
+    name.includes("карточ") ||
+    name.includes("скважин")
+  ) {
+    return "source";
+  }
+
+  if (
     name.includes("инклин") ||
     name.includes("inclino") ||
     name.includes("trajectory") ||
@@ -67,23 +80,9 @@ function detectExtractionDocKind(file: File): ExtractionDocKind {
     name.includes("protocol") ||
     name.includes("протокол") ||
     name.includes("рецепт") ||
-    name.includes("design") ||
-    name.includes("цемент")
+    name.includes("design")
   ) {
     return "lab";
-  }
-
-  if (
-    name.includes("заяв") ||
-    name.includes("исход") ||
-    name.includes("тз") ||
-    name.includes("наряд") ||
-    name.includes("заказ") ||
-    name.includes("гтн") ||
-    name.includes("карточ") ||
-    name.includes("скважин")
-  ) {
-    return "source";
   }
 
   if (name.includes("програм")) {
@@ -102,13 +101,67 @@ function normalizeExtractedText(text: string): string {
     .trim();
 }
 
-function limitTextByDocKind(text: string, kind: ExtractionDocKind): string {
+function parseLooseNumber(value: string): number | null {
+  const normalized = value.replace(/,/g, ".").replace(/[^0-9.+-]/g, "");
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function compressTrajectoryText(text: string, stepMeters = 100): string {
   const normalized = normalizeExtractedText(text);
+  const lines = normalized.split("\n");
+  const headerLines: string[] = [];
+  const sampledRows: string[] = [];
+  let lastAcceptedMd = -Infinity;
+  let lastNumericLine = "";
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const matches = line.match(/-?\d+(?:[.,]\d+)?/g) || [];
+    if (matches.length >= 3) {
+      const md = parseLooseNumber(matches[0]);
+      if (md == null) continue;
+
+      lastNumericLine = line;
+      if (sampledRows.length === 0 || md - lastAcceptedMd >= stepMeters - 0.5) {
+        sampledRows.push(line);
+        lastAcceptedMd = md;
+      }
+      continue;
+    }
+
+    if (headerLines.length < 12) {
+      headerLines.push(line);
+    }
+  }
+
+  if (lastNumericLine && sampledRows[sampledRows.length - 1] !== lastNumericLine) {
+    sampledRows.push(lastNumericLine);
+  }
+
+  if (sampledRows.length < 2) {
+    return normalized;
+  }
+
+  return [
+    ...headerLines,
+    "Сокращенная инклинометрия для AI-извлечения: точки с шагом около 100 м (MD / угол / азимут / TVD если есть).",
+    ...sampledRows,
+  ].join("\n");
+}
+
+function limitTextByDocKind(text: string, kind: ExtractionDocKind): string {
+  const normalized = kind === "trajectory"
+    ? compressTrajectoryText(text)
+    : normalizeExtractedText(text);
   const maxCharsByKind: Record<ExtractionDocKind, number> = {
-    source: 22000,
+    source: 32000,
     lab: 22000,
     program: 18000,
-    trajectory: 24000,
+    trajectory: 12000,
     general: 14000,
   };
 
