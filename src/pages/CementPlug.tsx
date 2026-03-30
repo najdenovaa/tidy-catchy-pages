@@ -787,6 +787,11 @@ export default function CementPlug() {
                       <Field label="Низ моста" value={plug.bottomMD} onChange={v => setPlug(p => ({ ...p, bottomMD: num(v) }))} unit="м MD" />
                     </div>
                     <p className="text-[10px] text-muted-foreground mt-1">Длина моста: {Math.max(0, plug.bottomMD - plug.topMD)} м</p>
+                    {isCasingMode && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        🔧 Мост в колонне ∅{well.casingID} мм · Затрубье: ∅{well.casingID}–∅{well.pipeOD} мм
+                      </p>
+                    )}
                   </CardContent>
                 </CollapsibleContent>
               </Card>
