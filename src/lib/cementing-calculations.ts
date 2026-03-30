@@ -941,7 +941,7 @@ export function calculatePressureProfile(
       });
     } else {
       const rate = b.flowRateSteps.length > 0 ? b.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: b.name, volume: b.volume, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, rateLps: rate, isCement: false, compressionCoeff: 1.0 });
+      stages.push({ name: b.name, volume: b.volume, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, rateLps: rate, isCement: false, compressionCoeff: 1.0, fluidType: 'buffer' as AnnularFluidType });
     }
   });
 
@@ -959,12 +959,12 @@ export function calculatePressureProfile(
     if (s.flowRateSteps.length > 1) {
       s.flowRateSteps.forEach(step => {
         if (step.volumeM3 > 0) {
-          stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, rateLps: step.rateLps, isCement: true, compressionCoeff: 1.0 });
+          stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, rateLps: step.rateLps, isCement: true, compressionCoeff: 1.0, fluidType: 'cement' as AnnularFluidType });
         }
       });
     } else {
       const rate = s.flowRateSteps.length > 0 ? s.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: s.name, volume: vol, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, rateLps: rate, isCement: true, compressionCoeff: 1.0 });
+      stages.push({ name: s.name, volume: vol, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, rateLps: rate, isCement: true, compressionCoeff: 1.0, fluidType: 'cement' as AnnularFluidType });
     }
   });
 
@@ -980,6 +980,7 @@ export function calculatePressureProfile(
     compressionCoeff: 1.0,
     durationMin: flushTimeMin,
     isFlushPause: true,
+    fluidType: 'mud' as AnnularFluidType,
   });
 
   // Продавочные жидкости — по шагам с распределением объёма
@@ -993,7 +994,7 @@ export function calculatePressureProfile(
         if (step.volumeM3 > 0) {
           const vol = Math.min(step.volumeM3, remainingDispVol);
           if (vol > 0) {
-            stages.push({ name: df.name, volume: vol, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc });
+            stages.push({ name: df.name, volume: vol, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc, fluidType: 'displacement' as AnnularFluidType });
             remainingDispVol -= vol;
           }
         }
@@ -1002,7 +1003,7 @@ export function calculatePressureProfile(
       const perStep = remainingDispVol / Math.max(df.flowRateSteps.length, 1);
       df.flowRateSteps.forEach(step => {
         if (perStep > 0 && step.rateLps > 0) {
-          stages.push({ name: df.name, volume: perStep, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc });
+          stages.push({ name: df.name, volume: perStep, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc, fluidType: 'displacement' as AnnularFluidType });
         }
       });
       remainingDispVol = 0;
@@ -1176,7 +1177,7 @@ export function calculatePressureProfile(
       let freefallVol = 0;
       if (heavyVolume > 0 && heavyDensity > lightDensityBelow + 0.05) {
         const savedTotal = totalPumped;
-        const testBatch: FluidBatch = { densityGcm3: heavyDensity, volumeM3: 0 };
+        const testBatch: FluidBatch = { densityGcm3: heavyDensity, volumeM3: 0, fluidType: 'cement' as AnnularFluidType };
         pumpHistory.push(testBatch);
         const maxFreefall = Math.min(heavyVolume, pipeCapacity * 0.4);
         const step = Math.max(maxFreefall / 100, 0.01);
@@ -1193,7 +1194,7 @@ export function calculatePressureProfile(
         testBatch.volumeM3 = 0;
         totalPumped = savedTotal;
       } else {
-        pumpHistory.push({ densityGcm3: mudDensityGcm3, volumeM3: 0 });
+        pumpHistory.push({ densityGcm3: mudDensityGcm3, volumeM3: 0, fluidType: 'mud' as AnnularFluidType });
       }
 
       // === Расчёт скорости свободного падения через бинарный поиск (трение = движущее давление) ===
@@ -1320,7 +1321,7 @@ export function calculatePressureProfile(
     // Множитель трения затрубья: эксцентриситет (~0.8x от концентрического)
     const annFrictionMultiplier = 0.4;
 
-    pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0 });
+    pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0, fluidType: s.fluidType });
     const batchIdx = pumpHistory.length - 1;
 
     const isDisplacement = !s.isCement && cementStartFound && !s.isFlushPause;
