@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea } from "recharts";
+import { LineChart, AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea } from "recharts";
 import type { PressurePoint, StageBoundary } from "@/lib/cementing-calculations";
 import CopyImageButton from "./CopyImageButton";
 
@@ -31,6 +31,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
   const chartRef3 = useRef<HTMLDivElement>(null);
   const chartRef4 = useRef<HTMLDivElement>(null);
   const chartRef5 = useRef<HTMLDivElement>(null);
+  const chartRef6 = useRef<HTMLDivElement>(null);
 
   if (pressureData.length === 0) {
     return (
@@ -262,6 +263,55 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
               </ScrollableChart>
             );
           })()}
+        </CardContent>
+      </Card>
+
+      {/* Состав затрубья — стековая диаграмма */}
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg">Состав затрубного пространства</CardTitle>
+            <CopyImageButton targetRef={chartRef6} />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground mb-3">
+            Высота заполнения затрубья каждым типом жидкости по времени: буровой раствор, буфер, тампонажный раствор и продавочная жидкость.
+          </p>
+          <div className="flex flex-wrap gap-4 mb-3 text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "hsl(30, 50%, 55%)" }} />
+              <span className="text-muted-foreground">Буровой раствор</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "hsl(200, 60%, 50%)" }} />
+              <span className="text-muted-foreground">Буфер</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "hsl(0, 0%, 55%)" }} />
+              <span className="text-muted-foreground">Тампонажный раствор</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: "hsl(120, 45%, 45%)" }} />
+              <span className="text-muted-foreground">Продавочная жидкость</span>
+            </div>
+          </div>
+          <ScrollableChart chartRef={chartRef6} height="h-[450px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={pressureData} margin={{ top: 5, right: 30, left: 25, bottom: 25 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" />
+                <YAxis label={{ value: "Высота, м", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
+                <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => [value.toFixed(0) + " м", name]} />
+                <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
+                {stageBoundaries.map((b, i) => <ReferenceLine key={`ann-stage-${i}`} x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />)}
+                <Area type="monotone" dataKey="annDisplHeightM" name="Продавочная жидкость" stackId="ann" stroke="hsl(120, 45%, 45%)" fill="hsl(120, 45%, 45%)" fillOpacity={0.6} />
+                <Area type="monotone" dataKey="annCementHeightM" name="Тампонажный раствор" stackId="ann" stroke="hsl(0, 0%, 55%)" fill="hsl(0, 0%, 55%)" fillOpacity={0.7} />
+                <Area type="monotone" dataKey="annBufferHeightM" name="Буфер" stackId="ann" stroke="hsl(200, 60%, 50%)" fill="hsl(200, 60%, 50%)" fillOpacity={0.5} />
+                <Area type="monotone" dataKey="annMudHeightM" name="Буровой раствор" stackId="ann" stroke="hsl(30, 50%, 55%)" fill="hsl(30, 50%, 55%)" fillOpacity={0.4} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </ScrollableChart>
         </CardContent>
       </Card>
     </div>
