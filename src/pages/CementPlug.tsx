@@ -150,6 +150,7 @@ export default function CementPlug() {
   const [viscousPadFluid, setViscousPadFluid] = useState<PlugFluid>(saved.viscousPadFluid || { name: "Вязкая пачка", density: 1.15, rheology: { pv: 30, yp: 15 }, gel10sec: 0, gel10min: 0 });
   const [viscousPadAdditives, setViscousPadAdditives] = useState<{ name: string; percent: number }[]>(saved.viscousPadAdditives || []);
   const [padPullUpAbove, setPadPullUpAbove] = useState(saved.padPullUpAbove ?? 5);
+  const [placementMode, setPlacementMode] = useState<PlacementMode>(saved.placementMode || 'openhole');
 
   /* ── Session save ── */
   useEffect(() => {
