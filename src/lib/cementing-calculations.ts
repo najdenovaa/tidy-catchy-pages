@@ -1270,6 +1270,7 @@ export function calculatePressureProfile(
         const surfP = Math.max(0, annHydro - pipeHydro);
         const bhp = annHydro;
 
+        const annP = calcAnnularProfile();
         points.push({
           stage: s.name, time: tNow,
           surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP,
@@ -1277,6 +1278,7 @@ export function calculatePressureProfile(
           flowRegimeAnn: 0, reynoldsAnn: 0,
           maxSafeRateLps: calcMaxSafeRate(annHydro, mudRheo.pv, mudRheo.yp, drillingFluid.density, mudRheo.pv, mudRheo.yp, drillingFluid.density),
           densityGcm3: mudDensityGcm3,
+          annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH,
         });
       }
       if (!equilibriumReached) equilibriumTimeMin = pauseMin;
