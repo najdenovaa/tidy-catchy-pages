@@ -144,6 +144,7 @@ export default function CoiledTubing() {
   const limitsChartRef = useRef<HTMLDivElement>(null);
   const hydraulicsChartRef = useRef<HTMLDivElement>(null);
   const fatigueChartRef = useRef<HTMLDivElement>(null);
+  const temperingChartRef = useRef<HTMLDivElement>(null);
 
   // Auth check
   useEffect(() => {
