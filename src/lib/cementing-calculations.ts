@@ -892,9 +892,42 @@ export function calculatePressureProfile(
   let equilibriumTimeMin = 0; // время выхода на равновесие после остановки, мин
 
   const mudRheo = effectiveRheology(drillingFluid.rheology, 'mud');
-  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: calcMaxSafeRate(hydroMudFull, mudRheo.pv, mudRheo.yp, drillingFluid.density, mudRheo.pv, mudRheo.yp, drillingFluid.density), densityGcm3: mudDensityGcm3 });
 
-  interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean; compressionCoeff: number; durationMin?: number; isFlushPause?: boolean }
+  // Annular profile helper — compute fluid heights by type from exitBatches
+  interface FluidBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; }
+
+  function calcAnnularProfile(): { mudH: number; bufferH: number; cementH: number; displH: number } {
+    const result = { mudH: 0, bufferH: 0, cementH: 0, displH: 0 };
+    const exitBatches: FluidBatch[] = [];
+    const mudExited = Math.min(totalPumped, pipeCapacity);
+    if (mudExited > 0) exitBatches.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited, fluidType: 'mud' });
+    let pumpedExited = Math.max(0, totalPumped - pipeCapacity);
+    for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
+      const take = Math.min(pumpHistory[i].volumeM3, pumpedExited);
+      if (take > 0) exitBatches.push({ densityGcm3: pumpHistory[i].densityGcm3, volumeM3: take, fluidType: pumpHistory[i].fluidType });
+      pumpedExited -= take;
+    }
+    // Annulus: last exited = bottom, first = top. Heights = volume / annVPM
+    let remaining = wellData.casingDepthMD; // available annular height
+    for (let i = exitBatches.length - 1; i >= 0 && remaining > 0; i--) {
+      const h = Math.min(exitBatches[i].volumeM3 / annVPM, remaining);
+      switch (exitBatches[i].fluidType) {
+        case 'mud': result.mudH += h; break;
+        case 'buffer': result.bufferH += h; break;
+        case 'cement': result.cementH += h; break;
+        case 'displacement': result.displH += h; break;
+      }
+      remaining -= h;
+    }
+    // Remaining = original mud in annulus (not displaced yet)
+    if (remaining > 0) result.mudH += remaining;
+    return result;
+  }
+
+  const initProfile = calcAnnularProfile();
+  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: calcMaxSafeRate(hydroMudFull, mudRheo.pv, mudRheo.yp, drillingFluid.density, mudRheo.pv, mudRheo.yp, drillingFluid.density), densityGcm3: mudDensityGcm3, annMudHeightM: initProfile.mudH, annBufferHeightM: initProfile.bufferH, annCementHeightM: initProfile.cementH, annDisplHeightM: initProfile.displH });
+
+  interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean; compressionCoeff: number; durationMin?: number; isFlushPause?: boolean; fluidType: AnnularFluidType }
   const stages: Stage[] = [];
 
   // Буферы — по шагам
