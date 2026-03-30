@@ -1429,8 +1429,8 @@ export function calculatePressureProfile(
           surfP = surfPRaw * 0.82 * (0.7 + 0.3 * smoothOver);
         }
       } else {
-        // Буферы и цемент: +10% к давлению
-        surfP = surfPRaw * 0.825 * 1.1;
+        // Буферы и цемент: +15% к давлению
+        surfP = surfPRaw * 0.825 * 1.15;
       }
       const bhp = bhpRaw;
 
