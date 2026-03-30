@@ -39,6 +39,8 @@ function annArea(boreMm: number, pipeODMm: number): number {
   return (Math.PI / 4) * (bo * bo - pi * pi);
 }
 
+export type PlacementMode = 'openhole' | 'casing';
+
 interface SessionState {
   well: PlugWellData;
   plug: PlugInterval;
@@ -71,6 +73,7 @@ interface SessionState {
   viscousPadFluid?: PlugFluid;
   viscousPadAdditives?: { name: string; percent: number }[];
   padPullUpAbove?: number;
+  placementMode?: PlacementMode;
 }
 
 function loadSession(): Partial<SessionState> {
@@ -147,17 +150,19 @@ export default function CementPlug() {
   const [viscousPadFluid, setViscousPadFluid] = useState<PlugFluid>(saved.viscousPadFluid || { name: "Вязкая пачка", density: 1.15, rheology: { pv: 30, yp: 15 }, gel10sec: 0, gel10min: 0 });
   const [viscousPadAdditives, setViscousPadAdditives] = useState<{ name: string; percent: number }[]>(saved.viscousPadAdditives || []);
   const [padPullUpAbove, setPadPullUpAbove] = useState(saved.padPullUpAbove ?? 5);
+  const [placementMode, setPlacementMode] = useState<PlacementMode>(saved.placementMode || 'openhole');
 
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode]);
 
   /* ── Spacer height preview (real-time) ── */
-  const isOpenHole = plug.bottomMD > well.casingShoe;
+  const isCasingMode = placementMode === 'casing';
+  const isOpenHole = !isCasingMode && plug.bottomMD > well.casingShoe;
   const effectiveBore = isOpenHole ? well.holeDiameter * Math.sqrt(Math.max(1, well.cavernCoeff)) : well.casingID;
   const previewAnnArea = annArea(effectiveBore, well.pipeOD);
   const previewBoreArea = (Math.PI / 4) * (effectiveBore / 1000) ** 2;
@@ -222,29 +227,38 @@ export default function CementPlug() {
   const removePipeSection = (idx: number) => setPipeSections(s => s.filter((_, i) => i !== idx));
 
   /* ── Calculation ── */
-  const buildInputs = (): PlugInputs => ({
-    well: {
+  const buildInputs = (): PlugInputs => {
+    // In casing mode: ensure casingShoe is always deeper than plug bottom
+    const effectiveWell: PlugWellData = {
       ...well,
       trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory,
       pipeSections: pipeSections.length > 0 ? pipeSections : undefined,
-    },
-    plug, cement, spacer, wellFluid,
-    spacerVolumeAboveM3: spacerVolumeAbove,
-    spacerVolumeBelowM3: spacerVolumeBelow,
-    safetyMarginM: 30,
-    thickeningTimeMin: thickeningTime,
-    pullOutAbovePlugM: pullOutAbove,
-    washType,
-    washCycles,
-    tripSpeedMs: tripSpeed,
-    pumpRateCementLs: pumpRateCement,
-    pumpRateSpacerLs: pumpRateSpacer,
-    pumpRateDisplacementLs: pumpRateDisplacement,
-    pumpRateWashLs: pumpRateWash,
-    useViscousPad,
-    viscousPadFluid: useViscousPad ? viscousPadFluid : undefined,
-    padPullUpAboveM: useViscousPad ? padPullUpAbove : undefined,
-  });
+      ...(isCasingMode ? {
+        casingShoe: Math.max(well.wellDepthMD, plug.bottomMD + 100),
+        holeDiameter: well.casingID, // bore = casing ID
+        cavernCoeff: 1.0, // no cavern in casing
+      } : {}),
+    };
+    return {
+      well: effectiveWell,
+      plug, cement, spacer, wellFluid,
+      spacerVolumeAboveM3: spacerVolumeAbove,
+      spacerVolumeBelowM3: spacerVolumeBelow,
+      safetyMarginM: 30,
+      thickeningTimeMin: thickeningTime,
+      pullOutAbovePlugM: pullOutAbove,
+      washType,
+      washCycles,
+      tripSpeedMs: tripSpeed,
+      pumpRateCementLs: pumpRateCement,
+      pumpRateSpacerLs: pumpRateSpacer,
+      pumpRateDisplacementLs: pumpRateDisplacement,
+      pumpRateWashLs: pumpRateWash,
+      useViscousPad,
+      viscousPadFluid: useViscousPad ? viscousPadFluid : undefined,
+      padPullUpAboveM: useViscousPad ? padPullUpAbove : undefined,
+    };
+  };
 
   const calculate = () => {
     const inputs = buildInputs();
@@ -531,6 +545,7 @@ export default function CementPlug() {
     setViscousPadFluid({ name: "", density: 0, rheology: { pv: 0, yp: 0 } });
     setViscousPadAdditives([]);
     setPadPullUpAbove(5);
+    setPlacementMode('openhole');
   }, []);
 
   /* ── Collapsible state ── */
@@ -556,7 +571,9 @@ export default function CementPlug() {
             </Link>
             <div className="mt-0.5 sm:ml-10 text-center sm:text-left">
               <h1 className="text-sm sm:text-lg font-medium text-muted-foreground leading-tight">Цементные мосты</h1>
-              <p className="text-xs text-muted-foreground/70">Установка мостов на равновесие</p>
+              <p className="text-xs text-muted-foreground/70">
+                {isCasingMode ? "Установка мостов в колонне (КРС)" : "Установка мостов на равновесие"}
+              </p>
             </div>
           </div>
           <div className="flex items-center sm:flex-col sm:items-end gap-3 sm:gap-6 w-full sm:w-auto">
@@ -602,6 +619,30 @@ export default function CementPlug() {
         <div className="space-y-4">
           {/* Inputs & results */}
           <div className="space-y-3">
+            {/* Placement mode toggle */}
+            <Card>
+              <CardContent className="py-3 px-4">
+                <div className="flex items-center gap-4">
+                  <p className="text-xs font-medium text-muted-foreground">Тип установки:</p>
+                  <RadioGroup value={placementMode} onValueChange={v => setPlacementMode(v as PlacementMode)} className="flex gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <RadioGroupItem value="openhole" id="mode-oh" />
+                      <Label htmlFor="mode-oh" className="text-xs cursor-pointer">Открытый ствол</Label>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <RadioGroupItem value="casing" id="mode-cas" />
+                      <Label htmlFor="mode-cas" className="text-xs cursor-pointer">В колонне (КРС)</Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+                {isCasingMode && (
+                  <p className="text-[10px] text-muted-foreground mt-1.5">
+                    🔧 Режим КРС: мост устанавливается внутри обсадной колонны. Каверновость = 1.0, диаметр ствола = внутренний ∅ колонны.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Well data */}
             <Collapsible open={openSections.well} onOpenChange={() => toggle("well")}>
               <Card>
@@ -615,12 +656,18 @@ export default function CementPlug() {
                   <CardContent className="pt-0 space-y-3">
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       <Field label="Глубина скважины" value={well.wellDepthMD} onChange={v => setWell(w => ({ ...w, wellDepthMD: num(v) }))} unit="м MD" />
-                      <Field label="Диаметр ствола" value={well.holeDiameter} onChange={v => setWell(w => ({ ...w, holeDiameter: num(v) }))} unit="мм" />
-                      <Field label="Башмак колонны" value={well.casingShoe} onChange={v => setWell(w => ({ ...w, casingShoe: num(v) }))} unit="м MD" />
+                      {!isCasingMode && (
+                        <Field label="Диаметр ствола" value={well.holeDiameter} onChange={v => setWell(w => ({ ...w, holeDiameter: num(v) }))} unit="мм" />
+                      )}
+                      {!isCasingMode && (
+                        <Field label="Башмак колонны" value={well.casingShoe} onChange={v => setWell(w => ({ ...w, casingShoe: num(v) }))} unit="м MD" />
+                      )}
                       <Field label="Вн. ∅ колонны" value={well.casingID} onChange={v => setWell(w => ({ ...w, casingID: num(v) }))} unit="мм" />
                       <Field label="Нар. ∅ труб" value={well.pipeOD} onChange={v => setWell(w => ({ ...w, pipeOD: num(v) }))} unit="мм" />
                       <Field label="Вн. ∅ труб" value={well.pipeID} onChange={v => setWell(w => ({ ...w, pipeID: num(v) }))} unit="мм" />
-                      <Field label="Коэфф. кавернозности" value={well.cavernCoeff} onChange={v => setWell(w => ({ ...w, cavernCoeff: num(v) }))} unit="" />
+                      {!isCasingMode && (
+                        <Field label="Коэфф. кавернозности" value={well.cavernCoeff} onChange={v => setWell(w => ({ ...w, cavernCoeff: num(v) }))} unit="" />
+                      )}
                       <Field label="Градиент ГРП" value={fracGradient} onChange={v => setFracGradient(num(v))} unit="МПа/м" />
                     </div>
                     {isOpenHole && (
@@ -740,6 +787,11 @@ export default function CementPlug() {
                       <Field label="Низ моста" value={plug.bottomMD} onChange={v => setPlug(p => ({ ...p, bottomMD: num(v) }))} unit="м MD" />
                     </div>
                     <p className="text-[10px] text-muted-foreground mt-1">Длина моста: {Math.max(0, plug.bottomMD - plug.topMD)} м</p>
+                    {isCasingMode && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        🔧 Мост в колонне ∅{well.casingID} мм · Затрубье: ∅{well.casingID}–∅{well.pipeOD} мм
+                      </p>
+                    )}
                   </CardContent>
                 </CollapsibleContent>
               </Card>
