@@ -1085,7 +1085,7 @@ export function calculatePressureProfile(
     // Первым вышел буровой раствор (до pipeCapacity м³), затем закачанные флюиды
     const exitBatches: FluidBatch[] = [];
     const mudExited = Math.min(totalPumped, pipeCapacity);
-    if (mudExited > 0) exitBatches.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited });
+    if (mudExited > 0) exitBatches.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited, fluidType: 'mud' as AnnularFluidType });
 
     let pumpedExited = Math.max(0, totalPumped - pipeCapacity);
     for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
