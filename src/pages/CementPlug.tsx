@@ -618,6 +618,30 @@ export default function CementPlug() {
         <div className="space-y-4">
           {/* Inputs & results */}
           <div className="space-y-3">
+            {/* Placement mode toggle */}
+            <Card>
+              <CardContent className="py-3 px-4">
+                <div className="flex items-center gap-4">
+                  <p className="text-xs font-medium text-muted-foreground">Тип установки:</p>
+                  <RadioGroup value={placementMode} onValueChange={v => setPlacementMode(v as PlacementMode)} className="flex gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <RadioGroupItem value="openhole" id="mode-oh" />
+                      <Label htmlFor="mode-oh" className="text-xs cursor-pointer">Открытый ствол</Label>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <RadioGroupItem value="casing" id="mode-cas" />
+                      <Label htmlFor="mode-cas" className="text-xs cursor-pointer">В колонне (КРС)</Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+                {isCasingMode && (
+                  <p className="text-[10px] text-muted-foreground mt-1.5">
+                    🔧 Режим КРС: мост устанавливается внутри обсадной колонны. Каверновость = 1.0, диаметр ствола = внутренний ∅ колонны.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Well data */}
             <Collapsible open={openSections.well} onOpenChange={() => toggle("well")}>
               <Card>
@@ -631,13 +655,20 @@ export default function CementPlug() {
                   <CardContent className="pt-0 space-y-3">
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       <Field label="Глубина скважины" value={well.wellDepthMD} onChange={v => setWell(w => ({ ...w, wellDepthMD: num(v) }))} unit="м MD" />
-                      <Field label="Диаметр ствола" value={well.holeDiameter} onChange={v => setWell(w => ({ ...w, holeDiameter: num(v) }))} unit="мм" />
-                      <Field label="Башмак колонны" value={well.casingShoe} onChange={v => setWell(w => ({ ...w, casingShoe: num(v) }))} unit="м MD" />
+                      {!isCasingMode && (
+                        <Field label="Диаметр ствола" value={well.holeDiameter} onChange={v => setWell(w => ({ ...w, holeDiameter: num(v) }))} unit="мм" />
+                      )}
+                      {!isCasingMode && (
+                        <Field label="Башмак колонны" value={well.casingShoe} onChange={v => setWell(w => ({ ...w, casingShoe: num(v) }))} unit="м MD" />
+                      )}
                       <Field label="Вн. ∅ колонны" value={well.casingID} onChange={v => setWell(w => ({ ...w, casingID: num(v) }))} unit="мм" />
                       <Field label="Нар. ∅ труб" value={well.pipeOD} onChange={v => setWell(w => ({ ...w, pipeOD: num(v) }))} unit="мм" />
                       <Field label="Вн. ∅ труб" value={well.pipeID} onChange={v => setWell(w => ({ ...w, pipeID: num(v) }))} unit="мм" />
-                      <Field label="Коэфф. кавернозности" value={well.cavernCoeff} onChange={v => setWell(w => ({ ...w, cavernCoeff: num(v) }))} unit="" />
+                      {!isCasingMode && (
+                        <Field label="Коэфф. кавернозности" value={well.cavernCoeff} onChange={v => setWell(w => ({ ...w, cavernCoeff: num(v) }))} unit="" />
+                      )}
                       <Field label="Градиент ГРП" value={fracGradient} onChange={v => setFracGradient(num(v))} unit="МПа/м" />
+                    </div>
                     </div>
                     {isOpenHole && (
                       <p className="text-[10px] text-amber-400">⚠ Открытый ствол: эфф. диаметр = {effectiveBore.toFixed(1)} мм (Kкав = {well.cavernCoeff})</p>
