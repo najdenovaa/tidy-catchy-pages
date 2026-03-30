@@ -774,6 +774,8 @@ export function calculateMaterials(
 
 // === Профиль давлений для графиков ===
 
+export type AnnularFluidType = 'mud' | 'buffer' | 'cement' | 'displacement';
+
 export interface PressurePoint {
   stage: string;
   time: number;
@@ -787,6 +789,11 @@ export interface PressurePoint {
   reynoldsAnn: number; // число Рейнольдса затрубья
   maxSafeRateLps: number; // макс. производительность без ГРП, л/с
   densityGcm3: number; // плотность закачиваемой жидкости, г/см³
+  // Annular fluid composition (heights in meters from bottom)
+  annMudHeightM: number;
+  annBufferHeightM: number;
+  annCementHeightM: number;
+  annDisplHeightM: number;
 }
 
 export interface StageBoundary {
