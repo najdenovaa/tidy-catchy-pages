@@ -736,6 +736,160 @@ export function generateTempProfile(well: WellGeometry, steps: number = 30): Tem
   return points;
 }
 
+// ─── CT Pipe Tempering (Temperature Derating) ───
+
+/**
+ * Temperature derating factor for CT steel yield strength.
+ * Based on API 5ST / IRP Vol.7 data for CT grades.
+ * Below 100°C: no derating (factor = 1.0)
+ * 100-200°C: mild derating
+ * 200-300°C: significant derating  
+ * Above 300°C: severe derating
+ */
+export function tempDeratingFactor(tempC: number): number {
+  if (tempC <= 100) return 1.0;
+  if (tempC <= 150) return 1.0 - 0.03 * ((tempC - 100) / 50);     // 1.0 → 0.97
+  if (tempC <= 200) return 0.97 - 0.07 * ((tempC - 150) / 50);    // 0.97 → 0.90
+  if (tempC <= 250) return 0.90 - 0.08 * ((tempC - 200) / 50);    // 0.90 → 0.82
+  if (tempC <= 300) return 0.82 - 0.10 * ((tempC - 250) / 50);    // 0.82 → 0.72
+  if (tempC <= 350) return 0.72 - 0.12 * ((tempC - 300) / 50);    // 0.72 → 0.60
+  return Math.max(0.40, 0.60 - 0.15 * ((tempC - 350) / 50));      // floor at 0.40
+}
+
+/**
+ * CT pipe temperature profile during circulation.
+ * Models heat exchange: fluid inside CT absorbs heat from formation,
+ * so pipe temp is between inlet fluid temp and formation temp.
+ * Uses a simplified 1D heat transfer model.
+ */
+export interface CTPipeTempPoint {
+  depth: number;
+  tvd: number;
+  formationTemp: number;     // geothermal temperature at this TVD
+  fluidInsideTemp: number;   // fluid temperature inside CT at this depth
+  pipeTemp: number;          // CT pipe body temperature
+  yieldDerating: number;     // derating factor (0-1)
+  effectiveYield: number;    // derated yield strength, MPa
+  burstDerated: number;      // derated burst pressure, MPa
+  collapseDerated: number;   // derated collapse pressure, MPa
+}
+
+export interface TemperingResult {
+  profile: CTPipeTempPoint[];
+  maxPipeTemp: number;
+  maxPipeTempDepth: number;
+  minDeratingFactor: number;
+  effectiveYieldAtBH: number;
+  burstAtBH: number;
+  collapseAtBH: number;
+  nominalYield: number;
+  nominalBurst: number;
+  nominalCollapse: number;
+}
+
+export function calculateTempering(
+  ct: CTStringData,
+  well: WellGeometry,
+  fluid: FluidData,
+  pump: PumpData,
+  steps: number = 40,
+): TemperingResult {
+  const yieldNominal = GRADE_YIELD[ct.grade] || 552;
+  const od = ct.od;
+  const wall = ct.wall;
+  const burstNominal = (2 * yieldNominal * wall) / od;
+  const dOverT = od / wall;
+  const collapseNominal = dOverT < 15
+    ? 2 * yieldNominal * ((dOverT - 1) / (dOverT * dOverT))
+    : yieldNominal * (1 / dOverT) * 2;
+
+  const traj = well.trajectory.length > 1 ? well.trajectory
+    : buildSyntheticTrajectory(well.md, well.tvd);
+  const maxMD = well.md;
+
+  // Heat transfer parameters
+  const flowRateLs = pump.flowRate;
+  const idCT = ctID(od, wall) / 1000; // m
+  const areaCT = (Math.PI / 4) * idCT * idCT;
+  const massFlowRate = flowRateLs / 1000 * fluid.density * 1000; // kg/s
+  const Cp = 4186; // J/(kg·K) - water-based, adjust for oil
+  const fluidCp = fluid.density < 0.9 ? 2100 : (fluid.density > 1.15 ? 3800 : Cp);
+
+  // Overall heat transfer coefficient (W/(m²·K)) — typical for CT in wellbore
+  const U = 50; // simplified
+  const perimeterInner = Math.PI * idCT;
+
+  const profile: CTPipeTempPoint[] = [];
+  let maxPipeTemp = 0;
+  let maxPipeTempDepth = 0;
+  let minDerating = 1.0;
+
+  // Simulate fluid heating as it flows down inside CT
+  let fluidTemp = well.whTemp; // inlet temperature = wellhead temp
+
+  for (let i = 0; i <= steps; i++) {
+    const md = (maxMD / steps) * i;
+    const tvd = getTVDatMD(traj, md);
+    const tvdRatio = well.tvd > 0 ? tvd / well.tvd : 0;
+    const formationTemp = well.whTemp + (well.bhst - well.whTemp) * tvdRatio;
+
+    // Heat exchange over this segment
+    if (i > 0 && massFlowRate > 0) {
+      const segLen = maxMD / steps;
+      const dQ = U * perimeterInner * segLen * (formationTemp - fluidTemp);
+      const dT = dQ / (massFlowRate * fluidCp);
+      fluidTemp += dT;
+      // Cap fluid temp to not exceed formation temp
+      fluidTemp = Math.min(fluidTemp, formationTemp);
+    }
+
+    // Pipe body temperature: between fluid inside and formation
+    // Weighted average — pipe closer to fluid temp when flow is high
+    const flowFactor = massFlowRate > 0
+      ? Math.min(0.85, 0.3 + (massFlowRate / 5) * 0.3) // 0.3-0.85 depending on flow
+      : 0.0;
+    const pipeTemp = flowFactor * fluidTemp + (1 - flowFactor) * formationTemp;
+
+    const derating = tempDeratingFactor(pipeTemp);
+    const effYield = yieldNominal * derating;
+    const burstD = burstNominal * derating;
+    const collapseD = collapseNominal * derating;
+
+    if (pipeTemp > maxPipeTemp) {
+      maxPipeTemp = pipeTemp;
+      maxPipeTempDepth = md;
+    }
+    if (derating < minDerating) minDerating = derating;
+
+    profile.push({
+      depth: Math.round(md),
+      tvd: Math.round(tvd * 10) / 10,
+      formationTemp: Math.round(formationTemp * 10) / 10,
+      fluidInsideTemp: Math.round(fluidTemp * 10) / 10,
+      pipeTemp: Math.round(pipeTemp * 10) / 10,
+      yieldDerating: Math.round(derating * 1000) / 1000,
+      effectiveYield: Math.round(effYield * 10) / 10,
+      burstDerated: Math.round(burstD * 10) / 10,
+      collapseDerated: Math.round(collapseD * 10) / 10,
+    });
+  }
+
+  const lastPoint = profile[profile.length - 1];
+
+  return {
+    profile,
+    maxPipeTemp: Math.round(maxPipeTemp * 10) / 10,
+    maxPipeTempDepth: Math.round(maxPipeTempDepth),
+    minDeratingFactor: Math.round(minDerating * 1000) / 1000,
+    effectiveYieldAtBH: lastPoint.effectiveYield,
+    burstAtBH: lastPoint.burstDerated,
+    collapseAtBH: lastPoint.collapseDerated,
+    nominalYield: yieldNominal,
+    nominalBurst: Math.round(burstNominal * 10) / 10,
+    nominalCollapse: Math.round(collapseNominal * 10) / 10,
+  };
+}
+
 // ─── Risk Assessment ───
 
 export interface RiskItem {
