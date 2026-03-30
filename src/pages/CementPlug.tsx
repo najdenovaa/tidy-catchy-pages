@@ -545,6 +545,7 @@ export default function CementPlug() {
     setViscousPadFluid({ name: "", density: 0, rheology: { pv: 0, yp: 0 } });
     setViscousPadAdditives([]);
     setPadPullUpAbove(5);
+    setPlacementMode('openhole');
   }, []);
 
   /* ── Collapsible state ── */
