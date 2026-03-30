@@ -173,6 +173,7 @@ export default function CoiledTubing() {
   const [limits, setLimits] = useState<LimitResult | null>(null);
   const [hydraulics, setHydraulics] = useState<HydraulicsResult | null>(null);
   const [fatigue, setFatigue] = useState<FatigueResult | null>(null);
+  const [tempering, setTempering] = useState<TemperingResult | null>(null);
   const [risks, setRisks] = useState<RiskItem[]>([]);
 
   // ── Trajectory ──
