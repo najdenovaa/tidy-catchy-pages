@@ -268,6 +268,7 @@ export default function CoiledTubing() {
     setReelSize("medium"); setPrevTrips(0); setCalculated(false);
     setTrajPoints(defaultTraj);
     setForces(null); setLimits(null); setHydraulics(null); setFatigue(null);
+    setTempering(null);
     setRisks([]);
     sessionStorage.removeItem(CT_SESSION_KEY);
     toast.info("Данные обнулены");
