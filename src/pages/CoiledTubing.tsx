@@ -15,8 +15,9 @@ import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import {
   CTStringData, WellGeometry, FluidData, PumpData, ToolsData,
   calculateTubingForces, calculateLimits, calculateHydraulics, calculateFatigue,
+  calculateTempering,
   CT_PRESETS, FLUID_PRESETS, ctWeightPerMeter,
-  ForceResult, LimitResult, HydraulicsResult, FatigueResult,
+  ForceResult, LimitResult, HydraulicsResult, FatigueResult, TemperingResult,
   generateForceDepthProfile, generateHydraulicsCurve, generateFatigueCurve, generatePressureLoadEnvelope,
   generateTempProfile,
   assessRisks, RiskItem,
