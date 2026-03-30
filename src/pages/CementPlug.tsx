@@ -570,7 +570,9 @@ export default function CementPlug() {
             </Link>
             <div className="mt-0.5 sm:ml-10 text-center sm:text-left">
               <h1 className="text-sm sm:text-lg font-medium text-muted-foreground leading-tight">Цементные мосты</h1>
-              <p className="text-xs text-muted-foreground/70">Установка мостов на равновесие</p>
+              <p className="text-xs text-muted-foreground/70">
+                {isCasingMode ? "Установка мостов в колонне (КРС)" : "Установка мостов на равновесие"}
+              </p>
             </div>
           </div>
           <div className="flex items-center sm:flex-col sm:items-end gap-3 sm:gap-6 w-full sm:w-auto">
