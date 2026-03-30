@@ -640,10 +640,11 @@ export default function CoiledTubing() {
           ) : forces && limits && hydraulics && fatigue && (
             <Tabs value={tab} onValueChange={setTab}>
               <div className="overflow-x-auto scrollbar-hide mb-3">
-                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-4">
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-5">
                   <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Силы</TabsTrigger>
                   <TabsTrigger value="limits" className="gap-1 text-xs whitespace-nowrap">🛡 Пределы</TabsTrigger>
                   <TabsTrigger value="hydraulics" className="gap-1 text-xs whitespace-nowrap">💧 Гидравлика</TabsTrigger>
+                  <TabsTrigger value="tempering" className="gap-1 text-xs whitespace-nowrap">🌡 Темперирование</TabsTrigger>
                   <TabsTrigger value="fatigue" className="gap-1 text-xs whitespace-nowrap">🔄 Усталость</TabsTrigger>
                 </TabsList>
               </div>
