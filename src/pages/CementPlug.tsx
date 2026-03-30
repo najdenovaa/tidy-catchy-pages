@@ -227,29 +227,38 @@ export default function CementPlug() {
   const removePipeSection = (idx: number) => setPipeSections(s => s.filter((_, i) => i !== idx));
 
   /* ── Calculation ── */
-  const buildInputs = (): PlugInputs => ({
-    well: {
+  const buildInputs = (): PlugInputs => {
+    // In casing mode: ensure casingShoe is always deeper than plug bottom
+    const effectiveWell: PlugWellData = {
       ...well,
       trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory,
       pipeSections: pipeSections.length > 0 ? pipeSections : undefined,
-    },
-    plug, cement, spacer, wellFluid,
-    spacerVolumeAboveM3: spacerVolumeAbove,
-    spacerVolumeBelowM3: spacerVolumeBelow,
-    safetyMarginM: 30,
-    thickeningTimeMin: thickeningTime,
-    pullOutAbovePlugM: pullOutAbove,
-    washType,
-    washCycles,
-    tripSpeedMs: tripSpeed,
-    pumpRateCementLs: pumpRateCement,
-    pumpRateSpacerLs: pumpRateSpacer,
-    pumpRateDisplacementLs: pumpRateDisplacement,
-    pumpRateWashLs: pumpRateWash,
-    useViscousPad,
-    viscousPadFluid: useViscousPad ? viscousPadFluid : undefined,
-    padPullUpAboveM: useViscousPad ? padPullUpAbove : undefined,
-  });
+      ...(isCasingMode ? {
+        casingShoe: Math.max(well.wellDepthMD, plug.bottomMD + 100),
+        holeDiameter: well.casingID, // bore = casing ID
+        cavernCoeff: 1.0, // no cavern in casing
+      } : {}),
+    };
+    return {
+      well: effectiveWell,
+      plug, cement, spacer, wellFluid,
+      spacerVolumeAboveM3: spacerVolumeAbove,
+      spacerVolumeBelowM3: spacerVolumeBelow,
+      safetyMarginM: 30,
+      thickeningTimeMin: thickeningTime,
+      pullOutAbovePlugM: pullOutAbove,
+      washType,
+      washCycles,
+      tripSpeedMs: tripSpeed,
+      pumpRateCementLs: pumpRateCement,
+      pumpRateSpacerLs: pumpRateSpacer,
+      pumpRateDisplacementLs: pumpRateDisplacement,
+      pumpRateWashLs: pumpRateWash,
+      useViscousPad,
+      viscousPadFluid: useViscousPad ? viscousPadFluid : undefined,
+      padPullUpAboveM: useViscousPad ? padPullUpAbove : undefined,
+    };
+  };
 
   const calculate = () => {
     const inputs = buildInputs();
