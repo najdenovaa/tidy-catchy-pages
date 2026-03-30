@@ -15,8 +15,9 @@ import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import {
   CTStringData, WellGeometry, FluidData, PumpData, ToolsData,
   calculateTubingForces, calculateLimits, calculateHydraulics, calculateFatigue,
+  calculateTempering,
   CT_PRESETS, FLUID_PRESETS, ctWeightPerMeter,
-  ForceResult, LimitResult, HydraulicsResult, FatigueResult,
+  ForceResult, LimitResult, HydraulicsResult, FatigueResult, TemperingResult,
   generateForceDepthProfile, generateHydraulicsCurve, generateFatigueCurve, generatePressureLoadEnvelope,
   generateTempProfile,
   assessRisks, RiskItem,
@@ -143,6 +144,7 @@ export default function CoiledTubing() {
   const limitsChartRef = useRef<HTMLDivElement>(null);
   const hydraulicsChartRef = useRef<HTMLDivElement>(null);
   const fatigueChartRef = useRef<HTMLDivElement>(null);
+  const temperingChartRef = useRef<HTMLDivElement>(null);
 
   // Auth check
   useEffect(() => {
@@ -172,6 +174,7 @@ export default function CoiledTubing() {
   const [limits, setLimits] = useState<LimitResult | null>(null);
   const [hydraulics, setHydraulics] = useState<HydraulicsResult | null>(null);
   const [fatigue, setFatigue] = useState<FatigueResult | null>(null);
+  const [tempering, setTempering] = useState<TemperingResult | null>(null);
   const [risks, setRisks] = useState<RiskItem[]>([]);
 
   // ── Trajectory ──
@@ -242,11 +245,13 @@ export default function CoiledTubing() {
     const h = calculateHydraulics(ct, wellWithTraj, fluid, pump, tools);
     const ft = calculateFatigue(ct, reelSize, pump.surfacePressure || h.dpTotal, prevTrips);
     const r = assessRisks(f, l, h, ft, wellWithTraj);
+    const tp = calculateTempering(ct, wellWithTraj, fluid, pump);
 
     setForces(f);
     setLimits(l);
     setHydraulics(h);
     setFatigue(ft);
+    setTempering(tp);
     setRisks(r);
     setCalculated(true);
 
@@ -263,6 +268,7 @@ export default function CoiledTubing() {
     setReelSize("medium"); setPrevTrips(0); setCalculated(false);
     setTrajPoints(defaultTraj);
     setForces(null); setLimits(null); setHydraulics(null); setFatigue(null);
+    setTempering(null);
     setRisks([]);
     sessionStorage.removeItem(CT_SESSION_KEY);
     toast.info("Данные обнулены");
@@ -634,10 +640,11 @@ export default function CoiledTubing() {
           ) : forces && limits && hydraulics && fatigue && (
             <Tabs value={tab} onValueChange={setTab}>
               <div className="overflow-x-auto scrollbar-hide mb-3">
-                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-4">
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-5">
                   <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Силы</TabsTrigger>
                   <TabsTrigger value="limits" className="gap-1 text-xs whitespace-nowrap">🛡 Пределы</TabsTrigger>
                   <TabsTrigger value="hydraulics" className="gap-1 text-xs whitespace-nowrap">💧 Гидравлика</TabsTrigger>
+                  <TabsTrigger value="tempering" className="gap-1 text-xs whitespace-nowrap">🌡 Темперирование</TabsTrigger>
                   <TabsTrigger value="fatigue" className="gap-1 text-xs whitespace-nowrap">🔄 Усталость</TabsTrigger>
                 </TabsList>
               </div>
@@ -815,6 +822,81 @@ export default function CoiledTubing() {
                         </div>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* Tempering */}
+              <TabsContent value="tempering">
+                <Card>
+                  <CardHeader className="py-3 px-4 flex-row items-center justify-between">
+                    <CardTitle className="text-sm">🌡 Темперирование — Температурная деградация</CardTitle>
+                    <CopyImageButton targetRef={temperingChartRef} label="📋" />
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 space-y-1">
+                    {tempering && (
+                      <>
+                        <Num label="Номинальный предел текучести" value={tempering.nominalYield.toFixed(0)} unit="МПа" />
+                        <Num label="Макс. температура трубы" value={`${tempering.maxPipeTemp}°C на ${tempering.maxPipeTempDepth} м`} />
+                        <Num label="Мин. коэфф. деградации" value={tempering.minDeratingFactor.toFixed(3)} warn={tempering.minDeratingFactor < 0.85} />
+                        <div className="border-t border-border my-2" />
+                        <Num label="Эфф. σ_y на забое" value={tempering.effectiveYieldAtBH.toFixed(0)} unit="МПа" warn={tempering.effectiveYieldAtBH < tempering.nominalYield * 0.85} />
+                        <Num label="Номинальное P разрыва" value={tempering.nominalBurst.toFixed(1)} unit="МПа" />
+                        <Num label="P разрыва на забое (с деградацией)" value={tempering.burstAtBH.toFixed(1)} unit="МПа" warn={tempering.burstAtBH < tempering.nominalBurst * 0.85} />
+                        <Num label="P смятия на забое (с деградацией)" value={tempering.collapseAtBH.toFixed(1)} unit="МПа" />
+                        <div className="border-t border-border my-2" />
+                        <Num label="Снижение прочности" value={`${((1 - tempering.minDeratingFactor) * 100).toFixed(1)}%`} warn={(1 - tempering.minDeratingFactor) > 0.1} />
+
+                        <div ref={temperingChartRef} className="mt-4 bg-card rounded-lg p-2">
+                          <p className="text-xs font-semibold text-center mb-2">📊 Температура трубы ГНКТ по глубине</p>
+                          <div className="overflow-x-auto -mx-2 px-2">
+                            <div className="min-w-[600px]">
+                              <ResponsiveContainer width="100%" height={300}>
+                                <LineChart data={tempering.profile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                                  <XAxis dataKey="depth" label={{ value: "Глубина MD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                                  <YAxis label={{ value: "°C", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                                  <Tooltip contentStyle={{ fontSize: 11 }} />
+                                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                                  <Line type="monotone" dataKey="formationTemp" name="T° пласта" stroke="#ef4444" strokeWidth={2} dot={false} />
+                                  <Line type="monotone" dataKey="fluidInsideTemp" name="T° жидкости в CT" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                                  <Line type="monotone" dataKey="pipeTemp" name="T° тела трубы" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
+                                  <ReferenceLine y={150} stroke="#dc2626" strokeDasharray="6 3" label={{ value: "150°C — начало деградации", position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
+                                </LineChart>
+                              </ResponsiveContainer>
+
+                              <p className="text-xs font-semibold text-center mt-4 mb-2">📊 Деградация прочности по глубине</p>
+                              <ResponsiveContainer width="100%" height={280}>
+                                <LineChart data={tempering.profile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                                  <XAxis dataKey="depth" label={{ value: "Глубина MD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                                  <YAxis yAxisId="left" label={{ value: "МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                                  <YAxis yAxisId="right" orientation="right" domain={[0, 1.1]} label={{ value: "Коэфф.", angle: 90, position: "insideRight", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                                  <Tooltip contentStyle={{ fontSize: 11 }} />
+                                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                                  <Line yAxisId="left" type="monotone" dataKey="effectiveYield" name="Эфф. σ_y" stroke="#10b981" strokeWidth={2} dot={false} />
+                                  <Line yAxisId="left" type="monotone" dataKey="burstDerated" name="P разрыва" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                                  <Line yAxisId="left" type="monotone" dataKey="collapseDerated" name="P смятия" stroke="#a855f7" strokeWidth={2} dot={false} />
+                                  <Line yAxisId="right" type="monotone" dataKey="yieldDerating" name="Коэфф. деградации" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 3" dot={false} />
+                                  <ReferenceLine yAxisId="right" y={0.85} stroke="#dc2626" strokeDasharray="4 4" label={{ value: "85%", position: "right", style: { fontSize: 9, fill: "#dc2626" } }} />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+                        </div>
+
+                        {tempering.minDeratingFactor < 0.90 && (
+                          <p className="text-xs text-destructive mt-2">
+                            ⚠️ Прочность ГНКТ снижена на {((1 - tempering.minDeratingFactor) * 100).toFixed(1)}% из-за высокой забойной температуры. Учитывайте при планировании операции!
+                          </p>
+                        )}
+                        {tempering.minDeratingFactor >= 0.97 && (
+                          <p className="text-xs text-muted-foreground mt-2">
+                            ✅ Температурная деградация незначительна ({((1 - tempering.minDeratingFactor) * 100).toFixed(1)}%). Прочностные характеристики в норме.
+                          </p>
+                        )}
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
