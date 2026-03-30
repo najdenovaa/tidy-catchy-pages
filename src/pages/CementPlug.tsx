@@ -669,7 +669,6 @@ export default function CementPlug() {
                       )}
                       <Field label="Градиент ГРП" value={fracGradient} onChange={v => setFracGradient(num(v))} unit="МПа/м" />
                     </div>
-                    </div>
                     {isOpenHole && (
                       <p className="text-[10px] text-amber-400">⚠ Открытый ствол: эфф. диаметр = {effectiveBore.toFixed(1)} мм (Kкав = {well.cavernCoeff})</p>
                     )}
