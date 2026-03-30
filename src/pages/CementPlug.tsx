@@ -161,7 +161,8 @@ export default function CementPlug() {
   }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode]);
 
   /* ── Spacer height preview (real-time) ── */
-  const isOpenHole = plug.bottomMD > well.casingShoe;
+  const isCasingMode = placementMode === 'casing';
+  const isOpenHole = !isCasingMode && plug.bottomMD > well.casingShoe;
   const effectiveBore = isOpenHole ? well.holeDiameter * Math.sqrt(Math.max(1, well.cavernCoeff)) : well.casingID;
   const previewAnnArea = annArea(effectiveBore, well.pipeOD);
   const previewBoreArea = (Math.PI / 4) * (effectiveBore / 1000) ** 2;
