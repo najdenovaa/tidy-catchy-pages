@@ -39,6 +39,8 @@ function annArea(boreMm: number, pipeODMm: number): number {
   return (Math.PI / 4) * (bo * bo - pi * pi);
 }
 
+export type PlacementMode = 'openhole' | 'casing';
+
 interface SessionState {
   well: PlugWellData;
   plug: PlugInterval;
@@ -71,6 +73,7 @@ interface SessionState {
   viscousPadFluid?: PlugFluid;
   viscousPadAdditives?: { name: string; percent: number }[];
   padPullUpAbove?: number;
+  placementMode?: PlacementMode;
 }
 
 function loadSession(): Partial<SessionState> {
