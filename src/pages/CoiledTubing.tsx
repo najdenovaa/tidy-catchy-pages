@@ -245,11 +245,13 @@ export default function CoiledTubing() {
     const h = calculateHydraulics(ct, wellWithTraj, fluid, pump, tools);
     const ft = calculateFatigue(ct, reelSize, pump.surfacePressure || h.dpTotal, prevTrips);
     const r = assessRisks(f, l, h, ft, wellWithTraj);
+    const tp = calculateTempering(ct, wellWithTraj, fluid, pump);
 
     setForces(f);
     setLimits(l);
     setHydraulics(h);
     setFatigue(ft);
+    setTempering(tp);
     setRisks(r);
     setCalculated(true);
 
