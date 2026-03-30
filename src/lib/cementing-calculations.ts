@@ -936,7 +936,7 @@ export function calculatePressureProfile(
     if (b.flowRateSteps.length > 1) {
       b.flowRateSteps.forEach(step => {
         if (step.volumeM3 > 0) {
-          stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: 1.0 });
+          stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: 1.0, fluidType: 'buffer' as AnnularFluidType });
         }
       });
     } else {
