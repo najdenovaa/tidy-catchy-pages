@@ -1457,12 +1457,14 @@ export function calculatePressureProfile(
   // Забойное = только гидростатика затрубья (насос отсечён пробкой, трения нет)
   const staticAnnHydro = calcAnnularHydrostatic();
 
+  const finalAnnP = calcAnnularProfile();
   // Скачок давления от посадки пробки (от динамического давления на насосе)
   points.push({
     stage: "СТОП (пробка в ЦКОД)", time: cumTime + 0.5,
     surfacePressure: lastSurfP + stopIncrease, bottomholePressure: staticAnnHydro,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: lastRate,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
+    annMudHeightM: finalAnnP.mudH, annBufferHeightM: finalAnnP.bufferH, annCementHeightM: finalAnnP.cementH, annDisplHeightM: finalAnnP.displH,
   });
 
   // Удержание давления СТОП
@@ -1471,6 +1473,7 @@ export function calculatePressureProfile(
     surfacePressure: lastSurfP + stopIncrease, bottomholePressure: staticAnnHydro,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
+    annMudHeightM: finalAnnP.mudH, annBufferHeightM: finalAnnP.bufferH, annCementHeightM: finalAnnP.cementH, annDisplHeightM: finalAnnP.displH,
   });
 
   const cementToStop = stopTime - cementStartTime;
