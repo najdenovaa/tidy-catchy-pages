@@ -683,15 +683,28 @@ export default function AnalysisSection({
         body: { jobId: createdJob.id, documentFiles, calcData },
       }).then(({ data: functionData, error: functionError }) => {
         if (functionError) {
-          throw new Error(functionError.message || "Ошибка сервера анализа");
+          // Only treat as real failure if it's NOT a network/timeout error
+          const msg = functionError.message || "";
+          const isNetworkError = msg.includes("Failed to send") || msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("Load failed") || msg.includes("aborted") || msg.includes("timeout");
+          if (!isNetworkError) {
+            throw new Error(msg || "Ошибка сервера анализа");
+          }
+          console.warn("Edge function network/timeout error (will rely on polling):", msg);
+          return null;
         }
         if (functionData?.error) {
           throw new Error(functionData.error);
         }
         return functionData;
       }).catch((invokeError: any) => {
-        console.error("analyze-cement invoke error:", invokeError);
-        invokeFailure = invokeError?.message || "Ошибка сервера анализа";
+        const msg = invokeError?.message || "Ошибка сервера анализа";
+        const isNetworkError = msg.includes("Failed to send") || msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("Load failed") || msg.includes("aborted") || msg.includes("timeout");
+        if (isNetworkError) {
+          console.warn("Edge function network error ignored, relying on polling:", msg);
+        } else {
+          console.error("analyze-cement invoke error:", invokeError);
+          invokeFailure = msg;
+        }
         return null;
       });
 
