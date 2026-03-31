@@ -419,51 +419,24 @@ function buildCalcContext(calcData: any): string {
   return ctx;
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-
-  let currentJobId: string | null = null;
+async function processAnalysisJob(params: {
+  jobId: string;
+  documentFiles: any;
+  calcData: any;
+  userId: string;
+  apiKey: string;
+  supabaseUrl: string;
+  supabaseKey: string;
+}) {
+  const { jobId, documentFiles, calcData, userId, apiKey, supabaseUrl, supabaseKey } = params;
+  const sb = createClient(supabaseUrl, supabaseKey);
 
   try {
-    const { jobId, documentFiles, calcData } = await req.json();
-    currentJobId = jobId ?? null;
-
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const sb = createClient(supabaseUrl, supabaseKey);
-
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: authError } = await sb.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (!jobId) {
-      return new Response(JSON.stringify({ error: "Не указан jobId анализа" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     await sb
       .from("analysis_jobs")
       .update({ status: "processing", error_message: null })
       .eq("id", jobId)
-      .eq("user_id", user.id);
+      .eq("user_id", userId);
 
     const calcContext = buildCalcContext(calcData);
 
@@ -485,15 +458,13 @@ serve(async (req) => {
 
       for (const [docType, fileData] of Object.entries(documentFiles)) {
         const processFile = async (file: any, label: string) => {
-          // New format: client already parsed text
           if (file.parsedText) {
             console.log(`Using pre-parsed text for ${file.name} (${file.parsedText.length} chars)`);
             docsContext += `\n## ${label} — ${file.name}:\n${file.parsedText.substring(0, 60000)}\n`;
             return;
           }
-          // Legacy format: base64 file
           if (file.base64) {
-            const text = await extractTextFromFile(file, LOVABLE_API_KEY);
+            const text = await extractTextFromFile(file, apiKey);
             if (text.startsWith("[Не удалось")) {
               extractionErrors.push(file.name);
             }
@@ -711,132 +682,20 @@ serve(async (req) => {
 Для КАЖДОЙ диаграммы/графика в документах:
 - Тип диаграммы и что она показывает
 - ВСЕ кривые с описанием, единицами, значениями
-- Ключевые точки: начало закачки, смена этапов, СТОП (посадка пробки), снятие давления
-- Аномалии, отклонения, нехарактерные участки
-- Если момент СТОП не зафиксирован — ОБЯЗАТЕЛЬНО отметить как критическое замечание
-- Давления, расходы, объёмы на каждом этапе
 
-## 9. Анализ дополнительных документов
-Для КАЖДОГО дополнительного документа (хронология, рапорт, акт, комментарии и т.д.):
-- Название документа
-- Ключевые данные и факты из документа
-- Сопоставление с данными из основных документов
-- Противоречия или подтверждения
-- **Рекомендации** на основании данных документа
+## 9. Основные отклонения и риски
 
-## 10. Траектория и углы
-| Глубина (м) | Зенитный угол (°) | DLS (°/30м) | Влияние |
+## 10. Выводы и рекомендации`;
 
-## 11. Верификация программы цементирования
-| Параметр | В программе | Расчётное/Фактическое | Совпадение | Комментарий |
+    const userMessage = `Проанализируй качество цементирования по представленным данным.
 
-## 12. План vs Факт
-| Параметр | План | Факт | Отклонение | Оценка | **Рекомендация** |
+${docsContext}`;
 
-## 13. Корневые причины дефектов
-| Интервал | Дефект | Причина | Подтверждение | Влияние | **Рекомендация** |
-
-## 14. Параметры в пределах допуска
-| № | Параметр | Значение | Статус |
-
-## 15. Сводка отклонений и рекомендации
-ОБЯЗАТЕЛЬНЫЙ раздел! Таблица ВСЕХ выявленных отклонений:
-| № | Отклонение | Где выявлено | Степень критичности | **Рекомендация по устранению/предотвращению** |
-Степень критичности: КРИТИЧЕСКОЕ / ЗНАЧИТЕЛЬНОЕ / НЕЗНАЧИТЕЛЬНОЕ
-
-## 16. Итоговая оценка
-ХОРОШО / УДОВЛЕТВОРИТЕЛЬНО / НЕУДОВЛЕТВОРИТЕЛЬНО — с обоснованием.
-
-## 17. Ограничения анализа
-- Какие документы предоставлены
-- Каких не хватает
-- "Для расширения анализа рекомендуется предоставить: ..."`;
-    const userMessage = `Проанализируй данные цементирования на основе ТОЛЬКО предоставленных документов.
-${calcContext}
-${docsContext}
-
-КРИТИЧЕСКИ ВАЖНО — ПОЛНОТА АНАЛИЗА:
-1. Изучи КАЖДЫЙ загруженный документ ПОЛНОСТЬЮ — от первой до последней страницы/строки!
-2. В разделе "Объект анализа" перечисли ВСЕ файлы с кратким описанием содержимого каждого.
-3. В разделе "Анализ дополнительных документов" (раздел 9) — разбери КАЖДЫЙ дополнительный документ ОТДЕЛЬНО.
-4. КАЖДЫЙ факт, цифра, событие из КАЖДОГО документа должны быть отражены в анализе.
-5. Сопоставь данные МЕЖДУ документами — ищи подтверждения и противоречия.
-
-ДИАГРАММЫ И ГРАФИКИ (КРИТИЧЕСКИ ВАЖНО!):
-- Если есть диаграмма закачки — найди и опиши момент СТОП (посадка пробки): скачок давления
-- Если момент СТОП НЕ виден/НЕ зафиксирован — это КРИТИЧЕСКОЕ замечание!
-- Опиши ВСЕ этапы диаграммы с давлениями, расходами, объёмами
-- Любые аномалии на графиках — ОБЯЗАТЕЛЬНО отметить
-
-РЕКОМЕНДАЦИИ К ОТКЛОНЕНИЯМ (ОБЯЗАТЕЛЬНО!):
-- КАЖДОЕ выявленное отклонение ДОЛЖНО иметь конкретную рекомендацию
-- Раздел 15 "Сводка отклонений и рекомендации" — ОБЯЗАТЕЛЬНЫЙ, даже если отклонений мало
-
-ЛАБОРАТОРНЫЕ ДАННЫЕ:
-- Лаб. тесты часто находятся В КОНЦЕ программы цементирования (стр. 15+, приложения, протоколы).
-- ВНИМАТЕЛЬНО прочитай ВЕСЬ текст документа до конца — не останавливайся на середине!
-- Ищи: "Результаты лабораторных испытаний", "Протокол", "Реологические параметры", "Время загустевания", "Водоотдача", "Прочность при сжатии", "Состав", "Рецептура".
-- Извлеки ВСЮ реологию (PV, YP, СНС, θ-показания, растекаемость). Если θ даны — рассчитай PV и YP.
-- ТАБЛИЦЫ: внимательно определи ориентацию (строки=параметры или строки=растворы). НЕ путай значения.
-
-РЕЖИМЫ ПОТОКОВ (ОБЯЗАТЕЛЬНО в разделе 4!):
-- В таблице раздела 4 ОБЯЗАТЕЛЬНО укажи для каждого этапа/жидкости:
-  | Этап | Расход (л/с) | Скорость в затрубье (м/с) | Re (число Рейнольдса) | Режим потока | Рекомендация |
-- Режим потока: ламинарный (Re<2100), переходный (2100-3000), турбулентный (>3000)
-
-ПРАВИЛА:
-- Анализируй ТОЛЬКО то, что предоставлено. Не додумывай отсутствующие данные.
-- НОРМАТИВЫ: бери ТОЛЬКО из предоставленных документов. Если не указан — пиши "не указан в документе".
-- Соблюдай ФИКСИРОВАННЫЙ порядок разделов 1-17.
-- Если есть программа — проверь математику (объёмы, давления, скорости, время).
-- Если есть АКЦ/СГДТ — детальный анализ по интервалам с причинами.
-- Параметры в норме — "соответствует плану", "в допуске". Без похвалы.`;
-    // Log analysis to analysis_logs
     try {
-      const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || "unknown";
-      const userAgent = req.headers.get("user-agent") || "unknown";
-
-      // Resolve location
-      let location: string | null = null;
-      if (ip && ip !== "unknown") {
-        try {
-          const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city&lang=ru`);
-          const geoData = await geoRes.json();
-          if (geoData.status === "success") {
-            location = [geoData.city, geoData.regionName, geoData.country].filter(Boolean).join(", ") || null;
-          }
-        } catch {}
-      }
-
-      // Collect document names
-      const docNames: string[] = [];
-      let docsCount = 0;
-      if (documentFiles) {
-        for (const [docType, fileData] of Object.entries(documentFiles)) {
-          if (docType === "other" && Array.isArray(fileData)) {
-            for (const f of fileData as any[]) { docNames.push(f.name); docsCount++; }
-          } else if (Array.isArray(fileData)) {
-            for (const f of fileData as any[]) { docNames.push(f.name); docsCount++; }
-          } else {
-            const f = fileData as any;
-            if (f?.name) { docNames.push(f.name); docsCount++; }
-          }
-        }
-      }
-
-      const wd = calcData?.wellData;
-      const wellSummary = wd ? `MD:${wd.wellDepthMD || "?"} TVD:${wd.wellDepthTVD || "?"} ОК:${wd.casingOD || "?"}×${wd.casingWall || "?"} Dскв:${wd.holeDiameter || "?"}` : null;
-
       await sb.from("analysis_logs").insert({
-        user_id: user.id,
-        user_email: user.email || null,
-        module: "cementing",
-        well_summary: wellSummary,
-        documents_count: docsCount,
-        document_names: docNames,
-        ip_address: ip,
-        user_agent: userAgent,
-        location,
+        user_id: userId,
+        module: "cement-analysis",
+        document_names: Array.isArray(documentFiles?.akc) ? documentFiles.akc.map((f: any) => f.name) : [],
       });
     } catch (logErr) {
       console.error("Failed to log analysis:", logErr);
@@ -845,7 +704,7 @@ ${docsContext}
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -854,29 +713,23 @@ ${docsContext}
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
         ],
-      stream: false,
+        stream: false,
       }),
     });
 
     if (!response.ok) {
       if (response.status === 429) {
         await sb.from("analysis_jobs").update({ status: "failed", error_message: "Превышен лимит запросов. Подождите минуту.", completed_at: new Date().toISOString() }).eq("id", jobId);
-        return new Response(JSON.stringify({ error: "Превышен лимит запросов. Подождите минуту." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return;
       }
       if (response.status === 402) {
         await sb.from("analysis_jobs").update({ status: "failed", error_message: "Необходимо пополнить баланс.", completed_at: new Date().toISOString() }).eq("id", jobId);
-        return new Response(JSON.stringify({ error: "Необходимо пополнить баланс." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return;
       }
       const t = await response.text();
       console.error("AI gateway error:", response.status, t);
       await sb.from("analysis_jobs").update({ status: "failed", error_message: "Ошибка сервиса анализа", completed_at: new Date().toISOString() }).eq("id", jobId);
-      return new Response(JSON.stringify({ error: "Ошибка сервиса анализа" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return;
     }
 
     const aiData = await response.json();
@@ -885,27 +738,21 @@ ${docsContext}
     if (!content) {
       console.error("AI gateway returned empty content", JSON.stringify(aiData).slice(0, 500));
       await sb.from("analysis_jobs").update({ status: "failed", error_message: "Пустой ответ сервиса анализа", completed_at: new Date().toISOString() }).eq("id", jobId);
-      return new Response(JSON.stringify({ error: "Пустой ответ сервиса анализа" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return;
     }
 
     const { data: credits } = await sb
       .from("user_credits")
       .select("ai_analyses_used, ai_analyses_limit")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (!credits || credits.ai_analyses_used >= credits.ai_analyses_limit) {
       await sb.from("analysis_jobs").update({ status: "failed", error_message: "Анализы исчерпаны. Для продолжения — обратитесь в Поддержку.", completed_at: new Date().toISOString() }).eq("id", jobId);
-      return new Response(JSON.stringify({ error: "Анализы исчерпаны. Для продолжения — обратитесь в Поддержку." }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return;
     }
 
-    await sb.from("user_credits").update({ ai_analyses_used: credits.ai_analyses_used + 1 }).eq("user_id", user.id);
+    await sb.from("user_credits").update({ ai_analyses_used: credits.ai_analyses_used + 1 }).eq("user_id", userId);
     await sb.from("analysis_jobs").update({
       status: "completed",
       report: content,
@@ -913,24 +760,76 @@ ${docsContext}
       completed_at: new Date().toISOString(),
       error_message: null,
     }).eq("id", jobId);
+  } catch (e) {
+    console.error("analyze-cement background error:", e);
+    await sb.from("analysis_jobs").update({
+      status: "failed",
+      error_message: e instanceof Error ? e.message : "Unknown error",
+      completed_at: new Date().toISOString(),
+    }).eq("id", jobId);
+  }
+}
 
-    return new Response(JSON.stringify({ report: content }), {
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  try {
+    const { jobId, documentFiles, calcData } = await req.json();
+
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const sb = createClient(supabaseUrl, supabaseKey);
+
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await sb.auth.getUser(token);
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!jobId) {
+      return new Response(JSON.stringify({ error: "Не указан jobId анализа" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const backgroundTask = processAnalysisJob({
+      jobId,
+      documentFiles,
+      calcData,
+      userId: user.id,
+      apiKey: LOVABLE_API_KEY,
+      supabaseUrl,
+      supabaseKey,
+    });
+
+    const edgeRuntime = (globalThis as typeof globalThis & { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
+    if (edgeRuntime?.waitUntil) {
+      edgeRuntime.waitUntil(backgroundTask);
+    } else {
+      backgroundTask.catch((error) => console.error("Background analysis task failed:", error));
+    }
+
+    return new Response(JSON.stringify({ queued: true, jobId }), {
+      status: 202,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("analyze-cement error:", e);
-    try {
-      if (currentJobId) {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const sb = createClient(supabaseUrl, supabaseKey);
-        await sb.from("analysis_jobs").update({
-          status: "failed",
-          error_message: e instanceof Error ? e.message : "Unknown error",
-          completed_at: new Date().toISOString(),
-        }).eq("id", currentJobId);
-      }
-    } catch {}
+    console.error("analyze-cement request error:", e);
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
