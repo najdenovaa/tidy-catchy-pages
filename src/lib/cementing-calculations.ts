@@ -1331,8 +1331,10 @@ export function calculatePressureProfile(
       displacementStartTime = cumTime;
     }
 
-    const dtMin = 0.5;
-    const stepCount = Math.max(1, Math.ceil(stageTime / dtMin));
+    const MAX_STEPS_PER_STAGE = 500;
+    const rawStepCount = Math.max(1, Math.ceil(stageTime / 0.5));
+    const stepCount = Math.min(rawStepCount, MAX_STEPS_PER_STAGE);
+    const dtMin = stageTime / stepCount;
     for (let step = 1; step <= stepCount; step++) {
       const progressedTime = Math.min(step * dtMin, stageTime);
       const frac = stageTime > 0 ? Math.min(progressedTime / stageTime, 1) : 1;
