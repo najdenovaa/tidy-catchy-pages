@@ -216,7 +216,7 @@ export function getSlurryHeight(slurries: SlurryInput[], index: number, casingDe
 
 // Совместимый getter для flowRateLps (берёт первый шаг или 0)
 export function getFlowRateLps(steps: FlowRateStep[]): number {
-  return steps.length > 0 ? steps[0].rateLps : 0;
+  return Array.isArray(steps) && steps.length > 0 ? steps[0].rateLps : 0;
 }
 
 export interface Equipment {
@@ -822,6 +822,24 @@ export function calculatePressureProfile(
   flushVolumeM3: number = 0
 ): PressureProfileResult {
   const points: PressurePoint[] = [];
+  slurries = slurries.map((s) => ({
+    ...s,
+    rheology: s.rheology ?? { pv: 0, yp: 0 },
+    additives: Array.isArray(s.additives) ? s.additives : [],
+    flowRateSteps: Array.isArray(s.flowRateSteps) && s.flowRateSteps.length > 0 ? s.flowRateSteps : [{ rateLps: 0, volumeM3: 0 }],
+  }));
+  buffers = buffers.map((b) => ({
+    ...b,
+    rheology: b.rheology ?? { pv: 0, yp: 0 },
+    additives: Array.isArray(b.additives) ? b.additives : [],
+    flowRateSteps: Array.isArray(b.flowRateSteps) && b.flowRateSteps.length > 0 ? b.flowRateSteps : [{ rateLps: 0, volumeM3: 0 }],
+  }));
+  displacementFluids = displacementFluids.map((df) => ({
+    ...df,
+    rheology: df.rheology ?? { pv: 0, yp: 0 },
+    flowRateSteps: Array.isArray(df.flowRateSteps) && df.flowRateSteps.length > 0 ? df.flowRateSteps : [{ rateLps: 0, volumeM3: 0 }],
+    compressionCoeff: df.compressionCoeff || 1.0,
+  }));
   const traj = getEffectiveTrajectory(wellData);
   const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);
   const fracP = (fractureGradient * bottomTVD) / 1000;
@@ -892,6 +910,14 @@ export function calculatePressureProfile(
   let equilibriumTimeMin = 0; // время выхода на равновесие после остановки, мин
 
   const mudRheo = effectiveRheology(drillingFluid.rheology, 'mud');
+
+  const avgCasingID = weightedAverageCasingID(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
+  const pipeCapacity = totalPipeVolumeForRange(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
+  const pipeVPM = wellData.casingDepthMD > 0 ? pipeCapacity / wellData.casingDepthMD : pipeVolumePerMeter(avgCasingID);
+  interface PumpBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; }
+  const pumpHistory: PumpBatch[] = [];
+  let totalPumped = 0;
+  let _dbgPipeCount = 0;
 
   // Annular profile helper — compute fluid heights by type from exitBatches
   interface FluidBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; }
@@ -1016,18 +1042,6 @@ export function calculatePressureProfile(
   // Отслеживаем границы этапов (группируем продавку)
   const stageBoundaries: StageBoundary[] = [];
   let prevGroupLabel = "";
-
-  // === Динамическое отслеживание флюидов в ТРУБЕ и ЗАТРУБЬЕ ===
-  const avgCasingID = weightedAverageCasingID(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
-  const pipeCapacity = totalPipeVolumeForRange(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
-  // CRITICAL: pipeVPM must be consistent with pipeCapacity to avoid hydrostatic errors
-  const pipeVPM = wellData.casingDepthMD > 0 ? pipeCapacity / wellData.casingDepthMD : pipeVolumePerMeter(avgCasingID);
-
-  // История закачки: [{densityGcm3, volumeM3, fluidType}] в порядке закачки
-  interface PumpBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; }
-  const pumpHistory: PumpBatch[] = [];
-  let totalPumped = 0;
-  let _dbgPipeCount = 0;
 
   // Вычисляет гидростатику ТРУБЫ с учётом текущих флюидов
   // Труба заполняется сверху: последний закачанный флюид — у устья, старый — у забоя
