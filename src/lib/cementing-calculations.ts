@@ -1023,9 +1023,9 @@ export function calculatePressureProfile(
   // CRITICAL: pipeVPM must be consistent with pipeCapacity to avoid hydrostatic errors
   const pipeVPM = wellData.casingDepthMD > 0 ? pipeCapacity / wellData.casingDepthMD : pipeVolumePerMeter(avgCasingID);
 
-  // История закачки: [{densityGcm3, volumeM3}] в порядке закачки
-  interface FluidBatch { densityGcm3: number; volumeM3: number; }
-  const pumpHistory: FluidBatch[] = [];
+  // История закачки: [{densityGcm3, volumeM3, fluidType}] в порядке закачки
+  interface PumpBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; }
+  const pumpHistory: PumpBatch[] = [];
   let totalPumped = 0;
   let _dbgPipeCount = 0;
 
@@ -1331,8 +1331,10 @@ export function calculatePressureProfile(
       displacementStartTime = cumTime;
     }
 
-    const dtMin = 0.5;
-    const stepCount = Math.max(1, Math.ceil(stageTime / dtMin));
+    const MAX_STEPS_PER_STAGE = 500;
+    const rawStepCount = Math.max(1, Math.ceil(stageTime / 0.5));
+    const stepCount = Math.min(rawStepCount, MAX_STEPS_PER_STAGE);
+    const dtMin = stageTime / stepCount;
     for (let step = 1; step <= stepCount; step++) {
       const progressedTime = Math.min(step * dtMin, stageTime);
       const frac = stageTime > 0 ? Math.min(progressedTime / stageTime, 1) : 1;
