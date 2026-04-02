@@ -1023,9 +1023,9 @@ export function calculatePressureProfile(
   // CRITICAL: pipeVPM must be consistent with pipeCapacity to avoid hydrostatic errors
   const pipeVPM = wellData.casingDepthMD > 0 ? pipeCapacity / wellData.casingDepthMD : pipeVolumePerMeter(avgCasingID);
 
-  // История закачки: [{densityGcm3, volumeM3}] в порядке закачки
-  interface FluidBatch { densityGcm3: number; volumeM3: number; }
-  const pumpHistory: FluidBatch[] = [];
+  // История закачки: [{densityGcm3, volumeM3, fluidType}] в порядке закачки
+  interface PumpBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; }
+  const pumpHistory: PumpBatch[] = [];
   let totalPumped = 0;
   let _dbgPipeCount = 0;
 
