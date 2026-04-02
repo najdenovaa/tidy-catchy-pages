@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { WellData, DrillingFluid, BufferFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
+import {
+  defaultCementingSnapshot,
+  normalizeCementingSnapshot,
+} from "@/lib/cementing-normalizers";
 
 const SESSION_KEY = "cementing_session_v1";
 
@@ -14,46 +18,14 @@ interface SessionData {
   flushVolumeM3: number;
 }
 
-const defaultWellData: WellData = {
-  wellDepthMD: 0,
-  wellDepthTVD: 0,
-  casingDepthMD: 0,
-  holeDiameter: 0,
-  casingOD: 0,
-  casingWall: 0,
-  prevCasingDepth: 0,
-  prevCasingOD: 0,
-  prevCasingID: 0,
-  ckodDepth: 0,
-  cementRiseHeight: 0,
-  cavernCoeff: 1.0,
-  bottomTempStatic: 0,
-  bottomTempCirc: 0,
-  trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }],
-};
-
-const defaultDrillingFluid: DrillingFluid = {
-  name: "",
-  density: 0,
-  rheology: { pv: 0, yp: 0 },
-  fluidLoss: 0,
-};
-
 const defaultSession: SessionData = {
-  wellData: defaultWellData,
-  drillingFluid: defaultDrillingFluid,
-  slurries: [],
-  buffers: [],
-  displacementFluids: [],
-  fractureGradient: 17.7,
-  flushTimeMin: 10,
-  flushVolumeM3: 0,
+  ...defaultCementingSnapshot,
 };
 
 function loadSession(): SessionData {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
-    if (raw) return { ...defaultSession, ...JSON.parse(raw) };
+    if (raw) return normalizeCementingSnapshot(JSON.parse(raw));
   } catch {}
   return defaultSession;
 }
@@ -97,14 +69,14 @@ export function useCementingSession() {
 
   const resetSession = useCallback(() => {
     sessionStorage.removeItem(SESSION_KEY);
-    setWellData(defaultWellData);
-    setDrillingFluid(defaultDrillingFluid);
-    setSlurries([]);
-    setBuffers([]);
-    setDisplacementFluids([]);
-    setFractureGradient(17.7);
-    setFlushTimeMin(10);
-    setFlushVolumeM3(0);
+    setWellData(defaultCementingSnapshot.wellData);
+    setDrillingFluid(defaultCementingSnapshot.drillingFluid);
+    setSlurries(defaultCementingSnapshot.slurries);
+    setBuffers(defaultCementingSnapshot.buffers);
+    setDisplacementFluids(defaultCementingSnapshot.displacementFluids);
+    setFractureGradient(defaultCementingSnapshot.fractureGradient);
+    setFlushTimeMin(defaultCementingSnapshot.flushTimeMin);
+    setFlushVolumeM3(defaultCementingSnapshot.flushVolumeM3);
   }, []);
 
   return {

@@ -19,17 +19,9 @@ import { supabase } from "@/integrations/supabase/client";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import { useCementingSession } from "@/hooks/use-cementing-session";
+import { normalizeCementingSnapshot, type CementingSnapshot } from "@/lib/cementing-normalizers";
 
-interface CalcSnapshot {
-  wellData: WellData;
-  drillingFluid: DrillingFluid;
-  slurries: SlurryInput[];
-  buffers: BufferFluid[];
-  displacementFluids: DisplacementFluid[];
-  fractureGradient: number;
-  flushTimeMin: number;
-  flushVolumeM3: number;
-}
+type CalcSnapshot = CementingSnapshot;
 
 export default function Index() {
   const location = useLocation();
@@ -71,11 +63,21 @@ export default function Index() {
   // Apply analysis navigation state once on mount
   useEffect(() => {
     if (analysisState?.fromAnalysis) {
-      if (analysisState.wellData) setWellData(analysisState.wellData);
-      if (analysisState.drillingFluid) setDrillingFluid(analysisState.drillingFluid);
-      if (analysisState.slurries?.length) setSlurries(analysisState.slurries);
-      if (analysisState.buffers?.length) setBuffers(analysisState.buffers);
-      if (analysisState.displacementFluids?.length) setDisplacementFluids(analysisState.displacementFluids);
+      const normalized = normalizeCementingSnapshot({
+        wellData: analysisState.wellData ?? wellData,
+        drillingFluid: analysisState.drillingFluid ?? drillingFluid,
+        slurries: analysisState.slurries ?? slurries,
+        buffers: analysisState.buffers ?? buffers,
+        displacementFluids: analysisState.displacementFluids ?? displacementFluids,
+        fractureGradient,
+        flushTimeMin,
+        flushVolumeM3,
+      });
+      setWellData(normalized.wellData);
+      setDrillingFluid(normalized.drillingFluid);
+      setSlurries(normalized.slurries);
+      setBuffers(normalized.buffers);
+      setDisplacementFluids(normalized.displacementFluids);
       if (analysisState.sourceDocuments) setSourceDocuments(analysisState.sourceDocuments);
       setFromAnalysis(true);
       // Clear navigation state to prevent re-applying
@@ -146,35 +148,28 @@ export default function Index() {
         return;
       }
 
-      const params = (data.calc_params ?? {}) as any;
-      const loadedWellData = (data.well_data ?? {}) as unknown as WellData;
-      const loadedDrillingFluid = (params.drillingFluid ?? drillingFluid) as DrillingFluid;
-      const loadedSlurries = (Array.isArray(params.slurries) ? params.slurries : []) as SlurryInput[];
-      const loadedBuffers = (Array.isArray(params.buffers) ? params.buffers : []) as BufferFluid[];
-      const loadedDisplacementFluids = (Array.isArray(params.displacementFluids) ? params.displacementFluids : []) as DisplacementFluid[];
-      const loadedFractureGradient = typeof params.fractureGradient === "number" ? params.fractureGradient : fractureGradient;
-      const loadedFlushTimeMin = typeof params.flushTimeMin === "number" ? params.flushTimeMin : flushTimeMin;
-      const loadedFlushVolumeM3 = typeof params.flushVolumeM3 === "number" ? params.flushVolumeM3 : flushVolumeM3;
-
-      setWellData(loadedWellData);
-      setDrillingFluid(loadedDrillingFluid);
-      setSlurries(loadedSlurries);
-      setBuffers(loadedBuffers);
-      setDisplacementFluids(loadedDisplacementFluids);
-      setFractureGradient(loadedFractureGradient);
-      setFlushTimeMin(loadedFlushTimeMin);
-      setFlushVolumeM3(loadedFlushVolumeM3);
-
-      setCalcSnapshot({
-        wellData: loadedWellData,
-        drillingFluid: loadedDrillingFluid,
-        slurries: loadedSlurries,
-        buffers: loadedBuffers,
-        displacementFluids: loadedDisplacementFluids,
-        fractureGradient: loadedFractureGradient,
-        flushTimeMin: loadedFlushTimeMin,
-        flushVolumeM3: loadedFlushVolumeM3,
+      const params = (data.calc_params ?? {}) as Record<string, unknown>;
+      const snapshot = normalizeCementingSnapshot({
+        wellData: data.well_data,
+        drillingFluid: params.drillingFluid,
+        slurries: params.slurries,
+        buffers: params.buffers,
+        displacementFluids: params.displacementFluids,
+        fractureGradient: params.fractureGradient,
+        flushTimeMin: params.flushTimeMin,
+        flushVolumeM3: params.flushVolumeM3,
       });
+
+      setWellData(snapshot.wellData);
+      setDrillingFluid(snapshot.drillingFluid);
+      setSlurries(snapshot.slurries);
+      setBuffers(snapshot.buffers);
+      setDisplacementFluids(snapshot.displacementFluids);
+      setFractureGradient(snapshot.fractureGradient);
+      setFlushTimeMin(snapshot.flushTimeMin);
+      setFlushVolumeM3(snapshot.flushVolumeM3);
+
+      setCalcSnapshot(snapshot);
       setActiveTab("hydraulics");
       setLoadingSavedCalc(false);
     };
@@ -183,7 +178,17 @@ export default function Index() {
   }, [calcId]);
 
   const handleCalculate = useCallback(() => {
-    setCalcSnapshot({ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 });
+    const snapshot = normalizeCementingSnapshot({
+      wellData,
+      drillingFluid,
+      slurries,
+      buffers,
+      displacementFluids,
+      fractureGradient,
+      flushTimeMin,
+      flushVolumeM3,
+    });
+    setCalcSnapshot(snapshot);
     setCalcCount(prev => prev + 1);
     // Log calculation to backend
     fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/log-activity`, {
@@ -192,8 +197,16 @@ export default function Index() {
       body: JSON.stringify({
         type: "calculation",
         module: "cementing",
-        well_data: wellData,
-        calc_params: { slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 },
+        well_data: snapshot.wellData,
+        calc_params: {
+          drillingFluid: snapshot.drillingFluid,
+          slurries: snapshot.slurries,
+          buffers: snapshot.buffers,
+          displacementFluids: snapshot.displacementFluids,
+          fractureGradient: snapshot.fractureGradient,
+          flushTimeMin: snapshot.flushTimeMin,
+          flushVolumeM3: snapshot.flushVolumeM3,
+        },
         page_url: window.location.href,
       }),
     }).catch(() => {});
@@ -242,7 +255,7 @@ export default function Index() {
     setExporting(true);
     try {
       const { exportToDocx } = await import("@/lib/export-docx");
-      const snap = calcSnapshot ?? { wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 };
+      const snap = calcSnapshot ?? normalizeCementingSnapshot({ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 });
 
       // Capture chart images from the DOM
       const chartImages: Record<string, string> = {};
@@ -380,7 +393,7 @@ export default function Index() {
     const wellName = prompt("Введите название расчёта:", `Расчёт ${new Date().toLocaleDateString("ru-RU")}`);
     if (!wellName) return;
 
-    const freshSnapshot: CalcSnapshot = {
+    const freshSnapshot = normalizeCementingSnapshot({
       wellData,
       drillingFluid,
       slurries,
@@ -389,7 +402,7 @@ export default function Index() {
       fractureGradient,
       flushTimeMin,
       flushVolumeM3,
-    };
+    });
 
     const computedVolumes = calculateVolumes(freshSnapshot.wellData);
     const computedMaterials = calculateMaterials(freshSnapshot.slurries, freshSnapshot.buffers, freshSnapshot.wellData);
