@@ -1,7 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Camera, Send, MapPin } from "lucide-react";
+import { ArrowLeft, Camera, Send, MapPin, Gauge } from "lucide-react";
+import CementingUnitSchematic from "@/components/CementingUnitSchematic";
 import { useState, useRef, useEffect } from "react";
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Legend,
@@ -204,6 +205,16 @@ export default function FleetDetail() {
               <p className="text-[11px] text-white font-medium">📍 Месторождение Ореховое, скв. 21</p>
               <p className="text-[10px] text-white/70">Цементирование экспл. колонны · ООО «Зарубежнефть Добыча Самара»</p>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* 5 — Cementing unit schematic */}
+        <Card className="aspect-square flex flex-col md:col-span-2">
+          <CardHeader className="py-2 px-3">
+            <CardTitle className="text-xs flex items-center gap-1"><Gauge className="w-3 h-3" /> Блок-схема агрегата</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 p-2 min-h-0">
+            <CementingUnitSchematic />
           </CardContent>
         </Card>
       </div>
