@@ -44,6 +44,7 @@ const App = () => (
           <Route path="/admin-login" element={<AdminLogin />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/admin/calc/:id" element={<CalcDetail />} />
+          <Route path="/admin/fleet/:id" element={<FleetDetail />} />
           <Route path="/coiled-tubing" element={<CoiledTubing />} />
           {/* Legacy routes */}
           <Route path="/cement-plug" element={<CementPlug />} />

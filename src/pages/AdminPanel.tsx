@@ -248,20 +248,30 @@ export default function AdminPanel() {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[1, 2, 3, 5].map(fleet => (
-                <div key={fleet} className="flex items-center gap-3 rounded-lg border border-border px-4 py-3">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">{fleet} флот</p>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 animate-ping" />
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                    </span>
-                    <span className="text-xs text-red-500 font-medium">offline</span>
-                  </div>
-                </div>
-              ))}
+              {[1, 2, 3, 5].map(fleet => {
+                const isOnline = fleet === 5;
+                const dotColor = isOnline ? "bg-green-500" : "bg-red-500";
+                const textColor = isOnline ? "text-green-500" : "text-red-500";
+                const Wrapper = isOnline ? "button" : "div";
+                return (
+                  <Wrapper
+                    key={fleet}
+                    className={`flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-left ${isOnline ? "cursor-pointer hover:bg-accent/50 transition-colors" : ""}`}
+                    {...(isOnline ? { onClick: () => navigate("/admin/fleet/5") } : {})}
+                  >
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">{fleet} флот</p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className={`absolute inline-flex h-full w-full rounded-full ${dotColor} opacity-75 animate-ping`} />
+                        <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${dotColor}`} />
+                      </span>
+                      <span className={`text-xs ${textColor} font-medium`}>{isOnline ? "online" : "offline"}</span>
+                    </div>
+                  </Wrapper>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
