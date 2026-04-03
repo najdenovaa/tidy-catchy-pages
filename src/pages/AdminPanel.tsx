@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Home, LogOut, RefreshCw, Search, Users, Eye, ExternalLink, Globe, Calculator, MapPin, FlaskConical, Plus, Minus, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import FleetConfigPanel from "@/components/FleetConfigPanel";
 
 interface CalcLog {
   id: string; created_at: string; module: string; well_data: any; calc_params: any;
