@@ -208,6 +208,74 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
     return autoResults.reduce((s, r) => s + r.totalCentralizers, 0);
   }, [autoResults]);
 
+  // ─── Generate joint-by-joint placement schedule for field crew ───
+  const jointSchedule = useMemo(() => {
+    if (!results || results.length === 0) return null;
+
+    // Determine active intervals (from manual or auto mode)
+    const activeIntervals: CentralizerInterval[] = autoResults
+      ? autoResults.map(p => ({
+          id: makeId(),
+          fromMD: p.fromMD,
+          toMD: p.toMD,
+          centralizersPerJoint: p.centralizersPerJoint,
+          jointLength: autoJointLength,
+          spec: { ...autoSpec },
+        }))
+      : intervals;
+
+    // Build joint-by-joint list from surface (0) down to casing shoe
+    const schedule: { jointNum: number; topMD: number; bottomMD: number; hasCentralizer: boolean; centralizerDepths: number[] }[] = [];
+    
+    let currentMD = 0;
+    let jointNum = 1;
+    const totalDepth = wellData.casingDepthMD;
+
+    while (currentMD < totalDepth) {
+      // Find which interval this joint falls into
+      const midMD = currentMD;
+      const interval = activeIntervals.find(iv => midMD >= iv.fromMD && midMD < iv.toMD);
+      const jl = interval?.jointLength ?? 12;
+      const bottomMD = Math.min(currentMD + jl, totalDepth);
+
+      let hasCent = false;
+      const centDepths: number[] = [];
+
+      if (interval && interval.centralizersPerJoint > 0) {
+        const cpj = interval.centralizersPerJoint;
+        if (cpj >= 1) {
+          // ≥1 centralizer per joint: place evenly along the joint
+          const count = Math.floor(cpj);
+          const spacing = jl / (count + 1);
+          for (let c = 1; c <= count; c++) {
+            centDepths.push(Math.round(currentMD + spacing * c));
+          }
+          hasCent = true;
+        } else {
+          // <1 centralizer per joint (e.g. 0.5 = every 2nd joint, 0.3 = every ~3rd)
+          const everyNth = Math.round(1 / cpj);
+          if ((jointNum - 1) % everyNth === 0) {
+            centDepths.push(Math.round(currentMD + jl / 2));
+            hasCent = true;
+          }
+        }
+      }
+
+      schedule.push({
+        jointNum,
+        topMD: Math.round(currentMD),
+        bottomMD: Math.round(bottomMD),
+        hasCentralizer: hasCent,
+        centralizerDepths: centDepths,
+      });
+
+      currentMD = bottomMD;
+      jointNum++;
+    }
+
+    return schedule;
+  }, [results, intervals, autoResults, autoJointLength, autoSpec, wellData.casingDepthMD]);
+
   return (
     <div className="space-y-4">
       {/* Mode switcher */}
@@ -534,7 +602,7 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
                         <TableCell className="text-xs px-2 py-1">{r.zenith.toFixed(1)}</TableCell>
                         <TableCell className="text-xs px-2 py-1">{r.eccentricity.toFixed(3)}</TableCell>
                         <TableCell className={`text-xs px-2 py-1 font-medium ${standoffColor(r.standoff)}`}>{r.standoff.toFixed(1)}</TableCell>
-                        <TableCell className="text-xs px-2 py-1">{r.hasCentralizer ? "●" : "—"}</TableCell>
+                        <TableCell className="text-xs px-2 py-1">{r.hasCentralizer ? <span className="text-primary font-bold">Ф</span> : "—"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -542,6 +610,61 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
               </div>
             </CardContent>
           </Card>
+
+          {/* JOINT-BY-JOINT PLACEMENT SCHEDULE */}
+          {jointSchedule && jointSchedule.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <span>📋 Таблица спуска — расстановка центраторов</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Всего Ф: <span className="text-primary font-bold">{jointSchedule.filter(j => j.hasCentralizer).length} шт.</span>
+                    {' '}/ {jointSchedule.length} труб
+                  </span>
+                </CardTitle>
+                <p className="text-[10px] text-muted-foreground">Спуск с устья. Ф — установить центратор на указанной глубине.</p>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="max-h-[500px] overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-[10px] px-2 w-12">№ трубы</TableHead>
+                        <TableHead className="text-[10px] px-2">Верх, м</TableHead>
+                        <TableHead className="text-[10px] px-2">Низ, м</TableHead>
+                        <TableHead className="text-[10px] px-2 text-center">Центратор</TableHead>
+                        <TableHead className="text-[10px] px-2">Глубина уст., м</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {jointSchedule.map((j) => (
+                        <TableRow
+                          key={j.jointNum}
+                          className={j.hasCentralizer ? "bg-primary/5" : ""}
+                        >
+                          <TableCell className="text-xs px-2 py-1 font-medium">{j.jointNum}</TableCell>
+                          <TableCell className="text-xs px-2 py-1">{j.topMD}</TableCell>
+                          <TableCell className="text-xs px-2 py-1">{j.bottomMD}</TableCell>
+                          <TableCell className="text-xs px-2 py-1 text-center">
+                            {j.hasCentralizer
+                              ? <span className="text-primary font-bold text-sm">Ф</span>
+                              : <span className="text-muted-foreground">—</span>
+                            }
+                          </TableCell>
+                          <TableCell className="text-xs px-2 py-1 font-medium">
+                            {j.centralizerDepths.length > 0
+                              ? j.centralizerDepths.map(d => `${d} м`).join(", ")
+                              : ""
+                            }
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
     </div>
