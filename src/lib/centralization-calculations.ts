@@ -191,6 +191,138 @@ export function calculateCentralization(
   return results;
 }
 
+// ─── Auto-placement: solve for centralizersPerJoint given target standoff ───
+
+export interface AutoPlacementInterval {
+  fromMD: number;
+  toMD: number;
+  avgZenith: number;
+  centralizersPerJoint: number;
+  standoffAchieved: number;
+  totalCentralizers: number;
+}
+
+/**
+ * Given a target standoff %, calculate required centralizersPerJoint
+ * for each segment of the well, respecting trajectory.
+ */
+export function autoPlaceCentralizers(
+  wellData: WellData,
+  spec: CentralizerSpec,
+  jointLength: number,
+  targetStandoff: number,
+  mudDensity: number,
+): AutoPlacementInterval[] {
+  const wpm = casingWeightPerMeter(wellData.casingOD, wellData.casingWall);
+  const bf = buoyancyFactor(mudDensity);
+  const rc_mm = radialClearance(wellData.holeDiameter, wellData.casingOD);
+  const rc_m = rc_mm / 1000;
+  const EI = STEEL_E * casingMomentOfInertia(wellData.casingOD, wellData.casingWall);
+
+  if (rc_mm <= 0 || EI <= 0) return [];
+
+  const targetEcc = 1 - targetStandoff / 100;
+  const F_max_N = spec.restoringForce * 1000;
+  const k_spring = F_max_N / rc_m;
+
+  // Segment the well by zenith zones (every 50m or change in zenith > 5°)
+  const segmentSize = 50;
+  const segments: { fromMD: number; toMD: number; zenithSamples: number[] }[] = [];
+  
+  for (let md = 0; md < wellData.casingDepthMD; md += segmentSize) {
+    const endMD = Math.min(md + segmentSize, wellData.casingDepthMD);
+    const samples: number[] = [];
+    for (let m = md; m <= endMD; m += 5) {
+      const { zenith } = interpolateTrajectory(wellData.trajectory, m);
+      samples.push(zenith);
+    }
+    segments.push({ fromMD: md, toMD: endMD, zenithSamples: samples });
+  }
+
+  // Merge adjacent segments with similar zenith
+  const merged: { fromMD: number; toMD: number; avgZenith: number }[] = [];
+  for (const seg of segments) {
+    const avg = seg.zenithSamples.reduce((a, b) => a + b, 0) / seg.zenithSamples.length;
+    if (merged.length > 0) {
+      const last = merged[merged.length - 1];
+      if (Math.abs(last.avgZenith - avg) < 5) {
+        last.toMD = seg.toMD;
+        last.avgZenith = (last.avgZenith + avg) / 2;
+        continue;
+      }
+    }
+    merged.push({ fromMD: seg.fromMD, toMD: seg.toMD, avgZenith: avg });
+  }
+
+  const result: AutoPlacementInterval[] = [];
+
+  for (const seg of merged) {
+    const zenith = seg.avgZenith;
+
+    if (zenith < 0.5) {
+      // Vertical — minimal centralizers needed
+      result.push({
+        fromMD: seg.fromMD,
+        toMD: seg.toMD,
+        avgZenith: zenith,
+        centralizersPerJoint: targetStandoff > 95 ? 1 : 0.5,
+        standoffAchieved: 98,
+        totalCentralizers: Math.ceil((seg.toMD - seg.fromMD) / jointLength * (targetStandoff > 95 ? 1 : 0.5)),
+      });
+      continue;
+    }
+
+    const lateralF = lateralForcePerMeter(wpm, bf, zenith);
+
+    // Binary search for centralizersPerJoint (0.1 to 5.0)
+    let lo = 0.1, hi = 5.0, bestCPJ = 1;
+    
+    for (let iter = 0; iter < 50; iter++) {
+      const mid = (lo + hi) / 2;
+      const L = jointLength / mid;
+      const sag_free = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
+      const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
+      const sag = sag_free / (1 + springFactor);
+      const ecc = Math.max(0.03, Math.min(1, sag / rc_m));
+
+      if (ecc <= targetEcc) {
+        bestCPJ = mid;
+        hi = mid;
+      } else {
+        lo = mid;
+      }
+    }
+
+    // Round to nearest 0.1
+    bestCPJ = Math.round(bestCPJ * 10) / 10;
+    // Ensure at least 0.1
+    bestCPJ = Math.max(0.1, bestCPJ);
+
+    // Recalculate achieved standoff
+    const L = jointLength / bestCPJ;
+    const sag_free = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
+    const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
+    const sag = sag_free / (1 + springFactor);
+    const ecc = Math.max(0.03, Math.min(1, sag / rc_m));
+    const achieved = Math.round((1 - ecc) * 1000) / 10;
+
+    const intervalLength = seg.toMD - seg.fromMD;
+    const joints = intervalLength / jointLength;
+    const totalCentralizers = Math.ceil(joints * bestCPJ);
+
+    result.push({
+      fromMD: seg.fromMD,
+      toMD: seg.toMD,
+      avgZenith: Math.round(zenith * 10) / 10,
+      centralizersPerJoint: bestCPJ,
+      standoffAchieved: achieved,
+      totalCentralizers,
+    });
+  }
+
+  return result;
+}
+
 // ─── Presets ─────────────────────────────────────────────────────
 
 export const centralizerPresets: Record<CentralizerType, Partial<CentralizerSpec>> = {
