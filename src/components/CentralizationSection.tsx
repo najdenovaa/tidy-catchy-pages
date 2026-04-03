@@ -208,6 +208,74 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
     return autoResults.reduce((s, r) => s + r.totalCentralizers, 0);
   }, [autoResults]);
 
+  // ─── Generate joint-by-joint placement schedule for field crew ───
+  const jointSchedule = useMemo(() => {
+    if (!results || results.length === 0) return null;
+
+    // Determine active intervals (from manual or auto mode)
+    const activeIntervals: CentralizerInterval[] = autoResults
+      ? autoResults.map(p => ({
+          id: makeId(),
+          fromMD: p.fromMD,
+          toMD: p.toMD,
+          centralizersPerJoint: p.centralizersPerJoint,
+          jointLength: autoJointLength,
+          spec: { ...autoSpec },
+        }))
+      : intervals;
+
+    // Build joint-by-joint list from surface (0) down to casing shoe
+    const schedule: { jointNum: number; topMD: number; bottomMD: number; hasCentralizer: boolean; centralizerDepths: number[] }[] = [];
+    
+    let currentMD = 0;
+    let jointNum = 1;
+    const totalDepth = wellData.casingDepthMD;
+
+    while (currentMD < totalDepth) {
+      // Find which interval this joint falls into
+      const midMD = currentMD;
+      const interval = activeIntervals.find(iv => midMD >= iv.fromMD && midMD < iv.toMD);
+      const jl = interval?.jointLength ?? 12;
+      const bottomMD = Math.min(currentMD + jl, totalDepth);
+
+      let hasCent = false;
+      const centDepths: number[] = [];
+
+      if (interval && interval.centralizersPerJoint > 0) {
+        const cpj = interval.centralizersPerJoint;
+        if (cpj >= 1) {
+          // ≥1 centralizer per joint: place evenly along the joint
+          const count = Math.floor(cpj);
+          const spacing = jl / (count + 1);
+          for (let c = 1; c <= count; c++) {
+            centDepths.push(Math.round(currentMD + spacing * c));
+          }
+          hasCent = true;
+        } else {
+          // <1 centralizer per joint (e.g. 0.5 = every 2nd joint, 0.3 = every ~3rd)
+          const everyNth = Math.round(1 / cpj);
+          if ((jointNum - 1) % everyNth === 0) {
+            centDepths.push(Math.round(currentMD + jl / 2));
+            hasCent = true;
+          }
+        }
+      }
+
+      schedule.push({
+        jointNum,
+        topMD: Math.round(currentMD),
+        bottomMD: Math.round(bottomMD),
+        hasCentralizer: hasCent,
+        centralizerDepths: centDepths,
+      });
+
+      currentMD = bottomMD;
+      jointNum++;
+    }
+
+    return schedule;
+  }, [results, intervals, autoResults, autoJointLength, autoSpec, wellData.casingDepthMD]);
+
   return (
     <div className="space-y-4">
       {/* Mode switcher */}
