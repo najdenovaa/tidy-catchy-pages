@@ -86,52 +86,67 @@ export default function FleetDetail() {
           <CardHeader className="py-2 px-3">
             <CardTitle className="text-xs">📊 График цементирования</CardTitle>
           </CardHeader>
-          <CardContent className="flex-1 p-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={LIVE_DATA} margin={{ top: 5, right: 50, left: 0, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
-                <XAxis
-                  dataKey="time"
-                  type="number"
-                  domain={[0, 100]}
-                  tickFormatter={(v: number) => `${v}`}
-                  label={{ value: "Время, мин", position: "insideBottom", offset: -5, style: { fontSize: 9, fill: "hsl(var(--muted-foreground))" } }}
-                  tick={{ fontSize: 9 }}
-                />
-                {/* Left Y — Pressure */}
-                <YAxis
-                  yAxisId="pressure"
-                  domain={[0, 50]}
-                  label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", style: { fontSize: 9, fill: "hsl(var(--muted-foreground))" } }}
-                  tick={{ fontSize: 9 }}
-                />
-                {/* Right Y1 — Rate + Density */}
-                <YAxis
-                  yAxisId="rate"
-                  orientation="right"
-                  domain={[0, 30]}
-                  label={{ value: "Q, л/с / ρ, г/см³", angle: 90, position: "insideRight", style: { fontSize: 9, fill: "hsl(var(--muted-foreground))" } }}
-                  tick={{ fontSize: 9 }}
-                />
-                {/* Right Y2 — Volume */}
-                <YAxis
-                  yAxisId="volume"
-                  orientation="right"
-                  domain={[0, 50]}
-                  label={{ value: "V, м³", angle: 90, position: "outsideRight", offset: 20, style: { fontSize: 9, fill: "hsl(var(--muted-foreground))" } }}
-                  tick={{ fontSize: 9 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
-                <Line yAxisId="pressure" type="monotone" dataKey="pressure" name="Давление" stroke="hsl(0, 80%, 55%)" strokeWidth={2} dot={false} connectNulls={false} />
-                <Line yAxisId="rate" type="stepAfter" dataKey="rate" name="Расход" stroke="hsl(210, 80%, 55%)" strokeWidth={1.5} dot={false} connectNulls={false} />
-                <Line yAxisId="rate" type="stepAfter" dataKey="density" name="Плотность" stroke="hsl(330, 60%, 45%)" strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls={false} />
-                <Bar yAxisId="volume" dataKey="volume" name="Объём" fill="hsl(195, 60%, 50%)" opacity={0.3} barSize={8} />
-                <Line yAxisId="rate" type="monotone" dataKey="temp" name="Темп. °C" stroke="hsl(30, 80%, 50%)" strokeWidth={1.5} dot={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
+          <CardContent className="flex-1 p-2 flex flex-col gap-1">
+            {/* Digital readout panel */}
+            <div className="grid grid-cols-5 gap-1 text-center">
+              {[
+                { label: "Давление", value: "6.5", unit: "МПа", color: "text-red-500" },
+                { label: "Расход", value: "6.1", unit: "л/с", color: "text-blue-500" },
+                { label: "Плотность", value: "1.20", unit: "г/см³", color: "text-pink-700" },
+                { label: "Объём", value: "1.75", unit: "м³", color: "text-cyan-500" },
+                { label: "Темп.", value: "22.6", unit: "°C", color: "text-orange-500" },
+              ].map((item) => (
+                <div key={item.label} className="rounded-md border border-border bg-muted/40 py-1 px-1">
+                  <p className="text-[8px] text-muted-foreground leading-tight">{item.label}</p>
+                  <p className={`text-sm font-bold leading-tight ${item.color}`}>{item.value}</p>
+                  <p className="text-[7px] text-muted-foreground leading-tight">{item.unit}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex-1 min-h-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={LIVE_DATA} margin={{ top: 5, right: 50, left: 0, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
+                  <XAxis
+                    dataKey="time"
+                    type="number"
+                    domain={[0, 100]}
+                    tickFormatter={(v: number) => `${v}`}
+                    label={{ value: "Время, мин", position: "insideBottom", offset: -5, style: { fontSize: 9, fill: "hsl(var(--muted-foreground))" } }}
+                    tick={{ fontSize: 9 }}
+                  />
+                  <YAxis
+                    yAxisId="pressure"
+                    domain={[0, 50]}
+                    label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", style: { fontSize: 9, fill: "hsl(var(--muted-foreground))" } }}
+                    tick={{ fontSize: 9 }}
+                  />
+                  <YAxis
+                    yAxisId="rate"
+                    orientation="right"
+                    domain={[0, 30]}
+                    label={{ value: "Q, л/с / ρ, г/см³", angle: 90, position: "insideRight", style: { fontSize: 9, fill: "hsl(var(--muted-foreground))" } }}
+                    tick={{ fontSize: 9 }}
+                  />
+                  <YAxis
+                    yAxisId="volume"
+                    orientation="right"
+                    domain={[0, 50]}
+                    label={{ value: "V, м³", angle: 90, position: "outsideRight", offset: 20, style: { fontSize: 9, fill: "hsl(var(--muted-foreground))" } }}
+                    tick={{ fontSize: 9 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  <Line yAxisId="pressure" type="monotone" dataKey="pressure" name="Давление" stroke="hsl(0, 80%, 55%)" strokeWidth={2} dot={false} connectNulls={false} />
+                  <Line yAxisId="rate" type="stepAfter" dataKey="rate" name="Расход" stroke="hsl(210, 80%, 55%)" strokeWidth={1.5} dot={false} connectNulls={false} />
+                  <Line yAxisId="rate" type="stepAfter" dataKey="density" name="Плотность" stroke="hsl(330, 60%, 45%)" strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls={false} />
+                  <Bar yAxisId="volume" dataKey="volume" name="Объём" fill="hsl(195, 60%, 50%)" opacity={0.3} barSize={8} />
+                  <Line yAxisId="rate" type="monotone" dataKey="temp" name="Темп. °C" stroke="hsl(30, 80%, 50%)" strokeWidth={1.5} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
 
