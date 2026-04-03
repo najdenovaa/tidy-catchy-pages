@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Home, LayoutDashboard, LogOut, Send } from "lucide-react";
 import AnalysisSection from "@/components/AnalysisSection";
