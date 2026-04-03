@@ -8,7 +8,13 @@ import {
   ResponsiveContainer, Tooltip,
 } from "recharts";
 
-const EMPTY_DATA = Array.from({ length: 20 }, (_, i) => ({ time: i * 5 }));
+const EMPTY_DATA = Array.from({ length: 21 }, (_, i) => ({
+  time: i * 5,
+  pressure: null as number | null,
+  rate: null as number | null,
+  density: null as number | null,
+  volume: null as number | null,
+}));
 
 export default function FleetDetail() {
   const navigate = useNavigate();
