@@ -484,7 +484,7 @@ export default function AnalysisSection({
   const uploadFile = useCallback(async (file: File, docType: "akc" | "program" | "report" | "other") => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-      setError("Войдите в аккаунт для загрузки файлов");
+      setShowAuthDialog(true);
       return;
     }
 
