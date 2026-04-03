@@ -421,6 +421,7 @@ export default function AnalysisSection({
   const [extracting, setExtracting] = useState(false);
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [showExtractionDialog, setShowExtractionDialog] = useState(false);
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
 
   // Get current user info and credits
   useEffect(() => {
