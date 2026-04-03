@@ -1360,6 +1360,7 @@ export default function CementPlug() {
           )}
         </div>
       </main>
+      <TermsFooter />
     </div>
   );
 }
