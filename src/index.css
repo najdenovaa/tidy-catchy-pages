@@ -1,95 +1,110 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 220 20% 97%;
-    --foreground: 220 30% 10%;
+    /* Material Design 3 — Light */
+    --background: 220 14% 96%;
+    --foreground: 220 15% 13%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 30% 10%;
+    --card-foreground: 220 15% 13%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 30% 10%;
+    --popover-foreground: 220 15% 13%;
 
-    --primary: 215 70% 45%;
+    --primary: 231 48% 48%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 15% 92%;
-    --secondary-foreground: 220 30% 15%;
+    --secondary: 250 20% 93%;
+    --secondary-foreground: 250 15% 25%;
 
-    --muted: 220 15% 94%;
-    --muted-foreground: 220 10% 45%;
+    --muted: 220 14% 93%;
+    --muted-foreground: 220 8% 46%;
 
-    --accent: 35 90% 55%;
-    --accent-foreground: 35 90% 15%;
+    --accent: 174 42% 41%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 70% 50%;
+    --destructive: 4 71% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 88%;
-    --input: 220 15% 88%;
-    --ring: 215 70% 45%;
+    --border: 220 13% 87%;
+    --input: 220 13% 87%;
+    --ring: 231 48% 48%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 15% 20%;
+    --sidebar-primary: 231 48% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 250 20% 95%;
+    --sidebar-accent-foreground: 220 15% 20%;
     --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-ring: 231 48% 48%;
 
-    --success: 145 60% 40%;
+    --success: 152 56% 39%;
     --success-foreground: 0 0% 100%;
-    --warning: 35 90% 55%;
-    --warning-foreground: 35 90% 15%;
+    --warning: 36 100% 50%;
+    --warning-foreground: 36 100% 12%;
+
+    /* Material elevation shadows */
+    --md-elevation-1: 0 1px 3px 0 hsl(0 0% 0% / 0.12), 0 1px 2px -1px hsl(0 0% 0% / 0.08);
+    --md-elevation-2: 0 3px 6px 0 hsl(0 0% 0% / 0.1), 0 2px 4px -2px hsl(0 0% 0% / 0.08);
+    --md-elevation-3: 0 8px 16px -4px hsl(0 0% 0% / 0.1), 0 4px 6px -4px hsl(0 0% 0% / 0.06);
+    --md-elevation-4: 0 16px 32px -8px hsl(0 0% 0% / 0.12), 0 8px 16px -8px hsl(0 0% 0% / 0.06);
   }
 
   .dark {
-    --background: 220 25% 8%;
-    --foreground: 220 10% 92%;
+    --background: 225 18% 9%;
+    --foreground: 220 10% 90%;
 
-    --card: 220 25% 12%;
-    --card-foreground: 220 10% 92%;
+    --card: 225 16% 13%;
+    --card-foreground: 220 10% 90%;
 
-    --popover: 220 25% 12%;
-    --popover-foreground: 220 10% 92%;
+    --popover: 225 16% 13%;
+    --popover-foreground: 220 10% 90%;
 
-    --primary: 215 70% 55%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 231 68% 68%;
+    --primary-foreground: 231 48% 12%;
 
-    --secondary: 220 20% 18%;
-    --secondary-foreground: 220 10% 85%;
+    --secondary: 250 12% 20%;
+    --secondary-foreground: 250 10% 80%;
 
-    --muted: 220 20% 18%;
-    --muted-foreground: 220 10% 55%;
+    --muted: 225 14% 17%;
+    --muted-foreground: 220 8% 55%;
 
-    --accent: 35 90% 55%;
-    --accent-foreground: 35 90% 95%;
+    --accent: 174 42% 50%;
+    --accent-foreground: 174 42% 8%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 4 62% 40%;
+    --destructive-foreground: 0 0% 95%;
 
-    --border: 220 20% 20%;
-    --input: 220 20% 20%;
-    --ring: 215 70% 55%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --border: 225 12% 20%;
+    --input: 225 12% 20%;
+    --ring: 231 68% 68%;
 
-    --success: 145 60% 40%;
+    --sidebar-background: 225 18% 11%;
+    --sidebar-foreground: 220 10% 85%;
+    --sidebar-primary: 231 68% 68%;
+    --sidebar-primary-foreground: 231 48% 12%;
+    --sidebar-accent: 225 12% 18%;
+    --sidebar-accent-foreground: 220 10% 85%;
+    --sidebar-border: 225 12% 18%;
+    --sidebar-ring: 231 68% 68%;
+
+    --success: 152 56% 45%;
     --success-foreground: 0 0% 100%;
-    --warning: 35 90% 55%;
-    --warning-foreground: 35 90% 15%;
+    --warning: 36 100% 50%;
+    --warning-foreground: 36 100% 12%;
+
+    --md-elevation-1: 0 1px 3px 0 hsl(0 0% 0% / 0.3), 0 1px 2px -1px hsl(0 0% 0% / 0.2);
+    --md-elevation-2: 0 3px 6px 0 hsl(0 0% 0% / 0.25), 0 2px 4px -2px hsl(0 0% 0% / 0.2);
+    --md-elevation-3: 0 8px 16px -4px hsl(0 0% 0% / 0.25), 0 4px 6px -4px hsl(0 0% 0% / 0.15);
+    --md-elevation-4: 0 16px 32px -8px hsl(0 0% 0% / 0.3), 0 8px 16px -8px hsl(0 0% 0% / 0.15);
   }
 }
 
@@ -100,7 +115,40 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Roboto', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: 0.01em;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Material-style ripple effect */
+@layer utilities {
+  .md-ripple {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .md-ripple::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle, hsl(var(--foreground) / 0.08) 10%, transparent 10%);
+    background-size: 1000% 1000%;
+    background-position: center;
+    opacity: 0;
+    transition: opacity 0.3s, background-size 0.4s;
+  }
+
+  .md-ripple:active::after {
+    background-size: 100% 100%;
+    opacity: 1;
+    transition: opacity 0s, background-size 0s;
   }
 }
 
@@ -110,4 +158,23 @@
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* Material scrollbar for non-hidden */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 100px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
 }
