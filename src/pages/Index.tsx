@@ -20,6 +20,7 @@ import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import { useCementingSession } from "@/hooks/use-cementing-session";
 import { normalizeCementingSnapshot, type CementingSnapshot } from "@/lib/cementing-normalizers";
+import TermsFooter from "@/components/TermsFooter";
 
 type CalcSnapshot = CementingSnapshot;
 
