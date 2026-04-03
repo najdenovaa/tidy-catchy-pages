@@ -18,6 +18,7 @@ import CalcDetail from "./pages/CalcDetail";
 import CementPlug from "./pages/CementPlug";
 import CoiledTubing from "./pages/CoiledTubing";
 import FleetDetail from "./pages/FleetDetail";
+import Terms from "./pages/Terms";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -46,6 +47,7 @@ const App = () => (
           <Route path="/admin/calc/:id" element={<CalcDetail />} />
           <Route path="/admin/fleet/:id" element={<FleetDetail />} />
           <Route path="/coiled-tubing" element={<CoiledTubing />} />
+          <Route path="/terms" element={<Terms />} />
           {/* Legacy routes */}
           <Route path="/cement-plug" element={<CementPlug />} />
           <Route path="*" element={<NotFound />} />

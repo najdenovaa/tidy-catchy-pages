@@ -5,6 +5,7 @@ import AnalysisSection from "@/components/AnalysisSection";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import { supabase } from "@/integrations/supabase/client";
 import type { WellData, DrillingFluid, SlurryInput, BufferFluid, DisplacementFluid } from "@/lib/cementing-calculations";
+import TermsFooter from "@/components/TermsFooter";
 
 const defaultWellData: WellData = {
   wellDepthMD: 0, wellDepthTVD: 0, casingDepthMD: 0, holeDiameter: 0,
@@ -83,6 +84,7 @@ export default function AnalysisPage() {
           centralizationResults={null}
         />
       </main>
+      <TermsFooter />
     </div>
   );
 }

@@ -24,6 +24,7 @@ import { exportCementPlugToDocx, type CementPlugExportData } from "@/lib/export-
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import TermsFooter from "@/components/TermsFooter";
 
 const SESSION_KEY = "cement_plug_session_v2";
 
@@ -1360,6 +1361,7 @@ export default function CementPlug() {
           )}
         </div>
       </main>
+      <TermsFooter />
     </div>
   );
 }
