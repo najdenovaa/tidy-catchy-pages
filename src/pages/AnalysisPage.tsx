@@ -83,6 +83,7 @@ export default function AnalysisPage() {
           centralizationResults={null}
         />
       </main>
+      <TermsFooter />
     </div>
   );
 }
