@@ -108,7 +108,7 @@ export default function FleetDetail() {
                   <XAxis
                     dataKey="time"
                     type="number"
-                    domain={[0, 100]}
+                    domain={[0, 10]}
                     tickFormatter={(v: number) => `${v}`}
                     label={{ value: "Время, мин", position: "insideBottom", offset: -5, style: { fontSize: 9, fill: "hsl(var(--muted-foreground))" } }}
                     tick={{ fontSize: 9 }}
