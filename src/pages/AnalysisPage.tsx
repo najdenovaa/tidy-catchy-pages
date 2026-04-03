@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Home, LayoutDashboard, LogOut, Send } from "lucide-react";
 import AnalysisSection from "@/components/AnalysisSection";
@@ -20,6 +21,18 @@ const defaultDrillingFluid: DrillingFluid = {
 
 export default function AnalysisPage() {
   const navigate = useNavigate();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setIsAuthenticated(!!data.session);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
 
   return (
@@ -39,15 +52,23 @@ export default function AnalysisPage() {
             <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
               <Home className="w-4 h-4" /> <span>Главная</span>
             </Link>
-            <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
-              <LayoutDashboard className="w-4 h-4" /> <span>Кабинет</span>
-            </Link>
-            <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
-              <Send className="w-4 h-4" /> <span>Поддержка</span>
-            </a>
-            <button onClick={handleLogout} className="flex items-center gap-1.5 text-muted-foreground hover:text-destructive transition-colors text-xs">
-              <LogOut className="w-4 h-4" /> <span>Выйти</span>
-            </button>
+            {isAuthenticated ? (
+              <>
+                <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
+                  <LayoutDashboard className="w-4 h-4" /> <span>Кабинет</span>
+                </Link>
+                <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
+                  <Send className="w-4 h-4" /> <span>Поддержка</span>
+                </a>
+                <button onClick={handleLogout} className="flex items-center gap-1.5 text-muted-foreground hover:text-destructive transition-colors text-xs">
+                  <LogOut className="w-4 h-4" /> <span>Выйти</span>
+                </button>
+              </>
+            ) : (
+              <Link to="/auth" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
+                <LogOut className="w-4 h-4" /> <span>Войти</span>
+              </Link>
+            )}
           </div>
         </div>
       </header>

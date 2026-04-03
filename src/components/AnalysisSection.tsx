@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Upload, FileText, Trash2, Loader2, AlertTriangle, CheckCircle, FolderOpen, Cpu, Download, FileInput } from "lucide-react";
+import { Upload, FileText, Trash2, Loader2, AlertTriangle, CheckCircle, FolderOpen, Cpu, Download, FileInput, LogIn } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { exportAnalysisToDocx } from "@/lib/export-analysis-docx";
 import FollowUpChat from "@/components/FollowUpChat";
 import { supabase } from "@/integrations/supabase/client";
@@ -420,6 +421,7 @@ export default function AnalysisSection({
   const [extracting, setExtracting] = useState(false);
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [showExtractionDialog, setShowExtractionDialog] = useState(false);
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
 
   // Get current user info and credits
   useEffect(() => {
@@ -482,7 +484,7 @@ export default function AnalysisSection({
   const uploadFile = useCallback(async (file: File, docType: "akc" | "program" | "report" | "other") => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-      setError("Войдите в аккаунт для загрузки файлов");
+      setShowAuthDialog(true);
       return;
     }
 
@@ -1227,6 +1229,30 @@ export default function AnalysisSection({
       {report && (
         <FollowUpChat reportContext={report} />
       )}
+
+      {/* Auth required dialog */}
+      <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LogIn className="w-5 h-5 text-primary" />
+              Требуется авторизация
+            </DialogTitle>
+            <DialogDescription>
+              Для загрузки документов и проведения анализа необходимо войти в аккаунт или зарегистрироваться.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setShowAuthDialog(false)}>
+              Отмена
+            </Button>
+            <Button onClick={() => navigate("/auth")}>
+              <LogIn className="w-4 h-4 mr-2" />
+              Войти / Регистрация
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
