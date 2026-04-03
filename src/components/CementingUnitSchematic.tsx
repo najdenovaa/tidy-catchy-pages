@@ -59,18 +59,36 @@ function Engine({ x, y, label, rpm, idle }: {
   );
 }
 
-export default function CementingUnitSchematic() {
+interface SchematicProps {
+  tank1Level?: number;
+  tank1Capacity?: number;
+  tank2Level?: number;
+  tank2Capacity?: number;
+  engine1Rpm?: number;
+  engine2Rpm?: number;
+}
+
+export default function CementingUnitSchematic({
+  tank1Level = 4.23,
+  tank1Capacity = 6,
+  tank2Level = 1.32,
+  tank2Capacity = 2,
+  engine1Rpm = 900,
+  engine2Rpm = 1523,
+}: SchematicProps) {
+  const engine1Idle = engine1Rpm < 1000;
+  const engine2Idle = engine2Rpm < 1000;
   return (
     <div className="w-full h-full flex items-center justify-center">
       <svg viewBox="0 0 380 200" className="w-full h-full"
         preserveAspectRatio="xMidYMid meet">
-        <Tank x={20} y={30} width={80} height={120} label="Ёмкость №1" capacity={6} level={4.23} />
-        <Tank x={130} y={50} width={60} height={100} label="Ёмкость №2" capacity={2} level={1.32} />
+        <Tank x={20} y={30} width={80} height={120} label="Ёмкость №1" capacity={tank1Capacity} level={tank1Level} />
+        <Tank x={130} y={50} width={60} height={100} label="Ёмкость №2" capacity={tank2Capacity} level={tank2Level} />
         <line x1={100} y1={110} x2={130} y2={110} stroke="hsl(var(--border))" strokeWidth={2} />
         <line x1={160} y1={150} x2={160} y2={165} stroke="hsl(var(--border))" strokeWidth={2} />
         <line x1={160} y1={165} x2={230} y2={165} stroke="hsl(var(--border))" strokeWidth={2} />
-        <Engine x={230} y={30} label="Двигатель №1" rpm={900} idle={true} />
-        <Engine x={230} y={120} label="Двигатель №2" rpm={1523} idle={false} />
+        <Engine x={230} y={30} label="Двигатель №1" rpm={engine1Rpm} idle={engine1Idle} />
+        <Engine x={230} y={120} label="Двигатель №2" rpm={engine2Rpm} idle={engine2Idle} />
         <line x1={300} y1={142} x2={340} y2={142} stroke="hsl(var(--border))" strokeWidth={2} />
         <polygon points="340,137 350,142 340,147" fill="hsl(120,60%,45%)" />
         <text x={355} y={145} fontSize={7} fill="hsl(var(--muted-foreground))">→ скв.</text>
