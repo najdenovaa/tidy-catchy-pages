@@ -1229,6 +1229,30 @@ export default function AnalysisSection({
       {report && (
         <FollowUpChat reportContext={report} />
       )}
+
+      {/* Auth required dialog */}
+      <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LogIn className="w-5 h-5 text-primary" />
+              Требуется авторизация
+            </DialogTitle>
+            <DialogDescription>
+              Для загрузки документов и проведения анализа необходимо войти в аккаунт или зарегистрироваться.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setShowAuthDialog(false)}>
+              Отмена
+            </Button>
+            <Button onClick={() => navigate("/auth")}>
+              <LogIn className="w-4 h-4 mr-2" />
+              Войти / Регистрация
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
