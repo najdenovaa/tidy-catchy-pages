@@ -746,6 +746,7 @@ export default function Index() {
       </Tabs>
 
       <footer className="w-full">
+        <TermsFooter />
         <img
           src={drillingBanner}
           alt="Буровые установки"
