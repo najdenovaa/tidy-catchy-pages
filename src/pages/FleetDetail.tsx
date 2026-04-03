@@ -1,7 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Camera, Send, MapPin } from "lucide-react";
+import { ArrowLeft, Camera, Send, MapPin, Gauge } from "lucide-react";
+import CementingUnitSchematic from "@/components/CementingUnitSchematic";
 import { useState, useRef, useEffect } from "react";
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Legend,
