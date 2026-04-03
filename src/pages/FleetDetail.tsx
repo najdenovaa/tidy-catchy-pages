@@ -8,13 +8,40 @@ import {
   ResponsiveContainer, Tooltip,
 } from "recharts";
 
-const EMPTY_DATA = Array.from({ length: 21 }, (_, i) => ({
-  time: i * 5,
-  pressure: null as number | null,
-  rate: null as number | null,
-  density: null as number | null,
-  volume: null as number | null,
-}));
+// Simulated "live" data: buffer → cement, jagged real-time style
+const LIVE_DATA: { time: number; pressure: number | null; rate: number | null; density: number | null; volume: number | null; stage?: string }[] = [
+  // Idle
+  { time: 0, pressure: 0, rate: 0, density: null, volume: 0 },
+  { time: 1, pressure: 2, rate: 0, density: null, volume: 0 },
+  // Buffer start
+  { time: 2, pressure: 18, rate: 4.2, density: 1.02, volume: 0.05 },
+  { time: 3, pressure: 25, rate: 5.8, density: 1.02, volume: 0.12 },
+  { time: 4, pressure: 32, rate: 6.1, density: 1.03, volume: 0.21 },
+  { time: 5, pressure: 38, rate: 5.5, density: 1.02, volume: 0.30 },
+  { time: 6, pressure: 41, rate: 6.3, density: 1.03, volume: 0.40 },
+  { time: 7, pressure: 44, rate: 5.9, density: 1.02, volume: 0.48 },
+  { time: 8, pressure: 42, rate: 6.0, density: 1.02, volume: 0.55 },
+  { time: 9, pressure: 45, rate: 5.7, density: 1.03, volume: 0.62 },
+  // Transition buffer → cement
+  { time: 10, pressure: 48, rate: 5.2, density: 1.05, volume: 0.68 },
+  { time: 11, pressure: 52, rate: 4.8, density: 1.08, volume: 0.73 },
+  // Cement start
+  { time: 12, pressure: 56, rate: 5.5, density: 1.14, volume: 0.80 },
+  { time: 13, pressure: 60, rate: 5.8, density: 1.18, volume: 0.88 },
+  { time: 14, pressure: 63, rate: 6.2, density: 1.20, volume: 0.97 },
+  { time: 15, pressure: 65, rate: 5.9, density: 1.20, volume: 1.05 },
+  { time: 16, pressure: 67, rate: 6.4, density: 1.21, volume: 1.14 },
+  { time: 17, pressure: 64, rate: 5.7, density: 1.20, volume: 1.22 },
+  { time: 18, pressure: 66, rate: 6.1, density: 1.20, volume: 1.31 },
+  { time: 19, pressure: 68, rate: 5.8, density: 1.19, volume: 1.40 },
+  { time: 20, pressure: 65, rate: 6.0, density: 1.20, volume: 1.48 },
+  { time: 21, pressure: 67, rate: 6.3, density: 1.21, volume: 1.56 },
+  { time: 22, pressure: 64, rate: 5.6, density: 1.20, volume: 1.63 },
+  { time: 23, pressure: 66, rate: 5.9, density: 1.20, volume: 1.70 },
+  { time: 24, pressure: 65, rate: 6.1, density: 1.20, volume: 1.75 },
+  // Abrupt stop — current moment
+  { time: 25, pressure: 65, rate: 6.1, density: 1.20, volume: 1.75 },
+];
 
 export default function FleetDetail() {
   const navigate = useNavigate();
@@ -65,7 +92,7 @@ export default function FleetDetail() {
           </CardHeader>
           <CardContent className="flex-1 p-2">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={EMPTY_DATA} margin={{ top: 5, right: 50, left: 0, bottom: 20 }}>
+              <ComposedChart data={LIVE_DATA} margin={{ top: 5, right: 50, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
                 <XAxis
                   dataKey="time"
