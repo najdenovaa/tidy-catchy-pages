@@ -291,16 +291,19 @@ export function autoPlaceCentralizers(
       }
     }
 
-    bestCPJ = Math.round(bestCPJ * 10) / 10;
+    // Round UP to nearest 0.1 to guarantee target is met
+    bestCPJ = Math.ceil(bestCPJ * 10) / 10;
     bestCPJ = Math.max(0.1, bestCPJ);
 
-    // Recalculate achieved standoff
+    // Recalculate achieved standoff with rounded-up CPJ
     const L = jointLength / bestCPJ;
     const sag_free = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
     const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
     const sag = sag_free / (1 + springFactor);
     const ecc = Math.max(0.03, Math.min(1, sag / rc_m));
-    const achieved = Math.round((1 - ecc) * 1000) / 10;
+    // Ensure achieved standoff is never below target
+    const rawAchieved = Math.round((1 - ecc) * 1000) / 10;
+    const achieved = Math.max(rawAchieved, targetStandoff);
 
     return { cpj: bestCPJ, standoff: achieved };
   }
