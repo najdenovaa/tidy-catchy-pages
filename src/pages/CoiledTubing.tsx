@@ -948,6 +948,7 @@ export default function CoiledTubing() {
           )}
         </div>
       </main>
+      <TermsFooter />
     </div>
   );
 }
