@@ -10,7 +10,7 @@ import {
 } from "recharts";
 
 // Simulated "live" data: buffer → cement, jagged real-time style (pressure in MPa, 65 atm ≈ 6.5 MPa)
-const LIVE_DATA: { time: number; pressure: number | null; rate: number | null; density: number | null; volume: number | null }[] = [
+const LIVE_DATA: { time: number; pressure: number | null; rate: number | null; density: number | null; volume: number | null; temp: number | null }[] = [
   { time: 0, pressure: 0, rate: 0, density: null, volume: 0 },
   { time: 1, pressure: 0.2, rate: 0, density: null, volume: 0 },
   // Buffer start
