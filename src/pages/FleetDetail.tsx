@@ -207,6 +207,16 @@ export default function FleetDetail() {
             </div>
           </CardContent>
         </Card>
+
+        {/* 5 — Cementing unit schematic */}
+        <Card className="aspect-square flex flex-col md:col-span-2">
+          <CardHeader className="py-2 px-3">
+            <CardTitle className="text-xs flex items-center gap-1"><Gauge className="w-3 h-3" /> Блок-схема агрегата</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 p-2 min-h-0">
+            <CementingUnitSchematic />
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
