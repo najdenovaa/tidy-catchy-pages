@@ -119,6 +119,7 @@ export default function AdminPanel() {
   const [searchUserId, setSearchUserId] = useState("");
   const [userCalcs, setUserCalcs] = useState<SavedCalc[]>([]);
   const [viewingUser, setViewingUser] = useState<Profile | null>(null);
+  const [fleetConfigs, setFleetConfigs] = useState<any[]>([]);
   const navigate = useNavigate();
   const { toast } = useToast();
 
