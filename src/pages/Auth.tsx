@@ -48,8 +48,7 @@ export default function Auth() {
     try {
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
-      toast({ title: "Регистрация успешна!", description: "Вы автоматически вошли в систему" });
-      navigate("/dashboard");
+      setSignupSuccess(true);
     } catch (err: any) {
       toast({ title: "Ошибка регистрации", description: err.message, variant: "destructive" });
     } finally {
