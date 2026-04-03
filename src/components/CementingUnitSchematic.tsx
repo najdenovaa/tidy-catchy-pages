@@ -78,48 +78,32 @@ function Engine({ x, y, label, rpm, idle }: {
 
 export default function CementingUnitSchematic() {
   return (
-    <div className="w-full h-full flex flex-col gap-2">
-      {/* SVG Schematic */}
-      <div className="flex-1 min-h-0 flex items-center justify-center">
-        <svg viewBox="0 0 380 200" className="w-full h-full max-h-[180px]"
-          preserveAspectRatio="xMidYMid meet">
-          {/* Tanks */}
-          <Tank x={20} y={30} width={80} height={120} label="Ёмкость №1" capacity={6} level={4.23} />
-          <Tank x={130} y={50} width={60} height={100} label="Ёмкость №2" capacity={2} level={1.32} />
+    <div className="w-full h-full flex items-center justify-center">
+      <svg viewBox="0 0 380 200" className="w-full h-full"
+        preserveAspectRatio="xMidYMid meet">
+        {/* Tanks */}
+        <Tank x={20} y={30} width={80} height={120} label="Ёмкость №1" capacity={6} level={4.23} />
+        <Tank x={130} y={50} width={60} height={100} label="Ёмкость №2" capacity={2} level={1.32} />
 
-          {/* Pipe from tank 1 to engine 1 */}
-          <line x1={100} y1={110} x2={130} y2={110} stroke="hsl(var(--border))" strokeWidth={2} />
-          {/* Pipe from tank 2 down */}
-          <line x1={160} y1={150} x2={160} y2={165} stroke="hsl(var(--border))" strokeWidth={2} />
-          <line x1={160} y1={165} x2={230} y2={165} stroke="hsl(var(--border))" strokeWidth={2} />
+        {/* Pipe from tank 1 to engine 1 */}
+        <line x1={100} y1={110} x2={130} y2={110} stroke="hsl(var(--border))" strokeWidth={2} />
+        {/* Pipe from tank 2 down */}
+        <line x1={160} y1={150} x2={160} y2={165} stroke="hsl(var(--border))" strokeWidth={2} />
+        <line x1={160} y1={165} x2={230} y2={165} stroke="hsl(var(--border))" strokeWidth={2} />
 
-          {/* Engines */}
-          <Engine x={230} y={30} label="Двигатель №1" rpm={900} idle={true} />
-          <Engine x={230} y={120} label="Двигатель №2" rpm={1523} idle={false} />
+        {/* Engines */}
+        <Engine x={230} y={30} label="Двигатель №1" rpm={900} idle={true} />
+        <Engine x={230} y={120} label="Двигатель №2" rpm={1523} idle={false} />
 
-          {/* Pipe from engine 2 to output */}
-          <line x1={300} y1={142} x2={340} y2={142} stroke="hsl(var(--border))" strokeWidth={2} />
-          <polygon points="340,137 350,142 340,147" fill="hsl(120,60%,45%)" />
-          <text x={355} y={145} fontSize={7} fill="hsl(var(--muted-foreground))">→ скв.</text>
+        {/* Pipe from engine 2 to output */}
+        <line x1={300} y1={142} x2={340} y2={142} stroke="hsl(var(--border))" strokeWidth={2} />
+        <polygon points="340,137 350,142 340,147" fill="hsl(120,60%,45%)" />
+        <text x={355} y={145} fontSize={7} fill="hsl(var(--muted-foreground))">→ скв.</text>
 
-          {/* Pipe from engine 1 */}
-          <line x1={300} y1={52} x2={340} y2={52} stroke="hsl(var(--border))" strokeWidth={2} strokeDasharray="4 3" />
-          <text x={345} y={55} fontSize={7} fill="hsl(var(--muted-foreground))">стоп</text>
-        </svg>
-      </div>
-
-      {/* Temperature chart */}
-      <div className="h-[100px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={TEMP_DATA} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-            <XAxis dataKey="time" tick={{ fontSize: 8 }} label={{ value: "мин", position: "insideBottomRight", offset: -2, style: { fontSize: 8 } }} />
-            <YAxis domain={[18, 24]} tick={{ fontSize: 8 }} label={{ value: "°C", angle: -90, position: "insideLeft", style: { fontSize: 9 } }} />
-            <Tooltip formatter={(v: number) => [`${v.toFixed(1)} °C`, "Темп."]} labelFormatter={(l) => `${l} мин`} />
-            <Line type="monotone" dataKey="temp" name="Температура" stroke="hsl(0,70%,50%)" strokeWidth={2} dot={false} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
+        {/* Pipe from engine 1 */}
+        <line x1={300} y1={52} x2={340} y2={52} stroke="hsl(var(--border))" strokeWidth={2} strokeDasharray="4 3" />
+        <text x={345} y={55} fontSize={7} fill="hsl(var(--muted-foreground))">стоп</text>
+      </svg>
     </div>
   );
 }
