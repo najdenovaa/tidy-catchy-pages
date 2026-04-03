@@ -92,7 +92,7 @@ export default function FleetDetail() {
           </CardHeader>
           <CardContent className="flex-1 p-2">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={EMPTY_DATA} margin={{ top: 5, right: 50, left: 0, bottom: 20 }}>
+              <ComposedChart data={LIVE_DATA} margin={{ top: 5, right: 50, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
                 <XAxis
                   dataKey="time"
