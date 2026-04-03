@@ -50,6 +50,11 @@ export default function FleetDetail() {
       <div className="text-xs text-muted-foreground mb-4 ml-1 space-y-0.5">
         <p><span className="font-medium text-foreground">Бригада:</span> Портнова А.В. · <span className="font-medium text-foreground">Работа:</span> Цементирование ЭК 146мм</p>
         <p><span className="font-medium text-foreground">Месторождение:</span> Ореховое, скв. 21 · <span className="font-medium text-foreground">Заказчик:</span> ООО «Зарубежнефть Добыча Самара»</p>
+        <p className="flex items-center gap-3">
+          <span className="font-medium text-foreground">Сигнал:</span>
+          <span className="inline-flex items-center gap-1"><span className="text-green-500">✔</span> GPRS</span>
+          <span className="inline-flex items-center gap-1 text-muted-foreground/50">○ Спутник ГП ЯМАЛ 401</span>
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-[1400px] mx-auto">
