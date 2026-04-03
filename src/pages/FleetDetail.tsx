@@ -34,7 +34,7 @@ export default function FleetDetail() {
 
   return (
     <div className="min-h-screen bg-background p-4">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-1">
         <Button variant="ghost" size="sm" onClick={() => navigate("/admin")}>
           <ArrowLeft className="w-4 h-4 mr-1" /> Назад
         </Button>
@@ -46,6 +46,10 @@ export default function FleetDetail() {
           </span>
           <span className="text-xs text-green-500 font-medium">online</span>
         </div>
+      </div>
+      <div className="text-xs text-muted-foreground mb-4 ml-1 space-y-0.5">
+        <p><span className="font-medium text-foreground">Бригада:</span> Портнова А.В. · <span className="font-medium text-foreground">Работа:</span> Цементирование ЭК 146мм</p>
+        <p><span className="font-medium text-foreground">Месторождение:</span> Ореховое, скв. 21 · <span className="font-medium text-foreground">Заказчик:</span> ООО «Зарубежнефть Добыча Самара»</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-[1400px] mx-auto">
