@@ -129,6 +129,7 @@ export default function FleetDetail() {
                 <Line yAxisId="rate" type="stepAfter" dataKey="rate" name="Расход" stroke="hsl(210, 80%, 55%)" strokeWidth={1.5} dot={false} connectNulls={false} />
                 <Line yAxisId="rate" type="stepAfter" dataKey="density" name="Плотность" stroke="hsl(330, 60%, 45%)" strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls={false} />
                 <Bar yAxisId="volume" dataKey="volume" name="Объём" fill="hsl(195, 60%, 50%)" opacity={0.3} barSize={8} />
+                <Line yAxisId="rate" type="monotone" dataKey="temp" name="Темп. °C" stroke="hsl(30, 80%, 50%)" strokeWidth={1.5} dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </CardContent>
