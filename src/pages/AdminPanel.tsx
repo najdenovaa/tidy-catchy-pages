@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Home, LogOut, RefreshCw, Search, Users, Eye, ExternalLink, Globe, Calculator, MapPin, FlaskConical, Plus, Minus, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import FleetConfigPanel from "@/components/FleetConfigPanel";
 
 interface CalcLog {
   id: string; created_at: string; module: string; well_data: any; calc_params: any;
@@ -118,6 +119,7 @@ export default function AdminPanel() {
   const [searchUserId, setSearchUserId] = useState("");
   const [userCalcs, setUserCalcs] = useState<SavedCalc[]>([]);
   const [viewingUser, setViewingUser] = useState<Profile | null>(null);
+  const [fleetConfigs, setFleetConfigs] = useState<any[]>([]);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -135,18 +137,20 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     setLoading(true);
-    const [calcRes, visitRes, profilesRes, analysisRes, creditsRes] = await Promise.all([
+    const [calcRes, visitRes, profilesRes, analysisRes, creditsRes, fleetRes] = await Promise.all([
       supabase.from("calculation_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("visit_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("analysis_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("user_credits").select("*"),
+      supabase.from("fleet_configs").select("*").order("fleet_number"),
     ]);
     if (calcRes.data) setCalcLogs(calcRes.data as CalcLog[]);
     if (visitRes.data) setVisitLogs(visitRes.data as VisitLog[]);
     if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
     if (analysisRes.data) setAnalysisLogs(analysisRes.data as AnalysisLog[]);
     if (creditsRes.data) setUserCredits(creditsRes.data as UserCredit[]);
+    if (fleetRes.data) setFleetConfigs(fleetRes.data);
     setLoading(false);
   };
 
@@ -248,19 +252,19 @@ export default function AdminPanel() {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[1, 2, 3, 5].map(fleet => {
-                const isOnline = fleet === 5;
+              {fleetConfigs.map(fc => {
+                const isOnline = fc.is_online;
                 const dotColor = isOnline ? "bg-green-500" : "bg-red-500";
                 const textColor = isOnline ? "text-green-500" : "text-red-500";
                 const Wrapper = isOnline ? "button" : "div";
                 return (
                   <Wrapper
-                    key={fleet}
+                    key={fc.fleet_number}
                     className={`flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-left ${isOnline ? "cursor-pointer hover:bg-accent/50 transition-colors" : ""}`}
-                    {...(isOnline ? { onClick: () => navigate("/admin/fleet/5") } : {})}
+                    {...(isOnline ? { onClick: () => navigate(`/admin/fleet/${fc.fleet_number}`) } : {})}
                   >
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-foreground">{fleet} флот</p>
+                      <p className="text-sm font-medium text-foreground">{fc.fleet_number} флот</p>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="relative flex h-2.5 w-2.5">
@@ -275,6 +279,9 @@ export default function AdminPanel() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Fleet config panel — admin only */}
+        <FleetConfigPanel />
 
         <div className="flex justify-end mb-4">
           <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>

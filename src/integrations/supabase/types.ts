@@ -223,6 +223,84 @@ export type Database = {
         }
         Relationships: []
       }
+      fleet_configs: {
+        Row: {
+          brigade: string | null
+          casing_diameter: string | null
+          created_at: string
+          customer: string | null
+          density: number | null
+          engine1_rpm: number | null
+          engine2_rpm: number | null
+          field_name: string | null
+          fleet_number: number
+          id: string
+          is_online: boolean
+          operation: string | null
+          pressure: number | null
+          rate: number | null
+          signal_type: string | null
+          tank1_capacity: number | null
+          tank1_level: number | null
+          tank2_capacity: number | null
+          tank2_level: number | null
+          temperature: number | null
+          updated_at: string
+          volume: number | null
+          well_number: string | null
+        }
+        Insert: {
+          brigade?: string | null
+          casing_diameter?: string | null
+          created_at?: string
+          customer?: string | null
+          density?: number | null
+          engine1_rpm?: number | null
+          engine2_rpm?: number | null
+          field_name?: string | null
+          fleet_number: number
+          id?: string
+          is_online?: boolean
+          operation?: string | null
+          pressure?: number | null
+          rate?: number | null
+          signal_type?: string | null
+          tank1_capacity?: number | null
+          tank1_level?: number | null
+          tank2_capacity?: number | null
+          tank2_level?: number | null
+          temperature?: number | null
+          updated_at?: string
+          volume?: number | null
+          well_number?: string | null
+        }
+        Update: {
+          brigade?: string | null
+          casing_diameter?: string | null
+          created_at?: string
+          customer?: string | null
+          density?: number | null
+          engine1_rpm?: number | null
+          engine2_rpm?: number | null
+          field_name?: string | null
+          fleet_number?: number
+          id?: string
+          is_online?: boolean
+          operation?: string | null
+          pressure?: number | null
+          rate?: number | null
+          signal_type?: string | null
+          tank1_capacity?: number | null
+          tank1_level?: number | null
+          tank2_capacity?: number | null
+          tank2_level?: number | null
+          temperature?: number | null
+          updated_at?: string
+          volume?: number | null
+          well_number?: string | null
+        }
+        Relationships: []
+      }
       followup_questions: {
         Row: {
           answer: string | null
