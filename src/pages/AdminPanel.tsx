@@ -241,6 +241,31 @@ export default function AdminPanel() {
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔬 Анализы</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{analysisLogs.length}</p></CardContent></Card>
         </div>
 
+        {/* Удалённый мониторинг */}
+        <Card className="mb-6">
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-sm">📡 Удалённый мониторинг</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[1, 2, 3, 5].map(fleet => (
+                <div key={fleet} className="flex items-center gap-3 rounded-lg border border-border px-4 py-3">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-foreground">{fleet} флот</p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 animate-ping" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                    </span>
+                    <span className="text-xs text-red-500 font-medium">offline</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="flex justify-end mb-4">
           <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Обновить
