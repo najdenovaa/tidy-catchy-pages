@@ -139,12 +139,13 @@ export default function FleetDetail() {
           <CardContent className="flex-1 p-0 relative">
             <iframe
               title="Местоположение флота"
-              src="https://www.openstreetmap.org/export/embed.html?bbox=53.3%2C54.4%2C53.6%2C54.55&layer=mapnik&marker=54.48%2C53.47"
+              src="https://www.openstreetmap.org/export/embed.html?bbox=53.2%2C54.15%2C53.7%2C54.35&layer=mapnik&marker=54.21%2C53.47"
               className="w-full h-full border-0"
               style={{ minHeight: 0 }}
             />
-            <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-3 py-1.5">
-              <p className="text-[11px] text-white font-medium">📍 Месторождение Ореховое, скважина 21</p>
+            <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-3 py-2">
+              <p className="text-[11px] text-white font-medium">📍 Месторождение Ореховое, скв. 21</p>
+              <p className="text-[10px] text-white/70">Цементирование экспл. колонны · ООО «Зарубежнефть Добыча Самара»</p>
             </div>
           </CardContent>
         </Card>
