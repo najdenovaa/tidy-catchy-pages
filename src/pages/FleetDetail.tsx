@@ -91,7 +91,7 @@ export default function FleetDetail() {
             <div className="grid grid-cols-5 gap-1 text-center">
               {[
                 { label: "Давление", value: "6.5", unit: "МПа", color: "text-red-500" },
-                { label: "Расход", value: "12.0", unit: "л/с", color: "text-blue-500" },
+                { label: "Расход", value: "11.59", unit: "л/с", color: "text-blue-500" },
                 { label: "Плотность", value: "1.20", unit: "г/см³", color: "text-pink-700" },
                 { label: "Объём", value: "1.75", unit: "м³", color: "text-cyan-500" },
                 { label: "Темп.", value: "22.6", unit: "°C", color: "text-orange-500" },
