@@ -610,6 +610,61 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
               </div>
             </CardContent>
           </Card>
+
+          {/* JOINT-BY-JOINT PLACEMENT SCHEDULE */}
+          {jointSchedule && jointSchedule.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <span>📋 Таблица спуска — расстановка центраторов</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Всего Ф: <span className="text-primary font-bold">{jointSchedule.filter(j => j.hasCentralizer).length} шт.</span>
+                    {' '}/ {jointSchedule.length} труб
+                  </span>
+                </CardTitle>
+                <p className="text-[10px] text-muted-foreground">Спуск с устья. Ф — установить центратор на указанной глубине.</p>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="max-h-[500px] overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-[10px] px-2 w-12">№ трубы</TableHead>
+                        <TableHead className="text-[10px] px-2">Верх, м</TableHead>
+                        <TableHead className="text-[10px] px-2">Низ, м</TableHead>
+                        <TableHead className="text-[10px] px-2 text-center">Центратор</TableHead>
+                        <TableHead className="text-[10px] px-2">Глубина уст., м</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {jointSchedule.map((j) => (
+                        <TableRow
+                          key={j.jointNum}
+                          className={j.hasCentralizer ? "bg-primary/5" : ""}
+                        >
+                          <TableCell className="text-xs px-2 py-1 font-medium">{j.jointNum}</TableCell>
+                          <TableCell className="text-xs px-2 py-1">{j.topMD}</TableCell>
+                          <TableCell className="text-xs px-2 py-1">{j.bottomMD}</TableCell>
+                          <TableCell className="text-xs px-2 py-1 text-center">
+                            {j.hasCentralizer
+                              ? <span className="text-primary font-bold text-sm">Ф</span>
+                              : <span className="text-muted-foreground">—</span>
+                            }
+                          </TableCell>
+                          <TableCell className="text-xs px-2 py-1 font-medium">
+                            {j.centralizerDepths.length > 0
+                              ? j.centralizerDepths.map(d => `${d} м`).join(", ")
+                              : ""
+                            }
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
     </div>
