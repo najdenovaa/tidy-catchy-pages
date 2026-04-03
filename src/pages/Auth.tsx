@@ -16,6 +16,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -47,14 +48,38 @@ export default function Auth() {
     try {
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
-      toast({ title: "Регистрация успешна!", description: "Вы автоматически вошли в систему" });
-      navigate("/dashboard");
+      setSignupSuccess(true);
     } catch (err: any) {
       toast({ title: "Ошибка регистрации", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
+
+  if (signupSuccess) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-sm">
+          <CardContent className="pt-8 text-center space-y-4">
+            <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
+              <span className="text-3xl">✉️</span>
+            </div>
+            <h2 className="text-lg font-semibold">Подтвердите email</h2>
+            <p className="text-sm text-muted-foreground">
+              На адрес <strong>{email}</strong> отправлено письмо со ссылкой для подтверждения. 
+              Перейдите по ссылке в письме, затем вернитесь и войдите.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Не получили письмо? Проверьте папку «Спам».
+            </p>
+            <Button variant="outline" className="w-full" onClick={() => { setSignupSuccess(false); setTab("login"); }}>
+              <LogIn className="w-4 h-4 mr-2" /> Перейти ко входу
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
