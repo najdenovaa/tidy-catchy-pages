@@ -252,19 +252,19 @@ export default function AdminPanel() {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[1, 2, 3, 5].map(fleet => {
-                const isOnline = fleet === 5;
+              {fleetConfigs.map(fc => {
+                const isOnline = fc.is_online;
                 const dotColor = isOnline ? "bg-green-500" : "bg-red-500";
                 const textColor = isOnline ? "text-green-500" : "text-red-500";
                 const Wrapper = isOnline ? "button" : "div";
                 return (
                   <Wrapper
-                    key={fleet}
+                    key={fc.fleet_number}
                     className={`flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-left ${isOnline ? "cursor-pointer hover:bg-accent/50 transition-colors" : ""}`}
-                    {...(isOnline ? { onClick: () => navigate("/admin/fleet/5") } : {})}
+                    {...(isOnline ? { onClick: () => navigate(`/admin/fleet/${fc.fleet_number}`) } : {})}
                   >
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-foreground">{fleet} флот</p>
+                      <p className="text-sm font-medium text-foreground">{fc.fleet_number} флот</p>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="relative flex h-2.5 w-2.5">
@@ -279,6 +279,9 @@ export default function AdminPanel() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Fleet config panel — admin only */}
+        <FleetConfigPanel />
 
         <div className="flex justify-end mb-4">
           <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
