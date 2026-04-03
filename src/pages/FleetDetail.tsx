@@ -4,8 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Camera, Send, MapPin } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import {
-  ComposedChart, XAxis, YAxis, CartesianGrid, Legend,
-  ResponsiveContainer,
+  ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Legend,
+  ResponsiveContainer, Tooltip,
 } from "recharts";
 
 const EMPTY_DATA = Array.from({ length: 20 }, (_, i) => ({ time: i * 5 }));
