@@ -123,6 +123,11 @@ export default function Home() {
                 <span className="text-border">|</span>
                 <a href="https://t.me/deallbiz" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">📢 Новостной канал DeAll</a>
               </div>
+              <div className="pt-2 border-t border-border/50">
+                <Link to="/terms" className="text-xs text-muted-foreground hover:text-primary transition-colors">
+                  Пользовательское соглашение и Политика конфиденциальности
+                </Link>
+              </div>
             </div>
           </div>
           <img src={drillingBanner} alt="Буровые установки" className="w-full h-20 sm:h-28 object-cover object-center opacity-30" />
