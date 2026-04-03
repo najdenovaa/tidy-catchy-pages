@@ -4,11 +4,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// Temperature data: gradual rise from ~20 to 22+
-const TEMP_DATA = Array.from({ length: 26 }, (_, i) => ({
-  time: i,
-  temp: 19.5 + (i / 25) * 3.2 + (Math.random() - 0.5) * 0.3,
-}));
 
 function Tank({ x, y, width, height, label, capacity, level }: {
   x: number; y: number; width: number; height: number;
