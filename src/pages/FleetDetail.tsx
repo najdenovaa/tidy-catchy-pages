@@ -86,7 +86,23 @@ export default function FleetDetail() {
           <CardHeader className="py-2 px-3">
             <CardTitle className="text-xs">📊 График цементирования</CardTitle>
           </CardHeader>
-          <CardContent className="flex-1 p-2">
+          <CardContent className="flex-1 p-2 flex flex-col gap-1">
+            {/* Digital readout panel */}
+            <div className="grid grid-cols-5 gap-1 text-center">
+              {[
+                { label: "Давление", value: "6.5", unit: "МПа", color: "text-red-500" },
+                { label: "Расход", value: "6.1", unit: "л/с", color: "text-blue-500" },
+                { label: "Плотность", value: "1.20", unit: "г/см³", color: "text-pink-700" },
+                { label: "Объём", value: "1.75", unit: "м³", color: "text-cyan-500" },
+                { label: "Темп.", value: "22.6", unit: "°C", color: "text-orange-500" },
+              ].map((item) => (
+                <div key={item.label} className="rounded-md border border-border bg-muted/40 py-1 px-1">
+                  <p className="text-[8px] text-muted-foreground leading-tight">{item.label}</p>
+                  <p className={`text-sm font-bold leading-tight ${item.color}`}>{item.value}</p>
+                  <p className="text-[7px] text-muted-foreground leading-tight">{item.unit}</p>
+                </div>
+              ))}
+            </div>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={LIVE_DATA} margin={{ top: 5, right: 50, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
