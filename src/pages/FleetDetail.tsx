@@ -10,36 +10,33 @@ import {
 } from "recharts";
 
 // Simulated "live" data: buffer → cement, jagged real-time style (pressure in MPa, 65 atm ≈ 6.5 MPa)
-const LIVE_DATA: { time: number; pressure: number | null; rate: number | null; density: number | null; volume: number | null }[] = [
-  { time: 0, pressure: 0, rate: 0, density: null, volume: 0 },
-  { time: 1, pressure: 0.2, rate: 0, density: null, volume: 0 },
-  // Buffer start
-  { time: 2, pressure: 1.8, rate: 4.2, density: 1.02, volume: 0.05 },
-  { time: 3, pressure: 2.5, rate: 5.8, density: 1.02, volume: 0.12 },
-  { time: 4, pressure: 3.2, rate: 6.1, density: 1.03, volume: 0.21 },
-  { time: 5, pressure: 3.8, rate: 5.5, density: 1.02, volume: 0.30 },
-  { time: 6, pressure: 4.1, rate: 6.3, density: 1.03, volume: 0.40 },
-  { time: 7, pressure: 4.4, rate: 5.9, density: 1.02, volume: 0.48 },
-  { time: 8, pressure: 4.2, rate: 6.0, density: 1.02, volume: 0.55 },
-  { time: 9, pressure: 4.5, rate: 5.7, density: 1.03, volume: 0.62 },
-  // Transition buffer → cement
-  { time: 10, pressure: 4.8, rate: 5.2, density: 1.05, volume: 0.68 },
-  { time: 11, pressure: 5.2, rate: 4.8, density: 1.08, volume: 0.73 },
-  // Cement start
-  { time: 12, pressure: 5.6, rate: 5.5, density: 1.14, volume: 0.80 },
-  { time: 13, pressure: 6.0, rate: 5.8, density: 1.18, volume: 0.88 },
-  { time: 14, pressure: 6.3, rate: 6.2, density: 1.20, volume: 0.97 },
-  { time: 15, pressure: 6.5, rate: 5.9, density: 1.20, volume: 1.05 },
-  { time: 16, pressure: 6.7, rate: 6.4, density: 1.21, volume: 1.14 },
-  { time: 17, pressure: 6.4, rate: 5.7, density: 1.20, volume: 1.22 },
-  { time: 18, pressure: 6.6, rate: 6.1, density: 1.20, volume: 1.31 },
-  { time: 19, pressure: 6.8, rate: 5.8, density: 1.19, volume: 1.40 },
-  { time: 20, pressure: 6.5, rate: 6.0, density: 1.20, volume: 1.48 },
-  { time: 21, pressure: 6.7, rate: 6.3, density: 1.21, volume: 1.56 },
-  { time: 22, pressure: 6.4, rate: 5.6, density: 1.20, volume: 1.63 },
-  { time: 23, pressure: 6.6, rate: 5.9, density: 1.20, volume: 1.70 },
-  { time: 24, pressure: 6.5, rate: 6.1, density: 1.20, volume: 1.75 },
-  { time: 25, pressure: 6.5, rate: 6.1, density: 1.20, volume: 1.75 },
+const LIVE_DATA: { time: number; pressure: number | null; rate: number | null; density: number | null; volume: number | null; temp: number | null }[] = [
+  { time: 0, pressure: 0, rate: 0, density: null, volume: 0, temp: 19.5 },
+  { time: 1, pressure: 0.2, rate: 0, density: null, volume: 0, temp: 19.7 },
+  { time: 2, pressure: 1.8, rate: 4.2, density: 1.02, volume: 0.05, temp: 19.9 },
+  { time: 3, pressure: 2.5, rate: 5.8, density: 1.02, volume: 0.12, temp: 20.0 },
+  { time: 4, pressure: 3.2, rate: 6.1, density: 1.03, volume: 0.21, temp: 20.1 },
+  { time: 5, pressure: 3.8, rate: 5.5, density: 1.02, volume: 0.30, temp: 20.2 },
+  { time: 6, pressure: 4.1, rate: 6.3, density: 1.03, volume: 0.40, temp: 20.3 },
+  { time: 7, pressure: 4.4, rate: 5.9, density: 1.02, volume: 0.48, temp: 20.5 },
+  { time: 8, pressure: 4.2, rate: 6.0, density: 1.02, volume: 0.55, temp: 20.6 },
+  { time: 9, pressure: 4.5, rate: 5.7, density: 1.03, volume: 0.62, temp: 20.8 },
+  { time: 10, pressure: 4.8, rate: 5.2, density: 1.05, volume: 0.68, temp: 20.9 },
+  { time: 11, pressure: 5.2, rate: 4.8, density: 1.08, volume: 0.73, temp: 21.0 },
+  { time: 12, pressure: 5.6, rate: 5.5, density: 1.14, volume: 0.80, temp: 21.2 },
+  { time: 13, pressure: 6.0, rate: 5.8, density: 1.18, volume: 0.88, temp: 21.3 },
+  { time: 14, pressure: 6.3, rate: 6.2, density: 1.20, volume: 0.97, temp: 21.5 },
+  { time: 15, pressure: 6.5, rate: 5.9, density: 1.20, volume: 1.05, temp: 21.6 },
+  { time: 16, pressure: 6.7, rate: 6.4, density: 1.21, volume: 1.14, temp: 21.7 },
+  { time: 17, pressure: 6.4, rate: 5.7, density: 1.20, volume: 1.22, temp: 21.8 },
+  { time: 18, pressure: 6.6, rate: 6.1, density: 1.20, volume: 1.31, temp: 21.9 },
+  { time: 19, pressure: 6.8, rate: 5.8, density: 1.19, volume: 1.40, temp: 22.0 },
+  { time: 20, pressure: 6.5, rate: 6.0, density: 1.20, volume: 1.48, temp: 22.1 },
+  { time: 21, pressure: 6.7, rate: 6.3, density: 1.21, volume: 1.56, temp: 22.2 },
+  { time: 22, pressure: 6.4, rate: 5.6, density: 1.20, volume: 1.63, temp: 22.3 },
+  { time: 23, pressure: 6.6, rate: 5.9, density: 1.20, volume: 1.70, temp: 22.4 },
+  { time: 24, pressure: 6.5, rate: 6.1, density: 1.20, volume: 1.75, temp: 22.5 },
+  { time: 25, pressure: 6.5, rate: 6.1, density: 1.20, volume: 1.75, temp: 22.6 },
 ];
 
 export default function FleetDetail() {
@@ -132,6 +129,7 @@ export default function FleetDetail() {
                 <Line yAxisId="rate" type="stepAfter" dataKey="rate" name="Расход" stroke="hsl(210, 80%, 55%)" strokeWidth={1.5} dot={false} connectNulls={false} />
                 <Line yAxisId="rate" type="stepAfter" dataKey="density" name="Плотность" stroke="hsl(330, 60%, 45%)" strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls={false} />
                 <Bar yAxisId="volume" dataKey="volume" name="Объём" fill="hsl(195, 60%, 50%)" opacity={0.3} barSize={8} />
+                <Line yAxisId="rate" type="monotone" dataKey="temp" name="Темп. °C" stroke="hsl(30, 80%, 50%)" strokeWidth={1.5} dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </CardContent>
