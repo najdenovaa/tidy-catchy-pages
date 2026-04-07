@@ -90,22 +90,26 @@ export function autoPlaceTurbulators(
   fluidPV: number,
   fluidYP: number,
   flowRateLps: number,
-  targetMultiplier: number = 2.0,
+  bladesCount: number = 4,
+  bladeAngle: number = 45,
+  bladeHeight: number = 15,
   spacingM: number = 6,
 ): { points: TurbulatorPoint[]; summary: AutoTurbulatorResult[] } {
-  const casingID_mm = getCasingID(wellData.casingOD, wellData.casingWall);
   const holeD = wellData.holeDiameter;
-  const dh_m = (holeD - wellData.casingOD) / 1000; // hydraulic diameter annulus, m
-  if (dh_m <= 0) return { points: [], summary: [] };
+  const annularGap_mm = (holeD - wellData.casingOD) / 2;
+  const dh_m = (holeD - wellData.casingOD) / 1000;
+  if (dh_m <= 0 || annularGap_mm <= 0) return { points: [], summary: [] };
 
   const areaAnn = Math.PI / 4 * ((holeD / 1000) ** 2 - (wellData.casingOD / 1000) ** 2);
   const Q_m3s = flowRateLps / 1000;
   const velocity = areaAnn > 0 ? Q_m3s / areaAnn : 0;
 
-  // Bingham Re
-  const pv_Pas = fluidPV / 1000; // cP → Pa·s
+  const pv_Pas = fluidPV / 1000;
   const rho = mudDensity;
   const Re = pv_Pas > 0 ? (rho * velocity * dh_m) / pv_Pas : 99999;
+
+  // Calculate turbulence multiplier from geometry
+  const turbMult = calcTurbulenceMultiplier(bladesCount, bladeAngle, bladeHeight, annularGap_mm);
 
   const step = 10;
   const points: TurbulatorPoint[] = [];
@@ -113,7 +117,6 @@ export function autoPlaceTurbulators(
   let currentSeg: { fromMD: number; toMD: number; reValues: number[] } | null = null;
 
   for (let md = 0; md <= wellData.casingDepthMD; md += step) {
-    // Laminar if Re < 2100 — turbulizer needed
     const needsTurb = Re < 2100;
     if (needsTurb) {
       if (!currentSeg) currentSeg = { fromMD: md, toMD: md, reValues: [Re] };
@@ -137,10 +140,9 @@ export function autoPlaceTurbulators(
         points.push({
           id: Math.random().toString(36).slice(2, 9),
           md: turbMD,
-          bladesCount: 4,
-          bladeAngle: 45,
-          bladeHeight: 15,
-          turbulenceMultiplier: targetMultiplier,
+          bladesCount,
+          bladeAngle,
+          bladeHeight,
         });
       }
     }
@@ -151,8 +153,9 @@ export function autoPlaceTurbulators(
       count,
       spacingM: Math.round(actualSpacing * 10) / 10,
       avgReOriginal: Math.round(avgRe),
-      avgReWithTurb: Math.round(avgRe * targetMultiplier),
-      flowRegime: avgRe * targetMultiplier > 2100 ? "Турбулентный" : "Переходный",
+      avgReWithTurb: Math.round(avgRe * turbMult),
+      turbMultiplier: turbMult,
+      flowRegime: avgRe * turbMult > 2100 ? "Турбулентный" : "Переходный",
     });
   }
 
