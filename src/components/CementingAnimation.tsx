@@ -49,6 +49,16 @@ interface AnnulusSegment {
   botMD: number;
 }
 
+interface CementTarget {
+  label: string;
+  lengthM: number;
+}
+
+interface BufferTarget {
+  label: string;
+  share: number;
+}
+
 const FLUID_COLORS: Record<FluidKey, string> = {
   mud: "hsl(30, 50%, 45%)",
   buffer: "hsl(200, 60%, 50%)",
@@ -75,6 +85,82 @@ const SPEED_OPTIONS = [1, 2, 5, 10];
 const EPS = 1e-6;
 const BOTTOM_UP_FLOW_ORDER: FluidKey[] = ["displacement", "cement", "buffer", "mud"];
 const TOP_DOWN_FLOW_ORDER: FluidKey[] = ["mud", "buffer", "cement", "displacement"];
+
+function buildCementTargets(slurries: SlurryInput[], casingDepthMD: number): CementTarget[] {
+  return [...slurries]
+    .sort((a, b) => a.topDepthMD - b.topDepthMD)
+    .map((slurry, index, ordered) => {
+      const nextTop = index === ordered.length - 1 ? casingDepthMD : ordered[index + 1].topDepthMD;
+      return {
+        label: slurry.name || `${FLUID_LABELS.cement} ${index + 1}`,
+        lengthM: Math.max(0, Math.min(casingDepthMD, nextTop) - slurry.topDepthMD),
+      };
+    })
+    .filter((target) => target.lengthM > EPS)
+    .reverse();
+}
+
+function buildBufferTargets(buffers: BufferFluid[]): BufferTarget[] {
+  const ordered = [...buffers].reverse();
+  const totalVolume = ordered.reduce((sum, buffer) => sum + Math.max(0, buffer.volume), 0);
+  return ordered.map((buffer, index) => ({
+    label: buffer.name || `${FLUID_LABELS.buffer} ${ordered.length - index}`,
+    share: totalVolume > EPS ? Math.max(0, buffer.volume) / totalVolume : 1 / Math.max(ordered.length, 1),
+  }));
+}
+
+function buildAnnulusSegmentsFromTargets(
+  point: PressurePoint,
+  casingDepthMD: number,
+  cementTargets: CementTarget[],
+  bufferTargets: BufferTarget[],
+): AnnulusSegment[] {
+  if (casingDepthMD <= EPS) return [];
+
+  const segments: AnnulusSegment[] = [];
+  let cursorBot = casingDepthMD;
+
+  const addSegment = (fluid: FluidKey, label: string, rawHeight: number) => {
+    const heightM = Math.max(0, Math.min(rawHeight, cursorBot));
+    if (heightM <= EPS) return;
+
+    const topMD = Math.max(0, cursorBot - heightM);
+    segments.push({ fluid, label, heightM, topMD, botMD: cursorBot });
+    cursorBot = topMD;
+  };
+
+  addSegment("displacement", FLUID_LABELS.displacement, point.annDisplHeightM);
+
+  let remainingCement = Math.min(point.annCementHeightM, cursorBot);
+  for (const target of cementTargets) {
+    if (remainingCement <= EPS) break;
+    const heightM = Math.min(target.lengthM, remainingCement);
+    addSegment("cement", target.label, heightM);
+    remainingCement -= heightM;
+  }
+  if (remainingCement > EPS) {
+    addSegment("cement", FLUID_LABELS.cement, remainingCement);
+  }
+
+  let remainingBuffer = Math.min(point.annBufferHeightM, cursorBot);
+  const totalShare = bufferTargets.reduce((sum, target) => sum + target.share, 0) || 1;
+  for (const target of bufferTargets) {
+    if (remainingBuffer <= EPS) break;
+    const plannedHeight = point.annBufferHeightM * (target.share / totalShare);
+    const heightM = Math.min(plannedHeight, remainingBuffer);
+    addSegment("buffer", target.label, heightM);
+    remainingBuffer -= heightM;
+  }
+  if (remainingBuffer > EPS) {
+    addSegment("buffer", FLUID_LABELS.buffer, remainingBuffer);
+  }
+
+  if (cursorBot > EPS) {
+    addSegment("mud", FLUID_LABELS.mud, cursorBot);
+  }
+
+  return segments;
+}
 
 function pushBatch(target: PumpBatch[], batch: PumpBatch) {
   if (batch.volumeM3 <= EPS) return;
@@ -290,6 +376,8 @@ export default function CementingAnimation({
 
   const bufferNames = useMemo(() => new Set(buffers.map((buffer) => buffer.name).filter(Boolean)), [buffers]);
   const slurryNames = useMemo(() => new Set(slurries.map((slurry) => slurry.name).filter(Boolean)), [slurries]);
+  const cementTargets = useMemo(() => buildCementTargets(slurries, casingDepthMD), [casingDepthMD, slurries]);
+  const bufferTargets = useMemo(() => buildBufferTargets(buffers), [buffers]);
 
   const visualFrames = useMemo(() => {
     const history: PumpBatch[] = [];
@@ -302,16 +390,15 @@ export default function CementingAnimation({
         pushBatch(history, { ...batchMeta, volumeM3: deltaVol });
       }
 
-      const exitedBatches = buildExitedBatches(history, point.cumulativeVolume, pipeCapacityM3);
       const frame = {
         pipeSegments: buildPipeSegments(history, point.cumulativeVolume, pipeCapacityM3, casingDepthMD),
-        annulusSegments: buildAnnulusSegments(exitedBatches, point, casingDepthMD),
+        annulusSegments: buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets),
       };
 
       lastCumVol = point.cumulativeVolume;
       return frame;
     });
-  }, [bufferNames, casingDepthMD, pipeCapacityM3, pressureData, slurryNames]);
+  }, [bufferNames, bufferTargets, casingDepthMD, cementTargets, pipeCapacityM3, pressureData, slurryNames]);
 
   const currentVisual = visualFrames[Math.min(currentIndex, Math.max(visualFrames.length - 1, 0))] || {
     pipeSegments: [] as PipeSegment[],
@@ -634,81 +721,6 @@ export default function CementingAnimation({
                 Башмак ОК {casingDepthMD.toFixed(0)} м
               </text>
 
-              {displacementTopMD !== null && (
-                <g>
-                  <line
-                    x1={cx - pipeWidth - annWidth - 4}
-                    y1={botY - currentPoint.annDisplHeightM * scaleFactor}
-                    x2={cx - pipeWidth - annWidth - 24}
-                    y2={botY - currentPoint.annDisplHeightM * scaleFactor}
-                    stroke={FLUID_COLORS.displacement}
-                    strokeWidth="0.8"
-                    strokeDasharray="2,2"
-                  />
-                  <text
-                    x={cx - pipeWidth - annWidth - 26}
-                    y={botY - currentPoint.annDisplHeightM * scaleFactor + 3}
-                    textAnchor="end"
-                    className="text-[6px]"
-                    fill={FLUID_COLORS.displacement}
-                  >
-                    {displacementTopMD.toFixed(0)} м
-                  </text>
-                </g>
-              )}
-
-              {cementTopMD !== null && (
-                <g>
-                  <line
-                    x1={cx + pipeWidth + annWidth + 6}
-                    y1={topY + cementTopMD * scaleFactor}
-                    x2={cx + pipeWidth + annWidth + 30}
-                    y2={topY + cementTopMD * scaleFactor}
-                    stroke={FLUID_COLORS.cement}
-                    strokeWidth="1"
-                    strokeDasharray="3,2"
-                  />
-                  <text
-                    x={cx + pipeWidth + annWidth + 32}
-                    y={topY + cementTopMD * scaleFactor + 3}
-                    className="text-[7px]"
-                    fill={FLUID_COLORS.cement}
-                  >
-                    {cementTopMD.toFixed(0)} м
-                  </text>
-                  <text
-                    x={cx + pipeWidth + annWidth + 32}
-                    y={topY + cementTopMD * scaleFactor + 12}
-                    className="text-[6px]"
-                    fill={FLUID_COLORS.cement}
-                  >
-                    ↕{currentPoint.annCementHeightM.toFixed(0)} м
-                  </text>
-                </g>
-              )}
-
-              {bufferTopMD !== null && (
-                <g>
-                  <line
-                    x1={cx - pipeWidth - annWidth - 4}
-                    y1={topY + bufferTopMD * scaleFactor}
-                    x2={cx - pipeWidth - annWidth - 20}
-                    y2={topY + bufferTopMD * scaleFactor}
-                    stroke={FLUID_COLORS.buffer}
-                    strokeWidth="0.8"
-                    strokeDasharray="2,2"
-                  />
-                  <text
-                    x={cx - pipeWidth - annWidth - 22}
-                    y={topY + bufferTopMD * scaleFactor + 3}
-                    textAnchor="end"
-                    className="text-[6px]"
-                    fill={FLUID_COLORS.buffer}
-                  >
-                    {bufferTopMD.toFixed(0)} м
-                  </text>
-                </g>
-              )}
             </svg>
 
             <div className="mt-2 text-[10px] text-center text-muted-foreground">
