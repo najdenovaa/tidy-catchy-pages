@@ -10,6 +10,7 @@ import type { WellData } from "@/lib/cementing-calculations";
 import {
   calculateCentralization,
   autoPlaceCentralizers,
+  autoPlaceTurbulators,
   centralizerPresets,
   centralizerTypeLabels,
   type CentralizerInterval,
@@ -18,11 +19,16 @@ import {
   type CentralizationResult,
   type AutoPlacementInterval,
   type TurbulatorInterval,
+  type TurbulatorPoint,
+  type AutoTurbulatorResult,
 } from "@/lib/centralization-calculations";
 
 interface Props {
   wellData: WellData;
   mudDensity: number;
+  fluidPV?: number;
+  fluidYP?: number;
+  flowRateLps?: number;
   onResultsChange?: (results: CentralizationResult[] | null) => void;
   onIntervalsChange?: (intervals: CentralizerInterval[]) => void;
 }
