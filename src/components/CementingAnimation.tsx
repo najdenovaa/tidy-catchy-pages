@@ -39,15 +39,6 @@ export default function CementingAnimation({ pressureData, stageBoundaries, casi
   const speed = SPEED_OPTIONS[speedIdx];
 
   const currentPoint = pressureData[Math.min(currentIndex, maxIndex)] || pressureData[0];
-  if (!currentPoint) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center text-muted-foreground">
-          Нет данных. Нажмите «РАСЧЁТ».
-        </CardContent>
-      </Card>
-    );
-  }
 
   // Animation loop
   const animate = useCallback((timestamp: number) => {
