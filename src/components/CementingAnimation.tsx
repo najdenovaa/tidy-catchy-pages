@@ -444,7 +444,7 @@ export default function CementingAnimation({
                 <div className="text-xs text-muted-foreground mb-1">Состав в трубе</div>
                 <div className="h-6 rounded-md overflow-hidden flex" style={{ border: "1px solid hsl(var(--border))" }}>
                   {pipeSegments.map((seg, i) => (
-                    <div key={i} style={{ width: `${(seg.fracBot - seg.fracTop) * 100}%`, backgroundColor: FLUID_COLORS[seg.fluid] }} className="h-full transition-all duration-200" title={`${seg.name}: ${((seg.fracBot - seg.fracTop) * 100).toFixed(1)}%`} />
+                    <div key={i} style={{ width: `${(seg.fracBot - seg.fracTop) * 100}%`, backgroundColor: FLUID_COLORS[seg.fluid] }} className="h-full transition-all duration-200" title={`${seg.name}: ${seg.volM3.toFixed(2)} м³ (${((seg.fracBot - seg.fracTop) * 100).toFixed(1)}%)`} />
                   ))}
                 </div>
                 <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
