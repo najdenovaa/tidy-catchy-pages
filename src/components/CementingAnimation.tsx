@@ -378,10 +378,8 @@ export default function CementingAnimation({
                       {seg.volM3.toFixed(2)} м³
                     </text>
                   </g>
-                );
-                  </text>
-                );
               })}
+
             </svg>
 
             {/* Legend */}
