@@ -1,11 +1,29 @@
 /**
  * Torque & Drag calculation engine — Soft-string (Johancsik) model.
  * Extended: BHA modes, motor drilling, back-reaming, fatigue, friction calibration, pick-up/slack-off.
+ * V2: Fluid rheology effects (viscous drag), centralizer drag, cement-with-rotation mode.
  */
 
 import { interpolateTVD, type TrajectoryPoint } from "./cementing-calculations";
 
 /* ───── Types ───── */
+
+export interface FluidSegment {
+  name: string;
+  density: number;       // кг/м³
+  pv: number;            // сПз (пластическая вязкость)
+  yp: number;            // Па (динамическое напряжение сдвига)
+  topMD: number;         // м — верхняя граница в затрубье
+  bottomMD: number;      // м — нижняя граница
+}
+
+export interface CentralizerDragItem {
+  fromMD: number;
+  toMD: number;
+  centralizersPerJoint: number;
+  jointLength: number;
+  dragForcePerUnit: number;  // кН — сила трения на 1 центратор
+}
 
 export interface TDInput {
   trajectory: TrajectoryPoint[];
@@ -30,9 +48,14 @@ export interface TDInput {
   dcWeight?: number;           // кг/м
   motorBendAngle?: number;     // угол перекоса ГЗД, °
   backReamSpeed?: number;      // скорость обратной проработки, м/мин
+  // V2: Fluid rheology
+  fluidSegments?: FluidSegment[];     // annular fluids for viscous drag
+  tripSpeedMps?: number;              // скорость спуска/подъёма, м/с (default 0.5)
+  // V2: Centralizer drag
+  centralizerDrag?: CentralizerDragItem[];
 }
 
-export type TDMode = 'trip_in' | 'trip_out' | 'rotate' | 'drill_rotary' | 'drill_motor' | 'back_ream' | 'pickup' | 'slackoff';
+export type TDMode = 'trip_in' | 'trip_out' | 'rotate' | 'drill_rotary' | 'drill_motor' | 'back_ream' | 'pickup' | 'slackoff' | 'cement_rotate';
 
 export interface TDPoint {
   md: number;
@@ -45,8 +68,10 @@ export interface TDPoint {
   sideForce: number;           // кН/м
   hookLoad: number;            // кН
   clearance: number;           // мм
-  fatigueDamage?: number;      // accumulated fatigue ratio (0–1)
-  vonMises?: number;           // Von Mises stress, МПа
+  fatigueDamage?: number;
+  vonMises?: number;           // МПа
+  viscousDrag?: number;        // кН — accumulated viscous drag
+  centralizerDragForce?: number; // кН — centralizer drag at this point
 }
 
 export interface TDResult {
@@ -60,6 +85,8 @@ export interface TDResult {
   freeRotatingWeight: number;
   maxFatigueDamage?: number;
   maxVonMises?: number;
+  totalViscousDrag?: number;
+  totalCentralizerDrag?: number;
 }
 
 export interface TDSummary {
@@ -90,14 +117,69 @@ function calcDLS(zen1: number, azi1: number, zen2: number, azi2: number, dMD: nu
   return (dl * 180 / Math.PI) * (30 / dMD);
 }
 
-/** Fatigue damage per cycle from bending stress (Lubinski/Hansford simplified) */
 function fatigueDamagePerCycle(bendingStress: number, yieldStrength: number): number {
-  // S-N curve approximation: cycles = (yield / stress)^4 * 1e6
   if (bendingStress <= 0 || yieldStrength <= 0) return 0;
   const ratio = yieldStrength / bendingStress;
-  if (ratio > 10) return 0; // negligible
+  if (ratio > 10) return 0;
   const nCycles = Math.pow(ratio, 4) * 1e6;
-  return 1 / nCycles; // damage per single rotation cycle
+  return 1 / nCycles;
+}
+
+/* ───── Viscous drag calculation (Bingham plastic annular flow) ───── */
+
+/**
+ * Calculate viscous drag force per meter due to fluid movement in annulus.
+ * Uses Bingham plastic model for annular flow around moving pipe.
+ * Returns force in кН/м.
+ */
+function viscousDragPerMeter(
+  pipeOD_mm: number,
+  holeID_mm: number,
+  fluidPV_cP: number,
+  fluidYP_Pa: number,
+  pipeSpeed_mps: number,
+): number {
+  if (fluidPV_cP <= 0 && fluidYP_Pa <= 0) return 0;
+  if (pipeSpeed_mps <= 0) return 0;
+
+  const ro = holeID_mm / 2000; // m
+  const ri = pipeOD_mm / 2000; // m
+  const gap = ro - ri;
+  if (gap <= 0) return 0;
+
+  // Shear stress on pipe surface (Couette flow approximation)
+  // τ = YP + PV * V / gap
+  const pvPas = fluidPV_cP * 0.001; // cP → Pa·s
+  const shearStress = fluidYP_Pa + pvPas * pipeSpeed_mps / gap; // Pa
+
+  // Force per meter = τ * circumference of pipe
+  const circumference = Math.PI * pipeOD_mm / 1000; // m
+  const forcePerMeter = shearStress * circumference; // N/m
+
+  return forcePerMeter / 1000; // кН/м
+}
+
+/**
+ * Find fluid at given MD from fluid segments.
+ */
+function findFluidAtMD(md: number, segments?: FluidSegment[]): FluidSegment | null {
+  if (!segments || segments.length === 0) return null;
+  return segments.find(s => md >= s.topMD && md <= s.bottomMD) ?? null;
+}
+
+/**
+ * Calculate centralizer drag at given MD.
+ * Returns additional drag force in кН for this segment.
+ */
+function centralizerDragAtMD(md: number, dMD: number, items?: CentralizerDragItem[]): number {
+  if (!items || items.length === 0) return 0;
+  const item = items.find(c => md >= c.fromMD && md <= c.toMD);
+  if (!item || item.centralizersPerJoint <= 0 || item.jointLength <= 0) return 0;
+
+  // Number of centralizers in this dMD segment
+  const centralizersPerMeter = item.centralizersPerJoint / item.jointLength;
+  const numCentralizers = centralizersPerMeter * dMD;
+  return numCentralizers * item.dragForcePerUnit;
 }
 
 /* ───── Main Calculation ───── */
@@ -133,10 +215,10 @@ export function calculateTD(input: TDInput, mode: TDMode): TDResult {
   const results: TDPoint[] = new Array(n);
 
   // Direction mapping
-  const frictionSign = (mode === 'trip_in' || mode === 'drill_rotary' || mode === 'drill_motor' || mode === 'slackoff') ? -1
+  const frictionSign = (mode === 'trip_in' || mode === 'drill_rotary' || mode === 'drill_motor' || mode === 'slackoff' || mode === 'cement_rotate') ? -1
     : (mode === 'trip_out' || mode === 'back_ream' || mode === 'pickup') ? 1
     : 0;
-  const isRotating = mode === 'rotate' || mode === 'drill_rotary' || mode === 'drill_motor' || mode === 'back_ream';
+  const isRotating = mode === 'rotate' || mode === 'drill_rotary' || mode === 'drill_motor' || mode === 'back_ream' || mode === 'cement_rotate';
 
   let tension = 0;
   if (mode === 'drill_rotary' || mode === 'drill_motor') {
@@ -145,8 +227,11 @@ export function calculateTD(input: TDInput, mode: TDMode): TDResult {
 
   let cumTorque = 0;
   let cumFatigue = 0;
-  const yieldStr = input.yieldStrength ?? 550; // default L80
+  let cumViscousDrag = 0;
+  let cumCentralizerDrag = 0;
+  const yieldStr = input.yieldStrength ?? 550;
   const pipeOD = input.pipeOD_mm ?? input.casingOD;
+  const tripSpeed = input.tripSpeedMps ?? 0.5; // м/с default
 
   // DC section
   const dcTop = input.dcLength ? Math.max(0, input.casingDepthMD - input.dcLength) : input.casingDepthMD;
@@ -185,26 +270,62 @@ export function calculateTD(input: TDInput, mode: TDMode): TDResult {
       // Motor drilling — add motor bend side force
       let motorSF = 0;
       if (mode === 'drill_motor' && input.motorBendAngle && input.motorBendAngle > 0) {
-        motorSF = input.wob * Math.sin(toRad(input.motorBendAngle)) * 0.1; // simplified
+        motorSF = input.wob * Math.sin(toRad(input.motorBendAngle)) * 0.1;
+      }
+
+      // V2: Viscous drag from fluid rheology
+      let viscDrag = 0;
+      if (input.fluidSegments && input.fluidSegments.length > 0) {
+        const fluid = findFluidAtMD(pt.md, input.fluidSegments);
+        if (fluid) {
+          const vdPerM = viscousDragPerMeter(segOD, boreDiam, fluid.pv, fluid.yp, tripSpeed);
+          viscDrag = vdPerM * dMD;
+          // Viscous drag always opposes motion
+          cumViscousDrag += viscDrag;
+        }
+      }
+
+      // V2: Centralizer drag
+      let centDrag = 0;
+      if (input.centralizerDrag && input.centralizerDrag.length > 0) {
+        centDrag = centralizerDragAtMD(pt.md, dMD, input.centralizerDrag);
+        cumCentralizerDrag += centDrag;
       }
 
       if (isRotating) {
         tension += Wb * Math.cos(avgInc);
         cumTorque += mu * (Fn + motorSF) * (segOD / 2000);
+        // For cement_rotate, add viscous torque from fluid
+        if (mode === 'cement_rotate' && input.fluidSegments) {
+          const fluid = findFluidAtMD(pt.md, input.fluidSegments);
+          if (fluid && input.rpm > 0) {
+            // Viscous torque: τ = (YP + PV*ω*r/gap) * 2πr * r * dL
+            const r = segOD / 2000;
+            const R = boreDiam / 2000;
+            const gap = R - r;
+            if (gap > 0) {
+              const omega = input.rpm * 2 * Math.PI / 60; // рад/с
+              const pvPas = fluid.pv * 0.001;
+              const shearTorque = (fluid.yp + pvPas * omega * r / gap) * 2 * Math.PI * r * r * dMD;
+              cumTorque += shearTorque / 1000; // Н·м → кН·м
+            }
+          }
+        }
       } else {
-        tension += Wb * Math.cos(avgInc) + frictionSign * drag;
+        tension += Wb * Math.cos(avgInc) + frictionSign * (drag + viscDrag + centDrag);
       }
 
       // DLS-based fatigue
       const dls = calcDLS(pt.zenith, pt.azimuth, ptNext.zenith, ptNext.azimuth, dMD);
-      const bendingStress = dls > 0 ? (segOD / 2000) * 210e3 * (dls * Math.PI / 180) / (30) : 0; // МПа
+      const bendingStress = dls > 0 ? (segOD / 2000) * 210e3 * (dls * Math.PI / 180) / (30) : 0;
       const dmg = isRotating && input.rpm > 0 ? fatigueDamagePerCycle(bendingStress, yieldStr) * input.rpm * (dMD / (input.rpm * 0.1 + 1)) : 0;
       cumFatigue += dmg;
 
       // Von Mises stress
-      const axialStress = Math.abs(tension) / (Math.PI * ((segOD / 2000) ** 2 - ((segOD - 2 * (input.casingOD > 0 ? (input.casingOD - input.casingID) / 2 : 10)) / 2000) ** 2));
+      const wallThick = (input.casingOD - input.casingID) / 2;
+      const axialStress = Math.abs(tension) / (Math.PI * ((segOD / 2000) ** 2 - ((segOD - 2 * wallThick) / 2000) ** 2));
       const shearStress = cumTorque > 0 ? cumTorque / (Math.PI / 16 * (segOD / 1000) ** 3) : 0;
-      const vonMises = Math.sqrt(axialStress ** 2 + 3 * shearStress ** 2) / 1e3; // МПа approx
+      const vonMises = Math.sqrt(axialStress ** 2 + 3 * shearStress ** 2) / 1e3;
 
       results[i] = {
         md: pt.md, tvd: pt.tvd, zenith: pt.zenith, azimuth: pt.azimuth,
@@ -216,6 +337,8 @@ export function calculateTD(input: TDInput, mode: TDMode): TDResult {
         clearance,
         fatigueDamage: cumFatigue,
         vonMises: Math.abs(vonMises),
+        viscousDrag: cumViscousDrag,
+        centralizerDragForce: cumCentralizerDrag,
       };
     } else {
       results[i] = {
@@ -225,6 +348,7 @@ export function calculateTD(input: TDInput, mode: TDMode): TDResult {
         hookLoad: tension + input.blockWeight,
         clearance,
         fatigueDamage: 0, vonMises: 0,
+        viscousDrag: 0, centralizerDragForce: 0,
       };
     }
   }
@@ -242,6 +366,7 @@ export function calculateTD(input: TDInput, mode: TDMode): TDResult {
     back_ream: 'Обратная проработка',
     pickup: 'Затяжка (Pick-up)',
     slackoff: 'Разгрузка (Slack-off)',
+    cement_rotate: 'Цемент. с вращением',
   };
 
   return {
@@ -255,6 +380,8 @@ export function calculateTD(input: TDInput, mode: TDMode): TDResult {
     freeRotatingWeight: buoyantWeight * input.casingDepthMD + input.blockWeight,
     maxFatigueDamage: Math.max(...results.map(p => p.fatigueDamage ?? 0)),
     maxVonMises: Math.max(...results.map(p => p.vonMises ?? 0)),
+    totalViscousDrag: cumViscousDrag,
+    totalCentralizerDrag: cumCentralizerDrag,
   };
 }
 
