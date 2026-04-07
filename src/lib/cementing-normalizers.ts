@@ -39,6 +39,7 @@ export const defaultWellData: WellData = {
   bottomTempStatic: 0,
   bottomTempCirc: 0,
   trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }],
+  reservoirLayers: [],
 };
 
 export const defaultDrillingFluid: DrillingFluid = {
