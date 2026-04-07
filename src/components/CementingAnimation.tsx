@@ -80,12 +80,23 @@ export default function CementingAnimation({ pressureData, stageBoundaries, casi
 
   // Get current stage name
   const currentStage = useMemo(() => {
+    if (!currentPoint) return "Начало";
     let stage = "Начало";
     for (const sb of stageBoundaries) {
       if (currentPoint.time >= sb.time) stage = sb.label;
     }
     return stage;
-  }, [currentPoint.time, stageBoundaries]);
+  }, [currentPoint?.time, stageBoundaries]);
+
+  if (!currentPoint) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-muted-foreground">
+          Нет данных. Нажмите «РАСЧЁТ».
+        </CardContent>
+      </Card>
+    );
+  }
 
   // Well visualization dimensions
   const wellHeight = 400;
