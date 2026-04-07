@@ -755,7 +755,7 @@ export default function Index() {
             </TabsContent>
           </div>
 
-
+          <div className={activeTab !== "visual" ? "h-0 overflow-hidden" : ""}>
             <TabsContent value="visual" forceMount>
               <div data-tab-content="visual">
                 <WellVisualization
