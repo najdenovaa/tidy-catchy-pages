@@ -8,6 +8,8 @@ import MaterialsSection from "@/components/MaterialsSection";
 import ChartsSection from "@/components/ChartsSection";
 import WellVisualization from "@/components/WellVisualization";
 import CentralizationSection from "@/components/CentralizationSection";
+import TorqueDragSection from "@/components/TorqueDragSection";
+import FoamCementSection from "@/components/FoamCementSection";
 import AnalysisChatPanel from "@/components/AnalysisChatPanel";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
