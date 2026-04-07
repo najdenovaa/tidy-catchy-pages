@@ -194,7 +194,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   }, []);
 
   const handleCalculateManual = useCallback(() => {
-    const res = calculateCentralization(wellData, intervals, mudDensity, turbulators.length > 0 ? turbulators : undefined);
+    const res = calculateCentralization(wellData, intervals, mudDensity, undefined, turbPoints.length > 0 ? turbPoints : undefined);
     setResults(res);
     setAutoResults(null);
     onResultsChange?.(res);
@@ -203,7 +203,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
       const worst = res.reduce((a, b) => a.eccentricity > b.eccentricity ? a : b);
       setSelectedMD(worst.md);
     }
-  }, [wellData, intervals, mudDensity, turbulators, onResultsChange, onIntervalsChange]);
+  }, [wellData, intervals, mudDensity, turbPoints, onResultsChange, onIntervalsChange]);
 
   const handleCalculateAuto = useCallback(() => {
     const placement = autoPlaceCentralizers(wellData, autoSpec, autoJointLength, targetStandoff, mudDensity);
@@ -218,7 +218,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
       spec: { ...autoSpec },
     }));
 
-    const res = calculateCentralization(wellData, autoIntervals, mudDensity, turbulators.length > 0 ? turbulators : undefined);
+    const res = calculateCentralization(wellData, autoIntervals, mudDensity, undefined, turbPoints.length > 0 ? turbPoints : undefined);
     setResults(res);
     onResultsChange?.(res);
     onIntervalsChange?.(autoIntervals);
@@ -226,7 +226,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
       const worst = res.reduce((a, b) => a.eccentricity > b.eccentricity ? a : b);
       setSelectedMD(worst.md);
     }
-  }, [wellData, autoSpec, autoJointLength, targetStandoff, mudDensity, turbulators, onResultsChange, onIntervalsChange]);
+  }, [wellData, autoSpec, autoJointLength, targetStandoff, mudDensity, turbPoints, onResultsChange, onIntervalsChange]);
 
   const selectedResult = useMemo(() => {
     if (results && selectedMD !== null) {
