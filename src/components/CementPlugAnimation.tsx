@@ -510,7 +510,7 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
           return {
             pipeTipMD: tip,
             wellSegs: finalWell,
-            pipeSegs: clipPipeSegments(finalPipeAtPlug, tip, wellFluid.name),
+            pipeSegs: buildMudPipe(tip, wellFluid.name),
           };
         });
         continue;
@@ -518,11 +518,10 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
 
       if (lowerName.includes("промывка")) {
         const washDir = lowerName.includes("обрат") || results.washType === "reverse" ? "reverse" : "direct";
-        const sourcePipe = clipPipeSegments(finalPipeAtPlug, pullOutMD, wellFluid.name);
-        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => ({
+        runStage(stage.name, stage.description, stageTime, stageVol, () => ({
           pipeTipMD: pullOutMD,
           wellSegs: finalWell,
-          pipeSegs: washPipeSegments(sourcePipe, pullOutMD, progress, washDir, wellFluid.name),
+          pipeSegs: buildMudPipe(pullOutMD, wellFluid.name),
           washDir,
         }));
         continue;
@@ -596,6 +595,19 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
     return () => cancelAnimationFrame(animRef.current);
   }, [animate, playing]);
 
+  const timelineStages = useMemo(() => {
+    const items: { name: string; startMin: number; endMin: number }[] = [];
+    const tripSpeed = inputs.tripSpeedMs > 0 ? inputs.tripSpeedMs : 0.3;
+    const tripInTime = initialRunDepth / tripSpeed / 60;
+    items.push({ name: "Спуск инструмента", startMin: 0, endMin: tripInTime });
+    let cursor = tripInTime;
+    for (const stage of results.pumpingStages) {
+      items.push({ name: stage.name, startMin: cursor, endMin: cursor + stage.timeMin });
+      cursor += stage.timeMin;
+    }
+    return items;
+  }, [initialRunDepth, inputs.tripSpeedMs, results.pumpingStages]);
+
   if (!frame) return null;
 
   const svgW = 360;
@@ -623,18 +635,6 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
   const totalTime = simulation[maxIndex]?.timeMin || 1;
   const arrowY = Math.max(topY + 24, mdToY(Math.max(viewTop, frame.pipeTipMD - viewRange * 0.25)));
 
-  const timelineStages = useMemo(() => {
-    const items: { name: string; startMin: number; endMin: number }[] = [];
-    const tripSpeed = inputs.tripSpeedMs > 0 ? inputs.tripSpeedMs : 0.3;
-    const tripInTime = initialRunDepth / tripSpeed / 60;
-    items.push({ name: "Спуск инструмента", startMin: 0, endMin: tripInTime });
-    let cursor = tripInTime;
-    for (const stage of results.pumpingStages) {
-      items.push({ name: stage.name, startMin: cursor, endMin: cursor + stage.timeMin });
-      cursor += stage.timeMin;
-    }
-    return items;
-  }, [initialRunDepth, inputs.tripSpeedMs, results.pumpingStages]);
 
   const activeIdx = timelineStages.findIndex((item) => frame.timeMin >= item.startMin - EPS && frame.timeMin <= item.endMin + EPS);
 
