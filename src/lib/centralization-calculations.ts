@@ -267,7 +267,9 @@ export function calculateCentralization(
     const turbInterval = turbulators?.find(t => md >= t.fromMD && md <= t.toMD);
     const turbPoint = turbPoints.find(tp => Math.abs(tp.md - md) <= TURB_RADIUS);
     const hasTurbulizer = (!!turbInterval && turbInterval.turbulizersPerJoint > 0) || !!turbPoint;
-    const turbMult = turbPoint ? turbPoint.turbulenceMultiplier
+    const annularGap_mm = radialClearance(wellData.holeDiameter, wellData.casingOD);
+    const turbMult = turbPoint
+      ? calcTurbulenceMultiplier(turbPoint.bladesCount, turbPoint.bladeAngle, turbPoint.bladeHeight, annularGap_mm)
       : (turbInterval && turbInterval.turbulizersPerJoint > 0) ? turbInterval.turbulenceMultiplier
       : 1.0;
 
