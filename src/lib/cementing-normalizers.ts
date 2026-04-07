@@ -6,6 +6,7 @@ import type {
   DisplacementFluid,
   DrillingFluid,
   FlowRateStep,
+  ReservoirLayer,
   Rheology,
   SlurryInput,
   TrajectoryPoint,
