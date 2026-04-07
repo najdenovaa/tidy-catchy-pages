@@ -137,6 +137,19 @@ function normalizeCavernInterval(value: unknown): CavernInterval {
   };
 }
 
+function normalizeReservoirLayer(value: unknown): ReservoirLayer {
+  const source = isRecord(value) ? value : {};
+  return {
+    name: toString(source.name, "Пласт"),
+    topMD: toNumber(source.topMD, 0),
+    bottomMD: toNumber(source.bottomMD, 0),
+    porePressureGrad: toNumber(source.porePressureGrad, 0),
+    fracGrad: toNumber(source.fracGrad, 0),
+    absorbGrad: toNumber(source.absorbGrad, 0),
+    fluidType: toString(source.fluidType, "нефть"),
+  };
+}
+
 export function normalizeWellData(value: unknown): WellData {
   const source = isRecord(value) ? value : {};
   const trajectory = Array.isArray(source.trajectory)
