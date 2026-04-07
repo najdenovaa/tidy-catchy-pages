@@ -92,7 +92,7 @@ function standoffBg(standoff: number): string {
 }
 
 // ─── Main component ─────────────────────────────────────────────
-export default function CentralizationSection({ wellData, mudDensity, onResultsChange }: Props) {
+export default function CentralizationSection({ wellData, mudDensity, onResultsChange, onIntervalsChange }: Props) {
   const [mode, setMode] = useState<CalcMode>("manual");
   const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => [newInterval(wellData.casingDepthMD)]);
   const [results, setResults] = useState<CentralizationResult[] | null>(null);
