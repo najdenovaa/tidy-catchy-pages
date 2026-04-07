@@ -91,41 +91,40 @@ export default function CementingAnimation({
     return schedule;
   }, [buffers, slurries, pipeCapacityM3]);
 
-  // Compute pipe fluid segments at current cumulative volume
   const pipeSegments = useMemo(() => {
     if (!currentPoint || pipeCapacityM3 <= 0) return [];
+
+    // Как только продавочная жидкость вышла из трубы в затрубье,
+    // труба должна быть полностью заполнена продавкой — без остаточного «стакана» цемента.
+    if (currentPoint.annDisplHeightM > 0.001) {
+      return [{ fluid: "displacement", name: "Продавка", fracTop: 0, fracBot: 1, volM3: pipeCapacityM3 }];
+    }
+
     const cumVol = currentPoint.cumulativeVolume;
     const segs: { fluid: string; name: string; fracTop: number; fracBot: number; volM3: number }[] = [];
 
-    // Pipe is filled top-to-bottom: latest pumped fluid is at top, oldest at bottom (exiting to annulus)
-    const exitedVol = Math.max(0, cumVol - pipeCapacityM3); // volume that already left pipe into annulus
-
-    // Walk pump schedule; for each batch, determine how much is still in pipe
+    const exitedVol = Math.max(0, cumVol - pipeCapacityM3);
     const pipeBatches: { fluid: string; name: string; volInPipe: number }[] = [];
 
-    // First, the original mud in pipe
     const mudStillInPipe = Math.max(0, pipeCapacityM3 - cumVol);
     if (mudStillInPipe > 0) pipeBatches.push({ fluid: "mud", name: "Буровой р-р", volInPipe: mudStillInPipe });
 
     for (const batch of pumpSchedule) {
       const pumpedOfBatch = Math.max(0, Math.min(cumVol - batch.startVol, batch.endVol - batch.startVol));
       if (pumpedOfBatch <= 0) break;
-      const exitedOfBatch = Math.max(0, exitedVol - batch.startVol);
+      const exitedOfBatch = Math.max(0, Math.min(exitedVol - batch.startVol, batch.endVol - batch.startVol));
       const inPipe = Math.max(0, pumpedOfBatch - exitedOfBatch);
       if (inPipe > 0.0001) pipeBatches.push({ fluid: batch.fluidType, name: batch.name, volInPipe: inPipe });
     }
 
-    // If pipe is fully displaced (no mud, all cement exited), ensure displacement fills entire pipe
     const totalInPipe = pipeBatches.reduce((s, b) => s + b.volInPipe, 0);
     if (totalInPipe < pipeCapacityM3 * 0.99 && cumVol > 0) {
-      // Gap means displacement should fill the rest
       const gap = pipeCapacityM3 - totalInPipe;
       const dispBatch = pipeBatches.find(b => b.fluid === "displacement");
       if (dispBatch) dispBatch.volInPipe += gap;
       else pipeBatches.push({ fluid: "displacement", name: "Продавка", volInPipe: gap });
     }
 
-    // Convert volumes to fractions of pipe
     let cursor = 0;
     for (const pb of pipeBatches) {
       const frac = Math.min(pb.volInPipe / pipeCapacityM3, 1 - cursor);
@@ -135,7 +134,7 @@ export default function CementingAnimation({
       }
     }
     return segs;
-  }, [currentPoint?.cumulativeVolume, pipeCapacityM3, pumpSchedule]);
+  }, [currentPoint?.annDisplHeightM, currentPoint?.cumulativeVolume, pipeCapacityM3, pumpSchedule]);
 
   const currentStage = useMemo(() => {
     if (!currentPoint) return "Начало";
