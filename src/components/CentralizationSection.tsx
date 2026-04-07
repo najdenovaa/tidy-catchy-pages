@@ -473,6 +473,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                     <TableHead className="text-[10px] px-2">Шаг, м</TableHead>
                     <TableHead className="text-[10px] px-2">Re исх.</TableHead>
                     <TableHead className="text-[10px] px-2">Re с турб.</TableHead>
+                    <TableHead className="text-[10px] px-2">Множ. (расч.)</TableHead>
                     <TableHead className="text-[10px] px-2">Режим</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -483,7 +484,8 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                       <TableCell className="text-xs px-2 py-1 font-medium">{r.count}</TableCell>
                       <TableCell className="text-xs px-2 py-1">{r.spacingM}</TableCell>
                       <TableCell className="text-xs px-2 py-1">{r.avgReOriginal}</TableCell>
-                      <TableCell className="text-xs px-2 py-1 text-blue-400 font-medium">{r.avgReWithTurb}</TableCell>
+                      <TableCell className="text-xs px-2 py-1 font-medium">{r.avgReWithTurb}</TableCell>
+                      <TableCell className="text-xs px-2 py-1 font-medium">×{r.turbMultiplier}</TableCell>
                       <TableCell className="text-xs px-2 py-1">{r.flowRegime}</TableCell>
                     </TableRow>
                   ))}
