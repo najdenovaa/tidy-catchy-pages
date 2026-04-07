@@ -722,7 +722,40 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <div className={activeTab !== "visual" ? "h-0 overflow-hidden" : ""}>
+          <div className={activeTab !== "animation" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="animation" forceMount>
+              <div data-tab-content="animation">
+                {calcSnapshot && pressureResult ? (
+                  <CementingAnimation
+                    pressureData={pressureResult.points}
+                    stageBoundaries={pressureResult.stageBoundaries}
+                    casingDepthMD={calcSnapshot.wellData.casingDepthMD}
+                    wellDepthMD={calcSnapshot.wellData.wellDepthMD}
+                  />
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+                )}
+              </div>
+            </TabsContent>
+          </div>
+
+          <div className={activeTab !== "contact" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="contact" forceMount>
+              <div data-tab-content="contact">
+                {calcSnapshot && pressureResult && volumes ? (
+                  <ContactTimeSection
+                    pressureData={pressureResult.points}
+                    casingDepthMD={calcSnapshot.wellData.casingDepthMD}
+                    annVPM={volumes.annularVolumePerMeter}
+                  />
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+                )}
+              </div>
+            </TabsContent>
+          </div>
+
+
             <TabsContent value="visual" forceMount>
               <div data-tab-content="visual">
                 <WellVisualization
