@@ -309,9 +309,24 @@ export default function CementingAnimation({
               <line x1={cx - pipeWidth - annWidth - 4} y1={botY} x2={cx + pipeWidth + annWidth + 4} y2={botY} stroke="hsl(30, 30%, 35%)" strokeWidth="3" />
               <text x={cx} y={botY + 14} textAnchor="middle" className="text-[8px] fill-muted-foreground">{casingDepthMD.toFixed(0)} м</text>
 
-              {/* Cement top marker */}
+              {/* Annulus boundary markers with MD and volumes */}
+              {/* Buffer top */}
+              {currentPoint.annBufferHeightM > 0 && (() => {
+                const bufTopMD = casingDepthMD - currentPoint.annCementHeightM - currentPoint.annBufferHeightM;
+                const bufTopY = botY - (currentPoint.annCementHeightM + currentPoint.annBufferHeightM) * scaleFactor;
+                return (
+                  <g>
+                    <line x1={cx - pipeWidth - annWidth - 4} y1={bufTopY} x2={cx - pipeWidth - annWidth - 20} y2={bufTopY} stroke="hsl(200, 60%, 50%)" strokeWidth="0.8" strokeDasharray="2,2" />
+                    <text x={cx - pipeWidth - annWidth - 22} y={bufTopY + 3} textAnchor="end" className="text-[6px]" fill="hsl(200, 60%, 50%)">
+                      {bufTopMD.toFixed(0)}м
+                    </text>
+                  </g>
+                );
+              })()}
+
+              {/* Cement top marker with MD + volume */}
               {currentPoint.annCementHeightM > 0 && (
-                <>
+                <g>
                   <line
                     x1={cx + pipeWidth + annWidth + 6}
                     y1={botY - currentPoint.annCementHeightM * scaleFactor}
@@ -326,23 +341,44 @@ export default function CementingAnimation({
                   >
                     {cementTopMD.toFixed(0)} м
                   </text>
-                </>
+                  <text
+                    x={cx + pipeWidth + annWidth + 32}
+                    y={botY - currentPoint.annCementHeightM * scaleFactor + 12}
+                    className="text-[6px]" fill="hsl(0, 50%, 60%)"
+                  >
+                    ↕{currentPoint.annCementHeightM.toFixed(0)} м
+                  </text>
+                </g>
               )}
 
-              {/* Pipe fluid labels (stage name inside pipe) */}
-              {pipeSegments.filter(s => (s.fracBot - s.fracTop) * usableH > 12).map((seg, i) => {
+              {/* Pipe fluid labels with name + volume */}
+              {pipeSegments.filter(s => (s.fracBot - s.fracTop) * usableH > 16).map((seg, i) => {
                 const segY = botY - seg.fracBot * usableH;
                 const segH = (seg.fracBot - seg.fracTop) * usableH;
+                const depthTop = casingDepthMD * seg.fracTop;
+                const depthBot = casingDepthMD * seg.fracBot;
                 return (
-                  <text
-                    key={`pipelbl-${i}`}
-                    x={cx}
-                    y={segY + segH / 2 + 3}
-                    textAnchor="middle"
-                    className="text-[6px] fill-background"
-                    style={{ fontWeight: 600 }}
-                  >
-                    {seg.name.length > 12 ? seg.name.slice(0, 12) + "…" : seg.name}
+                  <g key={`pipelbl-${i}`}>
+                    <text
+                      x={cx}
+                      y={segY + segH / 2 - 1}
+                      textAnchor="middle"
+                      className="text-[6px] fill-background"
+                      style={{ fontWeight: 600 }}
+                    >
+                      {seg.name.length > 10 ? seg.name.slice(0, 10) + "…" : seg.name}
+                    </text>
+                    <text
+                      x={cx}
+                      y={segY + segH / 2 + 8}
+                      textAnchor="middle"
+                      className="text-[5px] fill-background"
+                      opacity={0.8}
+                    >
+                      {seg.volM3.toFixed(2)} м³
+                    </text>
+                  </g>
+                );
                   </text>
                 );
               })}
