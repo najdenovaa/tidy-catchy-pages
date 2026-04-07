@@ -801,9 +801,13 @@ export default function Index() {
           <div className={activeTab !== "torquedrag" ? "h-0 overflow-hidden" : ""}>
             <TabsContent value="torquedrag" forceMount>
               <div data-tab-content="torquedrag">
-                <TorqueDragSection
+              <TorqueDragSection
                   wellData={wellData}
                   mudDensity={drillingFluid.density}
+                  drillingFluid={drillingFluid}
+                  slurries={slurries}
+                  buffers={buffers}
+                  displacementFluids={displacementFluids}
                 />
               </div>
             </TabsContent>
