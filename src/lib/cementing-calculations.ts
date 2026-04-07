@@ -76,6 +76,16 @@ export interface CavernInterval {
   coeff: number;  // коэффициент кавернозности
 }
 
+export interface ReservoirLayer {
+  name: string;             // Название пласта
+  topMD: number;            // Кровля, м (MD)
+  bottomMD: number;         // Подошва, м (MD)
+  porePressureGrad: number; // Градиент пластового давления, кПа/м
+  fracGrad: number;         // Градиент ГРП, кПа/м
+  absorbGrad: number;       // Градиент поглощения, кПа/м
+  fluidType: string;        // Тип флюида (нефть, газ, вода)
+}
+
 export interface WellData {
   wellDepthMD: number;
   wellDepthTVD: number;
@@ -94,6 +104,7 @@ export interface WellData {
   trajectory: TrajectoryPoint[];
   casingSections?: CasingSection[];
   cavernIntervals?: CavernInterval[];
+  reservoirLayers?: ReservoirLayer[];
 }
 
 export function getCasingID(casingOD: number, casingWall: number): number {
