@@ -848,6 +848,9 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                 }))
               : intervals
             }
+            turbPoints={turbPoints}
+            autoTurbResults={autoTurbResults}
+            turbBladeHeight={turbBladeHeight}
             pipeWeightKgPerM={pipeWeightKgPerM}
             frictionCased={frictionCased}
             frictionOpenhole={frictionOpenhole}
