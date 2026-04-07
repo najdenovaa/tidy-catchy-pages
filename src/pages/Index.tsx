@@ -10,6 +10,8 @@ import WellVisualization from "@/components/WellVisualization";
 import CentralizationSection from "@/components/CentralizationSection";
 import TorqueDragSection from "@/components/TorqueDragSection";
 import FoamCementSection from "@/components/FoamCementSection";
+import CementingAnimation from "@/components/CementingAnimation";
+import ContactTimeSection from "@/components/ContactTimeSection";
 import AnalysisChatPanel from "@/components/AnalysisChatPanel";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
@@ -604,12 +606,14 @@ export default function Index() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="overflow-x-auto scrollbar-hide sticky top-[80px] sm:top-[164px] z-[9] bg-background border-b border-border">
           <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2">
-           <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-9 h-auto min-w-max sm:min-w-0">
+           <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-11 h-auto min-w-max sm:min-w-0">
               <TabsTrigger value="input" className="text-xs py-2 px-3 sm:px-1">Данные</TabsTrigger>
               <TabsTrigger value="hydraulics" className="text-xs py-2 px-3 sm:px-1">Гидравлика</TabsTrigger>
               <TabsTrigger value="schedule" className="text-xs py-2 px-3 sm:px-1">Закачка</TabsTrigger>
               <TabsTrigger value="materials" className="text-xs py-2 px-3 sm:px-1">Материалы</TabsTrigger>
               <TabsTrigger value="charts" className="text-xs py-2 px-3 sm:px-1">Графики</TabsTrigger>
+              <TabsTrigger value="animation" className="text-xs py-2 px-3 sm:px-1">Анимация</TabsTrigger>
+              <TabsTrigger value="contact" className="text-xs py-2 px-3 sm:px-1">Контакт</TabsTrigger>
               <TabsTrigger value="visual" className="text-xs py-2 px-3 sm:px-1">Визуал</TabsTrigger>
               <TabsTrigger value="centralization" className="text-xs py-2 px-3 sm:px-1">Центрир.</TabsTrigger>
               <TabsTrigger value="torquedrag" className="text-xs py-2 px-3 sm:px-1">T&D</TabsTrigger>
@@ -711,6 +715,39 @@ export default function Index() {
               <div data-tab-content="charts">
                 {calcSnapshot && pressureResult ? (
                   <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin} />
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+                )}
+              </div>
+            </TabsContent>
+          </div>
+
+          <div className={activeTab !== "animation" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="animation" forceMount>
+              <div data-tab-content="animation">
+                {calcSnapshot && pressureResult ? (
+                  <CementingAnimation
+                    pressureData={pressureResult.points}
+                    stageBoundaries={pressureResult.stageBoundaries}
+                    casingDepthMD={calcSnapshot.wellData.casingDepthMD}
+                    wellDepthMD={calcSnapshot.wellData.wellDepthMD}
+                  />
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+                )}
+              </div>
+            </TabsContent>
+          </div>
+
+          <div className={activeTab !== "contact" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="contact" forceMount>
+              <div data-tab-content="contact">
+                {calcSnapshot && pressureResult && volumes ? (
+                  <ContactTimeSection
+                    pressureData={pressureResult.points}
+                    casingDepthMD={calcSnapshot.wellData.casingDepthMD}
+                    annVPM={volumes.annularVolumePerMeter}
+                  />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
                 )}
