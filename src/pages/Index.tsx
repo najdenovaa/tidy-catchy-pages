@@ -794,6 +794,7 @@ export default function Index() {
                   wellData={wellData}
                   mudDensity={drillingFluid.density}
                   onResultsChange={setCentralizationResults}
+                  onIntervalsChange={setCentralizerIntervals}
                 />
               </div>
             </TabsContent>
