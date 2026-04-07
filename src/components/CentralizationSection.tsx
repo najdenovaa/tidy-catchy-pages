@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Calculator, Target, Settings2 } from "lucide-react";
+import { Plus, Trash2, Calculator, Target, Settings2, Wind } from "lucide-react";
 import CopyImageButton from "@/components/CopyImageButton";
 import type { WellData } from "@/lib/cementing-calculations";
 import {
@@ -17,12 +17,14 @@ import {
   type CentralizerSpec,
   type CentralizationResult,
   type AutoPlacementInterval,
+  type TurbulatorInterval,
 } from "@/lib/centralization-calculations";
 
 interface Props {
   wellData: WellData;
   mudDensity: number;
   onResultsChange?: (results: CentralizationResult[] | null) => void;
+  onIntervalsChange?: (intervals: CentralizerInterval[]) => void;
 }
 
 type CalcMode = "manual" | "auto";
