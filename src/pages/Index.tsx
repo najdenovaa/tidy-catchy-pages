@@ -607,8 +607,9 @@ export default function Index() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="overflow-x-auto scrollbar-hide sticky top-[80px] sm:top-[164px] z-[9] bg-background border-b border-border">
           <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2">
-           <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-11 h-auto min-w-max sm:min-w-0">
+           <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-12 h-auto min-w-max sm:min-w-0">
               <TabsTrigger value="input" className="text-xs py-2 px-3 sm:px-1">Данные</TabsTrigger>
+              <TabsTrigger value="trajectory" className="text-xs py-2 px-3 sm:px-1">Траектория</TabsTrigger>
               <TabsTrigger value="hydraulics" className="text-xs py-2 px-3 sm:px-1">Гидравлика</TabsTrigger>
               <TabsTrigger value="schedule" className="text-xs py-2 px-3 sm:px-1">Закачка</TabsTrigger>
               <TabsTrigger value="materials" className="text-xs py-2 px-3 sm:px-1">Материалы</TabsTrigger>
