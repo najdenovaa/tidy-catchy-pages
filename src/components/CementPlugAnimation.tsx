@@ -510,7 +510,7 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
           return {
             pipeTipMD: tip,
             wellSegs: finalWell,
-            pipeSegs: clipPipeSegments(finalPipeAtPlug, tip, wellFluid.name),
+            pipeSegs: buildMudPipe(tip, wellFluid.name),
           };
         });
         continue;
