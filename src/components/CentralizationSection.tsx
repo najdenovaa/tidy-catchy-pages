@@ -848,6 +848,9 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                 }))
               : intervals
             }
+            turbPoints={turbPoints}
+            autoTurbResults={autoTurbResults}
+            turbBladeHeight={turbBladeHeight}
             pipeWeightKgPerM={pipeWeightKgPerM}
             frictionCased={frictionCased}
             frictionOpenhole={frictionOpenhole}
@@ -862,9 +865,12 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
 
 // ─── T&D Charts sub-component ────────────────────────────────────
 function TDChartsBlock({
-  wellData, mudDensity, intervals, pipeWeightKgPerM, frictionCased, frictionOpenhole, fluidPV, fluidYP,
+  wellData, mudDensity, intervals, turbPoints, autoTurbResults, turbBladeHeight,
+  pipeWeightKgPerM, frictionCased, frictionOpenhole, fluidPV, fluidYP,
 }: {
   wellData: WellData; mudDensity: number; intervals: CentralizerInterval[];
+  turbPoints?: TurbulatorPoint[]; autoTurbResults?: AutoTurbulatorResult[] | null;
+  turbBladeHeight?: number;
   pipeWeightKgPerM?: number; frictionCased: number; frictionOpenhole: number;
   fluidPV: number; fluidYP: number;
 }) {
@@ -886,6 +892,41 @@ function TDChartsBlock({
         jointLength: iv.jointLength,
         dragForcePerUnit: iv.spec.type === "rigid" ? 2.0 : iv.spec.type === "solid" ? 3.0 : 0.8,
       }));
+
+    // Add turbulizer drag — turbulizers create flow restriction → additional drag during trip
+    // Drag per turbulizer ≈ 0.3–1.0 kN depending on blade height
+    const bladeH = turbBladeHeight ?? 15;
+    const annGap = (wellData.holeDiameter - wellData.casingOD) / 2;
+    const blockageRatio = Math.min(0.7, bladeH / annGap);
+    const turbDragPerUnit = 0.3 + blockageRatio * 1.5; // kN per turbulizer
+
+    // Manual turbulizer points → treat each as a drag point (small interval around it)
+    if (turbPoints && turbPoints.length > 0) {
+      for (const tp of turbPoints) {
+        if (tp.md > 0) {
+          centDrag.push({
+            fromMD: tp.md - 0.5,
+            toMD: tp.md + 0.5,
+            centralizersPerJoint: 1,
+            jointLength: 1,
+            dragForcePerUnit: turbDragPerUnit,
+          });
+        }
+      }
+    }
+    // Auto turbulizer results → intervals with spacing
+    if (autoTurbResults && autoTurbResults.length > 0) {
+      for (const at of autoTurbResults) {
+        const spacing = at.toMD - at.fromMD > 0 ? (at.toMD - at.fromMD) / Math.max(1, Math.round((at.toMD - at.fromMD) / 6)) : 6;
+        centDrag.push({
+          fromMD: at.fromMD,
+          toMD: at.toMD,
+          centralizersPerJoint: 1,
+          jointLength: spacing,
+          dragForcePerUnit: turbDragPerUnit,
+        });
+      }
+    }
 
     const input: TDInput = {
       trajectory: wellData.trajectory,
