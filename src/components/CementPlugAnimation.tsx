@@ -518,11 +518,10 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
 
       if (lowerName.includes("промывка")) {
         const washDir = lowerName.includes("обрат") || results.washType === "reverse" ? "reverse" : "direct";
-        const sourcePipe = clipPipeSegments(finalPipeAtPlug, pullOutMD, wellFluid.name);
-        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => ({
+        runStage(stage.name, stage.description, stageTime, stageVol, () => ({
           pipeTipMD: pullOutMD,
           wellSegs: finalWell,
-          pipeSegs: washPipeSegments(sourcePipe, pullOutMD, progress, washDir, wellFluid.name),
+          pipeSegs: buildMudPipe(pullOutMD, wellFluid.name),
           washDir,
         }));
         continue;
