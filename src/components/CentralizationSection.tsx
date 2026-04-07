@@ -180,21 +180,21 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
   }, []);
 
   const handleCalculateManual = useCallback(() => {
-    const res = calculateCentralization(wellData, intervals, mudDensity);
+    const res = calculateCentralization(wellData, intervals, mudDensity, turbulators.length > 0 ? turbulators : undefined);
     setResults(res);
     setAutoResults(null);
     onResultsChange?.(res);
+    onIntervalsChange?.(intervals);
     if (res.length > 0) {
       const worst = res.reduce((a, b) => a.eccentricity > b.eccentricity ? a : b);
       setSelectedMD(worst.md);
     }
-  }, [wellData, intervals, mudDensity, onResultsChange]);
+  }, [wellData, intervals, mudDensity, turbulators, onResultsChange, onIntervalsChange]);
 
   const handleCalculateAuto = useCallback(() => {
     const placement = autoPlaceCentralizers(wellData, autoSpec, autoJointLength, targetStandoff, mudDensity);
     setAutoResults(placement);
 
-    // Convert auto results to intervals and run full calculation
     const autoIntervals: CentralizerInterval[] = placement.map(p => ({
       id: makeId(),
       fromMD: p.fromMD,
@@ -204,14 +204,15 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
       spec: { ...autoSpec },
     }));
 
-    const res = calculateCentralization(wellData, autoIntervals, mudDensity);
+    const res = calculateCentralization(wellData, autoIntervals, mudDensity, turbulators.length > 0 ? turbulators : undefined);
     setResults(res);
     onResultsChange?.(res);
+    onIntervalsChange?.(autoIntervals);
     if (res.length > 0) {
       const worst = res.reduce((a, b) => a.eccentricity > b.eccentricity ? a : b);
       setSelectedMD(worst.md);
     }
-  }, [wellData, autoSpec, autoJointLength, targetStandoff, mudDensity, onResultsChange]);
+  }, [wellData, autoSpec, autoJointLength, targetStandoff, mudDensity, turbulators, onResultsChange, onIntervalsChange]);
 
   const selectedResult = useMemo(() => {
     if (results && selectedMD !== null) {
