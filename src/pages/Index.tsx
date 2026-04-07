@@ -745,7 +745,29 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          {/* Follow-up chat removed from here — now in floating side panel */}
+          <div className={activeTab !== "torquedrag" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="torquedrag" forceMount>
+              <div data-tab-content="torquedrag">
+                <TorqueDragSection
+                  wellData={wellData}
+                  mudDensity={drillingFluid.density}
+                />
+              </div>
+            </TabsContent>
+          </div>
+
+          <div className={activeTab !== "foam" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="foam" forceMount>
+              <div data-tab-content="foam">
+                <FoamCementSection
+                  wellData={wellData}
+                  slurries={slurries}
+                  mudDensity={drillingFluid.density}
+                />
+              </div>
+            </TabsContent>
+          </div>
+
 
         </main>
       </Tabs>
