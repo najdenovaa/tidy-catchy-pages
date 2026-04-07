@@ -805,6 +805,18 @@ export default function Index() {
             </TabsContent>
           </div>
 
+          <div className={activeTab !== "drillhydr" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="drillhydr" forceMount>
+              <div data-tab-content="drillhydr">
+                <DrillingHydraulicsSection
+                  wellData={wellData}
+                  mudDensity={drillingFluid.density}
+                  mudRheology={drillingFluid.rheology}
+                />
+              </div>
+            </TabsContent>
+          </div>
+
           <div className={activeTab !== "foam" ? "h-0 overflow-hidden" : ""}>
             <TabsContent value="foam" forceMount>
               <div data-tab-content="foam">
