@@ -110,8 +110,32 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
     restoringForce: centralizerPresets.rigid.restoringForce!,
     maxAxialLoad: centralizerPresets.rigid.maxAxialLoad!,
   });
+  // Turbulizer state
+  const [turbulators, setTurbulators] = useState<TurbulatorInterval[]>([]);
 
-  const crossSectionRef = useRef<HTMLDivElement>(null);
+  const addTurbulator = useCallback(() => {
+    setTurbulators(prev => [...prev, {
+      id: makeId(),
+      fromMD: 0,
+      toMD: wellData.casingDepthMD,
+      turbulizersPerJoint: 1,
+      jointLength: 12,
+      bladesCount: 4,
+      bladeAngle: 45,
+      bladeHeight: 15,
+      turbulenceMultiplier: 2.0,
+    }]);
+  }, [wellData.casingDepthMD]);
+
+  const removeTurbulator = useCallback((id: string) => {
+    setTurbulators(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const updateTurbulator = useCallback((id: string, patch: Partial<TurbulatorInterval>) => {
+    setTurbulators(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+  }, []);
+
+
   const standoffProfileRef = useRef<HTMLDivElement>(null);
   const resultsTableRef = useRef<HTMLDivElement>(null);
   const placementTableRef = useRef<HTMLDivElement>(null);
