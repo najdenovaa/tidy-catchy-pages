@@ -1,8 +1,8 @@
 import { useEffect, useRef, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import CopyImageButton from "./CopyImageButton";
-import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid } from "@/lib/cementing-calculations";
-import { getSlurryHeight, interpolateTVD, annularVolumePerMeter } from "@/lib/cementing-calculations";
+import type { WellData, SlurryInput, BufferFluid, DrillingFluid } from "@/lib/cementing-calculations";
+import { getSlurryHeight, annularVolumePerMeter } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 
 interface Props {
@@ -10,59 +10,51 @@ interface Props {
   slurries: SlurryInput[];
   buffers: BufferFluid[];
   drillingFluid: DrillingFluid;
-  displacementFluids?: DisplacementFluid[];
+  displacementFluids?: any[];
   centralizationResults?: CentralizationResult[];
 }
 
-// ── Simple 2D value noise (deterministic, smooth) ──
+// ── Noise helpers ──
 function hash2d(ix: number, iy: number): number {
   let h = ix * 374761393 + iy * 668265263;
   h = (h ^ (h >> 13)) * 1274126177;
-  return ((h ^ (h >> 16)) & 0x7fffffff) / 0x7fffffff; // 0..1
+  return ((h ^ (h >> 16)) & 0x7fffffff) / 0x7fffffff;
 }
-
 function smoothNoise(x: number, y: number): number {
-  const ix = Math.floor(x);
-  const iy = Math.floor(y);
-  const fx = x - ix;
-  const fy = y - iy;
-  // Smooth interpolation (hermite)
-  const sx = fx * fx * (3 - 2 * fx);
-  const sy = fy * fy * (3 - 2 * fy);
-  const n00 = hash2d(ix, iy);
-  const n10 = hash2d(ix + 1, iy);
-  const n01 = hash2d(ix, iy + 1);
-  const n11 = hash2d(ix + 1, iy + 1);
-  const nx0 = n00 + (n10 - n00) * sx;
-  const nx1 = n01 + (n11 - n01) * sx;
-  return nx0 + (nx1 - nx0) * sy;
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const n00 = hash2d(ix, iy), n10 = hash2d(ix + 1, iy);
+  const n01 = hash2d(ix, iy + 1), n11 = hash2d(ix + 1, iy + 1);
+  return (n00 + (n10 - n00) * sx) + ((n01 + (n11 - n01) * sx) - (n00 + (n10 - n00) * sx)) * sy;
 }
 
-function fbmNoise(x: number, y: number): number {
-  return 0.6 * smoothNoise(x, y) + 0.3 * smoothNoise(x * 2.1, y * 2.1) + 0.1 * smoothNoise(x * 4.3, y * 4.3);
+// ── Fluid zone info ──
+interface FluidZone {
+  topMD: number;
+  botMD: number;
+  type: "cement" | "buffer" | "mud";
+  density: number;
+  yp: number;
+  pv: number;
+  name: string;
+  color: string; // base color for this zone
+  idx: number;
 }
 
-interface DepthInfo {
-  md: number;
-  zenithDeg: number;
-  fluidType: "cement" | "buffer" | "mud";
-  fluidDensity: number;
-  fluidYP: number;
-  isOpenHole: boolean;
-  distFromTopFrac: number;    // 0=top of this fluid zone, 1=bottom
-  distFromBoundary: number;   // 0..1, 0=at fluid boundary (transition zone)
-  zoneIndex: number;          // unique index for this fluid zone (seed variation)
-}
-
-function buildDepthInfo(
+function buildFluidZones(
   wellData: WellData, slurries: SlurryInput[], buffers: BufferFluid[], drillingFluid: DrillingFluid
-): { info: DepthInfo[]; mdMin: number; mdMax: number } {
-  const traj = wellData.trajectory?.length >= 2
-    ? [...wellData.trajectory].sort((a, b) => a.md - b.md)
-    : [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }, { md: wellData.casingDepthMD, azimuth: 0, zenith: 0, tvd: wellData.casingDepthMD }];
-
+): FluidZone[] {
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
+  const zones: FluidZone[] = [];
 
+  // Cement intervals
+  const cementColors = [
+    "hsl(200, 55%, 35%)",   // blue-steel
+    "hsl(160, 40%, 30%)",   // teal-dark
+    "hsl(220, 50%, 40%)",   // slate-blue
+    "hsl(30, 45%, 35%)",    // warm brown
+  ];
   const cemInts: { top: number; bot: number; idx: number }[] = [];
   slurries.forEach((s, i) => {
     const h = getSlurryHeight(slurries, i, wellData.casingDepthMD);
@@ -71,159 +63,113 @@ function buildDepthInfo(
       cemInts.push({ top: s.topDepthMD, bot, idx: i });
     }
   });
+  cemInts.forEach((ci, i) => {
+    zones.push({
+      topMD: ci.top, botMD: ci.bot, type: "cement",
+      density: slurries[ci.idx].density * 1000,
+      yp: slurries[ci.idx].rheology.yp,
+      pv: slurries[ci.idx].rheology.pv,
+      name: slurries[ci.idx].name || `Цемент ${ci.idx + 1}`,
+      color: cementColors[i % cementColors.length],
+      idx: i,
+    });
+  });
 
-  const bufInts: { top: number; bot: number; idx: number }[] = [];
+  // Buffer intervals (stack from top of cement upwards)
+  const bufferColors = [
+    "hsl(50, 60%, 50%)",    // amber
+    "hsl(80, 50%, 45%)",    // olive
+  ];
   let cur = cemInts.length > 0 ? Math.min(...cemInts.map(c => c.top)) : wellData.casingDepthMD;
   for (let i = buffers.length - 1; i >= 0; i--) {
     const bufH = buffers[i].volume / annVPM;
     const bot = cur;
     const top = Math.max(0, cur - bufH);
-    bufInts.push({ top, bot, idx: i });
+    zones.push({
+      topMD: top, botMD: bot, type: "buffer",
+      density: buffers[i].density,
+      yp: buffers[i].rheology.yp,
+      pv: buffers[i].rheology.pv,
+      name: buffers[i].name || `Буфер ${i + 1}`,
+      color: bufferColors[i % bufferColors.length],
+      idx: 100 + i,
+    });
     cur = top;
   }
 
-  function zenithAt(md: number): number {
-    if (md <= traj[0].md) return traj[0].zenith;
-    if (md >= traj[traj.length - 1].md) return traj[traj.length - 1].zenith;
-    for (let j = 0; j < traj.length - 1; j++) {
-      if (md >= traj[j].md && md <= traj[j + 1].md) {
-        const f = (md - traj[j].md) / (traj[j + 1].md - traj[j].md || 1);
-        return traj[j].zenith + f * (traj[j + 1].zenith - traj[j].zenith);
-      }
-    }
-    return 0;
-  }
-
-  const mdMin = Math.min(
-    ...(cemInts.map(c => c.top)),
-    ...(bufInts.map(b => b.top)),
-    wellData.casingDepthMD
-  );
-  const mdMax = wellData.casingDepthMD;
-  const N = 400;
-  const info: DepthInfo[] = [];
-
-  // Build all fluid zones with boundaries
-  const allZones: { top: number; bot: number; type: DepthInfo["fluidType"]; density: number; yp: number; zoneIdx: number }[] = [];
-  let zi = 0;
-  for (const bi of bufInts) {
-    allZones.push({ top: bi.top, bot: bi.bot, type: "buffer", density: buffers[bi.idx].density, yp: buffers[bi.idx].rheology.yp, zoneIdx: zi++ });
-  }
-  for (const ci of cemInts) {
-    allZones.push({ top: ci.top, bot: ci.bot, type: "cement", density: slurries[ci.idx].density * 1000, yp: slurries[ci.idx].rheology.yp, zoneIdx: zi++ });
-  }
-  allZones.sort((a, b) => a.top - b.top);
-
-  for (let i = 0; i <= N; i++) {
-    const md = mdMin + (mdMax - mdMin) * i / N;
-    const zenithDeg = zenithAt(md);
-    const isOpenHole = md > wellData.prevCasingDepth;
-
-    let fluidType: DepthInfo["fluidType"] = "mud";
-    let fluidDensity = drillingFluid.density;
-    let fluidYP = drillingFluid.rheology.yp;
-    let distFromTopFrac = 0.5;
-    let distFromBoundary = 1;
-    let zoneIndex = 99;
-
-    for (const z of allZones) {
-      if (md >= z.top && md <= z.bot) {
-        fluidType = z.type;
-        fluidDensity = z.density;
-        fluidYP = z.yp;
-        zoneIndex = z.zoneIdx;
-        const zoneLen = z.bot - z.top || 1;
-        distFromTopFrac = (md - z.top) / zoneLen;
-        // Distance to nearest boundary (0 at boundary, 1 at center)
-        const distTop = (md - z.top) / zoneLen;
-        const distBot = (z.bot - md) / zoneLen;
-        distFromBoundary = Math.min(distTop, distBot) * 2; // 0..1
-        break;
-      }
-    }
-
-    info.push({ md, zenithDeg, fluidType, fluidDensity, fluidYP, isOpenHole, distFromTopFrac, distFromBoundary, zoneIndex });
-  }
-  return { info, mdMin, mdMax };
+  zones.sort((a, b) => a.topMD - b.topMD);
+  return zones;
 }
 
-/**
- * Displacement efficiency 0..1.
- * Longitudinal channels (vertical streaks) that vary with depth.
- * Near fluid boundaries: transition/mixing zones with poor displacement.
- * Different zones have different channel patterns (seed from zoneIndex).
- * Cement front (top of cement) has worse displacement than bottom.
- */
-function calcEff(
-  d: DepthInfo,
-  angle: number,
-  circumFrac: number,
-  depthFrac: number,
-  mudDensity: number,
-  mudYP: number,
-  avgRate: number,
-  annArea: number,
-  cavernCoeff: number,
-): number {
-  if (d.fluidType === "mud") return 0;
+function parseHSL(hsl: string): [number, number, number] {
+  const m = hsl.match(/hsl\((\d+),\s*(\d+)%?,\s*(\d+)%?\)/);
+  if (!m) return [200, 50, 40];
+  return [+m[1], +m[2], +m[3]];
+}
 
-  // ── Base efficiency from fluid properties ──
-  const densityRatio = d.fluidDensity / mudDensity;
+// ── Displacement efficiency ──
+function calcEff(
+  zenithDeg: number, fluidDensity: number, fluidYP: number,
+  mudDensity: number, mudYP: number,
+  isOpenHole: boolean, cavernCoeff: number,
+  distFromTop: number, distFromBoundary: number,
+  angle: number, circumFrac: number, depthFrac: number,
+  zoneIdx: number, ecc: number, turbMult: number,
+  avgVel: number, fluidType: "cement" | "buffer" | "mud",
+): number {
+  if (fluidType === "mud") return 0;
+
+  const densityRatio = fluidDensity / mudDensity;
   const dScore = Math.min(1, Math.max(0, (densityRatio - 0.85) / 0.55));
-  const ypScore = Math.min(1, Math.max(0.15, (d.fluidYP / Math.max(mudYP, 1)) * 0.35));
-  const vel = avgRate > 0 ? (avgRate * 0.001) / annArea : 0.3;
-  const vScore = Math.min(1, vel / 1.0);
+  const ypScore = Math.min(1, Math.max(0.15, (fluidYP / Math.max(mudYP, 1)) * 0.35));
+  const vScore = Math.min(1, avgVel / 1.0);
   let eff = 0.30 * dScore + 0.25 * ypScore + 0.45 * vScore;
 
-  // ── Inclination → eccentricity ──
-  const eccen = Math.sin(d.zenithDeg * Math.PI / 180);
+  // Inclination → eccentricity penalty on low side
+  const eccen = Math.sin(zenithDeg * Math.PI / 180);
   const cosA = Math.cos(angle);
   eff -= eccen * cosA * 0.35;
 
-  if (d.isOpenHole) eff *= 0.90;
-  if (cavernCoeff > 1.05) eff *= 1.0 - (cavernCoeff - 1.0) * 0.25;
-  if (d.fluidType === "buffer") eff *= 0.5;
+  // Centralization eccentricity
+  eff -= ecc * 0.25 * Math.max(0, cosA);
 
-  // ── Depth-dependent variation ──
-  // 1. Cement front (top of zone): displacement is worst here (leading edge turbulence)
-  //    Bottom of zone: cement has settled, better displacement
-  const frontPenalty = (1 - d.distFromTopFrac) * 0.2; // worse at top
-  eff -= frontPenalty;
-
-  // 2. Transition/mixing zones at fluid boundaries: poor displacement
-  //    distFromBoundary: 0=at boundary, 1=zone center
-  const boundaryPenalty = (1 - d.distFromBoundary) * 0.25;
-  eff -= boundaryPenalty;
-
-  // ── Longitudinal channels with depth variation ──
-  // Use zoneIndex as seed offset so each zone has unique channel pattern
-  const seedOffset = d.zoneIndex * 7.31;
-  
-  // Channels: high freq circumferentially, but they SHIFT and CHANGE with depth
-  // depthFrac scaled higher so pattern actually changes along the wellbore
-  const dY = depthFrac * 30 + seedOffset; // much more depth variation
-  
-  const channelNoise = 
-    0.40 * smoothNoise(circumFrac * 8 + seedOffset, dY * 0.3) +
-    0.30 * smoothNoise(circumFrac * 18 + seedOffset * 0.5, dY * 0.7) +
-    0.20 * smoothNoise(circumFrac * 35, dY * 1.2) +
-    0.10 * smoothNoise(circumFrac * 60, dY * 2.0);
-
-  // Channel intensity varies with depth (some depths have deeper channels)
-  const channelIntensity = 0.3 + 0.25 * smoothNoise(circumFrac * 3, dY * 0.15);
-  eff += (channelNoise - 0.5) * channelIntensity;
-
-  // 3. Washout/cavern zones: random pockets of bad displacement at certain depths
-  const washoutNoise = smoothNoise(depthFrac * 15 + 5.7, circumFrac * 4 + seedOffset);
-  if (washoutNoise > 0.75 && d.isOpenHole) {
-    eff -= (washoutNoise - 0.75) * 1.2; // localized bad zones
+  // Turbulizer boost: increases mixing → better displacement
+  if (turbMult > 1) {
+    eff += (turbMult - 1) * 0.08;
   }
 
-  // 4. Laminar flow penalty — channels deeper in laminar regime
-  const Re = vel * 0.05 * mudDensity / (mudYP > 0 ? mudYP * 0.001 : 0.025);
-  if (Re < 2100) {
-    const laminarChannels = smoothNoise(circumFrac * 12 + seedOffset, dY * 0.5) * 0.18;
-    eff -= laminarChannels;
+  if (isOpenHole) eff *= 0.90;
+  if (cavernCoeff > 1.05) eff *= 1.0 - (cavernCoeff - 1.0) * 0.25;
+  if (fluidType === "buffer") eff *= 0.5;
+
+  // Cement front penalty
+  eff -= (1 - distFromTop) * 0.18;
+  // Boundary mixing penalty
+  eff -= (1 - distFromBoundary) * 0.22;
+
+  // Longitudinal channels with depth variation
+  const seed = zoneIdx * 7.31;
+  const dY = depthFrac * 30 + seed;
+  const channelNoise =
+    0.40 * smoothNoise(circumFrac * 8 + seed, dY * 0.3) +
+    0.30 * smoothNoise(circumFrac * 18 + seed * 0.5, dY * 0.7) +
+    0.20 * smoothNoise(circumFrac * 35, dY * 1.2) +
+    0.10 * smoothNoise(circumFrac * 60, dY * 2.0);
+  const channelInt = 0.3 + 0.25 * smoothNoise(circumFrac * 3, dY * 0.15);
+  // Turbulizer reduces channel depth
+  const turbReduction = turbMult > 1 ? 0.6 : 1.0;
+  eff += (channelNoise - 0.5) * channelInt * turbReduction;
+
+  // Washout zones in open hole
+  if (isOpenHole) {
+    const wo = smoothNoise(depthFrac * 15 + 5.7, circumFrac * 4 + seed);
+    if (wo > 0.75) eff -= (wo - 0.75) * 1.2;
+  }
+
+  // Laminar flow channels
+  const Re = avgVel * 0.05 * mudDensity / (mudYP > 0 ? mudYP * 0.001 : 0.025);
+  if (Re < 2100 && turbMult <= 1) {
+    eff -= smoothNoise(circumFrac * 12 + seed, dY * 0.5) * 0.18;
   }
 
   return Math.max(0, Math.min(1, eff));
@@ -233,10 +179,16 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { info, mdMin, mdMax } = useMemo(
-    () => buildDepthInfo(wellData, slurries, buffers, drillingFluid),
+  const zones = useMemo(
+    () => buildFluidZones(wellData, slurries, buffers, drillingFluid),
     [wellData, slurries, buffers, drillingFluid]
   );
+
+  const mdMin = useMemo(() => {
+    if (zones.length === 0) return wellData.casingDepthMD;
+    return Math.min(...zones.map(z => z.topMD));
+  }, [zones, wellData.casingDepthMD]);
+  const mdMax = wellData.casingDepthMD;
 
   const annArea = useMemo(() => {
     const dH = wellData.holeDiameter / 1000;
@@ -244,20 +196,29 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     return (Math.PI / 4) * (dH * dH - dC * dC);
   }, [wellData.holeDiameter, wellData.casingOD]);
 
-  // Интерполяция эксцентриситета из данных центрирования
-  const getEccentricityAtMD = useMemo(() => {
-    if (!centralizationResults || centralizationResults.length === 0) return (_md: number) => 0;
+  // Interpolate centralization results
+  const getCentDataAtMD = useMemo(() => {
+    if (!centralizationResults || centralizationResults.length === 0) {
+      return (_md: number) => ({ ecc: 0, turbMult: 1, standoff: 100 });
+    }
     const sorted = [...centralizationResults].sort((a, b) => a.md - b.md);
-    return (md: number): number => {
-      if (md <= sorted[0].md) return sorted[0].eccentricity;
-      if (md >= sorted[sorted.length - 1].md) return sorted[sorted.length - 1].eccentricity;
+    return (md: number) => {
+      if (md <= sorted[0].md) return { ecc: sorted[0].eccentricity, turbMult: sorted[0].turbulenceMultiplier, standoff: sorted[0].standoff };
+      if (md >= sorted[sorted.length - 1].md) {
+        const l = sorted[sorted.length - 1];
+        return { ecc: l.eccentricity, turbMult: l.turbulenceMultiplier, standoff: l.standoff };
+      }
       for (let i = 0; i < sorted.length - 1; i++) {
         if (md >= sorted[i].md && md <= sorted[i + 1].md) {
           const f = (md - sorted[i].md) / (sorted[i + 1].md - sorted[i].md);
-          return sorted[i].eccentricity + f * (sorted[i + 1].eccentricity - sorted[i].eccentricity);
+          return {
+            ecc: sorted[i].eccentricity + f * (sorted[i + 1].eccentricity - sorted[i].eccentricity),
+            turbMult: sorted[i].turbulenceMultiplier + f * (sorted[i + 1].turbulenceMultiplier - sorted[i].turbulenceMultiplier),
+            standoff: sorted[i].standoff + f * (sorted[i + 1].standoff - sorted[i].standoff),
+          };
         }
       }
-      return 0;
+      return { ecc: 0, turbMult: 1, standoff: 100 };
     };
   }, [centralizationResults]);
 
@@ -268,23 +229,27 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     return r.length > 0 ? r.reduce((a, b) => a + b) / r.length : 5;
   }, [slurries, buffers]);
 
+  const traj = useMemo(() => {
+    return wellData.trajectory?.length >= 2
+      ? [...wellData.trajectory].sort((a, b) => a.md - b.md)
+      : [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }, { md: wellData.casingDepthMD, azimuth: 0, zenith: 0, tvd: wellData.casingDepthMD }];
+  }, [wellData]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || info.length < 2) return;
+    if (!canvas || zones.length === 0) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const W = 480, H = 680;
-    const mL = 55, mR = 20, mT = 30, mB = 50;
+    const W = 520, H = 720;
+    const mL = 58, mR = 120, mT = 36, mB = 60;
     const plotH = H - mT - mB;
     const plotW = W - mL - mR;
+    const mdRange = mdMax - mdMin || 1;
 
-    // Layout: [borehole wall] annulus | casing | annulus [borehole wall]
-    const casingW = plotW * 0.12;
+    // Casing geometry proportions
+    const casingW = plotW * 0.10;
     const annW = (plotW - casingW) / 2;
-    const annLX = mL;
-    const casX = mL + annW;
-    const annRX = casX + casingW;
 
     canvas.width = W * 2;
     canvas.height = H * 2;
@@ -292,181 +257,338 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     canvas.style.height = H + "px";
     ctx.scale(2, 2);
 
-    ctx.fillStyle = "#1a1a2e";
+    // Background gradient
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+    bgGrad.addColorStop(0, "#0f1318");
+    bgGrad.addColorStop(1, "#1a1f2e");
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, W, H);
 
-    const numAnglesPerSide = 80;
-    const mdRange = mdMax - mdMin || 1;
+    // Zenith interpolation
+    function zenithAt(md: number): number {
+      if (md <= traj[0].md) return traj[0].zenith;
+      if (md >= traj[traj.length - 1].md) return traj[traj.length - 1].zenith;
+      for (let j = 0; j < traj.length - 1; j++) {
+        if (md >= traj[j].md && md <= traj[j + 1].md) {
+          const f = (md - traj[j].md) / (traj[j + 1].md - traj[j].md || 1);
+          return traj[j].zenith + f * (traj[j + 1].zenith - traj[j].zenith);
+        }
+      }
+      return 0;
+    }
 
-    // Use ImageData for speed
-    // We'll draw pixel-by-pixel on a temporary canvas
-    const imgW = Math.round(plotW);
-    const imgH = Math.round(plotH);
-    const imgData = ctx.createImageData(imgW * 2, imgH * 2);
+    // Find zone at depth
+    function getZoneAt(md: number): FluidZone | null {
+      for (const z of zones) {
+        if (md >= z.topMD && md <= z.botMD) return z;
+      }
+      return null;
+    }
+
+    const N_Y = plotH * 2;
+    const N_X = plotW * 2;
+    const imgData = ctx.createImageData(N_X, N_Y);
     const pixels = imgData.data;
     const annFracW = annW / plotW;
     const casFracW = casingW / plotW;
+    const avgVel = (avgRate * 0.001) / (annArea > 0 ? annArea : 0.01);
 
-    for (let py = 0; py < imgH * 2; py++) {
-      const yFrac = py / (imgH * 2);
-      const diFloat = yFrac * (info.length - 1);
-      const di = Math.min(Math.floor(diFloat), info.length - 1);
-      const d = info[di];
+    // ── Render pixel grid ──
+    for (let py = 0; py < N_Y; py++) {
+      const yFrac = py / N_Y;
+      const md = mdMin + yFrac * mdRange;
+      const zenithDeg = zenithAt(md);
+      const isOpenHole = md > wellData.prevCasingDepth;
+      const zone = getZoneAt(md);
+      const centData = getCentDataAtMD(md);
+      const ecc = centData.ecc;
+      const turbMult = centData.turbMult;
 
-      // Эксцентриситет колонны на данной глубине (0 = по центру, 1 = лежит на стенке)
-      const ecc = getEccentricityAtMD(d.md);
-      // Смещение колонны: ecc * (доступный зазор в пикселях)
-      // Колонна смещается ВПРАВО (лежит на правой стенке = low side)
-      const maxOffsetPx = annW / plotW * 0.85; // макс. смещение как доля от ширины
-      const offsetFrac = ecc * maxOffsetPx; // смещение центра колонны в долях от plotW
-
-      // Динамические границы колонны с учётом смещения
+      // Eccentricity offset
+      const maxOffset = annFracW * 0.85;
+      const offsetFrac = ecc * maxOffset;
       const casCenterFrac = annFracW + casFracW / 2 + offsetFrac;
       const casLeftFrac = casCenterFrac - casFracW / 2;
       const casRightFrac = casCenterFrac + casFracW / 2;
 
-      for (let px = 0; px < imgW * 2; px++) {
-        const xFrac = px / (imgW * 2);
+      for (let px = 0; px < N_X; px++) {
+        const xFrac = px / N_X;
+        let r = 15, g = 18, b = 25, a = 255;
 
-        let gray = 0;
-        let alpha = 255;
-
-         // Затемнение для тяжёлого цемента — усиленное
-         // Более плотный цемент = значительно темнее; плавный переход от светлого к тёмному
-         const densityDarkening = d.fluidType === "cement"
-           ? Math.min(0.55, Math.max(0, (d.fluidDensity - 1200) / 1200) * 0.55)
-           : d.fluidType === "buffer" ? 0.05 : 0;
-         // Переход между зонами: плавное затемнение у границ (от светлого к тёмному)
-         const boundaryBlend = 1 - Math.pow(1 - d.distFromBoundary, 2); // квадратичный ease-in у границ
-
-         if (xFrac < casLeftFrac) {
-          // Левое затрубье (расширенное при эксцентриситете)
-          const leftAnnWidth = casLeftFrac;
-          const localFrac = leftAnnWidth > 0 ? xFrac / leftAnnWidth : 0;
-          const angle = Math.PI * (1 - localFrac);
-          const eff = calcEff(d, angle, localFrac, yFrac, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff);
-          gray = Math.round((40 + (1 - eff) * 215) * (1 - densityDarkening * boundaryBlend));
-        } else if (xFrac > casRightFrac) {
-          // Правое затрубье (сужено при эксцентриситете — low side)
-          const rightAnnStart = casRightFrac;
-          const rightAnnWidth = 1.0 - rightAnnStart;
-          const localFrac = rightAnnWidth > 0 ? (xFrac - rightAnnStart) / rightAnnWidth : 0;
-          const angle = Math.PI * localFrac;
-          const eccPenalty = ecc * 0.3;
-          const eff = Math.max(0, calcEff(d, angle, localFrac + 1, yFrac, drillingFluid.density, drillingFluid.rheology.yp, avgRate, annArea, wellData.cavernCoeff) - eccPenalty);
-          gray = Math.round((40 + (1 - eff) * 215) * (1 - densityDarkening * boundaryBlend));
+        if (xFrac >= casLeftFrac && xFrac <= casRightFrac) {
+          // ── Casing: solid steel gradient ──
+          const t = (xFrac - casLeftFrac) / (casRightFrac - casLeftFrac);
+          // 3D pipe shading: bright at edges, darker in center
+          const shade = 0.35 + 0.65 * Math.pow(Math.abs(2 * t - 1), 0.6);
+          const base = 100 + shade * 60;
+          r = Math.round(base * 0.85);
+          g = Math.round(base * 0.88);
+          b = Math.round(base * 0.95);
+          a = 240;
         } else {
-          // Колонна — steel gray
-          gray = 110;
-          alpha = 220;
+          // ── Annulus ──
+          const isLeft = xFrac < casLeftFrac;
+          let localFrac: number, angle: number;
+          if (isLeft) {
+            localFrac = casLeftFrac > 0 ? xFrac / casLeftFrac : 0;
+            angle = Math.PI * (1 - localFrac);
+          } else {
+            const rightStart = casRightFrac;
+            const rightW = 1.0 - rightStart;
+            localFrac = rightW > 0 ? (xFrac - rightStart) / rightW : 0;
+            angle = Math.PI * localFrac;
+          }
+
+          if (!zone || zone.type === "mud") {
+            // Mud (drilling fluid) — dark brownish
+            const mudNoise = smoothNoise(localFrac * 5, yFrac * 20) * 0.15;
+            r = Math.round(45 + mudNoise * 30);
+            g = Math.round(38 + mudNoise * 25);
+            b = Math.round(30 + mudNoise * 20);
+          } else {
+            // Cement or buffer
+            const zLen = zone.botMD - zone.topMD || 1;
+            const distTop = (md - zone.topMD) / zLen;
+            const distBot = (zone.botMD - md) / zLen;
+            const distBoundary = Math.min(distTop, distBot) * 2;
+            const eccPenalty = !isLeft ? ecc * 0.3 : 0;
+
+            const eff = Math.max(0, calcEff(
+              zenithDeg, zone.density, zone.yp,
+              drillingFluid.density, drillingFluid.rheology.yp,
+              isOpenHole, wellData.cavernCoeff,
+              distTop, distBoundary, angle,
+              isLeft ? localFrac : localFrac + 1, yFrac,
+              zone.idx, ecc, turbMult, avgVel, zone.type,
+            ) - eccPenalty);
+
+            // Map efficiency to color: zone base color → white (poor displacement = mud channel)
+            const [zh, zs, zl] = parseHSL(zone.color);
+            // Good displacement: saturated zone color (darker)
+            // Poor displacement: light/white (mud channel = засвет)
+            const effL = zl * (0.5 + eff * 0.5); // darker with better eff
+            const effS = zs * (0.4 + eff * 0.6);
+            // Mix: poor eff → whitish (засвет)
+            const mudR = 220, mudG = 215, mudB = 200; // mud channel color (light)
+            const hslToRGB = (h: number, s: number, l: number) => {
+              const sn = s / 100, ln = l / 100;
+              const c = (1 - Math.abs(2 * ln - 1)) * sn;
+              const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+              const m = ln - c / 2;
+              let rr = 0, gg = 0, bb = 0;
+              if (h < 60) { rr = c; gg = x; }
+              else if (h < 120) { rr = x; gg = c; }
+              else if (h < 180) { gg = c; bb = x; }
+              else if (h < 240) { gg = x; bb = c; }
+              else if (h < 300) { rr = x; bb = c; }
+              else { rr = c; bb = x; }
+              return [Math.round((rr + m) * 255), Math.round((gg + m) * 255), Math.round((bb + m) * 255)];
+            };
+            const [cr, cg, cb] = hslToRGB(zh, effS, effL);
+            // Blend with mud color based on efficiency
+            r = Math.round(cr * eff + mudR * (1 - eff));
+            g = Math.round(cg * eff + mudG * (1 - eff));
+            b = Math.round(cb * eff + mudB * (1 - eff));
+          }
         }
 
-        const idx = (py * imgW * 2 + px) * 4;
-        pixels[idx] = gray;
-        pixels[idx + 1] = gray;
-        pixels[idx + 2] = gray;
-        pixels[idx + 3] = alpha;
+        const idx = (py * N_X + px) * 4;
+        pixels[idx] = r;
+        pixels[idx + 1] = g;
+        pixels[idx + 2] = b;
+        pixels[idx + 3] = a;
       }
     }
 
     ctx.putImageData(imgData, mL * 2, mT * 2);
 
-    // Borehole walls
-    ctx.strokeStyle = "#8B7D6B";
+    // ── Borehole walls ──
     ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.moveTo(annLX, mT); ctx.lineTo(annLX, mT + plotH); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(annRX + annW, mT); ctx.lineTo(annRX + annW, mT + plotH); ctx.stroke();
+    const wallGrad = ctx.createLinearGradient(0, mT, 0, mT + plotH);
+    wallGrad.addColorStop(0, "#6b5f52");
+    wallGrad.addColorStop(0.5, "#8b7d6b");
+    wallGrad.addColorStop(1, "#5a4f42");
+    ctx.strokeStyle = wallGrad;
+    ctx.beginPath(); ctx.moveTo(mL, mT); ctx.lineTo(mL, mT + plotH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mL + plotW, mT); ctx.lineTo(mL + plotW, mT + plotH); ctx.stroke();
 
-    // Casing walls — follow eccentricity curve with smooth Bezier transitions
-    const casingPoints: { y: number; leftX: number; rightX: number }[] = [];
-    for (let i = 0; i <= info.length - 1; i++) {
-      const y = mT + (i / (info.length - 1)) * plotH;
-      const ecc = getEccentricityAtMD(info[i].md);
+    // ── Casing walls — smooth Bezier ──
+    const casingPts: { y: number; lx: number; rx: number }[] = [];
+    const nPts = 200;
+    for (let i = 0; i <= nPts; i++) {
+      const md = mdMin + (mdRange * i / nPts);
+      const y = mT + (i / nPts) * plotH;
+      const ecc = getCentDataAtMD(md).ecc;
       const offset = ecc * annW * 0.85;
-      casingPoints.push({ y, leftX: casX + offset, rightX: annRX + offset });
+      const cx = mL + annW;
+      casingPts.push({ y, lx: cx + offset, rx: cx + casingW + offset });
     }
-
-    // Draw smooth casing walls using quadratic Bezier curves
-    const drawSmoothLine = (getX: (p: typeof casingPoints[0]) => number) => {
-      ctx.strokeStyle = "#bbb";
-      ctx.lineWidth = 1.5;
+    const drawCasingWall = (getX: (p: typeof casingPts[0]) => number) => {
+      const grad = ctx.createLinearGradient(0, mT, 0, mT + plotH);
+      grad.addColorStop(0, "#a0a8b4");
+      grad.addColorStop(0.5, "#c0c8d0");
+      grad.addColorStop(1, "#9098a4");
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.8;
       ctx.beginPath();
-      if (casingPoints.length < 2) return;
-      ctx.moveTo(getX(casingPoints[0]), casingPoints[0].y);
-      for (let i = 0; i < casingPoints.length - 1; i++) {
-        const p0 = casingPoints[i];
-        const p1 = casingPoints[i + 1];
+      ctx.moveTo(getX(casingPts[0]), casingPts[0].y);
+      for (let i = 1; i < casingPts.length; i++) {
+        const p0 = casingPts[i - 1], p1 = casingPts[i];
         const cpX = (getX(p0) + getX(p1)) / 2;
         const cpY = (p0.y + p1.y) / 2;
         ctx.quadraticCurveTo(getX(p0), p0.y, cpX, cpY);
       }
-      const last = casingPoints[casingPoints.length - 1];
-      ctx.lineTo(getX(last), last.y);
+      ctx.lineTo(getX(casingPts[casingPts.length - 1]), casingPts[casingPts.length - 1].y);
       ctx.stroke();
     };
-    drawSmoothLine(p => p.leftX);
-    drawSmoothLine(p => p.rightX);
+    drawCasingWall(p => p.lx);
+    drawCasingWall(p => p.rx);
 
-    // Labels
-    ctx.fillStyle = "#aaa";
-    ctx.font = "10px sans-serif";
-    ctx.textAlign = "right";
-    const dInt = mdRange > 300 ? 100 : mdRange > 100 ? 50 : 20;
-    for (let md = Math.ceil(mdMin / dInt) * dInt; md <= mdMax; md += dInt) {
-      const y = mT + ((md - mdMin) / mdRange) * plotH;
-      ctx.fillStyle = "#555";
-      ctx.fillRect(mL - 4, y, 4, 1);
-      ctx.fillStyle = "#aaa";
-      ctx.fillText(`${md}`, mL - 7, y + 3);
+    // ── Dashed boundary lines between fluid zones ──
+    ctx.setLineDash([6, 4]);
+    ctx.lineWidth = 1.2;
+    for (const z of zones) {
+      // Top boundary
+      const yTop = mT + ((z.topMD - mdMin) / mdRange) * plotH;
+      const yBot = mT + ((z.botMD - mdMin) / mdRange) * plotH;
+      const [zh] = parseHSL(z.color);
+      const lineColor = `hsla(${zh}, 70%, 65%, 0.8)`;
+      ctx.strokeStyle = lineColor;
+      // Top line
+      if (z.topMD > mdMin + 1) {
+        ctx.beginPath();
+        ctx.moveTo(mL + 2, yTop);
+        ctx.lineTo(mL + plotW - 2, yTop);
+        ctx.stroke();
+      }
+      // Bottom line
+      if (z.botMD < mdMax - 1) {
+        ctx.beginPath();
+        ctx.moveTo(mL + 2, yBot);
+        ctx.lineTo(mL + plotW - 2, yBot);
+        ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+
+    // ── Identify and mark unrealistic zones (standoff < 50% → засвет) ──
+    if (centralizationResults && centralizationResults.length > 0) {
+      const badZones: { from: number; to: number }[] = [];
+      let curBad: { from: number; to: number } | null = null;
+      const sorted = [...centralizationResults].sort((a, b) => a.md - b.md);
+      for (const pt of sorted) {
+        if (pt.md < mdMin || pt.md > mdMax) continue;
+        const zone = zones.find(z => pt.md >= z.topMD && pt.md <= z.botMD);
+        if (!zone) continue;
+        // Bad if standoff < 50 or very high eccentricity
+        const isBad = pt.standoff < 50 || pt.eccentricity > 0.6;
+        if (isBad) {
+          if (!curBad) curBad = { from: pt.md, to: pt.md };
+          else curBad.to = pt.md;
+        } else {
+          if (curBad) { badZones.push(curBad); curBad = null; }
+        }
+      }
+      if (curBad) badZones.push(curBad);
+
+      // Draw warning markers for bad zones
+      for (const bz of badZones) {
+        const y1 = mT + ((bz.from - mdMin) / mdRange) * plotH;
+        const y2 = mT + ((bz.to - mdMin) / mdRange) * plotH;
+        const h = Math.max(y2 - y1, 4);
+        // Transparent red overlay on the right side
+        ctx.fillStyle = "rgba(220, 50, 50, 0.15)";
+        ctx.fillRect(mL + plotW + 2, y1, 18, h);
+        ctx.strokeStyle = "rgba(220, 50, 50, 0.6)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(mL + plotW + 2, y1, 18, h);
+        // Warning marker
+        ctx.fillStyle = "rgba(220, 80, 60, 0.9)";
+        ctx.font = "bold 9px sans-serif";
+        ctx.textAlign = "left";
+        const midY = (y1 + y2) / 2;
+        ctx.fillText("⚠", mL + plotW + 5, midY + 3);
+      }
     }
 
-    // Y-axis title
+    // ── Depth labels (left axis) ──
+    ctx.fillStyle = "#8899aa";
+    ctx.font = "10px monospace";
+    ctx.textAlign = "right";
+    const dInt = mdRange > 500 ? 100 : mdRange > 200 ? 50 : 20;
+    for (let md = Math.ceil(mdMin / dInt) * dInt; md <= mdMax; md += dInt) {
+      const y = mT + ((md - mdMin) / mdRange) * plotH;
+      ctx.fillStyle = "#334";
+      ctx.fillRect(mL - 5, y, 5, 1);
+      ctx.fillStyle = "#8899aa";
+      ctx.fillText(`${md}`, mL - 8, y + 3);
+    }
+
+    // Y axis label
     ctx.save();
-    ctx.translate(12, mT + plotH / 2);
+    ctx.translate(13, mT + plotH / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.fillStyle = "#aaa";
+    ctx.fillStyle = "#8899aa";
     ctx.font = "11px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText("Глубина по стволу, м", 0, 0);
     ctx.restore();
 
-    // X labels
-    ctx.fillStyle = "#888";
+    // ── Zone labels on the right ──
+    for (const z of zones) {
+      const yMid = mT + (((z.topMD + z.botMD) / 2 - mdMin) / mdRange) * plotH;
+      const [zh, zs] = parseHSL(z.color);
+      ctx.fillStyle = `hsl(${zh}, ${zs}%, 65%)`;
+      ctx.font = "bold 10px sans-serif";
+      ctx.textAlign = "left";
+      const labelX = mL + plotW + 24;
+      ctx.fillText(z.name, labelX, yMid - 2);
+      ctx.fillStyle = "#8899aa";
+      ctx.font = "9px monospace";
+      ctx.fillText(`${z.topMD.toFixed(0)}–${z.botMD.toFixed(0)} м`, labelX, yMid + 10);
+      ctx.fillText(`ρ ${(z.density / 1000).toFixed(2)} г/см³`, labelX, yMid + 20);
+    }
+
+    // ── Title ──
+    ctx.fillStyle = "#d0d8e0";
+    ctx.font = "bold 13px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Эффективность замещения — продольный разрез", W / 2 - 30, 18);
+
+    // ── Bottom labels ──
+    ctx.fillStyle = "#667788";
     ctx.font = "9px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("Порода", annLX - 8, mT + plotH + 14);
-    ctx.fillText("Затрубье", annLX + annW / 2, mT + plotH + 14);
-    ctx.fillText("Колонна", casX + casingW / 2, mT + plotH + 14);
-    ctx.fillText("Затрубье", annRX + annW / 2, mT + plotH + 14);
-    ctx.fillText("Порода", annRX + annW + 12, mT + plotH + 14);
+    const cx = mL + annW + casingW / 2;
+    ctx.fillText("Порода", mL - 8, mT + plotH + 14);
+    ctx.fillText("Затрубье", mL + annW / 2, mT + plotH + 14);
+    ctx.fillText("Колонна", cx, mT + plotH + 14);
+    ctx.fillText("Затрубье", mL + annW + casingW + annW / 2, mT + plotH + 14);
+    ctx.fillText("Порода", mL + plotW + 10, mT + plotH + 14);
 
-    // Title
-    ctx.fillStyle = "#ddd";
-    ctx.font = "bold 12px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("Эффективность замещения — продольный разрез", W / 2, 16);
-
-    // Legend
-    const legX = mL, legY = mT + plotH + 24, legW = plotW, legH = 10;
+    // ── Color legend bar ──
+    const legX = mL, legY = mT + plotH + 28, legW = plotW, legH = 10;
+    // Gradient from zone color (good) to light (poor/засвет)
     for (let i = 0; i < legW; i++) {
       const eff = i / legW;
-      const g = Math.round(40 + (1 - eff) * 215);
-      ctx.fillStyle = `rgb(${g},${g},${g})`;
+      const g = Math.round(220 - eff * 180);
+      const rb = Math.round(200 - eff * 160);
+      ctx.fillStyle = `rgb(${rb},${rb + 5},${g})`;
       ctx.fillRect(legX + i, legY, 1.5, legH);
     }
-    ctx.strokeStyle = "#555";
+    ctx.strokeStyle = "#445";
     ctx.lineWidth = 0.5;
     ctx.strokeRect(legX, legY, legW, legH);
-    ctx.fillStyle = "#aaa";
+    ctx.fillStyle = "#8899aa";
     ctx.font = "9px sans-serif";
     ctx.textAlign = "left";
     ctx.fillText("Засвет (каналы БР)", legX, legY + legH + 12);
     ctx.textAlign = "right";
     ctx.fillText("Полное замещение", legX + legW, legY + legH + 12);
 
-  }, [info, mdMin, mdMax, drillingFluid, avgRate, annArea, wellData, getEccentricityAtMD]);
+  }, [zones, mdMin, mdMax, drillingFluid, avgRate, annArea, wellData, getCentDataAtMD, traj]);
 
-  const range = info.length >= 2 ? `${info[0].md.toFixed(0)} – ${info[info.length - 1].md.toFixed(0)} м` : "";
+  const range = zones.length > 0 ? `${mdMin.toFixed(0)} – ${mdMax.toFixed(0)} м` : "";
 
   return (
     <Card>
@@ -475,7 +597,8 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
           <div>
             <CardTitle className="text-lg">Эффективность замещения</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Продольный разрез кольцевого пространства ({range}). Тёмное — цемент замещён полностью, белое — каналы бурового раствора (засветы).
+              Продольный разрез кольцевого пространства ({range}). Цветное — цемент/буфер, светлое — каналы БР (засветы).
+              {centralizationResults && centralizationResults.length > 0 && " Учтены: центрирование, турбулизаторы, реология."}
             </p>
           </div>
           <CopyImageButton targetRef={containerRef} />
