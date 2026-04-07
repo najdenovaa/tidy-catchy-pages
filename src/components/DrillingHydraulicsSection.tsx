@@ -286,12 +286,12 @@ export default function DrillingHydraulicsSection({ wellData, mudDensity, mudRhe
               <LineChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, bottom: 5, left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                 <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-                <XAxis type="number" yAxisId="left" label={{ value: '°C', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-                <XAxis type="number" yAxisId="right" orientation="top" label={{ value: 'мм', position: 'insideTop', offset: -5 }} tick={{ fontSize: 11 }} />
+                <XAxis type="number" xAxisId="left" label={{ value: '°C', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
+                <XAxis type="number" xAxisId="right" orientation="top" label={{ value: 'мм', position: 'insideTop', offset: -5 }} tick={{ fontSize: 11 }} />
                 <Tooltip contentStyle={ts} labelFormatter={(l: number) => `MD: ${l} м`} />
                 <Legend />
-                <Line dataKey="temp" name="Температура, °C" stroke="hsl(0, 70%, 50%)" dot={false} strokeWidth={2} yAxisId="left" />
-                <Line dataKey="bedHeight" name="Шламовая подушка, мм" stroke="hsl(35, 60%, 45%)" dot={false} strokeWidth={2} yAxisId="right" />
+                <Line dataKey="temp" name="Температура, °C" stroke="hsl(0, 70%, 50%)" dot={false} strokeWidth={2} xAxisId="left" />
+                <Line dataKey="bedHeight" name="Шламовая подушка, мм" stroke="hsl(35, 60%, 45%)" dot={false} strokeWidth={2} xAxisId="right" />
               </LineChart>
             </ResponsiveContainer>
           </ScrollableChart>
