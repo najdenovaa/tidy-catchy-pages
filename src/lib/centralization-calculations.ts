@@ -22,6 +22,18 @@ export interface CentralizerInterval {
   spec: CentralizerSpec;
 }
 
+export interface TurbulatorInterval {
+  id: string;
+  fromMD: number;
+  toMD: number;
+  turbulizersPerJoint: number;
+  jointLength: number;
+  bladesCount: number;      // кол-во лопастей
+  bladeAngle: number;       // угол лопастей, ° (обычно 30-60)
+  bladeHeight: number;      // высота лопасти, мм
+  turbulenceMultiplier: number; // множитель турбулизации (1.5–3.0)
+}
+
 export interface CentralizationResult {
   md: number;
   tvd: number;
@@ -29,6 +41,8 @@ export interface CentralizationResult {
   eccentricity: number;        // 0..1 (0 = идеально, 1 = касание стенки)
   standoff: number;            // % (100 = идеально, 0 = касается)
   hasCentralizer: boolean;
+  hasTurbulizer: boolean;
+  turbulenceMultiplier: number;
   intervalId: string | null;
 }
 
