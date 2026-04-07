@@ -944,20 +944,56 @@ export function calculatePressureProfile(
       if (take > 0) exitBatches.push({ densityGcm3: pumpHistory[i].densityGcm3, volumeM3: take, fluidType: pumpHistory[i].fluidType });
       pumpedExited -= take;
     }
-    // Annulus: last exited = bottom, first = top. Heights = volume / annVPM
-    let remaining = wellData.casingDepthMD; // available annular height
-    for (let i = exitBatches.length - 1; i >= 0 && remaining > 0; i--) {
-      const h = Math.min(exitBatches[i].volumeM3 / annVPM, remaining);
-      switch (exitBatches[i].fluidType) {
+
+    // Two-section annulus model: fill from bottom (shoe) upward
+    // Lower section: open hole (from prevShoe to casingDepthMD) — uses annAreaLower
+    // Upper section: prev casing (from 0 to prevShoe) — uses annAreaUpper
+    const lowerVPM = annAreaLower > 0 ? annAreaLower : annVPM / 1000; // m³/m
+    const upperVPM = annAreaUpper > 0 ? annAreaUpper : annVPM / 1000; // m³/m
+
+    function addHeight(type: AnnularFluidType, h: number) {
+      switch (type) {
         case 'mud': result.mudH += h; break;
         case 'buffer': result.bufferH += h; break;
         case 'cement': result.cementH += h; break;
         case 'displacement': result.displH += h; break;
       }
-      remaining -= h;
     }
-    // Remaining = original mud in annulus (not displaced yet)
-    if (remaining > 0) result.mudH += remaining;
+
+    // Walk batches from last exited (bottom) to first exited (top)
+    let filledFromBottom = 0; // meters filled from bottom (shoe) upward
+    for (let i = exitBatches.length - 1; i >= 0; i--) {
+      let volRemaining = exitBatches[i].volumeM3;
+      const ft = exitBatches[i].fluidType;
+
+      // Fill lower section first (open hole)
+      const lowerRemaining = Math.max(0, lowerLen - filledFromBottom);
+      if (lowerRemaining > 0 && volRemaining > 0) {
+        const hLower = Math.min(volRemaining / lowerVPM, lowerRemaining);
+        addHeight(ft, hLower);
+        volRemaining -= hLower * lowerVPM;
+        filledFromBottom += hLower;
+      }
+
+      // Then fill upper section (prev casing)
+      const upperStart = Math.max(0, filledFromBottom - lowerLen);
+      const upperRemaining = Math.max(0, upperLen - upperStart);
+      if (upperRemaining > 0 && volRemaining > 0) {
+        const hUpper = Math.min(volRemaining / upperVPM, upperRemaining);
+        addHeight(ft, hUpper);
+        volRemaining -= hUpper * upperVPM;
+        filledFromBottom += hUpper;
+      }
+
+      if (filledFromBottom >= wellData.casingDepthMD) break;
+    }
+
+    // Remaining annular space = original mud
+    const totalFilled = result.mudH + result.bufferH + result.cementH + result.displH;
+    if (totalFilled < wellData.casingDepthMD) {
+      result.mudH += (wellData.casingDepthMD - totalFilled);
+    }
+
     return result;
   }
 
