@@ -11,6 +11,7 @@ import {
   calculateCentralization,
   autoPlaceCentralizers,
   autoPlaceTurbulators,
+  calcTurbulenceMultiplier,
   centralizerPresets,
   centralizerTypeLabels,
   type CentralizerInterval,
@@ -448,8 +449,16 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
               <Input type="number" min={1} max={50} value={turbSpacing} onChange={e => setTurbSpacing(+e.target.value)} className="h-8 text-xs" />
             </div>
             <div>
-              <label className="text-[10px] text-muted-foreground">Множ. турбулизации</label>
-              <Input type="number" min={1} max={5} step={0.1} value={turbTargetMult} onChange={e => setTurbTargetMult(+e.target.value)} className="h-8 text-xs" />
+              <label className="text-[10px] text-muted-foreground">Кол-во лопастей</label>
+              <Input type="number" min={2} max={8} value={turbBladesCount} onChange={e => setTurbBladesCount(+e.target.value)} className="h-8 text-xs" />
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground">Угол лопасти, °</label>
+              <Input type="number" min={15} max={75} step={5} value={turbBladeAngle} onChange={e => setTurbBladeAngle(+e.target.value)} className="h-8 text-xs" />
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground">Высота лопасти, мм</label>
+              <Input type="number" min={5} max={30} value={turbBladeHeight} onChange={e => setTurbBladeHeight(+e.target.value)} className="h-8 text-xs" />
             </div>
           </div>
 
@@ -500,12 +509,15 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                     <TableHead className="text-[10px] px-2">Лопасти</TableHead>
                     <TableHead className="text-[10px] px-2">Угол, °</TableHead>
                     <TableHead className="text-[10px] px-2">Высота, мм</TableHead>
-                    <TableHead className="text-[10px] px-2">Множ.</TableHead>
+                    <TableHead className="text-[10px] px-2">Расч. множ.</TableHead>
                     <TableHead className="text-[10px] px-2 w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {turbPoints.map((tp) => (
+                  {turbPoints.map((tp) => {
+                    const annGap = (wellData.holeDiameter - wellData.casingOD) / 2;
+                    const mult = calcTurbulenceMultiplier(tp.bladesCount, tp.bladeAngle, tp.bladeHeight, annGap);
+                    return (
                     <TableRow key={tp.id}>
                       <TableCell className="px-1 py-0.5">
                         <Input type="number" value={tp.md || ""} onChange={e => updateTurbPoint(tp.id, { md: +e.target.value })} className="h-7 text-xs w-20" />
@@ -519,8 +531,8 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                       <TableCell className="px-1 py-0.5">
                         <Input type="number" min={5} max={30} value={tp.bladeHeight} onChange={e => updateTurbPoint(tp.id, { bladeHeight: +e.target.value })} className="h-7 text-xs w-14" />
                       </TableCell>
-                      <TableCell className="px-1 py-0.5">
-                        <Input type="number" min={1} max={5} step={0.1} value={tp.turbulenceMultiplier} onChange={e => updateTurbPoint(tp.id, { turbulenceMultiplier: +e.target.value })} className="h-7 text-xs w-14" />
+                      <TableCell className="px-1 py-0.5 text-xs text-blue-400 font-medium">
+                        ×{mult}
                       </TableCell>
                       <TableCell className="px-1 py-0.5">
                         <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeTurbPoint(tp.id)}>
