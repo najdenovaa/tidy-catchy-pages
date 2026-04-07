@@ -12,6 +12,7 @@ import TorqueDragSection from "@/components/TorqueDragSection";
 import FoamCementSection from "@/components/FoamCementSection";
 import CementingAnimation from "@/components/CementingAnimation";
 import ContactTimeSection from "@/components/ContactTimeSection";
+import TrajectorySection from "@/components/TrajectorySection";
 import AnalysisChatPanel from "@/components/AnalysisChatPanel";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
