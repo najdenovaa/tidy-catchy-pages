@@ -680,6 +680,7 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
                       <TableHead className="text-[10px] px-2">Зенит, °</TableHead>
                       <TableHead className="text-[10px] px-2">Эксц.</TableHead>
                       <TableHead className="text-[10px] px-2">Standoff, %</TableHead>
+                      <TableHead className="text-[10px] px-2">Турб.</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -694,6 +695,9 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
                         <TableCell className="text-xs px-2 py-1">{r.zenith.toFixed(1)}</TableCell>
                         <TableCell className="text-xs px-2 py-1">{r.eccentricity.toFixed(3)}</TableCell>
                         <TableCell className={`text-xs px-2 py-1 font-medium ${standoffColor(r.standoff)}`}>{r.standoff.toFixed(1)}</TableCell>
+                        <TableCell className="text-xs px-2 py-1">
+                          {r.hasTurbulizer ? <span className="text-blue-400 font-medium">×{r.turbulenceMultiplier.toFixed(1)}</span> : "—"}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
