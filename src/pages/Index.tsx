@@ -810,6 +810,7 @@ export default function Index() {
                   slurries={slurries}
                   buffers={buffers}
                   displacementFluids={displacementFluids}
+                  centralizerIntervals={centralizerIntervals}
                 />
               </div>
             </TabsContent>
