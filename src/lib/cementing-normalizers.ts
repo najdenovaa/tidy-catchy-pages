@@ -162,6 +162,10 @@ export function normalizeWellData(value: unknown): WellData {
     ? source.cavernIntervals.filter(isRecord).map(normalizeCavernInterval)
     : undefined;
 
+  const reservoirLayers = Array.isArray(source.reservoirLayers)
+    ? source.reservoirLayers.filter(isRecord).map(normalizeReservoirLayer)
+    : undefined;
+
   return {
     wellDepthMD: toNumber(source.wellDepthMD, defaultWellData.wellDepthMD),
     wellDepthTVD: toNumber(source.wellDepthTVD, defaultWellData.wellDepthTVD),
@@ -180,6 +184,7 @@ export function normalizeWellData(value: unknown): WellData {
     trajectory: trajectory.length > 0 ? trajectory : defaultWellData.trajectory,
     casingSections: casingSections && casingSections.length > 0 ? casingSections : undefined,
     cavernIntervals: cavernIntervals && cavernIntervals.length > 0 ? cavernIntervals : undefined,
+    reservoirLayers: reservoirLayers && reservoirLayers.length > 0 ? reservoirLayers : undefined,
   };
 }
 
