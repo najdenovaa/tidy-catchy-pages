@@ -748,6 +748,7 @@ export default function Index() {
                     buffers={calcSnapshot.buffers}
                     reservoirLayers={calcSnapshot.wellData.reservoirLayers}
                     pipeCapacityM3={volumes?.totalPipeVolume || 0}
+                    prevCasingDepth={calcSnapshot.wellData.prevCasingDepth || 0}
                   />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
