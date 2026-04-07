@@ -208,7 +208,7 @@ function buildRisingAnnulusFlow(
   let cursorBot = plugBottomMD;
 
   for (const batch of [...exitedBatches].reverse()) {
-    if (batch.fluid !== "cement" && batch.fluid !== "spacer") continue;
+    if (batch.fluid === "mud") continue;
     const height = annArea > EPS ? batch.volumeM3 / annArea : 0;
     if (height <= EPS) continue;
 
