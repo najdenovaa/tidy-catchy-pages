@@ -56,6 +56,7 @@ export default function Index() {
   const [activeTab, setActiveTab] = useState("input");
   const [exporting, setExporting] = useState(false);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
+  const [centralizerIntervals, setCentralizerIntervals] = useState<import("@/lib/centralization-calculations").CentralizerInterval[]>([]);
   const [saving, setSaving] = useState(false);
   const [loadingSavedCalc, setLoadingSavedCalc] = useState(false);
   const [searchParams] = useSearchParams();
