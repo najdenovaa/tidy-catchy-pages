@@ -32,6 +32,9 @@ interface Props {
   fluidPV?: number;
   fluidYP?: number;
   flowRateLps?: number;
+  pipeWeightKgPerM?: number;
+  frictionCased?: number;
+  frictionOpenhole?: number;
   onResultsChange?: (results: CentralizationResult[] | null) => void;
   onIntervalsChange?: (intervals: CentralizerInterval[]) => void;
 }
