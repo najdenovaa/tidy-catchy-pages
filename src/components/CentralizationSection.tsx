@@ -136,6 +136,7 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
   }, []);
 
 
+  const crossSectionRef = useRef<HTMLDivElement>(null);
   const standoffProfileRef = useRef<HTMLDivElement>(null);
   const resultsTableRef = useRef<HTMLDivElement>(null);
   const placementTableRef = useRef<HTMLDivElement>(null);
