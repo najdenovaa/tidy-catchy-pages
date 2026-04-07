@@ -662,6 +662,14 @@ export default function Index() {
             </div>
           </TabsContent>
 
+          <div className={activeTab !== "trajectory" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="trajectory" forceMount>
+              <div data-tab-content="trajectory">
+                <TrajectorySection wellData={wellData} />
+              </div>
+            </TabsContent>
+          </div>
+
           <TabsContent value="hydraulics">
             <div data-tab-content="hydraulics">
               {calcSnapshot && volumes ? (
