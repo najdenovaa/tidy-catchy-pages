@@ -420,70 +420,118 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
         </Card>
       )}
 
-      {/* ═══════ TURBULIZERS ═══════ */}
+      {/* ═══════ TURBULIZERS — POINT-BASED ═══════ */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center justify-between">
             <span className="flex items-center gap-1.5"><Wind className="w-4 h-4" /> Турбулизаторы потока</span>
-            <Button size="sm" variant="outline" onClick={addTurbulator} className="text-xs gap-1">
-              <Plus className="w-3 h-3" /> Добавить
-            </Button>
+            <div className="flex gap-1">
+              <Button size="sm" variant="outline" onClick={addTurbPoint} className="text-xs gap-1">
+                <Plus className="w-3 h-3" /> Добавить точку
+              </Button>
+              <Button size="sm" variant="secondary" onClick={handleAutoTurbulators} className="text-xs gap-1">
+                <Target className="w-3 h-3" /> Авто
+              </Button>
+            </div>
           </CardTitle>
           <p className="text-[10px] text-muted-foreground mt-1">
-            Турбулизаторы создают завихрение потока, улучшая вытеснение бурового раствора.
-            Множитель турбулизации влияет на эффективное число Рейнольдса.
+            Установите турбулизаторы на конкретных глубинах. «Авто» расставит их в зонах ламинарного потока с учётом реологии (PV={fluidPV} сПз, YP={fluidYP} Па, Q={flowRateLps} л/с).
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
-          {turbulators.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-2">Турбулизаторы не заданы</p>
-          )}
-          {turbulators.map((tb, idx) => (
-            <div key={tb.id} className="border border-border rounded-lg p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">Турбулизатор {idx + 1}</span>
-                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeTurbulator(tb.id)}>
-                  <Trash2 className="w-3 h-3" />
-                </Button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div>
-                  <label className="text-[10px] text-muted-foreground">От (MD), м</label>
-                  <Input type="number" value={tb.fromMD || ""} onChange={e => updateTurbulator(tb.id, { fromMD: +e.target.value })} className="h-8 text-xs" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-muted-foreground">До (MD), м</label>
-                  <Input type="number" value={tb.toMD || ""} onChange={e => updateTurbulator(tb.id, { toMD: +e.target.value })} className="h-8 text-xs" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-muted-foreground">Турб./трубу</label>
-                  <Input type="number" min={0.1} step={0.1} value={tb.turbulizersPerJoint} onChange={e => updateTurbulator(tb.id, { turbulizersPerJoint: +e.target.value })} className="h-8 text-xs" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-muted-foreground">Длина трубы, м</label>
-                  <Input type="number" value={tb.jointLength} onChange={e => updateTurbulator(tb.id, { jointLength: +e.target.value })} className="h-8 text-xs" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div>
-                  <label className="text-[10px] text-muted-foreground">Кол-во лопастей</label>
-                  <Input type="number" min={2} max={8} value={tb.bladesCount} onChange={e => updateTurbulator(tb.id, { bladesCount: +e.target.value })} className="h-8 text-xs" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-muted-foreground">Угол лопасти, °</label>
-                  <Input type="number" min={15} max={75} step={5} value={tb.bladeAngle} onChange={e => updateTurbulator(tb.id, { bladeAngle: +e.target.value })} className="h-8 text-xs" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-muted-foreground">Высота лоп., мм</label>
-                  <Input type="number" min={5} max={30} value={tb.bladeHeight} onChange={e => updateTurbulator(tb.id, { bladeHeight: +e.target.value })} className="h-8 text-xs" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-muted-foreground">Множ. турбулизации</label>
-                  <Input type="number" min={1} max={5} step={0.1} value={tb.turbulenceMultiplier} onChange={e => updateTurbulator(tb.id, { turbulenceMultiplier: +e.target.value })} className="h-8 text-xs" />
-                </div>
-              </div>
+          {/* Auto-placement params */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div>
+              <label className="text-[10px] text-muted-foreground">Шаг расстановки, м</label>
+              <Input type="number" min={1} max={50} value={turbSpacing} onChange={e => setTurbSpacing(+e.target.value)} className="h-8 text-xs" />
             </div>
-          ))}
+            <div>
+              <label className="text-[10px] text-muted-foreground">Множ. турбулизации</label>
+              <Input type="number" min={1} max={5} step={0.1} value={turbTargetMult} onChange={e => setTurbTargetMult(+e.target.value)} className="h-8 text-xs" />
+            </div>
+          </div>
+
+          {/* Auto results summary */}
+          {autoTurbResults && autoTurbResults.length > 0 && (
+            <div className="border border-border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-[10px] px-2">Интервал, м</TableHead>
+                    <TableHead className="text-[10px] px-2">Кол-во</TableHead>
+                    <TableHead className="text-[10px] px-2">Шаг, м</TableHead>
+                    <TableHead className="text-[10px] px-2">Re исх.</TableHead>
+                    <TableHead className="text-[10px] px-2">Re с турб.</TableHead>
+                    <TableHead className="text-[10px] px-2">Режим</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {autoTurbResults.map((r, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="text-xs px-2 py-1">{r.fromMD}–{r.toMD}</TableCell>
+                      <TableCell className="text-xs px-2 py-1 font-medium">{r.count}</TableCell>
+                      <TableCell className="text-xs px-2 py-1">{r.spacingM}</TableCell>
+                      <TableCell className="text-xs px-2 py-1">{r.avgReOriginal}</TableCell>
+                      <TableCell className="text-xs px-2 py-1 text-blue-400 font-medium">{r.avgReWithTurb}</TableCell>
+                      <TableCell className="text-xs px-2 py-1">{r.flowRegime}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          {autoTurbResults && autoTurbResults.length === 0 && (
+            <p className="text-xs text-green-400 text-center py-2">Поток уже турбулентный — турбулизаторы не требуются</p>
+          )}
+
+          {turbPoints.length === 0 && !autoTurbResults && (
+            <p className="text-xs text-muted-foreground text-center py-2">Нет точек установки. Добавьте вручную или нажмите «Авто».</p>
+          )}
+
+          {/* Manual points list */}
+          {turbPoints.length > 0 && (
+            <div className="border border-border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-[10px] px-2">Глубина, м</TableHead>
+                    <TableHead className="text-[10px] px-2">Лопасти</TableHead>
+                    <TableHead className="text-[10px] px-2">Угол, °</TableHead>
+                    <TableHead className="text-[10px] px-2">Высота, мм</TableHead>
+                    <TableHead className="text-[10px] px-2">Множ.</TableHead>
+                    <TableHead className="text-[10px] px-2 w-8"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {turbPoints.map((tp) => (
+                    <TableRow key={tp.id}>
+                      <TableCell className="px-1 py-0.5">
+                        <Input type="number" value={tp.md || ""} onChange={e => updateTurbPoint(tp.id, { md: +e.target.value })} className="h-7 text-xs w-20" />
+                      </TableCell>
+                      <TableCell className="px-1 py-0.5">
+                        <Input type="number" min={2} max={8} value={tp.bladesCount} onChange={e => updateTurbPoint(tp.id, { bladesCount: +e.target.value })} className="h-7 text-xs w-14" />
+                      </TableCell>
+                      <TableCell className="px-1 py-0.5">
+                        <Input type="number" min={15} max={75} step={5} value={tp.bladeAngle} onChange={e => updateTurbPoint(tp.id, { bladeAngle: +e.target.value })} className="h-7 text-xs w-14" />
+                      </TableCell>
+                      <TableCell className="px-1 py-0.5">
+                        <Input type="number" min={5} max={30} value={tp.bladeHeight} onChange={e => updateTurbPoint(tp.id, { bladeHeight: +e.target.value })} className="h-7 text-xs w-14" />
+                      </TableCell>
+                      <TableCell className="px-1 py-0.5">
+                        <Input type="number" min={1} max={5} step={0.1} value={tp.turbulenceMultiplier} onChange={e => updateTurbPoint(tp.id, { turbulenceMultiplier: +e.target.value })} className="h-7 text-xs w-14" />
+                      </TableCell>
+                      <TableCell className="px-1 py-0.5">
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeTurbPoint(tp.id)}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <p className="text-[10px] text-muted-foreground">Всего турбулизаторов: <span className="text-foreground font-medium">{turbPoints.length} шт.</span></p>
         </CardContent>
       </Card>
       {mode === "auto" && (
