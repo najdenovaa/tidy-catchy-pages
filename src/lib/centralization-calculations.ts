@@ -39,9 +39,8 @@ export interface TurbulatorPoint {
   id: string;
   md: number;              // глубина установки, м
   bladesCount: number;
-  bladeAngle: number;
-  bladeHeight: number;
-  turbulenceMultiplier: number;
+  bladeAngle: number;      // угол лопастей, °
+  bladeHeight: number;     // высота лопасти, мм
 }
 
 /** Auto-placement result for turbulizers */
@@ -52,7 +51,36 @@ export interface AutoTurbulatorResult {
   spacingM: number;
   avgReOriginal: number;
   avgReWithTurb: number;
+  turbMultiplier: number;
   flowRegime: string;
+}
+
+/**
+ * Calculate turbulence multiplier from blade geometry and annular gap.
+ * Physics: constriction increases velocity, blade angle adds swirl (tangential component).
+ * Effective Re_turb = Re_base * multiplier
+ */
+export function calcTurbulenceMultiplier(
+  bladesCount: number,
+  bladeAngle_deg: number,
+  bladeHeight_mm: number,
+  annularGap_mm: number,
+): number {
+  if (annularGap_mm <= 0) return 1;
+  // Blockage ratio: fraction of annular gap blocked by blades
+  const blockagePerBlade = Math.min(bladeHeight_mm / annularGap_mm, 0.9);
+  // Total circumferential blockage (blades cover part of circumference)
+  // Each blade subtends ~15° of arc; total blocked fraction
+  const circumBlockage = Math.min(bladesCount * 0.08, 0.7); // empirical: 4 blades ≈ 32%
+  // Effective flow area reduction → velocity increase
+  const areaRatio = Math.max(0.1, 1 - blockagePerBlade * circumBlockage);
+  const velocityRatio = 1 / areaRatio;
+  // Swirl factor: blade deflects flow at angle → adds tangential velocity
+  const angleRad = Math.min(bladeAngle_deg, 75) * Math.PI / 180;
+  const swirlFactor = 1 + Math.sin(angleRad) * 0.5; // tangential component
+  // Combined: velocity increase * swirl → effective Re multiplier
+  const multiplier = velocityRatio * swirlFactor;
+  return Math.round(multiplier * 100) / 100;
 }
 
 /** Auto-place turbulizers where flow is laminar to achieve turbulence */
