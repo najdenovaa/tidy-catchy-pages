@@ -95,15 +95,12 @@ export default function CementingAnimation({
   const pipeSegments = useMemo(() => {
     if (!currentPoint || pipeCapacityM3 <= 0) return [];
     const cumVol = currentPoint.cumulativeVolume;
-    const segs: { fluid: string; name: string; fracTop: number; fracBot: number }[] = [];
+    const segs: { fluid: string; name: string; fracTop: number; fracBot: number; volM3: number }[] = [];
 
     // Pipe is filled top-to-bottom: latest pumped fluid is at top, oldest at bottom (exiting to annulus)
-    // At cumVol, the pipe contains: bottom = whatever was pumped first and hasn't exited yet
-    // What's still in pipe = pumped volumes that haven't fully passed through
     const exitedVol = Math.max(0, cumVol - pipeCapacityM3); // volume that already left pipe into annulus
 
     // Walk pump schedule; for each batch, determine how much is still in pipe
-    let batchStart = 0;
     const pipeBatches: { fluid: string; name: string; volInPipe: number }[] = [];
 
     // First, the original mud in pipe
@@ -115,17 +112,27 @@ export default function CementingAnimation({
       if (pumpedOfBatch <= 0) break;
       const exitedOfBatch = Math.max(0, exitedVol - batch.startVol);
       const inPipe = Math.max(0, pumpedOfBatch - exitedOfBatch);
-      if (inPipe > 0) pipeBatches.push({ fluid: batch.fluidType, name: batch.name, volInPipe: inPipe });
+      if (inPipe > 0.0001) pipeBatches.push({ fluid: batch.fluidType, name: batch.name, volInPipe: inPipe });
+    }
+
+    // If pipe is fully displaced (no mud, all cement exited), ensure displacement fills entire pipe
+    const totalInPipe = pipeBatches.reduce((s, b) => s + b.volInPipe, 0);
+    if (totalInPipe < pipeCapacityM3 * 0.99 && cumVol > 0) {
+      // Gap means displacement should fill the rest
+      const gap = pipeCapacityM3 - totalInPipe;
+      const dispBatch = pipeBatches.find(b => b.fluid === "displacement");
+      if (dispBatch) dispBatch.volInPipe += gap;
+      else pipeBatches.push({ fluid: "displacement", name: "Продавка", volInPipe: gap });
     }
 
     // Convert volumes to fractions of pipe
     let cursor = 0;
-    // Bottom of pipe = first (oldest) batch still in pipe; top = last (newest)
-    // Reverse: draw from bottom (oldest) to top (newest)
     for (const pb of pipeBatches) {
-      const frac = pb.volInPipe / pipeCapacityM3;
-      segs.push({ fluid: pb.fluid, name: pb.name, fracTop: cursor, fracBot: cursor + frac });
-      cursor += frac;
+      const frac = Math.min(pb.volInPipe / pipeCapacityM3, 1 - cursor);
+      if (frac > 0.001) {
+        segs.push({ fluid: pb.fluid, name: pb.name, fracTop: cursor, fracBot: cursor + frac, volM3: pb.volInPipe });
+        cursor += frac;
+      }
     }
     return segs;
   }, [currentPoint?.cumulativeVolume, pipeCapacityM3, pumpSchedule]);
