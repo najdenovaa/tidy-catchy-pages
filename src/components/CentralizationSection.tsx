@@ -4,9 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Calculator, Target, Settings2, Wind } from "lucide-react";
+import { Plus, Trash2, Calculator, Target, Settings2, Wind, TrendingDown } from "lucide-react";
 import CopyImageButton from "@/components/CopyImageButton";
 import type { WellData } from "@/lib/cementing-calculations";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
+import { calculateTDSummary, calculateTD, type TDInput, type TDSummary, type TDResult, type CentralizerDragItem } from "@/lib/torque-drag-calculations";
 import {
   calculateCentralization,
   autoPlaceCentralizers,
