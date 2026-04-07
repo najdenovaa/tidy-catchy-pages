@@ -56,6 +56,7 @@ export default function Index() {
   const [activeTab, setActiveTab] = useState("input");
   const [exporting, setExporting] = useState(false);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
+  const [centralizerIntervals, setCentralizerIntervals] = useState<import("@/lib/centralization-calculations").CentralizerInterval[]>([]);
   const [saving, setSaving] = useState(false);
   const [loadingSavedCalc, setLoadingSavedCalc] = useState(false);
   const [searchParams] = useSearchParams();
@@ -793,6 +794,7 @@ export default function Index() {
                   wellData={wellData}
                   mudDensity={drillingFluid.density}
                   onResultsChange={setCentralizationResults}
+                  onIntervalsChange={setCentralizerIntervals}
                 />
               </div>
             </TabsContent>
@@ -801,9 +803,14 @@ export default function Index() {
           <div className={activeTab !== "torquedrag" ? "h-0 overflow-hidden" : ""}>
             <TabsContent value="torquedrag" forceMount>
               <div data-tab-content="torquedrag">
-                <TorqueDragSection
+              <TorqueDragSection
                   wellData={wellData}
                   mudDensity={drillingFluid.density}
+                  drillingFluid={drillingFluid}
+                  slurries={slurries}
+                  buffers={buffers}
+                  displacementFluids={displacementFluids}
+                  centralizerIntervals={centralizerIntervals}
                 />
               </div>
             </TabsContent>

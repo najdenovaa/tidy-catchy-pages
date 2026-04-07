@@ -1,14 +1,20 @@
 import { useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
-import { calculateTDSummary, calculateTD, type TDInput, type TDMode, type TDResult, type TDSummary } from "@/lib/torque-drag-calculations";
-import type { WellData } from "@/lib/cementing-calculations";
+import { calculateTDSummary, calculateTD, type TDInput, type TDMode, type TDResult, type TDSummary, type FluidSegment, type CentralizerDragItem } from "@/lib/torque-drag-calculations";
+import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import { getCasingID } from "@/lib/cementing-calculations";
+import type { CentralizationResult, CentralizerInterval } from "@/lib/centralization-calculations";
 import CopyImageButton from "./CopyImageButton";
 
 interface Props {
   wellData: WellData;
   mudDensity: number;
+  drillingFluid?: DrillingFluid;
+  slurries?: SlurryInput[];
+  buffers?: BufferFluid[];
+  displacementFluids?: DisplacementFluid[];
+  centralizerIntervals?: CentralizerInterval[];
 }
 
 const fmt = (v: number, dec = 2) => v.toFixed(dec);
@@ -21,7 +27,64 @@ function ScrollableChart({ children, chartRef, height }: { children: React.React
   );
 }
 
-export default function TorqueDragSection({ wellData, mudDensity }: Props) {
+/** Build fluid segments for T&D viscous drag from cementing fluids */
+function buildFluidSegments(
+  wellData: WellData,
+  drillingFluid?: DrillingFluid,
+  slurries?: SlurryInput[],
+  buffers?: BufferFluid[],
+): FluidSegment[] {
+  const segments: FluidSegment[] = [];
+
+  // Drilling fluid fills the entire well by default
+  if (drillingFluid && drillingFluid.density > 0) {
+    segments.push({
+      name: drillingFluid.name || "Буровой р-р",
+      density: drillingFluid.density,
+      pv: drillingFluid.rheology.pv,
+      yp: drillingFluid.rheology.yp,
+      topMD: 0,
+      bottomMD: wellData.casingDepthMD,
+    });
+  }
+
+  // Add slurries — they override the drilling fluid in their intervals
+  if (slurries && slurries.length > 0) {
+    slurries.forEach((s, idx) => {
+      const bottomMD = idx === slurries.length - 1 ? wellData.casingDepthMD : (slurries[idx + 1]?.topDepthMD ?? wellData.casingDepthMD);
+      if (s.density > 0 && s.rheology) {
+        segments.push({
+          name: s.name || `Раствор ${idx + 1}`,
+          density: s.density >= 10 ? s.density : s.density * 1000,
+          pv: s.rheology.pv,
+          yp: s.rheology.yp,
+          topMD: s.topDepthMD,
+          bottomMD,
+        });
+      }
+    });
+  }
+
+  return segments;
+}
+
+/** Build centralizer drag items from centralization intervals */
+function buildCentralizerDrag(intervals?: CentralizerInterval[]): CentralizerDragItem[] {
+  if (!intervals || intervals.length === 0) return [];
+  return intervals.map(iv => ({
+    fromMD: iv.fromMD,
+    toMD: iv.toMD,
+    centralizersPerJoint: iv.centralizersPerJoint,
+    jointLength: iv.jointLength,
+    // Drag force depends on centralizer type & restoring force
+    // Approximate: rigid ~2-5 kN, spring ~0.5-2 kN, solid ~3-8 kN
+    dragForcePerUnit: iv.spec.type === 'spring' ? Math.min(iv.spec.restoringForce * 0.3, 2)
+      : iv.spec.type === 'solid' ? Math.min(iv.spec.restoringForce * 0.5, 8)
+      : Math.min(iv.spec.restoringForce * 0.4, 5), // rigid
+  }));
+}
+
+export default function TorqueDragSection({ wellData, mudDensity, drillingFluid, slurries, buffers, displacementFluids, centralizerIntervals }: Props) {
   const [frictionCased, setFrictionCased] = useState(0.20);
   const [frictionOpenhole, setFrictionOpenhole] = useState(0.30);
   const [pipeWeight, setPipeWeight] = useState(47);
@@ -33,6 +96,9 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
   const [dcOD, setDcOD] = useState(172);
   const [dcWeight, setDcWeight] = useState(145);
   const [motorBendAngle, setMotorBendAngle] = useState(1.5);
+  const [tripSpeed, setTripSpeed] = useState(0.5);
+  const [useFluidRheology, setUseFluidRheology] = useState(true);
+  const [useCentralizerDrag, setUseCentralizerDrag] = useState(true);
 
   const chartRef1 = useRef<HTMLDivElement>(null);
   const chartRef2 = useRef<HTMLDivElement>(null);
@@ -42,6 +108,16 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
   const chartRef6 = useRef<HTMLDivElement>(null);
 
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
+
+  const fluidSegments = useMemo(() => {
+    if (!useFluidRheology) return undefined;
+    return buildFluidSegments(wellData, drillingFluid, slurries, buffers);
+  }, [wellData, drillingFluid, slurries, buffers, useFluidRheology]);
+
+  const centralizerDrag = useMemo(() => {
+    if (!useCentralizerDrag) return undefined;
+    return buildCentralizerDrag(centralizerIntervals);
+  }, [centralizerIntervals, useCentralizerDrag]);
 
   const makeInput = (): TDInput => ({
     trajectory: wellData.trajectory,
@@ -58,12 +134,15 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
     yieldStrength,
     dcLength, dcOD, dcWeight,
     motorBendAngle,
+    fluidSegments,
+    tripSpeedMps: tripSpeed,
+    centralizerDrag,
   });
 
   const summary = useMemo<TDSummary | null>(() => {
     if (!wellData.casingDepthMD || wellData.casingDepthMD <= 0) return null;
     return calculateTDSummary(makeInput());
-  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID, yieldStrength, dcLength, dcOD, dcWeight, motorBendAngle]);
+  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID, yieldStrength, dcLength, dcOD, dcWeight, motorBendAngle, fluidSegments, centralizerDrag, tripSpeed]);
 
   const extraModes = useMemo(() => {
     if (!wellData.casingDepthMD || wellData.casingDepthMD <= 0) return null;
@@ -74,8 +153,9 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
       backReam: calculateTD(input, 'back_ream'),
       pickup: calculateTD(input, 'pickup'),
       slackoff: calculateTD(input, 'slackoff'),
+      cementRotate: calculateTD(input, 'cement_rotate'),
     };
-  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID, yieldStrength, dcLength, dcOD, dcWeight, motorBendAngle]);
+  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID, yieldStrength, dcLength, dcOD, dcWeight, motorBendAngle, fluidSegments, centralizerDrag, tripSpeed]);
 
   if (!summary || !extraModes) {
     return (
@@ -85,8 +165,8 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
     );
   }
 
-  const allModes = [summary.tripIn, summary.tripOut, summary.rotate, extraModes.drillRotary, extraModes.drillMotor, extraModes.backReam, extraModes.pickup, extraModes.slackoff];
-  
+  const allModes = [summary.tripIn, summary.tripOut, summary.rotate, extraModes.drillRotary, extraModes.drillMotor, extraModes.backReam, extraModes.pickup, extraModes.slackoff, extraModes.cementRotate];
+
   const chartData = summary.tripIn.points.map((pt, i) => ({
     md: pt.md,
     tripInHL: summary.tripIn.points[i]?.hookLoad ?? 0,
@@ -97,15 +177,19 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
     drillMotorHL: extraModes.drillMotor.points[i]?.hookLoad ?? 0,
     pickupHL: extraModes.pickup.points[i]?.hookLoad ?? 0,
     slackoffHL: extraModes.slackoff.points[i]?.hookLoad ?? 0,
+    cementRotateHL: extraModes.cementRotate.points[i]?.hookLoad ?? 0,
     tripInTension: summary.tripIn.points[i]?.effectiveTension ?? 0,
     tripOutTension: summary.tripOut.points[i]?.effectiveTension ?? 0,
     torqueRot: summary.rotate.points[i]?.torque ?? 0,
     torqueDrill: extraModes.drillRotary.points[i]?.torque ?? 0,
     torqueMotor: extraModes.drillMotor.points[i]?.torque ?? 0,
+    torqueCement: extraModes.cementRotate.points[i]?.torque ?? 0,
     sideForce: summary.tripIn.points[i]?.sideForce ?? 0,
     clearance: summary.tripIn.points[i]?.clearance ?? 0,
     fatigue: summary.rotate.points[i]?.fatigueDamage ?? 0,
     vonMises: summary.tripIn.points[i]?.vonMises ?? 0,
+    viscousDrag: summary.tripIn.points[i]?.viscousDrag ?? 0,
+    centDrag: summary.tripIn.points[i]?.centralizerDragForce ?? 0,
   }));
 
   const ts = {
@@ -114,6 +198,9 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
     borderRadius: "8px",
     fontSize: "12px",
   };
+
+  const hasFluidData = fluidSegments && fluidSegments.length > 0;
+  const hasCentData = centralizerDrag && centralizerDrag.length > 0;
 
   return (
     <div className="space-y-6">
@@ -153,7 +240,7 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
                 className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mt-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mt-4">
             <div>
               <label className="text-xs text-muted-foreground">Предел текучести, МПа</label>
               <input type="number" step="10" value={yieldStrength} onChange={e => setYieldStrength(+e.target.value)}
@@ -179,13 +266,52 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
               <input type="number" step="0.25" min="0" max="5" value={motorBendAngle} onChange={e => setMotorBendAngle(+e.target.value)}
                 className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
             </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Скорость СПО, м/с</label>
+              <input type="number" step="0.1" min="0.1" max="2" value={tripSpeed} onChange={e => setTripSpeed(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            </div>
           </div>
+
+          {/* Toggles for rheology and centralizer effects */}
+          <div className="flex flex-wrap gap-4 mt-4 text-xs">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={useFluidRheology} onChange={e => setUseFluidRheology(e.target.checked)}
+                className="rounded border-border" />
+              <span className="text-muted-foreground">Учёт реологии жидкостей</span>
+              {hasFluidData && <span className="text-green-400">({fluidSegments!.length} сегм.)</span>}
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={useCentralizerDrag} onChange={e => setUseCentralizerDrag(e.target.checked)}
+                className="rounded border-border" />
+              <span className="text-muted-foreground">Учёт сопр. центраторов</span>
+              {hasCentData && <span className="text-green-400">({centralizerDrag!.length} инт.)</span>}
+            </label>
+          </div>
+
+          {/* Info about fluid effects */}
+          {(hasFluidData || hasCentData) && (
+            <div className="mt-3 p-2 rounded bg-muted/30 text-[10px] text-muted-foreground space-y-1">
+              {hasFluidData && (
+                <p>Реология: вязкостное сопр. потока учтено в спуске/подъёме (Бингам-пластик, v={tripSpeed} м/с). Момент от жидкости — в режиме «Цемент. с вращением».</p>
+              )}
+              {hasCentData && (
+                <p>Центраторы: доп. сопр. {centralizerDrag!.reduce((s, c) => s + c.centralizersPerJoint * Math.ceil((c.toMD - c.fromMD) / c.jointLength), 0)} шт. учтено при спуске.</p>
+              )}
+              {summary.tripIn.totalViscousDrag! > 0 && (
+                <p>Суммарное вязкостное сопротивление (спуск): <strong>{fmt(summary.tripIn.totalViscousDrag!, 1)} кН</strong></p>
+              )}
+              {summary.tripIn.totalCentralizerDrag! > 0 && (
+                <p>Суммарное сопротивление центраторов (спуск): <strong>{fmt(summary.tripIn.totalCentralizerDrag!, 1)} кН</strong></p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Summary table - all 8 modes */}
+      {/* Summary table - all 9 modes */}
       <Card>
-        <CardHeader className="pb-4"><CardTitle className="text-lg">📊 Сводка Torque & Drag (8 режимов)</CardTitle></CardHeader>
+        <CardHeader className="pb-4"><CardTitle className="text-lg">📊 Сводка Torque & Drag (9 режимов)</CardTitle></CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -193,7 +319,7 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
                 <tr className="border-b border-border">
                   <th className="text-left py-2 px-1 text-muted-foreground font-medium text-xs">Параметр</th>
                   {allModes.map((m, i) => (
-                    <th key={i} className="text-right py-2 px-1 text-muted-foreground font-medium text-xs">{m.modeLabel.split(' ').slice(0, 2).join(' ')}</th>
+                    <th key={i} className="text-right py-2 px-1 text-muted-foreground font-medium text-[10px] whitespace-nowrap">{m.modeLabel.split(' ').slice(0, 2).join(' ')}</th>
                   ))}
                 </tr>
               </thead>
@@ -213,6 +339,14 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
                 <tr className="border-b border-border">
                   <td className="py-2 px-1 text-muted-foreground text-xs">Бок. сила макс, кН/м</td>
                   {allModes.map((m, i) => <td key={i} className="py-2 px-1 text-right font-semibold text-xs">{fmt(m.maxSideForce, 2)}</td>)}
+                </tr>
+                <tr className="border-b border-border">
+                  <td className="py-2 px-1 text-muted-foreground text-xs">Вязк. сопр., кН</td>
+                  {allModes.map((m, i) => <td key={i} className="py-2 px-1 text-right font-semibold text-xs">{m.totalViscousDrag && m.totalViscousDrag > 0.1 ? fmt(m.totalViscousDrag, 1) : "—"}</td>)}
+                </tr>
+                <tr className="border-b border-border">
+                  <td className="py-2 px-1 text-muted-foreground text-xs">Центр. сопр., кН</td>
+                  {allModes.map((m, i) => <td key={i} className="py-2 px-1 text-right font-semibold text-xs">{m.totalCentralizerDrag && m.totalCentralizerDrag > 0.1 ? fmt(m.totalCentralizerDrag, 1) : "—"}</td>)}
                 </tr>
                 <tr className="border-b border-border">
                   <td className="py-2 px-1 text-muted-foreground text-xs">Усталость (макс)</td>
@@ -254,6 +388,7 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
                 <Line dataKey="drillMotorHL" name="Бурение ГЗД" stroke="hsl(30, 80%, 50%)" dot={false} strokeWidth={1.5} strokeDasharray="4 2" />
                 <Line dataKey="pickupHL" name="Затяжка" stroke="hsl(340, 70%, 55%)" dot={false} strokeWidth={1.5} />
                 <Line dataKey="slackoffHL" name="Разгрузка" stroke="hsl(170, 60%, 45%)" dot={false} strokeWidth={1.5} />
+                <Line dataKey="cementRotateHL" name="Цемент+вращ." stroke="hsl(45, 90%, 50%)" dot={false} strokeWidth={2} strokeDasharray="6 3" />
                 <Line dataKey="freeWeight" name="Своб. вес" stroke="hsl(var(--muted-foreground))" dot={false} strokeWidth={1} strokeDasharray="5 5" />
               </LineChart>
             </ResponsiveContainer>
@@ -285,7 +420,7 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
         </CardContent>
       </Card>
 
-      {/* Chart 3: Torque — all rotating modes */}
+      {/* Chart 3: Torque — all rotating modes incl. cement */}
       <Card>
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
           <CardTitle className="text-lg">📈 Крутящий момент по глубине</CardTitle>
@@ -303,6 +438,7 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
                 <Line dataKey="torqueRot" name="Вращение" stroke="hsl(280, 60%, 50%)" dot={false} strokeWidth={2} />
                 <Line dataKey="torqueDrill" name="Бурение рот." stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
                 <Line dataKey="torqueMotor" name="Бурение ГЗД" stroke="hsl(30, 80%, 50%)" dot={false} strokeWidth={2} />
+                <Line dataKey="torqueCement" name="Цемент+вращ." stroke="hsl(45, 90%, 50%)" dot={false} strokeWidth={2} strokeDasharray="6 3" />
               </LineChart>
             </ResponsiveContainer>
           </ScrollableChart>
@@ -391,6 +527,7 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
                   <th className="py-2 px-1 text-right text-muted-foreground">HL спуск</th>
                   <th className="py-2 px-1 text-right text-muted-foreground">HL подъём</th>
                   <th className="py-2 px-1 text-right text-muted-foreground">HL вращ.</th>
+                  <th className="py-2 px-1 text-right text-muted-foreground">HL цем.вр.</th>
                   <th className="py-2 px-1 text-right text-muted-foreground">Момент</th>
                   <th className="py-2 px-1 text-right text-muted-foreground">Бок. сила</th>
                   <th className="py-2 px-1 text-right text-muted-foreground">Зазор</th>
@@ -408,6 +545,7 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
                       <td className="py-1 px-1 text-right">{fmt(pt.hookLoad, 0)}</td>
                       <td className="py-1 px-1 text-right">{fmt(summary.tripOut.points[i]?.hookLoad ?? 0, 0)}</td>
                       <td className="py-1 px-1 text-right">{fmt(summary.rotate.points[i]?.hookLoad ?? 0, 0)}</td>
+                      <td className="py-1 px-1 text-right">{fmt(extraModes.cementRotate.points[i]?.hookLoad ?? 0, 0)}</td>
                       <td className="py-1 px-1 text-right">{fmt(summary.rotate.points[i]?.torque ?? 0, 2)}</td>
                       <td className="py-1 px-1 text-right">{fmt(pt.sideForce, 2)}</td>
                       <td className="py-1 px-1 text-right">{fmt(pt.clearance, 0)}</td>

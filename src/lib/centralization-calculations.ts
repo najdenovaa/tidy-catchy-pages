@@ -22,6 +22,18 @@ export interface CentralizerInterval {
   spec: CentralizerSpec;
 }
 
+export interface TurbulatorInterval {
+  id: string;
+  fromMD: number;
+  toMD: number;
+  turbulizersPerJoint: number;
+  jointLength: number;
+  bladesCount: number;      // кол-во лопастей
+  bladeAngle: number;       // угол лопастей, ° (обычно 30-60)
+  bladeHeight: number;      // высота лопасти, мм
+  turbulenceMultiplier: number; // множитель турбулизации (1.5–3.0)
+}
+
 export interface CentralizationResult {
   md: number;
   tvd: number;
@@ -29,6 +41,8 @@ export interface CentralizationResult {
   eccentricity: number;        // 0..1 (0 = идеально, 1 = касание стенки)
   standoff: number;            // % (100 = идеально, 0 = касается)
   hasCentralizer: boolean;
+  hasTurbulizer: boolean;
+  turbulenceMultiplier: number;
   intervalId: string | null;
 }
 
@@ -99,79 +113,63 @@ export function calculateCentralization(
   wellData: WellData,
   intervals: CentralizerInterval[],
   mudDensity: number,
+  turbulators?: TurbulatorInterval[],
 ): CentralizationResult[] {
   const results: CentralizationResult[] = [];
-  const step = 5; // каждые 5 м по стволу
+  const step = 5;
   const wpm = casingWeightPerMeter(wellData.casingOD, wellData.casingWall);
   const bf = buoyancyFactor(mudDensity);
   const rc_mm = radialClearance(wellData.holeDiameter, wellData.casingOD);
   const rc_m = rc_mm / 1000;
-  const EI = STEEL_E * casingMomentOfInertia(wellData.casingOD, wellData.casingWall); // Н·м²
+  const EI = STEEL_E * casingMomentOfInertia(wellData.casingOD, wellData.casingWall);
 
   if (rc_mm <= 0) return results;
 
   for (let md = 0; md <= wellData.casingDepthMD; md += step) {
     const { tvd, zenith } = interpolateTrajectory(wellData.trajectory, md);
 
-    // Find matching interval
     const interval = intervals.find(iv => md >= iv.fromMD && md <= iv.toMD);
+
+    // Check turbulizer
+    const turbInterval = turbulators?.find(t => md >= t.fromMD && md <= t.toMD);
+    const hasTurbulizer = !!turbInterval && turbInterval.turbulizersPerJoint > 0;
+    const turbMult = hasTurbulizer ? turbInterval!.turbulenceMultiplier : 1.0;
 
     let spanLength: number;
     let hasCentralizer = false;
-    let centralizerMaxForce_N = 0; // max restoring force at full compression
+    let centralizerMaxForce_N = 0;
 
     if (interval && interval.centralizersPerJoint > 0 && interval.jointLength > 0) {
       spanLength = interval.jointLength / interval.centralizersPerJoint;
-      centralizerMaxForce_N = interval.spec.restoringForce * 1000; // кН → Н
+      centralizerMaxForce_N = interval.spec.restoringForce * 1000;
       hasCentralizer = true;
     } else {
-      spanLength = 12; // default joint length
+      spanLength = 12;
     }
 
-    const lateralF = lateralForcePerMeter(wpm, bf, zenith); // N/m
+    const lateralF = lateralForcePerMeter(wpm, bf, zenith);
 
     let eccentricity: number;
 
     if (zenith < 0.5) {
-      // Nearly vertical — casing hangs centered, minor eccentricity from imperfections
       eccentricity = hasCentralizer ? 0.02 : 0.08;
     } else if (hasCentralizer && EI > 0) {
-      // ═══ Beam-on-elastic-support model ═══
-      // Free sag of simply-supported beam under UDL (lateral gravity):
-      // δ₀ = 5·w·L⁴ / (384·E·I)
       const L = spanLength;
       const sag_free_m = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
-
-      // Centralizer acts as a SPRING at mid-span, NOT a constant force.
-      // Spring stiffness: k = F_max / clearance (linear spring model)
-      // At full compression (casing on wall), force = F_max
-      // At zero deflection, force = 0
-      const k_spring = centralizerMaxForce_N / rc_m; // N/m
-
-      // Beam with central spring support:
-      // Effective deflection: δ = δ₀ / (1 + k·L³/(48·E·I))
+      const k_spring = centralizerMaxForce_N / rc_m;
       const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
       const sag_with_spring_m = sag_free_m / (1 + springFactor);
-
-      // Eccentricity = deflection / clearance, capped at 1.0
       eccentricity = Math.min(1, Math.max(0, sag_with_spring_m / rc_m));
-
-      // Apply dogleg severity effect: in build/drop sections, additional bending increases eccentricity
-      // Minimum eccentricity even with centralizers due to practical tolerances
       eccentricity = Math.max(eccentricity, 0.03);
     } else {
-      // No centralizer — casing sags under gravity
       if (EI > 0) {
-        // Free sag without support
         const L = spanLength;
         const sag_free_m = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
         eccentricity = Math.min(1, sag_free_m / rc_m);
-        // In deviated wells without centralizers, casing tends to rest on low side
-        // Apply minimum eccentricity based on inclination
         const inclinationFactor = Math.sin(zenith * Math.PI / 180);
         eccentricity = Math.max(eccentricity, 0.5 * inclinationFactor + 0.2 * inclinationFactor * inclinationFactor);
       } else {
-        eccentricity = 1; // degenerate case
+        eccentricity = 1;
       }
     }
 
@@ -184,6 +182,8 @@ export function calculateCentralization(
       eccentricity: Math.round(eccentricity * 1000) / 1000,
       standoff: Math.round(standoff * 10) / 10,
       hasCentralizer,
+      hasTurbulizer,
+      turbulenceMultiplier: turbMult,
       intervalId: interval?.id ?? null,
     });
   }

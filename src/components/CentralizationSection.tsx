@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Calculator, Target, Settings2 } from "lucide-react";
+import { Plus, Trash2, Calculator, Target, Settings2, Wind } from "lucide-react";
 import CopyImageButton from "@/components/CopyImageButton";
 import type { WellData } from "@/lib/cementing-calculations";
 import {
@@ -17,12 +17,14 @@ import {
   type CentralizerSpec,
   type CentralizationResult,
   type AutoPlacementInterval,
+  type TurbulatorInterval,
 } from "@/lib/centralization-calculations";
 
 interface Props {
   wellData: WellData;
   mudDensity: number;
   onResultsChange?: (results: CentralizationResult[] | null) => void;
+  onIntervalsChange?: (intervals: CentralizerInterval[]) => void;
 }
 
 type CalcMode = "manual" | "auto";
@@ -90,7 +92,7 @@ function standoffBg(standoff: number): string {
 }
 
 // ─── Main component ─────────────────────────────────────────────
-export default function CentralizationSection({ wellData, mudDensity, onResultsChange }: Props) {
+export default function CentralizationSection({ wellData, mudDensity, onResultsChange, onIntervalsChange }: Props) {
   const [mode, setMode] = useState<CalcMode>("manual");
   const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => [newInterval(wellData.casingDepthMD)]);
   const [results, setResults] = useState<CentralizationResult[] | null>(null);
@@ -108,6 +110,31 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
     restoringForce: centralizerPresets.rigid.restoringForce!,
     maxAxialLoad: centralizerPresets.rigid.maxAxialLoad!,
   });
+  // Turbulizer state
+  const [turbulators, setTurbulators] = useState<TurbulatorInterval[]>([]);
+
+  const addTurbulator = useCallback(() => {
+    setTurbulators(prev => [...prev, {
+      id: makeId(),
+      fromMD: 0,
+      toMD: wellData.casingDepthMD,
+      turbulizersPerJoint: 1,
+      jointLength: 12,
+      bladesCount: 4,
+      bladeAngle: 45,
+      bladeHeight: 15,
+      turbulenceMultiplier: 2.0,
+    }]);
+  }, [wellData.casingDepthMD]);
+
+  const removeTurbulator = useCallback((id: string) => {
+    setTurbulators(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const updateTurbulator = useCallback((id: string, patch: Partial<TurbulatorInterval>) => {
+    setTurbulators(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+  }, []);
+
 
   const crossSectionRef = useRef<HTMLDivElement>(null);
   const standoffProfileRef = useRef<HTMLDivElement>(null);
@@ -153,21 +180,21 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
   }, []);
 
   const handleCalculateManual = useCallback(() => {
-    const res = calculateCentralization(wellData, intervals, mudDensity);
+    const res = calculateCentralization(wellData, intervals, mudDensity, turbulators.length > 0 ? turbulators : undefined);
     setResults(res);
     setAutoResults(null);
     onResultsChange?.(res);
+    onIntervalsChange?.(intervals);
     if (res.length > 0) {
       const worst = res.reduce((a, b) => a.eccentricity > b.eccentricity ? a : b);
       setSelectedMD(worst.md);
     }
-  }, [wellData, intervals, mudDensity, onResultsChange]);
+  }, [wellData, intervals, mudDensity, turbulators, onResultsChange, onIntervalsChange]);
 
   const handleCalculateAuto = useCallback(() => {
     const placement = autoPlaceCentralizers(wellData, autoSpec, autoJointLength, targetStandoff, mudDensity);
     setAutoResults(placement);
 
-    // Convert auto results to intervals and run full calculation
     const autoIntervals: CentralizerInterval[] = placement.map(p => ({
       id: makeId(),
       fromMD: p.fromMD,
@@ -177,14 +204,15 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
       spec: { ...autoSpec },
     }));
 
-    const res = calculateCentralization(wellData, autoIntervals, mudDensity);
+    const res = calculateCentralization(wellData, autoIntervals, mudDensity, turbulators.length > 0 ? turbulators : undefined);
     setResults(res);
     onResultsChange?.(res);
+    onIntervalsChange?.(autoIntervals);
     if (res.length > 0) {
       const worst = res.reduce((a, b) => a.eccentricity > b.eccentricity ? a : b);
       setSelectedMD(worst.md);
     }
-  }, [wellData, autoSpec, autoJointLength, targetStandoff, mudDensity, onResultsChange]);
+  }, [wellData, autoSpec, autoJointLength, targetStandoff, mudDensity, turbulators, onResultsChange, onIntervalsChange]);
 
   const selectedResult = useMemo(() => {
     if (results && selectedMD !== null) {
@@ -378,7 +406,72 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
         </Card>
       )}
 
-      {/* ═══════ AUTO MODE ═══════ */}
+      {/* ═══════ TURBULIZERS ═══════ */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center justify-between">
+            <span className="flex items-center gap-1.5"><Wind className="w-4 h-4" /> Турбулизаторы потока</span>
+            <Button size="sm" variant="outline" onClick={addTurbulator} className="text-xs gap-1">
+              <Plus className="w-3 h-3" /> Добавить
+            </Button>
+          </CardTitle>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Турбулизаторы создают завихрение потока, улучшая вытеснение бурового раствора.
+            Множитель турбулизации влияет на эффективное число Рейнольдса.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {turbulators.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-2">Турбулизаторы не заданы</p>
+          )}
+          {turbulators.map((tb, idx) => (
+            <div key={tb.id} className="border border-border rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Турбулизатор {idx + 1}</span>
+                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeTurbulator(tb.id)}>
+                  <Trash2 className="w-3 h-3" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div>
+                  <label className="text-[10px] text-muted-foreground">От (MD), м</label>
+                  <Input type="number" value={tb.fromMD || ""} onChange={e => updateTurbulator(tb.id, { fromMD: +e.target.value })} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground">До (MD), м</label>
+                  <Input type="number" value={tb.toMD || ""} onChange={e => updateTurbulator(tb.id, { toMD: +e.target.value })} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground">Турб./трубу</label>
+                  <Input type="number" min={0.1} step={0.1} value={tb.turbulizersPerJoint} onChange={e => updateTurbulator(tb.id, { turbulizersPerJoint: +e.target.value })} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground">Длина трубы, м</label>
+                  <Input type="number" value={tb.jointLength} onChange={e => updateTurbulator(tb.id, { jointLength: +e.target.value })} className="h-8 text-xs" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div>
+                  <label className="text-[10px] text-muted-foreground">Кол-во лопастей</label>
+                  <Input type="number" min={2} max={8} value={tb.bladesCount} onChange={e => updateTurbulator(tb.id, { bladesCount: +e.target.value })} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground">Угол лопасти, °</label>
+                  <Input type="number" min={15} max={75} step={5} value={tb.bladeAngle} onChange={e => updateTurbulator(tb.id, { bladeAngle: +e.target.value })} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground">Высота лоп., мм</label>
+                  <Input type="number" min={5} max={30} value={tb.bladeHeight} onChange={e => updateTurbulator(tb.id, { bladeHeight: +e.target.value })} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground">Множ. турбулизации</label>
+                  <Input type="number" min={1} max={5} step={0.1} value={tb.turbulenceMultiplier} onChange={e => updateTurbulator(tb.id, { turbulenceMultiplier: +e.target.value })} className="h-8 text-xs" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
       {mode === "auto" && (
         <Card>
           <CardHeader className="pb-3">
@@ -587,6 +680,7 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
                       <TableHead className="text-[10px] px-2">Зенит, °</TableHead>
                       <TableHead className="text-[10px] px-2">Эксц.</TableHead>
                       <TableHead className="text-[10px] px-2">Standoff, %</TableHead>
+                      <TableHead className="text-[10px] px-2">Турб.</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -601,6 +695,9 @@ export default function CentralizationSection({ wellData, mudDensity, onResultsC
                         <TableCell className="text-xs px-2 py-1">{r.zenith.toFixed(1)}</TableCell>
                         <TableCell className="text-xs px-2 py-1">{r.eccentricity.toFixed(3)}</TableCell>
                         <TableCell className={`text-xs px-2 py-1 font-medium ${standoffColor(r.standoff)}`}>{r.standoff.toFixed(1)}</TableCell>
+                        <TableCell className="text-xs px-2 py-1">
+                          {r.hasTurbulizer ? <span className="text-blue-400 font-medium">×{r.turbulenceMultiplier.toFixed(1)}</span> : "—"}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
