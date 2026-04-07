@@ -211,6 +211,7 @@ export function calculateCentralization(
   intervals: CentralizerInterval[],
   mudDensity: number,
   turbulators?: TurbulatorInterval[],
+  turbulatorPoints?: TurbulatorPoint[],
 ): CentralizationResult[] {
   const results: CentralizationResult[] = [];
   const step = 5;
@@ -222,15 +223,22 @@ export function calculateCentralization(
 
   if (rc_mm <= 0) return results;
 
+  // Pre-sort turbulator points for fast lookup
+  const turbPoints = turbulatorPoints?.slice().sort((a, b) => a.md - b.md) ?? [];
+  const TURB_RADIUS = 3; // ±3m influence zone for a point turbulizer
+
   for (let md = 0; md <= wellData.casingDepthMD; md += step) {
     const { tvd, zenith } = interpolateTrajectory(wellData.trajectory, md);
 
     const interval = intervals.find(iv => md >= iv.fromMD && md <= iv.toMD);
 
-    // Check turbulizer
+    // Check turbulizer — interval-based (legacy) or point-based
     const turbInterval = turbulators?.find(t => md >= t.fromMD && md <= t.toMD);
-    const hasTurbulizer = !!turbInterval && turbInterval.turbulizersPerJoint > 0;
-    const turbMult = hasTurbulizer ? turbInterval!.turbulenceMultiplier : 1.0;
+    const turbPoint = turbPoints.find(tp => Math.abs(tp.md - md) <= TURB_RADIUS);
+    const hasTurbulizer = (!!turbInterval && turbInterval.turbulizersPerJoint > 0) || !!turbPoint;
+    const turbMult = turbPoint ? turbPoint.turbulenceMultiplier
+      : (turbInterval && turbInterval.turbulizersPerJoint > 0) ? turbInterval.turbulenceMultiplier
+      : 1.0;
 
     let spanLength: number;
     let hasCentralizer = false;
