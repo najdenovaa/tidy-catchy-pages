@@ -540,7 +540,8 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
