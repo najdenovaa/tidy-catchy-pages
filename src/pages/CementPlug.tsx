@@ -1328,6 +1328,11 @@ export default function CementPlug() {
             )}
           </div>
 
+          {/* Animation */}
+          {results && (
+            <CementPlugAnimation inputs={buildInputs()} results={results} />
+          )}
+
           {/* Visualization & Chart — below results */}
           {results && (
             <div className="grid grid-cols-1 gap-4">
