@@ -34,6 +34,103 @@ export interface TurbulatorInterval {
   turbulenceMultiplier: number; // множитель турбулизации (1.5–3.0)
 }
 
+/** Single turbulizer point placed manually at exact MD */
+export interface TurbulatorPoint {
+  id: string;
+  md: number;              // глубина установки, м
+  bladesCount: number;
+  bladeAngle: number;
+  bladeHeight: number;
+  turbulenceMultiplier: number;
+}
+
+/** Auto-placement result for turbulizers */
+export interface AutoTurbulatorResult {
+  fromMD: number;
+  toMD: number;
+  count: number;
+  spacingM: number;
+  avgReOriginal: number;
+  avgReWithTurb: number;
+  flowRegime: string;
+}
+
+/** Auto-place turbulizers where flow is laminar to achieve turbulence */
+export function autoPlaceTurbulators(
+  wellData: WellData,
+  mudDensity: number,
+  fluidPV: number,
+  fluidYP: number,
+  flowRateLps: number,
+  targetMultiplier: number = 2.0,
+  spacingM: number = 6,
+): { points: TurbulatorPoint[]; summary: AutoTurbulatorResult[] } {
+  const casingID_mm = getCasingID(wellData.casingOD, wellData.casingWall);
+  const holeD = wellData.holeDiameter;
+  const dh_m = (holeD - wellData.casingOD) / 1000; // hydraulic diameter annulus, m
+  if (dh_m <= 0) return { points: [], summary: [] };
+
+  const areaAnn = Math.PI / 4 * ((holeD / 1000) ** 2 - (wellData.casingOD / 1000) ** 2);
+  const Q_m3s = flowRateLps / 1000;
+  const velocity = areaAnn > 0 ? Q_m3s / areaAnn : 0;
+
+  // Bingham Re
+  const pv_Pas = fluidPV / 1000; // cP → Pa·s
+  const rho = mudDensity;
+  const Re = pv_Pas > 0 ? (rho * velocity * dh_m) / pv_Pas : 99999;
+
+  const step = 10;
+  const points: TurbulatorPoint[] = [];
+  const segments: { fromMD: number; toMD: number; reValues: number[] }[] = [];
+  let currentSeg: { fromMD: number; toMD: number; reValues: number[] } | null = null;
+
+  for (let md = 0; md <= wellData.casingDepthMD; md += step) {
+    // Laminar if Re < 2100 — turbulizer needed
+    const needsTurb = Re < 2100;
+    if (needsTurb) {
+      if (!currentSeg) currentSeg = { fromMD: md, toMD: md, reValues: [Re] };
+      else { currentSeg.toMD = md; currentSeg.reValues.push(Re); }
+    } else {
+      if (currentSeg) { segments.push(currentSeg); currentSeg = null; }
+    }
+  }
+  if (currentSeg) segments.push(currentSeg);
+
+  const summary: AutoTurbulatorResult[] = [];
+  for (const seg of segments) {
+    const length = seg.toMD - seg.fromMD;
+    const count = Math.max(1, Math.ceil(length / spacingM));
+    const actualSpacing = length / count;
+    const avgRe = seg.reValues.reduce((a, b) => a + b, 0) / seg.reValues.length;
+
+    for (let i = 0; i < count; i++) {
+      const turbMD = Math.round(seg.fromMD + actualSpacing * (i + 0.5));
+      if (turbMD <= wellData.casingDepthMD) {
+        points.push({
+          id: Math.random().toString(36).slice(2, 9),
+          md: turbMD,
+          bladesCount: 4,
+          bladeAngle: 45,
+          bladeHeight: 15,
+          turbulenceMultiplier: targetMultiplier,
+        });
+      }
+    }
+
+    summary.push({
+      fromMD: seg.fromMD,
+      toMD: seg.toMD,
+      count,
+      spacingM: Math.round(actualSpacing * 10) / 10,
+      avgReOriginal: Math.round(avgRe),
+      avgReWithTurb: Math.round(avgRe * targetMultiplier),
+      flowRegime: avgRe * targetMultiplier > 2100 ? "Турбулентный" : "Переходный",
+    });
+  }
+
+  return { points, summary };
+}
+
 export interface CentralizationResult {
   md: number;
   tvd: number;
@@ -114,6 +211,7 @@ export function calculateCentralization(
   intervals: CentralizerInterval[],
   mudDensity: number,
   turbulators?: TurbulatorInterval[],
+  turbulatorPoints?: TurbulatorPoint[],
 ): CentralizationResult[] {
   const results: CentralizationResult[] = [];
   const step = 5;
@@ -125,15 +223,22 @@ export function calculateCentralization(
 
   if (rc_mm <= 0) return results;
 
+  // Pre-sort turbulator points for fast lookup
+  const turbPoints = turbulatorPoints?.slice().sort((a, b) => a.md - b.md) ?? [];
+  const TURB_RADIUS = 3; // ±3m influence zone for a point turbulizer
+
   for (let md = 0; md <= wellData.casingDepthMD; md += step) {
     const { tvd, zenith } = interpolateTrajectory(wellData.trajectory, md);
 
     const interval = intervals.find(iv => md >= iv.fromMD && md <= iv.toMD);
 
-    // Check turbulizer
+    // Check turbulizer — interval-based (legacy) or point-based
     const turbInterval = turbulators?.find(t => md >= t.fromMD && md <= t.toMD);
-    const hasTurbulizer = !!turbInterval && turbInterval.turbulizersPerJoint > 0;
-    const turbMult = hasTurbulizer ? turbInterval!.turbulenceMultiplier : 1.0;
+    const turbPoint = turbPoints.find(tp => Math.abs(tp.md - md) <= TURB_RADIUS);
+    const hasTurbulizer = (!!turbInterval && turbInterval.turbulizersPerJoint > 0) || !!turbPoint;
+    const turbMult = turbPoint ? turbPoint.turbulenceMultiplier
+      : (turbInterval && turbInterval.turbulizersPerJoint > 0) ? turbInterval.turbulenceMultiplier
+      : 1.0;
 
     let spanLength: number;
     let hasCentralizer = false;

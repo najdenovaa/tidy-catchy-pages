@@ -793,6 +793,9 @@ export default function Index() {
                 <CentralizationSection
                   wellData={wellData}
                   mudDensity={drillingFluid.density}
+                  fluidPV={drillingFluid.rheology?.pv || 25}
+                  fluidYP={drillingFluid.rheology?.yp || 25}
+                  flowRateLps={slurries[0]?.flowRateSteps?.[0]?.rateLps || 10}
                   onResultsChange={setCentralizationResults}
                   onIntervalsChange={setCentralizerIntervals}
                 />

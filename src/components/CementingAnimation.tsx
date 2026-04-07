@@ -95,15 +95,12 @@ export default function CementingAnimation({
   const pipeSegments = useMemo(() => {
     if (!currentPoint || pipeCapacityM3 <= 0) return [];
     const cumVol = currentPoint.cumulativeVolume;
-    const segs: { fluid: string; name: string; fracTop: number; fracBot: number }[] = [];
+    const segs: { fluid: string; name: string; fracTop: number; fracBot: number; volM3: number }[] = [];
 
     // Pipe is filled top-to-bottom: latest pumped fluid is at top, oldest at bottom (exiting to annulus)
-    // At cumVol, the pipe contains: bottom = whatever was pumped first and hasn't exited yet
-    // What's still in pipe = pumped volumes that haven't fully passed through
     const exitedVol = Math.max(0, cumVol - pipeCapacityM3); // volume that already left pipe into annulus
 
     // Walk pump schedule; for each batch, determine how much is still in pipe
-    let batchStart = 0;
     const pipeBatches: { fluid: string; name: string; volInPipe: number }[] = [];
 
     // First, the original mud in pipe
@@ -115,17 +112,27 @@ export default function CementingAnimation({
       if (pumpedOfBatch <= 0) break;
       const exitedOfBatch = Math.max(0, exitedVol - batch.startVol);
       const inPipe = Math.max(0, pumpedOfBatch - exitedOfBatch);
-      if (inPipe > 0) pipeBatches.push({ fluid: batch.fluidType, name: batch.name, volInPipe: inPipe });
+      if (inPipe > 0.0001) pipeBatches.push({ fluid: batch.fluidType, name: batch.name, volInPipe: inPipe });
+    }
+
+    // If pipe is fully displaced (no mud, all cement exited), ensure displacement fills entire pipe
+    const totalInPipe = pipeBatches.reduce((s, b) => s + b.volInPipe, 0);
+    if (totalInPipe < pipeCapacityM3 * 0.99 && cumVol > 0) {
+      // Gap means displacement should fill the rest
+      const gap = pipeCapacityM3 - totalInPipe;
+      const dispBatch = pipeBatches.find(b => b.fluid === "displacement");
+      if (dispBatch) dispBatch.volInPipe += gap;
+      else pipeBatches.push({ fluid: "displacement", name: "Продавка", volInPipe: gap });
     }
 
     // Convert volumes to fractions of pipe
     let cursor = 0;
-    // Bottom of pipe = first (oldest) batch still in pipe; top = last (newest)
-    // Reverse: draw from bottom (oldest) to top (newest)
     for (const pb of pipeBatches) {
-      const frac = pb.volInPipe / pipeCapacityM3;
-      segs.push({ fluid: pb.fluid, name: pb.name, fracTop: cursor, fracBot: cursor + frac });
-      cursor += frac;
+      const frac = Math.min(pb.volInPipe / pipeCapacityM3, 1 - cursor);
+      if (frac > 0.001) {
+        segs.push({ fluid: pb.fluid, name: pb.name, fracTop: cursor, fracBot: cursor + frac, volM3: pb.volInPipe });
+        cursor += frac;
+      }
     }
     return segs;
   }, [currentPoint?.cumulativeVolume, pipeCapacityM3, pumpSchedule]);
@@ -302,9 +309,24 @@ export default function CementingAnimation({
               <line x1={cx - pipeWidth - annWidth - 4} y1={botY} x2={cx + pipeWidth + annWidth + 4} y2={botY} stroke="hsl(30, 30%, 35%)" strokeWidth="3" />
               <text x={cx} y={botY + 14} textAnchor="middle" className="text-[8px] fill-muted-foreground">{casingDepthMD.toFixed(0)} м</text>
 
-              {/* Cement top marker */}
+              {/* Annulus boundary markers with MD and volumes */}
+              {/* Buffer top */}
+              {currentPoint.annBufferHeightM > 0 && (() => {
+                const bufTopMD = casingDepthMD - currentPoint.annCementHeightM - currentPoint.annBufferHeightM;
+                const bufTopY = botY - (currentPoint.annCementHeightM + currentPoint.annBufferHeightM) * scaleFactor;
+                return (
+                  <g>
+                    <line x1={cx - pipeWidth - annWidth - 4} y1={bufTopY} x2={cx - pipeWidth - annWidth - 20} y2={bufTopY} stroke="hsl(200, 60%, 50%)" strokeWidth="0.8" strokeDasharray="2,2" />
+                    <text x={cx - pipeWidth - annWidth - 22} y={bufTopY + 3} textAnchor="end" className="text-[6px]" fill="hsl(200, 60%, 50%)">
+                      {bufTopMD.toFixed(0)}м
+                    </text>
+                  </g>
+                );
+              })()}
+
+              {/* Cement top marker with MD + volume */}
               {currentPoint.annCementHeightM > 0 && (
-                <>
+                <g>
                   <line
                     x1={cx + pipeWidth + annWidth + 6}
                     y1={botY - currentPoint.annCementHeightM * scaleFactor}
@@ -319,26 +341,46 @@ export default function CementingAnimation({
                   >
                     {cementTopMD.toFixed(0)} м
                   </text>
-                </>
+                  <text
+                    x={cx + pipeWidth + annWidth + 32}
+                    y={botY - currentPoint.annCementHeightM * scaleFactor + 12}
+                    className="text-[6px]" fill="hsl(0, 50%, 60%)"
+                  >
+                    ↕{currentPoint.annCementHeightM.toFixed(0)} м
+                  </text>
+                </g>
               )}
 
-              {/* Pipe fluid labels (stage name inside pipe) */}
-              {pipeSegments.filter(s => (s.fracBot - s.fracTop) * usableH > 12).map((seg, i) => {
+              {/* Pipe fluid labels with name + volume */}
+              {pipeSegments.filter(s => (s.fracBot - s.fracTop) * usableH > 16).map((seg, i) => {
                 const segY = botY - seg.fracBot * usableH;
                 const segH = (seg.fracBot - seg.fracTop) * usableH;
+                const depthTop = casingDepthMD * seg.fracTop;
+                const depthBot = casingDepthMD * seg.fracBot;
                 return (
-                  <text
-                    key={`pipelbl-${i}`}
-                    x={cx}
-                    y={segY + segH / 2 + 3}
-                    textAnchor="middle"
-                    className="text-[6px] fill-background"
-                    style={{ fontWeight: 600 }}
-                  >
-                    {seg.name.length > 12 ? seg.name.slice(0, 12) + "…" : seg.name}
-                  </text>
+                  <g key={`pipelbl-${i}`}>
+                    <text
+                      x={cx}
+                      y={segY + segH / 2 - 1}
+                      textAnchor="middle"
+                      className="text-[6px] fill-background"
+                      style={{ fontWeight: 600 }}
+                    >
+                      {seg.name.length > 10 ? seg.name.slice(0, 10) + "…" : seg.name}
+                    </text>
+                    <text
+                      x={cx}
+                      y={segY + segH / 2 + 8}
+                      textAnchor="middle"
+                      className="text-[5px] fill-background"
+                      opacity={0.8}
+                    >
+                      {seg.volM3.toFixed(2)} м³
+                    </text>
+                  </g>
                 );
               })}
+
             </svg>
 
             {/* Legend */}
@@ -402,7 +444,7 @@ export default function CementingAnimation({
                 <div className="text-xs text-muted-foreground mb-1">Состав в трубе</div>
                 <div className="h-6 rounded-md overflow-hidden flex" style={{ border: "1px solid hsl(var(--border))" }}>
                   {pipeSegments.map((seg, i) => (
-                    <div key={i} style={{ width: `${(seg.fracBot - seg.fracTop) * 100}%`, backgroundColor: FLUID_COLORS[seg.fluid] }} className="h-full transition-all duration-200" title={`${seg.name}: ${((seg.fracBot - seg.fracTop) * 100).toFixed(1)}%`} />
+                    <div key={i} style={{ width: `${(seg.fracBot - seg.fracTop) * 100}%`, backgroundColor: FLUID_COLORS[seg.fluid] }} className="h-full transition-all duration-200" title={`${seg.name}: ${seg.volM3.toFixed(2)} м³ (${((seg.fracBot - seg.fracTop) * 100).toFixed(1)}%)`} />
                   ))}
                 </div>
                 <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
