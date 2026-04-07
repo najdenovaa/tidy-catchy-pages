@@ -49,6 +49,13 @@ interface AnnulusSegment {
   botMD: number;
 }
 
+interface VisualFrame {
+  pipeSegments: PipeSegment[];
+  annulusSegments: AnnulusSegment[];
+  activeExit: PumpBatch | null;
+  flowConnected: boolean;
+}
+
 interface CementTarget {
   label: string;
   lengthM: number;
@@ -390,9 +397,20 @@ export default function CementingAnimation({
         pushBatch(history, { ...batchMeta, volumeM3: deltaVol });
       }
 
-      const frame = {
+      const exitedBatches = buildExitedBatches(history, point.cumulativeVolume, pipeCapacityM3);
+      const isSettled = point.pumpRateLps <= EPS && point.annularReturnRate <= EPS;
+      const annulusSegments = isSettled
+        ? buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets)
+        : buildAnnulusSegments(exitedBatches, point, casingDepthMD);
+      const activeExit = [...exitedBatches]
+        .reverse()
+        .find((batch) => batch.fluid !== "mud" && batch.volumeM3 > EPS) || null;
+
+      const frame: VisualFrame = {
         pipeSegments: buildPipeSegments(history, point.cumulativeVolume, pipeCapacityM3, casingDepthMD),
-        annulusSegments: buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets),
+        annulusSegments,
+        activeExit,
+        flowConnected: point.pumpRateLps > EPS && point.cumulativeVolume > pipeCapacityM3 + EPS,
       };
 
       lastCumVol = point.cumulativeVolume;
@@ -403,6 +421,8 @@ export default function CementingAnimation({
   const currentVisual = visualFrames[Math.min(currentIndex, Math.max(visualFrames.length - 1, 0))] || {
     pipeSegments: [] as PipeSegment[],
     annulusSegments: [] as AnnulusSegment[],
+    activeExit: null,
+    flowConnected: false,
   };
 
   const pipeSegments = currentVisual.pipeSegments;
@@ -707,6 +727,32 @@ export default function CementingAnimation({
                   fill={FLUID_COLORS.mud}
                   opacity={0.3}
                 />
+              )}
+
+              {currentVisual.flowConnected && currentVisual.activeExit && (
+                <g opacity="0.92">
+                  <rect
+                    x={cx - pipeWidth + 3}
+                    y={botY - 6}
+                    width={pipeWidth * 2 - 6}
+                    height={6}
+                    fill={FLUID_COLORS[currentVisual.activeExit.fluid]}
+                  />
+                  <rect
+                    x={cx - pipeWidth - annWidth}
+                    y={botY - 6}
+                    width={annWidth}
+                    height={6}
+                    fill={FLUID_COLORS[currentVisual.activeExit.fluid]}
+                  />
+                  <rect
+                    x={cx + pipeWidth}
+                    y={botY - 6}
+                    width={annWidth}
+                    height={6}
+                    fill={FLUID_COLORS[currentVisual.activeExit.fluid]}
+                  />
+                </g>
               )}
 
               <line

@@ -19,6 +19,12 @@ interface DepthSeg {
   botMD: number;
 }
 
+interface FlowBatch {
+  fluid: FluidKey;
+  label: string;
+  volumeM3: number;
+}
+
 interface Frame {
   timeMin: number;
   stage: string;
@@ -112,6 +118,113 @@ function clipPipeSegments(staticSegs: DepthSeg[], tipMD: number, mudLabel: strin
 function buildMudPipe(tipMD: number, mudLabel: string): DepthSeg[] {
   if (tipMD <= EPS) return [];
   return [{ fluid: "mud", label: mudLabel, topMD: 0, botMD: tipMD }];
+}
+
+function pushFlowBatch(target: FlowBatch[], batch: FlowBatch) {
+  if (batch.volumeM3 <= EPS) return;
+  const last = target[target.length - 1];
+  if (last && last.fluid === batch.fluid && last.label === batch.label) {
+    last.volumeM3 += batch.volumeM3;
+  } else {
+    target.push({ ...batch });
+  }
+}
+
+function buildExitedFlowBatches(history: FlowBatch[], cumulativeVolume: number, pipeCapacityM3: number): FlowBatch[] {
+  const exited: FlowBatch[] = [];
+  let pumpedExited = Math.max(0, cumulativeVolume - pipeCapacityM3);
+
+  for (const batch of history) {
+    if (pumpedExited <= EPS) break;
+    const take = Math.min(batch.volumeM3, pumpedExited);
+    if (take > EPS) {
+      pushFlowBatch(exited, { ...batch, volumeM3: take });
+      pumpedExited -= take;
+    }
+  }
+
+  return exited;
+}
+
+function buildPipeFlowSegments(
+  history: FlowBatch[],
+  cumulativeVolume: number,
+  pipeCapacityM3: number,
+  tipMD: number,
+  mudLabel: string,
+): DepthSeg[] {
+  if (tipMD <= EPS) return [];
+  if (pipeCapacityM3 <= EPS) return buildMudPipe(tipMD, mudLabel);
+
+  const pipeBatches: FlowBatch[] = [];
+  const mudStillInPipe = Math.max(0, pipeCapacityM3 - cumulativeVolume);
+  if (mudStillInPipe > EPS) {
+    pipeBatches.push({ fluid: "mud", label: mudLabel, volumeM3: mudStillInPipe });
+  }
+
+  let pumpedExited = Math.max(0, cumulativeVolume - pipeCapacityM3);
+  for (const batch of history) {
+    const exitedOfBatch = Math.min(batch.volumeM3, pumpedExited);
+    const inPipe = Math.max(0, batch.volumeM3 - exitedOfBatch);
+    pumpedExited = Math.max(0, pumpedExited - exitedOfBatch);
+    if (inPipe > EPS) {
+      pipeBatches.push({ ...batch, volumeM3: inPipe });
+    }
+  }
+
+  if (pipeBatches.length === 0) return buildMudPipe(tipMD, mudLabel);
+
+  const segments: DepthSeg[] = [];
+  let cursor = 0;
+  for (const batch of pipeBatches) {
+    const frac = Math.min(batch.volumeM3 / pipeCapacityM3, 1 - cursor);
+    if (frac <= EPS) continue;
+
+    const topMD = Math.max(0, tipMD * (1 - (cursor + frac)));
+    const botMD = Math.min(tipMD, tipMD * (1 - cursor));
+    segments.push({
+      fluid: batch.fluid,
+      label: batch.label,
+      topMD,
+      botMD,
+    });
+
+    cursor += frac;
+    if (cursor >= 1 - EPS) break;
+  }
+
+  return mergeSegments(segments);
+}
+
+function buildRisingAnnulusFlow(
+  exitedBatches: FlowBatch[],
+  annArea: number,
+  plugBottomMD: number,
+  totalDepth: number,
+  mudLabel: string,
+  staticSegments: DepthSeg[] = [],
+): DepthSeg[] {
+  const dynamicSegments: DepthSeg[] = [];
+  let cursorBot = plugBottomMD;
+
+  for (const batch of [...exitedBatches].reverse()) {
+    if (batch.fluid !== "cement" && batch.fluid !== "spacer") continue;
+    const height = annArea > EPS ? batch.volumeM3 / annArea : 0;
+    if (height <= EPS) continue;
+
+    const topMD = Math.max(0, cursorBot - height);
+    dynamicSegments.push({
+      fluid: batch.fluid,
+      label: batch.label,
+      topMD,
+      botMD: cursorBot,
+    });
+    cursorBot = topMD;
+
+    if (cursorBot <= EPS) break;
+  }
+
+  return ensureMudCoverage([...staticSegments, ...dynamicSegments], totalDepth, mudLabel);
 }
 
 function revealSegmentsFromBottom(segments: DepthSeg[], progress: number): DepthSeg[] {
@@ -367,6 +480,38 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
       });
     };
 
+    const annArea = Math.max(results.annArea, EPS);
+    const padPipeCapacityM3 = Math.max(results.pipeArea * Math.max(initialRunDepth, 1), EPS);
+    const mainPipeCapacityM3 = Math.max(results.pipeArea * Math.max(plug.bottomMD, 1), EPS);
+    const mainHistory: FlowBatch[] = [];
+    let mainCumVol = 0;
+
+    const getMainDynamicState = (
+      extraBatch?: { fluid: FluidKey; label: string },
+      extraVolume: number = 0,
+      finalized: boolean = false,
+    ) => {
+      if (finalized) {
+        return {
+          wellSegs: finalWell,
+          pipeSegs: finalPipeAtPlug,
+        };
+      }
+
+      const history = mainHistory.map((batch) => ({ ...batch }));
+      if (extraBatch && extraVolume > EPS) {
+        pushFlowBatch(history, { ...extraBatch, volumeM3: extraVolume });
+      }
+
+      const cumulative = mainCumVol + extraVolume;
+      const exited = buildExitedFlowBatches(history, cumulative, mainPipeCapacityM3);
+
+      return {
+        wellSegs: buildRisingAnnulusFlow(exited, annArea, plug.bottomMD, wellDepth, wellFluid.name, padWellSegs),
+        pipeSegs: buildPipeFlowSegments(history, cumulative, mainPipeCapacityM3, plug.bottomMD, wellFluid.name),
+      };
+    };
+
     const tripSteps = Math.max(1, Math.ceil(Math.max(tripInTime, 0.25) / 0.25));
     pushFrame("Спуск инструмента", `Спуск до ${initialRunDepth.toFixed(0)} м`, mudWell, [], 0, null);
     for (let step = 1; step <= tripSteps; step++) {
@@ -416,20 +561,47 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
       const stageVol = Math.max(stage.volumeM3, 0);
 
       if (lowerName.includes("закачка вязкой пачки")) {
-        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => ({
-          pipeTipMD: initialRunDepth,
-          wellSegs: mudWell,
-          pipeSegs: buildPadPipeProgress(progress),
-        }));
+        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => {
+          const partialVol = stageVol * progress;
+          const history: FlowBatch[] = partialVol > EPS
+            ? [{ fluid: "viscousPad", label: padLabel, volumeM3: partialVol }]
+            : [];
+
+          return {
+            pipeTipMD: initialRunDepth,
+            wellSegs: mudWell,
+            pipeSegs: buildPipeFlowSegments(history, partialVol, padPipeCapacityM3, initialRunDepth, wellFluid.name),
+          };
+        });
         continue;
       }
 
       if (lowerName.includes("продавка вязкой пачки")) {
-        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => ({
-          pipeTipMD: initialRunDepth,
-          wellSegs: buildPadWellProgress(progress),
-          pipeSegs: buildPadPipeProgress(1),
-        }));
+        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => {
+          const displacementVol = stageVol * progress;
+          const history: FlowBatch[] = [];
+          pushFlowBatch(history, { fluid: "viscousPad", label: padLabel, volumeM3: Math.max(results.spacerVolumeBelow, 0) });
+          pushFlowBatch(history, { fluid: "mud", label: wellFluid.name, volumeM3: displacementVol });
+
+          const cumulative = Math.max(results.spacerVolumeBelow, 0) + displacementVol;
+          const exited = buildExitedFlowBatches(history, cumulative, padPipeCapacityM3);
+          const padExitedVol = exited
+            .filter((batch) => batch.fluid === "viscousPad")
+            .reduce((sum, batch) => sum + batch.volumeM3, 0);
+          const padHeightNow = annArea > EPS ? padExitedVol / annArea : 0;
+
+          return {
+            pipeTipMD: initialRunDepth,
+            wellSegs: ensureMudCoverage(
+              padHeightNow > EPS
+                ? [{ fluid: "viscousPad", label: padLabel, topMD: plug.bottomMD, botMD: Math.min(wellDepth, plug.bottomMD + padHeightNow) }]
+                : [],
+              wellDepth,
+              wellFluid.name,
+            ),
+            pipeSegs: buildPipeFlowSegments(history, cumulative, padPipeCapacityM3, initialRunDepth, wellFluid.name),
+          };
+        });
         continue;
       }
 
@@ -439,18 +611,17 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
           return {
             pipeTipMD: tip,
             wellSegs: padWellStatic,
-            pipeSegs: clipPipeSegments(padPipeStatic, tip, wellFluid.name),
+            pipeSegs: buildMudPipe(tip, wellFluid.name),
           };
         });
         continue;
       }
 
       if (lowerName.includes("обратная промывка")) {
-        const sourcePipe = clipPipeSegments(padPipeStatic, padPullUpMD, wellFluid.name);
         runStage(stage.name, stage.description, stageTime, stageVol, (progress) => ({
           pipeTipMD: padPullUpMD,
           wellSegs: padWellStatic,
-          pipeSegs: washPipeSegments(sourcePipe, padPullUpMD, progress, "reverse", wellFluid.name),
+          pipeSegs: buildMudPipe(padPullUpMD, wellFluid.name),
           washDir: "reverse",
         }));
         continue;
@@ -469,38 +640,61 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
       }
 
       if (lowerName.includes("верхний буфер") && lowerName.includes("затруб")) {
-        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => ({
-          pipeTipMD: plug.bottomMD,
-          wellSegs: buildMainWellLayout(progress, 0, false),
-          pipeSegs: buildMudPipe(plug.bottomMD, wellFluid.name),
-        }));
+        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => {
+          const state = getMainDynamicState({ fluid: "spacer", label: spacer.name }, stageVol * progress);
+          return {
+            pipeTipMD: plug.bottomMD,
+            wellSegs: state.wellSegs,
+            pipeSegs: state.pipeSegs,
+          };
+        });
+        pushFlowBatch(mainHistory, { fluid: "spacer", label: spacer.name, volumeM3: stageVol });
+        mainCumVol += stageVol;
         continue;
       }
 
       if (lowerName.includes("цемент")) {
-        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => ({
-          pipeTipMD: plug.bottomMD,
-          wellSegs: buildMainWellLayout(1, progress, false),
-          pipeSegs: buildMainPipeLayout(progress, 0, false),
-        }));
+        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => {
+          const state = getMainDynamicState({ fluid: "cement", label: cement.name }, stageVol * progress);
+          return {
+            pipeTipMD: plug.bottomMD,
+            wellSegs: state.wellSegs,
+            pipeSegs: state.pipeSegs,
+          };
+        });
+        pushFlowBatch(mainHistory, { fluid: "cement", label: cement.name, volumeM3: stageVol });
+        mainCumVol += stageVol;
         continue;
       }
 
       if (lowerName.includes("верхний буфер") && lowerName.includes("труб")) {
-        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => ({
-          pipeTipMD: plug.bottomMD,
-          wellSegs: buildMainWellLayout(1, 1, false),
-          pipeSegs: buildMainPipeLayout(1, progress, false),
-        }));
+        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => {
+          const state = getMainDynamicState({ fluid: "spacer", label: spacer.name }, stageVol * progress);
+          return {
+            pipeTipMD: plug.bottomMD,
+            wellSegs: state.wellSegs,
+            pipeSegs: state.pipeSegs,
+          };
+        });
+        pushFlowBatch(mainHistory, { fluid: "spacer", label: spacer.name, volumeM3: stageVol });
+        mainCumVol += stageVol;
         continue;
       }
 
       if (lowerName.includes("продавка")) {
-        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => ({
-          pipeTipMD: plug.bottomMD,
-          wellSegs: finalWell,
-          pipeSegs: progress < 0.4 ? buildMainPipeLayout(1, 1, false) : finalPipeAtPlug,
-        }));
+        runStage(stage.name, stage.description, stageTime, stageVol, (progress) => {
+          const state = progress >= 0.96
+            ? getMainDynamicState(undefined, 0, true)
+            : getMainDynamicState({ fluid: "mud", label: wellFluid.name }, stageVol * progress);
+
+          return {
+            pipeTipMD: plug.bottomMD,
+            wellSegs: state.wellSegs,
+            pipeSegs: state.pipeSegs,
+          };
+        });
+        pushFlowBatch(mainHistory, { fluid: "mud", label: wellFluid.name, volumeM3: stageVol });
+        mainCumVol += stageVol;
         continue;
       }
 
