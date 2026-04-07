@@ -120,18 +120,19 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   const [turbPoints, setTurbPoints] = useState<TurbulatorPoint[]>([]);
   const [autoTurbResults, setAutoTurbResults] = useState<AutoTurbulatorResult[] | null>(null);
   const [turbSpacing, setTurbSpacing] = useState(6);
-  const [turbTargetMult, setTurbTargetMult] = useState(2.0);
+  const [turbBladesCount, setTurbBladesCount] = useState(4);
+  const [turbBladeAngle, setTurbBladeAngle] = useState(45);
+  const [turbBladeHeight, setTurbBladeHeight] = useState(15);
 
   const addTurbPoint = useCallback(() => {
     setTurbPoints(prev => [...prev, {
       id: makeId(),
       md: 0,
-      bladesCount: 4,
-      bladeAngle: 45,
-      bladeHeight: 15,
-      turbulenceMultiplier: 2.0,
+      bladesCount: turbBladesCount,
+      bladeAngle: turbBladeAngle,
+      bladeHeight: turbBladeHeight,
     }]);
-  }, []);
+  }, [turbBladesCount, turbBladeAngle, turbBladeHeight]);
 
   const removeTurbPoint = useCallback((id: string) => {
     setTurbPoints(prev => prev.filter(t => t.id !== id));
@@ -143,11 +144,12 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
 
   const handleAutoTurbulators = useCallback(() => {
     const { points, summary } = autoPlaceTurbulators(
-      wellData, mudDensity, fluidPV, fluidYP, flowRateLps, turbTargetMult, turbSpacing
+      wellData, mudDensity, fluidPV, fluidYP, flowRateLps,
+      turbBladesCount, turbBladeAngle, turbBladeHeight, turbSpacing
     );
     setTurbPoints(points);
     setAutoTurbResults(summary);
-  }, [wellData, mudDensity, fluidPV, fluidYP, flowRateLps, turbTargetMult, turbSpacing]);
+  }, [wellData, mudDensity, fluidPV, fluidYP, flowRateLps, turbBladesCount, turbBladeAngle, turbBladeHeight, turbSpacing]);
 
 
   const crossSectionRef = useRef<HTMLDivElement>(null);
