@@ -116,30 +116,38 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
     restoringForce: centralizerPresets.rigid.restoringForce!,
     maxAxialLoad: centralizerPresets.rigid.maxAxialLoad!,
   });
-  // Turbulizer state
-  const [turbulators, setTurbulators] = useState<TurbulatorInterval[]>([]);
+  // Turbulizer state — point-based manual + auto
+  const [turbPoints, setTurbPoints] = useState<TurbulatorPoint[]>([]);
+  const [autoTurbResults, setAutoTurbResults] = useState<AutoTurbulatorResult[] | null>(null);
+  const [turbSpacing, setTurbSpacing] = useState(6);
+  const [turbTargetMult, setTurbTargetMult] = useState(2.0);
 
-  const addTurbulator = useCallback(() => {
-    setTurbulators(prev => [...prev, {
+  const addTurbPoint = useCallback(() => {
+    setTurbPoints(prev => [...prev, {
       id: makeId(),
-      fromMD: 0,
-      toMD: wellData.casingDepthMD,
-      turbulizersPerJoint: 1,
-      jointLength: 12,
+      md: 0,
       bladesCount: 4,
       bladeAngle: 45,
       bladeHeight: 15,
       turbulenceMultiplier: 2.0,
     }]);
-  }, [wellData.casingDepthMD]);
-
-  const removeTurbulator = useCallback((id: string) => {
-    setTurbulators(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  const updateTurbulator = useCallback((id: string, patch: Partial<TurbulatorInterval>) => {
-    setTurbulators(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+  const removeTurbPoint = useCallback((id: string) => {
+    setTurbPoints(prev => prev.filter(t => t.id !== id));
   }, []);
+
+  const updateTurbPoint = useCallback((id: string, patch: Partial<TurbulatorPoint>) => {
+    setTurbPoints(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+  }, []);
+
+  const handleAutoTurbulators = useCallback(() => {
+    const { points, summary } = autoPlaceTurbulators(
+      wellData, mudDensity, fluidPV, fluidYP, flowRateLps, turbTargetMult, turbSpacing
+    );
+    setTurbPoints(points);
+    setAutoTurbResults(summary);
+  }, [wellData, mudDensity, fluidPV, fluidYP, flowRateLps, turbTargetMult, turbSpacing]);
 
 
   const crossSectionRef = useRef<HTMLDivElement>(null);
