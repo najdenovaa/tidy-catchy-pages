@@ -355,15 +355,6 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
     );
   }, [mudWell, padHeight, padLabel, plug.bottomMD, usePad, wellDepth, wellFluid.name]);
 
-  const padPipeStatic = useMemo(() => {
-    if (!usePad) return buildMudPipe(initialRunDepth, wellFluid.name);
-    return ensureMudCoverage(
-      [{ fluid: "viscousPad", label: padLabel, topMD: plug.bottomMD, botMD: initialRunDepth }],
-      initialRunDepth,
-      wellFluid.name,
-    );
-  }, [initialRunDepth, padLabel, plug.bottomMD, usePad, wellFluid.name]);
-
   const finalWell = useMemo(
     () => buildStaticSegmentsFromColumns(results.fluidColumns.filter((column) => column.location === "annulus"), wellDepth, wellFluid.name),
     [results.fluidColumns, wellDepth, wellFluid.name],
@@ -379,76 +370,10 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
     [finalPipeStatic, plug.bottomMD, wellFluid.name],
   );
 
-  const upperSpacerWellSegs = useMemo(
-    () => finalWell.filter((segment) => segment.fluid === "spacer"),
-    [finalWell],
-  );
-  const cementWellSegs = useMemo(
-    () => finalWell.filter((segment) => segment.fluid === "cement"),
-    [finalWell],
-  );
   const padWellSegs = useMemo(
     () => finalWell.filter((segment) => segment.fluid === "viscousPad"),
     [finalWell],
   );
-
-  const cementPipeSegs = useMemo(
-    () => finalPipeAtPlug.filter((segment) => segment.fluid === "cement"),
-    [finalPipeAtPlug],
-  );
-  const upperSpacerPipeSegs = useMemo(
-    () => finalPipeAtPlug.filter((segment) => segment.fluid === "spacer"),
-    [finalPipeAtPlug],
-  );
-
-  const buildPadPipeProgress = useCallback((progress: number) => {
-    if (!usePad) return buildMudPipe(initialRunDepth, wellFluid.name);
-    const filled = padHeight * clamp01(progress);
-    return ensureMudCoverage(
-      filled > EPS
-        ? [{ fluid: "viscousPad", label: padLabel, topMD: initialRunDepth - filled, botMD: initialRunDepth }]
-        : [],
-      initialRunDepth,
-      wellFluid.name,
-    );
-  }, [initialRunDepth, padHeight, padLabel, usePad, wellFluid.name]);
-
-  const buildPadWellProgress = useCallback((progress: number) => {
-    if (!usePad) return mudWell;
-    const filled = padHeight * clamp01(progress);
-    return ensureMudCoverage(
-      filled > EPS
-        ? [{ fluid: "viscousPad", label: padLabel, topMD: plug.bottomMD, botMD: Math.min(wellDepth, plug.bottomMD + filled) }]
-        : [],
-      wellDepth,
-      wellFluid.name,
-    );
-  }, [mudWell, padHeight, padLabel, plug.bottomMD, usePad, wellDepth, wellFluid.name]);
-
-  const buildMainWellLayout = useCallback((bufferProgress: number, cementProgress: number, finalized: boolean) => {
-    if (finalized) return finalWell;
-    return ensureMudCoverage(
-      [
-        ...padWellSegs,
-        ...revealSegmentsFromBottom(upperSpacerWellSegs, bufferProgress),
-        ...revealSegmentsFromBottom(cementWellSegs, cementProgress),
-      ],
-      wellDepth,
-      wellFluid.name,
-    );
-  }, [cementWellSegs, finalWell, padWellSegs, upperSpacerWellSegs, wellDepth, wellFluid.name]);
-
-  const buildMainPipeLayout = useCallback((cementProgress: number, spacerProgress: number, finalized: boolean) => {
-    if (finalized) return finalPipeAtPlug;
-    return ensureMudCoverage(
-      [
-        ...revealSegmentsFromBottom(cementPipeSegs, cementProgress),
-        ...revealSegmentsFromBottom(upperSpacerPipeSegs, spacerProgress),
-      ],
-      plug.bottomMD,
-      wellFluid.name,
-    );
-  }, [cementPipeSegs, finalPipeAtPlug, plug.bottomMD, upperSpacerPipeSegs, wellFluid.name]);
 
   const simulation = useMemo(() => {
     const frames: Frame[] = [];
@@ -734,16 +659,11 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
 
     return frames;
   }, [
-    buildMainPipeLayout,
-    buildMainWellLayout,
-    buildPadPipeProgress,
-    buildPadWellProgress,
     finalPipeAtPlug,
     finalWell,
     initialRunDepth,
     inputs.tripSpeedMs,
     mudWell,
-    padPipeStatic,
     padPullUpMD,
     padWellStatic,
     plug.bottomMD,
