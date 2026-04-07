@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { useState, memo, useCallback, useMemo, ChangeEvent } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { getCasingID, getSlurryHeight, annularVolumePerMeter, annularVolumeForInterval, hydrostaticPressure, interpolateTVD, calculateTVDFromSurvey, calculateCement, calculateAdditiveMass, effectiveRheology, cementCategory, calculateHydraulics, getFlowRateLps } from "@/lib/cementing-calculations";
-import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, AdditivePercentageType, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval } from "@/lib/cementing-calculations";
+import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, AdditivePercentageType, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval, ReservoirLayer } from "@/lib/cementing-calculations";
 import * as XLSX from "xlsx";
 
 interface Props {
@@ -126,7 +126,7 @@ const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolu
 
 export default function InputSection(props: Props) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    well: false, trajectory: false, mud: false, buffers: false, cement: false, displacement: false, hydraulics: false, flush: false,
+    well: false, trajectory: false, reservoirs: false, mud: false, buffers: false, cement: false, displacement: false, hydraulics: false, flush: false,
   });
 
   const toggle = (key: string) => {
