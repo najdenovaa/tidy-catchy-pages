@@ -743,6 +743,10 @@ export default function Index() {
                     stageBoundaries={pressureResult.stageBoundaries}
                     casingDepthMD={calcSnapshot.wellData.casingDepthMD}
                     wellDepthMD={calcSnapshot.wellData.wellDepthMD}
+                    slurries={calcSnapshot.slurries}
+                    buffers={calcSnapshot.buffers}
+                    reservoirLayers={calcSnapshot.wellData.reservoirLayers}
+                    pipeCapacityM3={volumes?.totalPipeVolume || 0}
                   />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
