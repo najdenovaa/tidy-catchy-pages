@@ -3,7 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Play, Pause, RotateCcw, FastForward } from "lucide-react";
-import type { PressurePoint, StageBoundary, SlurryInput, BufferFluid, ReservoirLayer } from "@/lib/cementing-calculations";
+import type {
+  PressurePoint,
+  StageBoundary,
+  SlurryInput,
+  BufferFluid,
+  ReservoirLayer,
+} from "@/lib/cementing-calculations";
 
 interface Props {
   pressureData: PressurePoint[];
@@ -13,29 +19,230 @@ interface Props {
   slurries?: SlurryInput[];
   buffers?: BufferFluid[];
   reservoirLayers?: ReservoirLayer[];
-  pipeCapacityM3?: number; // internal pipe volume
+  pipeCapacityM3?: number;
+  prevCasingDepth?: number;
 }
 
-const FLUID_COLORS: Record<string, string> = {
+type FluidKey = "mud" | "buffer" | "cement" | "displacement";
+
+interface PumpBatch {
+  fluid: FluidKey;
+  label: string;
+  volumeM3: number;
+}
+
+interface PipeSegment {
+  fluid: FluidKey;
+  label: string;
+  fracTop: number;
+  fracBot: number;
+  volM3: number;
+  topMD: number;
+  botMD: number;
+}
+
+interface AnnulusSegment {
+  fluid: FluidKey;
+  label: string;
+  heightM: number;
+  topMD: number;
+  botMD: number;
+}
+
+const FLUID_COLORS: Record<FluidKey, string> = {
   mud: "hsl(30, 50%, 45%)",
   buffer: "hsl(200, 60%, 50%)",
   cement: "hsl(0, 0%, 55%)",
   displacement: "hsl(120, 40%, 45%)",
 };
 
+const FLUID_LABELS: Record<FluidKey, string> = {
+  mud: "Буровой р-р",
+  buffer: "Буфер",
+  cement: "Цемент",
+  displacement: "Продавка",
+};
+
 const RESERVOIR_COLORS: Record<string, string> = {
-  "нефть": "hsl(120, 60%, 35%)",
-  "газ": "hsl(0, 70%, 50%)",
-  "вода": "hsl(210, 70%, 55%)",
+  нефть: "hsl(120, 60%, 35%)",
+  газ: "hsl(0, 70%, 50%)",
+  вода: "hsl(210, 70%, 55%)",
   "нефть+газ": "hsl(45, 80%, 50%)",
-  "газоконденсат": "hsl(30, 70%, 50%)",
+  газоконденсат: "hsl(30, 70%, 50%)",
 };
 
 const SPEED_OPTIONS = [1, 2, 5, 10];
+const EPS = 1e-6;
+const BOTTOM_UP_FLOW_ORDER: FluidKey[] = ["displacement", "cement", "buffer", "mud"];
+const TOP_DOWN_FLOW_ORDER: FluidKey[] = ["mud", "buffer", "cement", "displacement"];
+
+function pushBatch(target: PumpBatch[], batch: PumpBatch) {
+  if (batch.volumeM3 <= EPS) return;
+  const last = target[target.length - 1];
+  if (last && last.fluid === batch.fluid && last.label === batch.label) {
+    last.volumeM3 += batch.volumeM3;
+  } else {
+    target.push({ ...batch });
+  }
+}
+
+function classifyStage(stage: string, bufferNames: Set<string>, slurryNames: Set<string>): Omit<PumpBatch, "volumeM3"> {
+  if (slurryNames.has(stage)) return { fluid: "cement", label: stage };
+  if (bufferNames.has(stage)) return { fluid: "buffer", label: stage };
+  if (/промывка лвд/i.test(stage)) return { fluid: "mud", label: "Промывка ЛВД" };
+  return { fluid: "displacement", label: stage || FLUID_LABELS.displacement };
+}
+
+function buildExitedBatches(history: PumpBatch[], cumulativeVolume: number, pipeCapacityM3: number): PumpBatch[] {
+  const exited: PumpBatch[] = [];
+  const mudExited = Math.min(cumulativeVolume, pipeCapacityM3);
+  if (mudExited > EPS) {
+    exited.push({ fluid: "mud", label: FLUID_LABELS.mud, volumeM3: mudExited });
+  }
+
+  let pumpedExited = Math.max(0, cumulativeVolume - pipeCapacityM3);
+  for (const batch of history) {
+    if (pumpedExited <= EPS) break;
+    const take = Math.min(batch.volumeM3, pumpedExited);
+    if (take > EPS) {
+      exited.push({ fluid: batch.fluid, label: batch.label, volumeM3: take });
+      pumpedExited -= take;
+    }
+  }
+
+  return exited;
+}
+
+function buildPipeSegments(
+  history: PumpBatch[],
+  cumulativeVolume: number,
+  pipeCapacityM3: number,
+  casingDepthMD: number,
+): PipeSegment[] {
+  if (pipeCapacityM3 <= EPS || casingDepthMD <= EPS) return [];
+
+  const pipeBatches: PumpBatch[] = [];
+  const mudStillInPipe = Math.max(0, pipeCapacityM3 - cumulativeVolume);
+  if (mudStillInPipe > EPS) {
+    pipeBatches.push({ fluid: "mud", label: FLUID_LABELS.mud, volumeM3: mudStillInPipe });
+  }
+
+  let pumpedExited = Math.max(0, cumulativeVolume - pipeCapacityM3);
+  for (const batch of history) {
+    const exitedOfBatch = Math.min(batch.volumeM3, pumpedExited);
+    const inPipe = Math.max(0, batch.volumeM3 - exitedOfBatch);
+    pumpedExited = Math.max(0, pumpedExited - exitedOfBatch);
+    if (inPipe > EPS) {
+      pipeBatches.push({ fluid: batch.fluid, label: batch.label, volumeM3: inPipe });
+    }
+  }
+
+  const totalInPipe = pipeBatches.reduce((sum, batch) => sum + batch.volumeM3, 0);
+  if (totalInPipe < pipeCapacityM3 - EPS) {
+    pipeBatches.push({
+      fluid: "mud",
+      label: FLUID_LABELS.mud,
+      volumeM3: pipeCapacityM3 - totalInPipe,
+    });
+  }
+
+  const segments: PipeSegment[] = [];
+  let cursor = 0;
+  for (const batch of pipeBatches) {
+    const frac = Math.min(batch.volumeM3 / pipeCapacityM3, 1 - cursor);
+    if (frac <= EPS) continue;
+
+    const fracTop = cursor;
+    const fracBot = cursor + frac;
+    const topMD = Math.max(0, casingDepthMD * (1 - fracBot));
+    const botMD = Math.min(casingDepthMD, casingDepthMD * (1 - fracTop));
+
+    segments.push({
+      fluid: batch.fluid,
+      label: batch.label,
+      fracTop,
+      fracBot,
+      volM3: batch.volumeM3,
+      topMD,
+      botMD,
+    });
+
+    cursor += frac;
+    if (cursor >= 1 - EPS) break;
+  }
+
+  return segments;
+}
+
+function buildAnnulusSegments(
+  exitedBatches: PumpBatch[],
+  point: PressurePoint,
+  casingDepthMD: number,
+): AnnulusSegment[] {
+  if (casingDepthMD <= EPS) return [];
+
+  const heights: Record<FluidKey, number> = {
+    mud: point.annMudHeightM,
+    buffer: point.annBufferHeightM,
+    cement: point.annCementHeightM,
+    displacement: point.annDisplHeightM,
+  };
+
+  const namedBottomUp = exitedBatches.slice().reverse();
+  const segments: AnnulusSegment[] = [];
+  let filledFromBottom = 0;
+
+  for (const fluid of BOTTOM_UP_FLOW_ORDER) {
+    const totalHeight = heights[fluid];
+    if (totalHeight <= EPS) continue;
+
+    let batches = namedBottomUp.filter((batch) => batch.fluid === fluid);
+    if (fluid === "mud") {
+      batches = [{ fluid: "mud", label: FLUID_LABELS.mud, volumeM3: 1 }];
+    }
+    if (batches.length === 0) {
+      batches = [{ fluid, label: FLUID_LABELS[fluid], volumeM3: 1 }];
+    }
+
+    const totalBatchVolume = batches.reduce((sum, batch) => sum + batch.volumeM3, 0) || 1;
+    let consumedHeight = 0;
+
+    batches.forEach((batch, index) => {
+      const isLast = index === batches.length - 1;
+      const heightM = isLast
+        ? Math.max(0, totalHeight - consumedHeight)
+        : totalHeight * (batch.volumeM3 / totalBatchVolume);
+      if (heightM <= EPS) return;
+
+      const botMD = Math.max(0, casingDepthMD - filledFromBottom);
+      const topMD = Math.max(0, casingDepthMD - (filledFromBottom + heightM));
+
+      segments.push({
+        fluid,
+        label: batch.label,
+        heightM,
+        topMD,
+        botMD,
+      });
+
+      filledFromBottom += heightM;
+      consumedHeight += heightM;
+    });
+  }
+
+  return segments;
+}
 
 export default function CementingAnimation({
-  pressureData, stageBoundaries, casingDepthMD, wellDepthMD,
-  slurries = [], buffers = [], reservoirLayers = [], pipeCapacityM3 = 0,
+  pressureData,
+  stageBoundaries,
+  casingDepthMD,
+  wellDepthMD,
+  slurries = [],
+  buffers = [],
+  reservoirLayers = [],
+  pipeCapacityM3 = 0,
+  prevCasingDepth = 0,
 }: Props) {
   const [playing, setPlaying] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -43,7 +250,7 @@ export default function CementingAnimation({
   const animRef = useRef<number>(0);
   const lastFrameTime = useRef(0);
 
-  const maxIndex = pressureData.length - 1;
+  const maxIndex = Math.max(pressureData.length - 1, 0);
   const speed = SPEED_OPTIONS[speedIdx];
   const currentPoint = pressureData[Math.min(currentIndex, maxIndex)] || pressureData[0];
 
@@ -52,14 +259,17 @@ export default function CementingAnimation({
     const delta = timestamp - lastFrameTime.current;
     if (delta > 33) {
       lastFrameTime.current = timestamp;
-      setCurrentIndex(prev => {
+      setCurrentIndex((prev) => {
         const next = prev + speed;
-        if (next >= maxIndex) { setPlaying(false); return maxIndex; }
+        if (next >= maxIndex) {
+          setPlaying(false);
+          return maxIndex;
+        }
         return next;
       });
     }
     animRef.current = requestAnimationFrame(animate);
-  }, [speed, maxIndex]);
+  }, [maxIndex, speed]);
 
   useEffect(() => {
     if (playing) {
@@ -69,81 +279,56 @@ export default function CementingAnimation({
       cancelAnimationFrame(animRef.current);
     }
     return () => cancelAnimationFrame(animRef.current);
-  }, [playing, animate]);
+  }, [animate, playing]);
 
-  const handleReset = () => { setPlaying(false); setCurrentIndex(0); };
-  const toggleSpeed = () => setSpeedIdx(prev => (prev + 1) % SPEED_OPTIONS.length);
+  const handleReset = () => {
+    setPlaying(false);
+    setCurrentIndex(0);
+  };
 
-  // Build pump schedule for pipe tracking
-  const pumpSchedule = useMemo(() => {
-    const schedule: { startVol: number; endVol: number; fluidType: string; name: string }[] = [];
-    let vol = 0;
-    buffers.forEach(b => {
-      const bVol = b.volume || b.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
-      if (bVol > 0) { schedule.push({ startVol: vol, endVol: vol + bVol, fluidType: "buffer", name: b.name }); vol += bVol; }
-    });
-    slurries.forEach(s => {
-      const sVol = s.flowRateSteps.reduce((sum, st) => sum + st.volumeM3, 0);
-      if (sVol > 0) { schedule.push({ startVol: vol, endVol: vol + sVol, fluidType: "cement", name: s.name }); vol += sVol; }
-    });
-    // displacement fills the rest
-    schedule.push({ startVol: vol, endVol: vol + (pipeCapacityM3 || 999), fluidType: "displacement", name: "Продавка" });
-    return schedule;
-  }, [buffers, slurries, pipeCapacityM3]);
+  const toggleSpeed = () => setSpeedIdx((prev) => (prev + 1) % SPEED_OPTIONS.length);
 
-  const pipeSegments = useMemo(() => {
-    if (!currentPoint || pipeCapacityM3 <= 0) return [];
+  const bufferNames = useMemo(() => new Set(buffers.map((buffer) => buffer.name).filter(Boolean)), [buffers]);
+  const slurryNames = useMemo(() => new Set(slurries.map((slurry) => slurry.name).filter(Boolean)), [slurries]);
 
-    // Как только продавочная жидкость вышла из трубы в затрубье,
-    // труба должна быть полностью заполнена продавкой — без остаточного «стакана» цемента.
-    if (currentPoint.annDisplHeightM > 0.001) {
-      return [{ fluid: "displacement", name: "Продавка", fracTop: 0, fracBot: 1, volM3: pipeCapacityM3 }];
-    }
+  const visualFrames = useMemo(() => {
+    const history: PumpBatch[] = [];
+    let lastCumVol = 0;
 
-    const cumVol = currentPoint.cumulativeVolume;
-    const segs: { fluid: string; name: string; fracTop: number; fracBot: number; volM3: number }[] = [];
-
-    const exitedVol = Math.max(0, cumVol - pipeCapacityM3);
-    const pipeBatches: { fluid: string; name: string; volInPipe: number }[] = [];
-
-    const mudStillInPipe = Math.max(0, pipeCapacityM3 - cumVol);
-    if (mudStillInPipe > 0) pipeBatches.push({ fluid: "mud", name: "Буровой р-р", volInPipe: mudStillInPipe });
-
-    for (const batch of pumpSchedule) {
-      const pumpedOfBatch = Math.max(0, Math.min(cumVol - batch.startVol, batch.endVol - batch.startVol));
-      if (pumpedOfBatch <= 0) break;
-      const exitedOfBatch = Math.max(0, Math.min(exitedVol - batch.startVol, batch.endVol - batch.startVol));
-      const inPipe = Math.max(0, pumpedOfBatch - exitedOfBatch);
-      if (inPipe > 0.0001) pipeBatches.push({ fluid: batch.fluidType, name: batch.name, volInPipe: inPipe });
-    }
-
-    const totalInPipe = pipeBatches.reduce((s, b) => s + b.volInPipe, 0);
-    if (totalInPipe < pipeCapacityM3 * 0.99 && cumVol > 0) {
-      const gap = pipeCapacityM3 - totalInPipe;
-      const dispBatch = pipeBatches.find(b => b.fluid === "displacement");
-      if (dispBatch) dispBatch.volInPipe += gap;
-      else pipeBatches.push({ fluid: "displacement", name: "Продавка", volInPipe: gap });
-    }
-
-    let cursor = 0;
-    for (const pb of pipeBatches) {
-      const frac = Math.min(pb.volInPipe / pipeCapacityM3, 1 - cursor);
-      if (frac > 0.001) {
-        segs.push({ fluid: pb.fluid, name: pb.name, fracTop: cursor, fracBot: cursor + frac, volM3: pb.volInPipe });
-        cursor += frac;
+    return pressureData.map((point) => {
+      const deltaVol = Math.max(0, point.cumulativeVolume - lastCumVol);
+      if (deltaVol > EPS) {
+        const batchMeta = classifyStage(point.stage, bufferNames, slurryNames);
+        pushBatch(history, { ...batchMeta, volumeM3: deltaVol });
       }
-    }
-    return segs;
-  }, [currentPoint?.annDisplHeightM, currentPoint?.cumulativeVolume, pipeCapacityM3, pumpSchedule]);
+
+      const exitedBatches = buildExitedBatches(history, point.cumulativeVolume, pipeCapacityM3);
+      const frame = {
+        pipeSegments: buildPipeSegments(history, point.cumulativeVolume, pipeCapacityM3, casingDepthMD),
+        annulusSegments: buildAnnulusSegments(exitedBatches, point, casingDepthMD),
+      };
+
+      lastCumVol = point.cumulativeVolume;
+      return frame;
+    });
+  }, [bufferNames, casingDepthMD, pipeCapacityM3, pressureData, slurryNames]);
+
+  const currentVisual = visualFrames[Math.min(currentIndex, Math.max(visualFrames.length - 1, 0))] || {
+    pipeSegments: [] as PipeSegment[],
+    annulusSegments: [] as AnnulusSegment[],
+  };
+
+  const pipeSegments = currentVisual.pipeSegments;
+  const namedAnnulusSegments = currentVisual.annulusSegments;
 
   const currentStage = useMemo(() => {
     if (!currentPoint) return "Начало";
     let stage = "Начало";
-    for (const sb of stageBoundaries) {
-      if (currentPoint.time >= sb.time) stage = sb.label;
+    for (const boundary of stageBoundaries) {
+      if (currentPoint.time >= boundary.time) stage = boundary.label;
     }
     return stage;
-  }, [currentPoint?.time, stageBoundaries]);
+  }, [currentPoint, stageBoundaries]);
 
   if (!currentPoint) {
     return (
@@ -155,7 +340,6 @@ export default function CementingAnimation({
     );
   }
 
-  // SVG dimensions
   const wellHeight = 480;
   const wellWidth = 260;
   const pipeWidth = 36;
@@ -164,44 +348,78 @@ export default function CementingAnimation({
   const botY = wellHeight - 20;
   const usableH = botY - topY;
   const scaleFactor = casingDepthMD > 0 ? usableH / casingDepthMD : 1;
-  const cx = wellWidth / 2; // center x
+  const cx = wellWidth / 2;
 
-  // Annulus segments (from bottom up)
-  const annSegments: { fluid: string; height: number; y: number }[] = [];
-  let curY = botY;
-  if (currentPoint.annCementHeightM > 0) { const h = currentPoint.annCementHeightM * scaleFactor; curY -= h; annSegments.push({ fluid: "cement", height: h, y: curY }); }
-  if (currentPoint.annBufferHeightM > 0) { const h = currentPoint.annBufferHeightM * scaleFactor; curY -= h; annSegments.push({ fluid: "buffer", height: h, y: curY }); }
-  if (currentPoint.annDisplHeightM > 0) { const h = currentPoint.annDisplHeightM * scaleFactor; curY -= h; annSegments.push({ fluid: "displacement", height: h, y: curY }); }
-  const mudH = Math.max(0, curY - topY);
-  if (mudH > 0) annSegments.push({ fluid: "mud", height: mudH, y: topY });
+  let annCursorY = botY;
+  const annSegmentsForRender = namedAnnulusSegments.map((segment) => {
+    const heightPx = segment.heightM * scaleFactor;
+    annCursorY -= heightPx;
+    return {
+      ...segment,
+      heightPx,
+      y: annCursorY,
+    };
+  });
 
   const maxTime = pressureData[maxIndex]?.time || 1;
   const progressPct = (currentPoint.time / maxTime) * 100;
-  const cementTopMD = casingDepthMD - currentPoint.annCementHeightM;
 
-  // Reservoir layer rects
-  const reservoirRects = (reservoirLayers || []).filter(r => r.topMD > 0 && r.bottomMD > r.topMD).map(r => ({
-    ...r,
-    yTop: topY + r.topMD * scaleFactor,
-    yBot: topY + Math.min(r.bottomMD, casingDepthMD) * scaleFactor,
-  }));
+  const displacementTopMD = currentPoint.annDisplHeightM > EPS
+    ? Math.max(0, casingDepthMD - currentPoint.annDisplHeightM)
+    : null;
+  const cementTopMD = currentPoint.annCementHeightM > EPS
+    ? Math.max(0, casingDepthMD - (currentPoint.annDisplHeightM + currentPoint.annCementHeightM))
+    : null;
+  const bufferTopMD = currentPoint.annBufferHeightM > EPS
+    ? Math.max(0, casingDepthMD - (currentPoint.annDisplHeightM + currentPoint.annCementHeightM + currentPoint.annBufferHeightM))
+    : null;
 
-  // Build fluid labels for legend (named)
-  const legendItems: { color: string; label: string }[] = [
-    { color: FLUID_COLORS.mud, label: "Буровой р-р" },
+  const reservoirRects = reservoirLayers
+    .filter((layer) => layer.topMD > 0 && layer.bottomMD > layer.topMD)
+    .map((layer) => ({
+      ...layer,
+      yTop: topY + layer.topMD * scaleFactor,
+      yBot: topY + Math.min(layer.bottomMD, casingDepthMD) * scaleFactor,
+    }));
+
+  const legendItems = [
+    { color: FLUID_COLORS.mud, label: FLUID_LABELS.mud },
+    ...buffers.map((buffer) => ({ color: FLUID_COLORS.buffer, label: buffer.name || FLUID_LABELS.buffer })),
+    ...slurries.map((slurry) => ({ color: FLUID_COLORS.cement, label: slurry.name || FLUID_LABELS.cement })),
+    { color: FLUID_COLORS.displacement, label: FLUID_LABELS.displacement },
+    ...reservoirLayers.map((layer) => ({
+      color: RESERVOIR_COLORS[layer.fluidType] || "hsl(120, 60%, 35%)",
+      label: `🛢 ${layer.name}`,
+    })),
   ];
-  buffers.forEach(b => legendItems.push({ color: FLUID_COLORS.buffer, label: b.name || "Буфер" }));
-  slurries.forEach(s => legendItems.push({ color: FLUID_COLORS.cement, label: s.name || "Цемент" }));
-  legendItems.push({ color: FLUID_COLORS.displacement, label: "Продавка" });
-  reservoirLayers?.forEach(r => legendItems.push({ color: RESERVOIR_COLORS[r.fluidType] || "hsl(120, 60%, 35%)", label: `🛢 ${r.name}` }));
 
-  // Deduplicate legend
-  const seen = new Set<string>();
-  const uniqueLegend = legendItems.filter(item => { if (seen.has(item.label)) return false; seen.add(item.label); return true; });
+  const seenLegend = new Set<string>();
+  const uniqueLegend = legendItems.filter((item) => {
+    if (seenLegend.has(item.label)) return false;
+    seenLegend.add(item.label);
+    return true;
+  });
+
+  const annulusBarSegments = TOP_DOWN_FLOW_ORDER
+    .map((fluid) => ({
+      fluid,
+      heightM:
+        fluid === "mud"
+          ? currentPoint.annMudHeightM
+          : fluid === "buffer"
+            ? currentPoint.annBufferHeightM
+            : fluid === "cement"
+              ? currentPoint.annCementHeightM
+              : currentPoint.annDisplHeightM,
+    }))
+    .filter((segment) => segment.heightM > EPS);
+
+  const prevCasingY = prevCasingDepth > 0 && prevCasingDepth < casingDepthMD
+    ? topY + prevCasingDepth * scaleFactor
+    : null;
 
   return (
     <div className="space-y-4">
-      {/* Controls */}
       <Card>
         <CardContent className="py-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -216,7 +434,16 @@ export default function CementingAnimation({
               <FastForward className="w-4 h-4" /> ×{speed}
             </Button>
             <div className="flex-1 min-w-[200px]">
-              <Slider value={[currentIndex]} min={0} max={maxIndex} step={1} onValueChange={([v]) => { setCurrentIndex(v); setPlaying(false); }} />
+              <Slider
+                value={[currentIndex]}
+                min={0}
+                max={maxIndex}
+                step={1}
+                onValueChange={([value]) => {
+                  setCurrentIndex(value);
+                  setPlaying(false);
+                }}
+              />
             </div>
             <span className="text-sm font-mono text-muted-foreground whitespace-nowrap">
               {currentPoint.time.toFixed(1)} / {maxTime.toFixed(1)} мин
@@ -226,166 +453,271 @@ export default function CementingAnimation({
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Well animation */}
         <Card className="lg:col-span-1">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Анимация закачки</CardTitle>
           </CardHeader>
           <CardContent>
             <svg viewBox={`0 0 ${wellWidth} ${wellHeight}`} className="w-full max-w-[280px] mx-auto" style={{ height: wellHeight }}>
-              {/* Surface */}
               <line x1="0" y1={topY} x2={wellWidth} y2={topY} stroke="hsl(var(--border))" strokeWidth="2" />
-              <text x={cx} y={topY - 8} textAnchor="middle" className="text-[9px] fill-muted-foreground">Устье</text>
+              <text x={cx} y={topY - 8} textAnchor="middle" className="text-[9px] fill-muted-foreground">
+                Устье
+              </text>
 
-              {/* Reservoir layers (behind everything) */}
-              {reservoirRects.map((r, i) => (
-                <g key={`res-${i}`}>
+              {reservoirRects.map((layer, index) => (
+                <g key={`reservoir-${index}`}>
                   <rect
                     x={cx - pipeWidth - annWidth - 4}
-                    y={r.yTop}
+                    y={layer.yTop}
                     width={4}
-                    height={r.yBot - r.yTop}
-                    fill={RESERVOIR_COLORS[r.fluidType] || "hsl(120, 60%, 35%)"}
+                    height={layer.yBot - layer.yTop}
+                    fill={RESERVOIR_COLORS[layer.fluidType] || "hsl(120, 60%, 35%)"}
                     opacity={0.7}
                   />
                   <rect
                     x={cx + pipeWidth + annWidth}
-                    y={r.yTop}
+                    y={layer.yTop}
                     width={4}
-                    height={r.yBot - r.yTop}
-                    fill={RESERVOIR_COLORS[r.fluidType] || "hsl(120, 60%, 35%)"}
+                    height={layer.yBot - layer.yTop}
+                    fill={RESERVOIR_COLORS[layer.fluidType] || "hsl(120, 60%, 35%)"}
                     opacity={0.7}
                   />
-                  {/* Label on the far left */}
                   <text
                     x={2}
-                    y={(r.yTop + r.yBot) / 2 + 3}
+                    y={(layer.yTop + layer.yBot) / 2 + 3}
                     className="text-[6px]"
-                    fill={RESERVOIR_COLORS[r.fluidType] || "hsl(120, 60%, 35%)"}
+                    fill={RESERVOIR_COLORS[layer.fluidType] || "hsl(120, 60%, 35%)"}
                   >
-                    {r.name}
+                    {layer.name}
                   </text>
                 </g>
               ))}
 
-              {/* Open hole walls */}
-              <rect x={cx - pipeWidth - annWidth - 4} y={topY} width={4} height={usableH} fill="hsl(30, 30%, 35%)" rx="1" opacity={0.5} />
-              <rect x={cx + pipeWidth + annWidth} y={topY} width={4} height={usableH} fill="hsl(30, 30%, 35%)" rx="1" opacity={0.5} />
+              <rect
+                x={cx - pipeWidth - annWidth - 4}
+                y={topY}
+                width={4}
+                height={usableH}
+                fill="hsl(30, 30%, 35%)"
+                rx="1"
+                opacity={0.5}
+              />
+              <rect
+                x={cx + pipeWidth + annWidth}
+                y={topY}
+                width={4}
+                height={usableH}
+                fill="hsl(30, 30%, 35%)"
+                rx="1"
+                opacity={0.5}
+              />
 
-              {/* Annulus fluid segments */}
-              {annSegments.map((seg, i) => (
-                <g key={`ann-${i}`}>
-                  <rect x={cx - pipeWidth - annWidth} y={seg.y} width={annWidth} height={seg.height} fill={FLUID_COLORS[seg.fluid]} opacity={0.85} />
-                  <rect x={cx + pipeWidth} y={seg.y} width={annWidth} height={seg.height} fill={FLUID_COLORS[seg.fluid]} opacity={0.85} />
+              {prevCasingY !== null && (
+                <g>
+                  <line
+                    x1={cx - pipeWidth - annWidth - 10}
+                    y1={prevCasingY}
+                    x2={cx + pipeWidth + annWidth + 10}
+                    y2={prevCasingY}
+                    stroke="hsl(var(--primary))"
+                    strokeWidth="0.8"
+                    strokeDasharray="3,2"
+                  />
+                  <text x={cx + pipeWidth + annWidth + 12} y={prevCasingY + 3} className="text-[6px] fill-primary">
+                    Башмак пред. колонны {prevCasingDepth.toFixed(0)} м
+                  </text>
+                </g>
+              )}
+
+              {annSegmentsForRender.map((segment, index) => (
+                <g key={`annulus-${index}`}>
+                  <rect
+                    x={cx - pipeWidth - annWidth}
+                    y={segment.y}
+                    width={annWidth}
+                    height={segment.heightPx}
+                    fill={FLUID_COLORS[segment.fluid]}
+                    opacity={0.88}
+                  />
+                  <rect
+                    x={cx + pipeWidth}
+                    y={segment.y}
+                    width={annWidth}
+                    height={segment.heightPx}
+                    fill={FLUID_COLORS[segment.fluid]}
+                    opacity={0.88}
+                  />
+                  {segment.heightPx > 18 && segment.fluid !== "mud" && (
+                    <>
+                      <text
+                        x={cx + pipeWidth + annWidth + 10}
+                        y={segment.y + segment.heightPx / 2 - 3}
+                        className="text-[6px] fill-foreground"
+                        style={{ fontWeight: 700 }}
+                      >
+                        {segment.label.length > 18 ? `${segment.label.slice(0, 18)}…` : segment.label}
+                      </text>
+                      <text
+                        x={cx + pipeWidth + annWidth + 10}
+                        y={segment.y + segment.heightPx / 2 + 5}
+                        className="text-[5px] fill-muted-foreground"
+                      >
+                        {segment.topMD.toFixed(0)}–{segment.botMD.toFixed(0)} м
+                      </text>
+                    </>
+                  )}
                 </g>
               ))}
 
-              {/* Casing pipe walls */}
               <rect x={cx - pipeWidth} y={topY} width={3} height={usableH} fill="hsl(var(--foreground))" opacity={0.6} />
               <rect x={cx + pipeWidth - 3} y={topY} width={3} height={usableH} fill="hsl(var(--foreground))" opacity={0.6} />
 
-              {/* Pipe interior — fluid segments */}
-              {pipeSegments.length > 0 ? pipeSegments.map((seg, i) => {
-                const pipeInnerW = pipeWidth * 2 - 6;
-                const segY = botY - seg.fracBot * usableH;
-                const segH = (seg.fracBot - seg.fracTop) * usableH;
-                return (
-                  <rect
-                    key={`pipe-${i}`}
-                    x={cx - pipeWidth + 3}
-                    y={segY}
-                    width={pipeInnerW}
-                    height={Math.max(0, segH)}
-                    fill={FLUID_COLORS[seg.fluid] || FLUID_COLORS.mud}
-                    opacity={0.6}
-                  />
-                );
-              }) : (
-                <rect x={cx - pipeWidth + 3} y={topY} width={pipeWidth * 2 - 6} height={usableH} fill={FLUID_COLORS.mud} opacity={0.3} />
+              {pipeSegments.length > 0 ? (
+                pipeSegments.map((segment, index) => {
+                  const pipeInnerWidth = pipeWidth * 2 - 6;
+                  const segmentY = botY - segment.fracBot * usableH;
+                  const segmentH = (segment.fracBot - segment.fracTop) * usableH;
+                  return (
+                    <g key={`pipe-${index}`}>
+                      <rect
+                        x={cx - pipeWidth + 3}
+                        y={segmentY}
+                        width={pipeInnerWidth}
+                        height={Math.max(0, segmentH)}
+                        fill={FLUID_COLORS[segment.fluid]}
+                        opacity={0.72}
+                      />
+                      {segmentH > 18 && (
+                        <>
+                          <text
+                            x={cx}
+                            y={segmentY + segmentH / 2 - 1}
+                            textAnchor="middle"
+                            className="text-[6px] fill-background"
+                            style={{ fontWeight: 700 }}
+                          >
+                            {segment.label.length > 12 ? `${segment.label.slice(0, 12)}…` : segment.label}
+                          </text>
+                          <text
+                            x={cx}
+                            y={segmentY + segmentH / 2 + 8}
+                            textAnchor="middle"
+                            className="text-[5px] fill-background"
+                          >
+                            {segment.volM3.toFixed(2)} м³
+                          </text>
+                        </>
+                      )}
+                    </g>
+                  );
+                })
+              ) : (
+                <rect
+                  x={cx - pipeWidth + 3}
+                  y={topY}
+                  width={pipeWidth * 2 - 6}
+                  height={usableH}
+                  fill={FLUID_COLORS.mud}
+                  opacity={0.3}
+                />
               )}
 
-              {/* Bottom */}
-              <line x1={cx - pipeWidth - annWidth - 4} y1={botY} x2={cx + pipeWidth + annWidth + 4} y2={botY} stroke="hsl(30, 30%, 35%)" strokeWidth="3" />
-              <text x={cx} y={botY + 14} textAnchor="middle" className="text-[8px] fill-muted-foreground">{casingDepthMD.toFixed(0)} м</text>
+              <line
+                x1={cx - pipeWidth - annWidth - 4}
+                y1={botY}
+                x2={cx + pipeWidth + annWidth + 4}
+                y2={botY}
+                stroke="hsl(30, 30%, 35%)"
+                strokeWidth="3"
+              />
+              <text x={cx} y={botY + 14} textAnchor="middle" className="text-[8px] fill-muted-foreground">
+                Башмак ОК {casingDepthMD.toFixed(0)} м
+              </text>
 
-              {/* Annulus boundary markers with MD and volumes */}
-              {/* Buffer top */}
-              {currentPoint.annBufferHeightM > 0 && (() => {
-                const bufTopMD = casingDepthMD - currentPoint.annCementHeightM - currentPoint.annBufferHeightM;
-                const bufTopY = botY - (currentPoint.annCementHeightM + currentPoint.annBufferHeightM) * scaleFactor;
-                return (
-                  <g>
-                    <line x1={cx - pipeWidth - annWidth - 4} y1={bufTopY} x2={cx - pipeWidth - annWidth - 20} y2={bufTopY} stroke="hsl(200, 60%, 50%)" strokeWidth="0.8" strokeDasharray="2,2" />
-                    <text x={cx - pipeWidth - annWidth - 22} y={bufTopY + 3} textAnchor="end" className="text-[6px]" fill="hsl(200, 60%, 50%)">
-                      {bufTopMD.toFixed(0)}м
-                    </text>
-                  </g>
-                );
-              })()}
+              {displacementTopMD !== null && (
+                <g>
+                  <line
+                    x1={cx - pipeWidth - annWidth - 4}
+                    y1={botY - currentPoint.annDisplHeightM * scaleFactor}
+                    x2={cx - pipeWidth - annWidth - 24}
+                    y2={botY - currentPoint.annDisplHeightM * scaleFactor}
+                    stroke={FLUID_COLORS.displacement}
+                    strokeWidth="0.8"
+                    strokeDasharray="2,2"
+                  />
+                  <text
+                    x={cx - pipeWidth - annWidth - 26}
+                    y={botY - currentPoint.annDisplHeightM * scaleFactor + 3}
+                    textAnchor="end"
+                    className="text-[6px]"
+                    fill={FLUID_COLORS.displacement}
+                  >
+                    {displacementTopMD.toFixed(0)} м
+                  </text>
+                </g>
+              )}
 
-              {/* Cement top marker with MD + volume */}
-              {currentPoint.annCementHeightM > 0 && (
+              {cementTopMD !== null && (
                 <g>
                   <line
                     x1={cx + pipeWidth + annWidth + 6}
-                    y1={botY - currentPoint.annCementHeightM * scaleFactor}
+                    y1={topY + cementTopMD * scaleFactor}
                     x2={cx + pipeWidth + annWidth + 30}
-                    y2={botY - currentPoint.annCementHeightM * scaleFactor}
-                    stroke="hsl(0, 70%, 50%)" strokeWidth="1" strokeDasharray="3,2"
+                    y2={topY + cementTopMD * scaleFactor}
+                    stroke={FLUID_COLORS.cement}
+                    strokeWidth="1"
+                    strokeDasharray="3,2"
                   />
                   <text
                     x={cx + pipeWidth + annWidth + 32}
-                    y={botY - currentPoint.annCementHeightM * scaleFactor + 3}
-                    className="text-[7px]" fill="hsl(0, 70%, 50%)"
+                    y={topY + cementTopMD * scaleFactor + 3}
+                    className="text-[7px]"
+                    fill={FLUID_COLORS.cement}
                   >
                     {cementTopMD.toFixed(0)} м
                   </text>
                   <text
                     x={cx + pipeWidth + annWidth + 32}
-                    y={botY - currentPoint.annCementHeightM * scaleFactor + 12}
-                    className="text-[6px]" fill="hsl(0, 50%, 60%)"
+                    y={topY + cementTopMD * scaleFactor + 12}
+                    className="text-[6px]"
+                    fill={FLUID_COLORS.cement}
                   >
                     ↕{currentPoint.annCementHeightM.toFixed(0)} м
                   </text>
                 </g>
               )}
 
-              {/* Pipe fluid labels with name + volume */}
-              {pipeSegments.filter(s => (s.fracBot - s.fracTop) * usableH > 16).map((seg, i) => {
-                const segY = botY - seg.fracBot * usableH;
-                const segH = (seg.fracBot - seg.fracTop) * usableH;
-                const depthTop = casingDepthMD * seg.fracTop;
-                const depthBot = casingDepthMD * seg.fracBot;
-                return (
-                  <g key={`pipelbl-${i}`}>
-                    <text
-                      x={cx}
-                      y={segY + segH / 2 - 1}
-                      textAnchor="middle"
-                      className="text-[6px] fill-background"
-                      style={{ fontWeight: 600 }}
-                    >
-                      {seg.name.length > 10 ? seg.name.slice(0, 10) + "…" : seg.name}
-                    </text>
-                    <text
-                      x={cx}
-                      y={segY + segH / 2 + 8}
-                      textAnchor="middle"
-                      className="text-[5px] fill-background"
-                      opacity={0.8}
-                    >
-                      {seg.volM3.toFixed(2)} м³
-                    </text>
-                  </g>
-                );
-              })}
-
+              {bufferTopMD !== null && (
+                <g>
+                  <line
+                    x1={cx - pipeWidth - annWidth - 4}
+                    y1={topY + bufferTopMD * scaleFactor}
+                    x2={cx - pipeWidth - annWidth - 20}
+                    y2={topY + bufferTopMD * scaleFactor}
+                    stroke={FLUID_COLORS.buffer}
+                    strokeWidth="0.8"
+                    strokeDasharray="2,2"
+                  />
+                  <text
+                    x={cx - pipeWidth - annWidth - 22}
+                    y={topY + bufferTopMD * scaleFactor + 3}
+                    textAnchor="end"
+                    className="text-[6px]"
+                    fill={FLUID_COLORS.buffer}
+                  >
+                    {bufferTopMD.toFixed(0)} м
+                  </text>
+                </g>
+              )}
             </svg>
 
-            {/* Legend */}
+            <div className="mt-2 text-[10px] text-center text-muted-foreground">
+              Глубина скважины {wellDepthMD.toFixed(0)} м MD
+            </div>
+
             <div className="flex flex-wrap gap-2 mt-3 justify-center">
-              {uniqueLegend.map((item, i) => (
-                <div key={i} className="flex items-center gap-1 text-[10px]">
+              {uniqueLegend.map((item, index) => (
+                <div key={index} className="flex items-center gap-1 text-[10px]">
                   <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: item.color }} />
                   <span>{item.label}</span>
                 </div>
@@ -394,16 +726,20 @@ export default function CementingAnimation({
           </CardContent>
         </Card>
 
-        {/* Dashboard */}
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Параметры в реальном времени</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="mb-4">
+            <div className="mb-4 flex flex-wrap gap-2">
               <span className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-semibold border border-primary/20">
-                {currentStage}
+                {currentPoint.stage}
               </span>
+              {currentStage !== currentPoint.stage && (
+                <span className="inline-block px-3 py-1 rounded-full bg-muted text-muted-foreground text-sm font-semibold border border-border">
+                  {currentStage}
+                </span>
+              )}
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -413,37 +749,53 @@ export default function CementingAnimation({
               <DashCard label="Q на выходе" value={`${currentPoint.annularReturnRate.toFixed(1)} л/с`} />
               <DashCard label="P на насосе" value={`${currentPoint.surfacePressure.toFixed(2)} МПа`} />
               <DashCard label="P на забое" value={`${currentPoint.bottomholePressure.toFixed(2)} МПа`} />
-              <DashCard label="P ГРП" value={`${currentPoint.fracturePressure.toFixed(2)} МПа`} highlight={currentPoint.bottomholePressure >= currentPoint.fracturePressure * 0.9} />
-              <DashCard label="Кровля цемента" value={currentPoint.annCementHeightM > 0 ? `${cementTopMD.toFixed(0)} м` : "—"} />
+              <DashCard
+                label="P ГРП"
+                value={`${currentPoint.fracturePressure.toFixed(2)} МПа`}
+                highlight={currentPoint.bottomholePressure >= currentPoint.fracturePressure * 0.9}
+              />
+              <DashCard label="Кровля продавки" value={displacementTopMD !== null ? `${displacementTopMD.toFixed(0)} м` : "—"} />
+              <DashCard label="Кровля цемента" value={cementTopMD !== null ? `${cementTopMD.toFixed(0)} м` : "—"} />
+              <DashCard label="Кровля буфера" value={bufferTopMD !== null ? `${bufferTopMD.toFixed(0)} м` : "—"} />
               <DashCard label="Высота цемента" value={`${currentPoint.annCementHeightM.toFixed(1)} м`} />
+              <DashCard label="Забой скважины" value={`${wellDepthMD.toFixed(0)} м`} />
             </div>
 
-            {/* Annular composition bar */}
             <div className="mt-4">
               <div className="text-xs text-muted-foreground mb-1">Состав затрубного пространства</div>
               <div className="h-6 rounded-md overflow-hidden flex" style={{ border: "1px solid hsl(var(--border))" }}>
-                {casingDepthMD > 0 && (
-                  <>
-                    {currentPoint.annDisplHeightM > 0 && <div style={{ width: `${(currentPoint.annDisplHeightM / casingDepthMD) * 100}%`, backgroundColor: FLUID_COLORS.displacement }} className="h-full transition-all duration-200" title={`Продавка: ${currentPoint.annDisplHeightM.toFixed(1)} м`} />}
-                    {currentPoint.annBufferHeightM > 0 && <div style={{ width: `${(currentPoint.annBufferHeightM / casingDepthMD) * 100}%`, backgroundColor: FLUID_COLORS.buffer }} className="h-full transition-all duration-200" title={`Буфер: ${currentPoint.annBufferHeightM.toFixed(1)} м`} />}
-                    {currentPoint.annMudHeightM > 0 && <div style={{ width: `${(currentPoint.annMudHeightM / casingDepthMD) * 100}%`, backgroundColor: FLUID_COLORS.mud }} className="h-full transition-all duration-200" title={`Буровой р-р: ${currentPoint.annMudHeightM.toFixed(1)} м`} />}
-                    {currentPoint.annCementHeightM > 0 && <div style={{ width: `${(currentPoint.annCementHeightM / casingDepthMD) * 100}%`, backgroundColor: FLUID_COLORS.cement }} className="h-full transition-all duration-200" title={`Цемент: ${currentPoint.annCementHeightM.toFixed(1)} м`} />}
-                  </>
-                )}
+                {annulusBarSegments.map((segment) => (
+                  <div
+                    key={segment.fluid}
+                    style={{
+                      width: `${(segment.heightM / casingDepthMD) * 100}%`,
+                      backgroundColor: FLUID_COLORS[segment.fluid],
+                    }}
+                    className="h-full transition-all duration-200"
+                    title={`${FLUID_LABELS[segment.fluid]}: ${segment.heightM.toFixed(1)} м`}
+                  />
+                ))}
               </div>
               <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
                 <span>Устье (0 м)</span>
-                <span>Забой ({casingDepthMD.toFixed(0)} м)</span>
+                <span>Башмак ОК ({casingDepthMD.toFixed(0)} м)</span>
               </div>
             </div>
 
-            {/* Pipe composition bar */}
             {pipeSegments.length > 0 && (
               <div className="mt-3">
                 <div className="text-xs text-muted-foreground mb-1">Состав в трубе</div>
                 <div className="h-6 rounded-md overflow-hidden flex" style={{ border: "1px solid hsl(var(--border))" }}>
-                  {pipeSegments.map((seg, i) => (
-                    <div key={i} style={{ width: `${(seg.fracBot - seg.fracTop) * 100}%`, backgroundColor: FLUID_COLORS[seg.fluid] }} className="h-full transition-all duration-200" title={`${seg.name}: ${seg.volM3.toFixed(2)} м³ (${((seg.fracBot - seg.fracTop) * 100).toFixed(1)}%)`} />
+                  {pipeSegments.map((segment, index) => (
+                    <div
+                      key={`${segment.label}-${index}`}
+                      style={{
+                        width: `${(segment.fracBot - segment.fracTop) * 100}%`,
+                        backgroundColor: FLUID_COLORS[segment.fluid],
+                      }}
+                      className="h-full transition-all duration-200"
+                      title={`${segment.label}: ${segment.topMD.toFixed(0)}–${segment.botMD.toFixed(0)} м, ${segment.volM3.toFixed(2)} м³`}
+                    />
                   ))}
                 </div>
                 <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
@@ -453,23 +805,59 @@ export default function CementingAnimation({
               </div>
             )}
 
-            {/* Reservoir layers info */}
-            {reservoirLayers && reservoirLayers.length > 0 && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">Интервалы в затрубье</div>
+                <div className="space-y-1.5">
+                  {namedAnnulusSegments.map((segment, index) => (
+                    <div key={`annulus-row-${index}`} className="flex items-center gap-2 rounded-md border border-border px-2 py-1 text-[10px]">
+                      <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: FLUID_COLORS[segment.fluid] }} />
+                      <span className="truncate">{segment.label}</span>
+                      <span className="ml-auto font-mono">
+                        {segment.topMD.toFixed(0)}–{segment.botMD.toFixed(0)} м
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">Интервалы в трубе</div>
+                <div className="space-y-1.5">
+                  {pipeSegments.map((segment, index) => (
+                    <div key={`pipe-row-${index}`} className="flex items-center gap-2 rounded-md border border-border px-2 py-1 text-[10px]">
+                      <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: FLUID_COLORS[segment.fluid] }} />
+                      <span className="truncate">{segment.label}</span>
+                      <span className="ml-auto font-mono">
+                        {segment.topMD.toFixed(0)}–{segment.botMD.toFixed(0)} м
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {reservoirLayers.length > 0 && (
               <div className="mt-4">
                 <div className="text-xs text-muted-foreground mb-1">Продуктивные пласты</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {reservoirLayers.map((r, i) => (
-                    <div key={i} className="rounded-md border border-border p-2 text-[10px] space-y-0.5" style={{ borderLeftColor: RESERVOIR_COLORS[r.fluidType] || "hsl(120,60%,35%)", borderLeftWidth: 3 }}>
-                      <div className="font-semibold text-xs">{r.name} ({r.fluidType})</div>
-                      <div>{r.topMD}–{r.bottomMD} м MD</div>
-                      <div>Pпл: {r.porePressureGrad} кПа/м | ГРП: {r.fracGrad} кПа/м</div>
+                  {reservoirLayers.map((layer, index) => (
+                    <div
+                      key={index}
+                      className="rounded-md border border-border p-2 text-[10px] space-y-0.5"
+                      style={{ borderLeftColor: RESERVOIR_COLORS[layer.fluidType] || "hsl(120, 60%, 35%)", borderLeftWidth: 3 }}
+                    >
+                      <div className="font-semibold text-xs">
+                        {layer.name} ({layer.fluidType})
+                      </div>
+                      <div>{layer.topMD}–{layer.bottomMD} м MD</div>
+                      <div>Pпл: {layer.porePressureGrad} кПа/м | ГРП: {layer.fracGrad} кПа/м</div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Progress bar */}
             <div className="mt-4">
               <div className="text-xs text-muted-foreground mb-1">Прогресс операции</div>
               <div className="h-2 rounded-full bg-muted overflow-hidden">
