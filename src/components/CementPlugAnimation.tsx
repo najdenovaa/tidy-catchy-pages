@@ -595,6 +595,19 @@ export default function CementPlugAnimation({ inputs, results }: Props) {
     return () => cancelAnimationFrame(animRef.current);
   }, [animate, playing]);
 
+  const timelineStages = useMemo(() => {
+    const items: { name: string; startMin: number; endMin: number }[] = [];
+    const tripSpeed = inputs.tripSpeedMs > 0 ? inputs.tripSpeedMs : 0.3;
+    const tripInTime = initialRunDepth / tripSpeed / 60;
+    items.push({ name: "Спуск инструмента", startMin: 0, endMin: tripInTime });
+    let cursor = tripInTime;
+    for (const stage of results.pumpingStages) {
+      items.push({ name: stage.name, startMin: cursor, endMin: cursor + stage.timeMin });
+      cursor += stage.timeMin;
+    }
+    return items;
+  }, [initialRunDepth, inputs.tripSpeedMs, results.pumpingStages]);
+
   if (!frame) return null;
 
   const svgW = 360;
