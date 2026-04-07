@@ -6,6 +6,7 @@ import type {
   DisplacementFluid,
   DrillingFluid,
   FlowRateStep,
+  ReservoirLayer,
   Rheology,
   SlurryInput,
   TrajectoryPoint,
@@ -39,6 +40,7 @@ export const defaultWellData: WellData = {
   bottomTempStatic: 0,
   bottomTempCirc: 0,
   trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }],
+  reservoirLayers: [],
 };
 
 export const defaultDrillingFluid: DrillingFluid = {
@@ -135,6 +137,19 @@ function normalizeCavernInterval(value: unknown): CavernInterval {
   };
 }
 
+function normalizeReservoirLayer(value: unknown): ReservoirLayer {
+  const source = isRecord(value) ? value : {};
+  return {
+    name: toString(source.name, "Пласт"),
+    topMD: toNumber(source.topMD, 0),
+    bottomMD: toNumber(source.bottomMD, 0),
+    porePressureGrad: toNumber(source.porePressureGrad, 0),
+    fracGrad: toNumber(source.fracGrad, 0),
+    absorbGrad: toNumber(source.absorbGrad, 0),
+    fluidType: toString(source.fluidType, "нефть"),
+  };
+}
+
 export function normalizeWellData(value: unknown): WellData {
   const source = isRecord(value) ? value : {};
   const trajectory = Array.isArray(source.trajectory)
@@ -145,6 +160,10 @@ export function normalizeWellData(value: unknown): WellData {
     : undefined;
   const cavernIntervals = Array.isArray(source.cavernIntervals)
     ? source.cavernIntervals.filter(isRecord).map(normalizeCavernInterval)
+    : undefined;
+
+  const reservoirLayers = Array.isArray(source.reservoirLayers)
+    ? source.reservoirLayers.filter(isRecord).map(normalizeReservoirLayer)
     : undefined;
 
   return {
@@ -165,6 +184,7 @@ export function normalizeWellData(value: unknown): WellData {
     trajectory: trajectory.length > 0 ? trajectory : defaultWellData.trajectory,
     casingSections: casingSections && casingSections.length > 0 ? casingSections : undefined,
     cavernIntervals: cavernIntervals && cavernIntervals.length > 0 ? cavernIntervals : undefined,
+    reservoirLayers: reservoirLayers && reservoirLayers.length > 0 ? reservoirLayers : undefined,
   };
 }
 

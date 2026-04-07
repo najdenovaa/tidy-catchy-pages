@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { useState, memo, useCallback, useMemo, ChangeEvent } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { getCasingID, getSlurryHeight, annularVolumePerMeter, annularVolumeForInterval, hydrostaticPressure, interpolateTVD, calculateTVDFromSurvey, calculateCement, calculateAdditiveMass, effectiveRheology, cementCategory, calculateHydraulics, getFlowRateLps } from "@/lib/cementing-calculations";
-import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, AdditivePercentageType, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval } from "@/lib/cementing-calculations";
+import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, AdditivePercentageType, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval, ReservoirLayer } from "@/lib/cementing-calculations";
 import * as XLSX from "xlsx";
 
 interface Props {
@@ -31,7 +31,7 @@ interface Props {
   onCalculate?: () => void;
 }
 
-type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals'>;
+type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers'>;
 const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "wellDepthMD", label: "Глубина скважины (по стволу)", unit: "м" },
   { key: "wellDepthTVD", label: "Глубина скважины (по вертикали)", unit: "м" },
@@ -126,7 +126,7 @@ const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolu
 
 export default function InputSection(props: Props) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    well: false, trajectory: false, mud: false, buffers: false, cement: false, displacement: false, hydraulics: false, flush: false,
+    well: false, trajectory: false, reservoirs: false, mud: false, buffers: false, cement: false, displacement: false, hydraulics: false, flush: false,
   });
 
   const toggle = (key: string) => {
@@ -674,7 +674,117 @@ export default function InputSection(props: Props) {
         )}
       </Card>
 
-      {/* ===== 2. Буровой раствор ===== */}
+      {/* ===== 1.7. Продуктивные пласты ===== */}
+      <Card>
+        <SectionHeader title="🛢️ Продуктивные пласты" isOpen={openSections.reservoirs} onClick={() => toggle("reservoirs")} />
+        {openSections.reservoirs && (
+          <CardContent className="pt-4 space-y-3">
+            <p className="text-xs text-muted-foreground italic">Задайте интервалы продуктивных пластов с градиентами давлений и типом флюида.</p>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Пласты ({(wellData.reservoirLayers || []).length})</span>
+              <button
+                onClick={() => {
+                  const layers = [...(wellData.reservoirLayers || [])];
+                  layers.push({ name: `Пласт ${layers.length + 1}`, topMD: 0, bottomMD: 0, porePressureGrad: 9.81, fracGrad: 17.7, absorbGrad: 14.0, fluidType: "нефть" });
+                  onWellDataChange({ ...wellData, reservoirLayers: layers });
+                }}
+                className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                + Добавить пласт
+              </button>
+            </div>
+            {(wellData.reservoirLayers || []).length > 0 ? (
+              <div className="space-y-3">
+                {wellData.reservoirLayers!.map((layer, i) => (
+                  <div key={i} className="p-3 rounded-lg bg-muted/30 space-y-2 border border-border/50">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm">{layer.name}</span>
+                      <button onClick={() => {
+                        const arr = wellData.reservoirLayers!.filter((_, j) => j !== i);
+                        onWellDataChange({ ...wellData, reservoirLayers: arr.length > 0 ? arr : undefined });
+                      }} className="text-xs text-destructive hover:underline">Удалить</button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Название</Label>
+                        <DebouncedInput value={layer.name} onChange={(e) => {
+                          const arr = [...wellData.reservoirLayers!]; arr[i] = { ...arr[i], name: e.target.value };
+                          onWellDataChange({ ...wellData, reservoirLayers: arr });
+                        }} className="h-7 text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Кровля MD, м</Label>
+                        <DebouncedInput type="number" step="1" value={layer.topMD || ""} onChange={(e) => {
+                          const arr = [...wellData.reservoirLayers!]; arr[i] = { ...arr[i], topMD: parseFloat(e.target.value) || 0 };
+                          onWellDataChange({ ...wellData, reservoirLayers: arr });
+                        }} className="h-7 text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Подошва MD, м</Label>
+                        <DebouncedInput type="number" step="1" value={layer.bottomMD || ""} onChange={(e) => {
+                          const arr = [...wellData.reservoirLayers!]; arr[i] = { ...arr[i], bottomMD: parseFloat(e.target.value) || 0 };
+                          onWellDataChange({ ...wellData, reservoirLayers: arr });
+                        }} className="h-7 text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Тип флюида</Label>
+                        <select
+                          value={layer.fluidType}
+                          onChange={(e) => {
+                            const arr = [...wellData.reservoirLayers!]; arr[i] = { ...arr[i], fluidType: e.target.value };
+                            onWellDataChange({ ...wellData, reservoirLayers: arr });
+                          }}
+                          className="h-7 text-xs w-full rounded-md border border-input bg-background px-2"
+                        >
+                          <option value="нефть">Нефть</option>
+                          <option value="газ">Газ</option>
+                          <option value="вода">Вода</option>
+                          <option value="нефть+газ">Нефть + Газ</option>
+                          <option value="газоконденсат">Газоконденсат</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Град. пласт. давл., кПа/м</Label>
+                        <DebouncedInput type="number" step="0.01" value={layer.porePressureGrad || ""} onChange={(e) => {
+                          const arr = [...wellData.reservoirLayers!]; arr[i] = { ...arr[i], porePressureGrad: parseFloat(e.target.value) || 0 };
+                          onWellDataChange({ ...wellData, reservoirLayers: arr });
+                        }} className="h-7 text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Град. ГРП, кПа/м</Label>
+                        <DebouncedInput type="number" step="0.01" value={layer.fracGrad || ""} onChange={(e) => {
+                          const arr = [...wellData.reservoirLayers!]; arr[i] = { ...arr[i], fracGrad: parseFloat(e.target.value) || 0 };
+                          onWellDataChange({ ...wellData, reservoirLayers: arr });
+                        }} className="h-7 text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Град. поглощ., кПа/м</Label>
+                        <DebouncedInput type="number" step="0.01" value={layer.absorbGrad || ""} onChange={(e) => {
+                          const arr = [...wellData.reservoirLayers!]; arr[i] = { ...arr[i], absorbGrad: parseFloat(e.target.value) || 0 };
+                          onWellDataChange({ ...wellData, reservoirLayers: arr });
+                        }} className="h-7 text-xs" />
+                      </div>
+                    </div>
+                    {layer.topMD > 0 && layer.bottomMD > layer.topMD && wellData.wellDepthTVD > 0 && (
+                      <div className="text-[10px] text-muted-foreground bg-muted/50 p-2 rounded space-y-0.5">
+                        <div>Pпл ≈ {((layer.porePressureGrad * ((layer.topMD + layer.bottomMD) / 2 * (wellData.wellDepthTVD / wellData.wellDepthMD || 1))) / 1000).toFixed(2)} МПа (на середине пласта)</div>
+                        <div>Pгрп ≈ {((layer.fracGrad * ((layer.topMD + layer.bottomMD) / 2 * (wellData.wellDepthTVD / wellData.wellDepthMD || 1))) / 1000).toFixed(2)} МПа</div>
+                        <div>Pпогл ≈ {((layer.absorbGrad * ((layer.topMD + layer.bottomMD) / 2 * (wellData.wellDepthTVD / wellData.wellDepthMD || 1))) / 1000).toFixed(2)} МПа</div>
+                        <div>Толщина: {(layer.bottomMD - layer.topMD).toFixed(1)} м | Флюид: {layer.fluidType}</div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground/60 italic">Не задано продуктивных пластов</p>
+            )}
+          </CardContent>
+        )}
+      </Card>
+
       <Card>
         <SectionHeader title="🧪 Буровой раствор" isOpen={openSections.mud} onClick={() => toggle("mud")} />
         {openSections.mud && (

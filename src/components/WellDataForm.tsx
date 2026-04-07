@@ -9,7 +9,7 @@ interface Props {
   onChange: (data: WellData) => void;
 }
 
-type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals'>;
+type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers'>;
 const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "wellDepthMD", label: "Глубина скважины (MD)", unit: "м" },
   { key: "wellDepthTVD", label: "Глубина скважины (TVD)", unit: "м" },
