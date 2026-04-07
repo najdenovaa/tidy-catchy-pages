@@ -13,6 +13,7 @@ import FoamCementSection from "@/components/FoamCementSection";
 import CementingAnimation from "@/components/CementingAnimation";
 import ContactTimeSection from "@/components/ContactTimeSection";
 import TrajectorySection from "@/components/TrajectorySection";
+import DrillingHydraulicsSection from "@/components/DrillingHydraulicsSection";
 import AnalysisChatPanel from "@/components/AnalysisChatPanel";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
@@ -607,7 +608,7 @@ export default function Index() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="overflow-x-auto scrollbar-hide sticky top-[80px] sm:top-[164px] z-[9] bg-background border-b border-border">
           <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2">
-           <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-12 h-auto min-w-max sm:min-w-0">
+           <TabsList className="inline-flex sm:grid sm:w-full sm:grid-cols-13 h-auto min-w-max sm:min-w-0">
               <TabsTrigger value="input" className="text-xs py-2 px-3 sm:px-1">Данные</TabsTrigger>
               <TabsTrigger value="trajectory" className="text-xs py-2 px-3 sm:px-1">Траектория</TabsTrigger>
               <TabsTrigger value="hydraulics" className="text-xs py-2 px-3 sm:px-1">Гидравлика</TabsTrigger>
@@ -619,6 +620,7 @@ export default function Index() {
               <TabsTrigger value="visual" className="text-xs py-2 px-3 sm:px-1">Визуал</TabsTrigger>
               <TabsTrigger value="centralization" className="text-xs py-2 px-3 sm:px-1">Центрир.</TabsTrigger>
               <TabsTrigger value="torquedrag" className="text-xs py-2 px-3 sm:px-1">T&D</TabsTrigger>
+              <TabsTrigger value="drillhydr" className="text-xs py-2 px-3 sm:px-1">Гидр. бур.</TabsTrigger>
               <TabsTrigger value="foam" className="text-xs py-2 px-3 sm:px-1">Пена</TabsTrigger>
             </TabsList>
           </div>
@@ -798,6 +800,18 @@ export default function Index() {
                 <TorqueDragSection
                   wellData={wellData}
                   mudDensity={drillingFluid.density}
+                />
+              </div>
+            </TabsContent>
+          </div>
+
+          <div className={activeTab !== "drillhydr" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="drillhydr" forceMount>
+              <div data-tab-content="drillhydr">
+                <DrillingHydraulicsSection
+                  wellData={wellData}
+                  mudDensity={drillingFluid.density}
+                  mudRheology={drillingFluid.rheology}
                 />
               </div>
             </TabsContent>

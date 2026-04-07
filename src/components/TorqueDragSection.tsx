@@ -8,7 +8,7 @@ import CopyImageButton from "./CopyImageButton";
 
 interface Props {
   wellData: WellData;
-  mudDensity: number; // кг/м³
+  mudDensity: number;
 }
 
 const fmt = (v: number, dec = 2) => v.toFixed(dec);
@@ -16,9 +16,7 @@ const fmt = (v: number, dec = 2) => v.toFixed(dec);
 function ScrollableChart({ children, chartRef, height }: { children: React.ReactNode; chartRef: React.RefObject<HTMLDivElement>; height: string }) {
   return (
     <div className="overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
-      <div ref={chartRef} className={`${height} min-w-[700px]`}>
-        {children}
-      </div>
+      <div ref={chartRef} className={`${height} min-w-[700px]`}>{children}</div>
     </div>
   );
 }
@@ -26,87 +24,91 @@ function ScrollableChart({ children, chartRef, height }: { children: React.React
 export default function TorqueDragSection({ wellData, mudDensity }: Props) {
   const [frictionCased, setFrictionCased] = useState(0.20);
   const [frictionOpenhole, setFrictionOpenhole] = useState(0.30);
-  const [pipeWeight, setPipeWeight] = useState(47); // кг/м
-  const [wob, setWob] = useState(50); // кН
+  const [pipeWeight, setPipeWeight] = useState(47);
+  const [wob, setWob] = useState(50);
   const [rpm, setRpm] = useState(60);
-  const [blockWeight, setBlockWeight] = useState(20); // кН
+  const [blockWeight, setBlockWeight] = useState(20);
+  const [yieldStrength, setYieldStrength] = useState(550);
+  const [dcLength, setDcLength] = useState(100);
+  const [dcOD, setDcOD] = useState(172);
+  const [dcWeight, setDcWeight] = useState(145);
+  const [motorBendAngle, setMotorBendAngle] = useState(1.5);
 
   const chartRef1 = useRef<HTMLDivElement>(null);
   const chartRef2 = useRef<HTMLDivElement>(null);
   const chartRef3 = useRef<HTMLDivElement>(null);
   const chartRef4 = useRef<HTMLDivElement>(null);
+  const chartRef5 = useRef<HTMLDivElement>(null);
+  const chartRef6 = useRef<HTMLDivElement>(null);
 
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
 
+  const makeInput = (): TDInput => ({
+    trajectory: wellData.trajectory,
+    wellDepthMD: wellData.wellDepthMD,
+    casingDepthMD: wellData.casingDepthMD,
+    casingShoe: wellData.prevCasingDepth,
+    holeDiameter: wellData.holeDiameter,
+    casingOD: wellData.casingOD,
+    casingID: wellData.prevCasingID || casingID,
+    pipeWeightKgPerM: pipeWeight,
+    mudDensity: mudDensity / 1000,
+    frictionCased, frictionOpenhole,
+    wob, rpm, blockWeight,
+    yieldStrength,
+    dcLength, dcOD, dcWeight,
+    motorBendAngle,
+  });
+
   const summary = useMemo<TDSummary | null>(() => {
     if (!wellData.casingDepthMD || wellData.casingDepthMD <= 0) return null;
-    const input: TDInput = {
-      trajectory: wellData.trajectory,
-      wellDepthMD: wellData.wellDepthMD,
-      casingDepthMD: wellData.casingDepthMD,
-      casingShoe: wellData.prevCasingDepth,
-      holeDiameter: wellData.holeDiameter,
-      casingOD: wellData.casingOD,
-      casingID: wellData.prevCasingID || casingID,
-      pipeWeightKgPerM: pipeWeight,
-      mudDensity: mudDensity / 1000,
-      frictionCased,
-      frictionOpenhole,
-      wob,
-      rpm,
-      blockWeight,
-    };
-    return calculateTDSummary(input);
-  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID]);
+    return calculateTDSummary(makeInput());
+  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID, yieldStrength, dcLength, dcOD, dcWeight, motorBendAngle]);
 
-  const drillResult = useMemo<TDResult | null>(() => {
+  const extraModes = useMemo(() => {
     if (!wellData.casingDepthMD || wellData.casingDepthMD <= 0) return null;
-    const input: TDInput = {
-      trajectory: wellData.trajectory,
-      wellDepthMD: wellData.wellDepthMD,
-      casingDepthMD: wellData.casingDepthMD,
-      casingShoe: wellData.prevCasingDepth,
-      holeDiameter: wellData.holeDiameter,
-      casingOD: wellData.casingOD,
-      casingID: wellData.prevCasingID || casingID,
-      pipeWeightKgPerM: pipeWeight,
-      mudDensity: mudDensity / 1000,
-      frictionCased,
-      frictionOpenhole,
-      wob,
-      rpm,
-      blockWeight,
+    const input = makeInput();
+    return {
+      drillRotary: calculateTD(input, 'drill_rotary'),
+      drillMotor: calculateTD(input, 'drill_motor'),
+      backReam: calculateTD(input, 'back_ream'),
+      pickup: calculateTD(input, 'pickup'),
+      slackoff: calculateTD(input, 'slackoff'),
     };
-    return calculateTD(input, 'drill_rotary');
-  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID]);
+  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID, yieldStrength, dcLength, dcOD, dcWeight, motorBendAngle]);
 
-  if (!summary) {
+  if (!summary || !extraModes) {
     return (
-      <Card>
-        <CardContent className="py-8 text-center text-muted-foreground">
-          Заполните данные скважины для расчёта Torque & Drag
-        </CardContent>
-      </Card>
+      <Card><CardContent className="py-8 text-center text-muted-foreground">
+        Заполните данные скважины для расчёта Torque & Drag
+      </CardContent></Card>
     );
   }
 
-  // Prepare chart data (depth on Y axis — inverted)
+  const allModes = [summary.tripIn, summary.tripOut, summary.rotate, extraModes.drillRotary, extraModes.drillMotor, extraModes.backReam, extraModes.pickup, extraModes.slackoff];
+  
   const chartData = summary.tripIn.points.map((pt, i) => ({
     md: pt.md,
     tripInHL: summary.tripIn.points[i]?.hookLoad ?? 0,
     tripOutHL: summary.tripOut.points[i]?.hookLoad ?? 0,
     rotateHL: summary.rotate.points[i]?.hookLoad ?? 0,
     freeWeight: summary.freeWeight,
+    drillRotaryHL: extraModes.drillRotary.points[i]?.hookLoad ?? 0,
+    drillMotorHL: extraModes.drillMotor.points[i]?.hookLoad ?? 0,
+    pickupHL: extraModes.pickup.points[i]?.hookLoad ?? 0,
+    slackoffHL: extraModes.slackoff.points[i]?.hookLoad ?? 0,
     tripInTension: summary.tripIn.points[i]?.effectiveTension ?? 0,
     tripOutTension: summary.tripOut.points[i]?.effectiveTension ?? 0,
-    torque: summary.rotate.points[i]?.torque ?? 0,
+    torqueRot: summary.rotate.points[i]?.torque ?? 0,
+    torqueDrill: extraModes.drillRotary.points[i]?.torque ?? 0,
+    torqueMotor: extraModes.drillMotor.points[i]?.torque ?? 0,
     sideForce: summary.tripIn.points[i]?.sideForce ?? 0,
-    sideForceOut: summary.tripOut.points[i]?.sideForce ?? 0,
     clearance: summary.tripIn.points[i]?.clearance ?? 0,
-    drillHL: drillResult?.points[i]?.hookLoad ?? 0,
+    fatigue: summary.rotate.points[i]?.fatigueDamage ?? 0,
+    vonMises: summary.tripIn.points[i]?.vonMises ?? 0,
   }));
 
-  const tooltipStyle = {
+  const ts = {
     backgroundColor: "hsl(var(--card))",
     border: "1px solid hsl(var(--border))",
     borderRadius: "8px",
@@ -117,9 +119,7 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
     <div className="space-y-6">
       {/* Inputs */}
       <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">⚙️ Параметры расчёта T&D</CardTitle>
-        </CardHeader>
+        <CardHeader className="pb-4"><CardTitle className="text-lg">⚙️ Параметры расчёта T&D</CardTitle></CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             <div>
@@ -153,95 +153,115 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
                 className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
             </div>
           </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mt-4">
+            <div>
+              <label className="text-xs text-muted-foreground">Предел текучести, МПа</label>
+              <input type="number" step="10" value={yieldStrength} onChange={e => setYieldStrength(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Длина УБТ, м</label>
+              <input type="number" step="10" value={dcLength} onChange={e => setDcLength(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">OD УБТ, мм</label>
+              <input type="number" step="1" value={dcOD} onChange={e => setDcOD(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Вес УБТ, кг/м</label>
+              <input type="number" step="5" value={dcWeight} onChange={e => setDcWeight(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Угол перекоса ГЗД, °</label>
+              <input type="number" step="0.25" min="0" max="5" value={motorBendAngle} onChange={e => setMotorBendAngle(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Summary table */}
+      {/* Summary table - all 8 modes */}
       <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">📊 Сводка Torque & Drag</CardTitle>
-        </CardHeader>
+        <CardHeader className="pb-4"><CardTitle className="text-lg">📊 Сводка Torque & Drag (8 режимов)</CardTitle></CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  <th className="text-left py-2 px-2 text-muted-foreground font-medium">Параметр</th>
-                  <th className="text-right py-2 px-2 text-muted-foreground font-medium">Спуск</th>
-                  <th className="text-right py-2 px-2 text-muted-foreground font-medium">Подъём</th>
-                  <th className="text-right py-2 px-2 text-muted-foreground font-medium">Вращение</th>
-                  <th className="text-right py-2 px-2 text-muted-foreground font-medium">Бурение рот.</th>
+                  <th className="text-left py-2 px-1 text-muted-foreground font-medium text-xs">Параметр</th>
+                  {allModes.map((m, i) => (
+                    <th key={i} className="text-right py-2 px-1 text-muted-foreground font-medium text-xs">{m.modeLabel.split(' ').slice(0, 2).join(' ')}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 <tr className="border-b border-border">
-                  <td className="py-2 px-2 text-muted-foreground">Вес на крюке (макс.), кН</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(summary.tripIn.maxHookLoad, 0)}</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(summary.tripOut.maxHookLoad, 0)}</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(summary.rotate.maxHookLoad, 0)}</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(drillResult?.maxHookLoad ?? 0, 0)}</td>
+                  <td className="py-2 px-1 text-muted-foreground text-xs">HL макс, кН</td>
+                  {allModes.map((m, i) => <td key={i} className="py-2 px-1 text-right font-semibold text-xs">{fmt(m.maxHookLoad, 0)}</td>)}
                 </tr>
                 <tr className="border-b border-border">
-                  <td className="py-2 px-2 text-muted-foreground">Вес на крюке (мин.), кН</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(summary.tripIn.minHookLoad, 0)}</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(summary.tripOut.minHookLoad, 0)}</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(summary.rotate.minHookLoad, 0)}</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(drillResult?.minHookLoad ?? 0, 0)}</td>
+                  <td className="py-2 px-1 text-muted-foreground text-xs">HL мин, кН</td>
+                  {allModes.map((m, i) => <td key={i} className="py-2 px-1 text-right font-semibold text-xs">{fmt(m.minHookLoad, 0)}</td>)}
                 </tr>
                 <tr className="border-b border-border">
-                  <td className="py-2 px-2 text-muted-foreground">Макс. момент, кН·м</td>
-                  <td className="py-2 px-2 text-right">—</td>
-                  <td className="py-2 px-2 text-right">—</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(summary.rotate.maxTorque, 1)}</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(drillResult?.maxTorque ?? 0, 1)}</td>
+                  <td className="py-2 px-1 text-muted-foreground text-xs">Момент макс, кН·м</td>
+                  {allModes.map((m, i) => <td key={i} className="py-2 px-1 text-right font-semibold text-xs">{m.maxTorque > 0 ? fmt(m.maxTorque, 1) : "—"}</td>)}
                 </tr>
                 <tr className="border-b border-border">
-                  <td className="py-2 px-2 text-muted-foreground">Макс. бок. сила, кН/м</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(summary.tripIn.maxSideForce, 2)}</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(summary.tripOut.maxSideForce, 2)}</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(summary.rotate.maxSideForce, 2)}</td>
-                  <td className="py-2 px-2 text-right font-semibold">{fmt(drillResult?.maxSideForce ?? 0, 2)}</td>
+                  <td className="py-2 px-1 text-muted-foreground text-xs">Бок. сила макс, кН/м</td>
+                  {allModes.map((m, i) => <td key={i} className="py-2 px-1 text-right font-semibold text-xs">{fmt(m.maxSideForce, 2)}</td>)}
                 </tr>
                 <tr className="border-b border-border">
-                  <td className="py-2 px-2 text-muted-foreground">Свободный вес колонны, кН</td>
-                  <td colSpan={4} className="py-2 px-2 text-right font-semibold">{fmt(summary.freeWeight, 0)}</td>
+                  <td className="py-2 px-1 text-muted-foreground text-xs">Усталость (макс)</td>
+                  {allModes.map((m, i) => <td key={i} className="py-2 px-1 text-right font-semibold text-xs">{m.maxFatigueDamage && m.maxFatigueDamage > 0 ? fmt(m.maxFatigueDamage, 6) : "—"}</td>)}
                 </tr>
                 <tr>
-                  <td className="py-2 px-2 text-muted-foreground">Коэфф. плавучести</td>
-                  <td colSpan={4} className="py-2 px-2 text-right font-semibold">{fmt(summary.buoyancyFactor, 3)}</td>
+                  <td className="py-2 px-1 text-muted-foreground text-xs">Von Mises макс, МПа</td>
+                  {allModes.map((m, i) => <td key={i} className="py-2 px-1 text-right font-semibold text-xs">{m.maxVonMises && m.maxVonMises > 0 ? fmt(m.maxVonMises, 0) : "—"}</td>)}
                 </tr>
               </tbody>
             </table>
           </div>
+          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+            <span>Коэфф. плавучести: <strong>{fmt(summary.buoyancyFactor, 3)}</strong></span>
+            <span>Свободный вес: <strong>{fmt(summary.freeWeight, 0)} кН</strong></span>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Chart 1: Hook Load vs Depth */}
+      {/* Chart 1: Hook Load — all modes */}
       <Card>
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">📈 Вес на крюке по глубине</CardTitle>
+          <CardTitle className="text-lg">📈 Вес на крюке по глубине (все режимы)</CardTitle>
           <CopyImageButton targetRef={chartRef1} />
         </CardHeader>
         <CardContent>
-          <ScrollableChart chartRef={chartRef1} height="h-[400px]">
+          <ScrollableChart chartRef={chartRef1} height="h-[450px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                 <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
                 <XAxis type="number" label={{ value: 'кН', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => fmt(v, 0) + ' кН'} labelFormatter={(l: number) => `MD: ${l} м`} />
-                <Legend />
+                <Tooltip contentStyle={ts} formatter={(v: number) => fmt(v, 0) + ' кН'} labelFormatter={(l: number) => `MD: ${l} м`} />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
                 <Line dataKey="tripInHL" name="Спуск" stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
                 <Line dataKey="tripOutHL" name="Подъём" stroke="hsl(0, 70%, 50%)" dot={false} strokeWidth={2} />
                 <Line dataKey="rotateHL" name="Вращение" stroke="hsl(120, 50%, 45%)" dot={false} strokeWidth={2} />
-                <Line dataKey="freeWeight" name="Свободный вес" stroke="hsl(var(--muted-foreground))" dot={false} strokeWidth={1} strokeDasharray="5 5" />
+                <Line dataKey="drillRotaryHL" name="Бурение рот." stroke="hsl(280, 60%, 50%)" dot={false} strokeWidth={1.5} strokeDasharray="4 2" />
+                <Line dataKey="drillMotorHL" name="Бурение ГЗД" stroke="hsl(30, 80%, 50%)" dot={false} strokeWidth={1.5} strokeDasharray="4 2" />
+                <Line dataKey="pickupHL" name="Затяжка" stroke="hsl(340, 70%, 55%)" dot={false} strokeWidth={1.5} />
+                <Line dataKey="slackoffHL" name="Разгрузка" stroke="hsl(170, 60%, 45%)" dot={false} strokeWidth={1.5} />
+                <Line dataKey="freeWeight" name="Своб. вес" stroke="hsl(var(--muted-foreground))" dot={false} strokeWidth={1} strokeDasharray="5 5" />
               </LineChart>
             </ResponsiveContainer>
           </ScrollableChart>
         </CardContent>
       </Card>
 
-      {/* Chart 2: Effective Tension vs Depth */}
+      {/* Chart 2: Effective Tension */}
       <Card>
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
           <CardTitle className="text-lg">📈 Эффективное натяжение по глубине</CardTitle>
@@ -254,7 +274,7 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                 <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
                 <XAxis type="number" label={{ value: 'кН', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => fmt(v, 1) + ' кН'} labelFormatter={(l: number) => `MD: ${l} м`} />
+                <Tooltip contentStyle={ts} formatter={(v: number) => fmt(v, 1) + ' кН'} labelFormatter={(l: number) => `MD: ${l} м`} />
                 <Legend />
                 <ReferenceLine x={0} stroke="hsl(var(--border))" strokeWidth={1} />
                 <Line dataKey="tripInTension" name="Спуск" stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
@@ -265,7 +285,7 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
         </CardContent>
       </Card>
 
-      {/* Chart 3: Torque vs Depth */}
+      {/* Chart 3: Torque — all rotating modes */}
       <Card>
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
           <CardTitle className="text-lg">📈 Крутящий момент по глубине</CardTitle>
@@ -278,9 +298,11 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                 <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
                 <XAxis type="number" label={{ value: 'кН·м', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => fmt(v, 2) + ' кН·м'} labelFormatter={(l: number) => `MD: ${l} м`} />
+                <Tooltip contentStyle={ts} formatter={(v: number) => fmt(v, 2) + ' кН·м'} labelFormatter={(l: number) => `MD: ${l} м`} />
                 <Legend />
-                <Line dataKey="torque" name="Момент (вращ.)" stroke="hsl(280, 60%, 50%)" dot={false} strokeWidth={2} />
+                <Line dataKey="torqueRot" name="Вращение" stroke="hsl(280, 60%, 50%)" dot={false} strokeWidth={2} />
+                <Line dataKey="torqueDrill" name="Бурение рот." stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
+                <Line dataKey="torqueMotor" name="Бурение ГЗД" stroke="hsl(30, 80%, 50%)" dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           </ScrollableChart>
@@ -300,10 +322,55 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                 <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
                 <XAxis type="number" label={{ value: 'кН/м | мм', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipStyle} labelFormatter={(l: number) => `MD: ${l} м`} />
+                <Tooltip contentStyle={ts} labelFormatter={(l: number) => `MD: ${l} м`} />
                 <Legend />
-                <Line dataKey="sideForce" name="Бок. сила (спуск), кН/м" stroke="hsl(35, 80%, 50%)" dot={false} strokeWidth={2} />
+                <Line dataKey="sideForce" name="Бок. сила (спуск)" stroke="hsl(35, 80%, 50%)" dot={false} strokeWidth={2} />
                 <Line dataKey="clearance" name="Зазор, мм" stroke="hsl(160, 60%, 45%)" dot={false} strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </ScrollableChart>
+        </CardContent>
+      </Card>
+
+      {/* Chart 5: Fatigue Damage */}
+      <Card>
+        <CardHeader className="pb-2 flex flex-row items-center justify-between">
+          <CardTitle className="text-lg">📈 Усталостное повреждение по глубине</CardTitle>
+          <CopyImageButton targetRef={chartRef5} />
+        </CardHeader>
+        <CardContent>
+          <ScrollableChart chartRef={chartRef5} height="h-[350px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
+                <XAxis type="number" label={{ value: 'Damage ratio', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
+                <Tooltip contentStyle={ts} formatter={(v: number) => v.toExponential(2)} labelFormatter={(l: number) => `MD: ${l} м`} />
+                <Legend />
+                <Line dataKey="fatigue" name="Fatigue Damage (вращение)" stroke="hsl(0, 80%, 50%)" dot={false} strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </ScrollableChart>
+        </CardContent>
+      </Card>
+
+      {/* Chart 6: Von Mises Stress */}
+      <Card>
+        <CardHeader className="pb-2 flex flex-row items-center justify-between">
+          <CardTitle className="text-lg">📈 Напряжение Von Mises по глубине</CardTitle>
+          <CopyImageButton targetRef={chartRef6} />
+        </CardHeader>
+        <CardContent>
+          <ScrollableChart chartRef={chartRef6} height="h-[350px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
+                <XAxis type="number" label={{ value: 'МПа', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
+                <Tooltip contentStyle={ts} formatter={(v: number) => fmt(v, 0) + ' МПа'} labelFormatter={(l: number) => `MD: ${l} м`} />
+                <Legend />
+                <ReferenceLine x={yieldStrength} stroke="hsl(0, 80%, 50%)" strokeWidth={1} strokeDasharray="8 4" label={{ value: `Предел текучести ${yieldStrength} МПа`, position: "insideTopRight", fontSize: 10 }} />
+                <Line dataKey="vonMises" name="Von Mises (спуск)" stroke="hsl(280, 60%, 50%)" dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           </ScrollableChart>
@@ -312,39 +379,39 @@ export default function TorqueDragSection({ wellData, mudDensity }: Props) {
 
       {/* Detail Table */}
       <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">📋 Детальная таблица по глубине</CardTitle>
-        </CardHeader>
+        <CardHeader className="pb-4"><CardTitle className="text-lg">📋 Детальная таблица по глубине</CardTitle></CardHeader>
         <CardContent>
           <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-card z-10">
                 <tr className="border-b border-border">
-                  <th className="py-2 px-1 text-left text-muted-foreground">MD, м</th>
-                  <th className="py-2 px-1 text-left text-muted-foreground">TVD, м</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">Зенит, °</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">HL спуск, кН</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">HL подъём, кН</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">HL вращ., кН</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">Момент, кН·м</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">Бок. сила, кН/м</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">Зазор, мм</th>
+                  <th className="py-2 px-1 text-left text-muted-foreground">MD</th>
+                  <th className="py-2 px-1 text-left text-muted-foreground">TVD</th>
+                  <th className="py-2 px-1 text-right text-muted-foreground">Зенит</th>
+                  <th className="py-2 px-1 text-right text-muted-foreground">HL спуск</th>
+                  <th className="py-2 px-1 text-right text-muted-foreground">HL подъём</th>
+                  <th className="py-2 px-1 text-right text-muted-foreground">HL вращ.</th>
+                  <th className="py-2 px-1 text-right text-muted-foreground">Момент</th>
+                  <th className="py-2 px-1 text-right text-muted-foreground">Бок. сила</th>
+                  <th className="py-2 px-1 text-right text-muted-foreground">Зазор</th>
+                  <th className="py-2 px-1 text-right text-muted-foreground">Fatigue</th>
                 </tr>
               </thead>
               <tbody>
-                {summary.tripIn.points.filter((_, i) => i % 5 === 0 || i === summary.tripIn.points.length - 1).map((pt, i) => {
-                  const idx = summary.tripIn.points.indexOf(pt);
+                {summary.tripIn.points.filter((_, i) => i % 5 === 0 || i === summary.tripIn.points.length - 1).map((pt, idx) => {
+                  const i = summary.tripIn.points.indexOf(pt);
                   return (
-                    <tr key={i} className="border-b border-border/50 hover:bg-muted/50">
-                      <td className="py-1.5 px-1">{fmt(pt.md, 0)}</td>
-                      <td className="py-1.5 px-1">{fmt(pt.tvd, 0)}</td>
-                      <td className="py-1.5 px-1 text-right">{fmt(pt.zenith, 1)}</td>
-                      <td className="py-1.5 px-1 text-right">{fmt(pt.hookLoad, 0)}</td>
-                      <td className="py-1.5 px-1 text-right">{fmt(summary.tripOut.points[idx]?.hookLoad ?? 0, 0)}</td>
-                      <td className="py-1.5 px-1 text-right">{fmt(summary.rotate.points[idx]?.hookLoad ?? 0, 0)}</td>
-                      <td className="py-1.5 px-1 text-right">{fmt(summary.rotate.points[idx]?.torque ?? 0, 2)}</td>
-                      <td className="py-1.5 px-1 text-right">{fmt(pt.sideForce, 2)}</td>
-                      <td className="py-1.5 px-1 text-right">{fmt(pt.clearance, 1)}</td>
+                    <tr key={idx} className="border-b border-border">
+                      <td className="py-1 px-1">{fmt(pt.md, 0)}</td>
+                      <td className="py-1 px-1">{fmt(pt.tvd, 0)}</td>
+                      <td className="py-1 px-1 text-right">{fmt(pt.zenith, 1)}°</td>
+                      <td className="py-1 px-1 text-right">{fmt(pt.hookLoad, 0)}</td>
+                      <td className="py-1 px-1 text-right">{fmt(summary.tripOut.points[i]?.hookLoad ?? 0, 0)}</td>
+                      <td className="py-1 px-1 text-right">{fmt(summary.rotate.points[i]?.hookLoad ?? 0, 0)}</td>
+                      <td className="py-1 px-1 text-right">{fmt(summary.rotate.points[i]?.torque ?? 0, 2)}</td>
+                      <td className="py-1 px-1 text-right">{fmt(pt.sideForce, 2)}</td>
+                      <td className="py-1 px-1 text-right">{fmt(pt.clearance, 0)}</td>
+                      <td className="py-1 px-1 text-right">{(pt.fatigueDamage ?? 0).toExponential(1)}</td>
                     </tr>
                   );
                 })}

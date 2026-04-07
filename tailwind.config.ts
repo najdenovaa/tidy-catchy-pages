@@ -13,6 +13,9 @@ export default {
       },
     },
     extend: {
+      gridTemplateColumns: {
+        '13': 'repeat(13, minmax(0, 1fr))',
+      },
       fontFamily: {
         sans: ["Roboto", "system-ui", "-apple-system", "sans-serif"],
         mono: ["Roboto Mono", "ui-monospace", "monospace"],
