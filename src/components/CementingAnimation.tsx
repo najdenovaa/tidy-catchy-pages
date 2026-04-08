@@ -179,10 +179,15 @@ function pushBatch(target: PumpBatch[], batch: PumpBatch) {
   }
 }
 
-function classifyStage(stage: string, bufferNames: Set<string>, slurryNames: Set<string>): Omit<PumpBatch, "volumeM3"> {
+/** Stages that flush surface lines — fluid goes to waste, NOT into the well */
+function isSurfaceOnlyStage(stage: string): boolean {
+  return /промывка лвд|заполнение лвд|опрессовка лвд/i.test(stage);
+}
+
+function classifyStage(stage: string, bufferNames: Set<string>, slurryNames: Set<string>): Omit<PumpBatch, "volumeM3"> | null {
+  if (isSurfaceOnlyStage(stage)) return null; // surface-only, skip
   if (slurryNames.has(stage)) return { fluid: "cement", label: stage };
   if (bufferNames.has(stage)) return { fluid: "buffer", label: stage };
-  if (/промывка лвд/i.test(stage)) return { fluid: "mud", label: "Промывка ЛВД" };
   return { fluid: "displacement", label: stage || FLUID_LABELS.displacement };
 }
 
