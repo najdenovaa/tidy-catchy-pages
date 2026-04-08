@@ -396,17 +396,82 @@ export default function CementingAnimation({
   const visualFrames = useMemo(() => {
     const history: PumpBatch[] = [];
     let lastCumVol = 0;
+    // Freeze annulus state before flush — cement falls in pipe pulling air, annulus unchanged
+    let preFlushAnnulus: AnnulusSegment[] | null = null;
+    let inFlush = false;
+    // Track cumulative volume that actually entered the well (excluding flush freefall)
+    let realPumpedVol = 0;
 
-    return pressureData.map((point) => {
+    return pressureData.map((point, idx) => {
+      const isFlushStage = /промывка лвд/i.test(point.stage);
       const deltaVol = Math.max(0, point.cumulativeVolume - lastCumVol);
+
+      // During flush: cement falls in pipe, pulls air — nothing enters annulus
+      if (isFlushStage) {
+        if (!inFlush) {
+          // Save annulus state from previous frame
+          inFlush = true;
+          if (idx > 0) {
+            const prevPoint = pressureData[idx - 1];
+            const prevExited = buildExitedBatches(history, realPumpedVol, pipeCapacityM3);
+            preFlushAnnulus = buildAnnulusSegments(prevExited, prevPoint, casingDepthMD);
+          }
+        }
+        // Don't add volume to history during flush — it's not pumped, it's gravity settling
+        // Pipe shows cement at bottom, air at top — but annulus stays frozen
+        const annulusSegments = preFlushAnnulus || buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets);
+
+        // Build pipe: show cement settled at bottom, air/void above
+        // Use the pipe capacity and the cement that has fallen
+        const cementInPipe = history.filter(b => b.fluid === "cement").reduce((s, b) => s + b.volumeM3, 0);
+        const bufferInPipe = history.filter(b => b.fluid === "buffer").reduce((s, b) => s + b.volumeM3, 0);
+        const pipeSegs: PipeSegment[] = [];
+
+        // Air at the top (the void left by fallen cement)
+        const settledVol = point.cumulativeVolume - (lastCumVol > 0 ? pressureData[Math.max(0, idx - 1)].cumulativeVolume : 0);
+        const totalFluidInPipe = Math.min(pipeCapacityM3, realPumpedVol);
+        const airFrac = Math.max(0, Math.min(1, 1 - totalFluidInPipe / Math.max(pipeCapacityM3, EPS)));
+
+        if (airFrac > EPS) {
+          pipeSegs.push({ fluid: "mud" as FluidKey, label: "Воздух", fracTop: 0, fracBot: airFrac, volM3: 0, topMD: casingDepthMD * (1 - airFrac), botMD: casingDepthMD });
+        }
+        // Rest: cement + buffer + mud (from bottom up, already settled)
+        const remainFrac = 1 - airFrac;
+        if (remainFrac > EPS) {
+          // Simplified: show what's in pipe based on history
+          const normalPipeSegs = buildPipeSegments(history, realPumpedVol, pipeCapacityM3, casingDepthMD);
+          // Shift them down to account for air at top
+          normalPipeSegs.forEach(seg => {
+            pipeSegs.push(seg);
+          });
+        }
+
+        const frame: VisualFrame = {
+          pipeSegments: pipeSegs.length > 0 ? pipeSegs : buildPipeSegments(history, realPumpedVol, pipeCapacityM3, casingDepthMD),
+          annulusSegments,
+          activeExit: null,
+          flowConnected: false,
+        };
+
+        lastCumVol = point.cumulativeVolume;
+        return frame;
+      }
+
+      // Exiting flush — displacement starts catching up
+      if (inFlush && !isFlushStage) {
+        inFlush = false;
+        preFlushAnnulus = null;
+      }
+
       if (deltaVol > EPS) {
         const batchMeta = classifyStage(point.stage, bufferNames, slurryNames);
         if (batchMeta) {
           pushBatch(history, { ...batchMeta, volumeM3: deltaVol });
+          realPumpedVol += deltaVol;
         }
       }
 
-      const exitedBatches = buildExitedBatches(history, point.cumulativeVolume, pipeCapacityM3);
+      const exitedBatches = buildExitedBatches(history, realPumpedVol, pipeCapacityM3);
       const isSettled = point.pumpRateLps <= EPS && point.annularReturnRate <= EPS;
       const annulusSegments = isSettled
         ? buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets)
@@ -416,10 +481,10 @@ export default function CementingAnimation({
         .find((batch) => batch.fluid !== "mud" && batch.volumeM3 > EPS) || null;
 
       const frame: VisualFrame = {
-        pipeSegments: buildPipeSegments(history, point.cumulativeVolume, pipeCapacityM3, casingDepthMD),
+        pipeSegments: buildPipeSegments(history, realPumpedVol, pipeCapacityM3, casingDepthMD),
         annulusSegments,
         activeExit,
-        flowConnected: point.pumpRateLps > EPS && point.cumulativeVolume > pipeCapacityM3 + EPS,
+        flowConnected: point.pumpRateLps > EPS && realPumpedVol > pipeCapacityM3 + EPS,
       };
 
       lastCumVol = point.cumulativeVolume;
