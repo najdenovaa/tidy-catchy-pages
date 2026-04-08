@@ -748,6 +748,7 @@ export default function Index() {
                     buffers={calcSnapshot.buffers}
                     reservoirLayers={calcSnapshot.wellData.reservoirLayers}
                     pipeCapacityM3={volumes?.totalPipeVolume || 0}
+                    annularVolumeM3={volumes?.totalAnnularVolume || 0}
                     prevCasingDepth={calcSnapshot.wellData.prevCasingDepth || 0}
                   />
                 ) : (
