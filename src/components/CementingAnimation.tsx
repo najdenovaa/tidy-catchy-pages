@@ -180,6 +180,90 @@ function buildAnnulusSegmentsFromTargets(
   return segments;
 }
 
+function pushBatch(target: PumpBatch[], batch: PumpBatch) {
+  if (batch.volumeM3 <= EPS) return;
+  const last = target[target.length - 1];
+  if (last && last.fluid === batch.fluid && last.label === batch.label) {
+    last.volumeM3 += batch.volumeM3;
+  } else {
+    target.push({ ...batch });
+  }
+}
+
+/** Stages that flush surface lines — fluid goes to waste, NOT into the well */
+function isSurfaceOnlyStage(stage: string): boolean {
+  return /промывка лвд|заполнение лвд|опрессовка лвд/i.test(stage);
+}
+
+function classifyStage(stage: string, bufferNames: Set<string>, slurryNames: Set<string>): Omit<PumpBatch, "volumeM3"> | null {
+  if (isSurfaceOnlyStage(stage)) return null;
+  if (slurryNames.has(stage)) return { fluid: "cement", label: stage };
+  if (bufferNames.has(stage)) return { fluid: "buffer", label: stage };
+  return { fluid: "displacement", label: stage || FLUID_LABELS.displacement };
+}
+
+function buildPipeSegments(
+  history: PumpBatch[],
+  cumulativeVolume: number,
+  pipeCapacityM3: number,
+  casingDepthMD: number,
+  fillFluid: FluidKey = "mud",
+): PipeSegment[] {
+  if (pipeCapacityM3 <= EPS || casingDepthMD <= EPS) return [];
+
+  const pipeBatches: PumpBatch[] = [];
+  const mudStillInPipe = Math.max(0, pipeCapacityM3 - cumulativeVolume);
+  if (mudStillInPipe > EPS) {
+    pipeBatches.push({ fluid: "mud", label: FLUID_LABELS.mud, volumeM3: mudStillInPipe });
+  }
+
+  let pumpedExited = Math.max(0, cumulativeVolume - pipeCapacityM3);
+  for (const batch of history) {
+    const exitedOfBatch = Math.min(batch.volumeM3, pumpedExited);
+    const inPipe = Math.max(0, batch.volumeM3 - exitedOfBatch);
+    pumpedExited = Math.max(0, pumpedExited - exitedOfBatch);
+    if (inPipe > EPS) {
+      pipeBatches.push({ fluid: batch.fluid, label: batch.label, volumeM3: inPipe });
+    }
+  }
+
+  const totalInPipe = pipeBatches.reduce((sum, batch) => sum + batch.volumeM3, 0);
+  if (totalInPipe < pipeCapacityM3 - EPS) {
+    pipeBatches.push({
+      fluid: fillFluid,
+      label: FLUID_LABELS[fillFluid],
+      volumeM3: pipeCapacityM3 - totalInPipe,
+    });
+  }
+
+  const segments: PipeSegment[] = [];
+  let cursor = 0;
+  for (const batch of pipeBatches) {
+    const frac = Math.min(batch.volumeM3 / pipeCapacityM3, 1 - cursor);
+    if (frac <= EPS) continue;
+
+    const fracTop = cursor;
+    const fracBot = cursor + frac;
+    const topMD = Math.max(0, casingDepthMD * (1 - fracBot));
+    const botMD = Math.min(casingDepthMD, casingDepthMD * (1 - fracTop));
+
+    segments.push({
+      fluid: batch.fluid,
+      label: batch.label,
+      fracTop,
+      fracBot,
+      volM3: batch.volumeM3,
+      topMD,
+      botMD,
+    });
+
+    cursor += frac;
+    if (cursor >= 1 - EPS) break;
+  }
+
+  return segments;
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
@@ -300,6 +384,7 @@ export default function CementingAnimation({
   const cementTargets = useMemo(() => buildCementTargets(slurries, casingDepthMD), [casingDepthMD, slurries]);
   const bufferTargets = useMemo(() => buildBufferTargets(buffers), [buffers]);
 
+  /** Always use engine-reported annular heights — no dual-path logic */
   const visualFrames = useMemo(() => {
     const history: PumpBatch[] = [];
     let lastCumVol = 0;
@@ -314,8 +399,6 @@ export default function CementingAnimation({
       const isFlushStage = /промывка лвд/i.test(point.stage);
       const deltaVol = Math.max(0, point.cumulativeVolume - lastCumVol);
 
-      // During flush: cement falls in pipe under gravity, exits into annulus
-      // Annulus uses calc engine heights (progressive settling), not frozen
       if (isFlushStage) {
         if (!inFlush) {
           inFlush = true;
@@ -328,6 +411,7 @@ export default function CementingAnimation({
         const settledVol = Math.max(0, (currentNonMudH - preFlushNonMudH) * annVPM);
         const effectivePumpedVol = preFlushCumVol + settledVol;
 
+        // Always trust engine heights for annulus
         const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets);
         const pipeSegments = buildPipeSegments(history, effectivePumpedVol, pipeCapacityM3, casingDepthMD, "void");
 
@@ -353,17 +437,24 @@ export default function CementingAnimation({
 
       const residualFreefallOffset = Math.max(0, freefallOffset - cumDisplacementVol);
       const effectivePumpedVol = point.cumulativeVolume + residualFreefallOffset;
-      const exitedBatches = buildExitedBatches(history, effectivePumpedVol, pipeCapacityM3);
-      const isStaticFrame = point.pumpRateLps <= EPS && point.annularReturnRate <= EPS;
-      const annulusSegments = isStaticFrame
-        ? buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets)
-        : buildAnnulusSegments(exitedBatches, point, casingDepthMD);
       const flowConnected = point.annularReturnRate > EPS && effectivePumpedVol > pipeCapacityM3 + EPS;
-      const activeExit = flowConnected
-        ? [...exitedBatches]
-            .reverse()
-            .find((batch) => batch.fluid !== "mud" && batch.volumeM3 > EPS) || null
-        : null;
+
+      // Determine what fluid is currently exiting the shoe for the flow indicator
+      const totalNonMudH = point.annCementHeightM + point.annBufferHeightM + point.annDisplHeightM;
+      let activeExit: PumpBatch | null = null;
+      if (flowConnected && totalNonMudH > EPS) {
+        // The fluid at the bottom of the annulus (nearest shoe) is what's exiting
+        if (point.annDisplHeightM > EPS) {
+          activeExit = { fluid: "displacement", label: FLUID_LABELS.displacement, volumeM3: point.annDisplHeightM };
+        } else if (point.annCementHeightM > EPS) {
+          activeExit = { fluid: "cement", label: FLUID_LABELS.cement, volumeM3: point.annCementHeightM };
+        } else if (point.annBufferHeightM > EPS) {
+          activeExit = { fluid: "buffer", label: FLUID_LABELS.buffer, volumeM3: point.annBufferHeightM };
+        }
+      }
+
+      // Always trust engine heights for annulus — single consistent path
+      const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets);
 
       const frame: VisualFrame = {
         pipeSegments: buildPipeSegments(
