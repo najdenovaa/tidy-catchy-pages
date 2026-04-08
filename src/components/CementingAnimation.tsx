@@ -20,6 +20,7 @@ interface Props {
   buffers?: BufferFluid[];
   reservoirLayers?: ReservoirLayer[];
   pipeCapacityM3?: number;
+  annularVolumeM3?: number;
   prevCasingDepth?: number;
 }
 
