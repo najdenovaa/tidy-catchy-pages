@@ -945,6 +945,9 @@ export function calculatePressureProfile(
     if (mudExited > 0) exitBatches.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited, fluidType: 'mud' });
     let pumpedExited = Math.max(0, totalPumped - pipeCapacity);
     for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
+      // Продавочная жидкость находится за верхней пробкой и не должна выходить в затрубье
+      // до посадки пробки в ЦКОД. Её объём лишь проталкивает впереди идущие пачки.
+      if (pumpHistory[i].fluidType === 'displacement') continue;
       const take = Math.min(pumpHistory[i].volumeM3, pumpedExited);
       if (take > 0) exitBatches.push({ densityGcm3: pumpHistory[i].densityGcm3, volumeM3: take, fluidType: pumpHistory[i].fluidType });
       pumpedExited -= take;
@@ -1426,7 +1429,10 @@ export function calculatePressureProfile(
       if (isDisplacement) cumDisplacementVol += stepVolume;
 
       pumpHistory[batchIdx].volumeM3 = s.volume * frac;
-      totalPumped = cumVol + s.volume * frac + freefallOffset;
+      const residualFreefallOffset = isDisplacement
+        ? Math.max(0, freefallOffset - cumDisplacementVol)
+        : freefallOffset;
+      totalPumped = cumVol + s.volume * frac + residualFreefallOffset;
 
       // Доля трубы, заполненная закачанным флюидом
       const filledFraction = Math.min(totalPumped / Math.max(pipeCapacity, 0.01), 1);
@@ -1468,28 +1474,11 @@ export function calculatePressureProfile(
       // На длинных промывках перед продавкой возможна задержка циркуляции:
       // сначала небольшой лаг, затем плавный рост до Qвых = Qвх,
       // после появления давления на агрегате — синхронный режим 1:1.
-      let circulationFactor = 1;
-      if (isDisplacement && displacementStartTime !== null) {
-        const timeFromDispStart = tNow - displacementStartTime;
-        const delayMin = 2;
-        const rampMin = 4;
-
-        if (timeFromDispStart <= delayMin) {
-          circulationFactor = 0;
-        } else {
-          const x = Math.min(1, (timeFromDispStart - delayMin) / rampMin);
-          circulationFactor = x * x * (3 - 2 * x); // smoothstep
-        }
-
-        // Как только давление на агрегате стабильно появилось — выход = вход
-        if (surfPRaw >= 0.3) {
-          circulationFactor = 1;
-        }
+      let totalAnnReturn = actualRateLps;
+      if (isDisplacement) {
+        totalAnnReturn = residualFreefallOffset > 0.000001 ? 0 : actualRateLps;
       }
-
-      let totalAnnReturn = actualRateLps * circulationFactor;
-      totalAnnReturn = Math.min(totalAnnReturn, actualRateLps);
-      totalAnnReturn = Math.max(0, totalAnnReturn);
+      totalAnnReturn = Math.max(0, Math.min(totalAnnReturn, actualRateLps));
 
       // Эмпирическая поправка давления на насосе
       let surfP: number;
@@ -1522,7 +1511,10 @@ export function calculatePressureProfile(
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;
-    totalPumped = cumVol + s.volume + freefallOffset;
+    const remainingFreefallOffset = isDisplacement
+      ? Math.max(0, freefallOffset - cumDisplacementVol)
+      : freefallOffset;
+    totalPumped = cumVol + s.volume + remainingFreefallOffset;
 
     cumTime += stageTime;
     cumVol += s.volume;

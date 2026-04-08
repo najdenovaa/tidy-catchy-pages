@@ -22,9 +22,14 @@ interface Props {
   pipeCapacityM3?: number;
   annularVolumeM3?: number;
   prevCasingDepth?: number;
+  ckodDepth?: number;
+  holeDiameter?: number;
+  casingOD?: number;
+  prevCasingID?: number;
 }
 
-type FluidKey = "mud" | "buffer" | "cement" | "displacement";
+type FluidKey = "mud" | "buffer" | "cement" | "displacement" | "void";
+type AnnulusFluidKey = Exclude<FluidKey, "void">;
 
 interface PumpBatch {
   fluid: FluidKey;
@@ -72,6 +77,7 @@ const FLUID_COLORS: Record<FluidKey, string> = {
   buffer: "hsl(200, 60%, 50%)",
   cement: "hsl(0, 0%, 55%)",
   displacement: "hsl(120, 40%, 45%)",
+  void: "hsl(var(--muted))",
 };
 
 const FLUID_LABELS: Record<FluidKey, string> = {
@@ -79,6 +85,7 @@ const FLUID_LABELS: Record<FluidKey, string> = {
   buffer: "Буфер",
   cement: "Цемент",
   displacement: "Продавка",
+  void: "Воздух",
 };
 
 const RESERVOIR_COLORS: Record<string, string> = {
@@ -91,8 +98,8 @@ const RESERVOIR_COLORS: Record<string, string> = {
 
 const SPEED_OPTIONS = [1, 2, 5, 10];
 const EPS = 1e-6;
-const BOTTOM_UP_FLOW_ORDER: FluidKey[] = ["displacement", "cement", "buffer", "mud"];
-const TOP_DOWN_FLOW_ORDER: FluidKey[] = ["mud", "buffer", "cement", "displacement"];
+const BOTTOM_UP_FLOW_ORDER: AnnulusFluidKey[] = ["displacement", "cement", "buffer", "mud"];
+const TOP_DOWN_FLOW_ORDER: AnnulusFluidKey[] = ["mud", "buffer", "cement", "displacement"];
 
 function buildCementTargets(slurries: SlurryInput[], casingDepthMD: number): CementTarget[] {
   return [...slurries]
@@ -202,6 +209,7 @@ function buildExitedBatches(history: PumpBatch[], cumulativeVolume: number, pipe
   let pumpedExited = Math.max(0, cumulativeVolume - pipeCapacityM3);
   for (const batch of history) {
     if (pumpedExited <= EPS) break;
+    if (batch.fluid === "displacement") continue;
     const take = Math.min(batch.volumeM3, pumpedExited);
     if (take > EPS) {
       exited.push({ fluid: batch.fluid, label: batch.label, volumeM3: take });
@@ -217,6 +225,7 @@ function buildPipeSegments(
   cumulativeVolume: number,
   pipeCapacityM3: number,
   casingDepthMD: number,
+  fillFluid: FluidKey = "mud",
 ): PipeSegment[] {
   if (pipeCapacityM3 <= EPS || casingDepthMD <= EPS) return [];
 
@@ -239,8 +248,8 @@ function buildPipeSegments(
   const totalInPipe = pipeBatches.reduce((sum, batch) => sum + batch.volumeM3, 0);
   if (totalInPipe < pipeCapacityM3 - EPS) {
     pipeBatches.push({
-      fluid: "mud",
-      label: FLUID_LABELS.mud,
+      fluid: fillFluid,
+      label: FLUID_LABELS[fillFluid],
       volumeM3: pipeCapacityM3 - totalInPipe,
     });
   }
@@ -280,7 +289,7 @@ function buildAnnulusSegments(
 ): AnnulusSegment[] {
   if (casingDepthMD <= EPS) return [];
 
-  const heights: Record<FluidKey, number> = {
+  const heights: Record<AnnulusFluidKey, number> = {
     mud: point.annMudHeightM,
     buffer: point.annBufferHeightM,
     cement: point.annCementHeightM,
@@ -332,6 +341,61 @@ function buildAnnulusSegments(
   return segments;
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function splitDepthInterval(topMD: number, botMD: number, breakpoints: number[]) {
+  const points = [
+    topMD,
+    ...breakpoints.filter((point) => point > topMD + EPS && point < botMD - EPS).sort((a, b) => a - b),
+    botMD,
+  ];
+
+  return points.slice(0, -1).map((point, index) => ({
+    topMD: point,
+    botMD: points[index + 1],
+  }));
+}
+
+function createDepthScaler(topY: number, botY: number, wellDepthMD: number, casingDepthMD: number, ckodDepth: number) {
+  const usableHeight = botY - topY;
+  const totalDepth = Math.max(wellDepthMD, casingDepthMD, ckodDepth, EPS);
+  const shoeTrackTop = ckodDepth > EPS && ckodDepth < casingDepthMD ? ckodDepth : casingDepthMD;
+  const upperLen = Math.max(0, shoeTrackTop);
+  const shoeTrackLen = Math.max(0, casingDepthMD - shoeTrackTop);
+  const sumpLen = Math.max(0, totalDepth - casingDepthMD);
+  const baseScale = usableHeight / totalDepth;
+
+  const detailLen = shoeTrackLen + sumpLen;
+  const minDetailHeight = (shoeTrackLen > EPS ? 14 : 0) + (sumpLen > EPS ? 18 : 0);
+  const reservedDetailHeight = detailLen > EPS
+    ? Math.min(Math.max(detailLen * baseScale, minDetailHeight), usableHeight * 0.34)
+    : 0;
+
+  const detailScale = detailLen > EPS ? reservedDetailHeight / detailLen : baseScale;
+  const shoeTrackScale = shoeTrackLen > EPS ? Math.max(baseScale, detailScale) : baseScale;
+  const sumpScale = sumpLen > EPS ? Math.max(baseScale, detailScale) : baseScale;
+  const usedDetailHeight = shoeTrackLen * shoeTrackScale + sumpLen * sumpScale;
+  const upperHeight = Math.max(0, usableHeight - usedDetailHeight);
+  const upperScale = upperLen > EPS ? upperHeight / upperLen : baseScale;
+  const upperEndY = topY + upperLen * upperScale;
+  const casingShoeY = upperEndY + shoeTrackLen * shoeTrackScale;
+
+  return {
+    toY: (md: number) => {
+      const depth = clamp(md, 0, totalDepth);
+      if (depth <= upperLen + EPS) {
+        return topY + depth * upperScale;
+      }
+      if (depth <= casingDepthMD + EPS) {
+        return upperEndY + (depth - upperLen) * shoeTrackScale;
+      }
+      return casingShoeY + (depth - casingDepthMD) * sumpScale;
+    },
+  };
+}
+
 export default function CementingAnimation({
   pressureData,
   stageBoundaries,
@@ -343,6 +407,10 @@ export default function CementingAnimation({
   pipeCapacityM3 = 0,
   annularVolumeM3 = 0,
   prevCasingDepth = 0,
+  ckodDepth = 0,
+  holeDiameter = 0,
+  casingOD = 0,
+  prevCasingID = 0,
 }: Props) {
   const [playing, setPlaying] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -397,10 +465,10 @@ export default function CementingAnimation({
     const history: PumpBatch[] = [];
     let lastCumVol = 0;
     let inFlush = false;
-    let realPumpedVol = 0;
-    // Freefall tracking: pre-flush state to compute gravity settling volume
-    let preFlushRealPumpedVol = 0;
+    let preFlushCumVol = 0;
     let preFlushNonMudH = 0;
+    let freefallOffset = 0;
+    let cumDisplacementVol = 0;
     const annVPM = annularVolumeM3 / Math.max(casingDepthMD, EPS);
 
     return pressureData.map((point, idx) => {
@@ -412,55 +480,63 @@ export default function CementingAnimation({
       if (isFlushStage) {
         if (!inFlush) {
           inFlush = true;
-          preFlushRealPumpedVol = realPumpedVol;
+          preFlushCumVol = lastCumVol;
           const prev = idx > 0 ? pressureData[idx - 1] : point;
           preFlushNonMudH = prev.annCementHeightM + prev.annBufferHeightM + prev.annDisplHeightM;
         }
 
-        // Compute progressive freefall volume from annular height changes
         const currentNonMudH = point.annCementHeightM + point.annBufferHeightM + point.annDisplHeightM;
         const settledVol = Math.max(0, (currentNonMudH - preFlushNonMudH) * annVPM);
-        const effectiveRealPumped = preFlushRealPumpedVol + settledVol;
+        const effectivePumpedVol = preFlushCumVol + settledVol;
 
-        // Annulus: use calc engine heights directly (shows progressive settling)
         const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets);
-        // Pipe: cement settled down, mud pushed out bottom
-        const pipeSegments = buildPipeSegments(history, effectiveRealPumped, pipeCapacityM3, casingDepthMD);
+        const pipeSegments = buildPipeSegments(history, effectivePumpedVol, pipeCapacityM3, casingDepthMD, "void");
 
         lastCumVol = point.cumulativeVolume;
         return { pipeSegments, annulusSegments, activeExit: null, flowConnected: false } as VisualFrame;
       }
 
-      // Exiting flush — finalize freefall volume for pipe/annulus sync
       if (inFlush && !isFlushStage) {
         inFlush = false;
         const currentNonMudH = point.annCementHeightM + point.annBufferHeightM + point.annDisplHeightM;
-        const finalFreefallVol = Math.max(0, (currentNonMudH - preFlushNonMudH) * annVPM);
-        realPumpedVol = preFlushRealPumpedVol + finalFreefallVol;
+        freefallOffset = Math.max(0, (currentNonMudH - preFlushNonMudH) * annVPM);
       }
 
       if (deltaVol > EPS) {
         const batchMeta = classifyStage(point.stage, bufferNames, slurryNames);
         if (batchMeta) {
           pushBatch(history, { ...batchMeta, volumeM3: deltaVol });
-          realPumpedVol += deltaVol;
+          if (batchMeta.fluid === "displacement") {
+            cumDisplacementVol += deltaVol;
+          }
         }
       }
 
-      const exitedBatches = buildExitedBatches(history, realPumpedVol, pipeCapacityM3);
-      const isSettled = point.pumpRateLps <= EPS && point.annularReturnRate <= EPS;
-      const annulusSegments = isSettled
+      const residualFreefallOffset = Math.max(0, freefallOffset - cumDisplacementVol);
+      const effectivePumpedVol = point.cumulativeVolume + residualFreefallOffset;
+      const exitedBatches = buildExitedBatches(history, effectivePumpedVol, pipeCapacityM3);
+      const isStaticFrame = point.pumpRateLps <= EPS && point.annularReturnRate <= EPS;
+      const annulusSegments = isStaticFrame
         ? buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets)
         : buildAnnulusSegments(exitedBatches, point, casingDepthMD);
-      const activeExit = [...exitedBatches]
-        .reverse()
-        .find((batch) => batch.fluid !== "mud" && batch.volumeM3 > EPS) || null;
+      const flowConnected = point.annularReturnRate > EPS && effectivePumpedVol > pipeCapacityM3 + EPS;
+      const activeExit = flowConnected
+        ? [...exitedBatches]
+            .reverse()
+            .find((batch) => batch.fluid !== "mud" && batch.volumeM3 > EPS) || null
+        : null;
 
       const frame: VisualFrame = {
-        pipeSegments: buildPipeSegments(history, realPumpedVol, pipeCapacityM3, casingDepthMD),
+        pipeSegments: buildPipeSegments(
+          history,
+          effectivePumpedVol,
+          pipeCapacityM3,
+          casingDepthMD,
+          residualFreefallOffset > EPS ? "void" : "mud",
+        ),
         annulusSegments,
         activeExit,
-        flowConnected: point.pumpRateLps > EPS && realPumpedVol > pipeCapacityM3 + EPS,
+        flowConnected,
       };
 
       lastCumVol = point.cumulativeVolume;
@@ -497,31 +573,46 @@ export default function CementingAnimation({
     );
   }
 
-  const wellHeight = 480;
-  // Compute proportional widths: annulus vs pipe based on real volumes
-  const volRatio = pipeCapacityM3 > 0 && annularVolumeM3 > 0
-    ? Math.min(Math.max(annularVolumeM3 / pipeCapacityM3, 0.5), 4)
-    : 1.2;
-  const basePipeHalf = 28; // half-width of pipe in px
-  const annWidth = Math.round(Math.max(18, basePipeHalf * volRatio * 0.6));
-  const pipeWidth = basePipeHalf;
-  const wellWidth = 2 * (pipeWidth + annWidth + 14);
+  const wellHeight = 520;
   const topY = 40;
-  const botY = wellHeight - 20;
-  const usableH = botY - topY;
-  const scaleFactor = casingDepthMD > 0 ? usableH / casingDepthMD : 1;
+  const botY = wellHeight - 28;
+  const safeCasingOD = Math.max(casingOD || 178, 1);
+  const safeUpperBoreID = Math.max(prevCasingID || holeDiameter || safeCasingOD * 1.15, safeCasingOD * 1.05);
+  const safeLowerBoreID = Math.max(holeDiameter || safeUpperBoreID, safeUpperBoreID);
+  const casingOuterHalf = 22;
+  const pipeInnerHalf = 18;
+  const upperBoreHalf = Math.round(clamp(casingOuterHalf * (safeUpperBoreID / safeCasingOD) * 0.95, casingOuterHalf + 10, 50));
+  const lowerBoreHalf = Math.round(clamp(casingOuterHalf * (safeLowerBoreID / safeCasingOD) * 0.98, upperBoreHalf, 58));
+  const wellWidth = lowerBoreHalf * 2 + 120;
   const cx = wellWidth / 2;
+  const depthScale = createDepthScaler(topY, botY, wellDepthMD, casingDepthMD, ckodDepth);
+  const depthToY = depthScale.toY;
+  const casingShoeY = depthToY(casingDepthMD);
+  const wellBottomY = depthToY(wellDepthMD);
+  const prevCasingY = prevCasingDepth > 0 && prevCasingDepth < casingDepthMD ? depthToY(prevCasingDepth) : null;
+  const ckodY = ckodDepth > 0 && ckodDepth < casingDepthMD ? depthToY(ckodDepth) : null;
+  const annulusBreakpoints = prevCasingDepth > 0 && prevCasingDepth < casingDepthMD ? [prevCasingDepth] : [];
+  const annulusPieces = namedAnnulusSegments.flatMap((segment, segmentIndex) =>
+    splitDepthInterval(segment.topMD, segment.botMD, annulusBreakpoints).map((part, partIndex) => {
+      const isUpperSection = prevCasingDepth > EPS && part.botMD <= prevCasingDepth + EPS;
+      const outerHalf = isUpperSection ? upperBoreHalf : lowerBoreHalf;
+      const y = depthToY(part.topMD);
 
-  let annCursorY = botY;
-  const annSegmentsForRender = namedAnnulusSegments.map((segment) => {
-    const heightPx = segment.heightM * scaleFactor;
-    annCursorY -= heightPx;
-    return {
+      return {
+        ...segment,
+        key: `${segmentIndex}-${partIndex}`,
+        y,
+        heightPx: Math.max(0, depthToY(part.botMD) - y),
+        outerHalf,
+      };
+    }),
+  );
+  const annulusLabels = namedAnnulusSegments
+    .filter((segment) => segment.fluid !== "mud" && depthToY(segment.botMD) - depthToY(segment.topMD) > 20)
+    .map((segment) => ({
       ...segment,
-      heightPx,
-      y: annCursorY,
-    };
-  });
+      yMid: (depthToY(segment.topMD) + depthToY(segment.botMD)) / 2,
+    }));
 
   const maxTime = pressureData[maxIndex]?.time || 1;
   const progressPct = (currentPoint.time / maxTime) * 100;
@@ -540,11 +631,13 @@ export default function CementingAnimation({
     .filter((layer) => layer.topMD > 0 && layer.bottomMD > layer.topMD)
     .map((layer) => ({
       ...layer,
-      yTop: topY + layer.topMD * scaleFactor,
-      yBot: topY + Math.min(layer.bottomMD, casingDepthMD) * scaleFactor,
+      yTop: depthToY(layer.topMD),
+      yBot: depthToY(Math.min(layer.bottomMD, wellDepthMD)),
     }));
 
+  const hasVoidInPipe = pipeSegments.some((segment) => segment.fluid === "void");
   const legendItems = [
+    ...(hasVoidInPipe ? [{ color: FLUID_COLORS.void, label: FLUID_LABELS.void }] : []),
     { color: FLUID_COLORS.mud, label: FLUID_LABELS.mud },
     ...buffers.map((buffer) => ({ color: FLUID_COLORS.buffer, label: buffer.name || FLUID_LABELS.buffer })),
     ...slurries.map((slurry) => ({ color: FLUID_COLORS.cement, label: slurry.name || FLUID_LABELS.cement })),
@@ -575,10 +668,6 @@ export default function CementingAnimation({
               : currentPoint.annDisplHeightM,
     }))
     .filter((segment) => segment.heightM > EPS);
-
-  const prevCasingY = prevCasingDepth > 0 && prevCasingDepth < casingDepthMD
-    ? topY + prevCasingDepth * scaleFactor
-    : null;
 
   return (
     <div className="space-y-4">
@@ -626,10 +715,42 @@ export default function CementingAnimation({
                 Устье
               </text>
 
+              <rect
+                x={cx - upperBoreHalf}
+                y={topY}
+                width={upperBoreHalf * 2}
+                height={(prevCasingY ?? casingShoeY) - topY}
+                fill="hsl(var(--muted) / 0.16)"
+                rx="6"
+              />
+              <rect
+                x={cx - lowerBoreHalf}
+                y={prevCasingY ?? topY}
+                width={lowerBoreHalf * 2}
+                height={wellBottomY - (prevCasingY ?? topY)}
+                fill="hsl(var(--muted) / 0.10)"
+                rx="6"
+              />
+
+              {wellDepthMD > casingDepthMD + EPS && (
+                <>
+                  <rect
+                    x={cx - lowerBoreHalf}
+                    y={casingShoeY}
+                    width={lowerBoreHalf * 2}
+                    height={Math.max(0, wellBottomY - casingShoeY)}
+                    fill="hsl(var(--secondary) / 0.18)"
+                  />
+                  <text x={cx - lowerBoreHalf - 8} y={(casingShoeY + wellBottomY) / 2 + 2} textAnchor="end" className="text-[6px] fill-muted-foreground">
+                    Зумпф
+                  </text>
+                </>
+              )}
+
               {reservoirRects.map((layer, index) => (
                 <g key={`reservoir-${index}`}>
                   <rect
-                    x={cx - pipeWidth - annWidth - 4}
+                    x={cx - lowerBoreHalf - 8}
                     y={layer.yTop}
                     width={4}
                     height={layer.yBot - layer.yTop}
@@ -637,7 +758,7 @@ export default function CementingAnimation({
                     opacity={0.7}
                   />
                   <rect
-                    x={cx + pipeWidth + annWidth}
+                    x={cx + lowerBoreHalf + 4}
                     y={layer.yTop}
                     width={4}
                     height={layer.yBot - layer.yTop}
@@ -655,99 +776,94 @@ export default function CementingAnimation({
                 </g>
               ))}
 
-              <rect
-                x={cx - pipeWidth - annWidth - 4}
-                y={topY}
-                width={4}
-                height={usableH}
-                fill="hsl(30, 30%, 35%)"
-                rx="1"
-                opacity={0.5}
+              <path
+                d={`M ${cx - upperBoreHalf} ${topY} L ${cx - upperBoreHalf} ${prevCasingY ?? topY} L ${cx - lowerBoreHalf} ${prevCasingY ?? topY} L ${cx - lowerBoreHalf} ${wellBottomY}`}
+                stroke="hsl(var(--border))"
+                strokeWidth="2"
+                fill="none"
               />
-              <rect
-                x={cx + pipeWidth + annWidth}
-                y={topY}
-                width={4}
-                height={usableH}
-                fill="hsl(30, 30%, 35%)"
-                rx="1"
-                opacity={0.5}
+              <path
+                d={`M ${cx + upperBoreHalf} ${topY} L ${cx + upperBoreHalf} ${prevCasingY ?? topY} L ${cx + lowerBoreHalf} ${prevCasingY ?? topY} L ${cx + lowerBoreHalf} ${wellBottomY}`}
+                stroke="hsl(var(--border))"
+                strokeWidth="2"
+                fill="none"
               />
 
               {prevCasingY !== null && (
                 <g>
                   <line
-                    x1={cx - pipeWidth - annWidth - 10}
+                    x1={cx - lowerBoreHalf - 10}
                     y1={prevCasingY}
-                    x2={cx + pipeWidth + annWidth + 10}
+                    x2={cx + lowerBoreHalf + 10}
                     y2={prevCasingY}
                     stroke="hsl(var(--primary))"
                     strokeWidth="0.8"
                     strokeDasharray="3,2"
                   />
-                  <text x={cx + pipeWidth + annWidth + 12} y={prevCasingY + 3} className="text-[6px] fill-primary">
+                  <text x={cx + lowerBoreHalf + 12} y={prevCasingY + 3} className="text-[6px] fill-primary">
                     Башмак пред. колонны {prevCasingDepth.toFixed(0)} м
                   </text>
                 </g>
               )}
 
-              {annSegmentsForRender.map((segment, index) => (
-                <g key={`annulus-${index}`}>
+              {annulusPieces.map((segment) => (
+                <g key={`annulus-${segment.key}`}>
                   <rect
-                    x={cx - pipeWidth - annWidth}
+                    x={cx - segment.outerHalf}
                     y={segment.y}
-                    width={annWidth}
+                    width={segment.outerHalf - casingOuterHalf}
                     height={segment.heightPx}
                     fill={FLUID_COLORS[segment.fluid]}
                     opacity={0.88}
                   />
                   <rect
-                    x={cx + pipeWidth}
+                    x={cx + casingOuterHalf}
                     y={segment.y}
-                    width={annWidth}
+                    width={segment.outerHalf - casingOuterHalf}
                     height={segment.heightPx}
                     fill={FLUID_COLORS[segment.fluid]}
                     opacity={0.88}
                   />
-                  {segment.heightPx > 18 && segment.fluid !== "mud" && (
-                    <>
-                      <text
-                        x={cx + pipeWidth + annWidth + 10}
-                        y={segment.y + segment.heightPx / 2 - 3}
-                        className="text-[6px] fill-foreground"
-                        style={{ fontWeight: 700 }}
-                      >
-                        {segment.label.length > 18 ? `${segment.label.slice(0, 18)}…` : segment.label}
-                      </text>
-                      <text
-                        x={cx + pipeWidth + annWidth + 10}
-                        y={segment.y + segment.heightPx / 2 + 5}
-                        className="text-[5px] fill-muted-foreground"
-                      >
-                        {segment.topMD.toFixed(0)}–{segment.botMD.toFixed(0)} м
-                      </text>
-                    </>
-                  )}
                 </g>
               ))}
 
-              <rect x={cx - pipeWidth} y={topY} width={3} height={usableH} fill="hsl(var(--foreground))" opacity={0.6} />
-              <rect x={cx + pipeWidth - 3} y={topY} width={3} height={usableH} fill="hsl(var(--foreground))" opacity={0.6} />
+              {annulusLabels.map((segment, index) => (
+                <g key={`annulus-label-${index}`}>
+                  <text
+                    x={cx + lowerBoreHalf + 10}
+                    y={segment.yMid - 3}
+                    className="text-[6px] fill-foreground"
+                    style={{ fontWeight: 700 }}
+                  >
+                    {segment.label.length > 18 ? `${segment.label.slice(0, 18)}…` : segment.label}
+                  </text>
+                  <text
+                    x={cx + lowerBoreHalf + 10}
+                    y={segment.yMid + 5}
+                    className="text-[5px] fill-muted-foreground"
+                  >
+                    {segment.topMD.toFixed(0)}–{segment.botMD.toFixed(0)} м
+                  </text>
+                </g>
+              ))}
+
+              <rect x={cx - casingOuterHalf - 2} y={topY} width={4} height={Math.max(0, casingShoeY - topY)} fill="hsl(var(--foreground))" opacity={0.65} />
+              <rect x={cx + casingOuterHalf - 2} y={topY} width={4} height={Math.max(0, casingShoeY - topY)} fill="hsl(var(--foreground))" opacity={0.65} />
 
               {pipeSegments.length > 0 ? (
                 pipeSegments.map((segment, index) => {
-                  const pipeInnerWidth = pipeWidth * 2 - 6;
-                  const segmentY = botY - segment.fracBot * usableH;
-                  const segmentH = (segment.fracBot - segment.fracTop) * usableH;
+                  const pipeInnerWidth = pipeInnerHalf * 2;
+                  const segmentY = depthToY(segment.topMD);
+                  const segmentH = Math.max(0, depthToY(segment.botMD) - segmentY);
                   return (
                     <g key={`pipe-${index}`}>
                       <rect
-                        x={cx - pipeWidth + 3}
+                        x={cx - pipeInnerHalf}
                         y={segmentY}
                         width={pipeInnerWidth}
-                        height={Math.max(0, segmentH)}
+                        height={segmentH}
                         fill={FLUID_COLORS[segment.fluid]}
-                        opacity={0.72}
+                        opacity={segment.fluid === "void" ? 0.9 : 0.78}
                       />
                       {segmentH > 18 && (
                         <>
@@ -755,7 +871,7 @@ export default function CementingAnimation({
                             x={cx}
                             y={segmentY + segmentH / 2 - 1}
                             textAnchor="middle"
-                            className="text-[6px] fill-background"
+                            className={segment.fluid === "void" ? "text-[6px] fill-foreground" : "text-[6px] fill-background"}
                             style={{ fontWeight: 700 }}
                           >
                             {segment.label.length > 12 ? `${segment.label.slice(0, 12)}…` : segment.label}
@@ -764,7 +880,7 @@ export default function CementingAnimation({
                             x={cx}
                             y={segmentY + segmentH / 2 + 8}
                             textAnchor="middle"
-                            className="text-[5px] fill-background"
+                            className={segment.fluid === "void" ? "text-[5px] fill-foreground" : "text-[5px] fill-background"}
                           >
                             {segment.volM3.toFixed(2)} м³
                           </text>
@@ -775,51 +891,93 @@ export default function CementingAnimation({
                 })
               ) : (
                 <rect
-                  x={cx - pipeWidth + 3}
+                  x={cx - pipeInnerHalf}
                   y={topY}
-                  width={pipeWidth * 2 - 6}
-                  height={usableH}
+                  width={pipeInnerHalf * 2}
+                  height={Math.max(0, casingShoeY - topY)}
                   fill={FLUID_COLORS.mud}
                   opacity={0.3}
                 />
               )}
 
+              {ckodY !== null && (
+                <g>
+                  <line
+                    x1={cx - lowerBoreHalf - 10}
+                    y1={ckodY}
+                    x2={cx + lowerBoreHalf + 10}
+                    y2={ckodY}
+                    stroke="hsl(var(--accent))"
+                    strokeWidth="0.8"
+                    strokeDasharray="3,2"
+                  />
+                  <text x={cx + lowerBoreHalf + 12} y={ckodY + 3} className="text-[6px] fill-accent">
+                    ЦКОД {ckodDepth.toFixed(0)} м
+                  </text>
+                  <rect
+                    x={cx + casingOuterHalf + 8}
+                    y={ckodY}
+                    width={8}
+                    height={Math.max(0, casingShoeY - ckodY)}
+                    fill="none"
+                    stroke="hsl(var(--accent))"
+                    strokeWidth="0.8"
+                    strokeDasharray="2,2"
+                  />
+                  <text x={cx + casingOuterHalf + 20} y={(ckodY + casingShoeY) / 2 + 2} className="text-[6px] fill-accent">
+                    Башм. труба
+                  </text>
+                </g>
+              )}
+
               {currentVisual.flowConnected && currentVisual.activeExit && (
                 <g opacity="0.92">
                   <rect
-                    x={cx - pipeWidth + 3}
-                    y={botY - 6}
-                    width={pipeWidth * 2 - 6}
-                    height={6}
+                    x={cx - pipeInnerHalf}
+                    y={casingShoeY - 5}
+                    width={pipeInnerHalf * 2}
+                    height={5}
                     fill={FLUID_COLORS[currentVisual.activeExit.fluid]}
                   />
                   <rect
-                    x={cx - pipeWidth - annWidth}
-                    y={botY - 6}
-                    width={annWidth}
-                    height={6}
+                    x={cx - lowerBoreHalf}
+                    y={casingShoeY - 5}
+                    width={lowerBoreHalf - casingOuterHalf}
+                    height={5}
                     fill={FLUID_COLORS[currentVisual.activeExit.fluid]}
                   />
                   <rect
-                    x={cx + pipeWidth}
-                    y={botY - 6}
-                    width={annWidth}
-                    height={6}
+                    x={cx + casingOuterHalf}
+                    y={casingShoeY - 5}
+                    width={lowerBoreHalf - casingOuterHalf}
+                    height={5}
                     fill={FLUID_COLORS[currentVisual.activeExit.fluid]}
                   />
                 </g>
               )}
 
               <line
-                x1={cx - pipeWidth - annWidth - 4}
-                y1={botY}
-                x2={cx + pipeWidth + annWidth + 4}
-                y2={botY}
-                stroke="hsl(30, 30%, 35%)"
+                x1={cx - lowerBoreHalf - 4}
+                y1={casingShoeY}
+                x2={cx + lowerBoreHalf + 4}
+                y2={casingShoeY}
+                stroke="hsl(var(--primary))"
                 strokeWidth="3"
               />
-              <text x={cx} y={botY + 14} textAnchor="middle" className="text-[8px] fill-muted-foreground">
+              <text x={cx} y={casingShoeY + 14} textAnchor="middle" className="text-[8px] fill-muted-foreground">
                 Башмак ОК {casingDepthMD.toFixed(0)} м
+              </text>
+
+              <line
+                x1={cx - lowerBoreHalf - 4}
+                y1={wellBottomY}
+                x2={cx + lowerBoreHalf + 4}
+                y2={wellBottomY}
+                stroke="hsl(var(--border))"
+                strokeWidth="2"
+              />
+              <text x={cx} y={wellBottomY + 14} textAnchor="middle" className="text-[8px] fill-muted-foreground">
+                Забой {wellDepthMD.toFixed(0)} м
               </text>
 
             </svg>
