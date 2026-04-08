@@ -805,6 +805,7 @@ export interface PressurePoint {
   annBufferHeightM: number;
   annCementHeightM: number;
   annDisplHeightM: number;
+  freefallSettledM3: number;
 }
 
 export interface StageBoundary {
@@ -929,6 +930,8 @@ export function calculatePressureProfile(
   const pumpHistory: PumpBatch[] = [];
   let totalPumped = 0;
   let _dbgPipeCount = 0;
+  let freefallBatchIdx = -1;
+  let currentFreefallSettled = 0;
 
   // Annular profile helper — compute fluid heights by type from exitBatches
   interface FluidBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; }
@@ -949,7 +952,10 @@ export function calculatePressureProfile(
       // до посадки пробки в ЦКОД. Её объём лишь проталкивает впереди идущие пачки.
       if (pumpHistory[i].fluidType === 'displacement') continue;
       const take = Math.min(pumpHistory[i].volumeM3, pumpedExited);
-      if (take > 0) exitBatches.push({ densityGcm3: pumpHistory[i].densityGcm3, volumeM3: take, fluidType: pumpHistory[i].fluidType });
+      if (take > 0) {
+        const effectiveType = (i === freefallBatchIdx) ? ('mud' as AnnularFluidType) : pumpHistory[i].fluidType;
+        exitBatches.push({ densityGcm3: pumpHistory[i].densityGcm3, volumeM3: take, fluidType: effectiveType });
+      }
       pumpedExited -= take;
     }
 
@@ -1018,7 +1024,7 @@ export function calculatePressureProfile(
   }
 
   const initProfile = calcAnnularProfile();
-  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: calcMaxSafeRate(hydroMudFull, mudRheo.pv, mudRheo.yp, drillingFluid.density, mudRheo.pv, mudRheo.yp, drillingFluid.density), densityGcm3: mudDensityGcm3, annMudHeightM: initProfile.mudH, annBufferHeightM: initProfile.bufferH, annCementHeightM: initProfile.cementH, annDisplHeightM: initProfile.displH });
+  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: calcMaxSafeRate(hydroMudFull, mudRheo.pv, mudRheo.yp, drillingFluid.density, mudRheo.pv, mudRheo.yp, drillingFluid.density), densityGcm3: mudDensityGcm3, annMudHeightM: initProfile.mudH, annBufferHeightM: initProfile.bufferH, annCementHeightM: initProfile.cementH, annDisplHeightM: initProfile.displH, freefallSettledM3: 0 });
 
   interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean; compressionCoeff: number; durationMin?: number; isFlushPause?: boolean; fluidType: AnnularFluidType }
   const stages: Stage[] = [];
@@ -1310,6 +1316,7 @@ export function calculatePressureProfile(
       settlingTau = Math.max(settlingTau, pauseMin * 0.3);
 
       const ffBatchIdx = pumpHistory.length - 1;
+      freefallBatchIdx = ffBatchIdx;
       const savedCumVol = cumVol;
 
       // Определяем макс. допустимый расход на выходе = последний расход перед паузой
@@ -1343,6 +1350,7 @@ export function calculatePressureProfile(
         }
 
         pumpHistory[ffBatchIdx].volumeM3 = settledVol;
+        currentFreefallSettled = settledVol;
         totalPumped = savedCumVol + settledVol;
 
         const pipeHydro = calcPipeHydrostatic();
@@ -1360,6 +1368,7 @@ export function calculatePressureProfile(
           maxSafeRateLps: calcMaxSafeRate(annHydro, mudRheo.pv, mudRheo.yp, drillingFluid.density, mudRheo.pv, mudRheo.yp, drillingFluid.density),
           densityGcm3: mudDensityGcm3,
           annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH,
+          freefallSettledM3: currentFreefallSettled,
         });
       }
       if (!equilibriumReached) equilibriumTimeMin = pauseMin;
@@ -1371,6 +1380,7 @@ export function calculatePressureProfile(
       cementFreefallVol = actualSettledVol; // запоминаем для продавки (объём догонки)
       freefallOffset = actualSettledVol; // смещение для корректного totalPumped в последующих этапах
       pumpHistory[ffBatchIdx].volumeM3 = actualSettledVol;
+      currentFreefallSettled = actualSettledVol;
       totalPumped = savedCumVol + actualSettledVol;
       cumTime += pauseMin;
       return;
@@ -1507,7 +1517,7 @@ export function calculatePressureProfile(
       const bhp = bhpRaw;
 
       const annP = calcAnnularProfile();
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH });
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled });
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;
@@ -1540,6 +1550,7 @@ export function calculatePressureProfile(
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: lastRate,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
     annMudHeightM: finalAnnP.mudH, annBufferHeightM: finalAnnP.bufferH, annCementHeightM: finalAnnP.cementH, annDisplHeightM: finalAnnP.displH,
+    freefallSettledM3: currentFreefallSettled,
   });
 
   // Удержание давления СТОП
@@ -1549,6 +1560,7 @@ export function calculatePressureProfile(
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
     annMudHeightM: finalAnnP.mudH, annBufferHeightM: finalAnnP.bufferH, annCementHeightM: finalAnnP.cementH, annDisplHeightM: finalAnnP.displH,
+    freefallSettledM3: currentFreefallSettled,
   });
 
   const cementToStop = stopTime - cementStartTime;

@@ -390,10 +390,8 @@ export default function CementingAnimation({
     let lastCumVol = 0;
     let inFlush = false;
     let preFlushCumVol = 0;
-    let preFlushNonMudH = 0;
     let freefallOffset = 0;
     let cumDisplacementVol = 0;
-    const annVPM = annularVolumeM3 / Math.max(casingDepthMD, EPS);
 
     return pressureData.map((point, idx) => {
       const isFlushStage = /промывка лвд/i.test(point.stage);
@@ -403,13 +401,9 @@ export default function CementingAnimation({
         if (!inFlush) {
           inFlush = true;
           preFlushCumVol = lastCumVol;
-          const prev = idx > 0 ? pressureData[idx - 1] : point;
-          preFlushNonMudH = prev.annCementHeightM + prev.annBufferHeightM + prev.annDisplHeightM;
         }
 
-        const currentNonMudH = point.annCementHeightM + point.annBufferHeightM + point.annDisplHeightM;
-        const settledVol = Math.max(0, (currentNonMudH - preFlushNonMudH) * annVPM);
-        const effectivePumpedVol = preFlushCumVol + settledVol;
+        const effectivePumpedVol = preFlushCumVol + (point.freefallSettledM3 || 0);
 
         // Always trust engine heights for annulus
         const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets);
@@ -421,8 +415,7 @@ export default function CementingAnimation({
 
       if (inFlush && !isFlushStage) {
         inFlush = false;
-        const currentNonMudH = point.annCementHeightM + point.annBufferHeightM + point.annDisplHeightM;
-        freefallOffset = Math.max(0, (currentNonMudH - preFlushNonMudH) * annVPM);
+        freefallOffset = point.freefallSettledM3 || 0;
       }
 
       if (deltaVol > EPS) {
@@ -472,7 +465,7 @@ export default function CementingAnimation({
       lastCumVol = point.cumulativeVolume;
       return frame;
     });
-  }, [bufferNames, bufferTargets, casingDepthMD, cementTargets, pipeCapacityM3, pressureData, slurryNames, annularVolumeM3]);
+  }, [bufferNames, bufferTargets, casingDepthMD, cementTargets, pipeCapacityM3, pressureData, slurryNames]);
 
   const currentVisual = visualFrames[Math.min(currentIndex, Math.max(visualFrames.length - 1, 0))] || {
     pipeSegments: [] as PipeSegment[],
