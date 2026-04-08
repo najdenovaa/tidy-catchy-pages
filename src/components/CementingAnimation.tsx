@@ -396,71 +396,47 @@ export default function CementingAnimation({
   const visualFrames = useMemo(() => {
     const history: PumpBatch[] = [];
     let lastCumVol = 0;
-    // Freeze annulus state before flush — cement falls in pipe pulling air, annulus unchanged
-    let preFlushAnnulus: AnnulusSegment[] | null = null;
     let inFlush = false;
-    // Track cumulative volume that actually entered the well (excluding flush freefall)
     let realPumpedVol = 0;
+    // Freefall tracking: pre-flush state to compute gravity settling volume
+    let preFlushRealPumpedVol = 0;
+    let preFlushNonMudH = 0;
+    const annVPM = annularVolumeM3 / Math.max(casingDepthMD, EPS);
 
     return pressureData.map((point, idx) => {
       const isFlushStage = /промывка лвд/i.test(point.stage);
       const deltaVol = Math.max(0, point.cumulativeVolume - lastCumVol);
 
-      // During flush: cement falls in pipe, pulls air — nothing enters annulus
+      // During flush: cement falls in pipe under gravity, exits into annulus
+      // Annulus uses calc engine heights (progressive settling), not frozen
       if (isFlushStage) {
         if (!inFlush) {
-          // Save annulus state from previous frame
           inFlush = true;
-          if (idx > 0) {
-            const prevPoint = pressureData[idx - 1];
-            const prevExited = buildExitedBatches(history, realPumpedVol, pipeCapacityM3);
-            preFlushAnnulus = buildAnnulusSegments(prevExited, prevPoint, casingDepthMD);
-          }
-        }
-        // Don't add volume to history during flush — it's not pumped, it's gravity settling
-        // Pipe shows cement at bottom, air at top — but annulus stays frozen
-        const annulusSegments = preFlushAnnulus || buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets);
-
-        // Build pipe: show cement settled at bottom, air/void above
-        // Use the pipe capacity and the cement that has fallen
-        const cementInPipe = history.filter(b => b.fluid === "cement").reduce((s, b) => s + b.volumeM3, 0);
-        const bufferInPipe = history.filter(b => b.fluid === "buffer").reduce((s, b) => s + b.volumeM3, 0);
-        const pipeSegs: PipeSegment[] = [];
-
-        // Air at the top (the void left by fallen cement)
-        const settledVol = point.cumulativeVolume - (lastCumVol > 0 ? pressureData[Math.max(0, idx - 1)].cumulativeVolume : 0);
-        const totalFluidInPipe = Math.min(pipeCapacityM3, realPumpedVol);
-        const airFrac = Math.max(0, Math.min(1, 1 - totalFluidInPipe / Math.max(pipeCapacityM3, EPS)));
-
-        if (airFrac > EPS) {
-          pipeSegs.push({ fluid: "mud" as FluidKey, label: "Воздух", fracTop: 0, fracBot: airFrac, volM3: 0, topMD: casingDepthMD * (1 - airFrac), botMD: casingDepthMD });
-        }
-        // Rest: cement + buffer + mud (from bottom up, already settled)
-        const remainFrac = 1 - airFrac;
-        if (remainFrac > EPS) {
-          // Simplified: show what's in pipe based on history
-          const normalPipeSegs = buildPipeSegments(history, realPumpedVol, pipeCapacityM3, casingDepthMD);
-          // Shift them down to account for air at top
-          normalPipeSegs.forEach(seg => {
-            pipeSegs.push(seg);
-          });
+          preFlushRealPumpedVol = realPumpedVol;
+          const prev = idx > 0 ? pressureData[idx - 1] : point;
+          preFlushNonMudH = prev.annCementHeightM + prev.annBufferHeightM + prev.annDisplHeightM;
         }
 
-        const frame: VisualFrame = {
-          pipeSegments: pipeSegs.length > 0 ? pipeSegs : buildPipeSegments(history, realPumpedVol, pipeCapacityM3, casingDepthMD),
-          annulusSegments,
-          activeExit: null,
-          flowConnected: false,
-        };
+        // Compute progressive freefall volume from annular height changes
+        const currentNonMudH = point.annCementHeightM + point.annBufferHeightM + point.annDisplHeightM;
+        const settledVol = Math.max(0, (currentNonMudH - preFlushNonMudH) * annVPM);
+        const effectiveRealPumped = preFlushRealPumpedVol + settledVol;
+
+        // Annulus: use calc engine heights directly (shows progressive settling)
+        const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets);
+        // Pipe: cement settled down, mud pushed out bottom
+        const pipeSegments = buildPipeSegments(history, effectiveRealPumped, pipeCapacityM3, casingDepthMD);
 
         lastCumVol = point.cumulativeVolume;
-        return frame;
+        return { pipeSegments, annulusSegments, activeExit: null, flowConnected: false } as VisualFrame;
       }
 
-      // Exiting flush — displacement starts catching up
+      // Exiting flush — finalize freefall volume for pipe/annulus sync
       if (inFlush && !isFlushStage) {
         inFlush = false;
-        preFlushAnnulus = null;
+        const currentNonMudH = point.annCementHeightM + point.annBufferHeightM + point.annDisplHeightM;
+        const finalFreefallVol = Math.max(0, (currentNonMudH - preFlushNonMudH) * annVPM);
+        realPumpedVol = preFlushRealPumpedVol + finalFreefallVol;
       }
 
       if (deltaVol > EPS) {
@@ -490,7 +466,7 @@ export default function CementingAnimation({
       lastCumVol = point.cumulativeVolume;
       return frame;
     });
-  }, [bufferNames, bufferTargets, casingDepthMD, cementTargets, pipeCapacityM3, pressureData, slurryNames]);
+  }, [bufferNames, bufferTargets, casingDepthMD, cementTargets, pipeCapacityM3, pressureData, slurryNames, annularVolumeM3]);
 
   const currentVisual = visualFrames[Math.min(currentIndex, Math.max(visualFrames.length - 1, 0))] || {
     pipeSegments: [] as PipeSegment[],
