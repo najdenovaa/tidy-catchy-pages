@@ -43,7 +43,6 @@ const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "prevCasingOD", label: "Наружный диам. пред. колонны", unit: "мм" },
   { key: "prevCasingID", label: "Внутр. диам. пред. колонны", unit: "мм" },
   { key: "ckodDepth", label: "Глубина ЦКОД (по стволу)", unit: "м" },
-  { key: "cementRiseHeight", label: "Высота подъёма цемента", unit: "м" },
   { key: "cavernCoeff", label: "Коэффициент кавернозности", unit: "" },
   { key: "bottomTempStatic", label: "BHST (статическая t°)", unit: "°C" },
   { key: "bottomTempCirc", label: "BHCT (циркуляционная t°)", unit: "°C" },
@@ -466,6 +465,12 @@ export default function InputSection(props: Props) {
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">Внутр. диаметр ОК (расчёт), мм</Label>
                 <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold border border-border">{casingID.toFixed(1)}</div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Высота подъёма цемента (из растворов), м</Label>
+                <div className="h-9 flex items-center px-3 rounded-md bg-muted text-sm font-semibold border border-border">
+                  {slurries.length > 0 ? Math.min(...slurries.map(s => s.topDepthMD)).toFixed(0) : "—"}
+                </div>
               </div>
             </div>
 
