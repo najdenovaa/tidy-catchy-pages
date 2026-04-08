@@ -93,7 +93,16 @@ export default function Index() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persistent counters from backend
+  // Auto-sync cementRiseHeight from slurries' minimum topDepthMD
+  useEffect(() => {
+    if (slurries.length > 0) {
+      const minTop = Math.min(...slurries.map(s => s.topDepthMD));
+      if (wellData.cementRiseHeight !== minTop) {
+        setWellData(prev => ({ ...prev, cementRiseHeight: minTop }));
+      }
+    }
+  }, [slurries]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [visitCount, setVisitCount] = useState<number>(0);
   const [calcCount, setCalcCount] = useState<number>(0);
 
