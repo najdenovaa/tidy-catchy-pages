@@ -341,6 +341,7 @@ export default function CementingAnimation({
   buffers = [],
   reservoirLayers = [],
   pipeCapacityM3 = 0,
+  annularVolumeM3 = 0,
   prevCasingDepth = 0,
 }: Props) {
   const [playing, setPlaying] = useState(false);
