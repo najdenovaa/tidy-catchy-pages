@@ -98,7 +98,6 @@ const RESERVOIR_COLORS: Record<string, string> = {
 
 const SPEED_OPTIONS = [1, 2, 5, 10];
 const EPS = 1e-6;
-const BOTTOM_UP_FLOW_ORDER: AnnulusFluidKey[] = ["displacement", "cement", "buffer", "mud"];
 const TOP_DOWN_FLOW_ORDER: AnnulusFluidKey[] = ["mud", "buffer", "cement", "displacement"];
 
 function buildCementTargets(slurries: SlurryInput[], casingDepthMD: number): CementTarget[] {
@@ -124,6 +123,10 @@ function buildBufferTargets(buffers: BufferFluid[]): BufferTarget[] {
   }));
 }
 
+/**
+ * Build annulus segments ALWAYS from engine-reported heights.
+ * This ensures the animation is perfectly synchronized with the calc engine.
+ */
 function buildAnnulusSegmentsFromTargets(
   point: PressurePoint,
   casingDepthMD: number,
@@ -193,31 +196,10 @@ function isSurfaceOnlyStage(stage: string): boolean {
 }
 
 function classifyStage(stage: string, bufferNames: Set<string>, slurryNames: Set<string>): Omit<PumpBatch, "volumeM3"> | null {
-  if (isSurfaceOnlyStage(stage)) return null; // surface-only, skip
+  if (isSurfaceOnlyStage(stage)) return null;
   if (slurryNames.has(stage)) return { fluid: "cement", label: stage };
   if (bufferNames.has(stage)) return { fluid: "buffer", label: stage };
   return { fluid: "displacement", label: stage || FLUID_LABELS.displacement };
-}
-
-function buildExitedBatches(history: PumpBatch[], cumulativeVolume: number, pipeCapacityM3: number): PumpBatch[] {
-  const exited: PumpBatch[] = [];
-  const mudExited = Math.min(cumulativeVolume, pipeCapacityM3);
-  if (mudExited > EPS) {
-    exited.push({ fluid: "mud", label: FLUID_LABELS.mud, volumeM3: mudExited });
-  }
-
-  let pumpedExited = Math.max(0, cumulativeVolume - pipeCapacityM3);
-  for (const batch of history) {
-    if (pumpedExited <= EPS) break;
-    if (batch.fluid === "displacement") continue;
-    const take = Math.min(batch.volumeM3, pumpedExited);
-    if (take > EPS) {
-      exited.push({ fluid: batch.fluid, label: batch.label, volumeM3: take });
-      pumpedExited -= take;
-    }
-  }
-
-  return exited;
 }
 
 function buildPipeSegments(
@@ -277,65 +259,6 @@ function buildPipeSegments(
 
     cursor += frac;
     if (cursor >= 1 - EPS) break;
-  }
-
-  return segments;
-}
-
-function buildAnnulusSegments(
-  exitedBatches: PumpBatch[],
-  point: PressurePoint,
-  casingDepthMD: number,
-): AnnulusSegment[] {
-  if (casingDepthMD <= EPS) return [];
-
-  const heights: Record<AnnulusFluidKey, number> = {
-    mud: point.annMudHeightM,
-    buffer: point.annBufferHeightM,
-    cement: point.annCementHeightM,
-    displacement: point.annDisplHeightM,
-  };
-
-  const namedBottomUp = exitedBatches.slice().reverse();
-  const segments: AnnulusSegment[] = [];
-  let filledFromBottom = 0;
-
-  for (const fluid of BOTTOM_UP_FLOW_ORDER) {
-    const totalHeight = heights[fluid];
-    if (totalHeight <= EPS) continue;
-
-    let batches = namedBottomUp.filter((batch) => batch.fluid === fluid);
-    if (fluid === "mud") {
-      batches = [{ fluid: "mud", label: FLUID_LABELS.mud, volumeM3: 1 }];
-    }
-    if (batches.length === 0) {
-      batches = [{ fluid, label: FLUID_LABELS[fluid], volumeM3: 1 }];
-    }
-
-    const totalBatchVolume = batches.reduce((sum, batch) => sum + batch.volumeM3, 0) || 1;
-    let consumedHeight = 0;
-
-    batches.forEach((batch, index) => {
-      const isLast = index === batches.length - 1;
-      const heightM = isLast
-        ? Math.max(0, totalHeight - consumedHeight)
-        : totalHeight * (batch.volumeM3 / totalBatchVolume);
-      if (heightM <= EPS) return;
-
-      const botMD = Math.max(0, casingDepthMD - filledFromBottom);
-      const topMD = Math.max(0, casingDepthMD - (filledFromBottom + heightM));
-
-      segments.push({
-        fluid,
-        label: batch.label,
-        heightM,
-        topMD,
-        botMD,
-      });
-
-      filledFromBottom += heightM;
-      consumedHeight += heightM;
-    });
   }
 
   return segments;
@@ -461,6 +384,7 @@ export default function CementingAnimation({
   const cementTargets = useMemo(() => buildCementTargets(slurries, casingDepthMD), [casingDepthMD, slurries]);
   const bufferTargets = useMemo(() => buildBufferTargets(buffers), [buffers]);
 
+  /** Always use engine-reported annular heights — no dual-path logic */
   const visualFrames = useMemo(() => {
     const history: PumpBatch[] = [];
     let lastCumVol = 0;
@@ -475,8 +399,6 @@ export default function CementingAnimation({
       const isFlushStage = /промывка лвд/i.test(point.stage);
       const deltaVol = Math.max(0, point.cumulativeVolume - lastCumVol);
 
-      // During flush: cement falls in pipe under gravity, exits into annulus
-      // Annulus uses calc engine heights (progressive settling), not frozen
       if (isFlushStage) {
         if (!inFlush) {
           inFlush = true;
@@ -489,6 +411,7 @@ export default function CementingAnimation({
         const settledVol = Math.max(0, (currentNonMudH - preFlushNonMudH) * annVPM);
         const effectivePumpedVol = preFlushCumVol + settledVol;
 
+        // Always trust engine heights for annulus
         const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets);
         const pipeSegments = buildPipeSegments(history, effectivePumpedVol, pipeCapacityM3, casingDepthMD, "void");
 
@@ -514,17 +437,24 @@ export default function CementingAnimation({
 
       const residualFreefallOffset = Math.max(0, freefallOffset - cumDisplacementVol);
       const effectivePumpedVol = point.cumulativeVolume + residualFreefallOffset;
-      const exitedBatches = buildExitedBatches(history, effectivePumpedVol, pipeCapacityM3);
-      const isStaticFrame = point.pumpRateLps <= EPS && point.annularReturnRate <= EPS;
-      const annulusSegments = isStaticFrame
-        ? buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets)
-        : buildAnnulusSegments(exitedBatches, point, casingDepthMD);
       const flowConnected = point.annularReturnRate > EPS && effectivePumpedVol > pipeCapacityM3 + EPS;
-      const activeExit = flowConnected
-        ? [...exitedBatches]
-            .reverse()
-            .find((batch) => batch.fluid !== "mud" && batch.volumeM3 > EPS) || null
-        : null;
+
+      // Determine what fluid is currently exiting the shoe for the flow indicator
+      const totalNonMudH = point.annCementHeightM + point.annBufferHeightM + point.annDisplHeightM;
+      let activeExit: PumpBatch | null = null;
+      if (flowConnected && totalNonMudH > EPS) {
+        // The fluid at the bottom of the annulus (nearest shoe) is what's exiting
+        if (point.annDisplHeightM > EPS) {
+          activeExit = { fluid: "displacement", label: FLUID_LABELS.displacement, volumeM3: point.annDisplHeightM };
+        } else if (point.annCementHeightM > EPS) {
+          activeExit = { fluid: "cement", label: FLUID_LABELS.cement, volumeM3: point.annCementHeightM };
+        } else if (point.annBufferHeightM > EPS) {
+          activeExit = { fluid: "buffer", label: FLUID_LABELS.buffer, volumeM3: point.annBufferHeightM };
+        }
+      }
+
+      // Always trust engine heights for annulus — single consistent path
+      const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets);
 
       const frame: VisualFrame = {
         pipeSegments: buildPipeSegments(
@@ -734,15 +664,27 @@ export default function CementingAnimation({
 
               {wellDepthMD > casingDepthMD + EPS && (
                 <>
-                  <rect
-                    x={cx - lowerBoreHalf}
-                    y={casingShoeY}
-                    width={lowerBoreHalf * 2}
-                    height={Math.max(0, wellBottomY - casingShoeY)}
-                    fill="hsl(var(--secondary) / 0.18)"
-                  />
+                  {/* Sump cement: once cement exits into annulus, sump is filled with cement */}
+                  {currentPoint.annCementHeightM > EPS ? (
+                    <rect
+                      x={cx - lowerBoreHalf}
+                      y={casingShoeY}
+                      width={lowerBoreHalf * 2}
+                      height={Math.max(0, wellBottomY - casingShoeY)}
+                      fill={FLUID_COLORS.cement}
+                      opacity={0.88}
+                    />
+                  ) : (
+                    <rect
+                      x={cx - lowerBoreHalf}
+                      y={casingShoeY}
+                      width={lowerBoreHalf * 2}
+                      height={Math.max(0, wellBottomY - casingShoeY)}
+                      fill="hsl(var(--secondary) / 0.18)"
+                    />
+                  )}
                   <text x={cx - lowerBoreHalf - 8} y={(casingShoeY + wellBottomY) / 2 + 2} textAnchor="end" className="text-[6px] fill-muted-foreground">
-                    Зумпф
+                    Зумпф {(wellDepthMD - casingDepthMD).toFixed(0)} м
                   </text>
                 </>
               )}
