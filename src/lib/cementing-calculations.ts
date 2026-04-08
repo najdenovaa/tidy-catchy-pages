@@ -1344,11 +1344,14 @@ export function calculatePressureProfile(
       }
       if (!equilibriumReached) equilibriumTimeMin = pauseMin;
 
-      // Финализируем
-      cementFreefallVol = freefallVol; // запоминаем для продавки (объём догонки)
-      freefallOffset = freefallVol; // смещение для корректного totalPumped в последующих этапах
-      pumpHistory[ffBatchIdx].volumeM3 = freefallVol;
-      totalPumped = savedCumVol + freefallVol;
+      // Финализируем: используем фактически осевший объём (не полный равновесный),
+      // чтобы избежать скачка на границе промывка→продавка
+      const finalSettledFrac = 1 - Math.exp(-pauseMin / Math.max(settlingTau, 0.01));
+      const actualSettledVol = freefallVol * finalSettledFrac;
+      cementFreefallVol = actualSettledVol; // запоминаем для продавки (объём догонки)
+      freefallOffset = actualSettledVol; // смещение для корректного totalPumped в последующих этапах
+      pumpHistory[ffBatchIdx].volumeM3 = actualSettledVol;
+      totalPumped = savedCumVol + actualSettledVol;
       cumTime += pauseMin;
       return;
     }
