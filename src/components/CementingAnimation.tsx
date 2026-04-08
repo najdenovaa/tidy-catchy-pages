@@ -98,7 +98,6 @@ const RESERVOIR_COLORS: Record<string, string> = {
 
 const SPEED_OPTIONS = [1, 2, 5, 10];
 const EPS = 1e-6;
-const BOTTOM_UP_FLOW_ORDER: AnnulusFluidKey[] = ["displacement", "cement", "buffer", "mud"];
 const TOP_DOWN_FLOW_ORDER: AnnulusFluidKey[] = ["mud", "buffer", "cement", "displacement"];
 
 function buildCementTargets(slurries: SlurryInput[], casingDepthMD: number): CementTarget[] {
@@ -124,6 +123,10 @@ function buildBufferTargets(buffers: BufferFluid[]): BufferTarget[] {
   }));
 }
 
+/**
+ * Build annulus segments ALWAYS from engine-reported heights.
+ * This ensures the animation is perfectly synchronized with the calc engine.
+ */
 function buildAnnulusSegmentsFromTargets(
   point: PressurePoint,
   casingDepthMD: number,
@@ -172,170 +175,6 @@ function buildAnnulusSegmentsFromTargets(
 
   if (cursorBot > EPS) {
     addSegment("mud", FLUID_LABELS.mud, cursorBot);
-  }
-
-  return segments;
-}
-
-function pushBatch(target: PumpBatch[], batch: PumpBatch) {
-  if (batch.volumeM3 <= EPS) return;
-  const last = target[target.length - 1];
-  if (last && last.fluid === batch.fluid && last.label === batch.label) {
-    last.volumeM3 += batch.volumeM3;
-  } else {
-    target.push({ ...batch });
-  }
-}
-
-/** Stages that flush surface lines — fluid goes to waste, NOT into the well */
-function isSurfaceOnlyStage(stage: string): boolean {
-  return /промывка лвд|заполнение лвд|опрессовка лвд/i.test(stage);
-}
-
-function classifyStage(stage: string, bufferNames: Set<string>, slurryNames: Set<string>): Omit<PumpBatch, "volumeM3"> | null {
-  if (isSurfaceOnlyStage(stage)) return null; // surface-only, skip
-  if (slurryNames.has(stage)) return { fluid: "cement", label: stage };
-  if (bufferNames.has(stage)) return { fluid: "buffer", label: stage };
-  return { fluid: "displacement", label: stage || FLUID_LABELS.displacement };
-}
-
-function buildExitedBatches(history: PumpBatch[], cumulativeVolume: number, pipeCapacityM3: number): PumpBatch[] {
-  const exited: PumpBatch[] = [];
-  const mudExited = Math.min(cumulativeVolume, pipeCapacityM3);
-  if (mudExited > EPS) {
-    exited.push({ fluid: "mud", label: FLUID_LABELS.mud, volumeM3: mudExited });
-  }
-
-  let pumpedExited = Math.max(0, cumulativeVolume - pipeCapacityM3);
-  for (const batch of history) {
-    if (pumpedExited <= EPS) break;
-    if (batch.fluid === "displacement") continue;
-    const take = Math.min(batch.volumeM3, pumpedExited);
-    if (take > EPS) {
-      exited.push({ fluid: batch.fluid, label: batch.label, volumeM3: take });
-      pumpedExited -= take;
-    }
-  }
-
-  return exited;
-}
-
-function buildPipeSegments(
-  history: PumpBatch[],
-  cumulativeVolume: number,
-  pipeCapacityM3: number,
-  casingDepthMD: number,
-  fillFluid: FluidKey = "mud",
-): PipeSegment[] {
-  if (pipeCapacityM3 <= EPS || casingDepthMD <= EPS) return [];
-
-  const pipeBatches: PumpBatch[] = [];
-  const mudStillInPipe = Math.max(0, pipeCapacityM3 - cumulativeVolume);
-  if (mudStillInPipe > EPS) {
-    pipeBatches.push({ fluid: "mud", label: FLUID_LABELS.mud, volumeM3: mudStillInPipe });
-  }
-
-  let pumpedExited = Math.max(0, cumulativeVolume - pipeCapacityM3);
-  for (const batch of history) {
-    const exitedOfBatch = Math.min(batch.volumeM3, pumpedExited);
-    const inPipe = Math.max(0, batch.volumeM3 - exitedOfBatch);
-    pumpedExited = Math.max(0, pumpedExited - exitedOfBatch);
-    if (inPipe > EPS) {
-      pipeBatches.push({ fluid: batch.fluid, label: batch.label, volumeM3: inPipe });
-    }
-  }
-
-  const totalInPipe = pipeBatches.reduce((sum, batch) => sum + batch.volumeM3, 0);
-  if (totalInPipe < pipeCapacityM3 - EPS) {
-    pipeBatches.push({
-      fluid: fillFluid,
-      label: FLUID_LABELS[fillFluid],
-      volumeM3: pipeCapacityM3 - totalInPipe,
-    });
-  }
-
-  const segments: PipeSegment[] = [];
-  let cursor = 0;
-  for (const batch of pipeBatches) {
-    const frac = Math.min(batch.volumeM3 / pipeCapacityM3, 1 - cursor);
-    if (frac <= EPS) continue;
-
-    const fracTop = cursor;
-    const fracBot = cursor + frac;
-    const topMD = Math.max(0, casingDepthMD * (1 - fracBot));
-    const botMD = Math.min(casingDepthMD, casingDepthMD * (1 - fracTop));
-
-    segments.push({
-      fluid: batch.fluid,
-      label: batch.label,
-      fracTop,
-      fracBot,
-      volM3: batch.volumeM3,
-      topMD,
-      botMD,
-    });
-
-    cursor += frac;
-    if (cursor >= 1 - EPS) break;
-  }
-
-  return segments;
-}
-
-function buildAnnulusSegments(
-  exitedBatches: PumpBatch[],
-  point: PressurePoint,
-  casingDepthMD: number,
-): AnnulusSegment[] {
-  if (casingDepthMD <= EPS) return [];
-
-  const heights: Record<AnnulusFluidKey, number> = {
-    mud: point.annMudHeightM,
-    buffer: point.annBufferHeightM,
-    cement: point.annCementHeightM,
-    displacement: point.annDisplHeightM,
-  };
-
-  const namedBottomUp = exitedBatches.slice().reverse();
-  const segments: AnnulusSegment[] = [];
-  let filledFromBottom = 0;
-
-  for (const fluid of BOTTOM_UP_FLOW_ORDER) {
-    const totalHeight = heights[fluid];
-    if (totalHeight <= EPS) continue;
-
-    let batches = namedBottomUp.filter((batch) => batch.fluid === fluid);
-    if (fluid === "mud") {
-      batches = [{ fluid: "mud", label: FLUID_LABELS.mud, volumeM3: 1 }];
-    }
-    if (batches.length === 0) {
-      batches = [{ fluid, label: FLUID_LABELS[fluid], volumeM3: 1 }];
-    }
-
-    const totalBatchVolume = batches.reduce((sum, batch) => sum + batch.volumeM3, 0) || 1;
-    let consumedHeight = 0;
-
-    batches.forEach((batch, index) => {
-      const isLast = index === batches.length - 1;
-      const heightM = isLast
-        ? Math.max(0, totalHeight - consumedHeight)
-        : totalHeight * (batch.volumeM3 / totalBatchVolume);
-      if (heightM <= EPS) return;
-
-      const botMD = Math.max(0, casingDepthMD - filledFromBottom);
-      const topMD = Math.max(0, casingDepthMD - (filledFromBottom + heightM));
-
-      segments.push({
-        fluid,
-        label: batch.label,
-        heightM,
-        topMD,
-        botMD,
-      });
-
-      filledFromBottom += heightM;
-      consumedHeight += heightM;
-    });
   }
 
   return segments;
