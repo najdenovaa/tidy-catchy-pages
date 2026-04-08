@@ -457,9 +457,14 @@ export default function CementingAnimation({
   }
 
   const wellHeight = 480;
-  const wellWidth = 260;
-  const pipeWidth = 36;
-  const annWidth = 22;
+  // Compute proportional widths: annulus vs pipe based on real volumes
+  const volRatio = pipeCapacityM3 > 0 && annularVolumeM3 > 0
+    ? Math.min(Math.max(annularVolumeM3 / pipeCapacityM3, 0.5), 4)
+    : 1.2;
+  const basePipeHalf = 28; // half-width of pipe in px
+  const annWidth = Math.round(Math.max(18, basePipeHalf * volRatio * 0.6));
+  const pipeWidth = basePipeHalf;
+  const wellWidth = 2 * (pipeWidth + annWidth + 14);
   const topY = 40;
   const botY = wellHeight - 20;
   const usableH = botY - topY;
