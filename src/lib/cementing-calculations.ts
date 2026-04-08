@@ -933,6 +933,11 @@ export function calculatePressureProfile(
   // Annular profile helper — compute fluid heights by type from exitBatches
   interface FluidBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; }
 
+  // Maximum cement height = from shoe to the topmost slurry top
+  const maxCementHeight = slurries.length > 0
+    ? Math.max(0, wellData.casingDepthMD - Math.min(...slurries.map(s => s.topDepthMD)))
+    : wellData.casingDepthMD;
+
   function calcAnnularProfile(): { mudH: number; bufferH: number; cementH: number; displH: number } {
     const result = { mudH: 0, bufferH: 0, cementH: 0, displH: 0 };
     const exitBatches: FluidBatch[] = [];
@@ -969,20 +974,32 @@ export function calculatePressureProfile(
       // Fill lower section first (open hole)
       const lowerRemaining = Math.max(0, lowerLen - filledFromBottom);
       if (lowerRemaining > 0 && volRemaining > 0) {
-        const hLower = Math.min(volRemaining / lowerVPM, lowerRemaining);
-        addHeight(ft, hLower);
-        volRemaining -= hLower * lowerVPM;
-        filledFromBottom += hLower;
+        let hLower = Math.min(volRemaining / lowerVPM, lowerRemaining);
+        // Cap cement height to prevent overflow above topDepthMD
+        if (ft === 'cement') {
+          hLower = Math.min(hLower, Math.max(0, maxCementHeight - result.cementH));
+        }
+        if (hLower > 0) {
+          addHeight(ft, hLower);
+          volRemaining -= hLower * lowerVPM;
+          filledFromBottom += hLower;
+        }
       }
 
       // Then fill upper section (prev casing)
       const upperStart = Math.max(0, filledFromBottom - lowerLen);
       const upperRemaining = Math.max(0, upperLen - upperStart);
       if (upperRemaining > 0 && volRemaining > 0) {
-        const hUpper = Math.min(volRemaining / upperVPM, upperRemaining);
-        addHeight(ft, hUpper);
-        volRemaining -= hUpper * upperVPM;
-        filledFromBottom += hUpper;
+        let hUpper = Math.min(volRemaining / upperVPM, upperRemaining);
+        // Cap cement height
+        if (ft === 'cement') {
+          hUpper = Math.min(hUpper, Math.max(0, maxCementHeight - result.cementH));
+        }
+        if (hUpper > 0) {
+          addHeight(ft, hUpper);
+          volRemaining -= hUpper * upperVPM;
+          filledFromBottom += hUpper;
+        }
       }
 
       if (filledFromBottom >= wellData.casingDepthMD) break;
