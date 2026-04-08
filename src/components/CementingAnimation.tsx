@@ -399,7 +399,9 @@ export default function CementingAnimation({
       const deltaVol = Math.max(0, point.cumulativeVolume - lastCumVol);
       if (deltaVol > EPS) {
         const batchMeta = classifyStage(point.stage, bufferNames, slurryNames);
-        pushBatch(history, { ...batchMeta, volumeM3: deltaVol });
+        if (batchMeta) {
+          pushBatch(history, { ...batchMeta, volumeM3: deltaVol });
+        }
       }
 
       const exitedBatches = buildExitedBatches(history, point.cumulativeVolume, pipeCapacityM3);
