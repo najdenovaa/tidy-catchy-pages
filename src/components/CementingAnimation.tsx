@@ -20,6 +20,7 @@ interface Props {
   buffers?: BufferFluid[];
   reservoirLayers?: ReservoirLayer[];
   pipeCapacityM3?: number;
+  annularVolumeM3?: number;
   prevCasingDepth?: number;
 }
 
@@ -179,10 +180,15 @@ function pushBatch(target: PumpBatch[], batch: PumpBatch) {
   }
 }
 
-function classifyStage(stage: string, bufferNames: Set<string>, slurryNames: Set<string>): Omit<PumpBatch, "volumeM3"> {
+/** Stages that flush surface lines — fluid goes to waste, NOT into the well */
+function isSurfaceOnlyStage(stage: string): boolean {
+  return /промывка лвд|заполнение лвд|опрессовка лвд/i.test(stage);
+}
+
+function classifyStage(stage: string, bufferNames: Set<string>, slurryNames: Set<string>): Omit<PumpBatch, "volumeM3"> | null {
+  if (isSurfaceOnlyStage(stage)) return null; // surface-only, skip
   if (slurryNames.has(stage)) return { fluid: "cement", label: stage };
   if (bufferNames.has(stage)) return { fluid: "buffer", label: stage };
-  if (/промывка лвд/i.test(stage)) return { fluid: "mud", label: "Промывка ЛВД" };
   return { fluid: "displacement", label: stage || FLUID_LABELS.displacement };
 }
 
@@ -335,6 +341,7 @@ export default function CementingAnimation({
   buffers = [],
   reservoirLayers = [],
   pipeCapacityM3 = 0,
+  annularVolumeM3 = 0,
   prevCasingDepth = 0,
 }: Props) {
   const [playing, setPlaying] = useState(false);
@@ -394,7 +401,9 @@ export default function CementingAnimation({
       const deltaVol = Math.max(0, point.cumulativeVolume - lastCumVol);
       if (deltaVol > EPS) {
         const batchMeta = classifyStage(point.stage, bufferNames, slurryNames);
-        pushBatch(history, { ...batchMeta, volumeM3: deltaVol });
+        if (batchMeta) {
+          pushBatch(history, { ...batchMeta, volumeM3: deltaVol });
+        }
       }
 
       const exitedBatches = buildExitedBatches(history, point.cumulativeVolume, pipeCapacityM3);
@@ -448,9 +457,14 @@ export default function CementingAnimation({
   }
 
   const wellHeight = 480;
-  const wellWidth = 260;
-  const pipeWidth = 36;
-  const annWidth = 22;
+  // Compute proportional widths: annulus vs pipe based on real volumes
+  const volRatio = pipeCapacityM3 > 0 && annularVolumeM3 > 0
+    ? Math.min(Math.max(annularVolumeM3 / pipeCapacityM3, 0.5), 4)
+    : 1.2;
+  const basePipeHalf = 28; // half-width of pipe in px
+  const annWidth = Math.round(Math.max(18, basePipeHalf * volRatio * 0.6));
+  const pipeWidth = basePipeHalf;
+  const wellWidth = 2 * (pipeWidth + annWidth + 14);
   const topY = 40;
   const botY = wellHeight - 20;
   const usableH = botY - topY;
