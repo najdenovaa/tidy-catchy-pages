@@ -664,15 +664,27 @@ export default function CementingAnimation({
 
               {wellDepthMD > casingDepthMD + EPS && (
                 <>
-                  <rect
-                    x={cx - lowerBoreHalf}
-                    y={casingShoeY}
-                    width={lowerBoreHalf * 2}
-                    height={Math.max(0, wellBottomY - casingShoeY)}
-                    fill="hsl(var(--secondary) / 0.18)"
-                  />
+                  {/* Sump cement: once cement exits into annulus, sump is filled with cement */}
+                  {currentPoint.annCementHeightM > EPS ? (
+                    <rect
+                      x={cx - lowerBoreHalf}
+                      y={casingShoeY}
+                      width={lowerBoreHalf * 2}
+                      height={Math.max(0, wellBottomY - casingShoeY)}
+                      fill={FLUID_COLORS.cement}
+                      opacity={0.88}
+                    />
+                  ) : (
+                    <rect
+                      x={cx - lowerBoreHalf}
+                      y={casingShoeY}
+                      width={lowerBoreHalf * 2}
+                      height={Math.max(0, wellBottomY - casingShoeY)}
+                      fill="hsl(var(--secondary) / 0.18)"
+                    />
+                  )}
                   <text x={cx - lowerBoreHalf - 8} y={(casingShoeY + wellBottomY) / 2 + 2} textAnchor="end" className="text-[6px] fill-muted-foreground">
-                    Зумпф
+                    Зумпф {(wellDepthMD - casingDepthMD).toFixed(0)} м
                   </text>
                 </>
               )}
