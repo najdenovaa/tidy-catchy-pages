@@ -759,6 +759,10 @@ export default function Index() {
                     pipeCapacityM3={volumes?.totalPipeVolume || 0}
                     annularVolumeM3={volumes?.totalAnnularVolume || 0}
                     prevCasingDepth={calcSnapshot.wellData.prevCasingDepth || 0}
+                    ckodDepth={calcSnapshot.wellData.ckodDepth || 0}
+                    holeDiameter={calcSnapshot.wellData.holeDiameter}
+                    casingOD={calcSnapshot.wellData.casingOD}
+                    prevCasingID={calcSnapshot.wellData.prevCasingID || 0}
                   />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
