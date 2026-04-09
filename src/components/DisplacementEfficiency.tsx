@@ -154,9 +154,10 @@ function calcEff(
   const vScore = Math.min(1, avgVel / 1.0);
   let eff = 0.30 * dScore + 0.25 * ypScore + 0.45 * vScore;
 
-  const eccen = Math.sin(zenithDeg * Math.PI / 180);
+  // Directional penalty scaled by ACTUAL eccentricity, not just inclination
+  // When ecc≈0 (good centering), no directional variation regardless of zenith
   const cosA = Math.cos(angle);
-  eff -= eccen * cosA * 0.35;
+  eff -= ecc * cosA * 0.35;
   eff -= ecc * 0.25 * Math.max(0, cosA);
 
   if (turbMult > 1) eff += (turbMult - 1) * 0.08;
