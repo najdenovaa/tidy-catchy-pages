@@ -736,7 +736,7 @@ export default function CoiledTubing() {
                 </TabsList>
               </div>
               {/* Forces */}
-              <TabsContent value="forces">
+              <TabsContent value="forces" forceMount className={tab !== "forces" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4 flex-row items-center justify-between">
                     <CardTitle className="text-sm">⚡ График дохождения ГНКТ</CardTitle>
@@ -817,7 +817,7 @@ export default function CoiledTubing() {
               </TabsContent>
 
               {/* Limits */}
-              <TabsContent value="limits">
+              <TabsContent value="limits" forceMount className={tab !== "limits" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4 flex-row items-center justify-between">
                     <CardTitle className="text-sm">🛡 CoilLIMIT — Пределы</CardTitle>
@@ -863,7 +863,7 @@ export default function CoiledTubing() {
               </TabsContent>
 
               {/* Hydraulics */}
-              <TabsContent value="hydraulics">
+              <TabsContent value="hydraulics" forceMount className={tab !== "hydraulics" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4 flex-row items-center justify-between">
                     <CardTitle className="text-sm">💧 Гидравлика циркуляции</CardTitle>
@@ -947,7 +947,7 @@ export default function CoiledTubing() {
               </TabsContent>
 
               {/* Tempering */}
-              <TabsContent value="tempering">
+              <TabsContent value="tempering" forceMount className={tab !== "tempering" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4 flex-row items-center justify-between">
                     <CardTitle className="text-sm">🌡 Темперирование — Температурная деградация</CardTitle>
@@ -1028,7 +1028,7 @@ export default function CoiledTubing() {
               </TabsContent>
 
               {/* 3D Well Profile */}
-              <TabsContent value="3d">
+              <TabsContent value="3d" forceMount className={tab !== "3d" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4">
                     <CardTitle className="text-sm">🌐 3D Профиль скважины</CardTitle>
@@ -1041,7 +1041,7 @@ export default function CoiledTubing() {
               </TabsContent>
 
               {/* Fatigue */}
-              <TabsContent value="fatigue">
+              <TabsContent value="fatigue" forceMount className={tab !== "fatigue" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4 flex-row items-center justify-between">
                     <CardTitle className="text-sm">🔄 CoilLIFE — Ресурс усталости</CardTitle>
