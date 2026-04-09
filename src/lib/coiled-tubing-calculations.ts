@@ -296,11 +296,11 @@ export function calculateTubingForces(
 
     // Curvature-induced normal force
     const curvNormalRIH = Math.abs(cumWeightRIH * dInc);
-    const totalNormalRIH = Math.sqrt(curvNormalRIH * curvNormalRIH + wNormal * wNormal);
+    const totalNormalRIH = Math.sqrt(curvNormalRIH * curvNormalRIH + wNormal * wNormal) * TORTUOSITY_FACTOR;
     const frictionRIH = frictionCoeff * totalNormalRIH;
 
     const curvNormalPOOH = Math.abs(cumWeightPOOH * dInc);
-    const totalNormalPOOH = Math.sqrt(curvNormalPOOH * curvNormalPOOH + wNormal * wNormal);
+    const totalNormalPOOH = Math.sqrt(curvNormalPOOH * curvNormalPOOH + wNormal * wNormal) * TORTUOSITY_FACTOR;
     const frictionPOOH = frictionCoeff * totalNormalPOOH;
 
     const wAxial = segW * Math.cos(incAvg);
