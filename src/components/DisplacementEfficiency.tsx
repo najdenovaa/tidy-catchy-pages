@@ -355,9 +355,8 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
 
           if (!zone || zone.type === "mud") {
             const mudNoise = smoothNoise(localFrac * 5, yFrac * 20) * 0.15;
-            r = Math.round(45 + mudNoise * 30);
-            g = Math.round(38 + mudNoise * 25);
-            b = Math.round(30 + mudNoise * 20);
+            const v = Math.round(230 + mudNoise * 20);
+            r = v; g = v; b = v;
           } else {
             const zLen = zone.botMD - zone.topMD || 1;
             const distTop = (md - zone.topMD) / zLen;
@@ -385,28 +384,17 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
               zone.type,
             ) - eccPenalty);
 
-            const [zh, zs, zl] = parseHSL(zone.color);
             const isCement = zone.type === "cement";
-            const colorEff = isCement ? Math.pow(eff, 0.82) : eff;
-            const effL = zl * (isCement ? (0.26 + colorEff * 0.34) : (0.42 + colorEff * 0.42));
-            const effS = zs * (isCement ? (0.62 + colorEff * 0.38) : (0.40 + colorEff * 0.60));
-            const [cr, cg, cb] = hslToRGB(zh, effS, effL);
+            // Grayscale: dark = good cement, bright = mud channel
+            const darkVal = 22;
+            const lightVal = isCement ? 235 : 210;
+            const quality = isCement ? Math.pow(eff, 0.7) : Math.pow(eff, 0.9);
+            const val = Math.round(lightVal - quality * (lightVal - darkVal));
 
-            const mudR = 222;
-            const mudG = 216;
-            const mudB = 204;
-            const blend = isCement ? Math.pow(eff, 1.08) : eff;
-            r = Math.round(cr * blend + mudR * (1 - blend));
-            g = Math.round(cg * blend + mudG * (1 - blend));
-            b = Math.round(cb * blend + mudB * (1 - blend));
-
-            if (isCement && eff > 0.8) {
-              const cleanFactor = (eff - 0.8) / 0.2;
-              const darkMul = 1 - cleanFactor * 0.22;
-              r = Math.round(r * darkMul);
-              g = Math.round(g * darkMul);
-              b = Math.round(b * (darkMul + 0.03));
-            }
+            // Subtle blue tint for cement
+            r = val;
+            g = val;
+            b = Math.min(255, val + (isCement ? 4 : 2));
           }
         }
 
