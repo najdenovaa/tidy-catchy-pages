@@ -93,7 +93,7 @@ const GUIDE_ARCH_DIAMETER = 1.83;
  * vs actual 3400 m → ~12% underestimate of drag).
  * Applied to the normal-force term in the soft-string drag model.
  */
-const TORTUOSITY_FACTOR = 1.42;
+const TORTUOSITY_FACTOR = 1.15;
 
 // ─── Utility ───
 
@@ -258,10 +258,10 @@ export function calculateTubingForces(
 
   // Helper: weight per meter at depth from surface (accounting for sections)
   const maxDeployLen = Math.min(totalCTLen, well.md);
-  function wpmAt(depthFromSurface: number, deployLen: number = maxDeployLen): number {
+  function wpmAt(depthFromSurface: number): number {
     if (!sections || sections.length === 0) return ctWeightPerMeter(ct.od, ct.wall);
     // sections[0] = bottom of string, sections[last] = near surface
-    const depthFromBottom = deployLen - depthFromSurface;
+    const depthFromBottom = maxDeployLen - depthFromSurface;
     let cum = 0;
     for (const sec of sections) {
       cum += sec.length;
@@ -330,55 +330,37 @@ export function calculateTubingForces(
     : 0;
   const Fhel = Fsin * 1.41;
 
-  // Lock-up = depth where compressive load at current deployment exceeds
-  // the local helical buckling threshold for that specific depth.
   let lockUpDepth = 0;
+  // Find lock-up from hook load profile (where RIH hook load goes to 0)
   {
-    const LOCKUP_TORTUOSITY = 1.15;
-
+    let prevHook = surfaceLoadRIH;
     for (let d = stepLen; d <= maxDeployLen; d += stepLen) {
+      // Approximate: compute forces for string deployed to depth d
       const deployed = d;
-      let axialForce = bhaWeightN * buoyancyFactor * 1000; // N
-      let maxCompression = 0;
+      let aRIH = bhaWeightN * buoyancyFactor * 1000; // N
       const dSteps = Math.ceil(deployed / stepLen);
       const dStep = deployed / dSteps;
-
       for (let j = dSteps; j > 0; j--) {
         const mB = j * dStep, mT = (j - 1) * dStep;
         const iB = getIncAtMD(traj, mB) * Math.PI / 180;
         const iT = getIncAtMD(traj, mT) * Math.PI / 180;
         const iA = (iB + iT) / 2;
         const dI = Math.abs(iB - iT);
-        const ww = wpmAt((mB + mT) / 2, deployed) * GRAVITY * buoyancyFactor;
+        const ww = wpmAt((mB + mT) / 2) * GRAVITY * buoyancyFactor;
         const sW = ww * dStep;
         const wN = Math.abs(sW * Math.sin(iA));
-        const cN = Math.abs(axialForce * dI);
-        const tN = Math.sqrt(cN * cN + wN * wN) * LOCKUP_TORTUOSITY;
-        axialForce += sW * Math.cos(iA) - frictionCoeff * tN;
-
-        if (axialForce < 0) {
-          maxCompression = Math.max(maxCompression, Math.abs(axialForce));
-        }
+        const cN = Math.abs(aRIH * dI);
+        const tN = Math.sqrt(cN * cN + wN * wN) * TORTUOSITY_FACTOR;
+        aRIH += sW * Math.cos(iA) - frictionCoeff * tN;
       }
-
-      const localBottomInc = getIncAtMD(traj, deployed) * Math.PI / 180;
-      const localBottomWpm = wpmAt(deployed, deployed);
-      const localBuoyedWeightPerM = localBottomWpm * GRAVITY * buoyancyFactor;
-      const localFsin = radialClearance > 0
-        ? 2 * Math.sqrt(E * 1e6 * momentOfInertia * localBuoyedWeightPerM * Math.sin(Math.max(localBottomInc, 0.01)) / radialClearance)
-        : 0;
-      const localFhel = localFsin * 1.41;
-
-      if (maxCompression > localFhel && localFhel > 0) {
-        lockUpDepth = Math.round(d);
+      const hookKN = aRIH / 1000;
+      if (hookKN <= 0 && prevHook > 0) {
+        // Interpolate
+        const frac = prevHook / (prevHook - hookKN);
+        lockUpDepth = Math.round((d - stepLen) + frac * stepLen);
         break;
       }
-
-      const hookKN = axialForce / 1000;
-      if (hookKN < -Math.abs(surfaceLoadRIH) * 2 && localFhel <= 0) {
-        lockUpDepth = Math.round(d);
-        break;
-      }
+      prevHook = hookKN;
     }
   }
 
