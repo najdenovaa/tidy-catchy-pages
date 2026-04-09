@@ -615,7 +615,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
           <div>
             <CardTitle className="text-lg">Эффективность замещения</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Продольный разрез кольцевого пространства ({range}). Цветное — цемент/буфер, светлое — каналы БР (засветы).
+              Продольный разрез кольцевого пространства ({range}). Тёмное — цемент, светлое — каналы БР (засветы).
               {centralizationResults && centralizationResults.length > 0 && " Учтены: центрирование, турбулизаторы, реология."}
             </p>
           </div>
