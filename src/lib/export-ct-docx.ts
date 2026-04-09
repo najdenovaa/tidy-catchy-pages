@@ -322,6 +322,12 @@ export async function exportCTDocx(input: CTDocxInput) {
     ));
   }
 
+  // 3D Well Profile image
+  if (chartImages?.well3d) {
+    children.push(subTitle("3D Профиль скважины"));
+    children.push(chartImage(chartImages.well3d, 540, 380, "well-3d-profile"));
+  }
+
   // 1.3 Fluid
   children.push(sectionTitle("1.3  Рабочая жидкость"));
   children.push(paramTable([
