@@ -85,6 +85,16 @@ const REEL_DIAMETERS: Record<string, number> = {
 };
 const GUIDE_ARCH_DIAMETER = 1.83;
 
+/**
+ * Micro-tortuosity multiplier for friction.
+ * Real wellbores have micro-doglegs between survey stations that increase
+ * effective friction by 10-20% beyond what the smooth minimum-curvature
+ * trajectory predicts. Calibrated against field lock-up data (predicted 3785 m
+ * vs actual 3400 m → ~12% underestimate of drag).
+ * Applied to the normal-force term in the soft-string drag model.
+ */
+const TORTUOSITY_FACTOR = 1.15;
+
 // ─── Utility ───
 
 /**
