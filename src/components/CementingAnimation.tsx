@@ -123,138 +123,186 @@ function buildBufferTargets(buffers: BufferFluid[]): BufferTarget[] {
   }));
 }
 
-/**
- * Compute per-slurry cement heights based on actual pipe exit order.
- * Slurries exit the pipe in pump order (slurries[0] first).
- * In the annulus, the latest cement to enter sits at the bottom (shoe),
- * pushing earlier cement upward. So from bottom: last exited → first exited.
- */
-function computeCementDistribution(
-  totalCementH: number,
-  slurries: SlurryInput[],
-  buffers: BufferFluid[],
-  cumulativeVolume: number,
-  pipeCapacityM3: number,
-): { label: string; heightM: number }[] {
-  if (slurries.length === 0 || totalCementH <= EPS) return [];
-
-  if (slurries.length === 1) {
-    return [{ label: slurries[0].name || FLUID_LABELS.cement, heightM: totalCementH }];
-  }
-
-  // Total buffer volume pumped before cement
-  const totalBufferVol = buffers.reduce((s, b) => s + Math.max(0, b.volume), 0);
-
-  // How much cement volume has exited the pipe
-  const cementExitedVol = Math.max(0, cumulativeVolume - pipeCapacityM3 - totalBufferVol);
-
-  // Per-slurry pipe volumes (pump order = slurries array order)
-  const slurryVols = slurries.map(s => {
-    const fromSteps = (s.flowRateSteps || []).reduce((sum, step) => sum + Math.max(0, step.volumeM3 || 0), 0);
-    // If steps have no volume, estimate from washVolume or use a fraction
-    if (fromSteps <= EPS) {
-      // Fallback: equal distribution
-      const totalSlurryVol = slurries.reduce((ss, sl) => {
-        return ss + (sl.flowRateSteps || []).reduce((sum, step) => sum + Math.max(0, step.volumeM3 || 0), 0);
-      }, 0);
-      return totalSlurryVol > EPS ? totalSlurryVol / slurries.length : 1;
-    }
-    return fromSteps;
-  });
-
-  // Distribute exited volume among slurries in pump order
-  let remaining = cementExitedVol;
-  const exitedPerSlurry = slurryVols.map(vol => {
-    const exited = Math.min(vol, remaining);
-    remaining = Math.max(0, remaining - exited);
-    return exited;
-  });
-
-  const totalExited = exitedPerSlurry.reduce((s, v) => s + v, 0);
-  if (totalExited <= EPS) {
-    return [{ label: slurries[0].name || FLUID_LABELS.cement, heightM: totalCementH }];
-  }
-
-  // Height per slurry proportional to exit volume
-  const heightPerSlurry = exitedPerSlurry.map(v => totalCementH * v / totalExited);
-
-  // In annulus from bottom: latest entered at bottom → earliest entered at top
-  // Exit order = pump order, so reverse for bottom-up annulus placement
-  const result: { label: string; heightM: number }[] = [];
-  for (let i = slurries.length - 1; i >= 0; i--) {
-    if (heightPerSlurry[i] > EPS) {
-      result.push({
-        label: slurries[i].name || `${FLUID_LABELS.cement} ${i + 1}`,
-        heightM: heightPerSlurry[i],
-      });
-    }
-  }
-
-  return result;
+function interCasingVolumePerMeter(prevCasingIDmm: number, casingODmm: number): number {
+  if (prevCasingIDmm <= casingODmm + EPS) return 0;
+  const prevIdM = prevCasingIDmm / 1000;
+  const casingODM = casingODmm / 1000;
+  return (Math.PI / 4) * (prevIdM * prevIdM - casingODM * casingODM);
 }
 
-/**
- * Build annulus segments ALWAYS from engine-reported heights.
- * This ensures the animation is perfectly synchronized with the calc engine.
- */
+function openHoleVolumePerMeter(holeDiameterMm: number, casingODmm: number): number {
+  if (holeDiameterMm <= casingODmm + EPS) return 0;
+  const holeM = holeDiameterMm / 1000;
+  const casingODM = casingODmm / 1000;
+  return (Math.PI / 4) * (holeM * holeM - casingODM * casingODM);
+}
+
+function resolveAnnulusGeometry(
+  casingDepthMD: number,
+  annularVolumeM3: number,
+  prevCasingDepth: number,
+  holeDiameter: number,
+  casingOD: number,
+  prevCasingID: number,
+) {
+  const upperLen = prevCasingDepth > EPS ? Math.min(prevCasingDepth, casingDepthMD) : 0;
+  const lowerLen = Math.max(0, casingDepthMD - upperLen);
+  const upperVPM = upperLen > EPS ? interCasingVolumePerMeter(prevCasingID, casingOD) : 0;
+  const fallbackLowerVPM = openHoleVolumePerMeter(holeDiameter, casingOD);
+
+  let lowerVPM = fallbackLowerVPM;
+  if (lowerLen > EPS && annularVolumeM3 > EPS) {
+    const derivedLowerVPM = (annularVolumeM3 - upperLen * upperVPM) / lowerLen;
+    if (derivedLowerVPM > EPS) {
+      lowerVPM = derivedLowerVPM;
+    }
+  }
+
+  if (lowerLen <= EPS) {
+    lowerVPM = upperVPM > EPS ? upperVPM : Math.max(annularVolumeM3 / Math.max(casingDepthMD, 1), EPS);
+  }
+
+  return {
+    upperLen,
+    lowerLen,
+    upperVPM: Math.max(upperVPM, EPS),
+    lowerVPM: Math.max(lowerVPM, EPS),
+  };
+}
+
+function buildExitedAnnulusBatches(
+  history: PumpBatch[],
+  effectivePumpedVol: number,
+  pipeCapacityM3: number,
+): PumpBatch[] {
+  const exitBatches: PumpBatch[] = [];
+  const mudExited = Math.min(Math.max(0, effectivePumpedVol), Math.max(0, pipeCapacityM3));
+  if (mudExited > EPS) {
+    exitBatches.push({ fluid: "mud", label: FLUID_LABELS.mud, volumeM3: mudExited });
+  }
+
+  let pumpedExited = Math.max(0, effectivePumpedVol - pipeCapacityM3);
+  for (const batch of history) {
+    if (pumpedExited <= EPS) break;
+    if (batch.fluid === "displacement" || batch.fluid === "void") continue;
+
+    const exitedOfBatch = Math.min(batch.volumeM3, pumpedExited);
+    if (exitedOfBatch > EPS) {
+      exitBatches.push({ ...batch, volumeM3: exitedOfBatch });
+    }
+    pumpedExited = Math.max(0, pumpedExited - exitedOfBatch);
+  }
+
+  if (pumpedExited > EPS) {
+    exitBatches.push({ fluid: "mud", label: FLUID_LABELS.mud, volumeM3: pumpedExited });
+  }
+
+  return exitBatches;
+}
+
 function buildAnnulusSegmentsFromTargets(
   point: PressurePoint,
+  history: PumpBatch[],
+  effectivePumpedVol: number,
   casingDepthMD: number,
-  cementTargets: CementTarget[],
-  bufferTargets: BufferTarget[],
-  slurries?: SlurryInput[],
-  buffers?: BufferFluid[],
-  pipeCapacityM3?: number,
+  pipeCapacityM3: number,
+  annularVolumeM3: number,
+  slurries: SlurryInput[],
+  prevCasingDepth: number,
+  holeDiameter: number,
+  casingOD: number,
+  prevCasingID: number,
 ): AnnulusSegment[] {
   if (casingDepthMD <= EPS) return [];
 
   const segments: AnnulusSegment[] = [];
   let cursorBot = casingDepthMD;
+  let filledFromBottom = 0;
+  let cementHeight = 0;
+  const maxCementHeight = slurries.length > 0
+    ? Math.max(0, casingDepthMD - Math.min(...slurries.map((slurry) => slurry.topDepthMD)))
+    : casingDepthMD;
+  const { upperLen, lowerLen, upperVPM, lowerVPM } = resolveAnnulusGeometry(
+    casingDepthMD,
+    annularVolumeM3,
+    prevCasingDepth,
+    holeDiameter,
+    casingOD,
+    prevCasingID,
+  );
+  const exitBatches = buildExitedAnnulusBatches(history, effectivePumpedVol, pipeCapacityM3);
 
   const addSegment = (fluid: FluidKey, label: string, rawHeight: number) => {
     const heightM = Math.max(0, Math.min(rawHeight, cursorBot));
     if (heightM <= EPS) return;
 
     const topMD = Math.max(0, cursorBot - heightM);
+    const last = segments[segments.length - 1];
+    if (last && last.fluid === fluid && last.label === label && Math.abs(last.topMD - cursorBot) <= EPS) {
+      last.heightM += heightM;
+      last.topMD = topMD;
+      cursorBot = topMD;
+      return;
+    }
+
     segments.push({ fluid, label, heightM, topMD, botMD: cursorBot });
     cursorBot = topMD;
   };
 
-  addSegment("displacement", FLUID_LABELS.displacement, point.annDisplHeightM);
+  if (point.annDisplHeightM > EPS) {
+    const displHeight = Math.min(point.annDisplHeightM, cursorBot);
+    addSegment("displacement", FLUID_LABELS.displacement, displHeight);
+    filledFromBottom += displHeight;
+  }
 
-  // Use dynamic per-slurry distribution if we have the required data
-  if (slurries && slurries.length > 1 && buffers && pipeCapacityM3 && pipeCapacityM3 > EPS) {
-    const cementSegs = computeCementDistribution(
-      point.annCementHeightM, slurries, buffers, point.cumulativeVolume, pipeCapacityM3,
+  for (let i = exitBatches.length - 1; i >= 0; i--) {
+    const batch = exitBatches[i];
+    let volRemaining = batch.volumeM3;
+    let batchHeight = 0;
+
+    const cementHeightRemaining = () => (
+      batch.fluid === "cement"
+        ? Math.max(0, maxCementHeight - cementHeight)
+        : Number.POSITIVE_INFINITY
     );
-    for (const seg of cementSegs) {
-      addSegment("cement", seg.label, seg.heightM);
-    }
-  } else {
-    // Fallback: use static cementTargets (old behavior)
-    let remainingCement = Math.min(point.annCementHeightM, cursorBot);
-    for (const target of cementTargets) {
-      if (remainingCement <= EPS) break;
-      const heightM = Math.min(target.lengthM, remainingCement);
-      addSegment("cement", target.label, heightM);
-      remainingCement -= heightM;
-    }
-    if (remainingCement > EPS) {
-      addSegment("cement", FLUID_LABELS.cement, remainingCement);
-    }
-  }
 
-  let remainingBuffer = Math.min(point.annBufferHeightM, cursorBot);
-  const totalShare = bufferTargets.reduce((sum, target) => sum + target.share, 0) || 1;
-  for (const target of bufferTargets) {
-    if (remainingBuffer <= EPS) break;
-    const plannedHeight = point.annBufferHeightM * (target.share / totalShare);
-    const heightM = Math.min(plannedHeight, remainingBuffer);
-    addSegment("buffer", target.label, heightM);
-    remainingBuffer -= heightM;
-  }
-  if (remainingBuffer > EPS) {
-    addSegment("buffer", FLUID_LABELS.buffer, remainingBuffer);
+    const lowerFilled = Math.min(filledFromBottom, lowerLen);
+    const lowerRemaining = Math.max(0, lowerLen - lowerFilled);
+    if (lowerRemaining > EPS && volRemaining > EPS) {
+      const heightLower = Math.min(
+        volRemaining / lowerVPM,
+        lowerRemaining,
+        cementHeightRemaining(),
+      );
+      if (heightLower > EPS) {
+        batchHeight += heightLower;
+        volRemaining -= heightLower * lowerVPM;
+        filledFromBottom += heightLower;
+        if (batch.fluid === "cement") cementHeight += heightLower;
+      }
+    }
+
+    const upperFilled = Math.max(0, filledFromBottom - lowerLen);
+    const upperRemaining = Math.max(0, upperLen - upperFilled);
+    if (upperRemaining > EPS && volRemaining > EPS) {
+      const heightUpper = Math.min(
+        volRemaining / upperVPM,
+        upperRemaining,
+        cementHeightRemaining(),
+      );
+      if (heightUpper > EPS) {
+        batchHeight += heightUpper;
+        volRemaining -= heightUpper * upperVPM;
+        filledFromBottom += heightUpper;
+        if (batch.fluid === "cement") cementHeight += heightUpper;
+      }
+    }
+
+    addSegment(batch.fluid, batch.label, batchHeight);
+
+    if (filledFromBottom >= casingDepthMD - EPS) {
+      break;
+    }
   }
 
   if (cursorBot > EPS) {
@@ -465,8 +513,6 @@ export default function CementingAnimation({
 
   const bufferNames = useMemo(() => new Set(buffers.map((buffer) => buffer.name).filter(Boolean)), [buffers]);
   const slurryNames = useMemo(() => new Set(slurries.map((slurry) => slurry.name).filter(Boolean)), [slurries]);
-  const cementTargets = useMemo(() => buildCementTargets(slurries, casingDepthMD), [casingDepthMD, slurries]);
-  const bufferTargets = useMemo(() => buildBufferTargets(buffers), [buffers]);
 
   /** Always use engine-reported annular heights — no dual-path logic */
   const visualFrames = useMemo(() => {
@@ -489,8 +535,19 @@ export default function CementingAnimation({
 
         const effectivePumpedVol = preFlushCumVol + (point.freefallSettledM3 || 0);
 
-        // Always trust engine heights for annulus
-        const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets, slurries, buffers, pipeCapacityM3);
+        const annulusSegments = buildAnnulusSegmentsFromTargets(
+          point,
+          history,
+          effectivePumpedVol,
+          casingDepthMD,
+          pipeCapacityM3,
+          annularVolumeM3,
+          slurries,
+          prevCasingDepth,
+          holeDiameter,
+          casingOD,
+          prevCasingID,
+        );
         const pipeSegments = buildPipeSegments(history, effectivePumpedVol, pipeCapacityM3, casingDepthMD, "void");
 
         lastCumVol = point.cumulativeVolume;
@@ -530,8 +587,19 @@ export default function CementingAnimation({
         }
       }
 
-      // Always trust engine heights for annulus — single consistent path
-      const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets, slurries, buffers, pipeCapacityM3);
+      const annulusSegments = buildAnnulusSegmentsFromTargets(
+        point,
+        history,
+        effectivePumpedVol,
+        casingDepthMD,
+        pipeCapacityM3,
+        annularVolumeM3,
+        slurries,
+        prevCasingDepth,
+        holeDiameter,
+        casingOD,
+        prevCasingID,
+      );
 
       const frame: VisualFrame = {
         pipeSegments: buildPipeSegments(
@@ -549,7 +617,7 @@ export default function CementingAnimation({
       lastCumVol = point.cumulativeVolume;
       return frame;
     });
-  }, [bufferNames, bufferTargets, casingDepthMD, cementTargets, pipeCapacityM3, pressureData, slurryNames]);
+  }, [annularVolumeM3, bufferNames, casingDepthMD, casingOD, holeDiameter, pipeCapacityM3, pressureData, prevCasingDepth, prevCasingID, slurryNames, slurries]);
 
   const currentVisual = visualFrames[Math.min(currentIndex, Math.max(visualFrames.length - 1, 0))] || {
     pipeSegments: [] as PipeSegment[],
