@@ -24,6 +24,8 @@ import {
   assessRisks, RiskItem,
   calculateTVDFromSurvey, type TrajectoryPoint,
 } from "@/lib/coiled-tubing-calculations";
+import { generateHookLoadProfile, type HookLoadPoint, type CTSection } from "@/lib/coiled-tubing-calculations";
+import CTWell3D from "@/components/CTWell3D";
 import { exportCTDocx } from "@/lib/export-ct-docx";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -43,6 +45,7 @@ interface CTSession {
   reelSize: "small" | "medium" | "large";
   prevTrips: number;
   trajPoints: TrajectoryPoint[];
+  ctSections: CTSection[];
 }
 
 const defaultCT: CTStringData = { od: 50.8, wall: 3.96, grade: "CT-80", length: 3000, ovality: 1 };
@@ -55,6 +58,9 @@ const defaultFluid: FluidData = { name: "Вода", density: 1.0, pv: 1, yp: 0, 
 const defaultPump: PumpData = { flowRate: 5, surfacePressure: 0 };
 const defaultTools: ToolsData = { bhaWeight: 200, bhaLength: 5, bhaOD: 48, nozzleDiam: 4, nozzleCount: 3 };
 const defaultTraj: TrajectoryPoint[] = [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }];
+const defaultSections: CTSection[] = [];
+
+function makeSecId() { return Math.random().toString(36).slice(2, 9); }
 
 function loadSession(): CTSession {
   try {
@@ -71,10 +77,11 @@ function loadSession(): CTSession {
         reelSize: p.reelSize ?? "medium",
         prevTrips: p.prevTrips ?? 0,
         trajPoints: Array.isArray(p.trajPoints) ? p.trajPoints : defaultTraj,
+        ctSections: Array.isArray(p.ctSections) ? p.ctSections : defaultSections,
       };
     }
   } catch {}
-  return { ct: defaultCT, well: defaultWell, fluid: defaultFluid, pump: defaultPump, tools: defaultTools, friction: 0.25, reelSize: "medium", prevTrips: 0, trajPoints: defaultTraj };
+  return { ct: defaultCT, well: defaultWell, fluid: defaultFluid, pump: defaultPump, tools: defaultTools, friction: 0.25, reelSize: "medium", prevTrips: 0, trajPoints: defaultTraj, ctSections: defaultSections };
 }
 
 function num(v: string): number {
@@ -131,6 +138,7 @@ export default function CoiledTubing() {
   const [prevTrips, setPrevTrips] = useState(initial.prevTrips);
   const [trajPoints, setTrajPoints] = useState<TrajectoryPoint[]>(initial.trajPoints);
   const [tab, setTab] = useState("forces");
+  const [ctSections, setCtSections] = useState<CTSection[]>(initial.ctSections);
   const [calculated, setCalculated] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -142,6 +150,7 @@ export default function CoiledTubing() {
 
   // Chart refs
   const forcesChartRef = useRef<HTMLDivElement>(null);
+  const hookLoadChartRef = useRef<HTMLDivElement>(null);
   const limitsChartRef = useRef<HTMLDivElement>(null);
   const hydraulicsChartRef = useRef<HTMLDivElement>(null);
   const fatigueChartRef = useRef<HTMLDivElement>(null);
@@ -162,11 +171,11 @@ export default function CoiledTubing() {
   useEffect(() => {
     const timer = setTimeout(() => {
       try {
-        sessionStorage.setItem(CT_SESSION_KEY, JSON.stringify({ ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints }));
+        sessionStorage.setItem(CT_SESSION_KEY, JSON.stringify({ ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections }));
       } catch {}
     }, 500);
     return () => clearTimeout(timer);
-  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints]);
+  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections]);
 
   const markDirty = useCallback(() => setCalculated(false), []);
 
@@ -177,6 +186,7 @@ export default function CoiledTubing() {
   const [fatigue, setFatigue] = useState<FatigueResult | null>(null);
   const [tempering, setTempering] = useState<TemperingResult | null>(null);
   const [risks, setRisks] = useState<RiskItem[]>([]);
+  const [hookLoadData, setHookLoadData] = useState<HookLoadPoint[]>([]);
 
   // ── Trajectory ──
   const updateTrajPoint = (idx: number, key: keyof TrajectoryPoint, val: string) => {
@@ -240,13 +250,15 @@ export default function CoiledTubing() {
       ...well,
       trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory,
     };
+    const secs = ctSections.length > 0 ? ctSections : undefined;
 
-    const f = calculateTubingForces(ct, wellWithTraj, fluid, tools, friction);
+    const f = calculateTubingForces(ct, wellWithTraj, fluid, tools, friction, secs);
     const l = calculateLimits(ct, pump.surfacePressure || 0, wellWithTraj.wellheadPressure, f.surfaceLoadPOOH);
     const h = calculateHydraulics(ct, wellWithTraj, fluid, pump, tools);
     const ft = calculateFatigue(ct, reelSize, pump.surfacePressure || h.dpTotal, prevTrips);
     const r = assessRisks(f, l, h, ft, wellWithTraj);
     const tp = calculateTempering(ct, wellWithTraj, fluid, pump);
+    const hl = generateHookLoadProfile(ct, wellWithTraj, fluid, tools, friction, secs);
 
     setForces(f);
     setLimits(l);
@@ -254,6 +266,7 @@ export default function CoiledTubing() {
     setFatigue(ft);
     setTempering(tp);
     setRisks(r);
+    setHookLoadData(hl);
     setCalculated(true);
 
     supabase.functions.invoke("log-activity", {
@@ -261,13 +274,15 @@ export default function CoiledTubing() {
     }).catch(() => {});
 
     toast.success("Расчёт выполнен ✅");
-  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints]);
+  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections]);
 
   const handleReset = useCallback(() => {
     setCT(defaultCT); setWell(defaultWell); setFluid(defaultFluid);
     setPump(defaultPump); setTools(defaultTools); setFriction(0.25);
     setReelSize("medium"); setPrevTrips(0); setCalculated(false);
     setTrajPoints(defaultTraj);
+    setCtSections(defaultSections);
+    setHookLoadData([]);
     setForces(null); setLimits(null); setHydraulics(null); setFatigue(null);
     setTempering(null);
     setRisks([]);
@@ -296,13 +311,13 @@ export default function CoiledTubing() {
       module: "coiled-tubing",
       title,
       well_data: { ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints } as any,
-      calc_params: { forces, limits, hydraulics, fatigue, risks } as any,
+      calc_params: { forces, limits, hydraulics, fatigue, risks, ctSections } as any,
       results: { forces, limits, hydraulics, fatigue } as any,
     }, { onConflict: "id" });
 
     if (error) { toast.error("Ошибка сохранения"); console.error(error); }
     else toast.success("Расчёт сохранён в личном кабинете 💾");
-  }, [userId, calculated, forces, limits, hydraulics, fatigue, risks, ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, navigate]);
+  }, [userId, calculated, forces, limits, hydraulics, fatigue, risks, ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, navigate]);
 
   // Export DOCX
   const handleExportDocx = useCallback(async () => {
@@ -342,7 +357,7 @@ export default function CoiledTubing() {
     trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory,
   }), [well, trajPoints]);
 
-  const forceProfile = useMemo(() => calculated ? generateForceDepthProfile(ct, wellWithTraj, fluid, tools, friction) : [], [calculated, ct, wellWithTraj, fluid, tools, friction]);
+  const forceProfile = useMemo(() => calculated ? generateForceDepthProfile(ct, wellWithTraj, fluid, tools, friction, 80, ctSections.length > 0 ? ctSections : undefined) : [], [calculated, ct, wellWithTraj, fluid, tools, friction, ctSections]);
   const hydraulicsCurve = useMemo(() => calculated ? generateHydraulicsCurve(ct, wellWithTraj, fluid, tools) : [], [calculated, ct, wellWithTraj, fluid, tools]);
   const fatigueCurve = useMemo(() => calculated ? generateFatigueCurve(ct, reelSize, pump.surfacePressure || (hydraulics?.dpTotal ?? 0)) : [], [calculated, ct, reelSize, pump.surfacePressure, hydraulics?.dpTotal]);
   const pressureEnvelope = useMemo(() => calculated ? generatePressureLoadEnvelope(ct) : [], [calculated, ct]);
@@ -453,6 +468,48 @@ export default function CoiledTubing() {
                     <Field label="Овальность" value={ct.ovality} onChange={v => { setCT(p => ({ ...p, ovality: num(v) })); markDirty(); }} unit="%" />
                   </div>
                   <p className="text-[10px] text-muted-foreground">Вн.Ø: {(ct.od - 2 * ct.wall).toFixed(1)} мм · Вес: {linWeight.toFixed(3)} кг/м</p>
+
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-muted-foreground">📏 Секции ГНКТ</p>
+                    <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" onClick={() => {
+                      setCtSections(s => [...s, { id: makeSecId(), od: ct.od, wall: ct.wall, length: 500 }]);
+                      markDirty();
+                    }}><Plus className="w-3 h-3 mr-0.5" /> секция</Button>
+                  </div>
+                  {ctSections.length > 0 ? (
+                    <>
+                      <div className="max-h-48 overflow-auto text-[10px]">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="text-muted-foreground">
+                              <th className="px-1 text-left">№</th>
+                              <th className="px-1 text-left">Нар.Ø, мм</th>
+                              <th className="px-1 text-left">Стенка, мм</th>
+                              <th className="px-1 text-left">Длина, м</th>
+                              <th className="w-6"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ctSections.map((sec, i) => (
+                              <tr key={sec.id}>
+                                <td className="text-muted-foreground px-1">{i + 1}</td>
+                                <td><BlurInput type="number" className="h-6 text-[10px] w-16" value={sec.od || ""} onValueCommit={v => { setCtSections(ss => ss.map(s => s.id === sec.id ? { ...s, od: num(v) } : s)); markDirty(); }} /></td>
+                                <td><BlurInput type="number" className="h-6 text-[10px] w-16" value={sec.wall || ""} onValueCommit={v => { setCtSections(ss => ss.map(s => s.id === sec.id ? { ...s, wall: num(v) } : s)); markDirty(); }} /></td>
+                                <td><BlurInput type="number" className="h-6 text-[10px] w-16" value={sec.length || ""} onValueCommit={v => { setCtSections(ss => ss.map(s => s.id === sec.id ? { ...s, length: num(v) } : s)); markDirty(); }} /></td>
+                                <td><button className="text-destructive text-[10px]" onClick={() => { setCtSections(ss => ss.filter(s => s.id !== sec.id)); markDirty(); }}>✕</button></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">
+                        Общая длина: <strong>{ctSections.reduce((s, sec) => s + sec.length, 0).toFixed(1)} м</strong> · {ctSections.length} секций
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground italic">Используется однородная труба {ct.od}×{ct.wall} мм, длина {ct.length} м. Добавьте секции для мультисекционной ГНКТ.</p>
+                  )}
                 </CardContent>
               </CollapsibleContent>
             </Card>
@@ -642,20 +699,21 @@ export default function CoiledTubing() {
             <Tabs value={tab} onValueChange={setTab}>
               <div className="overflow-x-auto scrollbar-hide mb-3">
                 <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-5">
-                  <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Силы</TabsTrigger>
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-6">
+                  <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Дохождение</TabsTrigger>
                   <TabsTrigger value="limits" className="gap-1 text-xs whitespace-nowrap">🛡 Пределы</TabsTrigger>
                   <TabsTrigger value="hydraulics" className="gap-1 text-xs whitespace-nowrap">💧 Гидравлика</TabsTrigger>
                   <TabsTrigger value="tempering" className="gap-1 text-xs whitespace-nowrap">🌡 Темперирование</TabsTrigger>
                   <TabsTrigger value="fatigue" className="gap-1 text-xs whitespace-nowrap">🔄 Усталость</TabsTrigger>
+                  <TabsTrigger value="3d" className="gap-1 text-xs whitespace-nowrap">🌐 3D Профиль</TabsTrigger>
                 </TabsList>
-              </div>
 
               {/* Forces */}
               <TabsContent value="forces">
                 <Card>
                   <CardHeader className="py-3 px-4 flex-row items-center justify-between">
-                    <CardTitle className="text-sm">⚡ Tubing Forces — Силы на ГНКТ</CardTitle>
-                    <CopyImageButton targetRef={forcesChartRef} label="📋" />
+                    <CardTitle className="text-sm">⚡ График дохождения ГНКТ</CardTitle>
+                    <CopyImageButton targetRef={hookLoadChartRef} label="📋" />
                   </CardHeader>
                   <CardContent className="px-4 pb-4 space-y-1">
                     <Num label="Вес в воздухе" value={forces.weightInAir.toFixed(1)} unit="кН" />
@@ -672,22 +730,56 @@ export default function CoiledTubing() {
                     <Num label="Спиральный изгиб" value={forces.helicalBucklingLoad.toFixed(1)} unit="кН" />
                     <Num label="Глубина lock-up" value={forces.lockUpDepth > 0 ? forces.lockUpDepth.toFixed(0) : "—"} unit={forces.lockUpDepth > 0 ? "м" : ""} warn={forces.lockUpDepth > 0} />
 
-                    <div ref={forcesChartRef} className="mt-4 bg-card rounded-lg p-2">
-                      <p className="text-xs font-semibold text-center mb-2">📊 Осевая нагрузка по глубине (MD)</p>
+                    {/* Hook Load Chart (CoilPRO style: depth on Y, weight on X) */}
+                    <div ref={hookLoadChartRef} className="mt-4 bg-card rounded-lg p-2">
+                      <p className="text-xs font-semibold text-center mb-2">📊 График дохождения — Вес на крюке vs Глубина КНБК</p>
+                      <p className="text-[10px] text-muted-foreground text-center mb-1">Коэфф. трения = {friction}</p>
                       <div className="overflow-x-auto -mx-2 px-2">
                         <div className="min-w-[600px]">
-                          <ResponsiveContainer width="100%" height={320}>
-                            <LineChart data={forceProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                          <ResponsiveContainer width="100%" height={420}>
+                            <LineChart layout="vertical" data={hookLoadData} margin={{ top: 20, right: 20, bottom: 5, left: 20 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                              <XAxis dataKey="depth" label={{ value: "Глубина MD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                              <YAxis label={{ value: "кН", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                              <YAxis dataKey="depth" type="number" reversed
+                                label={{ value: "Глубина, м", angle: -90, position: "insideLeft", offset: -5, style: { fontSize: 10 } }}
+                                tick={{ fontSize: 10 }} />
+                              <XAxis type="number" orientation="top"
+                                label={{ value: "Вес, кгс", position: "insideTop", offset: -18, style: { fontSize: 10 } }}
+                                tick={{ fontSize: 10 }} />
                               <Tooltip contentStyle={{ fontSize: 11 }} />
                               <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Line type="monotone" dataKey="axialRIH" name="СПО ↓" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                              <Line type="monotone" dataKey="axialPOOH" name="СПО ↑" stroke="#ef4444" strokeWidth={2} dot={false} />
+                              <Line type="monotone" dataKey="hookPOOH_kgf" name="Подъём" stroke="#ef4444" strokeWidth={2.5} dot={false} />
+                              <Line type="monotone" dataKey="hookRIH_kgf" name="Спуск" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
+                              <Line type="monotone" dataKey="yieldLimit80_kgf" name="Предел текучести 80%" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
+                              <ReferenceLine x={0} stroke="hsl(var(--foreground))" strokeWidth={1} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                          <p className="text-[10px] text-muted-foreground text-center mt-1 italic">
+                            {forces.lockUpDepth > 0 ? `🔒 Запирание на ${forces.lockUpDepth} м` : "✅ Запирание не обнаружено"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Axial load distribution (internal profile) */}
+                    <div ref={forcesChartRef} className="mt-4 bg-card rounded-lg p-2">
+                      <p className="text-xs font-semibold text-center mb-2">📊 Распределение осевой нагрузки в колонне</p>
+                      <div className="overflow-x-auto -mx-2 px-2">
+                        <div className="min-w-[600px]">
+                          <ResponsiveContainer width="100%" height={300}>
+                            <LineChart layout="vertical" data={forceProfile} margin={{ top: 20, right: 20, bottom: 5, left: 20 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <YAxis dataKey="depth" type="number" reversed
+                                label={{ value: "Глубина, м", angle: -90, position: "insideLeft", offset: -5, style: { fontSize: 10 } }}
+                                tick={{ fontSize: 10 }} />
+                              <XAxis type="number" orientation="top"
+                                label={{ value: "кН", position: "insideTop", offset: -18, style: { fontSize: 10 } }}
+                                tick={{ fontSize: 10 }} />
+                              <Tooltip contentStyle={{ fontSize: 11 }} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Line type="monotone" dataKey="axialPOOH" name="Подъём" stroke="#ef4444" strokeWidth={2} dot={false} />
+                              <Line type="monotone" dataKey="axialRIH" name="Спуск" stroke="#3b82f6" strokeWidth={2} dot={false} />
                               <Line type="monotone" dataKey="bucklingLimit" name="Синус. изгиб" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
-                              <Line type="monotone" dataKey="helicalLimit" name="Спирал. изгиб" stroke="#a855f7" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
-                              <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
+                              <ReferenceLine x={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
@@ -898,6 +990,19 @@ export default function CoiledTubing() {
                         )}
                       </>
                     )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* 3D Well Profile */}
+              <TabsContent value="3d">
+                <Card>
+                  <CardHeader className="py-3 px-4">
+                    <CardTitle className="text-sm">🌐 3D Профиль скважины</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <CTWell3D trajectory={wellWithTraj.trajectory} maxMD={wellWithTraj.md} />
+                    <p className="text-[10px] text-muted-foreground text-center mt-2">Зажмите мышь для вращения. Колёсико — масштаб.</p>
                   </CardContent>
                 </Card>
               </TabsContent>
