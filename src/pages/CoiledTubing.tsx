@@ -354,7 +354,8 @@ export default function CoiledTubing() {
     });
 
     toast.success("DOCX сформирован 📄");
-  }, [calculated, forces, limits, hydraulics, fatigue, tempering, risks, ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, hookLoadData, forceProfile, tempProfile, hydraulicsCurve, fatigueCurve]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calculated, forces, limits, hydraulics, fatigue, tempering, risks, ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, hookLoadData]);
 
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
