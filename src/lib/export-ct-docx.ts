@@ -180,7 +180,7 @@ export interface CTDocxInput {
     forces?: string; hookLoad?: string; limits?: string;
     hydraulics?: string; fatigue?: string;
     tempering?: string; temperingDegradation?: string;
-    tempProfile?: string;
+    tempProfile?: string; well3d?: string;
   };
 }
 
