@@ -22,6 +22,13 @@ export interface CTStringData {
   ovality: number;     // Ovality %, 0-10
 }
 
+export interface CTSection {
+  id: string;
+  od: number;          // Outer diameter, mm
+  wall: number;        // Wall thickness, mm
+  length: number;      // Section length, m
+}
+
 export interface WellGeometry {
   md: number;          // Measured depth, m
   tvd: number;         // True vertical depth, m (auto-calculated from trajectory)
@@ -201,15 +208,36 @@ export interface DepthForcePoint {
   helicalLimit: number;
 }
 
+export interface HookLoadPoint {
+  depth: number;
+  tvd: number;
+  hookRIH_kgf: number;
+  hookPOOH_kgf: number;
+  hookRIH_kN: number;
+  hookPOOH_kN: number;
+  yieldLimit80_kgf: number;
+  bucklingLimit_kgf: number;
+}
+
 export function calculateTubingForces(
   ct: CTStringData,
   well: WellGeometry,
   fluid: FluidData,
   tools: ToolsData,
-  frictionCoeff: number = 0.25
+  frictionCoeff: number = 0.25,
+  sections?: CTSection[],
 ): ForceResult {
-  const linearWeight = ctWeightPerMeter(ct.od, ct.wall);
-  const totalWeightAir = linearWeight * ct.length * GRAVITY / 1000;
+  const totalCTLen = sections && sections.length > 0
+    ? sections.reduce((s, sec) => s + sec.length, 0) : ct.length;
+
+  // Total weight in air considering sections
+  let totalWeightAirN = 0;
+  if (sections && sections.length > 0) {
+    for (const sec of sections) totalWeightAirN += ctWeightPerMeter(sec.od, sec.wall) * sec.length * GRAVITY;
+  } else {
+    totalWeightAirN = ctWeightPerMeter(ct.od, ct.wall) * ct.length * GRAVITY;
+  }
+  const totalWeightAir = totalWeightAirN / 1000; // kN
   const bhaWeightN = tools.bhaWeight * GRAVITY / 1000;
 
   const fluidDensity = fluid.density * 1000;
@@ -218,25 +246,63 @@ export function calculateTubingForces(
 
   const traj = well.trajectory.length > 1 ? well.trajectory : buildSyntheticTrajectory(well.md, well.tvd);
 
-  let totalDragRIH = 0;
-  let totalDragPOOH = 0;
-  let cumulativeWeight = bhaWeightN * buoyancyFactor;
-
-  for (let i = traj.length - 1; i > 0; i--) {
-    const segLen = traj[i].md - traj[i - 1].md;
-    const incRad = (traj[i].zenith * Math.PI) / 180;
-    const segWeight = linearWeight * segLen * GRAVITY / 1000 * buoyancyFactor;
-
-    const normalForce = Math.abs(cumulativeWeight * Math.sin(incRad));
-    const frictionForce = frictionCoeff * normalForce;
-
-    totalDragRIH += frictionForce;
-    totalDragPOOH += frictionForce;
-    cumulativeWeight += segWeight;
+  // Helper: weight per meter at depth from surface (accounting for sections)
+  const maxDeployLen = Math.min(totalCTLen, well.md);
+  function wpmAt(depthFromSurface: number): number {
+    if (!sections || sections.length === 0) return ctWeightPerMeter(ct.od, ct.wall);
+    // sections[0] = bottom of string, sections[last] = near surface
+    const depthFromBottom = maxDeployLen - depthFromSurface;
+    let cum = 0;
+    for (const sec of sections) {
+      cum += sec.length;
+      if (depthFromBottom <= cum) return ctWeightPerMeter(sec.od, sec.wall);
+    }
+    return ctWeightPerMeter(sections[sections.length - 1].od, sections[sections.length - 1].wall);
   }
 
-  const surfaceLoadRIH = weightInFluid - totalDragRIH;
-  const surfaceLoadPOOH = weightInFluid + totalDragPOOH;
+  // Build fine-grained depth grid for integration
+  const integrationSteps = 200;
+  const stepLen = maxDeployLen / integrationSteps;
+
+  let totalDragRIH = 0;
+  let totalDragPOOH = 0;
+  let cumWeightRIH = bhaWeightN * buoyancyFactor * 1000; // N
+  let cumWeightPOOH = bhaWeightN * buoyancyFactor * 1000; // N
+
+  // Integrate from bottom to surface
+  for (let s = integrationSteps; s > 0; s--) {
+    const mdBot = s * stepLen;
+    const mdTop = (s - 1) * stepLen;
+    const segLen = mdBot - mdTop;
+    const mdMid = (mdBot + mdTop) / 2;
+    const incBot = getIncAtMD(traj, mdBot) * Math.PI / 180;
+    const incTop = getIncAtMD(traj, mdTop) * Math.PI / 180;
+    const incAvg = (incBot + incTop) / 2;
+    const dInc = Math.abs(incBot - incTop);
+
+    const w = wpmAt(mdMid) * GRAVITY * buoyancyFactor; // N/m buoyed
+    const segW = w * segLen;
+    const wNormal = Math.abs(segW * Math.sin(incAvg));
+
+    // Curvature-induced normal force
+    const curvNormalRIH = Math.abs(cumWeightRIH * dInc);
+    const totalNormalRIH = Math.sqrt(curvNormalRIH * curvNormalRIH + wNormal * wNormal);
+    const frictionRIH = frictionCoeff * totalNormalRIH;
+
+    const curvNormalPOOH = Math.abs(cumWeightPOOH * dInc);
+    const totalNormalPOOH = Math.sqrt(curvNormalPOOH * curvNormalPOOH + wNormal * wNormal);
+    const frictionPOOH = frictionCoeff * totalNormalPOOH;
+
+    const wAxial = segW * Math.cos(incAvg);
+    cumWeightRIH += wAxial - frictionRIH;
+    cumWeightPOOH += wAxial + frictionPOOH;
+
+    totalDragRIH += frictionRIH / 1000; // kN
+    totalDragPOOH += frictionPOOH / 1000;
+  }
+
+  const surfaceLoadRIH = cumWeightRIH / 1000; // N → kN
+  const surfaceLoadPOOH = cumWeightPOOH / 1000;
 
   const idCasing = well.casingID / 1000;
   const odCT = ct.od / 1000;
@@ -244,7 +310,9 @@ export function calculateTubingForces(
   const momentOfInertia = (Math.PI / 64) * (Math.pow(odCT, 4) - Math.pow(ctID(ct.od, ct.wall) / 1000, 4));
   const E = 207000;
 
-  const buoyedWeightPerM = linearWeight * GRAVITY * buoyancyFactor;
+  const defaultWPM = sections && sections.length > 0
+    ? ctWeightPerMeter(sections[0].od, sections[0].wall) : ctWeightPerMeter(ct.od, ct.wall);
+  const buoyedWeightPerM = defaultWPM * GRAVITY * buoyancyFactor;
   const bottomZenith = traj[traj.length - 1]?.zenith || 0;
 
   const Fsin = radialClearance > 0
@@ -253,21 +321,36 @@ export function calculateTubingForces(
   const Fhel = Fsin * 1.41;
 
   let lockUpDepth = 0;
-  if (surfaceLoadRIH < 0) {
-    lockUpDepth = well.md;
-  } else {
-    let axialLoad = surfaceLoadRIH * 1000;
-    for (let i = 1; i < traj.length; i++) {
-      const segLen = traj[i].md - traj[i - 1].md;
-      const incRad = (traj[i].zenith * Math.PI) / 180;
-      const segWeight = linearWeight * segLen * GRAVITY * buoyancyFactor;
-      const normalF = Math.abs(axialLoad * Math.sin(incRad));
-      const frictionF = frictionCoeff * normalF;
-      axialLoad = axialLoad - segWeight * Math.cos(incRad) - frictionF;
-      if (axialLoad < -Fhel) {
-        lockUpDepth = traj[i].md;
+  // Find lock-up from hook load profile (where RIH hook load goes to 0)
+  {
+    let prevHook = surfaceLoadRIH;
+    for (let d = stepLen; d <= maxDeployLen; d += stepLen) {
+      // Approximate: compute forces for string deployed to depth d
+      const deployed = d;
+      let aRIH = bhaWeightN * buoyancyFactor * 1000; // N
+      const dSteps = Math.ceil(deployed / stepLen);
+      const dStep = deployed / dSteps;
+      for (let j = dSteps; j > 0; j--) {
+        const mB = j * dStep, mT = (j - 1) * dStep;
+        const iB = getIncAtMD(traj, mB) * Math.PI / 180;
+        const iT = getIncAtMD(traj, mT) * Math.PI / 180;
+        const iA = (iB + iT) / 2;
+        const dI = Math.abs(iB - iT);
+        const ww = wpmAt((mB + mT) / 2) * GRAVITY * buoyancyFactor;
+        const sW = ww * dStep;
+        const wN = Math.abs(sW * Math.sin(iA));
+        const cN = Math.abs(aRIH * dI);
+        const tN = Math.sqrt(cN * cN + wN * wN);
+        aRIH += sW * Math.cos(iA) - frictionCoeff * tN;
+      }
+      const hookKN = aRIH / 1000;
+      if (hookKN <= 0 && prevHook > 0) {
+        // Interpolate
+        const frac = prevHook / (prevHook - hookKN);
+        lockUpDepth = Math.round((d - stepLen) + frac * stepLen);
         break;
       }
+      prevHook = hookKN;
     }
   }
 
@@ -285,20 +368,123 @@ export function calculateTubingForces(
   };
 }
 
-/** Generate depth profile for force chart */
+/** Generate hook load vs BHA depth profile (CoilPRO style) */
+export function generateHookLoadProfile(
+  ct: CTStringData,
+  well: WellGeometry,
+  fluid: FluidData,
+  tools: ToolsData,
+  frictionCoeff: number = 0.25,
+  sections?: CTSection[],
+  steps: number = 60,
+): HookLoadPoint[] {
+  const traj = well.trajectory.length > 1 ? well.trajectory : buildSyntheticTrajectory(well.md, well.tvd);
+  const fluidDensity = fluid.density * 1000;
+  const buoyancyFactor = 1 - fluidDensity / STEEL_DENSITY;
+  const bhaWeightN = tools.bhaWeight * GRAVITY; // N
+  const totalCTLen = sections && sections.length > 0
+    ? sections.reduce((s, sec) => s + sec.length, 0) : ct.length;
+  const maxD = Math.min(totalCTLen, well.md);
+
+  const yieldStrength = GRADE_YIELD[ct.grade] || 552;
+  const steelArea = ctCrossSectionArea(ct.od, ct.wall);
+  const yieldTension80 = yieldStrength * steelArea * 1000 * 0.8; // N, 80%
+
+  const odCT = ct.od / 1000;
+  const idCasing = well.casingID / 1000;
+  const rc = Math.max((idCasing - odCT) / 2, 0.001);
+  const I = (Math.PI / 64) * (Math.pow(odCT, 4) - Math.pow(ctID(ct.od, ct.wall) / 1000, 4));
+  const E = 207000e6; // Pa
+
+  function wpmAt(depthFromSurface: number, deployLen: number): number {
+    if (!sections || sections.length === 0) return ctWeightPerMeter(ct.od, ct.wall);
+    const depthFromBottom = deployLen - depthFromSurface;
+    let cum = 0;
+    for (const sec of sections) {
+      cum += sec.length;
+      if (depthFromBottom <= cum) return ctWeightPerMeter(sec.od, sec.wall);
+    }
+    return ctWeightPerMeter(sections[sections.length - 1].od, sections[sections.length - 1].wall);
+  }
+
+  const points: HookLoadPoint[] = [];
+
+  for (let si = 0; si <= steps; si++) {
+    const deployDepth = (maxD / steps) * si;
+    if (deployDepth <= 0) {
+      points.push({
+        depth: 0, tvd: 0,
+        hookRIH_kgf: 0, hookPOOH_kgf: 0,
+        hookRIH_kN: 0, hookPOOH_kN: 0,
+        yieldLimit80_kgf: Math.round(yieldTension80 / GRAVITY),
+        bucklingLimit_kgf: 0,
+      });
+      continue;
+    }
+
+    const tvd = getTVDatMD(traj, deployDepth);
+    const intSteps = Math.max(20, Math.ceil(deployDepth / 15));
+    const dStep = deployDepth / intSteps;
+
+    let aRIH = bhaWeightN * buoyancyFactor; // N
+    let aPOOH = bhaWeightN * buoyancyFactor;
+
+    for (let j = intSteps; j > 0; j--) {
+      const mB = j * dStep, mT = (j - 1) * dStep;
+      const iB = getIncAtMD(traj, mB) * Math.PI / 180;
+      const iT = getIncAtMD(traj, mT) * Math.PI / 180;
+      const iA = (iB + iT) / 2;
+      const dI = Math.abs(iB - iT);
+      const ww = wpmAt((mB + mT) / 2, deployDepth) * GRAVITY * buoyancyFactor;
+      const sW = ww * dStep;
+      const wAx = sW * Math.cos(iA);
+      const wN = Math.abs(sW * Math.sin(iA));
+
+      const cRIH = Math.abs(aRIH * dI);
+      const nRIH = Math.sqrt(cRIH * cRIH + wN * wN);
+      aRIH += wAx - frictionCoeff * nRIH;
+
+      const cPOOH = Math.abs(aPOOH * dI);
+      const nPOOH = Math.sqrt(cPOOH * cPOOH + wN * wN);
+      aPOOH += wAx + frictionCoeff * nPOOH;
+    }
+
+    // Buckling limit at bottom
+    const botInc = getIncAtMD(traj, deployDepth) * Math.PI / 180;
+    const wpmBot = wpmAt(deployDepth, deployDepth);
+    const bwpm = wpmBot * GRAVITY * buoyancyFactor;
+    const Fhel = rc > 0 ? 2 * 1.41 * Math.sqrt(E * I * bwpm * Math.sin(Math.max(botInc, 0.01)) / rc) : 0;
+
+    points.push({
+      depth: Math.round(deployDepth),
+      tvd: Math.round(tvd * 10) / 10,
+      hookRIH_kgf: Math.round(aRIH / GRAVITY),
+      hookPOOH_kgf: Math.round(aPOOH / GRAVITY),
+      hookRIH_kN: Math.round(aRIH / 1000 * 10) / 10,
+      hookPOOH_kN: Math.round(aPOOH / 1000 * 10) / 10,
+      yieldLimit80_kgf: Math.round(yieldTension80 / GRAVITY),
+      bucklingLimit_kgf: Math.round(-Fhel / GRAVITY),
+    });
+  }
+
+  return points;
+}
+
+/** Generate depth profile for force chart (axial load distribution at full deployment) */
 export function generateForceDepthProfile(
   ct: CTStringData,
   well: WellGeometry,
   fluid: FluidData,
   tools: ToolsData,
   frictionCoeff: number = 0.25,
-  steps: number = 50
+  steps: number = 80,
+  sections?: CTSection[],
 ): DepthForcePoint[] {
-  const linearWeight = ctWeightPerMeter(ct.od, ct.wall);
   const fluidDensity = fluid.density * 1000;
   const buoyancyFactor = 1 - fluidDensity / STEEL_DENSITY;
   const bhaWeightN = tools.bhaWeight * GRAVITY / 1000;
-  const buoyedWeightPerM = linearWeight * GRAVITY * buoyancyFactor;
+  const totalCTLen = sections && sections.length > 0
+    ? sections.reduce((s, sec) => s + sec.length, 0) : ct.length;
 
   const odCT = ct.od / 1000;
   const idCasing = well.casingID / 1000;
@@ -307,35 +493,66 @@ export function generateForceDepthProfile(
   const E = 207000;
 
   const points: DepthForcePoint[] = [];
-  const maxD = Math.min(ct.length, well.md);
+  const maxD = Math.min(totalCTLen, well.md);
   const stepSize = maxD / steps;
   const traj = well.trajectory.length > 1 ? well.trajectory : buildSyntheticTrajectory(well.md, well.tvd);
 
-  for (let s = 0; s <= steps; s++) {
-    const depth = s * stepSize;
-    const tvd = getTVDatMD(traj, depth);
-    const depthWeight = linearWeight * depth * GRAVITY / 1000 * buoyancyFactor;
-    const totalWeight = depthWeight + bhaWeightN * buoyancyFactor;
+  function wpmAt(d: number): number {
+    if (!sections || sections.length === 0) return ctWeightPerMeter(ct.od, ct.wall);
+    const dfb = maxD - d;
+    let cum = 0;
+    for (const sec of sections) {
+      cum += sec.length;
+      if (dfb <= cum) return ctWeightPerMeter(sec.od, sec.wall);
+    }
+    return ctWeightPerMeter(sections[sections.length - 1].od, sections[sections.length - 1].wall);
+  }
 
+  // Integrate from bottom to surface
+  const depths: number[] = [];
+  for (let s = 0; s <= steps; s++) depths.push(s * stepSize);
+
+  const rihF = new Array(steps + 1).fill(0);
+  const poohF = new Array(steps + 1).fill(0);
+
+  rihF[steps] = bhaWeightN * buoyancyFactor * 1000; // N
+  poohF[steps] = bhaWeightN * buoyancyFactor * 1000;
+
+  for (let i = steps; i > 0; i--) {
+    const mdB = depths[i], mdT = depths[i - 1];
+    const segLen = mdB - mdT;
+    const iB = getIncAtMD(traj, mdB) * Math.PI / 180;
+    const iT = getIncAtMD(traj, mdT) * Math.PI / 180;
+    const iA = (iB + iT) / 2;
+    const dI = Math.abs(iB - iT);
+    const w = wpmAt((mdB + mdT) / 2) * GRAVITY * buoyancyFactor;
+    const sW = w * segLen;
+    const wAx = sW * Math.cos(iA);
+    const wN = Math.abs(sW * Math.sin(iA));
+
+    const cR = Math.abs(rihF[i] * dI);
+    rihF[i - 1] = rihF[i] + wAx - frictionCoeff * Math.sqrt(cR * cR + wN * wN);
+
+    const cP = Math.abs(poohF[i] * dI);
+    poohF[i - 1] = poohF[i] + wAx + frictionCoeff * Math.sqrt(cP * cP + wN * wN);
+  }
+
+  for (let s = 0; s <= steps; s++) {
+    const depth = depths[s];
+    const tvd = getTVDatMD(traj, depth);
     const zenith = getIncAtMD(traj, depth);
     const incRad = (zenith * Math.PI) / 180;
-
-    const normalForce = Math.abs(totalWeight * Math.sin(Math.max(incRad, 0.01)));
-    const drag = frictionCoeff * normalForce;
-
-    const axialRIH = totalWeight - drag;
-    const axialPOOH = totalWeight + drag;
-
+    const buoyedWPM = wpmAt(depth) * GRAVITY * buoyancyFactor;
     const sinBuckle = radialClearance > 0
-      ? -2 * Math.sqrt(E * 1e6 * momentOfInertia * buoyedWeightPerM * Math.sin(Math.max(incRad, 0.01)) / radialClearance) / 1000
+      ? -2 * Math.sqrt(E * 1e6 * momentOfInertia * buoyedWPM * Math.sin(Math.max(incRad, 0.01)) / radialClearance) / 1000
       : 0;
     const helBuckle = sinBuckle * 1.41;
 
     points.push({
       depth: Math.round(depth),
       tvd: Math.round(tvd * 10) / 10,
-      axialRIH: Math.round(axialRIH * 10) / 10,
-      axialPOOH: Math.round(axialPOOH * 10) / 10,
+      axialRIH: Math.round(rihF[s] / 1000 * 10) / 10,
+      axialPOOH: Math.round(poohF[s] / 1000 * 10) / 10,
       bucklingLimit: Math.round(sinBuckle * 10) / 10,
       helicalLimit: Math.round(helBuckle * 10) / 10,
     });
