@@ -962,8 +962,10 @@ export function calculatePressureProfile(
     // Two-section annulus model: fill from bottom (shoe) upward
     // Lower section: open hole (from prevShoe to casingDepthMD) — uses annAreaLower
     // Upper section: prev casing (from 0 to prevShoe) — uses annAreaUpper
-    const lowerVPM = annAreaLower > 0 ? annAreaLower : annVPM / 1000; // m³/m
-    const upperVPM = annAreaUpper > 0 ? annAreaUpper : annVPM / 1000; // m³/m
+    // IMPORTANT: apply cavern coefficient to open hole section to match cement volume calculation
+    // (annularVolumeForInterval uses cavernCoeff, so height conversion must use the same VPM)
+    const lowerVPM = annAreaLower > 0 ? annAreaLower * wellData.cavernCoeff : annVPM / 1000; // m³/m (with cavern)
+    const upperVPM = annAreaUpper > 0 ? annAreaUpper : annVPM / 1000; // m³/m (inter-casing, no cavern)
 
     function addHeight(type: AnnularFluidType, h: number) {
       switch (type) {
