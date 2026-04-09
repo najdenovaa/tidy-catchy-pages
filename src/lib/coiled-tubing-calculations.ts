@@ -350,7 +350,7 @@ export function calculateTubingForces(
         const sW = ww * dStep;
         const wN = Math.abs(sW * Math.sin(iA));
         const cN = Math.abs(aRIH * dI);
-        const tN = Math.sqrt(cN * cN + wN * wN);
+        const tN = Math.sqrt(cN * cN + wN * wN) * TORTUOSITY_FACTOR;
         aRIH += sW * Math.cos(iA) - frictionCoeff * tN;
       }
       const hookKN = aRIH / 1000;
