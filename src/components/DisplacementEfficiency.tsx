@@ -341,17 +341,21 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
         } else {
           const isLeft = xFrac < casLeftFrac;
           let localFrac: number;
-          let angle: number;
 
           if (isLeft) {
             localFrac = casLeftFrac > 0 ? xFrac / casLeftFrac : 0;
-            angle = Math.PI * (1 - localFrac);
           } else {
             const rightStart = casRightFrac;
             const rightW = 1.0 - rightStart;
             localFrac = rightW > 0 ? (xFrac - rightStart) / rightW : 0;
-            angle = Math.PI * localFrac;
           }
+
+          // Wide side (left) = good cement (angle→π, cosA<0 → eff increases)
+          // Narrow side (right) = mud channel (angle→0, cosA>0 → eff decreases)
+          const baseAngle = isLeft ? Math.PI : 0;
+          // Small variation within each side for texture
+          const angleVariation = (isLeft ? (1 - localFrac) : localFrac) * 0.3;
+          const angle = baseAngle + angleVariation;
 
           if (!zone || zone.type === "mud") {
             const mudNoise = smoothNoise(localFrac * 5, yFrac * 20) * 0.15;
