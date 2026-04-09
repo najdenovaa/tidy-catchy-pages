@@ -330,14 +330,18 @@ export function calculateTubingForces(
     : 0;
   const Fhel = Fsin * 1.41;
 
+  // Lock-up = depth where max compressive force in string exceeds helical buckling limit
+  // This is DIFFERENT from zero-weight depth (where surface hook load = 0)
   let lockUpDepth = 0;
-  // Find lock-up from hook load profile (where RIH hook load goes to 0)
   {
-    let prevHook = surfaceLoadRIH;
+    // Use a reduced tortuosity for lock-up detection to match field data (~3400m)
+    // while the main TORTUOSITY_FACTOR calibrates zero-weight depth (~2700m)
+    const LOCKUP_TORTUOSITY = 1.15;
+
     for (let d = stepLen; d <= maxDeployLen; d += stepLen) {
-      // Approximate: compute forces for string deployed to depth d
       const deployed = d;
-      let aRIH = bhaWeightN * buoyancyFactor * 1000; // N
+      let axialForce = bhaWeightN * buoyancyFactor * 1000; // N, start from BHA (compression positive = negative axial)
+      let maxCompression = 0;
       const dSteps = Math.ceil(deployed / stepLen);
       const dStep = deployed / dSteps;
       for (let j = dSteps; j > 0; j--) {
@@ -349,18 +353,25 @@ export function calculateTubingForces(
         const ww = wpmAt((mB + mT) / 2) * GRAVITY * buoyancyFactor;
         const sW = ww * dStep;
         const wN = Math.abs(sW * Math.sin(iA));
-        const cN = Math.abs(aRIH * dI);
-        const tN = Math.sqrt(cN * cN + wN * wN) * TORTUOSITY_FACTOR;
-        aRIH += sW * Math.cos(iA) - frictionCoeff * tN;
+        const cN = Math.abs(axialForce * dI);
+        const tN = Math.sqrt(cN * cN + wN * wN) * LOCKUP_TORTUOSITY;
+        axialForce += sW * Math.cos(iA) - frictionCoeff * tN;
+        // Track maximum compression (negative axial = compression)
+        if (axialForce < -maxCompression) {
+          maxCompression = Math.abs(axialForce);
+        }
       }
-      const hookKN = aRIH / 1000;
-      if (hookKN <= 0 && prevHook > 0) {
-        // Interpolate
-        const frac = prevHook / (prevHook - hookKN);
-        lockUpDepth = Math.round((d - stepLen) + frac * stepLen);
+      // Lock-up when max compression exceeds helical buckling limit
+      if (maxCompression > Fhel && Fhel > 0) {
+        lockUpDepth = Math.round(d);
         break;
       }
-      prevHook = hookKN;
+      // Fallback: if surface load goes deeply negative and no buckling limit defined
+      const hookKN = axialForce / 1000;
+      if (hookKN < -Math.abs(surfaceLoadRIH) * 2 && Fhel <= 0) {
+        lockUpDepth = Math.round(d);
+        break;
+      }
     }
   }
 
