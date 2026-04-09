@@ -258,10 +258,10 @@ export function calculateTubingForces(
 
   // Helper: weight per meter at depth from surface (accounting for sections)
   const maxDeployLen = Math.min(totalCTLen, well.md);
-  function wpmAt(depthFromSurface: number): number {
+  function wpmAt(depthFromSurface: number, deployLen: number = maxDeployLen): number {
     if (!sections || sections.length === 0) return ctWeightPerMeter(ct.od, ct.wall);
     // sections[0] = bottom of string, sections[last] = near surface
-    const depthFromBottom = maxDeployLen - depthFromSurface;
+    const depthFromBottom = deployLen - depthFromSurface;
     let cum = 0;
     for (const sec of sections) {
       cum += sec.length;
@@ -330,45 +330,52 @@ export function calculateTubingForces(
     : 0;
   const Fhel = Fsin * 1.41;
 
-  // Lock-up = depth where max compressive force in string exceeds helical buckling limit
-  // This is DIFFERENT from zero-weight depth (where surface hook load = 0)
+  // Lock-up = depth where compressive load at current deployment exceeds
+  // the local helical buckling threshold for that specific depth.
   let lockUpDepth = 0;
   {
-    // Use a reduced tortuosity for lock-up detection to match field data (~3400m)
-    // while the main TORTUOSITY_FACTOR calibrates zero-weight depth (~2700m)
     const LOCKUP_TORTUOSITY = 1.15;
 
     for (let d = stepLen; d <= maxDeployLen; d += stepLen) {
       const deployed = d;
-      let axialForce = bhaWeightN * buoyancyFactor * 1000; // N, start from BHA (compression positive = negative axial)
+      let axialForce = bhaWeightN * buoyancyFactor * 1000; // N
       let maxCompression = 0;
       const dSteps = Math.ceil(deployed / stepLen);
       const dStep = deployed / dSteps;
+
       for (let j = dSteps; j > 0; j--) {
         const mB = j * dStep, mT = (j - 1) * dStep;
         const iB = getIncAtMD(traj, mB) * Math.PI / 180;
         const iT = getIncAtMD(traj, mT) * Math.PI / 180;
         const iA = (iB + iT) / 2;
         const dI = Math.abs(iB - iT);
-        const ww = wpmAt((mB + mT) / 2) * GRAVITY * buoyancyFactor;
+        const ww = wpmAt((mB + mT) / 2, deployed) * GRAVITY * buoyancyFactor;
         const sW = ww * dStep;
         const wN = Math.abs(sW * Math.sin(iA));
         const cN = Math.abs(axialForce * dI);
         const tN = Math.sqrt(cN * cN + wN * wN) * LOCKUP_TORTUOSITY;
         axialForce += sW * Math.cos(iA) - frictionCoeff * tN;
-        // Track maximum compression (negative axial = compression)
-        if (axialForce < -maxCompression) {
-          maxCompression = Math.abs(axialForce);
+
+        if (axialForce < 0) {
+          maxCompression = Math.max(maxCompression, Math.abs(axialForce));
         }
       }
-      // Lock-up when max compression exceeds helical buckling limit
-      if (maxCompression > Fhel && Fhel > 0) {
+
+      const localBottomInc = getIncAtMD(traj, deployed) * Math.PI / 180;
+      const localBottomWpm = wpmAt(deployed, deployed);
+      const localBuoyedWeightPerM = localBottomWpm * GRAVITY * buoyancyFactor;
+      const localFsin = radialClearance > 0
+        ? 2 * Math.sqrt(E * 1e6 * momentOfInertia * localBuoyedWeightPerM * Math.sin(Math.max(localBottomInc, 0.01)) / radialClearance)
+        : 0;
+      const localFhel = localFsin * 1.41;
+
+      if (maxCompression > localFhel && localFhel > 0) {
         lockUpDepth = Math.round(d);
         break;
       }
-      // Fallback: if surface load goes deeply negative and no buckling limit defined
+
       const hookKN = axialForce / 1000;
-      if (hookKN < -Math.abs(surfaceLoadRIH) * 2 && Fhel <= 0) {
+      if (hookKN < -Math.abs(surfaceLoadRIH) * 2 && localFhel <= 0) {
         lockUpDepth = Math.round(d);
         break;
       }
