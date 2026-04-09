@@ -157,6 +157,7 @@ export default function CoiledTubing() {
   const temperingChartRef = useRef<HTMLDivElement>(null);
   const temperingDegradationRef = useRef<HTMLDivElement>(null);
   const tempProfileChartRef = useRef<HTMLDivElement>(null);
+  const well3dRef = useRef<HTMLDivElement>(null);
 
   // Auth check
   useEffect(() => {
@@ -330,6 +331,15 @@ export default function CoiledTubing() {
 
     toast.info("Формирование документа...");
 
+    // Capture 3D canvas separately (WebGL)
+    let well3dImg: string | undefined;
+    if (well3dRef.current) {
+      const canvas = well3dRef.current.querySelector("canvas");
+      if (canvas) {
+        try { well3dImg = canvas.toDataURL("image/png"); } catch { /* security */ }
+      }
+    }
+
     const [forcesImg, hookLoadImg, limitsImg, hydraulicsImg, fatigueImg, temperingImg, temperingDegImg, tempProfileImg] = await Promise.all([
       captureChart(forcesChartRef),
       captureChart(hookLoadChartRef),
@@ -355,6 +365,7 @@ export default function CoiledTubing() {
         forces: forcesImg, hookLoad: hookLoadImg, limits: limitsImg,
         hydraulics: hydraulicsImg, fatigue: fatigueImg, tempering: temperingImg,
         temperingDegradation: temperingDegImg, tempProfile: tempProfileImg,
+        well3d: well3dImg,
       },
     });
 
