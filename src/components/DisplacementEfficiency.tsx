@@ -591,9 +591,8 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     const legH = 10;
     for (let i = 0; i < legW; i++) {
       const eff = i / legW;
-      const g = Math.round(220 - eff * 180);
-      const rb = Math.round(200 - eff * 170);
-      ctx.fillStyle = `rgb(${rb},${rb + 3},${g})`;
+      const v = Math.round(235 - eff * (235 - 22));
+      ctx.fillStyle = `rgb(${v},${v},${Math.min(255, v + 4)})`;
       ctx.fillRect(legX + i, legY, 1.5, legH);
     }
     ctx.strokeStyle = "hsl(224, 18%, 30%)";
