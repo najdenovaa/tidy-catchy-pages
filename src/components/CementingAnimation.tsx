@@ -490,7 +490,7 @@ export default function CementingAnimation({
         const effectivePumpedVol = preFlushCumVol + (point.freefallSettledM3 || 0);
 
         // Always trust engine heights for annulus
-        const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets);
+        const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets, slurries, buffers, pipeCapacityM3);
         const pipeSegments = buildPipeSegments(history, effectivePumpedVol, pipeCapacityM3, casingDepthMD, "void");
 
         lastCumVol = point.cumulativeVolume;
@@ -531,7 +531,7 @@ export default function CementingAnimation({
       }
 
       // Always trust engine heights for annulus — single consistent path
-      const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets);
+      const annulusSegments = buildAnnulusSegmentsFromTargets(point, casingDepthMD, cementTargets, bufferTargets, slurries, buffers, pipeCapacityM3);
 
       const frame: VisualFrame = {
         pipeSegments: buildPipeSegments(
