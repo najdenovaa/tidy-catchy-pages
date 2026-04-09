@@ -132,12 +132,12 @@ function CrossSectionView({ eccentricity, holeD, casingOD, casingID, standoff }:
 
         if (distCasing > casODR && distHole <= holeR) {
           // Annulus — cement distribution
-          // angle from hole center to this pixel
-          const pixAngle = Math.atan2(x, -y);
-          // actual gap: distance from hole wall to casing wall along this ray
-          const distToHoleWall = holeR;
-          const distToCasingWall = Math.sqrt(x * x + (y - offset) * (y - offset)) - casODR;
-          const localGap = Math.max(0, distToCasingWall);
+          // Angle from hole center to this pixel
+          const holeAngle = Math.atan2(x, -y);
+          // Approximate annular gap at this angular direction
+          // Gap = holeR - casODR - offset*cos(angle from offset direction)
+          // Offset is downward (+y), so offset direction angle = π (bottom)
+          const localGap = Math.max(0, holeR - casODR - offset * Math.cos(holeAngle));
           const maxGap = holeR - casODR + Math.abs(offset);
           const minGap = Math.max(0, holeR - casODR - Math.abs(offset));
           const gapFrac = maxGap > minGap ? (localGap - minGap) / (maxGap - minGap) : 0.5;
