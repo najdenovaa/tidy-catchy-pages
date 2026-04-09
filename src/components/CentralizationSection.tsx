@@ -854,6 +854,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                   holeD={wellData.holeDiameter}
                   casingOD={wellData.casingOD}
                   casingID={casingID}
+                  standoff={selectedResult?.standoff}
                 />
                 <div className="text-xs space-y-1 text-muted-foreground">
                   {selectedResult && (
