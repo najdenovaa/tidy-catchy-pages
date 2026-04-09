@@ -973,8 +973,14 @@ export default function CoiledTubing() {
                                   <ReferenceLine y={150} stroke="#dc2626" strokeDasharray="6 3" label={{ value: "150°C — начало деградации", position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
                                 </LineChart>
                               </ResponsiveContainer>
+                            </div>
+                          </div>
+                        </div>
 
-                              <p className="text-xs font-semibold text-center mt-4 mb-2">📊 Деградация прочности по глубине</p>
+                        <div ref={temperingDegradationRef} className="mt-4 bg-card rounded-lg p-2">
+                          <p className="text-xs font-semibold text-center mb-2">📊 Деградация прочности по глубине</p>
+                          <div className="overflow-x-auto -mx-2 px-2">
+                            <div className="min-w-[600px]">
                               <ResponsiveContainer width="100%" height={280}>
                                 <LineChart data={tempering.profile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
