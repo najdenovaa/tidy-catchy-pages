@@ -541,10 +541,10 @@ export function generateForceDepthProfile(
     const wN = Math.abs(sW * Math.sin(iA));
 
     const cR = Math.abs(rihF[i] * dI);
-    rihF[i - 1] = rihF[i] + wAx - frictionCoeff * Math.sqrt(cR * cR + wN * wN);
+    rihF[i - 1] = rihF[i] + wAx - frictionCoeff * Math.sqrt(cR * cR + wN * wN) * TORTUOSITY_FACTOR;
 
     const cP = Math.abs(poohF[i] * dI);
-    poohF[i - 1] = poohF[i] + wAx + frictionCoeff * Math.sqrt(cP * cP + wN * wN);
+    poohF[i - 1] = poohF[i] + wAx + frictionCoeff * Math.sqrt(cP * cP + wN * wN) * TORTUOSITY_FACTOR;
   }
 
   for (let s = 0; s <= steps; s++) {
