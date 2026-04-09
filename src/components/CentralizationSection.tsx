@@ -81,7 +81,6 @@ function CrossSectionView({ eccentricity, holeD, casingOD, casingID, standoff }:
     canvas.height = size * dpr;
     canvas.style.width = `${size}px`;
     canvas.style.height = `${size}px`;
-    ctx.scale(dpr, dpr);
 
     const cx = size / 2, cy = size / 2;
     const maxR = (size - 20) / 2;
@@ -90,98 +89,71 @@ function CrossSectionView({ eccentricity, holeD, casingOD, casingID, standoff }:
     const casODR = (casingOD / 2) * scale;
     const casIDR = (casingID / 2) * scale;
     const clearance = holeR - casODR;
-    const offset = eccentricity * clearance; // casing shifts down
+    const offset = eccentricity * clearance;
 
-    // Clear
-    ctx.clearRect(0, 0, size, size);
-
-    // Draw annular cement distribution pixel by pixel
-    const imgSize = Math.ceil(size * dpr);
-    const imgData = ctx.createImageData(imgSize, imgSize);
+    // Render pixel-perfect at full resolution (no ctx.scale — manual dpr)
+    const W = size * dpr;
+    const imgData = ctx.createImageData(W, W);
     const pixels = imgData.data;
 
-    for (let py = 0; py < imgSize; py++) {
-      for (let px = 0; px < imgSize; px++) {
+    for (let py = 0; py < W; py++) {
+      for (let px = 0; px < W; px++) {
         const x = px / dpr - cx;
         const y = py / dpr - cy;
 
-        // Distance from hole center
         const distHole = Math.sqrt(x * x + y * y);
-        // Distance from casing center (shifted down by offset)
         const distCasing = Math.sqrt(x * x + (y - offset) * (y - offset));
 
-        const idx = (py * imgSize + px) * 4;
+        const idx = (py * W + px) * 4;
 
-        if (distHole > holeR + 1) {
-          // Outside hole — transparent
+        if (distHole > holeR + 0.5) {
           pixels[idx + 3] = 0;
           continue;
         }
 
-        if (distCasing < casIDR) {
-          // Inside casing — light background
-          pixels[idx] = 30;
-          pixels[idx + 1] = 32;
-          pixels[idx + 2] = 40;
-          pixels[idx + 3] = 255;
+        if (distCasing < casIDR - 0.5) {
+          // Inside casing — dark void
+          pixels[idx] = 22; pixels[idx + 1] = 24; pixels[idx + 2] = 30; pixels[idx + 3] = 255;
           continue;
         }
 
-        if (distCasing >= casIDR && distCasing <= casODR) {
-          // Casing wall — steel gray
-          pixels[idx] = 120;
-          pixels[idx + 1] = 125;
-          pixels[idx + 2] = 135;
-          pixels[idx + 3] = 255;
+        if (distCasing >= casIDR - 0.5 && distCasing <= casODR + 0.5) {
+          // Casing wall — metallic gradient based on angle from casing center
+          const angleFromCenter = Math.atan2(x, -(y - offset));
+          const casingFrac = (distCasing - casIDR) / (casODR - casIDR);
+          // Metallic highlight: brighter on top-left, darker on bottom-right
+          const highlight = 0.5 + 0.5 * Math.cos(angleFromCenter - 0.8);
+          const baseVal = 80 + highlight * 100;
+          const edgeDark = 1 - Math.pow(Math.abs(casingFrac - 0.5) * 2, 2) * 0.3;
+          const v = Math.round(baseVal * edgeDark);
+          pixels[idx] = v; pixels[idx + 1] = v + 2; pixels[idx + 2] = v + 5; pixels[idx + 3] = 255;
           continue;
         }
 
         if (distCasing > casODR && distHole <= holeR) {
           // Annulus — cement distribution
-          // Angle from casing center (0 = top, PI = bottom)
-          const angle = Math.atan2(x, -(y - offset)); // 0=top, PI=bottom
-
-          // Gap width at this angle (distance from casing OD to hole wall along this ray)
-          // Approximate: at angle θ, gap = holeR - casODR - offset*cos(θ)
-          // More precisely: solve intersection of ray from casing center with hole circle
-          const cosA = Math.cos(angle);
-          const sinA = Math.sin(angle);
-          // Ray from casing center: P = (0, offset) + t*(sinA, -cosA)
-          // Hole circle: x^2 + y^2 = holeR^2
-          // (t*sinA)^2 + (offset - t*cosA)^2 = holeR^2
-          // t^2 - 2*offset*cosA*t + offset^2 - holeR^2 = 0
-          const b_coeff = -2 * offset * (-cosA); // actually for direction (-cosA from y)
-          // Simpler: local gap as fraction of max gap
+          const angle = Math.atan2(x, -(y - offset));
           const localGap = holeR - casODR - offset * Math.cos(angle);
           const maxGap = holeR - casODR + Math.abs(offset);
           const minGap = Math.max(0, holeR - casODR - Math.abs(offset));
           const gapFrac = maxGap > minGap ? (localGap - minGap) / (maxGap - minGap) : 0.5;
 
-          // Cement quality: wider gap = better cement (darker), narrow gap = poor (lighter, mud channel)
-          // gapFrac: 0 = narrowest, 1 = widest
-          const quality = Math.pow(gapFrac, 0.6); // non-linear: emphasize narrow side
+          // quality: wide gap = good cement (dark), narrow = mud channel (bright)
+          const quality = Math.pow(gapFrac, 0.55);
 
-          // Grayscale: dark = good cement, light = mud/poor
-          // Dark cement: ~25-35, poor/mud: ~180-200
-          const darkVal = 28;
-          const lightVal = 195;
+          // Brighter mud channels: dark cement ~25, bright mud channel ~230
+          const darkVal = 25;
+          const lightVal = 235;
           const val = Math.round(lightVal - quality * (lightVal - darkVal));
 
-          // Add subtle radial variation (cement texture)
-          const radFrac = (distCasing - casODR) / (holeR - casODR);
-          const textureShift = Math.sin(radFrac * Math.PI) * 8 * quality;
-
-          const finalVal = Math.max(20, Math.min(210, val - textureShift));
+          // Radial texture
+          const radFrac = (distCasing - casODR) / Math.max(1, localGap);
+          const textureShift = Math.sin(radFrac * Math.PI) * 10 * quality;
+          const finalVal = Math.max(18, Math.min(240, val - textureShift));
 
           pixels[idx] = finalVal;
           pixels[idx + 1] = finalVal;
-          pixels[idx + 2] = Math.min(255, finalVal + 5);
-          pixels[idx + 3] = 255;
-        } else if (distHole <= holeR) {
-          // Between hole wall and casing but outside casing — shouldn't happen much, fill dark
-          pixels[idx] = 50;
-          pixels[idx + 1] = 50;
-          pixels[idx + 2] = 55;
+          pixels[idx + 2] = Math.min(255, finalVal + 4);
           pixels[idx + 3] = 255;
         }
       }
@@ -189,49 +161,52 @@ function CrossSectionView({ eccentricity, holeD, casingOD, casingID, standoff }:
 
     ctx.putImageData(imgData, 0, 0);
 
-    // Draw hole boundary
-    ctx.strokeStyle = "hsl(30, 20%, 40%)";
-    ctx.lineWidth = 2.5;
+    // All further drawing uses dpr-scaled coordinates directly (no ctx.scale)
+    const D = dpr;
+
+    // Hole boundary — earthy brown
+    ctx.strokeStyle = "hsl(30, 20%, 42%)";
+    ctx.lineWidth = 2.5 * D;
     ctx.beginPath();
-    ctx.arc(cx * dpr, cy * dpr, holeR * dpr, 0, Math.PI * 2);
+    ctx.arc(cx * D, cy * D, holeR * D, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Draw casing OD outline
-    ctx.strokeStyle = "hsl(210, 10%, 55%)";
-    ctx.lineWidth = 1.5;
+    // Casing OD outline
+    ctx.strokeStyle = "hsl(210, 12%, 60%)";
+    ctx.lineWidth = 1.5 * D;
     ctx.beginPath();
-    ctx.arc(cx * dpr, (cy + offset) * dpr, casODR * dpr, 0, Math.PI * 2);
+    ctx.arc(cx * D, (cy + offset) * D, casODR * D, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Draw casing ID outline
-    ctx.strokeStyle = "hsl(210, 10%, 40%)";
-    ctx.lineWidth = 1;
+    // Casing ID outline
+    ctx.strokeStyle = "hsl(210, 10%, 38%)";
+    ctx.lineWidth = 1 * D;
     ctx.beginPath();
-    ctx.arc(cx * dpr, (cy + offset) * dpr, casIDR * dpr, 0, Math.PI * 2);
+    ctx.arc(cx * D, (cy + offset) * D, casIDR * D, 0, Math.PI * 2);
     ctx.stroke();
 
     // Center dots
     ctx.fillStyle = "#ef4444";
     ctx.beginPath();
-    ctx.arc(cx * dpr, cy * dpr, 3, 0, Math.PI * 2);
+    ctx.arc(cx * D, cy * D, 3 * D, 0, Math.PI * 2);
     ctx.fill();
 
-    if (offset > 5) {
+    if (offset > 3) {
       ctx.fillStyle = "#3b82f6";
       ctx.beginPath();
-      ctx.arc(cx * dpr, (cy + offset) * dpr, 3, 0, Math.PI * 2);
+      ctx.arc(cx * D, (cy + offset) * D, 3 * D, 0, Math.PI * 2);
       ctx.fill();
     }
 
     // Legend gradient bar
-    const barX = 12 * dpr;
-    const barY = (size - 60) * dpr;
-    const barW = 12 * dpr;
-    const barH = 50 * dpr;
+    const barX = 12 * D;
+    const barY = (size - 60) * D;
+    const barW = 12 * D;
+    const barH = 50 * D;
     for (let i = 0; i < barH; i++) {
       const f = i / barH;
-      const v = Math.round(28 + f * (195 - 28));
-      ctx.fillStyle = `rgb(${v},${v},${v + 5})`;
+      const v = Math.round(25 + f * (235 - 25));
+      ctx.fillStyle = `rgb(${v},${v},${v + 4})`;
       ctx.fillRect(barX, barY + i, barW, 1);
     }
     ctx.strokeStyle = "hsl(210, 10%, 40%)";
@@ -239,9 +214,9 @@ function CrossSectionView({ eccentricity, holeD, casingOD, casingID, standoff }:
     ctx.strokeRect(barX, barY, barW, barH);
 
     ctx.fillStyle = "#aaa";
-    ctx.font = `${9 * dpr}px sans-serif`;
+    ctx.font = `${9 * D}px sans-serif`;
     ctx.textAlign = "left";
-    ctx.fillText("100%", barX + barW + 4, barY + 9 * dpr);
+    ctx.fillText("100%", barX + barW + 4, barY + 9 * D);
     ctx.fillText("0%", barX + barW + 4, barY + barH);
 
   }, [eccentricity, holeD, casingOD, casingID, size]);
