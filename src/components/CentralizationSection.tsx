@@ -132,17 +132,41 @@ function CrossSectionView({ eccentricity, holeD, casingOD, casingID, standoff }:
 
         if (distCasing > casODR && distHole <= holeR) {
           // Annulus — cement distribution
-          // Angle from hole center; offset is +y (downward)
-          // At bottom (y>0): narrow side. cos should be +1 at bottom.
-          const holeAngle = Math.atan2(y, x);
-          // Offset direction is +y, so offset angle = π/2
-          const angleFromOffset = holeAngle - Math.PI / 2;
-          const localGap = Math.max(0, holeR - casODR - offset * Math.cos(angleFromOffset));
+          // The actual gap at this point is the distance from casing OD to hole wall
+          // measured radially from the hole center through this point.
+          // For a point at angle θ from hole center, the hole wall is at holeR.
+          // The casing edge in that direction: we need the distance from hole center
+          // to the nearest point on the casing OD circle (centered at (0, offset)).
+          // localGap = holeR - (distance from hole center to casing OD edge along this radial)
+          // Along radial direction (cosA, sinA) from hole center, casing OD edge distance ≈ offset*sinA + casODR (approx for small offset)
+          // More precisely: distance from hole center to casing OD along angle θ
+          const angle = Math.atan2(y, x);
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          // Solve for t along (t*cosA, t*sinA) that hits the casing OD circle: (t*cosA)^2 + (t*sinA - offset)^2 = casODR^2
+          // t^2 - 2*t*sinA*offset + offset^2 - casODR^2 = 0
+          const a_coeff = 1;
+          const b_coeff = -2 * sinA * offset;
+          const c_coeff = offset * offset - casODR * casODR;
+          const disc = b_coeff * b_coeff - 4 * a_coeff * c_coeff;
+          let casingEdgeDist = casODR; // fallback
+          if (disc >= 0) {
+            const sqrtDisc = Math.sqrt(disc);
+            const t1 = (-b_coeff + sqrtDisc) / 2;
+            const t2 = (-b_coeff - sqrtDisc) / 2;
+            casingEdgeDist = Math.max(t1, t2); // take the farther intersection (outer edge)
+          }
+          const localGap = Math.max(0, holeR - casingEdgeDist);
+          
+          // Compute max and min gaps for normalization
+          // Max gap: opposite side from offset (angle = -π/2 when offset is +y)
+          // Min gap: same side as offset (angle = +π/2 when offset is +y)
           const maxGap = holeR - casODR + Math.abs(offset);
           const minGap = Math.max(0, holeR - casODR - Math.abs(offset));
-          const gapFrac = maxGap > minGap ? (localGap - minGap) / (maxGap - minGap) : 0.5;
+          const gapFrac = maxGap > minGap ? Math.max(0, Math.min(1, (localGap - minGap) / (maxGap - minGap))) : 1.0;
 
           // quality: wide gap = good cement (dark), narrow = mud channel (bright)
+          // When centered (offset=0), gapFrac=1.0 everywhere → uniform dark cement
           const quality = Math.pow(gapFrac, 0.55);
 
           // Brighter mud channels: dark cement ~25, bright mud channel ~230
@@ -150,10 +174,10 @@ function CrossSectionView({ eccentricity, holeD, casingOD, casingID, standoff }:
           const lightVal = 235;
           const val = Math.round(lightVal - quality * (lightVal - darkVal));
 
-          // Radial texture
+          // Radial texture (subtle)
           const radFrac = (distCasing - casODR) / Math.max(1, localGap);
-          const textureShift = Math.sin(radFrac * Math.PI) * 10 * quality;
-          const finalVal = Math.max(18, Math.min(240, val - textureShift));
+          const textureShift = Math.sin(radFrac * Math.PI) * 8 * (1 - quality);
+          const finalVal = Math.max(18, Math.min(240, val + textureShift));
 
           pixels[idx] = finalVal;
           pixels[idx + 1] = finalVal;
