@@ -1034,7 +1034,9 @@ export default function CoiledTubing() {
                     <CardTitle className="text-sm">🌐 3D Профиль скважины</CardTitle>
                   </CardHeader>
                   <CardContent className="px-4 pb-4">
-                    <CTWell3D trajectory={wellWithTraj.trajectory} maxMD={wellWithTraj.md} />
+                    <div ref={well3dRef}>
+                      <CTWell3D trajectory={wellWithTraj.trajectory} maxMD={wellWithTraj.md} />
+                    </div>
                     <p className="text-[10px] text-muted-foreground text-center mt-2">Зажмите мышь для вращения. Колёсико — масштаб.</p>
                   </CardContent>
                 </Card>
