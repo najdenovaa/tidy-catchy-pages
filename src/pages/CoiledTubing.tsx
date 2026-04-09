@@ -155,6 +155,8 @@ export default function CoiledTubing() {
   const hydraulicsChartRef = useRef<HTMLDivElement>(null);
   const fatigueChartRef = useRef<HTMLDivElement>(null);
   const temperingChartRef = useRef<HTMLDivElement>(null);
+  const temperingDegradationRef = useRef<HTMLDivElement>(null);
+  const tempProfileChartRef = useRef<HTMLDivElement>(null);
 
   // Auth check
   useEffect(() => {
@@ -328,13 +330,15 @@ export default function CoiledTubing() {
 
     toast.info("Формирование документа...");
 
-    const [forcesImg, hookLoadImg, limitsImg, hydraulicsImg, fatigueImg, temperingImg] = await Promise.all([
+    const [forcesImg, hookLoadImg, limitsImg, hydraulicsImg, fatigueImg, temperingImg, temperingDegImg, tempProfileImg] = await Promise.all([
       captureChart(forcesChartRef),
       captureChart(hookLoadChartRef),
       captureChart(limitsChartRef),
       captureChart(hydraulicsChartRef),
       captureChart(fatigueChartRef),
       captureChart(temperingChartRef),
+      captureChart(temperingDegradationRef),
+      captureChart(tempProfileChartRef),
     ]);
 
     await exportCTDocx({
@@ -350,6 +354,7 @@ export default function CoiledTubing() {
       chartImages: {
         forces: forcesImg, hookLoad: hookLoadImg, limits: limitsImg,
         hydraulics: hydraulicsImg, fatigue: fatigueImg, tempering: temperingImg,
+        temperingDegradation: temperingDegImg, tempProfile: tempProfileImg,
       },
     });
 
@@ -908,7 +913,7 @@ export default function CoiledTubing() {
 
                           {/* Temperature profile */}
                           {tempProfile.length > 0 && (
-                            <>
+                            <div ref={tempProfileChartRef}>
                               <p className="text-xs font-semibold text-center mt-4 mb-2">🌡 Температурный профиль по глубине (TVD)</p>
                               <ResponsiveContainer width="100%" height={250}>
                                 <LineChart data={tempProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
@@ -921,7 +926,7 @@ export default function CoiledTubing() {
                                   <Line type="monotone" dataKey="tempCirculating" name="BHCT (цирк.)" stroke="#3b82f6" strokeWidth={2} strokeDasharray="5 3" dot={false} />
                                 </LineChart>
                               </ResponsiveContainer>
-                            </>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -968,8 +973,14 @@ export default function CoiledTubing() {
                                   <ReferenceLine y={150} stroke="#dc2626" strokeDasharray="6 3" label={{ value: "150°C — начало деградации", position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
                                 </LineChart>
                               </ResponsiveContainer>
+                            </div>
+                          </div>
+                        </div>
 
-                              <p className="text-xs font-semibold text-center mt-4 mb-2">📊 Деградация прочности по глубине</p>
+                        <div ref={temperingDegradationRef} className="mt-4 bg-card rounded-lg p-2">
+                          <p className="text-xs font-semibold text-center mb-2">📊 Деградация прочности по глубине</p>
+                          <div className="overflow-x-auto -mx-2 px-2">
+                            <div className="min-w-[600px]">
                               <ResponsiveContainer width="100%" height={280}>
                                 <LineChart data={tempering.profile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />

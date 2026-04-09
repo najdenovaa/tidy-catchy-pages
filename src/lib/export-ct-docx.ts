@@ -180,6 +180,7 @@ export interface CTDocxInput {
     forces?: string; hookLoad?: string; limits?: string;
     hydraulics?: string; fatigue?: string;
     tempering?: string; temperingDegradation?: string;
+    tempProfile?: string;
   };
 }
 
@@ -666,6 +667,7 @@ export async function exportCTDocx(input: CTDocxInput) {
   // 2.5 Temperature Profile
   if (tempProfile && tempProfile.length > 0) {
     children.push(sectionTitle(tempering ? "2.5  Температурный профиль" : "2.4  Температурный профиль"));
+    if (chartImages?.tempProfile) children.push(chartImage(chartImages.tempProfile, 540, 280, "temp-profile"));
     const step = Math.max(1, Math.floor(tempProfile.length / 15));
     const sampled = tempProfile.filter((_, i) => i === 0 || i === tempProfile.length - 1 || i % step === 0);
     children.push(dataTable(
