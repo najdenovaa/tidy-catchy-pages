@@ -180,7 +180,7 @@ export interface CTDocxInput {
     forces?: string; hookLoad?: string; limits?: string;
     hydraulics?: string; fatigue?: string;
     tempering?: string; temperingDegradation?: string;
-    tempProfile?: string;
+    tempProfile?: string; well3d?: string;
   };
 }
 
@@ -320,6 +320,12 @@ export async function exportCTDocx(input: CTDocxInput) {
       ["MD, м", "Азимут, °", "Зенит, °", "TVD, м"],
       traj.map(p => [fmt(p.md, 1), fmt(p.azimuth, 1), fmt(p.zenith, 1), fmt(p.tvd, 1)]),
     ));
+  }
+
+  // 3D Well Profile image
+  if (chartImages?.well3d) {
+    children.push(subTitle("3D Профиль скважины"));
+    children.push(chartImage(chartImages.well3d, 540, 380, "well-3d-profile"));
   }
 
   // 1.3 Fluid

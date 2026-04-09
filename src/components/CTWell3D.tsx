@@ -252,7 +252,7 @@ export default function CTWell3D({ trajectory, maxMD }: Props) {
 
   return (
     <div className="w-full h-[550px] bg-card rounded-lg border border-border overflow-hidden relative">
-      <Canvas camera={{ position: [camDist * 0.7, -camDist * 0.35, camDist * 0.9], fov: 50, near: 0.01, far: 100 }}>
+      <Canvas gl={{ preserveDrawingBuffer: true }} camera={{ position: [camDist * 0.7, -camDist * 0.35, camDist * 0.9], fov: 50, near: 0.01, far: 100 }}>
         <WellScene trajectory={trajectory} maxMD={maxMD} />
       </Canvas>
       {/* Legend overlay */}

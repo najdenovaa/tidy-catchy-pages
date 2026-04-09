@@ -157,6 +157,7 @@ export default function CoiledTubing() {
   const temperingChartRef = useRef<HTMLDivElement>(null);
   const temperingDegradationRef = useRef<HTMLDivElement>(null);
   const tempProfileChartRef = useRef<HTMLDivElement>(null);
+  const well3dRef = useRef<HTMLDivElement>(null);
 
   // Auth check
   useEffect(() => {
@@ -330,6 +331,15 @@ export default function CoiledTubing() {
 
     toast.info("Формирование документа...");
 
+    // Capture 3D canvas separately (WebGL)
+    let well3dImg: string | undefined;
+    if (well3dRef.current) {
+      const canvas = well3dRef.current.querySelector("canvas");
+      if (canvas) {
+        try { well3dImg = canvas.toDataURL("image/png"); } catch { /* security */ }
+      }
+    }
+
     const [forcesImg, hookLoadImg, limitsImg, hydraulicsImg, fatigueImg, temperingImg, temperingDegImg, tempProfileImg] = await Promise.all([
       captureChart(forcesChartRef),
       captureChart(hookLoadChartRef),
@@ -355,6 +365,7 @@ export default function CoiledTubing() {
         forces: forcesImg, hookLoad: hookLoadImg, limits: limitsImg,
         hydraulics: hydraulicsImg, fatigue: fatigueImg, tempering: temperingImg,
         temperingDegradation: temperingDegImg, tempProfile: tempProfileImg,
+        well3d: well3dImg,
       },
     });
 
@@ -725,7 +736,7 @@ export default function CoiledTubing() {
                 </TabsList>
               </div>
               {/* Forces */}
-              <TabsContent value="forces">
+              <TabsContent value="forces" forceMount className={tab !== "forces" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4 flex-row items-center justify-between">
                     <CardTitle className="text-sm">⚡ График дохождения ГНКТ</CardTitle>
@@ -806,7 +817,7 @@ export default function CoiledTubing() {
               </TabsContent>
 
               {/* Limits */}
-              <TabsContent value="limits">
+              <TabsContent value="limits" forceMount className={tab !== "limits" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4 flex-row items-center justify-between">
                     <CardTitle className="text-sm">🛡 CoilLIMIT — Пределы</CardTitle>
@@ -852,7 +863,7 @@ export default function CoiledTubing() {
               </TabsContent>
 
               {/* Hydraulics */}
-              <TabsContent value="hydraulics">
+              <TabsContent value="hydraulics" forceMount className={tab !== "hydraulics" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4 flex-row items-center justify-between">
                     <CardTitle className="text-sm">💧 Гидравлика циркуляции</CardTitle>
@@ -936,7 +947,7 @@ export default function CoiledTubing() {
               </TabsContent>
 
               {/* Tempering */}
-              <TabsContent value="tempering">
+              <TabsContent value="tempering" forceMount className={tab !== "tempering" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4 flex-row items-center justify-between">
                     <CardTitle className="text-sm">🌡 Темперирование — Температурная деградация</CardTitle>
@@ -1017,20 +1028,22 @@ export default function CoiledTubing() {
               </TabsContent>
 
               {/* 3D Well Profile */}
-              <TabsContent value="3d">
+              <TabsContent value="3d" forceMount className={tab !== "3d" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4">
                     <CardTitle className="text-sm">🌐 3D Профиль скважины</CardTitle>
                   </CardHeader>
                   <CardContent className="px-4 pb-4">
-                    <CTWell3D trajectory={wellWithTraj.trajectory} maxMD={wellWithTraj.md} />
+                    <div ref={well3dRef}>
+                      <CTWell3D trajectory={wellWithTraj.trajectory} maxMD={wellWithTraj.md} />
+                    </div>
                     <p className="text-[10px] text-muted-foreground text-center mt-2">Зажмите мышь для вращения. Колёсико — масштаб.</p>
                   </CardContent>
                 </Card>
               </TabsContent>
 
               {/* Fatigue */}
-              <TabsContent value="fatigue">
+              <TabsContent value="fatigue" forceMount className={tab !== "fatigue" ? "hidden" : ""}>
                 <Card>
                   <CardHeader className="py-3 px-4 flex-row items-center justify-between">
                     <CardTitle className="text-sm">🔄 CoilLIFE — Ресурс усталости</CardTitle>
