@@ -328,22 +328,33 @@ export default function CoiledTubing() {
 
     toast.info("Формирование документа...");
 
-    const [forcesImg, limitsImg, hydraulicsImg, fatigueImg] = await Promise.all([
+    const [forcesImg, hookLoadImg, limitsImg, hydraulicsImg, fatigueImg, temperingImg] = await Promise.all([
       captureChart(forcesChartRef),
+      captureChart(hookLoadChartRef),
       captureChart(limitsChartRef),
       captureChart(hydraulicsChartRef),
       captureChart(fatigueChartRef),
+      captureChart(temperingChartRef),
     ]);
 
     await exportCTDocx({
       ct, well, fluid, pump, tools, friction, reelSize, prevTrips,
-      forces, limits, hydraulics, fatigue, risks,
+      forces, limits, hydraulics, fatigue, tempering, risks,
       trajPoints,
-      chartImages: { forces: forcesImg, limits: limitsImg, hydraulics: hydraulicsImg, fatigue: fatigueImg },
+      ctSections: ctSections.length > 0 ? ctSections : undefined,
+      hookLoadData: hookLoadData.length > 0 ? hookLoadData : undefined,
+      forceProfile: forceProfile.length > 0 ? forceProfile : undefined,
+      tempProfile: tempProfile.length > 0 ? tempProfile : undefined,
+      hydraulicsCurve: hydraulicsCurve.length > 0 ? hydraulicsCurve : undefined,
+      fatigueCurve: fatigueCurve.length > 0 ? fatigueCurve : undefined,
+      chartImages: {
+        forces: forcesImg, hookLoad: hookLoadImg, limits: limitsImg,
+        hydraulics: hydraulicsImg, fatigue: fatigueImg, tempering: temperingImg,
+      },
     });
 
     toast.success("DOCX сформирован 📄");
-  }, [calculated, forces, limits, hydraulics, fatigue, risks, ct, well, fluid, pump, tools, friction, reelSize, prevTrips]);
+  }, [calculated, forces, limits, hydraulics, fatigue, tempering, risks, ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, hookLoadData, forceProfile, tempProfile, hydraulicsCurve, fatigueCurve]);
 
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
