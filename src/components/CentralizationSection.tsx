@@ -41,6 +41,25 @@ interface Props {
 
 type CalcMode = "manual" | "auto";
 
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function getCasingEdgeDistanceOnRay(angle: number, offset: number, casingOuterRadius: number) {
+  const sinA = Math.sin(angle);
+  const b = -2 * sinA * offset;
+  const c = offset * offset - casingOuterRadius * casingOuterRadius;
+  const disc = b * b - 4 * c;
+
+  if (disc < 0) return casingOuterRadius;
+
+  const sqrtDisc = Math.sqrt(disc);
+  const t1 = (-b + sqrtDisc) / 2;
+  const t2 = (-b - sqrtDisc) / 2;
+
+  return Math.max(t1, t2);
+}
+
 function makeId() {
   return Math.random().toString(36).slice(2, 9);
 }
@@ -89,7 +108,10 @@ function CrossSectionView({ eccentricity, holeD, casingOD, casingID, standoff }:
     const casODR = (casingOD / 2) * scale;
     const casIDR = (casingID / 2) * scale;
     const clearance = holeR - casODR;
+    const nominalGap = Math.max(clearance, 1);
     const offset = eccentricity * clearance;
+    const standoffValue = standoff ?? Math.max(0, (1 - eccentricity) * 100);
+    const centeringSeverity = clamp01(Math.max(eccentricity, (100 - standoffValue) / 100));
 
     // Render pixel-perfect at full resolution (no ctx.scale — manual dpr)
     const W = size * dpr;
@@ -131,53 +153,29 @@ function CrossSectionView({ eccentricity, holeD, casingOD, casingID, standoff }:
         }
 
         if (distCasing > casODR && distHole <= holeR) {
-          // Annulus — cement distribution
-          // The actual gap at this point is the distance from casing OD to hole wall
-          // measured radially from the hole center through this point.
-          // For a point at angle θ from hole center, the hole wall is at holeR.
-          // The casing edge in that direction: we need the distance from hole center
-          // to the nearest point on the casing OD circle (centered at (0, offset)).
-          // localGap = holeR - (distance from hole center to casing OD edge along this radial)
-          // Along radial direction (cosA, sinA) from hole center, casing OD edge distance ≈ offset*sinA + casODR (approx for small offset)
-          // More precisely: distance from hole center to casing OD along angle θ
+          // Annulus — dark = cement, light = mud channel.
+          // Important: brightness must depend on the ABSOLUTE narrowing of the gap,
+          // not on min/max normalization of the current frame. Otherwise even tiny
+          // eccentricity creates a full white band, which is physically wrong.
           const angle = Math.atan2(y, x);
-          const cosA = Math.cos(angle);
-          const sinA = Math.sin(angle);
-          // Solve for t along (t*cosA, t*sinA) that hits the casing OD circle: (t*cosA)^2 + (t*sinA - offset)^2 = casODR^2
-          // t^2 - 2*t*sinA*offset + offset^2 - casODR^2 = 0
-          const a_coeff = 1;
-          const b_coeff = -2 * sinA * offset;
-          const c_coeff = offset * offset - casODR * casODR;
-          const disc = b_coeff * b_coeff - 4 * a_coeff * c_coeff;
-          let casingEdgeDist = casODR; // fallback
-          if (disc >= 0) {
-            const sqrtDisc = Math.sqrt(disc);
-            const t1 = (-b_coeff + sqrtDisc) / 2;
-            const t2 = (-b_coeff - sqrtDisc) / 2;
-            casingEdgeDist = Math.max(t1, t2); // take the farther intersection (outer edge)
-          }
+          const casingEdgeDist = getCasingEdgeDistanceOnRay(angle, offset, casODR);
           const localGap = Math.max(0, holeR - casingEdgeDist);
-          
-          // Compute max and min gaps for normalization
-          // Max gap: opposite side from offset (angle = -π/2 when offset is +y)
-          // Min gap: same side as offset (angle = +π/2 when offset is +y)
-          const maxGap = holeR - casODR + Math.abs(offset);
-          const minGap = Math.max(0, holeR - casODR - Math.abs(offset));
-          const gapFrac = maxGap > minGap ? Math.max(0, Math.min(1, (localGap - minGap) / (maxGap - minGap))) : 1.0;
+          const localGapRatio = clamp01(localGap / nominalGap);
+          const gapNarrowing = clamp01(1 - localGapRatio);
+          const channelRisk = clamp01(Math.pow(gapNarrowing * Math.max(centeringSeverity, 0.001), 0.72) * 1.6);
 
-          // quality: wide gap = good cement (dark), narrow = mud channel (bright)
-          // When centered (offset=0), gapFrac=1.0 everywhere → uniform dark cement
-          const quality = Math.pow(gapFrac, 0.55);
-
-          // Brighter mud channels: dark cement ~25, bright mud channel ~230
+          // Brighter mud channels: dark cement ~25, bright mud channel ~235.
+          // With good centering (e.g. standoff 95–100%) channelRisk stays near zero,
+          // so the annulus remains uniformly dark.
           const darkVal = 25;
           const lightVal = 235;
-          const val = Math.round(lightVal - quality * (lightVal - darkVal));
+          const baseVal = darkVal + channelRisk * (lightVal - darkVal);
 
-          // Radial texture (subtle)
+          // Radial texture only in poor-displacement zones; remove "patches"
+          // when the pipe is centered well.
           const radFrac = (distCasing - casODR) / Math.max(1, localGap);
-          const textureShift = Math.sin(radFrac * Math.PI) * 8 * (1 - quality);
-          const finalVal = Math.max(18, Math.min(240, val + textureShift));
+          const textureShift = Math.sin(radFrac * Math.PI) * 8 * Math.min(1, channelRisk * 1.4);
+          const finalVal = Math.max(18, Math.min(240, baseVal + textureShift));
 
           pixels[idx] = finalVal;
           pixels[idx + 1] = finalVal;
@@ -247,7 +245,7 @@ function CrossSectionView({ eccentricity, holeD, casingOD, casingID, standoff }:
     ctx.fillText("100%", barX + barW + 4, barY + 9 * D);
     ctx.fillText("0%", barX + barW + 4, barY + barH);
 
-  }, [eccentricity, holeD, casingOD, casingID, size]);
+  }, [eccentricity, holeD, casingOD, casingID, size, standoff]);
 
   return <canvas ref={canvasRef} className="mx-auto" />;
 }
