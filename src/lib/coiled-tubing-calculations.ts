@@ -93,7 +93,7 @@ const GUIDE_ARCH_DIAMETER = 1.83;
  * vs actual 3400 m → ~12% underestimate of drag).
  * Applied to the normal-force term in the soft-string drag model.
  */
-const TORTUOSITY_FACTOR = 1.15;
+const TORTUOSITY_FACTOR = 1.42;
 
 // ─── Utility ───
 
