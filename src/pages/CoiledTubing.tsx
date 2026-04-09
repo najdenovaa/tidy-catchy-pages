@@ -913,7 +913,7 @@ export default function CoiledTubing() {
 
                           {/* Temperature profile */}
                           {tempProfile.length > 0 && (
-                            <>
+                            <div ref={tempProfileChartRef}>
                               <p className="text-xs font-semibold text-center mt-4 mb-2">🌡 Температурный профиль по глубине (TVD)</p>
                               <ResponsiveContainer width="100%" height={250}>
                                 <LineChart data={tempProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
@@ -926,7 +926,7 @@ export default function CoiledTubing() {
                                   <Line type="monotone" dataKey="tempCirculating" name="BHCT (цирк.)" stroke="#3b82f6" strokeWidth={2} strokeDasharray="5 3" dot={false} />
                                 </LineChart>
                               </ResponsiveContainer>
-                            </>
+                            </div>
                           )}
                         </div>
                       </div>
