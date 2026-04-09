@@ -367,7 +367,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
             const distTop = (md - zone.topMD) / zLen;
             const distBot = (zone.botMD - md) / zLen;
             const distBoundary = Math.min(distTop, distBot) * 2;
-            const eccPenalty = !isLeft ? ecc * 0.3 : 0;
+            const eccPenalty = !isLeft ? ecc * ecc * 0.3 : 0;
 
             const eff = Math.max(0, calcEff(
               zenithDeg,
