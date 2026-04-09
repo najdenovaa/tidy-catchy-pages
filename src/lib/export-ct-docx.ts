@@ -374,15 +374,174 @@ export async function exportCTDocx(input: CTDocxInput) {
   if (chartImages?.hookLoad) children.push(chartImage(chartImages.hookLoad, 540, 320, "hook-load"));
   if (chartImages?.forces) children.push(chartImage(chartImages.forces, 540, 280, "axial-load"));
 
-  // 2.1.1 Hook Load Table
+  children.push(pageBreak());
+
+  // ══════════════════════════════════════
+  // ═══ 2.1A — АНАЛИЗ ПРОХОЖДЕНИЯ ГНКТ ═══
+  // ══════════════════════════════════════
+  children.push(new Paragraph({
+    spacing: { after: 200 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 3, color: NAVY, space: 4 } },
+    children: [new TextRun({ text: "АНАЛИЗ ПРОХОЖДЕНИЯ ГНКТ", bold: true, size: 28, font: "Calibri", color: NAVY })],
+  }));
+
+  children.push(infoLine(
+    `Профиль дохождения колонны ГНКТ ${ct.od}×${ct.wall} мм (${ct.grade}) в скважине MD = ${well.md} м, TVD = ${well.tvd} м.`,
+    { size: 18 },
+  ));
+  children.push(infoLine(
+    `Коэффициент трения μ = ${friction}. Жидкость: ${fluid.name} (ρ = ${fluid.density} г/см³). КНБК: ${tools.bhaWeight} кг.`,
+    { size: 18 },
+  ));
+
+  // Summary verdict
+  if (forces.lockUpDepth > 0) {
+    children.push(new Paragraph({
+      spacing: { before: 120, after: 120 },
+      shading: { type: ShadingType.CLEAR, color: "auto", fill: "FDEDEC" },
+      indent: { left: 200, right: 200 },
+      children: [
+        new TextRun({ text: "🔒 ВЫВОД: ", bold: true, size: 20, font: "Calibri", color: RED }),
+        new TextRun({ text: `Запирание ГНКТ прогнозируется на глубине ${forces.lockUpDepth} м. Дальнейшее продвижение невозможно без изменения условий.`, size: 20, font: "Calibri", color: RED }),
+      ],
+    }));
+  } else {
+    children.push(new Paragraph({
+      spacing: { before: 120, after: 120 },
+      shading: { type: ShadingType.CLEAR, color: "auto", fill: "EAFAF1" },
+      indent: { left: 200, right: 200 },
+      children: [
+        new TextRun({ text: "✅ ВЫВОД: ", bold: true, size: 20, font: "Calibri", color: GREEN }),
+        new TextRun({ text: `Прохождение ГНКТ до забоя (${well.md} м) — успешно. Запирание не прогнозируется.`, size: 20, font: "Calibri", color: GREEN }),
+      ],
+    }));
+  }
+
+  // Key metrics summary mini-table
+  children.push(subTitle("Сводка по нагрузкам"));
+  children.push(paramTable([
+    ["Вес на крюке при спуске (на забое)", `${fmt(forces.surfaceLoadRIH, 1)} кН (${fmt(forces.surfaceLoadRIH * 1000 / 9.81, 0)} кгс)`, forces.surfaceLoadRIH < 0],
+    ["Вес на крюке при подъёме (с забоя)", `${fmt(forces.surfaceLoadPOOH, 1)} кН (${fmt(forces.surfaceLoadPOOH * 1000 / 9.81, 0)} кгс)`],
+    ["Разница (подъём − спуск)", `${fmt(forces.surfaceLoadPOOH - forces.surfaceLoadRIH, 1)} кН`],
+    ["Предел текучести 80%", `${fmt(limits.maxWorkingTension, 1)} кН (${fmt(limits.maxWorkingTension * 1000 / 9.81, 0)} кгс)`],
+    ["Запас по растяжению (подъём)", `${fmt((1 - forces.surfaceLoadPOOH / limits.yieldTension) * 100, 1)}%`, forces.surfaceLoadPOOH > limits.maxWorkingTension],
+    ["Глубина lock-up", forces.lockUpDepth > 0 ? `${forces.lockUpDepth} м` : "— (нет)", forces.lockUpDepth > 0],
+    ["Сила трения (СПО ↓)", `${fmt(forces.dragForceRIH, 1)} кН`],
+    ["Сила трения (СПО ↑)", `${fmt(forces.dragForcePOOH, 1)} кН`],
+  ]));
+
+  // ─── 100m interval table (the main deliverable) ───
+  if (hookLoadData && hookLoadData.length > 0) {
+    children.push(subTitle("Профиль дохождения с интервалом 100 м"));
+    children.push(infoLine(
+      "Вес на крюке в кгс при спуске (RIH) и подъёме (POOH) на каждые 100 м глубины КНБК.",
+      { italic: true, color: GRAY, size: 16 },
+    ));
+
+    // Build 100m-interval rows from hookLoadData
+    const maxDepth = hookLoadData[hookLoadData.length - 1]?.depth || 0;
+    const interval = 100;
+    const intervalRows: string[][] = [];
+
+    for (let d = 0; d <= maxDepth; d += interval) {
+      // Find closest point
+      let best = hookLoadData[0];
+      let bestDist = Math.abs(best.depth - d);
+      for (const p of hookLoadData) {
+        const dist = Math.abs(p.depth - d);
+        if (dist < bestDist) { best = p; bestDist = dist; }
+      }
+      // Status indicator
+      let status = "✅";
+      if (best.hookRIH_kgf <= 0) status = "🔒 Запирание";
+      else if (best.hookRIH_kgf < best.yieldLimit80_kgf * 0.1) status = "⚠ Малый вес";
+      if (best.hookPOOH_kgf > best.yieldLimit80_kgf) status = "⛔ Перегрузка";
+
+      intervalRows.push([
+        `${best.depth}`,
+        fmt(best.tvd, 0),
+        `${best.hookRIH_kgf}`,
+        fmt(best.hookRIH_kN, 1),
+        `${best.hookPOOH_kgf}`,
+        fmt(best.hookPOOH_kN, 1),
+        `${best.hookPOOH_kgf - best.hookRIH_kgf}`,
+        status,
+      ]);
+    }
+    // Always add last point if not on interval
+    const last = hookLoadData[hookLoadData.length - 1];
+    if (last.depth % interval !== 0) {
+      let status = "✅";
+      if (last.hookRIH_kgf <= 0) status = "🔒 Запирание";
+      if (last.hookPOOH_kgf > last.yieldLimit80_kgf) status = "⛔ Перегрузка";
+      intervalRows.push([
+        `${last.depth}`,
+        fmt(last.tvd, 0),
+        `${last.hookRIH_kgf}`,
+        fmt(last.hookRIH_kN, 1),
+        `${last.hookPOOH_kgf}`,
+        fmt(last.hookPOOH_kN, 1),
+        `${last.hookPOOH_kgf - last.hookRIH_kgf}`,
+        status,
+      ]);
+    }
+
+    children.push(dataTable(
+      ["MD, м", "TVD, м", "Спуск, кгс", "Спуск, кН", "Подъём, кгс", "Подъём, кН", "Δ (кгс)", "Статус"],
+      intervalRows,
+      { warn: (ri) => {
+        const row = intervalRows[ri];
+        return row[7].includes("🔒") || row[7].includes("⛔");
+      }},
+    ));
+
+    // Textual analysis per zone
+    children.push(subTitle("Анализ по интервалам"));
+    const zones: { from: number; to: number; comment: string; level: string }[] = [];
+    for (let i = 1; i < intervalRows.length; i++) {
+      const depthFrom = parseInt(intervalRows[i - 1][0]);
+      const depthTo = parseInt(intervalRows[i][0]);
+      const rihFrom = parseInt(intervalRows[i - 1][2]);
+      const rihTo = parseInt(intervalRows[i][2]);
+      const drop = rihFrom - rihTo;
+      const dropPct = rihFrom > 0 ? (drop / rihFrom) * 100 : 0;
+
+      if (intervalRows[i][7].includes("🔒")) {
+        zones.push({ from: depthFrom, to: depthTo, comment: `Запирание! Вес на спуск падает до 0 кгс. Требуется снижение трения или изменение технологии.`, level: "critical" });
+      } else if (dropPct > 30) {
+        zones.push({ from: depthFrom, to: depthTo, comment: `Резкое снижение веса на спуск (−${fmt(dropPct, 0)}%). Зона повышенного трения — возможен набор кривизны.`, level: "warning" });
+      } else if (dropPct > 15) {
+        zones.push({ from: depthFrom, to: depthTo, comment: `Умеренное снижение веса на спуск (−${fmt(dropPct, 0)}%). Контроль скорости спуска.`, level: "info" });
+      }
+    }
+
+    if (zones.length === 0) {
+      children.push(infoLine("✅ Равномерное снижение веса по всему стволу — без аномальных зон трения.", { color: GREEN, bold: true }));
+    } else {
+      for (const z of zones) {
+        const color = z.level === "critical" ? RED : z.level === "warning" ? AMBER : GRAY;
+        const bg = z.level === "critical" ? "FDEDEC" : z.level === "warning" ? "FEF9E7" : undefined;
+        children.push(new Paragraph({
+          spacing: { before: 40, after: 40 },
+          shading: bg ? { type: ShadingType.CLEAR, color: "auto", fill: bg } : undefined,
+          indent: { left: 200 },
+          children: [
+            new TextRun({ text: `${z.from}–${z.to} м: `, bold: true, size: 18, font: "Calibri", color }),
+            new TextRun({ text: z.comment, size: 18, font: "Calibri", color }),
+          ],
+        }));
+      }
+    }
+  }
+
+  // 2.1.1 Full Hook Load Table (detailed)
   if (hookLoadData && hookLoadData.length > 0) {
     children.push(pageBreak());
-    children.push(subTitle("Таблица дохождения — Вес на крюке"));
-    // Sample every N rows to keep manageable
+    children.push(subTitle("Полная таблица дохождения — Вес на крюке"));
     const step = Math.max(1, Math.floor(hookLoadData.length / 30));
     const sampled = hookLoadData.filter((_, i) => i === 0 || i === hookLoadData.length - 1 || i % step === 0);
     children.push(dataTable(
-      ["Глубина КНБК, м", "TVD, м", "Спуск, кгс", "Подъём, кгс", "Спуск, кН", "Подъём, кН", "80% σ_y, кгс"],
+      ["Глубина, м", "TVD, м", "Спуск, кгс", "Подъём, кгс", "Спуск, кН", "Подъём, кН", "80% σ_y, кгс"],
       sampled.map(p => [
         `${p.depth}`, fmt(p.tvd, 1),
         `${p.hookRIH_kgf}`, `${p.hookPOOH_kgf}`,
