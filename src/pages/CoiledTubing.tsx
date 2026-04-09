@@ -706,7 +706,7 @@ export default function CoiledTubing() {
                   <TabsTrigger value="fatigue" className="gap-1 text-xs whitespace-nowrap">🔄 Усталость</TabsTrigger>
                   <TabsTrigger value="3d" className="gap-1 text-xs whitespace-nowrap">🌐 3D Профиль</TabsTrigger>
                 </TabsList>
-
+              </div>
               {/* Forces */}
               <TabsContent value="forces">
                 <Card>
