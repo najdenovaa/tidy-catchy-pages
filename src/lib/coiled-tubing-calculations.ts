@@ -451,11 +451,11 @@ export function generateHookLoadProfile(
       const wN = Math.abs(sW * Math.sin(iA));
 
       const cRIH = Math.abs(aRIH * dI);
-      const nRIH = Math.sqrt(cRIH * cRIH + wN * wN);
+      const nRIH = Math.sqrt(cRIH * cRIH + wN * wN) * TORTUOSITY_FACTOR;
       aRIH += wAx - frictionCoeff * nRIH;
 
       const cPOOH = Math.abs(aPOOH * dI);
-      const nPOOH = Math.sqrt(cPOOH * cPOOH + wN * wN);
+      const nPOOH = Math.sqrt(cPOOH * cPOOH + wN * wN) * TORTUOSITY_FACTOR;
       aPOOH += wAx + frictionCoeff * nPOOH;
     }
 
