@@ -330,13 +330,15 @@ export default function CoiledTubing() {
 
     toast.info("Формирование документа...");
 
-    const [forcesImg, hookLoadImg, limitsImg, hydraulicsImg, fatigueImg, temperingImg] = await Promise.all([
+    const [forcesImg, hookLoadImg, limitsImg, hydraulicsImg, fatigueImg, temperingImg, temperingDegImg, tempProfileImg] = await Promise.all([
       captureChart(forcesChartRef),
       captureChart(hookLoadChartRef),
       captureChart(limitsChartRef),
       captureChart(hydraulicsChartRef),
       captureChart(fatigueChartRef),
       captureChart(temperingChartRef),
+      captureChart(temperingDegradationRef),
+      captureChart(tempProfileChartRef),
     ]);
 
     await exportCTDocx({
@@ -352,6 +354,7 @@ export default function CoiledTubing() {
       chartImages: {
         forces: forcesImg, hookLoad: hookLoadImg, limits: limitsImg,
         hydraulics: hydraulicsImg, fatigue: fatigueImg, tempering: temperingImg,
+        temperingDegradation: temperingDegImg, tempProfile: tempProfileImg,
       },
     });
 
