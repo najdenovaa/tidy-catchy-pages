@@ -85,6 +85,16 @@ const REEL_DIAMETERS: Record<string, number> = {
 };
 const GUIDE_ARCH_DIAMETER = 1.83;
 
+/**
+ * Micro-tortuosity multiplier for friction.
+ * Real wellbores have micro-doglegs between survey stations that increase
+ * effective friction by 10-20% beyond what the smooth minimum-curvature
+ * trajectory predicts. Calibrated against field lock-up data (predicted 3785 m
+ * vs actual 3400 m → ~12% underestimate of drag).
+ * Applied to the normal-force term in the soft-string drag model.
+ */
+const TORTUOSITY_FACTOR = 1.15;
+
 // ─── Utility ───
 
 /**
@@ -286,11 +296,11 @@ export function calculateTubingForces(
 
     // Curvature-induced normal force
     const curvNormalRIH = Math.abs(cumWeightRIH * dInc);
-    const totalNormalRIH = Math.sqrt(curvNormalRIH * curvNormalRIH + wNormal * wNormal);
+    const totalNormalRIH = Math.sqrt(curvNormalRIH * curvNormalRIH + wNormal * wNormal) * TORTUOSITY_FACTOR;
     const frictionRIH = frictionCoeff * totalNormalRIH;
 
     const curvNormalPOOH = Math.abs(cumWeightPOOH * dInc);
-    const totalNormalPOOH = Math.sqrt(curvNormalPOOH * curvNormalPOOH + wNormal * wNormal);
+    const totalNormalPOOH = Math.sqrt(curvNormalPOOH * curvNormalPOOH + wNormal * wNormal) * TORTUOSITY_FACTOR;
     const frictionPOOH = frictionCoeff * totalNormalPOOH;
 
     const wAxial = segW * Math.cos(incAvg);
@@ -340,7 +350,7 @@ export function calculateTubingForces(
         const sW = ww * dStep;
         const wN = Math.abs(sW * Math.sin(iA));
         const cN = Math.abs(aRIH * dI);
-        const tN = Math.sqrt(cN * cN + wN * wN);
+        const tN = Math.sqrt(cN * cN + wN * wN) * TORTUOSITY_FACTOR;
         aRIH += sW * Math.cos(iA) - frictionCoeff * tN;
       }
       const hookKN = aRIH / 1000;
@@ -441,11 +451,11 @@ export function generateHookLoadProfile(
       const wN = Math.abs(sW * Math.sin(iA));
 
       const cRIH = Math.abs(aRIH * dI);
-      const nRIH = Math.sqrt(cRIH * cRIH + wN * wN);
+      const nRIH = Math.sqrt(cRIH * cRIH + wN * wN) * TORTUOSITY_FACTOR;
       aRIH += wAx - frictionCoeff * nRIH;
 
       const cPOOH = Math.abs(aPOOH * dI);
-      const nPOOH = Math.sqrt(cPOOH * cPOOH + wN * wN);
+      const nPOOH = Math.sqrt(cPOOH * cPOOH + wN * wN) * TORTUOSITY_FACTOR;
       aPOOH += wAx + frictionCoeff * nPOOH;
     }
 
@@ -531,10 +541,10 @@ export function generateForceDepthProfile(
     const wN = Math.abs(sW * Math.sin(iA));
 
     const cR = Math.abs(rihF[i] * dI);
-    rihF[i - 1] = rihF[i] + wAx - frictionCoeff * Math.sqrt(cR * cR + wN * wN);
+    rihF[i - 1] = rihF[i] + wAx - frictionCoeff * Math.sqrt(cR * cR + wN * wN) * TORTUOSITY_FACTOR;
 
     const cP = Math.abs(poohF[i] * dI);
-    poohF[i - 1] = poohF[i] + wAx + frictionCoeff * Math.sqrt(cP * cP + wN * wN);
+    poohF[i - 1] = poohF[i] + wAx + frictionCoeff * Math.sqrt(cP * cP + wN * wN) * TORTUOSITY_FACTOR;
   }
 
   for (let s = 0; s <= steps; s++) {
