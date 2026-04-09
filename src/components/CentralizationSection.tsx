@@ -63,32 +63,190 @@ function newInterval(casingDepthMD: number): CentralizerInterval {
   };
 }
 
-// ─── Cross-section SVG ───────────────────────────────────────────
-function CrossSectionView({ eccentricity, holeD, casingOD, casingID }: {
-  eccentricity: number; holeD: number; casingOD: number; casingID: number;
+// ─── Cross-section Canvas — annular cement distribution ──────────
+function CrossSectionView({ eccentricity, holeD, casingOD, casingID, standoff }: {
+  eccentricity: number; holeD: number; casingOD: number; casingID: number; standoff?: number;
 }) {
-  const size = 220;
-  const cx = size / 2, cy = size / 2;
-  const scale = (size - 40) / holeD;
-  const holeR = (holeD / 2) * scale;
-  const casODR = (casingOD / 2) * scale;
-  const casIDR = (casingID / 2) * scale;
-  const clearance = holeR - casODR;
-  const offset = eccentricity * clearance;
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const size = 280;
 
-  return (
-    <svg width={size} height={size} className="mx-auto">
-      <circle cx={cx} cy={cy} r={holeR} fill="hsl(var(--muted))" stroke="hsl(var(--border))" strokeWidth={2} />
-      <circle cx={cx} cy={cy + offset} r={casODR} fill="hsl(var(--secondary))" stroke="hsl(var(--foreground))" strokeWidth={1.5} />
-      <circle cx={cx} cy={cy + offset} r={casIDR} fill="hsl(var(--background))" stroke="hsl(var(--muted-foreground))" strokeWidth={1} />
-      <circle cx={cx} cy={cy} r={2} fill="hsl(var(--destructive))" />
-      <circle cx={cx} cy={cy + offset} r={2} fill="hsl(var(--primary))" />
-      <text x={cx + 5} y={cy - 5} fill="hsl(var(--destructive))" fontSize={9}>ось скважины</text>
-      {offset > 8 && (
-        <text x={cx + 5} y={cy + offset - 5} fill="hsl(var(--primary))" fontSize={9}>ось колонны</text>
-      )}
-    </svg>
-  );
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = 2;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    canvas.style.width = `${size}px`;
+    canvas.style.height = `${size}px`;
+    ctx.scale(dpr, dpr);
+
+    const cx = size / 2, cy = size / 2;
+    const maxR = (size - 20) / 2;
+    const scale = maxR / (holeD / 2);
+    const holeR = (holeD / 2) * scale;
+    const casODR = (casingOD / 2) * scale;
+    const casIDR = (casingID / 2) * scale;
+    const clearance = holeR - casODR;
+    const offset = eccentricity * clearance; // casing shifts down
+
+    // Clear
+    ctx.clearRect(0, 0, size, size);
+
+    // Draw annular cement distribution pixel by pixel
+    const imgSize = Math.ceil(size * dpr);
+    const imgData = ctx.createImageData(imgSize, imgSize);
+    const pixels = imgData.data;
+
+    for (let py = 0; py < imgSize; py++) {
+      for (let px = 0; px < imgSize; px++) {
+        const x = px / dpr - cx;
+        const y = py / dpr - cy;
+
+        // Distance from hole center
+        const distHole = Math.sqrt(x * x + y * y);
+        // Distance from casing center (shifted down by offset)
+        const distCasing = Math.sqrt(x * x + (y - offset) * (y - offset));
+
+        const idx = (py * imgSize + px) * 4;
+
+        if (distHole > holeR + 1) {
+          // Outside hole — transparent
+          pixels[idx + 3] = 0;
+          continue;
+        }
+
+        if (distCasing < casIDR) {
+          // Inside casing — light background
+          pixels[idx] = 30;
+          pixels[idx + 1] = 32;
+          pixels[idx + 2] = 40;
+          pixels[idx + 3] = 255;
+          continue;
+        }
+
+        if (distCasing >= casIDR && distCasing <= casODR) {
+          // Casing wall — steel gray
+          pixels[idx] = 120;
+          pixels[idx + 1] = 125;
+          pixels[idx + 2] = 135;
+          pixels[idx + 3] = 255;
+          continue;
+        }
+
+        if (distCasing > casODR && distHole <= holeR) {
+          // Annulus — cement distribution
+          // Angle from casing center (0 = top, PI = bottom)
+          const angle = Math.atan2(x, -(y - offset)); // 0=top, PI=bottom
+
+          // Gap width at this angle (distance from casing OD to hole wall along this ray)
+          // Approximate: at angle θ, gap = holeR - casODR - offset*cos(θ)
+          // More precisely: solve intersection of ray from casing center with hole circle
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          // Ray from casing center: P = (0, offset) + t*(sinA, -cosA)
+          // Hole circle: x^2 + y^2 = holeR^2
+          // (t*sinA)^2 + (offset - t*cosA)^2 = holeR^2
+          // t^2 - 2*offset*cosA*t + offset^2 - holeR^2 = 0
+          const b_coeff = -2 * offset * (-cosA); // actually for direction (-cosA from y)
+          // Simpler: local gap as fraction of max gap
+          const localGap = holeR - casODR - offset * Math.cos(angle);
+          const maxGap = holeR - casODR + Math.abs(offset);
+          const minGap = Math.max(0, holeR - casODR - Math.abs(offset));
+          const gapFrac = maxGap > minGap ? (localGap - minGap) / (maxGap - minGap) : 0.5;
+
+          // Cement quality: wider gap = better cement (darker), narrow gap = poor (lighter, mud channel)
+          // gapFrac: 0 = narrowest, 1 = widest
+          const quality = Math.pow(gapFrac, 0.6); // non-linear: emphasize narrow side
+
+          // Grayscale: dark = good cement, light = mud/poor
+          // Dark cement: ~25-35, poor/mud: ~180-200
+          const darkVal = 28;
+          const lightVal = 195;
+          const val = Math.round(lightVal - quality * (lightVal - darkVal));
+
+          // Add subtle radial variation (cement texture)
+          const radFrac = (distCasing - casODR) / (holeR - casODR);
+          const textureShift = Math.sin(radFrac * Math.PI) * 8 * quality;
+
+          const finalVal = Math.max(20, Math.min(210, val - textureShift));
+
+          pixels[idx] = finalVal;
+          pixels[idx + 1] = finalVal;
+          pixels[idx + 2] = Math.min(255, finalVal + 5);
+          pixels[idx + 3] = 255;
+        } else if (distHole <= holeR) {
+          // Between hole wall and casing but outside casing — shouldn't happen much, fill dark
+          pixels[idx] = 50;
+          pixels[idx + 1] = 50;
+          pixels[idx + 2] = 55;
+          pixels[idx + 3] = 255;
+        }
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+
+    // Draw hole boundary
+    ctx.strokeStyle = "hsl(30, 20%, 40%)";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(cx * dpr, cy * dpr, holeR * dpr, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Draw casing OD outline
+    ctx.strokeStyle = "hsl(210, 10%, 55%)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx * dpr, (cy + offset) * dpr, casODR * dpr, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Draw casing ID outline
+    ctx.strokeStyle = "hsl(210, 10%, 40%)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx * dpr, (cy + offset) * dpr, casIDR * dpr, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Center dots
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    ctx.arc(cx * dpr, cy * dpr, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (offset > 5) {
+      ctx.fillStyle = "#3b82f6";
+      ctx.beginPath();
+      ctx.arc(cx * dpr, (cy + offset) * dpr, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Legend gradient bar
+    const barX = 12 * dpr;
+    const barY = (size - 60) * dpr;
+    const barW = 12 * dpr;
+    const barH = 50 * dpr;
+    for (let i = 0; i < barH; i++) {
+      const f = i / barH;
+      const v = Math.round(28 + f * (195 - 28));
+      ctx.fillStyle = `rgb(${v},${v},${v + 5})`;
+      ctx.fillRect(barX, barY + i, barW, 1);
+    }
+    ctx.strokeStyle = "hsl(210, 10%, 40%)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+
+    ctx.fillStyle = "#aaa";
+    ctx.font = `${9 * dpr}px sans-serif`;
+    ctx.textAlign = "left";
+    ctx.fillText("100%", barX + barW + 4, barY + 9 * dpr);
+    ctx.fillText("0%", barX + barW + 4, barY + barH);
+
+  }, [eccentricity, holeD, casingOD, casingID, size]);
+
+  return <canvas ref={canvasRef} className="mx-auto" />;
 }
 
 function standoffColor(standoff: number): string {
