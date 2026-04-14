@@ -715,6 +715,7 @@ export default function Index() {
                   displacementVolume={volumes.displacementVolume}
                   displacementFluids={calcSnapshot.displacementFluids}
                   casingDepthMD={calcSnapshot.wellData.casingDepthMD}
+                  wellData={calcSnapshot.wellData}
                 />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
