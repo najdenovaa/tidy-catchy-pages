@@ -523,7 +523,7 @@ export function displacementVolume(pipeVolPerM: number, ckodDepth: number): numb
 
 // === Расчёт объёмов ===
 
-export function calculateVolumes(data: WellData): VolumeResults {
+export function calculateVolumes(data: WellData, slurries: SlurryInput[] = []): VolumeResults {
   const casingID = getCasingID(data.casingOD, data.casingWall);
   const wellVPM = wellVolumePerMeter(data.holeDiameter);
   const wellVCav = wellVolumeWithCavern(data.holeDiameter, data.cavernCoeff);
@@ -545,6 +545,33 @@ export function calculateVolumes(data: WellData): VolumeResults {
   const dispVol = totalPipeVolumeForRange(0, data.ckodDepth, data.casingOD, data.casingWall, data.casingSections);
   const dispVolComp = dispVol * 1.05; // с коэф. сжатия 5%
 
+  // Расчёт объёмов каждого цементного раствора
+  const slurryVolumes: SlurryVolumeResult[] = [];
+  let totalSlurryVolume = 0;
+  slurries.forEach((s, i) => {
+    const h = getSlurryHeight(slurries, i, data.casingDepthMD);
+    if (h > 0) {
+      const lastIdx = slurries.length - 1;
+      const mdBot = i === lastIdx ? data.casingDepthMD : slurries[i + 1].topDepthMD;
+      let vol = annularVolumeForInterval(s.topDepthMD, mdBot, data.holeDiameter, data.casingOD, data.prevCasingID, data.prevCasingDepth, data.cavernCoeff, data.cavernIntervals);
+      if (i === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
+      const cementRes = calculateCement(vol, s.density, s.waterRatio, s.yieldPerTon);
+      slurryVolumes.push({
+        name: s.name,
+        topMD: s.topDepthMD,
+        bottomMD: mdBot,
+        heightM: h,
+        slurryVolumeM3: vol,
+        dryMassTons: cementRes.dryMass,
+        waterVolumeM3: cementRes.waterVolume,
+        waterCementRatio: cementRes.waterCementRatio,
+        yieldPerTon: cementRes.yieldPerTon,
+        densityGcm3: s.density,
+      });
+      totalSlurryVolume += vol;
+    }
+  });
+
   return {
     casingID,
     wellVolumePerMeter: wellVPM,
@@ -558,6 +585,8 @@ export function calculateVolumes(data: WellData): VolumeResults {
     displacementVolume: dispVol,
     displacementVolumeWithCompression: dispVolComp,
     equivalentDiameter: eqDiam,
+    slurryVolumes,
+    totalSlurryVolume,
   };
 }
 
