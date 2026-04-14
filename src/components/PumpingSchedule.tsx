@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getSlurryHeight } from "@/lib/cementing-calculations";
-import type { BufferFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
+import { getSlurryHeight, annularVolumeForInterval } from "@/lib/cementing-calculations";
+import type { BufferFluid, SlurryInput, DisplacementFluid, WellData } from "@/lib/cementing-calculations";
 
 interface Props {
   buffers: BufferFluid[];
@@ -10,12 +10,13 @@ interface Props {
   displacementVolume: number;
   displacementFluids: DisplacementFluid[];
   casingDepthMD: number;
+  wellData?: WellData;
 }
 
 const fmt = (v: number, dec: number = 1) => v.toFixed(dec);
 const lpsToM3min = (lps: number) => lps * 0.06;
 
-export default function PumpingSchedule({ buffers, slurries, annularVPM, displacementVolume, displacementFluids, casingDepthMD }: Props) {
+export default function PumpingSchedule({ buffers, slurries, annularVPM, displacementVolume, displacementFluids, casingDepthMD, wellData }: Props) {
   const stages: { name: string; fluid: string; rateLps: number; volume: number }[] = [];
 
   const defaultRate = displacementFluids.length > 0 && displacementFluids[0].flowRateSteps.length > 0
