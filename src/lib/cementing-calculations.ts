@@ -614,8 +614,30 @@ export function getWaterCementRatio(densityKgM3: number): number {
 export function calculateCement(
   slurryVolume: number,
   densityGcm3: number,
+  userWaterRatio?: number,
+  userYieldPerTon?: number,
 ): CementResults {
   const densityKg = densityGcm3 * 1000;
+
+  // Если пользователь задал В/Ц и выход — используем их
+  if (userYieldPerTon && userYieldPerTon > 0) {
+    const dryMassTons = slurryVolume / userYieldPerTon;
+    const wcr = userWaterRatio && userWaterRatio > 0 ? userWaterRatio : getWaterCementRatio(densityKg);
+    const waterVolume = (dryMassTons * 1000 * wcr) / 1000;
+    return { slurryVolume, dryMass: dryMassTons, waterVolume, yieldPerTon: userYieldPerTon, waterCementRatio: wcr };
+  }
+
+  // Если задан только В/Ц
+  if (userWaterRatio && userWaterRatio > 0) {
+    const slurryMassKg = slurryVolume * densityKg;
+    const dryMassKg = slurryMassKg / (1 + userWaterRatio);
+    const dryMassTons = dryMassKg / 1000;
+    const waterVolume = (dryMassKg * userWaterRatio) / 1000;
+    const yieldPerTon = dryMassTons > 0 ? slurryVolume / dryMassTons : 0;
+    return { slurryVolume, dryMass: dryMassTons, waterVolume, yieldPerTon, waterCementRatio: userWaterRatio };
+  }
+
+  // Фоллбэк: по таблице плотностей
   const wcr = getWaterCementRatio(densityKg);
   const slurryMassKg = slurryVolume * densityKg;
   const dryMassKg = slurryMassKg / (1 + wcr);
