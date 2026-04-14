@@ -421,7 +421,7 @@ export default function Index() {
       flushVolumeM3,
     });
 
-    const computedVolumes = calculateVolumes(freshSnapshot.wellData);
+    const computedVolumes = calculateVolumes(freshSnapshot.wellData, freshSnapshot.slurries);
     const computedMaterials = calculateMaterials(freshSnapshot.slurries, freshSnapshot.buffers, freshSnapshot.wellData);
     const computedPressure = calculatePressureProfile(
       freshSnapshot.wellData,
