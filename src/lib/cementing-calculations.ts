@@ -237,6 +237,19 @@ export interface Equipment {
   personnel: { role: string; count: number }[];
 }
 
+export interface SlurryVolumeResult {
+  name: string;
+  topMD: number;
+  bottomMD: number;
+  heightM: number;
+  slurryVolumeM3: number;
+  dryMassTons: number;
+  waterVolumeM3: number;
+  waterCementRatio: number;
+  yieldPerTon: number;
+  densityGcm3: number;
+}
+
 export interface VolumeResults {
   casingID: number;
   wellVolumePerMeter: number;
@@ -250,6 +263,8 @@ export interface VolumeResults {
   displacementVolume: number;
   displacementVolumeWithCompression: number; // с коэф. сжатия
   equivalentDiameter: number;
+  slurryVolumes: SlurryVolumeResult[];
+  totalSlurryVolume: number;
 }
 
 export interface CementResults {
