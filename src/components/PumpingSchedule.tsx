@@ -43,7 +43,12 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
   // 3. Цементные растворы — в порядке списка (первый по списку качается первым)
   slurries.forEach((s, origIdx) => {
     const height = getSlurryHeight(slurries, origIdx, casingDepthMD);
-    let vol = annularVPM * height;
+    const lastIdx = slurries.length - 1;
+    const mdBot = origIdx === lastIdx ? casingDepthMD : slurries[origIdx + 1].topDepthMD;
+    // Используем точный расчёт через annularVolumeForInterval если есть wellData
+    let vol = wellData
+      ? annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals)
+      : annularVPM * height;
     // Добавляем объём на вымыв для первого (верхнего) раствора
     if (origIdx === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
     if (vol > 0) {
