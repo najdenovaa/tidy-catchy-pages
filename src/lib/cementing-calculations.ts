@@ -237,6 +237,19 @@ export interface Equipment {
   personnel: { role: string; count: number }[];
 }
 
+export interface SlurryVolumeResult {
+  name: string;
+  topMD: number;
+  bottomMD: number;
+  heightM: number;
+  slurryVolumeM3: number;
+  dryMassTons: number;
+  waterVolumeM3: number;
+  waterCementRatio: number;
+  yieldPerTon: number;
+  densityGcm3: number;
+}
+
 export interface VolumeResults {
   casingID: number;
   wellVolumePerMeter: number;
@@ -250,6 +263,8 @@ export interface VolumeResults {
   displacementVolume: number;
   displacementVolumeWithCompression: number; // с коэф. сжатия
   equivalentDiameter: number;
+  slurryVolumes: SlurryVolumeResult[];
+  totalSlurryVolume: number;
 }
 
 export interface CementResults {
@@ -508,7 +523,7 @@ export function displacementVolume(pipeVolPerM: number, ckodDepth: number): numb
 
 // === Расчёт объёмов ===
 
-export function calculateVolumes(data: WellData): VolumeResults {
+export function calculateVolumes(data: WellData, slurries: SlurryInput[] = []): VolumeResults {
   const casingID = getCasingID(data.casingOD, data.casingWall);
   const wellVPM = wellVolumePerMeter(data.holeDiameter);
   const wellVCav = wellVolumeWithCavern(data.holeDiameter, data.cavernCoeff);
@@ -530,6 +545,33 @@ export function calculateVolumes(data: WellData): VolumeResults {
   const dispVol = totalPipeVolumeForRange(0, data.ckodDepth, data.casingOD, data.casingWall, data.casingSections);
   const dispVolComp = dispVol * 1.05; // с коэф. сжатия 5%
 
+  // Расчёт объёмов каждого цементного раствора
+  const slurryVolumes: SlurryVolumeResult[] = [];
+  let totalSlurryVolume = 0;
+  slurries.forEach((s, i) => {
+    const h = getSlurryHeight(slurries, i, data.casingDepthMD);
+    if (h > 0) {
+      const lastIdx = slurries.length - 1;
+      const mdBot = i === lastIdx ? data.casingDepthMD : slurries[i + 1].topDepthMD;
+      let vol = annularVolumeForInterval(s.topDepthMD, mdBot, data.holeDiameter, data.casingOD, data.prevCasingID, data.prevCasingDepth, data.cavernCoeff, data.cavernIntervals);
+      if (i === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
+      const cementRes = calculateCement(vol, s.density, s.waterRatio, s.yieldPerTon);
+      slurryVolumes.push({
+        name: s.name,
+        topMD: s.topDepthMD,
+        bottomMD: mdBot,
+        heightM: h,
+        slurryVolumeM3: vol,
+        dryMassTons: cementRes.dryMass,
+        waterVolumeM3: cementRes.waterVolume,
+        waterCementRatio: cementRes.waterCementRatio,
+        yieldPerTon: cementRes.yieldPerTon,
+        densityGcm3: s.density,
+      });
+      totalSlurryVolume += vol;
+    }
+  });
+
   return {
     casingID,
     wellVolumePerMeter: wellVPM,
@@ -543,6 +585,8 @@ export function calculateVolumes(data: WellData): VolumeResults {
     displacementVolume: dispVol,
     displacementVolumeWithCompression: dispVolComp,
     equivalentDiameter: eqDiam,
+    slurryVolumes,
+    totalSlurryVolume,
   };
 }
 
@@ -570,8 +614,30 @@ export function getWaterCementRatio(densityKgM3: number): number {
 export function calculateCement(
   slurryVolume: number,
   densityGcm3: number,
+  userWaterRatio?: number,
+  userYieldPerTon?: number,
 ): CementResults {
   const densityKg = densityGcm3 * 1000;
+
+  // Если пользователь задал В/Ц и выход — используем их
+  if (userYieldPerTon && userYieldPerTon > 0) {
+    const dryMassTons = slurryVolume / userYieldPerTon;
+    const wcr = userWaterRatio && userWaterRatio > 0 ? userWaterRatio : getWaterCementRatio(densityKg);
+    const waterVolume = (dryMassTons * 1000 * wcr) / 1000;
+    return { slurryVolume, dryMass: dryMassTons, waterVolume, yieldPerTon: userYieldPerTon, waterCementRatio: wcr };
+  }
+
+  // Если задан только В/Ц
+  if (userWaterRatio && userWaterRatio > 0) {
+    const slurryMassKg = slurryVolume * densityKg;
+    const dryMassKg = slurryMassKg / (1 + userWaterRatio);
+    const dryMassTons = dryMassKg / 1000;
+    const waterVolume = (dryMassKg * userWaterRatio) / 1000;
+    const yieldPerTon = dryMassTons > 0 ? slurryVolume / dryMassTons : 0;
+    return { slurryVolume, dryMass: dryMassTons, waterVolume, yieldPerTon, waterCementRatio: userWaterRatio };
+  }
+
+  // Фоллбэк: по таблице плотностей
   const wcr = getWaterCementRatio(densityKg);
   const slurryMassKg = slurryVolume * densityKg;
   const dryMassKg = slurryMassKg / (1 + wcr);
@@ -737,7 +803,7 @@ export function calculateMaterials(
       let vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
       // Добавляем объём на вымыв для первого (верхнего) раствора
       if (i === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
-      const res = calculateCement(vol, s.density);
+      const res = calculateCement(vol, s.density, s.waterRatio, s.yieldPerTon);
       const dryMassKg = res.dryMass * 1000; // тонны → кг
       cementItems.push({ name: s.name, amount: res.dryMass, unit: "т" });
       waterForCement += res.waterVolume;

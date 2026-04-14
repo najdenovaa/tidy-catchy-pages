@@ -229,7 +229,7 @@ export default function Index() {
     }).catch(() => {});
   }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3]);
 
-  const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData) : null, [calcSnapshot]);
+  const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData, calcSnapshot.slurries) : null, [calcSnapshot]);
 
   const materials = useMemo(
     () => calcSnapshot && volumes ? calculateMaterials(calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.wellData) : null,
@@ -421,7 +421,7 @@ export default function Index() {
       flushVolumeM3,
     });
 
-    const computedVolumes = calculateVolumes(freshSnapshot.wellData);
+    const computedVolumes = calculateVolumes(freshSnapshot.wellData, freshSnapshot.slurries);
     const computedMaterials = calculateMaterials(freshSnapshot.slurries, freshSnapshot.buffers, freshSnapshot.wellData);
     const computedPressure = calculatePressureProfile(
       freshSnapshot.wellData,
@@ -715,6 +715,7 @@ export default function Index() {
                   displacementVolume={volumes.displacementVolume}
                   displacementFluids={calcSnapshot.displacementFluids}
                   casingDepthMD={calcSnapshot.wellData.casingDepthMD}
+                  wellData={calcSnapshot.wellData}
                 />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>

@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getSlurryHeight } from "@/lib/cementing-calculations";
-import type { BufferFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
+import { getSlurryHeight, annularVolumeForInterval } from "@/lib/cementing-calculations";
+import type { BufferFluid, SlurryInput, DisplacementFluid, WellData } from "@/lib/cementing-calculations";
 
 interface Props {
   buffers: BufferFluid[];
@@ -10,12 +10,13 @@ interface Props {
   displacementVolume: number;
   displacementFluids: DisplacementFluid[];
   casingDepthMD: number;
+  wellData?: WellData;
 }
 
 const fmt = (v: number, dec: number = 1) => v.toFixed(dec);
 const lpsToM3min = (lps: number) => lps * 0.06;
 
-export default function PumpingSchedule({ buffers, slurries, annularVPM, displacementVolume, displacementFluids, casingDepthMD }: Props) {
+export default function PumpingSchedule({ buffers, slurries, annularVPM, displacementVolume, displacementFluids, casingDepthMD, wellData }: Props) {
   const stages: { name: string; fluid: string; rateLps: number; volume: number }[] = [];
 
   const defaultRate = displacementFluids.length > 0 && displacementFluids[0].flowRateSteps.length > 0
@@ -42,7 +43,12 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
   // 3. Цементные растворы — в порядке списка (первый по списку качается первым)
   slurries.forEach((s, origIdx) => {
     const height = getSlurryHeight(slurries, origIdx, casingDepthMD);
-    let vol = annularVPM * height;
+    const lastIdx = slurries.length - 1;
+    const mdBot = origIdx === lastIdx ? casingDepthMD : slurries[origIdx + 1].topDepthMD;
+    // Используем точный расчёт через annularVolumeForInterval если есть wellData
+    let vol = wellData
+      ? annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals)
+      : annularVPM * height;
     // Добавляем объём на вымыв для первого (верхнего) раствора
     if (origIdx === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
     if (vol > 0) {
