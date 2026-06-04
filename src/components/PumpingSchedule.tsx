@@ -69,6 +69,14 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
   stages.push({ name: "Промывка ЛВД, сброс пробки", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.5 });
 
   // 5. Продавка — по порциям
+  const totalConfiguredDispVolume = displacementFluids.reduce(
+    (sum, df) => sum + df.flowRateSteps.reduce((stepSum, step) => stepSum + step.volumeM3, 0),
+    0
+  );
+  const totalDispStages = displacementFluids.reduce((sum, df) => sum + Math.max(df.flowRateSteps.length, 1), 0) || 1;
+  const configuredDispScale = totalConfiguredDispVolume > 0 ? displacementVolume / totalConfiguredDispVolume : 1;
+  const fallbackDispStageVolume = totalConfiguredDispVolume > 0 ? 0 : displacementVolume / totalDispStages;
+
   displacementFluids.forEach((df, dfIdx) => {
     const label = displacementFluids.length > 1 ? `${df.name} (порция ${dfIdx + 1})` : df.name;
     if (df.flowRateSteps.length > 0) {
@@ -76,16 +84,16 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
       if (totalStepVol > 0) {
         df.flowRateSteps.forEach((step, si) => {
           if (step.volumeM3 > 0) {
-            stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 });
+            stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 * configuredDispScale });
           }
         });
       } else {
         df.flowRateSteps.forEach((step, si) => {
-          stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: 0 });
+          stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: fallbackDispStageVolume });
         });
       }
     } else {
-      stages.push({ name: `Продавка: ${label}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: defaultRate, volume: 0 });
+      stages.push({ name: `Продавка: ${label}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: defaultRate, volume: fallbackDispStageVolume });
     }
   });
 

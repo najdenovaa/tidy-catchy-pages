@@ -37,7 +37,7 @@ export default function VolumeResults({ results, wellData }: Props) {
         { label: "Общий V затрубного пр-ва", value: fmt(results.totalAnnularVolume, 2), unit: "м³" },
         { label: "Общий V трубного пр-ва", value: fmt(results.totalPipeVolume, 2), unit: "м³" },
         { label: "Расчётный объём продавки", value: fmt(results.displacementVolume, 1), unit: "м³" },
-        { label: "С учётом коэф. сжатия (5%)", value: fmt(results.displacementVolumeWithCompression, 1), unit: "м³" },
+        { label: "С учётом коэф. сжатия", value: fmt(results.displacementVolumeWithCompression, 1), unit: "м³" },
       ],
     },
   ];

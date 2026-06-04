@@ -1213,8 +1213,14 @@ export function calculatePressureProfile(
     fluidType: 'mud' as AnnularFluidType,
   });
 
-  // Продавочные жидкости — по шагам с распределением объёма
-  let remainingDispVol = displacementVol;
+  // Продавочные жидкости — по шагам с распределением расчётного объёма продавки
+  const totalConfiguredDispVolume = displacementFluids.reduce(
+    (sum, df) => sum + df.flowRateSteps.reduce((stepSum, step) => stepSum + step.volumeM3, 0),
+    0
+  );
+  const totalDispStages = displacementFluids.reduce((sum, df) => sum + Math.max(df.flowRateSteps.length, 1), 0) || 1;
+  const configuredDispScale = totalConfiguredDispVolume > 0 ? displacementVol / totalConfiguredDispVolume : 1;
+  const fallbackDispStageVolume = totalConfiguredDispVolume > 0 ? 0 : displacementVol / totalDispStages;
   displacementFluids.forEach(df => {
     const cc = df.compressionCoeff || 1.0;
     const dfRheo = effectiveRheology(df.rheology, 'displacement');
@@ -1222,21 +1228,18 @@ export function calculatePressureProfile(
     if (totalStepVol > 0) {
       df.flowRateSteps.forEach(step => {
         if (step.volumeM3 > 0) {
-          const vol = Math.min(step.volumeM3, remainingDispVol);
+          const vol = step.volumeM3 * configuredDispScale;
           if (vol > 0) {
             stages.push({ name: df.name, volume: vol, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc, fluidType: 'displacement' as AnnularFluidType });
-            remainingDispVol -= vol;
           }
         }
       });
     } else {
-      const perStep = remainingDispVol / Math.max(df.flowRateSteps.length, 1);
       df.flowRateSteps.forEach(step => {
-        if (perStep > 0 && step.rateLps > 0) {
-          stages.push({ name: df.name, volume: perStep, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc, fluidType: 'displacement' as AnnularFluidType });
+        if (fallbackDispStageVolume > 0 && step.rateLps > 0) {
+          stages.push({ name: df.name, volume: fallbackDispStageVolume, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc, fluidType: 'displacement' as AnnularFluidType });
         }
       });
-      remainingDispVol = 0;
     }
   });
 
