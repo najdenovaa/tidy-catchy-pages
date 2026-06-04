@@ -665,6 +665,7 @@ export default function CementingAnimation({
           casingDepthMD,
           residualFreefallOffset > EPS ? "void" : "mud",
           ckodDepth,
+          cumDisplacementVol,
         ),
         annulusSegments,
         activeExit,
