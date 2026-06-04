@@ -341,6 +341,7 @@ function buildPipeSegments(
   casingDepthMD: number,
   fillFluid: FluidKey = "mud",
   ckodDepth: number = 0,
+  cumDisplacementVol: number = 0,
 ): PipeSegment[] {
   if (pipeCapacityM3 <= EPS || casingDepthMD <= EPS) return [];
 
