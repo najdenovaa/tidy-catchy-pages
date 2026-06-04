@@ -1430,13 +1430,8 @@ export function calculatePressureProfile(
     return totalP;
   }
 
-  // === Константы для ЭЦП ===
-  const prevShoeTVD = interpolateTVD(prevShoe, traj);
-  const fracGradEcdGcm3 = fractureGradient > 0 ? fractureGradient / 9.81 : 0;
-  const maxPorePressureGrad = wellData.reservoirLayers && wellData.reservoirLayers.length > 0
-    ? Math.max(...wellData.reservoirLayers.map(r => r.porePressureGrad || 0))
-    : 0;
-  const porePressureEcdGcm3 = maxPorePressureGrad > 0 ? maxPorePressureGrad / 9.81 : 0;
+
+
 
 
   let cumDisplacementVol = 0; // накопленный объём продавки (для отслеживания догонки)
