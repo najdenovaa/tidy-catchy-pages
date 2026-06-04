@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from "recharts";
 import { calculateFoamCement, type FoamCementInput } from "@/lib/foam-cement-calculations";
 import type { WellData, SlurryInput } from "@/lib/cementing-calculations";
 import CopyImageButton from "./CopyImageButton";
@@ -9,6 +9,7 @@ interface Props {
   wellData: WellData;
   slurries: SlurryInput[];
   mudDensity: number; // кг/м³
+  pumpRateLps?: number;
 }
 
 const fmt = (v: number, dec = 2) => v.toFixed(dec);
@@ -23,9 +24,11 @@ function ScrollableChart({ children, chartRef, height }: { children: React.React
   );
 }
 
-export default function FoamCementSection({ wellData, slurries, mudDensity }: Props) {
+export default function FoamCementSection({ wellData, slurries, mudDensity, pumpRateLps }: Props) {
   const [targetQuality, setTargetQuality] = useState(35);
   const [backPressure, setBackPressure] = useState(0.5);
+  const [surfaceTemp, setSurfaceTemp] = useState(20);
+  const [pumpingTime, setPumpingTime] = useState<number | "">("");
   const [baseDensity, setBaseDensity] = useState(() => {
     const s = slurries[0];
     return s ? (s.density >= 100 ? s.density / 1000 : s.density) : 1.85;
@@ -34,6 +37,7 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
   const chartRef1 = useRef<HTMLDivElement>(null);
   const chartRef2 = useRef<HTMLDivElement>(null);
   const chartRef3 = useRef<HTMLDivElement>(null);
+  const chartRef4 = useRef<HTMLDivElement>(null);
 
   const cementTopMD = slurries.length > 0 ? Math.min(...slurries.map(s => s.topDepthMD)) : wellData.cementRiseHeight;
   const cementBottomMD = wellData.casingDepthMD;
@@ -44,7 +48,7 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
       baseDensity,
       targetFoamQuality: targetQuality,
       backPressure,
-      surfaceTemperature: 20,
+      surfaceTemperature: surfaceTemp,
       bottomTemperature: wellData.bottomTempStatic,
       wellDepthMD: wellData.wellDepthMD,
       casingDepthMD: wellData.casingDepthMD,
@@ -54,9 +58,12 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
       cementBottomMD,
       trajectory: wellData.trajectory,
       mudDensity: mudDensity / 1000,
+      cavernCoeff: wellData.cavernCoeff,
+      pumpingTimeMin: typeof pumpingTime === "number" && pumpingTime > 0 ? pumpingTime : undefined,
+      pumpRateLps,
     };
     return calculateFoamCement(input);
-  }, [baseDensity, targetQuality, backPressure, wellData, cementTopMD, cementBottomMD, mudDensity]);
+  }, [baseDensity, targetQuality, backPressure, surfaceTemp, pumpingTime, wellData, cementTopMD, cementBottomMD, mudDensity, pumpRateLps]);
 
   if (!result) {
     return (
@@ -68,6 +75,7 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
     );
   }
 
+  // Данные для основного графика (FQ + ρ) и графика N₂ по времени
   const chartData = result.points.map(pt => ({
     md: pt.md,
     foamQuality: pt.foamQuality,
@@ -75,7 +83,20 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
     pressure: pt.pressure,
     n2Ratio: pt.n2VolumeRatio * 100,
     temperature: pt.temperature,
+    zFactor: pt.zFactor,
   }));
+
+  // Расписание N₂ по времени закачки (линейно по объёму)
+  const totalSeg = result.points.length;
+  const n2ScheduleData = result.points.map((pt, i) => {
+    const timeMin = totalSeg > 0 ? (i / Math.max(1, totalSeg - 1)) * result.pumpingTimeMin : 0;
+    return {
+      timeMin: Math.round(timeMin * 10) / 10,
+      depthMD: pt.md,
+      foamQuality: pt.foamQuality,
+      pressure: pt.pressure,
+    };
+  });
 
   const tooltipStyle = {
     backgroundColor: "hsl(var(--card))",
@@ -114,6 +135,20 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
                 onChange={e => setBackPressure(+e.target.value)}
                 className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
             </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Температура на устье, °C</label>
+              <input type="number" step="1" min="-30" max="60" value={surfaceTemp}
+                onChange={e => setSurfaceTemp(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Время закачки, мин (опц.)</label>
+              <input type="number" step="1" min="0" value={pumpingTime}
+                placeholder={pumpRateLps ? "из расхода" : "60"}
+                onChange={e => setPumpingTime(e.target.value === "" ? "" : +e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+              <div className="text-[10px] text-muted-foreground mt-0.5">Принято: {fmt(result.pumpingTimeMin, 1)} мин</div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -125,10 +160,12 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
         </CardHeader>
         <CardContent>
           <div className="space-y-1">
-            <Row label="Начальный объём пеноцемента (на устье)" value={`${fmt(result.initialVolumeM3, 2)} м³`} />
-            <Row label="Конечный объём (в скважине)" value={`${fmt(result.finalVolumeM3, 2)} м³`} />
+            <Row label="Объём пеноцемента в скважине (затрубье)" value={`${fmt(result.finalVolumeM3, 2)} м³`} />
+            <Row label="Объём базовой суспензии (без газа)" value={`${fmt(result.slurryVolumeM3, 2)} м³`} />
+            <Row label="Объём пеноцемента на устье (с газом при P_устья)" value={`${fmt(result.initialVolumeM3, 2)} м³`} />
             <Row label="Объём N₂ при стд. условиях" value={`${fmt(result.n2VolumeStdM3, 1)} м³`} />
             <Row label="Расход подачи N₂ (ср.)" value={`${fmt(result.n2RateM3PerMin, 2)} м³/мин`} />
+            <Row label="Время закачки" value={`${fmt(result.pumpingTimeMin, 1)} мин`} />
             <Row label="Качество пены (среднее)" value={`${fmt(result.avgFoamQuality, 1)}%`} />
             <Row label="Качество пены (мин. / макс.)" value={`${fmt(result.minFoamQuality, 1)}% / ${fmt(result.maxFoamQuality, 1)}%`} />
             <Row label="Плотность пеноцемента (средняя)" value={`${fmt(result.avgFoamDensity, 3)} г/см³`} />
@@ -142,7 +179,7 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
         </CardContent>
       </Card>
 
-      {/* Chart 1: Foam Quality & Density by Depth */}
+      {/* Chart 1: Foam Quality & Density by Depth — две Y-оси, зоны FQ */}
       <Card>
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
           <CardTitle className="text-lg">📈 Качество пены и плотность по глубине</CardTitle>
@@ -151,14 +188,23 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
         <CardContent>
           <ScrollableChart chartRef={chartRef1} height="h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
+              <LineChart data={chartData} layout="vertical" margin={{ top: 5, right: 60, bottom: 5, left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                 <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <XAxis xAxisId="quality" type="number" domain={[0, 100]} orientation="bottom"
+                  label={{ value: 'FQ, %', position: 'insideBottom', offset: -2 }} tick={{ fontSize: 11 }} />
+                <XAxis xAxisId="density" type="number" domain={['auto', 'auto']} orientation="top"
+                  label={{ value: 'ρ, г/см³', position: 'insideTop', offset: -2 }} tick={{ fontSize: 11 }} />
+                {/* Зоны качества пены */}
+                <ReferenceArea xAxisId="quality" x1={20} x2={80} fill="hsl(var(--primary))" fillOpacity={0.04} />
+                <ReferenceArea xAxisId="quality" x1={0} x2={15} fill="hsl(var(--destructive))" fillOpacity={0.06} />
+                <ReferenceArea xAxisId="quality" x1={85} x2={100} fill="hsl(var(--destructive))" fillOpacity={0.06} />
+                <ReferenceArea xAxisId="quality" x1={15} x2={20} fill="hsl(45, 90%, 50%)" fillOpacity={0.06} />
+                <ReferenceArea xAxisId="quality" x1={80} x2={85} fill="hsl(45, 90%, 50%)" fillOpacity={0.06} />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(l: number) => `MD: ${l} м`} />
                 <Legend />
-                <Line dataKey="foamQuality" name="Качество пены, %" stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
-                <Line dataKey="foamDensity" name="Плотность, г/см³" stroke="hsl(35, 80%, 50%)" dot={false} strokeWidth={2} />
+                <Line xAxisId="quality" dataKey="foamQuality" name="Качество пены, %" stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
+                <Line xAxisId="density" dataKey="foamDensity" name="Плотность, г/см³" stroke="hsl(35, 80%, 50%)" dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           </ScrollableChart>
@@ -174,14 +220,15 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
         <CardContent>
           <ScrollableChart chartRef={chartRef2} height="h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
+              <LineChart data={chartData} layout="vertical" margin={{ top: 5, right: 60, bottom: 5, left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                 <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <XAxis xAxisId="p" type="number" orientation="bottom" label={{ value: 'P, МПа', position: 'insideBottom', offset: -2 }} tick={{ fontSize: 11 }} />
+                <XAxis xAxisId="t" type="number" orientation="top" label={{ value: 'T, °C', position: 'insideTop', offset: -2 }} tick={{ fontSize: 11 }} />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(l: number) => `MD: ${l} м`} />
                 <Legend />
-                <Line dataKey="pressure" name="Давление, МПа" stroke="hsl(0, 60%, 50%)" dot={false} strokeWidth={2} />
-                <Line dataKey="temperature" name="Температура, °C" stroke="hsl(280, 50%, 55%)" dot={false} strokeWidth={2} />
+                <Line xAxisId="p" dataKey="pressure" name="Давление, МПа" stroke="hsl(0, 60%, 50%)" dot={false} strokeWidth={2} />
+                <Line xAxisId="t" dataKey="temperature" name="Температура, °C" stroke="hsl(280, 50%, 55%)" dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           </ScrollableChart>
@@ -210,6 +257,30 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
         </CardContent>
       </Card>
 
+      {/* Chart 4: N₂ schedule по времени закачки */}
+      <Card>
+        <CardHeader className="pb-2 flex flex-row items-center justify-between">
+          <CardTitle className="text-lg">📈 График закачки по времени (FQ и глубина)</CardTitle>
+          <CopyImageButton targetRef={chartRef4} />
+        </CardHeader>
+        <CardContent>
+          <ScrollableChart chartRef={chartRef4} height="h-[360px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={n2ScheduleData} margin={{ top: 5, right: 60, bottom: 30, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis dataKey="timeMin" type="number" label={{ value: 'Время, мин', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="fq" orientation="left" domain={[0, 100]} label={{ value: 'FQ, %', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="depth" orientation="right" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: 90, position: 'insideRight' }} tick={{ fontSize: 11 }} />
+                <Tooltip contentStyle={tooltipStyle} labelFormatter={(l: number) => `Время: ${l} мин`} />
+                <Legend />
+                <Line yAxisId="fq" dataKey="foamQuality" name="FQ, %" stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
+                <Line yAxisId="depth" dataKey="depthMD" name="Глубина заполнения, м" stroke="hsl(15, 75%, 50%)" dot={false} strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </ScrollableChart>
+        </CardContent>
+      </Card>
+
       {/* Detail Table */}
       <Card>
         <CardHeader className="pb-4">
@@ -224,6 +295,7 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
                   <th className="py-2 px-1 text-right text-muted-foreground">TVD, м</th>
                   <th className="py-2 px-1 text-right text-muted-foreground">P, МПа</th>
                   <th className="py-2 px-1 text-right text-muted-foreground">T, °C</th>
+                  <th className="py-2 px-1 text-right text-muted-foreground">Z (N₂)</th>
                   <th className="py-2 px-1 text-right text-muted-foreground">Кач. пены, %</th>
                   <th className="py-2 px-1 text-right text-muted-foreground">Плотн., г/см³</th>
                   <th className="py-2 px-1 text-right text-muted-foreground">N₂, %</th>
@@ -236,6 +308,7 @@ export default function FoamCementSection({ wellData, slurries, mudDensity }: Pr
                     <td className="py-1.5 px-1 text-right">{fmt(pt.tvd, 0)}</td>
                     <td className="py-1.5 px-1 text-right">{fmt(pt.pressure, 2)}</td>
                     <td className="py-1.5 px-1 text-right">{fmt(pt.temperature, 1)}</td>
+                    <td className="py-1.5 px-1 text-right">{fmt(pt.zFactor, 3)}</td>
                     <td className="py-1.5 px-1 text-right">{fmt(pt.foamQuality, 1)}</td>
                     <td className="py-1.5 px-1 text-right">{fmt(pt.foamDensity, 3)}</td>
                     <td className="py-1.5 px-1 text-right">{fmt(pt.n2VolumeRatio * 100, 1)}</td>
