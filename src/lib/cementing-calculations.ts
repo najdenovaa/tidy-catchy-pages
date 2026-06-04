@@ -1634,34 +1634,17 @@ export function calculatePressureProfile(
       }
       totalAnnReturn = Math.max(0, Math.min(totalAnnReturn, actualRateLps));
 
-      // Эмпирическая поправка давления на насосе
-      let surfP: number;
-      if (isDisplacement) {
-        // На продавке: пока догоняем объём свободного оседания цемента — давление минимальное
-        // После догонки — стандартный расчёт с плавным нарастанием
-        const catchUpRatio = cementFreefallVol > 0.01
-          ? Math.min(1, cumDisplacementVol / cementFreefallVol)
-          : 1;
-        if (catchUpRatio < 1) {
-          // Пока не догнали — околоминимальное давление (только трение трубы)
-          const minSurfP = Math.max(0, frPipe * 0.5);
-          surfP = minSurfP + (surfPRaw * 0.82 - minSurfP) * catchUpRatio * catchUpRatio;
-        } else {
-          // Догнали — стандартная продавка, плавный переход
-          const overRatio = cementFreefallVol > 0.01
-            ? Math.min(1, (cumDisplacementVol - cementFreefallVol) / Math.max(cementFreefallVol * 0.3, 0.1))
-            : 1;
-          const smoothOver = overRatio * overRatio * (3 - 2 * overRatio); // smoothstep
-          surfP = surfPRaw * 0.82 * (0.7 + 0.3 * smoothOver);
-        }
-      } else {
-        // Буферы и цемент: +15% к давлению
-        surfP = surfPRaw * 0.825 * 1.15;
-      }
+      // Чистый физический расчёт без эмпирических множителей.
+      // Эксцентриситет уже учтён через annFrictionMultiplier (0.4).
+      const surfP = surfPRaw;
       const bhp = bhpRaw;
 
+      // Средняя скорость восходящего потока в затрубье (нижняя секция — открытый ствол)
+      const annAreaForVel = annAreaLower > 0 ? annAreaLower : (annAreaUpper > 0 ? annAreaUpper : 0);
+      const annularVelocityMps = annAreaForVel > 0 ? (actualRateLps / 1000) / annAreaForVel : 0;
+
       const annP = calcAnnularProfile();
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled });
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps });
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;
