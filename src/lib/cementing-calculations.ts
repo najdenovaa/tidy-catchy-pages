@@ -1600,6 +1600,11 @@ export function calculatePressureProfile(
           densityGcm3: mudDensityGcm3,
           annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH,
           freefallSettledM3: currentFreefallSettled,
+          annularVelocityMps: 0,
+          ecdAtBottomGcm3: bottomTVD > 0 ? bhp / (0.00981 * bottomTVD) : 0,
+          ecdStaticAtBottomGcm3: bottomTVD > 0 ? bhp / (0.00981 * bottomTVD) : 0,
+          ecdAtPrevShoeGcm3: prevShoeTVD > 0 ? calcAnnularHydrostaticAtDepth(prevShoe) / (0.00981 * prevShoeTVD) : 0,
+          fracGradEcdGcm3, porePressureEcdGcm3,
         });
       }
       if (!equilibriumReached) equilibriumTimeMin = pauseMin;
