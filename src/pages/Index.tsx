@@ -239,7 +239,7 @@ export default function Index() {
 
   const pressureResult = useMemo(
     () => calcSnapshot && volumes
-      ? calculatePressureProfile(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.drillingFluid, calcSnapshot.displacementFluids, calcSnapshot.fractureGradient, volumes.displacementVolume, calcSnapshot.flushTimeMin, calcSnapshot.flushVolumeM3)
+      ? calculatePressureProfile(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.drillingFluid, calcSnapshot.displacementFluids, calcSnapshot.fractureGradient, volumes.displacementVolumeWithCompression, calcSnapshot.flushTimeMin, calcSnapshot.flushVolumeM3)
       : null,
     [calcSnapshot, volumes]
   );
@@ -431,7 +431,7 @@ export default function Index() {
       freshSnapshot.drillingFluid,
       freshSnapshot.displacementFluids,
       freshSnapshot.fractureGradient,
-      computedVolumes.displacementVolume,
+      computedVolumes.displacementVolumeWithCompression,
       freshSnapshot.flushTimeMin,
       freshSnapshot.flushVolumeM3
     );
