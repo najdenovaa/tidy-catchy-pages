@@ -99,14 +99,14 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 20, right: 115, left: 25, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
-                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" angle={-45} textAnchor="end" height={50} interval={0} />
                 <YAxis yAxisId="pressure" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.15)]} label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
                 <YAxis yAxisId="rate" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: 5, fontSize: 12 }} className="text-xs" width={50} />
                 <YAxis yAxisId="density" orientation="right" domain={[(dataMin: number) => Math.floor(Math.max(0, dataMin - 0.2) * 10) / 10, (dataMax: number) => Math.ceil((dataMax + 0.2) * 10) / 10]} label={{ value: "ρ, г/см³", angle: 90, position: "insideRight", offset: 5, fontSize: 12 }} className="text-xs" width={50} tick={{ fontSize: 11 }} />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => { if (name === "Производительность" || name === "Выход на устье") return [value.toFixed(1) + " л/с", name]; if (name === "Плотность закачки") return [value.toFixed(2) + " г/см³", name]; return [value.toFixed(2) + " МПа", name]; }} />
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
                 
-                {stageBoundaries.map((b, i) => <ReferenceLine key={`stage-${i}`} yAxisId="pressure" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />)}
+                {stageBoundaries.map((b, i) => <ReferenceLine key={`stage-${i}`} yAxisId="pressure" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600, dy: (i % 4) * 14 }} />)}
                 <Line yAxisId="pressure" type="linear" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
@@ -132,7 +132,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5 }} className="text-xs" />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5 }} className="text-xs" angle={-45} textAnchor="end" height={50} interval={0} />
                 <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft" }} className="text-xs" />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => [value.toFixed(2) + " МПа", name]} />
                 <Legend />
@@ -161,7 +161,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 20, right: 80, left: 25, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
-                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" angle={-45} textAnchor="end" height={50} interval={0} />
                 <YAxis yAxisId="ecd"
                   domain={[
                     (dataMin: number) => Math.floor(Math.max(0.8, dataMin - 0.1) * 10) / 10,
@@ -183,7 +183,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
                 {stageBoundaries.map((b, i) => (
                   <ReferenceLine key={`ecd-stage-${i}`} yAxisId="ecd" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5}
-                    label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />
+                    label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600, dy: (i % 4) * 14 }} />
                 ))}
                 {(pressureData[0]?.fracGradEcdGcm3 ?? 0) > 0 && (
                   <ReferenceLine yAxisId="ecd" y={pressureData[0].fracGradEcdGcm3!} stroke="hsl(0, 70%, 50%)" strokeDasharray="8 4" strokeWidth={2}
@@ -242,7 +242,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="cumulativeVolume" label={{ value: "Накопит. объём, м³", position: "insideBottomRight", offset: -5 }} className="text-xs" />
+                <XAxis dataKey="cumulativeVolume" label={{ value: "Накопит. объём, м³", position: "insideBottomRight", offset: -5 }} className="text-xs" angle={-45} textAnchor="end" height={50} tickFormatter={(v) => Number(v).toFixed(0)} />
                 <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft" }} className="text-xs" />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Объём: ${Number(v).toFixed(1)} м³`} formatter={(value: number, name: string) => [value.toFixed(2) + " МПа", name]} />
                 <Legend />
@@ -271,12 +271,12 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 20, right: 65, left: 25, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
-                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" angle={-45} textAnchor="end" height={50} interval={0} />
                 <YAxis yAxisId="pressure" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.15)]} label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
                 <YAxis yAxisId="rate" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => { if (name.includes("л/с") || name.includes("Производительность") || name.includes("Макс.")) return [value.toFixed(1) + " л/с", name]; return [value.toFixed(2) + " МПа", name]; }} />
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
-                {stageBoundaries.map((b, i) => <ReferenceLine key={`plan-stage-${i}`} yAxisId="pressure" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />)}
+                {stageBoundaries.map((b, i) => <ReferenceLine key={`plan-stage-${i}`} yAxisId="pressure" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600, dy: (i % 4) * 14 }} />)}
                 <Line yAxisId="pressure" type="linear" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
@@ -326,7 +326,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                     <ReferenceArea yAxisId="re" y1={0} y2={2100} fill="hsla(120, 50%, 50%, 0.08)" />
                     <ReferenceArea yAxisId="re" y1={2100} y2={3000} fill="hsla(45, 80%, 50%, 0.08)" />
                     <ReferenceArea yAxisId="re" y1={3000} y2={reYMax} fill="hsla(0, 70%, 50%, 0.06)" />
-                    <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" />
+                    <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" angle={-45} textAnchor="end" height={50} interval={0} />
                     <YAxis yAxisId="re" domain={[0, reYMax]} label={{ value: "Re", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
                     <YAxis yAxisId="rate" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
                     <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => {
@@ -386,11 +386,11 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={pressureData} margin={{ top: 5, right: 30, left: 25, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
-                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" angle={-45} textAnchor="end" height={50} interval={0} />
                 <YAxis label={{ value: "Высота, м", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => [value.toFixed(0) + " м", name]} />
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
-                {stageBoundaries.map((b, i) => <ReferenceLine key={`ann-stage-${i}`} x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />)}
+                {stageBoundaries.map((b, i) => <ReferenceLine key={`ann-stage-${i}`} x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600, dy: (i % 4) * 14 }} />)}
                 <Area type="monotone" dataKey="annDisplHeightM" name="Продавочная жидкость" stackId="ann" stroke="hsl(120, 45%, 45%)" fill="hsl(120, 45%, 45%)" fillOpacity={0.6} />
                 <Area type="monotone" dataKey="annCementHeightM" name="Тампонажный раствор" stackId="ann" stroke="hsl(0, 0%, 55%)" fill="hsl(0, 0%, 55%)" fillOpacity={0.7} />
                 <Area type="monotone" dataKey="annBufferHeightM" name="Буфер" stackId="ann" stroke="hsl(200, 60%, 50%)" fill="hsl(200, 60%, 50%)" fillOpacity={0.5} />
