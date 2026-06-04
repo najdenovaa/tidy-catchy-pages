@@ -479,9 +479,8 @@ export function autoPlaceCentralizers(
     const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
     const sag = sag_free / (1 + springFactor);
     const ecc = Math.max(0.03, Math.min(1, sag / rc_m));
-    // Ensure achieved standoff is never below target
-    const rawAchieved = Math.round((1 - ecc) * 1000) / 10;
-    const achieved = Math.max(rawAchieved, targetStandoff);
+    // Показываем реальный достигнутый standoff (без подгонки под целевой)
+    const achieved = Math.round((1 - ecc) * 1000) / 10;
 
     return { cpj: bestCPJ, standoff: achieved };
   }
