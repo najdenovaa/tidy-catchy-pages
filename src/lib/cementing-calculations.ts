@@ -1291,20 +1291,54 @@ export function calculatePressureProfile(
       pumpedExited -= take;
     }
 
-    // Затрубье: exitBatches в обратном порядке = самый свежий внизу
+    // Двухсекционная модель: заполняем затрубье снизу вверх
+    // Нижняя секция: открытый ствол (prevShoe → casingDepthMD), сечение lowerVPMhydro (с каверн.)
+    // Верхняя секция: межтрубное (0 → prevShoe), сечение upperVPMhydro
+    const lowerVPMhydro = annAreaLower > 0
+      ? annAreaLower * wellData.cavernCoeff
+      : annVPM;
+    const upperVPMhydro = annAreaUpper > 0
+      ? annAreaUpper
+      : annVPM;
+
     let currentBottomMD = wellData.casingDepthMD;
     for (let i = exitBatches.length - 1; i >= 0; i--) {
       const batch = exitBatches[i];
       if (batch.volumeM3 <= 0 || currentBottomMD <= 0) continue;
-      const heightMD = batch.volumeM3 / annVPM;
-      const topMD = Math.max(0, currentBottomMD - heightMD);
-      const tvdBot = interpolateTVD(currentBottomMD, traj);
-      const tvdTop = interpolateTVD(topMD, traj);
-      pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
-      currentBottomMD = topMD;
+      let volRemaining = batch.volumeM3;
+
+      // Сначала заполняем нижнюю секцию (открытый ствол)
+      if (currentBottomMD > prevShoe && volRemaining > 0) {
+        const availableLen = currentBottomMD - Math.max(prevShoe, 0);
+        const maxVol = availableLen * lowerVPMhydro;
+        const fillVol = Math.min(volRemaining, maxVol);
+        const fillLen = lowerVPMhydro > 0 ? fillVol / lowerVPMhydro : 0;
+        const topMD = currentBottomMD - fillLen;
+        const tvdBot = interpolateTVD(currentBottomMD, traj);
+        const tvdTop = interpolateTVD(topMD, traj);
+        pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
+        currentBottomMD = topMD;
+        volRemaining -= fillVol;
+      }
+
+      // Затем заполняем верхнюю секцию (межтрубное)
+      if (currentBottomMD > 0 && currentBottomMD <= prevShoe + 0.001 && volRemaining > 0) {
+        const availableLen = currentBottomMD;
+        const maxVol = availableLen * upperVPMhydro;
+        const fillVol = Math.min(volRemaining, maxVol);
+        const fillLen = upperVPMhydro > 0 ? fillVol / upperVPMhydro : 0;
+        const topMD = Math.max(0, currentBottomMD - fillLen);
+        const tvdBot = interpolateTVD(currentBottomMD, traj);
+        const tvdTop = interpolateTVD(topMD, traj);
+        pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
+        currentBottomMD = topMD;
+        volRemaining -= fillVol;
+      }
+
+      if (currentBottomMD <= 0) break;
     }
 
-    // Выше — исходный буровой раствор затрубья
+    // Выше всех пачек — исходный буровой раствор
     if (currentBottomMD > 0) {
       const tvd = interpolateTVD(currentBottomMD, traj);
       pressure += mudDensityGcm3 * tvd * 0.00981;
