@@ -341,6 +341,7 @@ function buildPipeSegments(
   casingDepthMD: number,
   fillFluid: FluidKey = "mud",
   ckodDepth: number = 0,
+  cumDisplacementVol: number = 0,
 ): PipeSegment[] {
   if (pipeCapacityM3 <= EPS || casingDepthMD <= EPS) return [];
 
@@ -400,9 +401,12 @@ function buildPipeSegments(
   if (ckodDepth > EPS && ckodDepth < casingDepthMD - EPS) {
     const cementHistory = history.filter((b) => b.fluid === "cement");
     const hasCement = cementHistory.length > 0;
-    const cementStartsExiting = cumulativeVolume - pipeCapacityM3;
+    // Стакан появляется только когда продавочная пробка достигла ЦКОД,
+    // т.е. закачано продавки ≥ ёмкости трубы от устья до ЦКОД.
+    const pipeVolToCkod = (ckodDepth / casingDepthMD) * pipeCapacityM3;
+    const plugReachedCkod = cumDisplacementVol >= pipeVolToCkod - 0.01;
 
-    if (hasCement && cementStartsExiting > 0) {
+    if (hasCement && plugReachedCkod) {
       const shoeTrackTopMD = ckodDepth;
       const shoeTrackBotMD = casingDepthMD;
       const shoeTrackFracTop = 1 - shoeTrackBotMD / casingDepthMD;
@@ -600,7 +604,7 @@ export default function CementingAnimation({
           casingOD,
           prevCasingID,
         );
-        const pipeSegments = buildPipeSegments(history, effectivePumpedVol, pipeCapacityM3, casingDepthMD, "void", ckodDepth);
+        const pipeSegments = buildPipeSegments(history, effectivePumpedVol, pipeCapacityM3, casingDepthMD, "void", ckodDepth, cumDisplacementVol);
 
         lastCumVol = point.cumulativeVolume;
         return { pipeSegments, annulusSegments, activeExit: null, flowConnected: false } as VisualFrame;
@@ -661,6 +665,7 @@ export default function CementingAnimation({
           casingDepthMD,
           residualFreefallOffset > EPS ? "void" : "mud",
           ckodDepth,
+          cumDisplacementVol,
         ),
         annulusSegments,
         activeExit,
