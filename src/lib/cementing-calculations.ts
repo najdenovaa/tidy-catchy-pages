@@ -1659,7 +1659,12 @@ export function calculatePressureProfile(
 
   // СТОП — пробка садится в ЦКОД на ходу, давление скачком от динамического
   const stopTime = cumTime;
-  const stopIncrease = 2.75;
+
+  // Скачок давления при посадке пробки = дифференциальное гидростатическое давление + срез ЦКОД
+  const ckodShear = wellData.ckodShearPressureMPa ?? 1.5;
+  const staticPipeHydroAtStop = calcPipeHydrostatic();
+  const staticAnnHydroAtStop = calcAnnularHydrostatic();
+  const stopIncrease = Math.abs(staticAnnHydroAtStop - staticPipeHydroAtStop) + ckodShear;
 
   // Берём последнее динамическое давление (с трением, насос работал)
   const lastPoint = points[points.length - 1];
