@@ -913,6 +913,7 @@ export interface PressurePoint {
   annCementHeightM: number;
   annDisplHeightM: number;
   freefallSettledM3: number;
+  annularVelocityMps?: number; // м/с — средняя скорость восходящего потока в затрубье (нижняя секция)
 }
 
 export interface StageBoundary {
