@@ -95,28 +95,50 @@ export function autoPlaceTurbulators(
   bladeHeight: number = 15,
   spacingM: number = 6,
 ): { points: TurbulatorPoint[]; summary: AutoTurbulatorResult[] } {
-  const holeD = wellData.holeDiameter;
-  const annularGap_mm = (holeD - wellData.casingOD) / 2;
-  const dh_m = (holeD - wellData.casingOD) / 1000;
-  if (dh_m <= 0 || annularGap_mm <= 0) return { points: [], summary: [] };
-
-  const areaAnn = Math.PI / 4 * ((holeD / 1000) ** 2 - (wellData.casingOD / 1000) ** 2);
+  const casingOD_m = wellData.casingOD / 1000;
   const Q_m3s = flowRateLps / 1000;
-  const velocity = areaAnn > 0 ? Q_m3s / areaAnn : 0;
+  const prevCasingDepth = wellData.prevCasingDepth || 0;
+  const prevCasingID = wellData.prevCasingID || wellData.holeDiameter;
+  const cavernCoeff = wellData.cavernCoeff || 1;
+  const bhst = wellData.bottomTempStatic || 50;
 
-  const pv_Pas = fluidPV / 1000;
-  const rho = mudDensity;
-  const Re = pv_Pas > 0 ? (rho * velocity * dh_m) / pv_Pas : 99999;
+  const annularGap_avg = (wellData.holeDiameter - wellData.casingOD) / 2;
+  if (annularGap_avg <= 0) return { points: [], summary: [] };
 
-  // Calculate turbulence multiplier from geometry
-  const turbMult = calcTurbulenceMultiplier(bladesCount, bladeAngle, bladeHeight, annularGap_mm);
+  // Turbulence multiplier from geometry (depends only on blades + average gap)
+  const turbMult = calcTurbulenceMultiplier(bladesCount, bladeAngle, bladeHeight, annularGap_avg);
 
   const step = 10;
   const points: TurbulatorPoint[] = [];
   const segments: { fromMD: number; toMD: number; reValues: number[] }[] = [];
   let currentSeg: { fromMD: number; toMD: number; reValues: number[] } | null = null;
 
+  // Re-by-depth: local annular cross-section + temperature-corrected PV
   for (let md = 0; md <= wellData.casingDepthMD; md += step) {
+    // Local bore diameter
+    let boreDiameter_mm: number;
+    if (md <= prevCasingDepth && prevCasingID > 0) {
+      boreDiameter_mm = prevCasingID; // внутри предыдущей колонны
+    } else {
+      boreDiameter_mm = wellData.holeDiameter * Math.sqrt(cavernCoeff); // открытый ствол с кавернозностью
+    }
+
+    const dh_m = (boreDiameter_mm - wellData.casingOD) / 1000;
+    if (dh_m <= 0) continue;
+
+    const bore_m = boreDiameter_mm / 1000;
+    const areaAnn = (Math.PI / 4) * (bore_m * bore_m - casingOD_m * casingOD_m);
+    const velocity = areaAnn > 0 ? Q_m3s / areaAnn : 0;
+
+    // Линейный градиент температуры от 20°C на устье до BHST на забое
+    const tempFrac = wellData.casingDepthMD > 0 ? md / wellData.casingDepthMD : 0;
+    const tempC = 20 + tempFrac * (bhst - 20);
+    // PV снижается ~1%/°C от 20°C
+    const pvCorrected = fluidPV * Math.exp(-0.01 * (tempC - 20));
+    const pv_Pas = pvCorrected / 1000;
+
+    const Re = pv_Pas > 0 ? (mudDensity * velocity * dh_m) / pv_Pas : 99999;
+
     const needsTurb = Re < 2100;
     if (needsTurb) {
       if (!currentSeg) currentSeg = { fromMD: md, toMD: md, reValues: [Re] };
