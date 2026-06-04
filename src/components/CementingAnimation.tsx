@@ -670,7 +670,7 @@ export default function CementingAnimation({
       lastCumVol = point.cumulativeVolume;
       return frame;
     });
-  }, [annularVolumeM3, bufferNames, casingDepthMD, casingOD, holeDiameter, pipeCapacityM3, pressureData, prevCasingDepth, prevCasingID, slurryNames, slurries]);
+  }, [annularVolumeM3, bufferNames, casingDepthMD, casingOD, ckodDepth, holeDiameter, pipeCapacityM3, pressureData, prevCasingDepth, prevCasingID, slurryNames, slurries]);
 
   const currentVisual = visualFrames[Math.min(currentIndex, Math.max(visualFrames.length - 1, 0))] || {
     pipeSegments: [] as PipeSegment[],
