@@ -762,7 +762,8 @@ export function calculateHydraulics(
   const maxBHP = annulusPressure + frictionAnn;
   const safetyCoeff = fracturePressure > 0 ? maxBHP / fracturePressure : 0;
   const differentialPressure = annulusPressure - pipePressure;
-  const stopPressure = Math.abs(differentialPressure) + 3.0;
+  const ckodShear = data.ckodShearPressureMPa ?? 1.5;
+  const stopPressure = Math.abs(differentialPressure) + frictionPipe + frictionAnn + ckodShear;
 
   return {
     hydrostaticPressurePipe: pipePressure,
