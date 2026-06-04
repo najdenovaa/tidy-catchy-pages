@@ -183,7 +183,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
                 {stageBoundaries.map((b, i) => (
                   <ReferenceLine key={`ecd-stage-${i}`} yAxisId="ecd" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5}
-                    label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />
+                    label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600, dy: (i % 4) * 14 }} />
                 ))}
                 {(pressureData[0]?.fracGradEcdGcm3 ?? 0) > 0 && (
                   <ReferenceLine yAxisId="ecd" y={pressureData[0].fracGradEcdGcm3!} stroke="hsl(0, 70%, 50%)" strokeDasharray="8 4" strokeWidth={2}
