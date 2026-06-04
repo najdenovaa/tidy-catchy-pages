@@ -340,6 +340,7 @@ function buildPipeSegments(
   pipeCapacityM3: number,
   casingDepthMD: number,
   fillFluid: FluidKey = "mud",
+  ckodDepth: number = 0,
 ): PipeSegment[] {
   if (pipeCapacityM3 <= EPS || casingDepthMD <= EPS) return [];
 
@@ -391,6 +392,57 @@ function buildPipeSegments(
 
     cursor += frac;
     if (cursor >= 1 - EPS) break;
+  }
+
+  // === ЦКОД: цементный «стакан» ниже ЦКОД ===
+  // Продавочная пробка садится на ЦКОД, поэтому интервал ЦКОД→башмак
+  // всегда занят цементом (как только цемент начал выходить из трубы).
+  if (ckodDepth > EPS && ckodDepth < casingDepthMD - EPS) {
+    const cementHistory = history.filter((b) => b.fluid === "cement");
+    const hasCement = cementHistory.length > 0;
+    const cementStartsExiting = cumulativeVolume - pipeCapacityM3;
+
+    if (hasCement && cementStartsExiting > 0) {
+      const shoeTrackTopMD = ckodDepth;
+      const shoeTrackBotMD = casingDepthMD;
+      const shoeTrackFracTop = 1 - shoeTrackBotMD / casingDepthMD;
+      const shoeTrackFracBot = 1 - shoeTrackTopMD / casingDepthMD;
+      const shoeTrackVolM3 = ((casingDepthMD - ckodDepth) / casingDepthMD) * pipeCapacityM3;
+      const cementLabel = cementHistory[cementHistory.length - 1].label;
+
+      const newSegments: PipeSegment[] = [];
+      for (const seg of segments) {
+        if (seg.botMD <= shoeTrackTopMD + EPS) {
+          newSegments.push(seg);
+        } else if (seg.topMD >= shoeTrackTopMD - EPS) {
+          // полностью ниже ЦКОД — заменяется стаканом
+          continue;
+        } else {
+          // пересекает ЦКОД — обрезаем сверху
+          const clippedFracBot = 1 - shoeTrackTopMD / casingDepthMD;
+          const denom = Math.max(seg.botMD - seg.topMD, EPS);
+          newSegments.push({
+            ...seg,
+            botMD: shoeTrackTopMD,
+            fracBot: clippedFracBot,
+            volM3: seg.volM3 * ((shoeTrackTopMD - seg.topMD) / denom),
+          });
+        }
+      }
+
+      newSegments.push({
+        fluid: "cement",
+        label: cementLabel,
+        fracTop: shoeTrackFracTop,
+        fracBot: shoeTrackFracBot,
+        volM3: shoeTrackVolM3,
+        topMD: shoeTrackTopMD,
+        botMD: shoeTrackBotMD,
+      });
+
+      newSegments.sort((a, b) => a.topMD - b.topMD);
+      return newSegments;
+    }
   }
 
   return segments;
@@ -548,7 +600,7 @@ export default function CementingAnimation({
           casingOD,
           prevCasingID,
         );
-        const pipeSegments = buildPipeSegments(history, effectivePumpedVol, pipeCapacityM3, casingDepthMD, "void");
+        const pipeSegments = buildPipeSegments(history, effectivePumpedVol, pipeCapacityM3, casingDepthMD, "void", ckodDepth);
 
         lastCumVol = point.cumulativeVolume;
         return { pipeSegments, annulusSegments, activeExit: null, flowConnected: false } as VisualFrame;
@@ -608,6 +660,7 @@ export default function CementingAnimation({
           pipeCapacityM3,
           casingDepthMD,
           residualFreefallOffset > EPS ? "void" : "mud",
+          ckodDepth,
         ),
         annulusSegments,
         activeExit,
@@ -617,7 +670,7 @@ export default function CementingAnimation({
       lastCumVol = point.cumulativeVolume;
       return frame;
     });
-  }, [annularVolumeM3, bufferNames, casingDepthMD, casingOD, holeDiameter, pipeCapacityM3, pressureData, prevCasingDepth, prevCasingID, slurryNames, slurries]);
+  }, [annularVolumeM3, bufferNames, casingDepthMD, casingOD, ckodDepth, holeDiameter, pipeCapacityM3, pressureData, prevCasingDepth, prevCasingID, slurryNames, slurries]);
 
   const currentVisual = visualFrames[Math.min(currentIndex, Math.max(visualFrames.length - 1, 0))] || {
     pipeSegments: [] as PipeSegment[],

@@ -1144,10 +1144,19 @@ export function calculatePressureProfile(
       if (filledFromBottom >= wellData.casingDepthMD) break;
     }
 
-    // Remaining annular space = original mud
+    // Remaining annular space — добиваем цементом, если по дизайну цемент должен
+    // подниматься до устья (maxCementHeight ≈ casingDepthMD) и цемент уже есть в затрубье.
+    // Иначе — оставшееся место занимает буровой раствор.
     const totalFilled = result.mudH + result.bufferH + result.cementH + result.displH;
     if (totalFilled < wellData.casingDepthMD) {
-      result.mudH += (wellData.casingDepthMD - totalFilled);
+      const gap = wellData.casingDepthMD - totalFilled;
+      const cementToSurface = maxCementHeight >= wellData.casingDepthMD - 0.5;
+      if (result.cementH > 0 && cementToSurface && gap < 2.0) {
+        // компенсируем погрешность округления объёмов
+        result.cementH += gap;
+      } else {
+        result.mudH += gap;
+      }
     }
 
     return result;
