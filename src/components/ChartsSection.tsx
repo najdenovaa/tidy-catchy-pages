@@ -45,7 +45,9 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
   }
 
   const maxTime = Math.ceil(pressureData[pressureData.length - 1]?.time || 0);
-  const timeTicks = Array.from({ length: maxTime + 1 }, (_, i) => i);
+  const tickStep = maxTime <= 20 ? 1 : maxTime <= 50 ? 5 : maxTime <= 120 ? 10 : maxTime <= 300 ? 20 : 30;
+  const timeTicks = Array.from({ length: Math.floor(maxTime / tickStep) + 1 }, (_, i) => i * tickStep);
+  if (timeTicks[timeTicks.length - 1] !== maxTime) timeTicks.push(maxTime);
 
   const tooltipStyle = {
     backgroundColor: "hsl(var(--card))",
