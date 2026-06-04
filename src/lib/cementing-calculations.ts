@@ -105,6 +105,7 @@ export interface WellData {
   casingSections?: CasingSection[];
   cavernIntervals?: CavernInterval[];
   reservoirLayers?: ReservoirLayer[];
+  ckodShearPressureMPa?: number; // давление среза пробки на ЦКОД, МПа (по умолчанию 1.5)
 }
 
 export function getCasingID(casingOD: number, casingWall: number): number {
@@ -265,6 +266,7 @@ export interface VolumeResults {
   equivalentDiameter: number;
   slurryVolumes: SlurryVolumeResult[];
   totalSlurryVolume: number;
+  plugVolume: number; // объём цементного стакана (внутри ОК от ЦКОД до башмака), м³
 }
 
 export interface CementResults {
@@ -523,7 +525,11 @@ export function displacementVolume(pipeVolPerM: number, ckodDepth: number): numb
 
 // === Расчёт объёмов ===
 
-export function calculateVolumes(data: WellData, slurries: SlurryInput[] = []): VolumeResults {
+export function calculateVolumes(
+  data: WellData,
+  slurries: SlurryInput[] = [],
+  compressionCoeff: number = 1.05,
+): VolumeResults {
   const casingID = getCasingID(data.casingOD, data.casingWall);
   const wellVPM = wellVolumePerMeter(data.holeDiameter);
   const wellVCav = wellVolumeWithCavern(data.holeDiameter, data.cavernCoeff);
@@ -543,7 +549,8 @@ export function calculateVolumes(data: WellData, slurries: SlurryInput[] = []): 
   // Объём трубного пространства с учётом секций ОК
   const totalPipe = totalPipeVolumeForRange(0, data.casingDepthMD, data.casingOD, data.casingWall, data.casingSections);
   const dispVol = totalPipeVolumeForRange(0, data.ckodDepth, data.casingOD, data.casingWall, data.casingSections);
-  const dispVolComp = dispVol * 1.05; // с коэф. сжатия 5%
+  const safeCompCoeff = Math.max(compressionCoeff || 1.0, 1.0);
+  const dispVolComp = dispVol * safeCompCoeff;
 
   // Расчёт объёмов каждого цементного раствора
   const slurryVolumes: SlurryVolumeResult[] = [];
@@ -572,6 +579,25 @@ export function calculateVolumes(data: WellData, slurries: SlurryInput[] = []): 
     }
   });
 
+  // === Цементный стакан (внутри ОК от ЦКОД до башмака) ===
+  const plugHeight = Math.max(0, data.casingDepthMD - data.ckodDepth);
+  const plugVolume = plugHeight > 0 && data.ckodDepth > 0
+    ? totalPipeVolumeForRange(data.ckodDepth, data.casingDepthMD, data.casingOD, data.casingWall, data.casingSections)
+    : 0;
+
+  // Стакан заполняется нижним (последним) цементным раствором
+  if (plugVolume > 0 && slurryVolumes.length > 0) {
+    const lastSV = slurryVolumes[slurryVolumes.length - 1];
+    const sInput = slurries[slurries.length - 1];
+    lastSV.slurryVolumeM3 += plugVolume;
+    const recalc = calculateCement(lastSV.slurryVolumeM3, sInput.density, sInput.waterRatio, sInput.yieldPerTon);
+    lastSV.dryMassTons = recalc.dryMass;
+    lastSV.waterVolumeM3 = recalc.waterVolume;
+    lastSV.yieldPerTon = recalc.yieldPerTon;
+    lastSV.waterCementRatio = recalc.waterCementRatio;
+    totalSlurryVolume += plugVolume;
+  }
+
   return {
     casingID,
     wellVolumePerMeter: wellVPM,
@@ -587,6 +613,7 @@ export function calculateVolumes(data: WellData, slurries: SlurryInput[] = []): 
     equivalentDiameter: eqDiam,
     slurryVolumes,
     totalSlurryVolume,
+    plugVolume,
   };
 }
 
@@ -667,8 +694,11 @@ export function calculateHydraulics(
   const traj = getEffectiveTrajectory(data);
   const bottomTVD = interpolateTVD(data.casingDepthMD, traj);
 
-  // Трубное — продавочная жидкость по вертикали
-  const pipePressure = hydrostaticPressure(displacementDensity, bottomTVD);
+  // Трубное — продавочная жидкость от устья до ЦКОД + цемент от ЦКОД до башмака
+  const lastSlurryDensity = slurries.length > 0 ? slurries[slurries.length - 1].density : displacementDensity;
+  const tvdCkod = data.ckodDepth > 0 ? interpolateTVD(data.ckodDepth, traj) : bottomTVD;
+  const pipePressure = hydrostaticPressure(displacementDensity, tvdCkod)
+    + hydrostaticPressure(lastSlurryDensity, Math.max(0, bottomTVD - tvdCkod));
 
   // Затрубное — цемент + бур. раствор (по вертикали)
   let annulusPressure = 0;
@@ -732,7 +762,8 @@ export function calculateHydraulics(
   const maxBHP = annulusPressure + frictionAnn;
   const safetyCoeff = fracturePressure > 0 ? maxBHP / fracturePressure : 0;
   const differentialPressure = annulusPressure - pipePressure;
-  const stopPressure = Math.abs(differentialPressure) + 3.0;
+  const ckodShear = data.ckodShearPressureMPa ?? 1.5;
+  const stopPressure = Math.abs(differentialPressure) + frictionPipe + frictionAnn + ckodShear;
 
   return {
     hydrostaticPressurePipe: pipePressure,
@@ -795,6 +826,12 @@ export function calculateMaterials(
   let waterForCement = 0;
   let waterForBuffers = 0;
 
+  // Цементный стакан (внутри ОК от ЦКОД до башмака) — добавляем к нижнему раствору
+  const plugHeight = Math.max(0, wellData.casingDepthMD - wellData.ckodDepth);
+  const plugVolume = plugHeight > 0 && wellData.ckodDepth > 0
+    ? totalPipeVolumeForRange(wellData.ckodDepth, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections)
+    : 0;
+
   slurries.forEach((s, i) => {
     const h = getSlurryHeight(slurries, i, wellData.casingDepthMD);
     if (h > 0) {
@@ -803,6 +840,8 @@ export function calculateMaterials(
       let vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
       // Добавляем объём на вымыв для первого (верхнего) раствора
       if (i === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
+      // Цементный стакан добавляем к последнему (нижнему) раствору
+      if (i === lastIdx && plugVolume > 0) vol += plugVolume;
       const res = calculateCement(vol, s.density, s.waterRatio, s.yieldPerTon);
       const dryMassKg = res.dryMass * 1000; // тонны → кг
       cementItems.push({ name: s.name, amount: res.dryMass, unit: "т" });
@@ -820,15 +859,17 @@ export function calculateMaterials(
 
   buffers.forEach(b => {
     bufferItems.push({ name: b.name, amount: b.volume, unit: "м³" });
-    waterForBuffers += b.volume * 0.9; // ~90% вода
     const bufferMassKg = b.volume * b.density; // density в кг/м³
+    // Вода в буфере = общий объём минус объём твёрдых добавок (плотность добавок ~1200 кг/м³)
+    let additivesVolumeM3 = 0;
     b.additives.forEach(a => {
-      // Авторасчёт массы из % (от массы буферной жидкости)
       const computedMassKg = a.percentage > 0 ? (a.percentage / 100) * bufferMassKg : a.massKg;
+      if (computedMassKg > 0) additivesVolumeM3 += computedMassKg / 1200;
       if (a.name && computedMassKg > 0) {
         bufferItems.push({ name: `  ${a.name} (${a.percentage}%)`, amount: computedMassKg, unit: "кг" });
       }
     });
+    waterForBuffers += Math.max(0, b.volume - additivesVolumeM3);
   });
 
   const waterReserve = (waterForCement + waterForBuffers) * 0.1;
@@ -872,6 +913,7 @@ export interface PressurePoint {
   annCementHeightM: number;
   annDisplHeightM: number;
   freefallSettledM3: number;
+  annularVelocityMps?: number; // м/с — средняя скорость восходящего потока в затрубье (нижняя секция)
 }
 
 export interface StageBoundary {
@@ -1249,20 +1291,54 @@ export function calculatePressureProfile(
       pumpedExited -= take;
     }
 
-    // Затрубье: exitBatches в обратном порядке = самый свежий внизу
+    // Двухсекционная модель: заполняем затрубье снизу вверх
+    // Нижняя секция: открытый ствол (prevShoe → casingDepthMD), сечение lowerVPMhydro (с каверн.)
+    // Верхняя секция: межтрубное (0 → prevShoe), сечение upperVPMhydro
+    const lowerVPMhydro = annAreaLower > 0
+      ? annAreaLower * wellData.cavernCoeff
+      : annVPM;
+    const upperVPMhydro = annAreaUpper > 0
+      ? annAreaUpper
+      : annVPM;
+
     let currentBottomMD = wellData.casingDepthMD;
     for (let i = exitBatches.length - 1; i >= 0; i--) {
       const batch = exitBatches[i];
       if (batch.volumeM3 <= 0 || currentBottomMD <= 0) continue;
-      const heightMD = batch.volumeM3 / annVPM;
-      const topMD = Math.max(0, currentBottomMD - heightMD);
-      const tvdBot = interpolateTVD(currentBottomMD, traj);
-      const tvdTop = interpolateTVD(topMD, traj);
-      pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
-      currentBottomMD = topMD;
+      let volRemaining = batch.volumeM3;
+
+      // Сначала заполняем нижнюю секцию (открытый ствол)
+      if (currentBottomMD > prevShoe && volRemaining > 0) {
+        const availableLen = currentBottomMD - Math.max(prevShoe, 0);
+        const maxVol = availableLen * lowerVPMhydro;
+        const fillVol = Math.min(volRemaining, maxVol);
+        const fillLen = lowerVPMhydro > 0 ? fillVol / lowerVPMhydro : 0;
+        const topMD = currentBottomMD - fillLen;
+        const tvdBot = interpolateTVD(currentBottomMD, traj);
+        const tvdTop = interpolateTVD(topMD, traj);
+        pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
+        currentBottomMD = topMD;
+        volRemaining -= fillVol;
+      }
+
+      // Затем заполняем верхнюю секцию (межтрубное)
+      if (currentBottomMD > 0 && currentBottomMD <= prevShoe + 0.001 && volRemaining > 0) {
+        const availableLen = currentBottomMD;
+        const maxVol = availableLen * upperVPMhydro;
+        const fillVol = Math.min(volRemaining, maxVol);
+        const fillLen = upperVPMhydro > 0 ? fillVol / upperVPMhydro : 0;
+        const topMD = Math.max(0, currentBottomMD - fillLen);
+        const tvdBot = interpolateTVD(currentBottomMD, traj);
+        const tvdTop = interpolateTVD(topMD, traj);
+        pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
+        currentBottomMD = topMD;
+        volRemaining -= fillVol;
+      }
+
+      if (currentBottomMD <= 0) break;
     }
 
-    // Выше — исходный буровой раствор затрубья
+    // Выше всех пачек — исходный буровой раствор
     if (currentBottomMD > 0) {
       const tvd = interpolateTVD(currentBottomMD, traj);
       pressure += mudDensityGcm3 * tvd * 0.00981;
@@ -1558,34 +1634,17 @@ export function calculatePressureProfile(
       }
       totalAnnReturn = Math.max(0, Math.min(totalAnnReturn, actualRateLps));
 
-      // Эмпирическая поправка давления на насосе
-      let surfP: number;
-      if (isDisplacement) {
-        // На продавке: пока догоняем объём свободного оседания цемента — давление минимальное
-        // После догонки — стандартный расчёт с плавным нарастанием
-        const catchUpRatio = cementFreefallVol > 0.01
-          ? Math.min(1, cumDisplacementVol / cementFreefallVol)
-          : 1;
-        if (catchUpRatio < 1) {
-          // Пока не догнали — околоминимальное давление (только трение трубы)
-          const minSurfP = Math.max(0, frPipe * 0.5);
-          surfP = minSurfP + (surfPRaw * 0.82 - minSurfP) * catchUpRatio * catchUpRatio;
-        } else {
-          // Догнали — стандартная продавка, плавный переход
-          const overRatio = cementFreefallVol > 0.01
-            ? Math.min(1, (cumDisplacementVol - cementFreefallVol) / Math.max(cementFreefallVol * 0.3, 0.1))
-            : 1;
-          const smoothOver = overRatio * overRatio * (3 - 2 * overRatio); // smoothstep
-          surfP = surfPRaw * 0.82 * (0.7 + 0.3 * smoothOver);
-        }
-      } else {
-        // Буферы и цемент: +15% к давлению
-        surfP = surfPRaw * 0.825 * 1.15;
-      }
+      // Чистый физический расчёт без эмпирических множителей.
+      // Эксцентриситет уже учтён через annFrictionMultiplier (0.4).
+      const surfP = surfPRaw;
       const bhp = bhpRaw;
 
+      // Средняя скорость восходящего потока в затрубье (нижняя секция — открытый ствол)
+      const annAreaForVel = annAreaLower > 0 ? annAreaLower : (annAreaUpper > 0 ? annAreaUpper : 0);
+      const annularVelocityMps = annAreaForVel > 0 ? (actualRateLps / 1000) / annAreaForVel : 0;
+
       const annP = calcAnnularProfile();
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled });
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps });
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;
@@ -1600,7 +1659,12 @@ export function calculatePressureProfile(
 
   // СТОП — пробка садится в ЦКОД на ходу, давление скачком от динамического
   const stopTime = cumTime;
-  const stopIncrease = 2.75;
+
+  // Скачок давления при посадке пробки = дифференциальное гидростатическое давление + срез ЦКОД
+  const ckodShear = wellData.ckodShearPressureMPa ?? 1.5;
+  const staticPipeHydroAtStop = calcPipeHydrostatic();
+  const staticAnnHydroAtStop = calcAnnularHydrostatic();
+  const stopIncrease = Math.abs(staticAnnHydroAtStop - staticPipeHydroAtStop) + ckodShear;
 
   // Берём последнее динамическое давление (с трением, насос работал)
   const lastPoint = points[points.length - 1];
@@ -1632,7 +1696,8 @@ export function calculatePressureProfile(
   });
 
   const cementToStop = stopTime - cementStartTime;
-  const safeWorkingTimeMin = cementToStop * 0.75;
+  // Минимальное требуемое время загустевания цемента (ПБНГП п.405): рабочее время / 0.75
+  const safeWorkingTimeMin = Math.round(cementToStop * 100 / 75);
 
   return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin };
 }
