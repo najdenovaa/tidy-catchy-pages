@@ -74,18 +74,20 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
     if (df.flowRateSteps.length > 0) {
       const totalStepVol = df.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
       if (totalStepVol > 0) {
+        const scale = displacementFluids.length === 1 ? displacementVolume / totalStepVol : 1;
         df.flowRateSteps.forEach((step, si) => {
           if (step.volumeM3 > 0) {
-            stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 });
+            stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 * scale });
           }
         });
       } else {
+        const perStep = displacementVolume / Math.max(df.flowRateSteps.length, 1);
         df.flowRateSteps.forEach((step, si) => {
-          stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: 0 });
+          stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: perStep });
         });
       }
     } else {
-      stages.push({ name: `Продавка: ${label}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: defaultRate, volume: 0 });
+      stages.push({ name: `Продавка: ${label}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: defaultRate, volume: displacementVolume });
     }
   });
 
