@@ -130,8 +130,9 @@ export default function Index() {
 
   const liveDispVol = useMemo(() => {
     const cid = getCasingID(wellData.casingOD, wellData.casingWall);
-    return pipeVolumePerMeter(cid) * wellData.ckodDepth;
-  }, [wellData.casingOD, wellData.casingWall, wellData.ckodDepth]);
+    const compressionCoeff = Math.max(displacementFluids?.[0]?.compressionCoeff || 1.0, 1.0);
+    return pipeVolumePerMeter(cid) * wellData.ckodDepth * compressionCoeff;
+  }, [wellData.casingOD, wellData.casingWall, wellData.ckodDepth, displacementFluids]);
 
   const [calcSnapshot, setCalcSnapshot] = useState<CalcSnapshot | null>(null);
 
@@ -713,7 +714,7 @@ export default function Index() {
                   buffers={calcSnapshot.buffers}
                   slurries={calcSnapshot.slurries}
                   annularVPM={volumes.annularVolumePerMeter}
-                  displacementVolume={volumes.displacementVolume}
+                  displacementVolume={volumes.displacementVolumeWithCompression}
                   displacementFluids={calcSnapshot.displacementFluids}
                   casingDepthMD={calcSnapshot.wellData.casingDepthMD}
                   wellData={calcSnapshot.wellData}
