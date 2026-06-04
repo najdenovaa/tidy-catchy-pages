@@ -987,6 +987,14 @@ export function calculatePressureProfile(
   const upperLen = Math.min(prevShoe, wellData.casingDepthMD); // межколонное
   const lowerLen = Math.max(0, wellData.casingDepthMD - upperLen); // открытый ствол
 
+  // === Константы ЭЦП (доступны во всех push'ах) ===
+  const prevShoeTVD = interpolateTVD(prevShoe, traj);
+  const fracGradEcdGcm3 = fractureGradient > 0 ? fractureGradient / 9.81 : 0;
+  const maxPorePressureGrad = wellData.reservoirLayers && wellData.reservoirLayers.length > 0
+    ? Math.max(...wellData.reservoirLayers.map(r => r.porePressureGrad || 0))
+    : 0;
+  const porePressureEcdGcm3 = maxPorePressureGrad > 0 ? maxPorePressureGrad / 9.81 : 0;
+
   // Верхняя секция (межколонное)
   const prevID = wellData.prevCasingID || wellData.holeDiameter; // если нет предыдущей колонны — используем дырку
   const dHydAnnUpper = Math.max(prevID - wellData.casingOD, 10); // мм
