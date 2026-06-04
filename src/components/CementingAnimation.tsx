@@ -401,9 +401,12 @@ function buildPipeSegments(
   if (ckodDepth > EPS && ckodDepth < casingDepthMD - EPS) {
     const cementHistory = history.filter((b) => b.fluid === "cement");
     const hasCement = cementHistory.length > 0;
-    const cementStartsExiting = cumulativeVolume - pipeCapacityM3;
+    // Стакан появляется только когда продавочная пробка достигла ЦКОД,
+    // т.е. закачано продавки ≥ ёмкости трубы от устья до ЦКОД.
+    const pipeVolToCkod = (ckodDepth / casingDepthMD) * pipeCapacityM3;
+    const plugReachedCkod = cumDisplacementVol >= pipeVolToCkod - 0.01;
 
-    if (hasCement && cementStartsExiting > 0) {
+    if (hasCement && plugReachedCkod) {
       const shoeTrackTopMD = ckodDepth;
       const shoeTrackBotMD = casingDepthMD;
       const shoeTrackFracTop = 1 - shoeTrackBotMD / casingDepthMD;
