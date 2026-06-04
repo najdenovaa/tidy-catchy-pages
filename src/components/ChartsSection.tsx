@@ -161,7 +161,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 20, right: 80, left: 25, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
-                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" angle={-45} textAnchor="end" height={50} interval={0} />
                 <YAxis yAxisId="ecd"
                   domain={[
                     (dataMin: number) => Math.floor(Math.max(0.8, dataMin - 0.1) * 10) / 10,
