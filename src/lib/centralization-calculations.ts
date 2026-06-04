@@ -95,28 +95,50 @@ export function autoPlaceTurbulators(
   bladeHeight: number = 15,
   spacingM: number = 6,
 ): { points: TurbulatorPoint[]; summary: AutoTurbulatorResult[] } {
-  const holeD = wellData.holeDiameter;
-  const annularGap_mm = (holeD - wellData.casingOD) / 2;
-  const dh_m = (holeD - wellData.casingOD) / 1000;
-  if (dh_m <= 0 || annularGap_mm <= 0) return { points: [], summary: [] };
-
-  const areaAnn = Math.PI / 4 * ((holeD / 1000) ** 2 - (wellData.casingOD / 1000) ** 2);
+  const casingOD_m = wellData.casingOD / 1000;
   const Q_m3s = flowRateLps / 1000;
-  const velocity = areaAnn > 0 ? Q_m3s / areaAnn : 0;
+  const prevCasingDepth = wellData.prevCasingDepth || 0;
+  const prevCasingID = wellData.prevCasingID || wellData.holeDiameter;
+  const cavernCoeff = wellData.cavernCoeff || 1;
+  const bhst = wellData.bottomTempStatic || 50;
 
-  const pv_Pas = fluidPV / 1000;
-  const rho = mudDensity;
-  const Re = pv_Pas > 0 ? (rho * velocity * dh_m) / pv_Pas : 99999;
+  const annularGap_avg = (wellData.holeDiameter - wellData.casingOD) / 2;
+  if (annularGap_avg <= 0) return { points: [], summary: [] };
 
-  // Calculate turbulence multiplier from geometry
-  const turbMult = calcTurbulenceMultiplier(bladesCount, bladeAngle, bladeHeight, annularGap_mm);
+  // Turbulence multiplier from geometry (depends only on blades + average gap)
+  const turbMult = calcTurbulenceMultiplier(bladesCount, bladeAngle, bladeHeight, annularGap_avg);
 
   const step = 10;
   const points: TurbulatorPoint[] = [];
   const segments: { fromMD: number; toMD: number; reValues: number[] }[] = [];
   let currentSeg: { fromMD: number; toMD: number; reValues: number[] } | null = null;
 
+  // Re-by-depth: local annular cross-section + temperature-corrected PV
   for (let md = 0; md <= wellData.casingDepthMD; md += step) {
+    // Local bore diameter
+    let boreDiameter_mm: number;
+    if (md <= prevCasingDepth && prevCasingID > 0) {
+      boreDiameter_mm = prevCasingID; // внутри предыдущей колонны
+    } else {
+      boreDiameter_mm = wellData.holeDiameter * Math.sqrt(cavernCoeff); // открытый ствол с кавернозностью
+    }
+
+    const dh_m = (boreDiameter_mm - wellData.casingOD) / 1000;
+    if (dh_m <= 0) continue;
+
+    const bore_m = boreDiameter_mm / 1000;
+    const areaAnn = (Math.PI / 4) * (bore_m * bore_m - casingOD_m * casingOD_m);
+    const velocity = areaAnn > 0 ? Q_m3s / areaAnn : 0;
+
+    // Линейный градиент температуры от 20°C на устье до BHST на забое
+    const tempFrac = wellData.casingDepthMD > 0 ? md / wellData.casingDepthMD : 0;
+    const tempC = 20 + tempFrac * (bhst - 20);
+    // PV снижается ~1%/°C от 20°C
+    const pvCorrected = fluidPV * Math.exp(-0.01 * (tempC - 20));
+    const pv_Pas = pvCorrected / 1000;
+
+    const Re = pv_Pas > 0 ? (mudDensity * velocity * dh_m) / pv_Pas : 99999;
+
     const needsTurb = Re < 2100;
     if (needsTurb) {
       if (!currentSeg) currentSeg = { fromMD: md, toMD: md, reValues: [Re] };
@@ -213,6 +235,33 @@ function lateralForcePerMeter(
   return weightPerMeter_N * buoyancy * Math.sin(zenithDeg * Math.PI / 180);
 }
 
+/** DLS (dogleg severity) at given MD in °/30 м (2D — без азимута) */
+function calcDLS(traj: TrajectoryPoint[], md: number, stepM: number = 30): number {
+  if (!traj || traj.length < 2) return 0;
+  const p1 = interpolateTrajectory(traj, Math.max(0, md - stepM / 2));
+  const p2 = interpolateTrajectory(traj, md + stepM / 2);
+  const zen1 = p1.zenith * Math.PI / 180;
+  const zen2 = p2.zenith * Math.PI / 180;
+  const dogleg = Math.abs(zen2 - zen1); // рад на stepM метров
+  return (dogleg * 180 / Math.PI); // °/stepM == °/30 м при stepM=30
+}
+
+/**
+ * Боковая сила с учётом веса и натяжения колонны на дог-леге:
+ * F = sqrt(F_weight² + F_tension²),  F_tension = T · DLS(рад/м)
+ */
+function lateralForceWithDLS(
+  weightPerMeter_N: number,
+  buoyancy: number,
+  zenithDeg: number,
+  tensionN: number,
+  dlsRadPerM: number,
+): number {
+  const Fw = weightPerMeter_N * buoyancy * Math.sin(zenithDeg * Math.PI / 180);
+  const Ft = tensionN * dlsRadPerM;
+  return Math.sqrt(Fw * Fw + Ft * Ft);
+}
+
 // ─── Interpolate trajectory ──────────────────────────────────────
 
 function interpolateTrajectory(trajectory: TrajectoryPoint[], md: number): { tvd: number; zenith: number } {
@@ -258,8 +307,23 @@ export function calculateCentralization(
   const turbPoints = turbulatorPoints?.slice().sort((a, b) => a.md - b.md) ?? [];
   const TURB_RADIUS = 3; // ±3m influence zone for a point turbulizer
 
+  const prevCasingDepth = wellData.prevCasingDepth || 0;
+  const prevCasingID = wellData.prevCasingID || wellData.holeDiameter;
+
   for (let md = 0; md <= wellData.casingDepthMD; md += step) {
     const { tvd, zenith } = interpolateTrajectory(wellData.trajectory, md);
+
+    // Локальный диаметр ствола (предыдущая колонна vs открытый ствол).
+    // Для центрирования используем номинальный диаметр без кавернозности
+    // (центраторы опираются на стенку реального ствола).
+    const boreDia_mm = (md <= prevCasingDepth && prevCasingID > 0)
+      ? prevCasingID
+      : wellData.holeDiameter;
+    const rc_mm_local = (boreDia_mm - wellData.casingOD) / 2;
+    const rc_m_local = rc_mm_local / 1000;
+    const annularGap_mm = rc_mm_local;
+
+    if (rc_mm_local <= 0) continue;
 
     const interval = intervals.find(iv => md >= iv.fromMD && md <= iv.toMD);
 
@@ -267,7 +331,6 @@ export function calculateCentralization(
     const turbInterval = turbulators?.find(t => md >= t.fromMD && md <= t.toMD);
     const turbPoint = turbPoints.find(tp => Math.abs(tp.md - md) <= TURB_RADIUS);
     const hasTurbulizer = (!!turbInterval && turbInterval.turbulizersPerJoint > 0) || !!turbPoint;
-    const annularGap_mm = radialClearance(wellData.holeDiameter, wellData.casingOD);
     const turbMult = turbPoint
       ? calcTurbulenceMultiplier(turbPoint.bladesCount, turbPoint.bladeAngle, turbPoint.bladeHeight, annularGap_mm)
       : (turbInterval && turbInterval.turbulizersPerJoint > 0) ? turbInterval.turbulenceMultiplier
@@ -285,25 +348,33 @@ export function calculateCentralization(
       spanLength = 12;
     }
 
-    const lateralF = lateralForcePerMeter(wpm, bf, zenith);
+    // Натяжение колонны ниже данной точки (упрощённо: вес ниже × cos(зенита))
+    const tensionN = wpm * bf * Math.max(0, wellData.casingDepthMD - md) * Math.cos(zenith * Math.PI / 180);
+    const dlsDegPer30m = calcDLS(wellData.trajectory, md);
+    const dlsRadPerM = (dlsDegPer30m * Math.PI / 180) / 30;
+    const lateralF = lateralForceWithDLS(wpm, bf, zenith, tensionN, dlsRadPerM);
 
     let eccentricity: number;
 
     if (zenith < 0.5) {
-      eccentricity = hasCentralizer ? 0.02 : 0.08;
+      // Вертикальный участок: основной источник эксцентриситета — допуски трубы (~0.5% овальности).
+      const toleranceEcc = rc_mm_local > 0 ? (wellData.casingOD * 0.005) / rc_mm_local : 0.05;
+      eccentricity = hasCentralizer
+        ? Math.max(0.01, toleranceEcc * 0.5)
+        : Math.max(0.05, toleranceEcc);
     } else if (hasCentralizer && EI > 0) {
       const L = spanLength;
       const sag_free_m = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
-      const k_spring = centralizerMaxForce_N / rc_m;
+      const k_spring = centralizerMaxForce_N / rc_m_local;
       const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
       const sag_with_spring_m = sag_free_m / (1 + springFactor);
-      eccentricity = Math.min(1, Math.max(0, sag_with_spring_m / rc_m));
+      eccentricity = Math.min(1, Math.max(0, sag_with_spring_m / rc_m_local));
       eccentricity = Math.max(eccentricity, 0.03);
     } else {
       if (EI > 0) {
         const L = spanLength;
         const sag_free_m = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
-        eccentricity = Math.min(1, sag_free_m / rc_m);
+        eccentricity = Math.min(1, sag_free_m / rc_m_local);
         const inclinationFactor = Math.sin(zenith * Math.PI / 180);
         eccentricity = Math.max(eccentricity, 0.5 * inclinationFactor + 0.2 * inclinationFactor * inclinationFactor);
       } else {
@@ -439,9 +510,8 @@ export function autoPlaceCentralizers(
     const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
     const sag = sag_free / (1 + springFactor);
     const ecc = Math.max(0.03, Math.min(1, sag / rc_m));
-    // Ensure achieved standoff is never below target
-    const rawAchieved = Math.round((1 - ecc) * 1000) / 10;
-    const achieved = Math.max(rawAchieved, targetStandoff);
+    // Показываем реальный достигнутый standoff (без подгонки под целевой)
+    const achieved = Math.round((1 - ecc) * 1000) / 10;
 
     return { cpj: bestCPJ, standoff: achieved };
   }
