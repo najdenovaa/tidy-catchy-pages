@@ -229,7 +229,7 @@ export default function Index() {
     }).catch(() => {});
   }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3]);
 
-  const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData, calcSnapshot.slurries) : null, [calcSnapshot]);
+  const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.displacementFluids?.[0]?.compressionCoeff ?? 1.0) : null, [calcSnapshot]);
 
   const materials = useMemo(
     () => calcSnapshot && volumes ? calculateMaterials(calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.wellData) : null,
@@ -421,7 +421,7 @@ export default function Index() {
       flushVolumeM3,
     });
 
-    const computedVolumes = calculateVolumes(freshSnapshot.wellData, freshSnapshot.slurries);
+    const computedVolumes = calculateVolumes(freshSnapshot.wellData, freshSnapshot.slurries, freshSnapshot.displacementFluids?.[0]?.compressionCoeff ?? 1.0);
     const computedMaterials = calculateMaterials(freshSnapshot.slurries, freshSnapshot.buffers, freshSnapshot.wellData);
     const computedPressure = calculatePressureProfile(
       freshSnapshot.wellData,
