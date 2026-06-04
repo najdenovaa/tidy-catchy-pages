@@ -32,6 +32,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
   const chartRef4 = useRef<HTMLDivElement>(null);
   const chartRef5 = useRef<HTMLDivElement>(null);
   const chartRef6 = useRef<HTMLDivElement>(null);
+  const chartRefECD = useRef<HTMLDivElement>(null);
 
   if (pressureData.length === 0) {
     return (
