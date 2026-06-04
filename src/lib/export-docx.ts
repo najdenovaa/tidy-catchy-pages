@@ -403,19 +403,29 @@ function buildSchedulePage(buffers: BufferFluid[], slurries: SlurryInput[], annu
 
   stages.push({ name: "Промывка ЛВД, сброс пробки", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.5 });
 
+  const totalConfiguredDispVolume = displacementFluids.reduce(
+    (sum, df) => sum + df.flowRateSteps.reduce((stepSum, step) => stepSum + step.volumeM3, 0),
+    0
+  );
+  const totalDispStages = displacementFluids.reduce((sum, df) => sum + Math.max(df.flowRateSteps.length, 1), 0) || 1;
+  const configuredDispScale = totalConfiguredDispVolume > 0 ? displacementVolume / totalConfiguredDispVolume : 1;
+  const fallbackDispStageVolume = totalConfiguredDispVolume > 0 ? 0 : displacementVolume / totalDispStages;
+
   displacementFluids.forEach((df, dfIdx) => {
     const label = displacementFluids.length > 1 ? `${df.name} (порция ${dfIdx + 1})` : df.name;
     if (df.flowRateSteps.length > 0) {
       const totalStepVol = df.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
       if (totalStepVol > 0) {
         df.flowRateSteps.forEach((step, si) => {
-          if (step.volumeM3 > 0) stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 });
+          if (step.volumeM3 > 0) stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 * configuredDispScale });
         });
       } else {
         df.flowRateSteps.forEach((step, si) => {
-          stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: 0 });
+          stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: fallbackDispStageVolume });
         });
       }
+    } else {
+      stages.push({ name: `Продавка: ${label}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: defaultRate, volume: fallbackDispStageVolume });
     }
   });
 
@@ -850,7 +860,7 @@ export async function exportToDocx(
 
   const inputContent = buildInputPage(wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
   const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult);
-  const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolume, displacementFluids, wellData.casingDepthMD);
+  const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolumeWithCompression, displacementFluids, wellData.casingDepthMD);
   const materialsContent = buildMaterialsPage(materials);
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
   const chartsDataContent = buildChartsDataPage(pressureResult, images?.chartImages);
