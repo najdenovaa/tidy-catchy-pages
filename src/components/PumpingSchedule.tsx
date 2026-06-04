@@ -93,7 +93,7 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
         });
       }
     } else {
-      stages.push({ name: `Продавка: ${label}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: defaultRate, volume: displacementVolume });
+      stages.push({ name: `Продавка: ${label}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: defaultRate, volume: fallbackDispStageVolume });
     }
   });
 
