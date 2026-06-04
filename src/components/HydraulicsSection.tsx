@@ -115,6 +115,47 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
         </CardContent>
       </Card>
 
+      {/* ЭЦП (ECD) */}
+      {pressureData && pressureData.length > 0 && (() => {
+        const maxEcdBottom = Math.max(...pressureData.map(p => p.ecdAtBottomGcm3 || 0));
+        const maxEcdShoe = Math.max(...pressureData.map(p => p.ecdAtPrevShoeGcm3 || 0));
+        const fracEcd = pressureData[0].fracGradEcdGcm3 || 0;
+        const startEcd = pressureData[0].ecdAtBottomGcm3 || 0;
+        const ecdRows = [
+          { label: "ЭЦП на забое (начальная)", value: fmt(startEcd, 3), unit: "г/см³" },
+          { label: "ЭЦП на забое (максимальная)", value: fmt(maxEcdBottom, 3), unit: "г/см³" },
+          { label: "ЭЦП на башмаке пред. колонны (макс.)", value: fmt(maxEcdShoe, 3), unit: "г/см³" },
+          { label: "Градиент ГРП (в ед. плотности)", value: fmt(fracEcd, 3), unit: "г/см³" },
+          { label: "Запас ЭЦП до ГРП", value: fmt(fracEcd - maxEcdBottom, 3), unit: "г/см³" },
+        ];
+        const ecdSafe = fracEcd > 0 && maxEcdBottom < fracEcd;
+        return (
+          <Card>
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg">Эквивалентная циркуляционная плотность (ЭЦП / ECD)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1">
+                {ecdRows.map((r, i) => (
+                  <div key={i} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                    <span className="text-sm text-muted-foreground">{r.label}</span>
+                    <span className="text-sm font-semibold">{r.value} <span className="text-muted-foreground font-normal">{r.unit}</span></span>
+                  </div>
+                ))}
+              </div>
+              {fracEcd > 0 && (
+                <div className={`mt-3 p-3 rounded-lg text-sm font-medium ${ecdSafe ? "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200"}`}>
+                  {ecdSafe
+                    ? `✓ ЭЦП в норме: макс. ${fmt(maxEcdBottom, 3)} г/см³ < ГРП ${fmt(fracEcd, 3)} г/см³`
+                    : `⚠ ЭЦП ПРЕВЫШАЕТ ГРП: ${fmt(maxEcdBottom, 3)} г/см³ > ${fmt(fracEcd, 3)} г/см³ — ОПАСНО!`}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+
       {/* Безопасное время */}
       <Card>
         <CardHeader className="pb-4">
