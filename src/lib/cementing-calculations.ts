@@ -1146,7 +1146,8 @@ export function calculatePressureProfile(
   }
 
   const initProfile = calcAnnularProfile();
-  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: calcMaxSafeRate(hydroMudFull, mudRheo.pv, mudRheo.yp, drillingFluid.density, mudRheo.pv, mudRheo.yp, drillingFluid.density), densityGcm3: mudDensityGcm3, annMudHeightM: initProfile.mudH, annBufferHeightM: initProfile.bufferH, annCementHeightM: initProfile.cementH, annDisplHeightM: initProfile.displH, freefallSettledM3: 0 });
+  const initEcd = bottomTVD > 0 ? hydroMudFull / (0.00981 * bottomTVD) : 0;
+  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: calcMaxSafeRate(hydroMudFull, mudRheo.pv, mudRheo.yp, drillingFluid.density, mudRheo.pv, mudRheo.yp, drillingFluid.density), densityGcm3: mudDensityGcm3, annMudHeightM: initProfile.mudH, annBufferHeightM: initProfile.bufferH, annCementHeightM: initProfile.cementH, annDisplHeightM: initProfile.displH, freefallSettledM3: 0, annularVelocityMps: 0, ecdAtBottomGcm3: initEcd, ecdStaticAtBottomGcm3: initEcd, ecdAtPrevShoeGcm3: mudDensityGcm3, fracGradEcdGcm3, porePressureEcdGcm3 });
 
   interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean; compressionCoeff: number; durationMin?: number; isFlushPause?: boolean; fluidType: AnnularFluidType }
   const stages: Stage[] = [];
