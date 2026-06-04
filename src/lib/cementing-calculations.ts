@@ -914,6 +914,18 @@ export interface PressurePoint {
   annDisplHeightM: number;
   freefallSettledM3: number;
   annularVelocityMps?: number; // м/с — средняя скорость восходящего потока в затрубье (нижняя секция)
+  // === ЭЦП (Эквивалентная Циркуляционная Плотность) ===
+  ecdAtBottomGcm3?: number;       // ЭЦП на забое, г/см³
+  ecdAtPrevShoeGcm3?: number;     // ЭЦП на башмаке предыдущей колонны, г/см³
+  ecdStaticAtBottomGcm3?: number; // Статическая ЭЦП на забое (без трения), г/см³
+  fracGradEcdGcm3?: number;       // Градиент ГРП в единицах плотности, г/см³
+  porePressureEcdGcm3?: number;   // Пластовое давление в единицах плотности, г/см³
+}
+
+/** ЭЦП = (P_гидростат + ΔP_трение) / (0.00981 × TVD). Результат в г/см³. */
+export function calculateECD(hydrostaticMPa: number, frictionMPa: number, tvdM: number): number {
+  if (tvdM <= 0) return 0;
+  return (hydrostaticMPa + frictionMPa) / (0.00981 * tvdM);
 }
 
 export interface StageBoundary {
