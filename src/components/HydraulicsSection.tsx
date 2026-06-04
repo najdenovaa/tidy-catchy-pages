@@ -15,11 +15,12 @@ interface Props {
   dynamicFracP?: number;
   dynamicStopP?: number;
   dynamicPreStopP?: number; // давление на насосе перед посадкой пробки
+  pressureData?: PressurePoint[]; // для расчёта ЭЦП
 }
 
 const fmt = (v: number, dec: number = 2) => v.toFixed(dec);
 
-export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes, displacementFluids, drillingFluid, dynamicMaxBHP, dynamicFracP, dynamicStopP, dynamicPreStopP }: Props) {
+export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes, displacementFluids, drillingFluid, dynamicMaxBHP, dynamicFracP, dynamicStopP, dynamicPreStopP, pressureData }: Props) {
   const dispFluid = displacementFluids?.[0];
   const pumpRate = dispFluid ? getFlowRateLps(dispFluid.flowRateSteps) : 0;
   const results = calculateHydraulics(
