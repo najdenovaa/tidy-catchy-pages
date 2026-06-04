@@ -303,7 +303,7 @@ function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volume
     { label: "Затрубное пр-во", value: `${fmt(volumes.annularVolumePerMeter, 4)} м³/м` },
     { label: "Внутр. объём колонны", value: `${fmt(volumes.pipeVolumePerMeter, 4)} м³/м` },
     { label: "Расчётный объём продавки", value: `${fmt(volumes.displacementVolume, 1)} м³` },
-    { label: "С учётом коэф. сжатия (5%)", value: `${fmt(volumes.displacementVolumeWithCompression, 1)} м³` },
+    { label: "С учётом коэф. сжатия", value: `${fmt(volumes.displacementVolumeWithCompression, 1)} м³` },
   ];
 
   const pressRows = [
