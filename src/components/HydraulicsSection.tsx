@@ -43,7 +43,7 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
     { label: `Затрубное пр-во`, value: fmt(volumes.annularVolumePerMeter, 4), unit: "м³/м" },
     { label: `Внутр. объём колонны`, value: fmt(volumes.pipeVolumePerMeter, 4), unit: "м³/м" },
     { label: "Расчётный объём продавки", value: fmt(volumes.displacementVolume, 1), unit: "м³" },
-    { label: "С учётом коэф. сжатия (5%)", value: fmt(volumes.displacementVolumeWithCompression, 1), unit: "м³" },
+    { label: "С учётом коэф. сжатия", value: fmt(volumes.displacementVolumeWithCompression, 1), unit: "м³" },
   ];
 
   const pressureRows = [
