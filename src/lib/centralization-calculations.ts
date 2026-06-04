@@ -348,7 +348,11 @@ export function calculateCentralization(
       spanLength = 12;
     }
 
-    const lateralF = lateralForcePerMeter(wpm, bf, zenith);
+    // Натяжение колонны ниже данной точки (упрощённо: вес ниже × cos(зенита))
+    const tensionN = wpm * bf * Math.max(0, wellData.casingDepthMD - md) * Math.cos(zenith * Math.PI / 180);
+    const dlsDegPer30m = calcDLS(wellData.trajectory, md);
+    const dlsRadPerM = (dlsDegPer30m * Math.PI / 180) / 30;
+    const lateralF = lateralForceWithDLS(wpm, bf, zenith, tensionN, dlsRadPerM);
 
     let eccentricity: number;
 
