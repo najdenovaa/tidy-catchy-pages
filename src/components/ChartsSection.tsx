@@ -326,7 +326,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                     <ReferenceArea yAxisId="re" y1={0} y2={2100} fill="hsla(120, 50%, 50%, 0.08)" />
                     <ReferenceArea yAxisId="re" y1={2100} y2={3000} fill="hsla(45, 80%, 50%, 0.08)" />
                     <ReferenceArea yAxisId="re" y1={3000} y2={reYMax} fill="hsla(0, 70%, 50%, 0.06)" />
-                    <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" />
+                    <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" angle={-45} textAnchor="end" height={50} interval={0} />
                     <YAxis yAxisId="re" domain={[0, reYMax]} label={{ value: "Re", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
                     <YAxis yAxisId="rate" orientation="right" domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]} label={{ value: "Расход, л/с", angle: 90, position: "insideRight", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
                     <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => {
