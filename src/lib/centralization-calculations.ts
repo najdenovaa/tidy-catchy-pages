@@ -280,8 +280,23 @@ export function calculateCentralization(
   const turbPoints = turbulatorPoints?.slice().sort((a, b) => a.md - b.md) ?? [];
   const TURB_RADIUS = 3; // ±3m influence zone for a point turbulizer
 
+  const prevCasingDepth = wellData.prevCasingDepth || 0;
+  const prevCasingID = wellData.prevCasingID || wellData.holeDiameter;
+
   for (let md = 0; md <= wellData.casingDepthMD; md += step) {
     const { tvd, zenith } = interpolateTrajectory(wellData.trajectory, md);
+
+    // Локальный диаметр ствола (предыдущая колонна vs открытый ствол).
+    // Для центрирования используем номинальный диаметр без кавернозности
+    // (центраторы опираются на стенку реального ствола).
+    const boreDia_mm = (md <= prevCasingDepth && prevCasingID > 0)
+      ? prevCasingID
+      : wellData.holeDiameter;
+    const rc_mm_local = (boreDia_mm - wellData.casingOD) / 2;
+    const rc_m_local = rc_mm_local / 1000;
+    const annularGap_mm = rc_mm_local;
+
+    if (rc_mm_local <= 0) continue;
 
     const interval = intervals.find(iv => md >= iv.fromMD && md <= iv.toMD);
 
@@ -289,7 +304,6 @@ export function calculateCentralization(
     const turbInterval = turbulators?.find(t => md >= t.fromMD && md <= t.toMD);
     const turbPoint = turbPoints.find(tp => Math.abs(tp.md - md) <= TURB_RADIUS);
     const hasTurbulizer = (!!turbInterval && turbInterval.turbulizersPerJoint > 0) || !!turbPoint;
-    const annularGap_mm = radialClearance(wellData.holeDiameter, wellData.casingOD);
     const turbMult = turbPoint
       ? calcTurbulenceMultiplier(turbPoint.bladesCount, turbPoint.bladeAngle, turbPoint.bladeHeight, annularGap_mm)
       : (turbInterval && turbInterval.turbulizersPerJoint > 0) ? turbInterval.turbulenceMultiplier
@@ -312,20 +326,24 @@ export function calculateCentralization(
     let eccentricity: number;
 
     if (zenith < 0.5) {
-      eccentricity = hasCentralizer ? 0.02 : 0.08;
+      // Вертикальный участок: основной источник эксцентриситета — допуски трубы (~0.5% овальности).
+      const toleranceEcc = rc_mm_local > 0 ? (wellData.casingOD * 0.005) / rc_mm_local : 0.05;
+      eccentricity = hasCentralizer
+        ? Math.max(0.01, toleranceEcc * 0.5)
+        : Math.max(0.05, toleranceEcc);
     } else if (hasCentralizer && EI > 0) {
       const L = spanLength;
       const sag_free_m = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
-      const k_spring = centralizerMaxForce_N / rc_m;
+      const k_spring = centralizerMaxForce_N / rc_m_local;
       const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
       const sag_with_spring_m = sag_free_m / (1 + springFactor);
-      eccentricity = Math.min(1, Math.max(0, sag_with_spring_m / rc_m));
+      eccentricity = Math.min(1, Math.max(0, sag_with_spring_m / rc_m_local));
       eccentricity = Math.max(eccentricity, 0.03);
     } else {
       if (EI > 0) {
         const L = spanLength;
         const sag_free_m = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
-        eccentricity = Math.min(1, sag_free_m / rc_m);
+        eccentricity = Math.min(1, sag_free_m / rc_m_local);
         const inclinationFactor = Math.sin(zenith * Math.PI / 180);
         eccentricity = Math.max(eccentricity, 0.5 * inclinationFactor + 0.2 * inclinationFactor * inclinationFactor);
       } else {
