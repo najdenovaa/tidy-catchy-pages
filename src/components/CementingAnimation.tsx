@@ -600,7 +600,7 @@ export default function CementingAnimation({
           casingOD,
           prevCasingID,
         );
-        const pipeSegments = buildPipeSegments(history, effectivePumpedVol, pipeCapacityM3, casingDepthMD, "void");
+        const pipeSegments = buildPipeSegments(history, effectivePumpedVol, pipeCapacityM3, casingDepthMD, "void", ckodDepth);
 
         lastCumVol = point.cumulativeVolume;
         return { pipeSegments, annulusSegments, activeExit: null, flowConnected: false } as VisualFrame;
