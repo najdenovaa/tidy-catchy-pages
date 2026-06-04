@@ -386,11 +386,11 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={pressureData} margin={{ top: 5, right: 30, left: 25, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
-                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" />
+                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -5, fontSize: 12 }} className="text-xs" angle={-45} textAnchor="end" height={50} interval={0} />
                 <YAxis label={{ value: "Высота, м", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }} className="text-xs" width={55} />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`} formatter={(value: number, name: string) => [value.toFixed(0) + " м", name]} />
                 <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
-                {stageBoundaries.map((b, i) => <ReferenceLine key={`ann-stage-${i}`} x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600 }} />)}
+                {stageBoundaries.map((b, i) => <ReferenceLine key={`ann-stage-${i}`} x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600, dy: (i % 4) * 14 }} />)}
                 <Area type="monotone" dataKey="annDisplHeightM" name="Продавочная жидкость" stackId="ann" stroke="hsl(120, 45%, 45%)" fill="hsl(120, 45%, 45%)" fillOpacity={0.6} />
                 <Area type="monotone" dataKey="annCementHeightM" name="Тампонажный раствор" stackId="ann" stroke="hsl(0, 0%, 55%)" fill="hsl(0, 0%, 55%)" fillOpacity={0.7} />
                 <Area type="monotone" dataKey="annBufferHeightM" name="Буфер" stackId="ann" stroke="hsl(200, 60%, 50%)" fill="hsl(200, 60%, 50%)" fillOpacity={0.5} />
