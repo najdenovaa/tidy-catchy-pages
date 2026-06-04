@@ -235,6 +235,33 @@ function lateralForcePerMeter(
   return weightPerMeter_N * buoyancy * Math.sin(zenithDeg * Math.PI / 180);
 }
 
+/** DLS (dogleg severity) at given MD in °/30 м (2D — без азимута) */
+function calcDLS(traj: TrajectoryPoint[], md: number, stepM: number = 30): number {
+  if (!traj || traj.length < 2) return 0;
+  const p1 = interpolateTrajectory(traj, Math.max(0, md - stepM / 2));
+  const p2 = interpolateTrajectory(traj, md + stepM / 2);
+  const zen1 = p1.zenith * Math.PI / 180;
+  const zen2 = p2.zenith * Math.PI / 180;
+  const dogleg = Math.abs(zen2 - zen1); // рад на stepM метров
+  return (dogleg * 180 / Math.PI); // °/stepM == °/30 м при stepM=30
+}
+
+/**
+ * Боковая сила с учётом веса и натяжения колонны на дог-леге:
+ * F = sqrt(F_weight² + F_tension²),  F_tension = T · DLS(рад/м)
+ */
+function lateralForceWithDLS(
+  weightPerMeter_N: number,
+  buoyancy: number,
+  zenithDeg: number,
+  tensionN: number,
+  dlsRadPerM: number,
+): number {
+  const Fw = weightPerMeter_N * buoyancy * Math.sin(zenithDeg * Math.PI / 180);
+  const Ft = tensionN * dlsRadPerM;
+  return Math.sqrt(Fw * Fw + Ft * Ft);
+}
+
 // ─── Interpolate trajectory ──────────────────────────────────────
 
 function interpolateTrajectory(trajectory: TrajectoryPoint[], md: number): { tvd: number; zenith: number } {
