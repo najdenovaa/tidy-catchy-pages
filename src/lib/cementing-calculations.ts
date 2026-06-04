@@ -105,6 +105,7 @@ export interface WellData {
   casingSections?: CasingSection[];
   cavernIntervals?: CavernInterval[];
   reservoirLayers?: ReservoirLayer[];
+  ckodShearPressureMPa?: number; // давление среза пробки на ЦКОД, МПа (по умолчанию 1.5)
 }
 
 export function getCasingID(casingOD: number, casingWall: number): number {
