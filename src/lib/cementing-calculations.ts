@@ -1776,6 +1776,9 @@ export function calculatePressureProfile(
   const staticAnnHydro = calcAnnularHydrostatic();
 
   const finalAnnP = calcAnnularProfile();
+  const ecdStopBottom = bottomTVD > 0 ? staticAnnHydro / (0.00981 * bottomTVD) : 0;
+  const hydroShoeStop = prevShoe > 0 ? calcAnnularHydrostaticAtDepth(prevShoe) : 0;
+  const ecdStopShoe = prevShoeTVD > 0 ? hydroShoeStop / (0.00981 * prevShoeTVD) : 0;
   // Скачок давления от посадки пробки (от динамического давления на насосе)
   points.push({
     stage: "СТОП (пробка в ЦКОД)", time: cumTime + 0.5,
@@ -1784,6 +1787,9 @@ export function calculatePressureProfile(
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
     annMudHeightM: finalAnnP.mudH, annBufferHeightM: finalAnnP.bufferH, annCementHeightM: finalAnnP.cementH, annDisplHeightM: finalAnnP.displH,
     freefallSettledM3: currentFreefallSettled,
+    annularVelocityMps: 0,
+    ecdAtBottomGcm3: ecdStopBottom, ecdStaticAtBottomGcm3: ecdStopBottom, ecdAtPrevShoeGcm3: ecdStopShoe,
+    fracGradEcdGcm3, porePressureEcdGcm3,
   });
 
   // Удержание давления СТОП
@@ -1794,6 +1800,9 @@ export function calculatePressureProfile(
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
     annMudHeightM: finalAnnP.mudH, annBufferHeightM: finalAnnP.bufferH, annCementHeightM: finalAnnP.cementH, annDisplHeightM: finalAnnP.displH,
     freefallSettledM3: currentFreefallSettled,
+    annularVelocityMps: 0,
+    ecdAtBottomGcm3: ecdStopBottom, ecdStaticAtBottomGcm3: ecdStopBottom, ecdAtPrevShoeGcm3: ecdStopShoe,
+    fracGradEcdGcm3, porePressureEcdGcm3,
   });
 
   const cementToStop = stopTime - cementStartTime;
