@@ -826,6 +826,12 @@ export function calculateMaterials(
   let waterForCement = 0;
   let waterForBuffers = 0;
 
+  // Цементный стакан (внутри ОК от ЦКОД до башмака) — добавляем к нижнему раствору
+  const plugHeight = Math.max(0, wellData.casingDepthMD - wellData.ckodDepth);
+  const plugVolume = plugHeight > 0 && wellData.ckodDepth > 0
+    ? totalPipeVolumeForRange(wellData.ckodDepth, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections)
+    : 0;
+
   slurries.forEach((s, i) => {
     const h = getSlurryHeight(slurries, i, wellData.casingDepthMD);
     if (h > 0) {
@@ -834,6 +840,8 @@ export function calculateMaterials(
       let vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
       // Добавляем объём на вымыв для первого (верхнего) раствора
       if (i === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
+      // Цементный стакан добавляем к последнему (нижнему) раствору
+      if (i === lastIdx && plugVolume > 0) vol += plugVolume;
       const res = calculateCement(vol, s.density, s.waterRatio, s.yieldPerTon);
       const dryMassKg = res.dryMass * 1000; // тонны → кг
       cementItems.push({ name: s.name, amount: res.dryMass, unit: "т" });
@@ -851,15 +859,17 @@ export function calculateMaterials(
 
   buffers.forEach(b => {
     bufferItems.push({ name: b.name, amount: b.volume, unit: "м³" });
-    waterForBuffers += b.volume * 0.9; // ~90% вода
     const bufferMassKg = b.volume * b.density; // density в кг/м³
+    // Вода в буфере = общий объём минус объём твёрдых добавок (плотность добавок ~1200 кг/м³)
+    let additivesVolumeM3 = 0;
     b.additives.forEach(a => {
-      // Авторасчёт массы из % (от массы буферной жидкости)
       const computedMassKg = a.percentage > 0 ? (a.percentage / 100) * bufferMassKg : a.massKg;
+      if (computedMassKg > 0) additivesVolumeM3 += computedMassKg / 1200;
       if (a.name && computedMassKg > 0) {
         bufferItems.push({ name: `  ${a.name} (${a.percentage}%)`, amount: computedMassKg, unit: "кг" });
       }
     });
+    waterForBuffers += Math.max(0, b.volume - additivesVolumeM3);
   });
 
   const waterReserve = (waterForCement + waterForBuffers) * 0.1;
