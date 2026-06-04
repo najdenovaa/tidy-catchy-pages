@@ -525,7 +525,11 @@ export function displacementVolume(pipeVolPerM: number, ckodDepth: number): numb
 
 // === Расчёт объёмов ===
 
-export function calculateVolumes(data: WellData, slurries: SlurryInput[] = []): VolumeResults {
+export function calculateVolumes(
+  data: WellData,
+  slurries: SlurryInput[] = [],
+  compressionCoeff: number = 1.05,
+): VolumeResults {
   const casingID = getCasingID(data.casingOD, data.casingWall);
   const wellVPM = wellVolumePerMeter(data.holeDiameter);
   const wellVCav = wellVolumeWithCavern(data.holeDiameter, data.cavernCoeff);
@@ -545,7 +549,8 @@ export function calculateVolumes(data: WellData, slurries: SlurryInput[] = []): 
   // Объём трубного пространства с учётом секций ОК
   const totalPipe = totalPipeVolumeForRange(0, data.casingDepthMD, data.casingOD, data.casingWall, data.casingSections);
   const dispVol = totalPipeVolumeForRange(0, data.ckodDepth, data.casingOD, data.casingWall, data.casingSections);
-  const dispVolComp = dispVol * 1.05; // с коэф. сжатия 5%
+  const safeCompCoeff = Math.max(compressionCoeff || 1.0, 1.0);
+  const dispVolComp = dispVol * safeCompCoeff;
 
   // Расчёт объёмов каждого цементного раствора
   const slurryVolumes: SlurryVolumeResult[] = [];
@@ -574,6 +579,25 @@ export function calculateVolumes(data: WellData, slurries: SlurryInput[] = []): 
     }
   });
 
+  // === Цементный стакан (внутри ОК от ЦКОД до башмака) ===
+  const plugHeight = Math.max(0, data.casingDepthMD - data.ckodDepth);
+  const plugVolume = plugHeight > 0 && data.ckodDepth > 0
+    ? totalPipeVolumeForRange(data.ckodDepth, data.casingDepthMD, data.casingOD, data.casingWall, data.casingSections)
+    : 0;
+
+  // Стакан заполняется нижним (последним) цементным раствором
+  if (plugVolume > 0 && slurryVolumes.length > 0) {
+    const lastSV = slurryVolumes[slurryVolumes.length - 1];
+    const sInput = slurries[slurries.length - 1];
+    lastSV.slurryVolumeM3 += plugVolume;
+    const recalc = calculateCement(lastSV.slurryVolumeM3, sInput.density, sInput.waterRatio, sInput.yieldPerTon);
+    lastSV.dryMassTons = recalc.dryMass;
+    lastSV.waterVolumeM3 = recalc.waterVolume;
+    lastSV.yieldPerTon = recalc.yieldPerTon;
+    lastSV.waterCementRatio = recalc.waterCementRatio;
+    totalSlurryVolume += plugVolume;
+  }
+
   return {
     casingID,
     wellVolumePerMeter: wellVPM,
@@ -589,6 +613,7 @@ export function calculateVolumes(data: WellData, slurries: SlurryInput[] = []): 
     equivalentDiameter: eqDiam,
     slurryVolumes,
     totalSlurryVolume,
+    plugVolume,
   };
 }
 
