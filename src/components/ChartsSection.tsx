@@ -242,7 +242,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={pressureData} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="cumulativeVolume" label={{ value: "Накопит. объём, м³", position: "insideBottomRight", offset: -5 }} className="text-xs" />
+                <XAxis dataKey="cumulativeVolume" label={{ value: "Накопит. объём, м³", position: "insideBottomRight", offset: -5 }} className="text-xs" angle={-45} textAnchor="end" height={50} tickFormatter={(v) => Number(v).toFixed(0)} />
                 <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft" }} className="text-xs" />
                 <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Объём: ${Number(v).toFixed(1)} м³`} formatter={(value: number, name: string) => [value.toFixed(2) + " МПа", name]} />
                 <Legend />
