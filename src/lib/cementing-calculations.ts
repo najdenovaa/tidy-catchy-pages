@@ -694,8 +694,11 @@ export function calculateHydraulics(
   const traj = getEffectiveTrajectory(data);
   const bottomTVD = interpolateTVD(data.casingDepthMD, traj);
 
-  // Трубное — продавочная жидкость по вертикали
-  const pipePressure = hydrostaticPressure(displacementDensity, bottomTVD);
+  // Трубное — продавочная жидкость от устья до ЦКОД + цемент от ЦКОД до башмака
+  const lastSlurryDensity = slurries.length > 0 ? slurries[slurries.length - 1].density : displacementDensity;
+  const tvdCkod = data.ckodDepth > 0 ? interpolateTVD(data.ckodDepth, traj) : bottomTVD;
+  const pipePressure = hydrostaticPressure(displacementDensity, tvdCkod)
+    + hydrostaticPressure(lastSlurryDensity, Math.max(0, bottomTVD - tvdCkod));
 
   // Затрубное — цемент + бур. раствор (по вертикали)
   let annulusPressure = 0;
