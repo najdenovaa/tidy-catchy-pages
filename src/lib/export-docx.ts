@@ -820,7 +820,7 @@ export async function exportToDocx(
   },
 ) {
   const volumes = preComputed?.volumes ?? calculateVolumes(wellData, slurries, displacementFluids?.[0]?.compressionCoeff ?? 1.0);
-  const pressureResult = preComputed?.pressureResult ?? calculatePressureProfile(wellData, slurries, buffers, drillingFluid, displacementFluids, fractureGradient, volumes.displacementVolume, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
+  const pressureResult = preComputed?.pressureResult ?? calculatePressureProfile(wellData, slurries, buffers, drillingFluid, displacementFluids, fractureGradient, volumes.displacementVolumeWithCompression, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
   const materials = preComputed?.materials ?? calculateMaterials(slurries, buffers, wellData);
   const workTimeWithCement = pressureResult.stopTime - pressureResult.cementStartTime;
 
