@@ -1696,7 +1696,8 @@ export function calculatePressureProfile(
   });
 
   const cementToStop = stopTime - cementStartTime;
-  const safeWorkingTimeMin = cementToStop * 0.75;
+  // Минимальное требуемое время загустевания цемента (ПБНГП п.405): рабочее время / 0.75
+  const safeWorkingTimeMin = Math.round(cementToStop * 100 / 75);
 
   return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin };
 }
