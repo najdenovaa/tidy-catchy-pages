@@ -1736,7 +1736,16 @@ export function calculatePressureProfile(
       const annularVelocityMps = annAreaForVel > 0 ? (actualRateLps / 1000) / annAreaForVel : 0;
 
       const annP = calcAnnularProfile();
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps });
+      // === ЭЦП ===
+      const ecdBottom = bottomTVD > 0 ? (annHydro + frAnnNow) / (0.00981 * bottomTVD) : 0;
+      const ecdStaticBottom = bottomTVD > 0 ? annHydro / (0.00981 * bottomTVD) : 0;
+      let ecdPrevShoe = 0;
+      if (prevShoe > 0 && prevShoeTVD > 0) {
+        const hydroAtShoe = calcAnnularHydrostaticAtDepth(prevShoe);
+        const frictionAtShoe = calcAnnFrictionToDepth(actualFlowRateM3min, prevShoe, effAnnPv, effAnnYp, annDensity) * annFrictionMultiplier;
+        ecdPrevShoe = (hydroAtShoe + frictionAtShoe) / (0.00981 * prevShoeTVD);
+      }
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps, ecdAtBottomGcm3: ecdBottom, ecdStaticAtBottomGcm3: ecdStaticBottom, ecdAtPrevShoeGcm3: ecdPrevShoe, fracGradEcdGcm3, porePressureEcdGcm3 });
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;
