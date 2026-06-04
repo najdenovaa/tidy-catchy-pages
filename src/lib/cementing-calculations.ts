@@ -1092,7 +1092,7 @@ export function calculatePressureProfile(
     // Upper section: prev casing (from 0 to prevShoe) — uses annAreaUpper
     // IMPORTANT: apply cavern coefficient to open hole section to match cement volume calculation
     // (annularVolumeForInterval uses cavernCoeff, so height conversion must use the same VPM)
-    const lowerVPM = annAreaLower > 0 ? annAreaLower * wellData.cavernCoeff : annVPM / 1000; // m³/m (with cavern)
+    const lowerVPM = annVPM; // m³/m (open hole section, cavern already in annVPM)
     const upperVPM = annAreaUpper > 0 ? annAreaUpper : annVPM / 1000; // m³/m (inter-casing, no cavern)
 
     function addHeight(type: AnnularFluidType, h: number) {
@@ -1360,7 +1360,7 @@ export function calculatePressureProfile(
   }
 
   // Те же VPM для двухсекционной модели затрубья (используются и для расчёта на произвольной глубине)
-  const lowerVPMhydro = annAreaLower > 0 ? annAreaLower * wellData.cavernCoeff : annVPM;
+  const lowerVPMhydro = annVPM;
   const upperVPMhydro = annAreaUpper > 0 ? annAreaUpper : annVPM;
 
   // Гидростатика затрубья ДО заданной глубины targetMD (для расчёта ЭЦП в произвольной точке)
