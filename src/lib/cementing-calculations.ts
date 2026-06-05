@@ -586,17 +586,25 @@ export function calculateVolumes(
     ? totalPipeVolumeForRange(data.ckodDepth, data.casingDepthMD, data.casingOD, data.casingWall, data.casingSections)
     : 0;
 
-  // Стакан заполняется нижним (последним) цементным раствором
-  if (plugVolume > 0 && slurryVolumes.length > 0) {
+  // === Зумпф (открытый ствол ниже башмака ОК) ===
+  // При продавке цемент выходит из башмака и заполняет зумпф снизу-вверх
+  const ratholeLen = Math.max(0, data.wellDepthMD - data.casingDepthMD);
+  const ratholeVolume = ratholeLen > 0
+    ? wellVolumePerMeter(data.holeDiameter) * data.cavernCoeff * ratholeLen
+    : 0;
+
+  // Стакан + зумпф заполняются нижним (последним) цементным раствором
+  const extraBottomVolume = plugVolume + ratholeVolume;
+  if (extraBottomVolume > 0 && slurryVolumes.length > 0) {
     const lastSV = slurryVolumes[slurryVolumes.length - 1];
     const sInput = slurries[slurries.length - 1];
-    lastSV.slurryVolumeM3 += plugVolume;
+    lastSV.slurryVolumeM3 += extraBottomVolume;
     const recalc = calculateCement(lastSV.slurryVolumeM3, sInput.density, sInput.waterRatio, sInput.yieldPerTon);
     lastSV.dryMassTons = recalc.dryMass;
     lastSV.waterVolumeM3 = recalc.waterVolume;
     lastSV.yieldPerTon = recalc.yieldPerTon;
     lastSV.waterCementRatio = recalc.waterCementRatio;
-    totalSlurryVolume += plugVolume;
+    totalSlurryVolume += extraBottomVolume;
   }
 
   // === Проверка: достаточен ли объём цемента, запланированный в расписании ===
