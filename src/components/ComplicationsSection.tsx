@@ -363,10 +363,24 @@ export default function ComplicationsSection({
 
                   <span className="text-muted-foreground font-semibold">Проектный интервал моста:</span>
                   <span>{complicationResult.designedPlugTopMD.toFixed(1)} — {complicationResult.designedPlugBottomMD.toFixed(1)} м ({complicationResult.designedPlugLengthM.toFixed(1)} м)</span>
+                  {complicationResult.hasViscousPadBelow && complicationResult.padHeightMD > 0 && (
+                    <>
+                      <span className="text-muted-foreground">  • вязкая пачка снизу:</span>
+                      <span className="text-blue-400">{(complicationResult.designedPlugBottomMD - complicationResult.padHeightMD).toFixed(1)} — {complicationResult.designedPlugBottomMD.toFixed(1)} м ({complicationResult.padHeightMD.toFixed(1)} м)</span>
+                    </>
+                  )}
                   <span className="text-muted-foreground font-semibold">Реальный интервал моста:</span>
                   <span className={`font-bold ${complicationResult.lossPercentage > 30 ? 'text-destructive' : complicationResult.lossPercentage > 15 ? 'text-amber-400' : 'text-green-500'}`}>
                     {complicationResult.realPlugTopMD.toFixed(1)} — {complicationResult.realPlugBottomMD.toFixed(1)} м ({complicationResult.realPlugLengthM.toFixed(1)} м)
                   </span>
+                  {complicationResult.hasViscousPadBelow && (
+                    <>
+                      <span className="text-muted-foreground">  • цемент (реальный):</span>
+                      <span>{complicationResult.realPlugTopMD.toFixed(1)} — {complicationResult.realCementBottomMD.toFixed(1)} м</span>
+                      <span className="text-muted-foreground">  • пачка (реальная):</span>
+                      <span className="text-blue-400">{complicationResult.realPadTopMD.toFixed(1)} — {complicationResult.realPadBottomMD.toFixed(1)} м</span>
+                    </>
+                  )}
                   <span className="text-muted-foreground">Потеряно:</span>
                   <span className={`font-semibold ${complicationResult.lossPercentage > 30 ? 'text-destructive' : 'text-amber-400'}`}>
                     {complicationResult.lossPercentage.toFixed(1)}%
@@ -374,7 +388,7 @@ export default function ComplicationsSection({
 
                   {complicationResult.contaminationDepthM > 0 && (
                     <>
-                      <span className="text-muted-foreground">Загрязнение низа моста:</span>
+                      <span className="text-muted-foreground">Загрязнение низа цемента:</span>
                       <span className="text-amber-400">~{complicationResult.contaminationDepthM.toFixed(1)} м</span>
                       <span className="text-muted-foreground font-semibold">Чистый цемент (рабочий мост):</span>
                       <span className="text-green-500 font-semibold">
@@ -444,7 +458,15 @@ export default function ComplicationsSection({
                         {complicationResult.realPlugTopMD.toFixed(1)} — {complicationResult.realPlugBottomMD.toFixed(1)} м
                       </span>
                       <span className="text-muted-foreground">Внедрение пластового флюида:</span>
-                      <span className="text-destructive">~{(complicationResult.designedPlugBottomMD - complicationResult.realPlugBottomMD).toFixed(1)} м</span>
+                      <span className="text-destructive">~{(complicationResult.padInvasionM + complicationResult.cementInvasionM).toFixed(1)} м</span>
+                      {complicationResult.hasViscousPadBelow && (
+                        <>
+                          <span className="text-muted-foreground">  • в вязкую пачку:</span>
+                          <span className="text-blue-400">{complicationResult.padInvasionM.toFixed(1)} м {complicationResult.padInvasionM >= complicationResult.padHeightMD && complicationResult.padHeightMD > 0 ? '(пробита)' : '(удержана)'}</span>
+                          <span className="text-muted-foreground">  • в цемент:</span>
+                          <span className={complicationResult.cementInvasionM > 0 ? 'text-destructive' : 'text-green-500'}>{complicationResult.cementInvasionM.toFixed(1)} м</span>
+                        </>
+                      )}
                       <span className="text-muted-foreground font-semibold">Чистый цемент (рабочий мост):</span>
                       <span className="text-green-500 font-semibold">
                         {complicationResult.cleanPlugTopMD.toFixed(1)} — {complicationResult.cleanPlugBottomMD.toFixed(1)} м

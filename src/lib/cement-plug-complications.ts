@@ -98,6 +98,20 @@ export interface ComplicationResult {
   cleanPlugTopMD: number;
   /** Clean (uncontaminated) plug bottom MD, m */
   cleanPlugBottomMD: number;
+  /** Has viscous pad below? */
+  hasViscousPadBelow: boolean;
+  /** Designed pad height in annulus, m */
+  padHeightMD: number;
+  /** Real pad top MD (after kick invasion), m */
+  realPadTopMD: number;
+  /** Real pad bottom MD (after kick invasion), m */
+  realPadBottomMD: number;
+  /** Real cement bottom MD (above the pad), m */
+  realCementBottomMD: number;
+  /** Pad invasion height (kick eats pad first), m */
+  padInvasionM: number;
+  /** Cement invasion height (kick reaches cement after pad), m */
+  cementInvasionM: number;
   /** Percentage of plug lost */
   lossPercentage: number;
   /** Contamination depth at bottom, m */
@@ -303,25 +317,54 @@ export function calculateComplications(
     ? (formationPressureMPa * 1e6) / (1000 * G * plugBottomTVD) / 1000
     : cement.densityGcm3;
 
-  // ═══ REAL PLUG INTERVALS ═══
-  // Cement settles to bottom by gravity; loss shortens the top of the plug.
-  // For kick breakthrough: formation fluid invades from below, lifting cement and contaminating its base.
+  // ═══ REAL PLUG INTERVALS (с учётом нижней вязкой пачки) ═══
+  // Если применяется вязкая пачка снизу — она занимает нижнюю часть моста (под цементом),
+  // выполняя роль барьера против поглощения / прорыва. Цемент садится ПОВЕРХ пачки.
+  const padHeightMD = usePadInZone && totalArea > 0
+    ? params.spacerVolumeBelowM3 / totalArea
+    : 0;
+
+  // Прорыв пластового флюида сначала «съедает» вязкую пачку, и только затем цемент.
   let kickInvasionM = 0;
+  let padInvasionM = 0;
+  let cementInvasionM = 0;
   if (kickBreakThrough && pressureDiff > 0) {
-    // Estimate invasion: ~5 m per MPa of pressure imbalance, capped at 30% of plug.
+    // Базовая оценка глубины внедрения: ~5 м на 1 МПа дисбаланса, до 30% длины моста.
     kickInvasionM = Math.min(pressureDiff * 5, plugLenAnn * 0.3);
-    contaminationDepth = Math.max(contaminationDepth, kickInvasionM);
+    // Вязкая пачка «съедается» первой (но с её СНС/реологией она прорезается медленнее).
+    // Эффективное проникновение в пачку = kickInvasion / (1 + СНС-фактор).
+    const padResistance = usePadInZone ? Math.max(1, effectiveGel / 5) : 1;
+    padInvasionM = Math.min(padHeightMD, kickInvasionM / padResistance);
+    // Остаток внедрения (если пачка пробита насквозь) идёт в цемент.
+    const remaining = Math.max(0, kickInvasionM - padInvasionM * padResistance);
+    cementInvasionM = remaining;
+    contaminationDepth = Math.max(contaminationDepth, cementInvasionM);
+  }
+
+  // При поглощении пачка тоже частично защищает низ цемента (часть потерь — пачка, не цемент).
+  if ((type === 'loss' || type === 'both') && usePadInZone && padHeightMD > 0) {
+    // Загрязнение цемента уменьшается на высоту пачки (пачка «принимает удар»).
+    contaminationDepth = Math.max(0, contaminationDepth - padHeightMD * 0.5);
   }
 
   const designedPlugTopMD = params.plugTopMD;
   const designedPlugBottomMD = params.plugBottomMD;
-  // Loss: bottom stays at design, top moves down (less cement remaining).
-  // Kick: bottom rises by invasion height, top also rises (cement column lifted).
-  const realPlugBottomMD = designedPlugBottomMD - kickInvasionM;
-  const realPlugTopMD = realPlugBottomMD - realPlugLength;
-  // Clean cement: contaminated bottom segment is removed/mixed with mud or formation fluid.
-  const cleanPlugBottomMD = realPlugBottomMD - contaminationDepth;
+  // Подошва вязкой пачки = проектная подошва моста.
+  // Подошва ЦЕМЕНТА (проектная) = подошва моста − высота пачки.
+  const designedCementBottomMD = designedPlugBottomMD - padHeightMD;
+  // Реальная подошва пачки приподнимается на padInvasionM (внедрение пластового флюида в пачку).
+  const realPadBottomMD = designedPlugBottomMD - padInvasionM;
+  const realPadTopMD = realPadBottomMD - Math.max(0, padHeightMD - padInvasionM);
+  // Реальная подошва цемента = подошва пачки (после внедрения) − глубина внедрения в цемент.
+  const realCementBottomMD = realPadTopMD - cementInvasionM;
+  // Высота цемента уменьшается на потери (объёмные потери / площадь).
+  const realPlugTopMD = realCementBottomMD - realPlugLength;
+  // «Реальный мост» = от верха цемента до подошвы пачки (или цемента, если пачки нет).
+  const realPlugBottomMD = usePadInZone ? realPadBottomMD : realCementBottomMD;
+  // Чистый цемент (рабочий мост) = от верха до подошвы цемента минус контаминация.
+  const cleanPlugBottomMD = realCementBottomMD - (usePadInZone ? 0 : contaminationDepth);
   const cleanPlugTopMD = realPlugTopMD;
+
 
 
   // ═══ CORRECTED VOLUMES ═══
@@ -467,6 +510,13 @@ export function calculateComplications(
     realPlugBottomMD: Math.round(realPlugBottomMD * 10) / 10,
     cleanPlugTopMD: Math.round(cleanPlugTopMD * 10) / 10,
     cleanPlugBottomMD: Math.round(cleanPlugBottomMD * 10) / 10,
+    hasViscousPadBelow: usePadInZone,
+    padHeightMD: Math.round(padHeightMD * 10) / 10,
+    realPadTopMD: Math.round(realPadTopMD * 10) / 10,
+    realPadBottomMD: Math.round(realPadBottomMD * 10) / 10,
+    realCementBottomMD: Math.round(realCementBottomMD * 10) / 10,
+    padInvasionM: Math.round(padInvasionM * 10) / 10,
+    cementInvasionM: Math.round(cementInvasionM * 10) / 10,
     lossPercentage: Math.round(lossPercent * 10) / 10,
     contaminationDepthM: Math.round(contaminationDepth * 10) / 10,
     cementHydrostaticMPa: Math.round(cementHydroAtZone * 100) / 100,
