@@ -171,7 +171,7 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
   };
 
   // Radii (scaled for visibility)
-  const vizScale = 0.08; // visual exaggeration for radii
+  const vizScale = 0.15; // visual exaggeration for radii
   const holeR = (wellData.holeDiameter / 2 / 1000) * vizScale;
   const casOR = (wellData.casingOD / 2 / 1000) * vizScale;
   const casIR = (getCasingID(wellData.casingOD, wellData.casingWall) / 2 / 1000) * vizScale;
@@ -352,6 +352,16 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
 
       {/* Displacement fluid inside pipe */}
       <WellTube path={pathForRange(0, wellData.ckodDepth)} radius={casIR * 0.8} color={DISP_COLOR} opacity={0.4} />
+
+      {/* Cement plug inside pipe (CKOD → shoe) */}
+      {wellData.ckodDepth > 0 && wellData.ckodDepth < wellData.casingDepthMD && cementSections.length > 0 && (
+        <WellTube
+          path={pathForRange(wellData.ckodDepth, wellData.casingDepthMD)}
+          radius={casIR * 0.8}
+          color={CEMENT_COLORS[cementSections.length - 1]}
+          opacity={0.75}
+        />
+      )}
 
       {/* Shoe */}
       {(() => {
