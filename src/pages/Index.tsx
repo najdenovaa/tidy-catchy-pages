@@ -857,7 +857,7 @@ export default function Index() {
                   slurries={slurries}
                   buffers={buffers}
                   mudDensity={drillingFluid.density}
-                  pumpRateLps={slurries[0]?.flowRateSteps?.[0]?.flowRateLps}
+                  pumpRateLps={slurries[0]?.flowRateSteps?.[0]?.rateLps}
                   fractureGradient={fractureGradient}
                 />
               </div>
