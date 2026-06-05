@@ -488,14 +488,23 @@ export function calculateComplications(
   // ═══ ПОЗИЦИОННАЯ ДИАГНОСТИКА: правильно ли установлен мост относительно зоны ═══
   if (zoneMD > 0 && zonePosition !== 'unknown') {
     const zoneLabel = type === 'kick' || type === 'both' ? 'зона проявления' : 'зона поглощения';
+    const padToZoneTopM3 = Math.max(0, (zoneTopMD - designedPlugBottomMD + 10) * totalArea);
+    const padToZoneBottomM3 = Math.max(0, (zoneBotMD - designedPlugBottomMD + 5) * totalArea);
     if (zonePosition === 'insideCement') {
       recs.push(`📍 ${zoneLabel[0].toUpperCase() + zoneLabel.slice(1)} (${zoneMD.toFixed(0)} м) находится В ТЕЛЕ цементного моста (${plugTop.toFixed(0)}–${plugBot.toFixed(0)} м) — прямой контакт цемента с пластом. Для поглощения это риск ухода цемента; для проявления — нужна низкопроницаемая рецептура.`);
+      if (type === 'loss' || type === 'both') {
+        recs.push(`⚠ Для борьбы с поглощением лучше не заводить обычный цемент прямо в принимающий пласт без предварительной кольматации: сначала ВИР/вязко-кольматирующая пачка по зоне, затем цементный мост сверху с расчётной осадкой.`);
+      }
     } else if (zonePosition === 'insidePad') {
       recs.push(`📍 ${zoneLabel[0].toUpperCase() + zoneLabel.slice(1)} (${zoneMD.toFixed(0)} м) попадает в НИЖНЮЮ вязкую пачку (${designedPadTopMD.toFixed(0)}–${designedPadBottomMD.toFixed(0)} м). При поглощении должна уходить пачка, цементный мост оседает вниз, но не поднимается вверх.`);
+      if ((type === 'loss' || type === 'both') && designedPadBottomMD < zoneBotMD) {
+        recs.push(`⚠ Пачка перекрывает кровлю, но не всю мощность зоны (${zoneTopMD.toFixed(0)}–${zoneBotMD.toFixed(0)} м). Для интенсивного поглощения целевой объём нижней пачки ≈${padToZoneBottomM3.toFixed(2)} м³, чтобы дойти до подошвы зоны с запасом 5 м.`);
+      }
     } else if (zonePosition === 'belowPad') {
       if (type === 'loss' || type === 'both') {
         if (usePadInZone && params.spacerVolumeBelowM3 >= 0.3) {
           recs.push(`✅ Схема допустима: ${zoneLabel} (${zoneMD.toFixed(0)} м) ниже вязкой пачки на ${distanceToZoneM.toFixed(0)} м. При поглощении сначала теряется нижняя пачка (${padLostM3.toFixed(2)} м³), цемент должен ПРОСЕСТЬ вниз примерно на ${settlementM.toFixed(1)} м; потери цемента: ${cementLostM3.toFixed(2)} м³.`);
+          recs.push(`⚠ Но пачка НЕ доходит до кровли зоны (${zoneTopMD.toFixed(0)} м). Увеличьте нижнюю пачку минимум до ≈${padToZoneTopM3.toFixed(2)} м³, чтобы перекрыть кровлю зоны с запасом 10 м; для перекрытия всей зоны — ≈${padToZoneBottomM3.toFixed(2)} м³.`);
         } else {
           recs.push(`⚠ ${zoneLabel[0].toUpperCase()+zoneLabel.slice(1)} (${zoneMD.toFixed(0)} м) на ${distanceToZoneM.toFixed(0)} м НИЖЕ подошвы моста. Без вязкой пачки снизу столб жидкости под мостом может «провалиться» в пласт — РЕКОМЕНДУЕТСЯ установить вязкую пачку ≥0.5 м³ (СНС ≥30 Па) между подошвой моста и кровлей зоны.`);
         }
