@@ -361,11 +361,11 @@ export default function ComplicationsSection({
 
                   <Separator className="col-span-2 my-1" />
 
-                  <span className="text-muted-foreground font-semibold">Проектная длина моста:</span>
-                  <span>{complicationResult.designedPlugLengthM.toFixed(1)} м</span>
-                  <span className="text-muted-foreground font-semibold">Реальная длина моста:</span>
+                  <span className="text-muted-foreground font-semibold">Проектный интервал моста:</span>
+                  <span>{complicationResult.designedPlugTopMD.toFixed(1)} — {complicationResult.designedPlugBottomMD.toFixed(1)} м ({complicationResult.designedPlugLengthM.toFixed(1)} м)</span>
+                  <span className="text-muted-foreground font-semibold">Реальный интервал моста:</span>
                   <span className={`font-bold ${complicationResult.lossPercentage > 30 ? 'text-destructive' : complicationResult.lossPercentage > 15 ? 'text-amber-400' : 'text-green-500'}`}>
-                    {complicationResult.realPlugLengthM.toFixed(1)} м
+                    {complicationResult.realPlugTopMD.toFixed(1)} — {complicationResult.realPlugBottomMD.toFixed(1)} м ({complicationResult.realPlugLengthM.toFixed(1)} м)
                   </span>
                   <span className="text-muted-foreground">Потеряно:</span>
                   <span className={`font-semibold ${complicationResult.lossPercentage > 30 ? 'text-destructive' : 'text-amber-400'}`}>
@@ -376,6 +376,10 @@ export default function ComplicationsSection({
                     <>
                       <span className="text-muted-foreground">Загрязнение низа моста:</span>
                       <span className="text-amber-400">~{complicationResult.contaminationDepthM.toFixed(1)} м</span>
+                      <span className="text-muted-foreground font-semibold">Чистый цемент (рабочий мост):</span>
+                      <span className="text-green-500 font-semibold">
+                        {complicationResult.cleanPlugTopMD.toFixed(1)} — {complicationResult.cleanPlugBottomMD.toFixed(1)} м
+                      </span>
                     </>
                   )}
                 </div>
@@ -432,6 +436,19 @@ export default function ComplicationsSection({
                     <>
                       <span className="text-muted-foreground">Требуемая плотность цемента:</span>
                       <span className="text-amber-400 font-semibold">≥{complicationResult.requiredCementDensityGcm3.toFixed(2)} г/см³</span>
+                      <Separator className="col-span-2 my-1" />
+                      <span className="text-muted-foreground font-semibold">Проектный интервал моста:</span>
+                      <span>{complicationResult.designedPlugTopMD.toFixed(1)} — {complicationResult.designedPlugBottomMD.toFixed(1)} м</span>
+                      <span className="text-muted-foreground font-semibold">Реальный интервал (после прорыва):</span>
+                      <span className="text-destructive font-bold">
+                        {complicationResult.realPlugTopMD.toFixed(1)} — {complicationResult.realPlugBottomMD.toFixed(1)} м
+                      </span>
+                      <span className="text-muted-foreground">Внедрение пластового флюида:</span>
+                      <span className="text-destructive">~{(complicationResult.designedPlugBottomMD - complicationResult.realPlugBottomMD).toFixed(1)} м</span>
+                      <span className="text-muted-foreground font-semibold">Чистый цемент (рабочий мост):</span>
+                      <span className="text-green-500 font-semibold">
+                        {complicationResult.cleanPlugTopMD.toFixed(1)} — {complicationResult.cleanPlugBottomMD.toFixed(1)} м
+                      </span>
                     </>
                   )}
                 </div>
