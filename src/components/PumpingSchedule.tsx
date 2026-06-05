@@ -155,6 +155,11 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
         <CardTitle className="text-lg">Порядок закачки технологических жидкостей</CardTitle>
       </CardHeader>
       <CardContent>
+        {showRaw && (
+          <div className="mb-3 text-xs text-muted-foreground">
+            Коэф. сжатия = {compressionCoeff.toFixed(3)}. В скобках указаны значения <span className="font-medium">без учёта коэф. сжатия</span>.
+          </div>
+        )}
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -169,21 +174,55 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
               </TableRow>
             </TableHeader>
             <TableBody>
-              {stagesWithCum.map((s, i) => (
-                <TableRow key={i} className={s.name.startsWith("ЦР:") || s.name.startsWith("ЦР (") ? "bg-primary/5" : ""}>
-                  <TableCell className="text-sm">{s.name}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{s.fluid}</TableCell>
-                  <TableCell className="text-sm text-right">{s.rateLps > 0 ? fmt(s.rateLps, 1) : "—"}</TableCell>
-                  <TableCell className="text-sm text-right font-medium">{s.volume > 0 ? fmt(s.volume) : "—"}</TableCell>
-                  <TableCell className="text-sm text-right">{fmt(s.time)}</TableCell>
-                  <TableCell className="text-sm text-right">{fmt(s.cumTime)}</TableCell>
-                  <TableCell className="text-sm text-right font-medium">{s.volume > 0 ? fmt(s.cumulative) : "—"}</TableCell>
-                </TableRow>
-              ))}
+              {stagesWithCum.map((s, i) => {
+                const hasRaw = s.rawVol !== undefined;
+                const hasRawCum = s.rawCumulative !== undefined;
+                return (
+                  <TableRow key={i} className={s.name.startsWith("ЦР:") || s.name.startsWith("ЦР (") ? "bg-primary/5" : ""}>
+                    <TableCell className="text-sm">{s.name}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{s.fluid}</TableCell>
+                    <TableCell className="text-sm text-right">{s.rateLps > 0 ? fmt(s.rateLps, 1) : "—"}</TableCell>
+                    <TableCell className="text-sm text-right font-medium">
+                      {s.volume > 0 ? fmt(s.volume) : "—"}
+                      {hasRaw && s.volume > 0 && (
+                        <span className="text-muted-foreground font-normal"> ({fmt(s.rawVol!)})</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-right">
+                      {fmt(s.time)}
+                      {hasRaw && s.time > 0 && (
+                        <span className="text-muted-foreground"> ({fmt(s.rawTime!)})</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-right">
+                      {fmt(s.cumTime)}
+                      {hasRawCum && (
+                        <span className="text-muted-foreground"> ({fmt(s.rawCumTime!)})</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-right font-medium">
+                      {s.volume > 0 ? fmt(s.cumulative) : "—"}
+                      {hasRawCum && s.volume > 0 && (
+                        <span className="text-muted-foreground font-normal"> ({fmt(s.rawCumulative!)})</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
               <TableRow className="font-semibold border-t-2 border-border">
                 <TableCell colSpan={5} className="text-sm">ИТОГО: общее время работы</TableCell>
-                <TableCell className="text-sm text-right">{fmt(totalTime)}</TableCell>
-                <TableCell className="text-sm text-right">{fmt(cumulative)}</TableCell>
+                <TableCell className="text-sm text-right">
+                  {fmt(totalTime)}
+                  {totalRawTime !== undefined && (
+                    <span className="text-muted-foreground font-normal"> ({fmt(totalRawTime)})</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm text-right">
+                  {fmt(cumulative)}
+                  {totalRawCum !== undefined && (
+                    <span className="text-muted-foreground font-normal"> ({fmt(totalRawCum)})</span>
+                  )}
+                </TableCell>
               </TableRow>
             </TableBody>
           </Table>
