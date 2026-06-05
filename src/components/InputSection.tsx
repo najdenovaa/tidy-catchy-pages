@@ -928,12 +928,16 @@ export default function InputSection(props: Props) {
               const cementRes = slurryVol > 0 ? calculateCement(slurryVol, s.density) : null;
               const dryMassKg = cementRes ? cementRes.dryMass * 1000 : 0; // т → кг
 
-              // Общий объём раствора: кольцевой + стакан (для нижнего раствора)
+              // Общий объём раствора: кольцевой + стакан + зумпф (для нижнего раствора)
               const pipeVPM = Math.PI / 4 * Math.pow((wellData.casingOD - 2 * wellData.casingWall) / 1000, 2);
               const plugVol = (wellData.ckodDepth > 0 && wellData.ckodDepth < wellData.casingDepthMD)
                 ? pipeVPM * (wellData.casingDepthMD - wellData.ckodDepth) : 0;
+              // Зумпф: открытый ствол ниже башмака ОК
+              const holeVPM = Math.PI / 4 * Math.pow(wellData.holeDiameter / 1000, 2);
+              const ratholeVol = wellData.wellDepthMD > wellData.casingDepthMD
+                ? holeVPM * wellData.cavernCoeff * (wellData.wellDepthMD - wellData.casingDepthMD) : 0;
               const isBottomSlurry = mdBot >= wellData.casingDepthMD - 0.5;
-              const totalSlurryVol = slurryVol + (isBottomSlurry ? plugVol : 0);
+              const totalSlurryVol = slurryVol + (isBottomSlurry ? (plugVol + ratholeVol) : 0);
 
               return (
                 <div key={idx} className="p-3 rounded-lg bg-muted/30 space-y-3 border border-border/50">
