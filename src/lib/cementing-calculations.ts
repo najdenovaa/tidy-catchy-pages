@@ -1847,7 +1847,7 @@ export function calculatePressureProfile(
   // Скачок давления от посадки пробки (от динамического давления на насосе)
   points.push({
     stage: "СТОП (пробка в ЦКОД)", time: cumTime + 0.5,
-    surfacePressure: lastSurfP + stopIncrease, bottomholePressure: staticAnnHydro,
+    surfacePressure: stopIncrease, bottomholePressure: staticAnnHydro,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: lastRate,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
     annMudHeightM: finalAnnP.mudH, annBufferHeightM: finalAnnP.bufferH, annCementHeightM: finalAnnP.cementH, annDisplHeightM: finalAnnP.displH,
@@ -1860,7 +1860,7 @@ export function calculatePressureProfile(
   // Удержание давления СТОП
   points.push({
     stage: "СТОП (удержание)", time: cumTime + 5,
-    surfacePressure: lastSurfP + stopIncrease, bottomholePressure: staticAnnHydro,
+    surfacePressure: stopIncrease, bottomholePressure: staticAnnHydro,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
     annMudHeightM: finalAnnP.mudH, annBufferHeightM: finalAnnP.bufferH, annCementHeightM: finalAnnP.cementH, annDisplHeightM: finalAnnP.displH,

@@ -648,6 +648,13 @@ export default function InputSection(props: Props) {
               ))}
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <a
+                href="/trajectory_template.xlsx"
+                download="trajectory_template.xlsx"
+                className="text-xs text-primary hover:underline flex items-center gap-1.5 mr-3"
+              >
+                📥 Скачать шаблон инклинометрии
+              </a>
               <label className="text-xs px-3 py-1.5 rounded-md border border-border text-foreground hover:bg-muted cursor-pointer transition-colors">
                 Импорт Excel (MD-азимут-зенит)
                 <input

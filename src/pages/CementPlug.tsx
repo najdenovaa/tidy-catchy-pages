@@ -678,7 +678,14 @@ export default function CementPlug() {
                     <Separator />
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-medium text-muted-foreground">Инклинометрия</p>
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 items-center">
+                        <a
+                          href="/trajectory_template.xlsx"
+                          download="trajectory_template.xlsx"
+                          className="text-[10px] text-primary hover:underline"
+                        >
+                          📥 Шаблон
+                        </a>
                         <label className="text-[10px] text-primary hover:underline cursor-pointer">
                           📥 Excel
                           <input type="file" accept=".xlsx,.xls" className="hidden" onChange={importExcel} />

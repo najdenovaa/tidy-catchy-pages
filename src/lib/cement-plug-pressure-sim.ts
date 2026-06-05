@@ -128,7 +128,7 @@ export function simulatePlugPressures(
   }
   stages.push({ name: 'Цемент', fluid: 'cement', volumeM3: results.cementVolumeTotal, rateLs: input.pumpRateCementLs });
   if (input.spacerVolumeAboveM3 > 0) {
-    const spacerAboveTotal = input.spacerVolumeAboveM3 + pipeA * results.spacerAboveHeightAnnMD;
+    const spacerAboveTotal = input.spacerVolumeAboveM3;
     stages.push({ name: 'Верх. буфер', fluid: 'spacer', volumeM3: spacerAboveTotal, rateLs: input.pumpRateSpacerLs });
   }
   stages.push({ name: 'Продавка', fluid: 'mud', volumeM3: results.displacementVolume, rateLs: input.pumpRateDisplacementLs });
