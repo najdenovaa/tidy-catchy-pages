@@ -599,6 +599,21 @@ export function calculateVolumes(
     totalSlurryVolume += plugVolume;
   }
 
+  // === Проверка: достаточен ли объём цемента, запланированный в расписании ===
+  const warnings: { type: 'error' | 'warning'; message: string }[] = [];
+  const requiredCementVolume = totalSlurryVolume; // кольцевой + стакан
+  const scheduledCementVolume = slurries.reduce(
+    (sum, s) => sum + (s.flowRateSteps || []).reduce((a, st) => a + (st.volumeM3 || 0), 0),
+    0,
+  );
+  if (requiredCementVolume > 0 && scheduledCementVolume < requiredCementVolume * 0.98) {
+    const deficit = requiredCementVolume - scheduledCementVolume;
+    warnings.push({
+      type: 'error',
+      message: `Объём цемента в расписании закачки (${scheduledCementVolume.toFixed(1)} м³) меньше расчётного (${requiredCementVolume.toFixed(1)} м³). Дефицит: ${deficit.toFixed(1)} м³. Цемент не поднимется до заданной высоты.`,
+    });
+  }
+
   return {
     casingID,
     wellVolumePerMeter: wellVPM,
@@ -615,6 +630,7 @@ export function calculateVolumes(
     slurryVolumes,
     totalSlurryVolume,
     plugVolume,
+    warnings,
   };
 }
 
