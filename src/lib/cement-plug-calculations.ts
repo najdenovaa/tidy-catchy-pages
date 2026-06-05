@@ -465,7 +465,10 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const totalOperationTimeMin = useViscousPad
     ? (pumpTimeSpacerBelowMin + padDisplacementTimeMin + padTripUpTimeMin + reverseFlushTimeMin + padTripDownTimeMin + pumpTimeSpacerAboveMin + pumpTimeCementMin + pumpTimeDisplacementMin + tripTimeMin + washTimeMin)
     : (pumpTimeCementMin + pumpTimeSpacerAboveMin + pumpTimeDisplacementMin + tripTimeMin + washTimeMin);
-  const isTimeSafe = totalOperationTimeMin <= safeTimeMin;
+  // Безопасное время ограничивает только время контакта цемента с потоком
+  // (закачка цемента + верхний буфер + продавка), без подъёма труб и промывки
+  const cementContactTimeMin = pumpTimeCementMin + pumpTimeSpacerAboveMin + pumpTimeDisplacementMin;
+  const isTimeSafe = thickeningTimeMin > 0 ? cementContactTimeMin <= safeTimeMin : true;
 
   // Pumping stages
   const pumpingStages: PumpingStage[] = [];
