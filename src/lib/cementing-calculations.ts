@@ -1634,7 +1634,7 @@ export function calculatePressureProfile(
       currentFreefallSettled = actualSettledVol;
       totalPumped = savedCumVol + actualSettledVol;
       cumTime += pauseMin;
-      return;
+      continue;
     }
 
     // === Обычный этап (с насосом) ===
