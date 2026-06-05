@@ -1165,14 +1165,24 @@ export function calculatePressureProfile(
     // подниматься до устья (maxCementHeight ≈ casingDepthMD) и цемент уже есть в затрубье.
     // Иначе — оставшееся место занимает буровой раствор.
     const totalFilled = result.mudH + result.bufferH + result.cementH + result.displH;
+    const cementToSurface = maxCementHeight >= wellData.casingDepthMD - 0.5;
     if (totalFilled < wellData.casingDepthMD) {
       const gap = wellData.casingDepthMD - totalFilled;
-      const cementToSurface = maxCementHeight >= wellData.casingDepthMD - 0.5;
       if (result.cementH > 0 && cementToSurface && gap < 2.0) {
         // компенсируем погрешность округления объёмов
         result.cementH += gap;
       } else {
         result.mudH += gap;
+      }
+    }
+
+    // Если по дизайну цемент должен быть до устья, а буфер «застрял» наверху —
+    // в реальности буфер вытесняется на поверхность, и его место занимает цемент.
+    if (cementToSurface && result.cementH > 0 && result.bufferH > 0) {
+      const totalNonMud = result.cementH + result.bufferH + result.displH;
+      if (totalNonMud >= wellData.casingDepthMD - 1.0) {
+        result.cementH += result.bufferH;
+        result.bufferH = 0;
       }
     }
 
