@@ -920,6 +920,14 @@ export default function InputSection(props: Props) {
               const slurryVol = height > 0 ? annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals) : 0;
               const cementRes = slurryVol > 0 ? calculateCement(slurryVol, s.density) : null;
               const dryMassKg = cementRes ? cementRes.dryMass * 1000 : 0; // т → кг
+
+              // Общий объём раствора: кольцевой + стакан (для нижнего раствора)
+              const pipeVPM = Math.PI / 4 * Math.pow((wellData.casingOD - 2 * wellData.casingWall) / 1000, 2);
+              const plugVol = (wellData.ckodDepth > 0 && wellData.ckodDepth < wellData.casingDepthMD)
+                ? pipeVPM * (wellData.casingDepthMD - wellData.ckodDepth) : 0;
+              const isBottomSlurry = mdBot >= wellData.casingDepthMD - 0.5;
+              const totalSlurryVol = slurryVol + (isBottomSlurry ? plugVol : 0);
+
               return (
                 <div key={idx} className="p-3 rounded-lg bg-muted/30 space-y-3 border border-border/50">
                 <div className="flex items-center justify-between">
@@ -970,7 +978,7 @@ export default function InputSection(props: Props) {
                   {/* Режимы закачки */}
                   <FlowRateStepsEditor
                     steps={s.flowRateSteps}
-                    totalVolume={height > 0 ? annVPM * height : 0}
+                    totalVolume={totalSlurryVol}
                     onChange={(steps) => { const u = [...slurries]; u[idx] = { ...u[idx], flowRateSteps: steps }; onSlurriesChange(u); }}
                     fracCheck={(rateLps) => fracCheck(rateLps, s.density * 1000, s.rheology.pv, s.rheology.yp, false, s.name)}
                     isDynamic={!!dynamicBHPMap}
