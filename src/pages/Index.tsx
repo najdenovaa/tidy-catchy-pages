@@ -855,7 +855,10 @@ export default function Index() {
                 <FoamCementSection
                   wellData={wellData}
                   slurries={slurries}
+                  buffers={buffers}
                   mudDensity={drillingFluid.density}
+                  pumpRateLps={slurries[0]?.flowRateSteps?.[0]?.rateLps}
+                  fractureGradient={fractureGradient}
                 />
               </div>
             </TabsContent>
