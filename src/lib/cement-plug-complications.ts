@@ -284,8 +284,44 @@ export function calculateComplications(
       break;
   }
 
+  // ── Factor 7: Geometric position of complication zone vs plug ──
+  // КЛЮЧЕВАЯ ЛОГИКА: потери возникают ТОЛЬКО там, где цемент контактирует с зоной.
+  //  • Зона ВНУТРИ моста   → прямой контакт, полные потери (фактор = 1.0)
+  //  • Зона НИЖЕ подошвы   → цемент не доходит; уход возможен только через жидкость/пачку под мостом
+  //  • Зона ВЫШЕ кровли    → цемент проходит мимо при закачке, после посадки изолирована
+  const zoneMD = inputs.zoneDepthMD;
+  const zoneThk = Math.max(0, inputs.zoneThicknessM);
+  const zoneTopMD = zoneMD - zoneThk / 2;
+  const zoneBotMD = zoneMD + zoneThk / 2;
+  const plugTop = params.plugTopMD;
+  const plugBot = params.plugBottomMD;
+
+  let zonePositionFactor = 1.0;
+  let zonePosition: 'inside' | 'below' | 'above' | 'unknown' = 'unknown';
+  let distanceToZoneM = 0;
+
+  if (zoneMD > 0) {
+    if (zoneBotMD >= plugTop && zoneTopMD <= plugBot) {
+      zonePosition = 'inside';
+      zonePositionFactor = 1.0;
+    } else if (zoneTopMD > plugBot) {
+      zonePosition = 'below';
+      distanceToZoneM = zoneTopMD - plugBot;
+      // Без пачки: ~30% базовых потерь. С пачкой: 5–15% (СНС + объём пачки гасят канал).
+      const padProtection = usePadInZone
+        ? Math.max(0.05, 0.20 - Math.min(params.spacerVolumeBelowM3, 2) * 0.06 - Math.min(effectiveGel, 60) / 600)
+        : 0.30;
+      const distAttenuation = Math.max(0.5, 1 - distanceToZoneM / 100);
+      zonePositionFactor = padProtection * distAttenuation;
+    } else if (zoneBotMD < plugTop) {
+      zonePosition = 'above';
+      distanceToZoneM = plugTop - zoneBotMD;
+      zonePositionFactor = 0.20;
+    }
+  }
+
   // ── Combined effective loss rate ──
-  const effectiveLossRateM3h = lossRateM3h * hydrostaticFactor * rheologyFactor * gelFactor * thickeningFactor * padBarrierFactor * behaviorFactor;
+  const effectiveLossRateM3h = lossRateM3h * hydrostaticFactor * rheologyFactor * gelFactor * thickeningFactor * padBarrierFactor * behaviorFactor * zonePositionFactor;
 
   // Volume lost during placement
   const lossRateM3s = effectiveLossRateM3h / 3600;
@@ -423,6 +459,36 @@ export function calculateComplications(
     }
     // Info about setting window
     recs.push(`🕐 Схватывание: начало через ${settingStartStatic.toFixed(0)} мин в статике (${settingStartAbsolute.toFixed(0)} мин от замеса)${settingEndStatic > 0 ? `, конец через ${settingEndStatic.toFixed(0)} мин (${settingEndAbsolute.toFixed(0)} мин от замеса)` : ''}.`);
+  }
+
+  // ═══ ПОЗИЦИОННАЯ ДИАГНОСТИКА: правильно ли установлен мост относительно зоны ═══
+  if (zoneMD > 0 && zonePosition !== 'unknown') {
+    const zoneLabel = type === 'kick' || type === 'both' ? 'зона проявления' : 'зона поглощения';
+    if (zonePosition === 'inside') {
+      recs.push(`📍 ${zoneLabel[0].toUpperCase() + zoneLabel.slice(1)} (${zoneMD.toFixed(0)} м) находится ВНУТРИ моста (${plugTop.toFixed(0)}–${plugBot.toFixed(0)} м) — прямой контакт цемента с пластом. Это правильная схема для изоляции, но требует кольматантов/газоблокаторов в самом цементе.`);
+    } else if (zonePosition === 'below') {
+      if (type === 'loss' || type === 'both') {
+        if (usePadInZone && params.spacerVolumeBelowM3 >= 0.3) {
+          recs.push(`✅ Грамотная схема: ${zoneLabel} (${zoneMD.toFixed(0)} м) на ${distanceToZoneM.toFixed(0)} м НИЖЕ подошвы моста (${plugBot.toFixed(0)} м), снизу — вязкая пачка ${params.spacerVolumeBelowM3.toFixed(2)} м³. Пачка работает буфером, цемент в пласт не уходит (потери ≈${(zonePositionFactor*100).toFixed(0)}% от базовых).`);
+        } else {
+          recs.push(`⚠ ${zoneLabel[0].toUpperCase()+zoneLabel.slice(1)} (${zoneMD.toFixed(0)} м) на ${distanceToZoneM.toFixed(0)} м НИЖЕ подошвы моста. Без вязкой пачки снизу столб жидкости под мостом может «провалиться» в пласт — РЕКОМЕНДУЕТСЯ установить вязкую пачку ≥0.5 м³ (СНС ≥30 Па) между подошвой моста и кровлей зоны.`);
+        }
+      } else if (type === 'kick') {
+        recs.push(`⚠ ${zoneLabel[0].toUpperCase()+zoneLabel.slice(1)} (${zoneMD.toFixed(0)} м) НИЖЕ подошвы моста на ${distanceToZoneM.toFixed(0)} м. Для герметичной изоляции от притока подошва моста ДОЛЖНА перекрывать кровлю зоны минимум на 30–50 м. Опустите низ моста до ≥${(zoneTopMD).toFixed(0)} м (минимум) или ≥${(zoneTopMD + 30).toFixed(0)} м (с запасом).`);
+      }
+    } else if (zonePosition === 'above') {
+      recs.push(`⚠ ${zoneLabel[0].toUpperCase()+zoneLabel.slice(1)} (${zoneMD.toFixed(0)} м) ВЫШЕ кровли моста на ${distanceToZoneM.toFixed(0)} м — мост её НЕ изолирует. Поднимите кровлю моста выше зоны (рекомендуется кровля ≤${(zoneTopMD - 30).toFixed(0)} м, с перекрытием 30–50 м над кровлей зоны).`);
+    }
+
+    // Рекомендации по идеальной схеме
+    if (zonePosition === 'below' && (type === 'loss' || type === 'both')) {
+      recs.push(`💡 Идеальная схема для борьбы с поглощением: цемент над зоной → вязкая пачка ПОВЕРХ кровли зоны (0.5–2 м³, СНС 30–80 Па) → между ними никакой буферной воды. Кровля зоны должна быть «накрыта» пачкой, цемент садится на пачку.`);
+    }
+    if (zonePosition === 'inside' && (type === 'kick' || type === 'both')) {
+      recs.push(`💡 Идеальная схема для изоляции проявления: подошва моста на ≥30–50 м НИЖЕ подошвы зоны, кровля моста на ≥50–100 м ВЫШЕ кровли зоны. Перекрытие гарантирует изоляцию даже при частичной контаминации.`);
+    }
+  } else if (zoneMD <= 0 && (type !== 'loss' || lossRateM3h > 0)) {
+    recs.push(`ℹ Глубина зоны осложнения не указана — позиционный анализ невозможен. Укажите глубину зоны для проверки корректности установки моста.`);
   }
 
   if (type === 'loss' || type === 'both') {
