@@ -1450,7 +1450,10 @@ export function calculatePressureProfile(
   let freefallOffset = 0; // объём, сместившийся при U-tube оседании (добавляется к totalPumped)
   let displacementStartTime: number | null = null; // старт продавки после промывки
 
-  stages.forEach(s => {
+  let plugLanded = false;
+  for (let stageIdx = 0; stageIdx < stages.length; stageIdx++) {
+    if (plugLanded) break;
+    const s = stages[stageIdx];
     if (s.isCement && !cementStartFound) {
       cementStartTime = cumTime;
       cementStartFound = true;
