@@ -1680,14 +1680,34 @@ export function calculatePressureProfile(
     const rawStepCount = Math.max(1, Math.ceil(stageTime / 0.5));
     const stepCount = Math.min(rawStepCount, MAX_STEPS_PER_STAGE);
     const dtMin = stageTime / stepCount;
+    let lastFracDone = 1;
+    let lastProgressedTime = stageTime;
     for (let step = 1; step <= stepCount; step++) {
-      const progressedTime = Math.min(step * dtMin, stageTime);
-      const frac = stageTime > 0 ? Math.min(progressedTime / stageTime, 1) : 1;
+      let progressedTime = Math.min(step * dtMin, stageTime);
+      let frac = stageTime > 0 ? Math.min(progressedTime / stageTime, 1) : 1;
+      let stepVolume = stepCount > 0 ? s.volume / stepCount : 0;
+
+      // === Проверка посадки пробки на ЦКОД ===
+      if (isDisplacement) {
+        const remaining = displacementVol - cumDisplacementVol;
+        if (stepVolume >= remaining - 1e-6) {
+          // Обрезаем шаг до точного остатка
+          stepVolume = Math.max(0, remaining);
+          const prevFrac = (step - 1) / Math.max(stepCount, 1);
+          const addFrac = s.volume > 0 ? stepVolume / s.volume : 0;
+          frac = Math.min(1, prevFrac + addFrac);
+          progressedTime = stageTime * frac;
+          cumDisplacementVol = displacementVol;
+          plugLanded = true;
+        } else {
+          cumDisplacementVol += stepVolume;
+        }
+      }
+
       const tNow = cumTime + progressedTime;
       const vNow = cumVol + s.volume * frac;
-      const stepVolume = stepCount > 0 ? s.volume / stepCount : 0;
-
-      if (isDisplacement) cumDisplacementVol += stepVolume;
+      lastFracDone = frac;
+      lastProgressedTime = progressedTime;
 
       pumpHistory[batchIdx].volumeM3 = s.volume * frac;
       const residualFreefallOffset = isDisplacement
@@ -1732,26 +1752,19 @@ export function calculatePressureProfile(
       const bhpRaw = annHydro + frAnnNow;
 
       // === Выход на устье ===
-      // На длинных промывках перед продавкой возможна задержка циркуляции:
-      // сначала небольшой лаг, затем плавный рост до Qвых = Qвх,
-      // после появления давления на агрегате — синхронный режим 1:1.
       let totalAnnReturn = actualRateLps;
       if (isDisplacement) {
         totalAnnReturn = residualFreefallOffset > 0.000001 ? 0 : actualRateLps;
       }
       totalAnnReturn = Math.max(0, Math.min(totalAnnReturn, actualRateLps));
 
-      // Чистый физический расчёт без эмпирических множителей.
-      // Эксцентриситет уже учтён через annFrictionMultiplier (0.4).
       const surfP = surfPRaw;
       const bhp = bhpRaw;
 
-      // Средняя скорость восходящего потока в затрубье (нижняя секция — открытый ствол)
       const annAreaForVel = annAreaLower > 0 ? annAreaLower : (annAreaUpper > 0 ? annAreaUpper : 0);
       const annularVelocityMps = annAreaForVel > 0 ? (actualRateLps / 1000) / annAreaForVel : 0;
 
       const annP = calcAnnularProfile();
-      // === ЭЦП ===
       const ecdBottom = bottomTVD > 0 ? (annHydro + frAnnNow) / (0.00981 * bottomTVD) : 0;
       const ecdStaticBottom = bottomTVD > 0 ? annHydro / (0.00981 * bottomTVD) : 0;
       let ecdPrevShoe = 0;
@@ -1761,6 +1774,16 @@ export function calculatePressureProfile(
         ecdPrevShoe = (hydroAtShoe + frictionAtShoe) / (0.00981 * prevShoeTVD);
       }
       points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: calcMaxSafeRate(annHydro, effAnnPv, effAnnYp, annDensity, s.pv, s.yp, densityKgM3), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps, ecdAtBottomGcm3: ecdBottom, ecdStaticAtBottomGcm3: ecdStaticBottom, ecdAtPrevShoeGcm3: ecdPrevShoe, fracGradEcdGcm3, porePressureEcdGcm3 });
+
+      if (plugLanded) break;
+    }
+
+    if (plugLanded) {
+      // Стадия оборвана на посадке пробки — фиксируем частичные значения
+      pumpHistory[batchIdx].volumeM3 = s.volume * lastFracDone;
+      cumTime += lastProgressedTime;
+      cumVol += s.volume * lastFracDone;
+      break;
     }
 
     pumpHistory[batchIdx].volumeM3 = s.volume;
@@ -1771,7 +1794,7 @@ export function calculatePressureProfile(
 
     cumTime += stageTime;
     cumVol += s.volume;
-  });
+  }
 
   // СТОП — пробка садится в ЦКОД на ходу, давление скачком от динамического
   const stopTime = cumTime;
