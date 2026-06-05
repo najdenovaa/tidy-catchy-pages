@@ -303,6 +303,27 @@ export function calculateComplications(
     ? (formationPressureMPa * 1e6) / (1000 * G * plugBottomTVD) / 1000
     : cement.densityGcm3;
 
+  // ═══ REAL PLUG INTERVALS ═══
+  // Cement settles to bottom by gravity; loss shortens the top of the plug.
+  // For kick breakthrough: formation fluid invades from below, lifting cement and contaminating its base.
+  let kickInvasionM = 0;
+  if (kickBreakThrough && pressureDiff > 0) {
+    // Estimate invasion: ~5 m per MPa of pressure imbalance, capped at 30% of plug.
+    kickInvasionM = Math.min(pressureDiff * 5, plugLenAnn * 0.3);
+    contaminationDepth = Math.max(contaminationDepth, kickInvasionM);
+  }
+
+  const designedPlugTopMD = params.plugTopMD;
+  const designedPlugBottomMD = params.plugBottomMD;
+  // Loss: bottom stays at design, top moves down (less cement remaining).
+  // Kick: bottom rises by invasion height, top also rises (cement column lifted).
+  const realPlugBottomMD = designedPlugBottomMD - kickInvasionM;
+  const realPlugTopMD = realPlugBottomMD - realPlugLength;
+  // Clean cement: contaminated bottom segment is removed/mixed with mud or formation fluid.
+  const cleanPlugBottomMD = realPlugBottomMD - contaminationDepth;
+  const cleanPlugTopMD = realPlugTopMD;
+
+
   // ═══ CORRECTED VOLUMES ═══
   const compensationFactor = 1.3; // 30% extra
   const correctedCement = params.cementVolumeTotalM3 + volumeLostM3 * compensationFactor;
