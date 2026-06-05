@@ -86,6 +86,18 @@ export interface ComplicationResult {
   realPlugLengthM: number;
   /** Designed plug length, m */
   designedPlugLengthM: number;
+  /** Designed plug top MD, m */
+  designedPlugTopMD: number;
+  /** Designed plug bottom MD, m */
+  designedPlugBottomMD: number;
+  /** Real plug top MD (after losses / kick invasion), m */
+  realPlugTopMD: number;
+  /** Real plug bottom MD (after losses / kick invasion), m */
+  realPlugBottomMD: number;
+  /** Clean (uncontaminated) plug top MD, m */
+  cleanPlugTopMD: number;
+  /** Clean (uncontaminated) plug bottom MD, m */
+  cleanPlugBottomMD: number;
   /** Percentage of plug lost */
   lossPercentage: number;
   /** Contamination depth at bottom, m */
