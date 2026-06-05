@@ -91,8 +91,8 @@ export default function ComplicationsSection({
       boreDiamMm: results.boreDiamUsed,
       pipeODMm: results.pipeSectionsUsed?.[0]?.od ?? 89,
       plugLengthMD: results.plugLengthMD,
-      plugTopMD: results.plugTopTVD,
-      plugBottomMD: results.plugBottomTVD,
+      plugTopMD: results.plugTopMD ?? results.plugTopTVD,
+      plugBottomMD: results.plugBottomMD ?? results.plugBottomTVD,
       cementVolumeTotalM3: results.cementVolumeTotal,
       totalOperationTimeMin: results.totalOperationTimeMin,
       spacerVolumeBelowM3: spacerVolumeBelow,
@@ -349,13 +349,23 @@ export default function ComplicationsSection({
             {(type === 'loss' || type === 'both') && (
               <div className="rounded-lg border border-border p-3 space-y-2">
                 <p className="text-[10px] font-semibold text-muted-foreground flex items-center gap-1">
-                  <TrendingDown className="w-3.5 h-3.5" /> Потери цемента при поглощении
+                  <TrendingDown className="w-3.5 h-3.5" /> Поглощение: уход пачки / цемента
                 </p>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
                   <span className="text-muted-foreground">Время заполнения затрубья:</span>
                   <span>{complicationResult.fillTimeMin.toFixed(1)} мин</span>
-                  <span className="text-muted-foreground">Потери в пласт:</span>
+                  <span className="text-muted-foreground">Уход в пласт всего:</span>
                   <span className="text-amber-400 font-semibold">{complicationResult.volumeLostM3.toFixed(3)} м³</span>
+                  <span className="text-muted-foreground">  • цемент:</span>
+                  <span>{complicationResult.cementLostM3.toFixed(3)} м³</span>
+                  <span className="text-muted-foreground">  • нижняя пачка:</span>
+                  <span className="text-blue-400">{complicationResult.padLostM3.toFixed(3)} м³</span>
+                  {complicationResult.settlementM > 0 && (
+                    <>
+                      <span className="text-muted-foreground">Осадка цемента вниз:</span>
+                      <span className="text-amber-400 font-semibold">{complicationResult.settlementM.toFixed(1)} м</span>
+                    </>
+                  )}
                   <span className="text-muted-foreground">Реальный объём цемента:</span>
                   <span>{complicationResult.realCementVolumeM3.toFixed(3)} м³</span>
 
@@ -365,17 +375,17 @@ export default function ComplicationsSection({
                   <span>{complicationResult.designedPlugTopMD.toFixed(1)} — {complicationResult.designedPlugBottomMD.toFixed(1)} м ({complicationResult.designedPlugLengthM.toFixed(1)} м)</span>
                   {complicationResult.hasViscousPadBelow && complicationResult.padHeightMD > 0 && (
                     <>
-                      <span className="text-muted-foreground">  • вязкая пачка снизу:</span>
-                      <span className="text-blue-400">{(complicationResult.designedPlugBottomMD - complicationResult.padHeightMD).toFixed(1)} — {complicationResult.designedPlugBottomMD.toFixed(1)} м ({complicationResult.padHeightMD.toFixed(1)} м)</span>
+                      <span className="text-muted-foreground">  • вязкая пачка ниже моста:</span>
+                      <span className="text-blue-400">{complicationResult.designedPadTopMD.toFixed(1)} — {complicationResult.designedPadBottomMD.toFixed(1)} м ({complicationResult.padHeightMD.toFixed(1)} м)</span>
                     </>
                   )}
-                  <span className="text-muted-foreground font-semibold">Реальный интервал моста:</span>
+                  <span className="text-muted-foreground font-semibold">Реальный интервал цемента:</span>
                   <span className={`font-bold ${complicationResult.lossPercentage > 30 ? 'text-destructive' : complicationResult.lossPercentage > 15 ? 'text-amber-400' : 'text-green-500'}`}>
                     {complicationResult.realPlugTopMD.toFixed(1)} — {complicationResult.realPlugBottomMD.toFixed(1)} м ({complicationResult.realPlugLengthM.toFixed(1)} м)
                   </span>
                   {complicationResult.hasViscousPadBelow && (
                     <>
-                      <span className="text-muted-foreground">  • цемент (реальный):</span>
+                      <span className="text-muted-foreground">  • цемент после осадки:</span>
                       <span>{complicationResult.realPlugTopMD.toFixed(1)} — {complicationResult.realCementBottomMD.toFixed(1)} м</span>
                       <span className="text-muted-foreground">  • пачка (реальная):</span>
                       <span className="text-blue-400">{complicationResult.realPadTopMD.toFixed(1)} — {complicationResult.realPadBottomMD.toFixed(1)} м</span>
@@ -492,6 +502,8 @@ export default function ComplicationsSection({
                     <>
                       <span className="text-muted-foreground">Рекомендуемая вязкая пачка:</span>
                       <span className="text-primary font-bold">≥{complicationResult.correctedSpacerBelowM3.toFixed(3)} м³</span>
+                      <span className="text-muted-foreground">Доп. нижняя пачка:</span>
+                      <span className="text-blue-400">{(complicationResult.correctedSpacerBelowM3 - spacerVolumeBelow).toFixed(3)} м³</span>
                     </>
                   )}
                 </div>
