@@ -284,8 +284,44 @@ export function calculateComplications(
       break;
   }
 
+  // ── Factor 7: Geometric position of complication zone vs plug ──
+  // КЛЮЧЕВАЯ ЛОГИКА: потери возникают ТОЛЬКО там, где цемент контактирует с зоной.
+  //  • Зона ВНУТРИ моста   → прямой контакт, полные потери (фактор = 1.0)
+  //  • Зона НИЖЕ подошвы   → цемент не доходит; уход возможен только через жидкость/пачку под мостом
+  //  • Зона ВЫШЕ кровли    → цемент проходит мимо при закачке, после посадки изолирована
+  const zoneMD = inputs.zoneDepthMD;
+  const zoneThk = Math.max(0, inputs.zoneThicknessM);
+  const zoneTopMD = zoneMD - zoneThk / 2;
+  const zoneBotMD = zoneMD + zoneThk / 2;
+  const plugTop = params.plugTopMD;
+  const plugBot = params.plugBottomMD;
+
+  let zonePositionFactor = 1.0;
+  let zonePosition: 'inside' | 'below' | 'above' | 'unknown' = 'unknown';
+  let distanceToZoneM = 0;
+
+  if (zoneMD > 0) {
+    if (zoneBotMD >= plugTop && zoneTopMD <= plugBot) {
+      zonePosition = 'inside';
+      zonePositionFactor = 1.0;
+    } else if (zoneTopMD > plugBot) {
+      zonePosition = 'below';
+      distanceToZoneM = zoneTopMD - plugBot;
+      // Без пачки: ~30% базовых потерь. С пачкой: 5–15% (СНС + объём пачки гасят канал).
+      const padProtection = usePadInZone
+        ? Math.max(0.05, 0.20 - Math.min(params.spacerVolumeBelowM3, 2) * 0.06 - Math.min(effectiveGel, 60) / 600)
+        : 0.30;
+      const distAttenuation = Math.max(0.5, 1 - distanceToZoneM / 100);
+      zonePositionFactor = padProtection * distAttenuation;
+    } else if (zoneBotMD < plugTop) {
+      zonePosition = 'above';
+      distanceToZoneM = plugTop - zoneBotMD;
+      zonePositionFactor = 0.20;
+    }
+  }
+
   // ── Combined effective loss rate ──
-  const effectiveLossRateM3h = lossRateM3h * hydrostaticFactor * rheologyFactor * gelFactor * thickeningFactor * padBarrierFactor * behaviorFactor;
+  const effectiveLossRateM3h = lossRateM3h * hydrostaticFactor * rheologyFactor * gelFactor * thickeningFactor * padBarrierFactor * behaviorFactor * zonePositionFactor;
 
   // Volume lost during placement
   const lossRateM3s = effectiveLossRateM3h / 3600;
