@@ -267,6 +267,7 @@ export interface VolumeResults {
   slurryVolumes: SlurryVolumeResult[];
   totalSlurryVolume: number;
   plugVolume: number; // объём цементного стакана (внутри ОК от ЦКОД до башмака), м³
+  warnings?: { type: 'error' | 'warning'; message: string }[];
 }
 
 export interface CementResults {
@@ -598,6 +599,21 @@ export function calculateVolumes(
     totalSlurryVolume += plugVolume;
   }
 
+  // === Проверка: достаточен ли объём цемента, запланированный в расписании ===
+  const warnings: { type: 'error' | 'warning'; message: string }[] = [];
+  const requiredCementVolume = totalSlurryVolume; // кольцевой + стакан
+  const scheduledCementVolume = slurries.reduce(
+    (sum, s) => sum + (s.flowRateSteps || []).reduce((a, st) => a + (st.volumeM3 || 0), 0),
+    0,
+  );
+  if (requiredCementVolume > 0 && scheduledCementVolume < requiredCementVolume * 0.98) {
+    const deficit = requiredCementVolume - scheduledCementVolume;
+    warnings.push({
+      type: 'error',
+      message: `Объём цемента в расписании закачки (${scheduledCementVolume.toFixed(1)} м³) меньше расчётного (${requiredCementVolume.toFixed(1)} м³). Дефицит: ${deficit.toFixed(1)} м³. Цемент не поднимется до заданной высоты.`,
+    });
+  }
+
   return {
     casingID,
     wellVolumePerMeter: wellVPM,
@@ -614,6 +630,7 @@ export function calculateVolumes(
     slurryVolumes,
     totalSlurryVolume,
     plugVolume,
+    warnings,
   };
 }
 
@@ -1148,14 +1165,24 @@ export function calculatePressureProfile(
     // подниматься до устья (maxCementHeight ≈ casingDepthMD) и цемент уже есть в затрубье.
     // Иначе — оставшееся место занимает буровой раствор.
     const totalFilled = result.mudH + result.bufferH + result.cementH + result.displH;
+    const cementToSurface = maxCementHeight >= wellData.casingDepthMD - 0.5;
     if (totalFilled < wellData.casingDepthMD) {
       const gap = wellData.casingDepthMD - totalFilled;
-      const cementToSurface = maxCementHeight >= wellData.casingDepthMD - 0.5;
       if (result.cementH > 0 && cementToSurface && gap < 2.0) {
         // компенсируем погрешность округления объёмов
         result.cementH += gap;
       } else {
         result.mudH += gap;
+      }
+    }
+
+    // Если по дизайну цемент должен быть до устья, а буфер «застрял» наверху —
+    // в реальности буфер вытесняется на поверхность, и его место занимает цемент.
+    if (cementToSurface && result.cementH > 0 && result.bufferH > 0) {
+      const totalNonMud = result.cementH + result.bufferH + result.displH;
+      if (totalNonMud >= wellData.casingDepthMD - 1.0) {
+        result.cementH += result.bufferH;
+        result.bufferH = 0;
       }
     }
 

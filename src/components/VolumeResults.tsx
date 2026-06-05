@@ -44,6 +44,22 @@ export default function VolumeResults({ results, wellData }: Props) {
 
   return (
     <div className="space-y-6">
+      {results.warnings && results.warnings.length > 0 && (
+        <div className="space-y-2">
+          {results.warnings.map((w, i) => (
+            <div
+              key={i}
+              className={`rounded-md border p-3 text-sm ${
+                w.type === 'error'
+                  ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                  : 'border-yellow-500/40 bg-yellow-500/10 text-yellow-700 dark:text-yellow-400'
+              }`}
+            >
+              {w.message}
+            </div>
+          ))}
+        </div>
+      )}
       <Card>
         <CardHeader className="pb-4">
           <CardTitle className="text-lg">07. Данные для расчёта</CardTitle>
