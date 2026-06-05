@@ -416,8 +416,8 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
 
 // ====== 2D Longitudinal Cross-Section (side view) ======
 function CrossSection({ wellData, slurries, buffers, drillingFluid }: Omit<Props, "displacementFluids">) {
-  const w = 500, h = 600;
-  const marginLeft = 55, marginRight = 20, marginTop = 25, marginBottom = 30;
+  const w = 420, h = 700;
+  const marginLeft = 60, marginRight = 140, marginTop = 30, marginBottom = 35;
   const plotW = w - marginLeft - marginRight;
   const plotH = h - marginTop - marginBottom;
 
@@ -425,8 +425,8 @@ function CrossSection({ wellData, slurries, buffers, drillingFluid }: Omit<Props
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
   const totalMD = wellData.casingDepthMD;
 
-  // Widths proportional to diameters (exaggerated for visibility)
-  const maxHalfW = plotW / 2 * 0.85;
+  // Narrow wellbore — like a real well (~15-20% of plot width)
+  const maxHalfW = plotW * 0.32;
   const holeHW = maxHalfW;
   const casOHW = maxHalfW * (wellData.casingOD / wellData.holeDiameter);
   const casIHW = maxHalfW * (casingID / wellData.holeDiameter);
@@ -468,42 +468,92 @@ function CrossSection({ wellData, slurries, buffers, drillingFluid }: Omit<Props
   for (let d = 0; d <= totalMD; d += depthInterval) depthTicks.push(d);
   if (totalMD % depthInterval !== 0) depthTicks.push(totalMD);
 
+  // Right-side labels — collision-aware vertical placement
+  type RLabel = { y: number; color: string; line1: string; line2?: string };
+  const rightLabels: RLabel[] = [];
+  cementSections.forEach((sec) => rightLabels.push({
+    y: (mdToY(sec.top) + mdToY(sec.bot)) / 2, color: sec.color,
+    line1: sec.name, line2: `${Math.round(sec.top)}–${Math.round(sec.bot)} м`,
+  }));
+  bufferSections.forEach((buf) => rightLabels.push({
+    y: (mdToY(buf.top) + mdToY(buf.bot)) / 2, color: buf.color,
+    line1: buf.name, line2: `${Math.round(buf.top)}–${Math.round(buf.bot)} м`,
+  }));
+  rightLabels.sort((a, b) => a.y - b.y);
+  // Push apart so labels don't overlap (min gap ~24px)
+  const minGap = 24;
+  for (let i = 1; i < rightLabels.length; i++) {
+    if (rightLabels[i].y - rightLabels[i - 1].y < minGap) {
+      rightLabels[i].y = rightLabels[i - 1].y + minGap;
+    }
+  }
+
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full max-w-lg mx-auto">
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full max-w-md mx-auto">
       <defs>
-        <linearGradient id="rockGrad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#5C4A3A" /><stop offset="50%" stopColor="#7A6550" /><stop offset="100%" stopColor="#5C4A3A" />
+        {/* Rock pattern — horizontal stratification */}
+        <pattern id="rockPattern" x="0" y="0" width="20" height="12" patternUnits="userSpaceOnUse">
+          <rect width="20" height="12" fill="#5C4A3A" />
+          <line x1="0" y1="3" x2="20" y2="3" stroke="#3A2E24" strokeWidth="0.6" opacity="0.7" />
+          <line x1="0" y1="7" x2="15" y2="7" stroke="#3A2E24" strokeWidth="0.4" opacity="0.5" />
+          <line x1="5" y1="10" x2="20" y2="10" stroke="#7A6550" strokeWidth="0.4" opacity="0.4" />
+        </pattern>
+        {/* Steel gradient — current casing */}
+        <linearGradient id="steelGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#7a7a7a" />
+          <stop offset="30%" stopColor="#c2c2c2" />
+          <stop offset="50%" stopColor="#dcdcdc" />
+          <stop offset="70%" stopColor="#c2c2c2" />
+          <stop offset="100%" stopColor="#7a7a7a" />
+        </linearGradient>
+        {/* Steel gradient — previous casing */}
+        <linearGradient id="steelGradPrev" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#5e5e5e" />
+          <stop offset="50%" stopColor="#a5a5a5" />
+          <stop offset="100%" stopColor="#5e5e5e" />
         </linearGradient>
       </defs>
 
       {/* Background */}
       <rect x={0} y={0} width={w} height={h} fill="#1a1a2e" />
 
-      {/* Formation / rock (open hole only) */}
-      <rect x={cx - holeHW - 8} y={mdToY(wellData.prevCasingDepth)} width={holeHW * 2 + 16} height={mdToY(totalMD) - mdToY(wellData.prevCasingDepth)} fill="#6B5B4F" opacity={0.4} rx={3} />
+      {/* Depth grid (subtle) */}
+      {depthTicks.map(d => (
+        <line key={`grid-${d}`} x1={cx - holeHW - 10} y1={mdToY(d)} x2={cx + holeHW + 10} y2={mdToY(d)}
+          stroke="#ffffff" strokeWidth={0.3} opacity={0.06} />
+      ))}
+
+      {/* Formation / rock (open hole only) — textured */}
+      <rect x={cx - holeHW - 10} y={mdToY(wellData.prevCasingDepth)} width={holeHW * 2 + 20}
+        height={mdToY(totalMD) - mdToY(wellData.prevCasingDepth)} fill="url(#rockPattern)" opacity={0.85} rx={2} />
 
       {/* Open hole walls */}
-      <line x1={cx - holeHW} y1={mdToY(wellData.prevCasingDepth)} x2={cx - holeHW} y2={mdToY(totalMD)} stroke="#8B7D6B" strokeWidth={2} />
-      <line x1={cx + holeHW} y1={mdToY(wellData.prevCasingDepth)} x2={cx + holeHW} y2={mdToY(totalMD)} stroke="#8B7D6B" strokeWidth={2} />
+      <line x1={cx - holeHW} y1={mdToY(wellData.prevCasingDepth)} x2={cx - holeHW} y2={mdToY(totalMD)} stroke="#3a2e24" strokeWidth={1.5} />
+      <line x1={cx + holeHW} y1={mdToY(wellData.prevCasingDepth)} x2={cx + holeHW} y2={mdToY(totalMD)} stroke="#3a2e24" strokeWidth={1.5} />
 
-      {/* Previous casing */}
+      {/* Previous casing walls */}
       {wellData.prevCasingDepth > 0 && (
         <>
-          <rect x={cx - prevCasOHW} y={mdToY(0)} width={prevCasOHW - prevCasIHW} height={mdToY(wellData.prevCasingDepth) - mdToY(0)} fill="#888" opacity={0.6} />
-          <rect x={cx + prevCasIHW} y={mdToY(0)} width={prevCasOHW - prevCasIHW} height={mdToY(wellData.prevCasingDepth) - mdToY(0)} fill="#888" opacity={0.6} />
+          <rect x={cx - prevCasOHW} y={mdToY(0)} width={prevCasOHW - prevCasIHW}
+            height={mdToY(wellData.prevCasingDepth) - mdToY(0)} fill="url(#steelGradPrev)" opacity={0.85} />
+          <rect x={cx + prevCasIHW} y={mdToY(0)} width={prevCasOHW - prevCasIHW}
+            height={mdToY(wellData.prevCasingDepth) - mdToY(0)} fill="url(#steelGradPrev)" opacity={0.85} />
         </>
       )}
 
       {/* Annulus — drilling mud (above fluids) */}
       {topFluidMD > 1 && (
         <>
-          <rect x={cx - holeHW} y={mdToY(Math.min(wellData.prevCasingDepth, topFluidMD))} width={holeHW - casOHW} height={mdToY(topFluidMD) - mdToY(Math.min(wellData.prevCasingDepth, topFluidMD))} fill={MUD_COLOR_3D} opacity={0.4} />
-          <rect x={cx + casOHW} y={mdToY(Math.min(wellData.prevCasingDepth, topFluidMD))} width={holeHW - casOHW} height={mdToY(topFluidMD) - mdToY(Math.min(wellData.prevCasingDepth, topFluidMD))} fill={MUD_COLOR_3D} opacity={0.4} />
-          {/* In prev casing interval */}
+          <rect x={cx - holeHW} y={mdToY(Math.min(wellData.prevCasingDepth, topFluidMD))} width={holeHW - casOHW}
+            height={mdToY(topFluidMD) - mdToY(Math.min(wellData.prevCasingDepth, topFluidMD))} fill={MUD_COLOR_3D} opacity={0.5} />
+          <rect x={cx + casOHW} y={mdToY(Math.min(wellData.prevCasingDepth, topFluidMD))} width={holeHW - casOHW}
+            height={mdToY(topFluidMD) - mdToY(Math.min(wellData.prevCasingDepth, topFluidMD))} fill={MUD_COLOR_3D} opacity={0.5} />
           {wellData.prevCasingDepth > 0 && topFluidMD > 0 && (
             <>
-              <rect x={cx - prevCasIHW} y={mdToY(0)} width={prevCasIHW - casOHW} height={mdToY(Math.min(wellData.prevCasingDepth, topFluidMD)) - mdToY(0)} fill={MUD_COLOR_3D} opacity={0.35} />
-              <rect x={cx + casOHW} y={mdToY(0)} width={prevCasIHW - casOHW} height={mdToY(Math.min(wellData.prevCasingDepth, topFluidMD)) - mdToY(0)} fill={MUD_COLOR_3D} opacity={0.35} />
+              <rect x={cx - prevCasIHW} y={mdToY(0)} width={prevCasIHW - casOHW}
+                height={mdToY(Math.min(wellData.prevCasingDepth, topFluidMD)) - mdToY(0)} fill={MUD_COLOR_3D} opacity={0.4} />
+              <rect x={cx + casOHW} y={mdToY(0)} width={prevCasIHW - casOHW}
+                height={mdToY(Math.min(wellData.prevCasingDepth, topFluidMD)) - mdToY(0)} fill={MUD_COLOR_3D} opacity={0.4} />
             </>
           )}
         </>
@@ -517,18 +567,16 @@ function CrossSection({ wellData, slurries, buffers, drillingFluid }: Omit<Props
         const inPrev2 = mdToY(Math.min(buf.bot, wellData.prevCasingDepth));
         return (
           <g key={`buf-${i}`}>
-            {/* Open hole portion */}
             {buf.bot > wellData.prevCasingDepth && (
               <>
-                <rect x={cx - holeHW} y={y1} width={holeHW - casOHW} height={y2 - y1} fill={buf.color} opacity={0.7} />
-                <rect x={cx + casOHW} y={y1} width={holeHW - casOHW} height={y2 - y1} fill={buf.color} opacity={0.7} />
+                <rect x={cx - holeHW} y={y1} width={holeHW - casOHW} height={y2 - y1} fill={buf.color} opacity={0.8} />
+                <rect x={cx + casOHW} y={y1} width={holeHW - casOHW} height={y2 - y1} fill={buf.color} opacity={0.8} />
               </>
             )}
-            {/* Prev casing portion */}
             {buf.top < wellData.prevCasingDepth && (
               <>
-                <rect x={cx - prevCasIHW} y={inPrev1} width={prevCasIHW - casOHW} height={inPrev2 - inPrev1} fill={buf.color} opacity={0.6} />
-                <rect x={cx + casOHW} y={inPrev1} width={prevCasIHW - casOHW} height={inPrev2 - inPrev1} fill={buf.color} opacity={0.6} />
+                <rect x={cx - prevCasIHW} y={inPrev1} width={prevCasIHW - casOHW} height={inPrev2 - inPrev1} fill={buf.color} opacity={0.7} />
+                <rect x={cx + casOHW} y={inPrev1} width={prevCasIHW - casOHW} height={inPrev2 - inPrev1} fill={buf.color} opacity={0.7} />
               </>
             )}
           </g>
@@ -545,69 +593,112 @@ function CrossSection({ wellData, slurries, buffers, drillingFluid }: Omit<Props
           <g key={`cem-${i}`}>
             {sec.bot > wellData.prevCasingDepth && (
               <>
-                <rect x={cx - holeHW} y={y1} width={holeHW - casOHW} height={y2 - y1} fill={sec.color} opacity={0.85} />
-                <rect x={cx + casOHW} y={y1} width={holeHW - casOHW} height={y2 - y1} fill={sec.color} opacity={0.85} />
+                <rect x={cx - holeHW} y={y1} width={holeHW - casOHW} height={y2 - y1} fill={sec.color} opacity={0.9} />
+                <rect x={cx + casOHW} y={y1} width={holeHW - casOHW} height={y2 - y1} fill={sec.color} opacity={0.9} />
               </>
             )}
             {sec.top < wellData.prevCasingDepth && (
               <>
-                <rect x={cx - prevCasIHW} y={inPrev1} width={prevCasIHW - casOHW} height={inPrev2 - inPrev1} fill={sec.color} opacity={0.75} />
-                <rect x={cx + casOHW} y={inPrev1} width={prevCasIHW - casOHW} height={inPrev2 - inPrev1} fill={sec.color} opacity={0.75} />
+                <rect x={cx - prevCasIHW} y={inPrev1} width={prevCasIHW - casOHW} height={inPrev2 - inPrev1} fill={sec.color} opacity={0.8} />
+                <rect x={cx + casOHW} y={inPrev1} width={prevCasIHW - casOHW} height={inPrev2 - inPrev1} fill={sec.color} opacity={0.8} />
               </>
             )}
           </g>
         );
       })}
 
-      {/* Current casing walls */}
-      <rect x={cx - casOHW} y={mdToY(0)} width={casOHW - casIHW} height={mdToY(totalMD) - mdToY(0)} fill="#A8A8A8" opacity={0.8} />
-      <rect x={cx + casIHW} y={mdToY(0)} width={casOHW - casIHW} height={mdToY(totalMD) - mdToY(0)} fill="#A8A8A8" opacity={0.8} />
+      {/* Current casing walls — steel gradient */}
+      <rect x={cx - casOHW} y={mdToY(0)} width={casOHW - casIHW} height={mdToY(totalMD) - mdToY(0)} fill="url(#steelGrad)" />
+      <rect x={cx + casIHW} y={mdToY(0)} width={casOHW - casIHW} height={mdToY(totalMD) - mdToY(0)} fill="url(#steelGrad)" />
 
-      {/* Displacement fluid inside casing */}
-      <rect x={cx - casIHW} y={mdToY(0)} width={casIHW * 2} height={mdToY(totalMD) - mdToY(0)} fill="#4A90D9" opacity={0.35} />
-      {/* Inside casing label */}
-      <text x={cx} y={mdToY(totalMD / 2) + 3} fontSize="8" fill="#8CB8E8" fontFamily="sans-serif" textAnchor="middle" fontWeight="500" opacity={0.8}>Продавка</text>
+      {/* Displacement fluid inside casing (above CKOD) */}
+      {(() => {
+        const ckod = wellData.ckodDepth > 0 && wellData.ckodDepth < totalMD ? wellData.ckodDepth : totalMD;
+        return (
+          <rect x={cx - casIHW + 0.5} y={mdToY(0)} width={casIHW * 2 - 1}
+            height={mdToY(ckod) - mdToY(0)} fill={DISP_COLOR} opacity={0.4} />
+        );
+      })()}
 
-      {/* Shoe */}
-      <polygon points={`${cx - casOHW - 4},${mdToY(totalMD)} ${cx + casOHW + 4},${mdToY(totalMD)} ${cx},${mdToY(totalMD) + 10}`} fill="#FF6B35" />
+      {/* Cement plug inside casing (CKOD → shoe) */}
+      {wellData.ckodDepth > 0 && wellData.ckodDepth < totalMD && cementSections.length > 0 && (
+        <rect x={cx - casIHW + 0.5} y={mdToY(wellData.ckodDepth)} width={casIHW * 2 - 1}
+          height={mdToY(totalMD) - mdToY(wellData.ckodDepth)}
+          fill={CEMENT_COLORS[cementSections.length - 1]} opacity={0.7} />
+      )}
 
-      {/* CKOD marker */}
-      <line x1={cx - casIHW} y1={mdToY(wellData.ckodDepth)} x2={cx + casIHW} y2={mdToY(wellData.ckodDepth)} stroke="#E53E3E" strokeWidth={2} />
-      <text x={cx + holeHW + 8} y={mdToY(wellData.ckodDepth) + 4} fontSize="9" fill="#E53E3E" fontFamily="sans-serif">ЦКОД {wellData.ckodDepth}м</text>
+      {/* Wellhead flange */}
+      <rect x={cx - casOHW - 12} y={mdToY(0) - 6} width={(casOHW + 12) * 2} height={6}
+        fill="#666" stroke="#888" strokeWidth={0.5} rx={1.5} />
+      <rect x={cx - casOHW - 18} y={mdToY(0) - 10} width={(casOHW + 18) * 2} height={4}
+        fill="#555" rx={1} />
 
-      {/* Previous casing shoe marker */}
-      {wellData.prevCasingDepth > 0 && (
+      {/* Shoe — guide cone */}
+      <path d={`M ${cx - casOHW - 4} ${mdToY(totalMD)} L ${cx - casIHW} ${mdToY(totalMD) + 10} L ${cx + casIHW} ${mdToY(totalMD) + 10} L ${cx + casOHW + 4} ${mdToY(totalMD)} Z`}
+        fill="#FF6B35" stroke="#CC4400" strokeWidth={0.6} />
+
+      {/* CKOD — check valve symbol */}
+      {wellData.ckodDepth > 0 && wellData.ckodDepth < totalMD && (
         <>
-          <line x1={cx - prevCasOHW - 3} y1={mdToY(wellData.prevCasingDepth)} x2={cx + prevCasOHW + 3} y2={mdToY(wellData.prevCasingDepth)} stroke="#888" strokeWidth={1.5} strokeDasharray="4 2" />
-          <text x={cx - holeHW - 6} y={mdToY(wellData.prevCasingDepth) + 4} fontSize="8" fill="#999" fontFamily="sans-serif" textAnchor="end">Конд. {wellData.prevCasingDepth}м</text>
+          <rect x={cx - casIHW} y={mdToY(wellData.ckodDepth) - 2} width={casIHW * 2} height={4}
+            fill="#E53E3E" opacity={0.85} rx={1} />
+          <line x1={cx - casOHW - 3} y1={mdToY(wellData.ckodDepth)} x2={cx + casOHW + 3} y2={mdToY(wellData.ckodDepth)}
+            stroke="#E53E3E" strokeWidth={1.5} />
         </>
       )}
 
-      {/* Depth ticks */}
+      {/* Previous casing shoe marker */}
+      {wellData.prevCasingDepth > 0 && (
+        <line x1={cx - prevCasOHW - 3} y1={mdToY(wellData.prevCasingDepth)} x2={cx + prevCasOHW + 3} y2={mdToY(wellData.prevCasingDepth)}
+          stroke="#aaa" strokeWidth={1.5} strokeDasharray="4 2" />
+      )}
+
+      {/* Depth ticks (left axis) */}
       {depthTicks.map(d => (
         <g key={`dt-${d}`}>
-          <line x1={marginLeft - 4} y1={mdToY(d)} x2={marginLeft} y2={mdToY(d)} stroke="#666" strokeWidth={1} />
-          <text x={marginLeft - 7} y={mdToY(d) + 3} fontSize="9" fill="#aaa" fontFamily="sans-serif" textAnchor="end">{d}</text>
+          <line x1={marginLeft - 5} y1={mdToY(d)} x2={marginLeft} y2={mdToY(d)} stroke="#888" strokeWidth={1} />
+          <text x={marginLeft - 8} y={mdToY(d) + 3} fontSize="9" fill="#bbb" fontFamily="sans-serif" textAnchor="end">{d}</text>
         </g>
       ))}
 
-      {/* Cement labels — in annulus, not inside casing */}
-      {cementSections.map((sec, i) => {
-        const midY = (mdToY(sec.top) + mdToY(sec.bot)) / 2;
-        const labelX = cx - (casOHW + holeHW) / 2;
-        return <text key={`cl-${i}`} x={labelX} y={midY + 3} fontSize="7" fill="#fff" fontFamily="sans-serif" textAnchor="middle" fontWeight="600" opacity={0.8}>{sec.name}</text>;
+      {/* Right-side fluid labels with leader lines */}
+      {rightLabels.map((lab, i) => {
+        const labelX = cx + holeHW + 14;
+        return (
+          <g key={`rl-${i}`}>
+            <line x1={cx + holeHW + 2} y1={lab.y} x2={labelX - 2} y2={lab.y}
+              stroke={lab.color} strokeWidth={0.6} strokeDasharray="2 2" opacity={0.7} />
+            <circle cx={labelX + 3} cy={lab.y} r={3} fill={lab.color} />
+            <text x={labelX + 10} y={lab.y + 3} fontSize="9" fill="#ddd" fontFamily="sans-serif" fontWeight="500">{lab.line1}</text>
+            {lab.line2 && (
+              <text x={labelX + 10} y={lab.y + 13} fontSize="8" fill="#888" fontFamily="sans-serif">{lab.line2}</text>
+            )}
+          </g>
+        );
       })}
 
-      {/* Buffer labels — in annulus */}
-      {bufferSections.map((buf, i) => {
-        const midY = (mdToY(buf.top) + mdToY(buf.bot)) / 2;
-        const labelX = cx + (casOHW + holeHW) / 2;
-        return <text key={`bl-${i}`} x={labelX} y={midY + 3} fontSize="7" fill="#fff" fontFamily="sans-serif" textAnchor="middle" fontWeight="500" opacity={0.7}>{buf.name}</text>;
-      })}
+      {/* CKOD label (right) */}
+      {wellData.ckodDepth > 0 && wellData.ckodDepth < totalMD && (
+        <text x={cx + holeHW + 14} y={mdToY(wellData.ckodDepth) - 4} fontSize="9" fill="#E53E3E" fontFamily="sans-serif" fontWeight="600">
+          ЦКОД {wellData.ckodDepth}м
+        </text>
+      )}
+      {/* Shoe label (right) */}
+      <text x={cx + holeHW + 14} y={mdToY(totalMD) + 14} fontSize="9" fill="#FF6B35" fontFamily="sans-serif" fontWeight="600">
+        Башмак {totalMD}м
+      </text>
+      {/* Previous casing label (left) */}
+      {wellData.prevCasingDepth > 0 && (
+        <text x={cx - holeHW - 14} y={mdToY(wellData.prevCasingDepth) + 3} fontSize="8" fill="#aaa" fontFamily="sans-serif" textAnchor="end">
+          Конд. {wellData.prevCasingDepth}м
+        </text>
+      )}
 
-      {/* Dimension labels */}
-      <text x={cx} y={marginTop - 8} fontSize="10" fill="#aaa" fontFamily="sans-serif" textAnchor="middle">∅{wellData.holeDiameter} / ∅{wellData.casingOD}×{wellData.casingWall} мм</text>
-      <text x={marginLeft - 7} y={marginTop - 5} fontSize="9" fill="#888" fontFamily="sans-serif" textAnchor="end">MD, м</text>
+      {/* Dimension labels (top) */}
+      <text x={cx} y={marginTop - 12} fontSize="10" fill="#bbb" fontFamily="sans-serif" textAnchor="middle">
+        ∅{wellData.holeDiameter} / ∅{wellData.casingOD}×{wellData.casingWall} мм
+      </text>
+      <text x={marginLeft - 8} y={marginTop - 8} fontSize="9" fill="#888" fontFamily="sans-serif" textAnchor="end">MD, м</text>
     </svg>
   );
 }
