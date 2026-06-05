@@ -1,52 +1,94 @@
 /**
- * Foam Cementing calculation engine.
- * Computes foam quality, density profile, N₂ volume and rate by depth
- * with iterative top-down pressure integration and N₂ real-gas Z-factor.
+ * Foam Cementing — comprehensive engine.
+ * A) Static profile by depth (iterative pressure, Z-factor N₂)
+ * B) Dynamic profile by time (pumping simulation, BHP/ECD/N₂ rate)
  */
 
-import { interpolateTVD, type TrajectoryPoint } from "./cementing-calculations";
+import {
+  interpolateTVD,
+  getCasingID,
+  type TrajectoryPoint,
+  type WellData,
+} from "./cementing-calculations";
 
-/* ───── Types ───── */
+/* ──────────── Constants ──────────── */
+
+const ATM_MPA = 0.101325;
+const STD_TEMP_K = 293.15;
+const M_N2 = 0.028014; // kg/mol
+const R = 8.314;
+const N2_TC = 126.2;
+const N2_PC = 3.39;
+const G = 9.81;
+
+/* ──────────── Helpers ──────────── */
+
+function areaM2(diamMm: number): number {
+  const d = diamMm / 1000;
+  return (Math.PI / 4) * d * d;
+}
+function annAreaM2(outerMm: number, innerMm: number): number {
+  return areaM2(outerMm) - areaM2(innerMm);
+}
+
+/** Papay correlation for N₂ Z-factor (±3% up to 30 MPa) */
+export function calcN2ZFactor(pressureMPa: number, tempK: number): number {
+  if (pressureMPa <= ATM_MPA) return 1;
+  const Tr = Math.max(0.5, tempK / N2_TC);
+  const Pr = pressureMPa / N2_PC;
+  const Z =
+    1 -
+    (3.53 * Pr) / Math.pow(10, 0.9813 * Tr) +
+    (0.274 * Pr * Pr) / Math.pow(10, 0.8157 * Tr);
+  return Math.max(0.3, Math.min(1.5, Z));
+}
+
+function n2DensityKgM3(pressureMPa: number, tempK: number): number {
+  const Z = calcN2ZFactor(pressureMPa, tempK);
+  return (pressureMPa * 1e6 * M_N2) / (Z * R * tempK);
+}
+
+/* ──────────── A. STATIC PROFILE ──────────── */
 
 export interface FoamCementInput {
-  baseDensity: number;           // базовая плотность цемента, г/см³
-  targetFoamQuality: number;     // целевое качество пены, % (20–80)
-  backPressure: number;          // обратное давление, МПа
-  surfaceTemperature: number;    // температура на устье, °C
-  bottomTemperature: number;     // температура на забое, °C
-  wellDepthMD: number;           // глубина скважины, м
-  casingDepthMD: number;         // глубина спуска ОК, м
-  holeDiameter: number;          // диаметр ствола, мм
-  casingOD: number;              // наружный диаметр ОК, мм
-  cementTopMD: number;           // кровля цемента, м
-  cementBottomMD: number;        // подошва цемента, м
+  baseDensity: number;
+  targetFoamQuality: number;
+  backPressure: number;
+  surfaceTemperature: number;
+  bottomTemperature: number;
+  wellDepthMD: number;
+  casingDepthMD: number;
+  holeDiameter: number;
+  casingOD: number;
+  cementTopMD: number;
+  cementBottomMD: number;
   trajectory: TrajectoryPoint[];
-  mudDensity: number;            // плотность бурового раствора, г/см³
-  cavernCoeff?: number;          // кавернозность открытого ствола (1.0 = нет)
-  pumpingTimeMin?: number;       // фактическое время закачки, мин
-  pumpRateLps?: number;          // расход закачки базовой суспензии, л/с
+  mudDensity: number;
+  cavernCoeff?: number;
+  pumpingTimeMin?: number;
+  pumpRateLps?: number;
 }
 
 export interface FoamCementPoint {
   md: number;
   tvd: number;
-  pressure: number;              // МПа (гидростатическое суммарное)
-  temperature: number;           // °C
-  foamQuality: number;           // % (0–100)
-  foamDensity: number;           // г/см³
-  n2VolumeRatio: number;         // объёмная доля N₂ на этой глубине
-  compressionFactor: number;     // V_std / V_depth (для справки)
-  zFactor: number;               // Z-фактор N₂ на данных P,T
+  pressure: number;
+  temperature: number;
+  foamQuality: number;
+  foamDensity: number;
+  n2VolumeRatio: number;
+  compressionFactor: number;
+  zFactor: number;
 }
 
 export interface FoamCementResult {
   points: FoamCementPoint[];
-  initialVolumeM3: number;       // объём пеноцемента на устье (суспензия + газ при P_surface)
-  finalVolumeM3: number;         // объём пеноцемента в скважине (полный кольцевой объём)
-  slurryVolumeM3: number;        // объём базовой суспензии (без газа)
-  n2VolumeStdM3: number;         // объём N₂ при стандартных условиях, м³
-  n2RateM3PerMin: number;        // средний расход N₂, м³/мин (стд.)
-  pumpingTimeMin: number;        // принятое время закачки, мин
+  initialVolumeM3: number;
+  finalVolumeM3: number;
+  slurryVolumeM3: number;
+  n2VolumeStdM3: number;
+  n2RateM3PerMin: number;
+  pumpingTimeMin: number;
   avgFoamQuality: number;
   minFoamQuality: number;
   maxFoamQuality: number;
@@ -56,205 +98,439 @@ export interface FoamCementResult {
   ecdProfile: { md: number; ecd: number }[];
 }
 
-/* ───── Constants ───── */
-
-const ATM_MPA = 0.101325;        // атмосферное давление, МПа
-const STD_TEMP_K = 293.15;       // стандартная температура, K (20°C)
-const R_J_MOL_K = 8.314;         // универс. газовая постоянная, Дж/(моль·K)
-const M_N2_KG_MOL = 0.028014;    // молярная масса N₂, кг/моль
-const N2_TC_K = 126.2;           // критическая температура N₂, K
-const N2_PC_MPA = 3.39;          // критическое давление N₂, МПа
-
-/* ───── Helpers ───── */
-
-function areaM2(diamMm: number): number {
-  const d = diamMm / 1000;
-  return (Math.PI / 4) * d * d;
-}
-
-function annAreaM2(outerMm: number, innerMm: number): number {
-  return areaM2(outerMm) - areaM2(innerMm);
-}
-
-/**
- * Z-фактор N₂ — упрощённая корреляция через приведённые параметры
- * (точность ±2–5% до 50 МПа в диапазоне 280–400 K).
- */
-export function calcN2CompressibilityFactor(pressureMPa: number, tempK: number): number {
-  if (pressureMPa <= ATM_MPA || tempK <= 0) return 1;
-  const Tr = tempK / N2_TC_K;
-  const Pr = pressureMPa / N2_PC_MPA;
-  // Корреляция типа Dranchuk-Abou-Kassem (сокращённая)
-  const A = 0.3265 - 1.0700 / Tr - 0.5339 / (Tr * Tr * Tr);
-  const B = 0.5475 - 0.7361 / Tr + 0.1844 / (Tr * Tr);
-  const rhoR = 0.27 * Pr / Tr; // приведённая плотность (нач. приближение)
-  let Z = 1 + A * rhoR + B * rhoR * rhoR;
-  Z = Math.max(0.3, Math.min(1.5, Z));
-  return Z;
-}
-
-/** Плотность N₂ из уравнения состояния реального газа, кг/м³ */
-function n2DensityKgM3(pressureMPa: number, tempK: number): number {
-  const Z = calcN2CompressibilityFactor(pressureMPa, tempK);
-  // PV = ZnRT → ρ = P·M / (Z·R·T)
-  return (pressureMPa * 1e6 * M_N2_KG_MOL) / (Z * R_J_MOL_K * tempK);
-}
-
-/* ───── Main Calculation ───── */
-
 export function calculateFoamCement(input: FoamCementInput): FoamCementResult {
   const {
     baseDensity, targetFoamQuality, backPressure,
     surfaceTemperature, bottomTemperature,
-    wellDepthMD, casingDepthMD, holeDiameter, casingOD,
+    casingDepthMD, holeDiameter, casingOD,
     cementTopMD, cementBottomMD, trajectory, mudDensity,
   } = input;
 
   const cavernCoeff = input.cavernCoeff ?? 1.0;
   const traj = trajectory.length > 1
     ? trajectory
-    : [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }, { md: wellDepthMD, azimuth: 0, zenith: 0, tvd: wellDepthMD }];
+    : [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }, { md: casingDepthMD, azimuth: 0, zenith: 0, tvd: casingDepthMD }];
 
-  // Кольцевая площадь с учётом кавернозности
-  const effectiveHoleDia = holeDiameter * Math.sqrt(cavernCoeff);
-  const annArea = annAreaM2(effectiveHoleDia, casingOD);
+  const effHole = holeDiameter * Math.sqrt(cavernCoeff);
+  const annArea = annAreaM2(effHole, casingOD);
   const cementLength = Math.max(0, cementBottomMD - cementTopMD);
-  const nSteps = 100;
-  const step = Math.max(0.5, cementLength / nSteps);
-  const points: FoamCementPoint[] = [];
+  const nSteps = 200;
+  const step = cementLength / nSteps;
 
-  // Поверхностные условия для целевого FQ
   const surfacePressure = backPressure + ATM_MPA;
-  const surfaceTempK = surfaceTemperature + 273.15;
-  // Соотношение V_gas / V_slurry при поверхностных условиях
-  const surfaceGasSlurryRatio = targetFoamQuality / (100 - targetFoamQuality);
+  const surfTK = surfaceTemperature + 273.15;
+  const surfGasR = targetFoamQuality / Math.max(0.0001, 100 - targetFoamQuality);
 
-  // Гидростатика мудовой колонны над кровлей цемента
   const topTVD = interpolateTVD(cementTopMD, traj);
-  // ρ[g/cm³] · g · h[м] / 1000 = МПа
-  let cumulativePressure = backPressure + mudDensity * 9.81 * topTVD / 1000;
+  const bottomTVD = interpolateTVD(cementBottomMD, traj);
+  let cumulativePressure = backPressure + mudDensity * G * topTVD / 1000;
 
-  let totalN2StdM3 = 0;
-  let sumFQ = 0, sumDens = 0, count = 0;
-  let minFQ = 100, maxFQ = 0;
-  let minDens = baseDensity, maxDens = 0;
+  const points: FoamCementPoint[] = [];
+  let prevTVD = topTVD;
+  let totalN2Std = 0;
+  let sumFQ = 0, sumDens = 0, minFQ = 100, maxFQ = 0, minDens = baseDensity, maxDens = 0;
   const ecdProfile: { md: number; ecd: number }[] = [];
 
-  let prevTVD = topTVD;
+  for (let i = 0; i <= nSteps; i++) {
+    const md = cementTopMD + i * step;
+    const tvd = interpolateTVD(md, traj);
+    const dTvd = Math.max(0, tvd - prevTVD);
 
-  // Итеративный проход сверху вниз: давление на текущей точке
-  // строится из накопленного давления + dP от плотности этого слоя.
-  for (let md = cementTopMD; md <= cementBottomMD + 1e-6; md += step) {
-    const mdCur = Math.min(md, cementBottomMD);
-    const tvd = interpolateTVD(mdCur, traj);
-
-    // Температура (линейный градиент по TVD)
-    const bottomTVD = interpolateTVD(cementBottomMD, traj);
     const tempFrac = bottomTVD > topTVD ? (tvd - topTVD) / (bottomTVD - topTVD) : 0;
-    const temperature = surfaceTemperature + tempFrac * (bottomTemperature - surfaceTemperature);
-    const tempK = temperature + 273.15;
+    const tempC = surfaceTemperature + tempFrac * (bottomTemperature - surfaceTemperature);
+    const tempK = tempC + 273.15;
 
-    // FQ на текущем давлении (из предыдущего шага — итеративно)
-    const depthGasSlurryRatio = surfaceGasSlurryRatio
-      * (surfacePressure * tempK) / (cumulativePressure * surfaceTempK)
-      * calcN2CompressibilityFactor(cumulativePressure, tempK); // Z увеличивает реальный объём
-    const foamQuality = Math.max(0, Math.min(100, (depthGasSlurryRatio / (1 + depthGasSlurryRatio)) * 100));
+    const Z = calcN2ZFactor(cumulativePressure, tempK);
+    const depthGasR = surfGasR * (surfacePressure * tempK) / (cumulativePressure * surfTK) * Z;
+    const foamQuality = Math.max(0, Math.min(100, (depthGasR / (1 + depthGasR)) * 100));
+    const n2Dens = n2DensityKgM3(cumulativePressure, tempK) / 1000;
+    const foamDensity = baseDensity * (1 - foamQuality / 100) + n2Dens * (foamQuality / 100);
 
-    // Плотность N₂ при реальном газе
-    const n2DensG = n2DensityKgM3(cumulativePressure, tempK) / 1000; // г/см³
-    // Плотность пеноцемента (объёмная смесь)
-    const foamDensity = baseDensity * (1 - foamQuality / 100) + n2DensG * (foamQuality / 100);
-
-    // Приращение давления от ЭТОГО слоя (по реальной плотности пеноцемента)
-    const dTvd = tvd - prevTVD;
-    if (dTvd > 0) {
-      const dP = foamDensity * 9.81 * dTvd / 1000; // МПа
-      cumulativePressure += dP;
-    }
+    if (dTvd > 0) cumulativePressure += foamDensity * G * dTvd / 1000;
     prevTVD = tvd;
 
-    const Z = calcN2CompressibilityFactor(cumulativePressure, tempK);
     const compressionFactor = (ATM_MPA * tempK) / (cumulativePressure * STD_TEMP_K * Z);
 
-    const pt: FoamCementPoint = {
-      md: mdCur,
-      tvd,
-      pressure: cumulativePressure,
-      temperature,
-      foamQuality,
-      foamDensity,
-      n2VolumeRatio: foamQuality / 100,
-      compressionFactor,
-      zFactor: Z,
-    };
-    points.push(pt);
-
+    points.push({
+      md, tvd, pressure: cumulativePressure, temperature: tempC,
+      foamQuality, foamDensity,
+      n2VolumeRatio: foamQuality / 100, compressionFactor, zFactor: Z,
+    });
     sumFQ += foamQuality;
     sumDens += foamDensity;
-    count++;
     if (foamQuality < minFQ) minFQ = foamQuality;
     if (foamQuality > maxFQ) maxFQ = foamQuality;
     if (foamDensity < minDens) minDens = foamDensity;
     if (foamDensity > maxDens) maxDens = foamDensity;
-
-    if (tvd > 0) {
-      const ecd = cumulativePressure / (9.81 * tvd / 1000); // г/см³
-      ecdProfile.push({ md: mdCur, ecd });
-    }
-
-    if (mdCur >= cementBottomMD) break;
+    if (tvd > 0) ecdProfile.push({ md, ecd: cumulativePressure / (G * tvd / 1000) });
   }
 
-  // Объёмы. Полный объём пеноцемента в скважине = кольцевой объём:
+  const count = points.length;
   const finalVolumeM3 = annArea * cementLength;
-
-  // Объём базовой суспензии = ∑(annArea · dL · (1 − FQ/100))
-  // Поскольку FQ меняется с глубиной — интегрируем по сегментам.
   let slurryVolumeM3 = 0;
-  const segLen = count > 0 ? cementLength / count : 0;
+  const segLen = count > 1 ? cementLength / (count - 1) : 0;
   for (const pt of points) {
     slurryVolumeM3 += annArea * segLen * (1 - pt.foamQuality / 100);
-  }
-
-  // N₂ при стандартных условиях по сегментам с реальным Z
-  for (const pt of points) {
-    const gasVolAtDepth = annArea * segLen * pt.n2VolumeRatio;
-    // V_std = V_depth · P_depth/P_std · T_std/T_depth · 1/Z
+    const gasV = annArea * segLen * pt.n2VolumeRatio;
     const tempK = pt.temperature + 273.15;
-    const n2Std = gasVolAtDepth * pt.pressure / ATM_MPA * STD_TEMP_K / tempK / pt.zFactor;
-    totalN2StdM3 += n2Std;
+    totalN2Std += gasV * pt.pressure / ATM_MPA * STD_TEMP_K / tempK / pt.zFactor;
   }
-
-  // Объём смеси на устье (для оценки начального объёма перед закачкой):
-  // суспензия + газ при поверхностных условиях
   const initialVolumeM3 = slurryVolumeM3 / Math.max(1e-6, 1 - targetFoamQuality / 100);
 
-  // Время закачки
   let pumpingTimeMin: number;
-  if (input.pumpingTimeMin && input.pumpingTimeMin > 0) {
-    pumpingTimeMin = input.pumpingTimeMin;
-  } else if (input.pumpRateLps && input.pumpRateLps > 0) {
-    // м³ / (л/с · 0.06) = м³ / (м³/мин)
-    pumpingTimeMin = slurryVolumeM3 / (input.pumpRateLps * 0.06);
-  } else {
-    pumpingTimeMin = 60;
-  }
-  const n2RateM3PerMin = pumpingTimeMin > 0 ? totalN2StdM3 / pumpingTimeMin : 0;
+  if (input.pumpingTimeMin && input.pumpingTimeMin > 0) pumpingTimeMin = input.pumpingTimeMin;
+  else if (input.pumpRateLps && input.pumpRateLps > 0) pumpingTimeMin = slurryVolumeM3 / (input.pumpRateLps * 0.06);
+  else pumpingTimeMin = 60;
+  const n2RateM3PerMin = pumpingTimeMin > 0 ? totalN2Std / pumpingTimeMin : 0;
 
   return {
-    points,
-    initialVolumeM3,
-    finalVolumeM3,
-    slurryVolumeM3,
-    n2VolumeStdM3: totalN2StdM3,
-    n2RateM3PerMin,
-    pumpingTimeMin,
+    points, initialVolumeM3, finalVolumeM3, slurryVolumeM3,
+    n2VolumeStdM3: totalN2Std, n2RateM3PerMin, pumpingTimeMin,
     avgFoamQuality: count > 0 ? sumFQ / count : 0,
-    minFoamQuality: minFQ,
-    maxFoamQuality: maxFQ,
+    minFoamQuality: minFQ, maxFoamQuality: maxFQ,
     avgFoamDensity: count > 0 ? sumDens / count : 0,
-    minFoamDensity: minDens,
-    maxFoamDensity: maxDens,
+    minFoamDensity: minDens, maxFoamDensity: maxDens,
     ecdProfile,
+  };
+}
+
+/* ──────────── B. DYNAMIC TIME PROFILE ──────────── */
+
+export interface FoamPumpingInput {
+  wellData: WellData;
+  trajectory: TrajectoryPoint[];
+  mudDensity: number;        // g/cm³
+  baseDensity: number;       // g/cm³ (slurry only)
+  targetFoamQuality: number; // %
+  backPressure: number;      // MPa
+  surfaceTemperature: number;
+  bottomTemperature: number;
+  bufferVolume: number;      // m³
+  bufferDensity: number;     // g/cm³
+  pumpRateLps: number;       // l/s (base slurry rate)
+  cementTopMD: number;
+  cementBottomMD: number;
+  fractureGradient: number;  // kPa/m
+  cavernCoeff: number;
+}
+
+export interface FoamPressurePoint {
+  stage: string;
+  time: number;
+  surfacePressure: number;
+  bottomholePressure: number;
+  fracturePressure: number;
+  cumulativeVolume: number;
+  pumpRateLps: number;
+  n2RateStdM3min: number;
+  cumulativeN2StdM3: number;
+  foamQualitySurface: number;
+  foamQualityBottom: number;
+  foamDensitySurface: number;
+  foamDensityBottom: number;
+  slurryRateLps: number;
+  ecdAtBottom: number;
+  ecdStatic: number;
+  fracGradEcd: number;
+  annMudHeightM: number;
+  annBufferHeightM: number;
+  annFoamHeightM: number;
+  foamTopMD: number;
+  annularVelocityMps: number;
+}
+
+export interface FoamPumpingResult {
+  points: FoamPressurePoint[];
+  stageBoundaries: { time: number; label: string }[];
+  totalN2StdM3: number;
+  peakN2RateStdM3min: number;
+  totalBaseSlurryM3: number;
+  totalFoamVolumeAtSurfaceM3: number;
+  pumpingTimeMin: number;
+  bufferTimeMin: number;
+  foamTimeMin: number;
+  displacementTimeMin: number;
+  avgFoamDensityAnn: number;
+  maxBHPmpa: number;
+  maxECD: number;
+}
+
+/** Compute foam column hydrostatic + densities at top/bottom via top-down integration */
+function integrateFoamColumn(
+  topMD: number,
+  heightM: number,
+  pTopMpa: number,
+  input: FoamPumpingInput,
+  traj: TrajectoryPoint[],
+): { pBottom: number; densTop: number; densBottom: number; fqTop: number; fqBottom: number; avgDens: number } {
+  if (heightM <= 0) {
+    return { pBottom: pTopMpa, densTop: input.baseDensity, densBottom: input.baseDensity, fqTop: input.targetFoamQuality, fqBottom: input.targetFoamQuality, avgDens: input.baseDensity };
+  }
+  const surfP = input.backPressure + ATM_MPA;
+  const surfTK = input.surfaceTemperature + 273.15;
+  const surfGasR = input.targetFoamQuality / Math.max(0.0001, 100 - input.targetFoamQuality);
+  const bottomTVDref = interpolateTVD(input.cementBottomMD, traj);
+  const topTVDref = interpolateTVD(input.cementTopMD, traj);
+
+  const slices = 30;
+  const dh = heightM / slices;
+  let p = pTopMpa;
+  let densTop = input.baseDensity, fqTop = input.targetFoamQuality;
+  let densBottom = densTop, fqBottom = fqTop;
+  let sumDens = 0, count = 0;
+  let prevTVD = interpolateTVD(topMD, traj);
+
+  for (let i = 0; i <= slices; i++) {
+    const md = topMD + i * dh;
+    const tvd = interpolateTVD(md, traj);
+    const tempFrac = bottomTVDref > topTVDref ? Math.max(0, Math.min(1, (tvd - topTVDref) / (bottomTVDref - topTVDref))) : 0;
+    const tempC = input.surfaceTemperature + tempFrac * (input.bottomTemperature - input.surfaceTemperature);
+    const tempK = tempC + 273.15;
+    const Z = calcN2ZFactor(p, tempK);
+    const depthGasR = surfGasR * (surfP * tempK) / (p * surfTK) * Z;
+    const fq = Math.max(0, Math.min(100, (depthGasR / (1 + depthGasR)) * 100));
+    const n2D = n2DensityKgM3(p, tempK) / 1000;
+    const dens = input.baseDensity * (1 - fq / 100) + n2D * (fq / 100);
+    if (i === 0) { densTop = dens; fqTop = fq; }
+    densBottom = dens; fqBottom = fq;
+    sumDens += dens; count++;
+    const dTVD = Math.max(0, tvd - prevTVD);
+    if (dTVD > 0) p += dens * G * dTVD / 1000;
+    prevTVD = tvd;
+  }
+  return { pBottom: p, densTop, densBottom, fqTop, fqBottom, avgDens: count > 0 ? sumDens / count : input.baseDensity };
+}
+
+/**
+ * Approximate height in annulus consumed by a given volume,
+ * walking from bottom of stack upward against `annArea`.
+ */
+function volToHeight(volM3: number, annArea: number): number {
+  return volM3 / Math.max(1e-9, annArea);
+}
+
+export function calculateFoamPressureProfile(input: FoamPumpingInput): FoamPumpingResult {
+  const traj = input.trajectory.length > 1 ? input.trajectory : [
+    { md: 0, azimuth: 0, zenith: 0, tvd: 0 },
+    { md: input.wellData.casingDepthMD, azimuth: 0, zenith: 0, tvd: input.wellData.casingDepthMD },
+  ];
+  const wd = input.wellData;
+  const casingID = getCasingID(wd.casingOD, wd.casingWall);
+  const pipeArea = areaM2(casingID);
+  const pipeCapacity = pipeArea * wd.casingDepthMD;
+
+  const effHole = wd.holeDiameter * Math.sqrt(input.cavernCoeff || 1);
+  const annArea = annAreaM2(effHole, wd.casingOD);
+  const annTotalVolume = annArea * wd.casingDepthMD;
+  const foamAnnVolume = annArea * Math.max(0, input.cementBottomMD - input.cementTopMD);
+
+  const slurryRate = Math.max(0.1, input.pumpRateLps);
+  const foamRateSurface = slurryRate / Math.max(0.0001, 1 - input.targetFoamQuality / 100);
+  const n2RateSurfaceLps = foamRateSurface - slurryRate;
+
+  // Volumes (surface basis)
+  const bufferVol = Math.max(0, input.bufferVolume);
+  const baseSlurryNeeded = foamAnnVolume; // slurry volume = annular foam volume (gas fills the rest)
+  const foamVolSurface = baseSlurryNeeded / Math.max(0.0001, 1 - input.targetFoamQuality / 100);
+  const displacementVol = pipeCapacity;
+
+  const bufferTimeMin = bufferVol / (slurryRate * 0.06);
+  const foamTimeMin = foamVolSurface / (foamRateSurface * 0.06);
+  const dispTimeMin = displacementVol / (slurryRate * 0.06);
+  const pumpingTimeMin = bufferTimeMin + foamTimeMin + dispTimeMin;
+
+  const bottomTVD = interpolateTVD(input.cementBottomMD, traj);
+  const fracPMpa = input.fractureGradient * bottomTVD / 1000; // kPa/m × m → kPa → /1000 MPa
+  const fracGradEcd = input.fractureGradient / G; // approx g/cm³
+
+  const dtMin = 0.5;
+  const points: FoamPressurePoint[] = [];
+  const stageBoundaries: { time: number; label: string }[] = [];
+  let cumTime = 0;
+  let cumBaseSlurryPumped = 0; // m³ slurry equivalent
+  let cumFoamPumpedSurface = 0; // m³ foam at surface
+  let cumBufferPumped = 0;
+  let cumDispPumped = 0;
+  let cumN2Std = 0;
+  let peakN2 = 0;
+  let maxBHP = 0, maxECD = 0;
+  let sumFoamDensAnn = 0, foamDensCount = 0;
+
+  const phases: Array<{ name: string; durationMin: number; kind: "buffer" | "foam" | "disp" }> = [
+    { name: "Буфер", durationMin: bufferTimeMin, kind: "buffer" },
+    { name: "Пеноцемент", durationMin: foamTimeMin, kind: "foam" },
+    { name: "Продавка", durationMin: dispTimeMin, kind: "disp" },
+  ];
+
+  stageBoundaries.push({ time: 0, label: "Начало" });
+
+  for (const phase of phases) {
+    if (phase.durationMin <= 0) {
+      stageBoundaries.push({ time: cumTime, label: phase.name });
+      continue;
+    }
+    const steps = Math.max(1, Math.round(phase.durationMin / dtMin));
+    const stepDt = phase.durationMin / steps;
+
+    for (let s = 0; s < steps; s++) {
+      cumTime += stepDt;
+      const isFoam = phase.kind === "foam";
+      const currentSlurryRate = slurryRate;
+      const currentFoamRate = isFoam ? foamRateSurface : currentSlurryRate;
+      const slurryStep = currentSlurryRate * 0.06 * stepDt;
+      const foamStep = currentFoamRate * 0.06 * stepDt;
+
+      if (phase.kind === "buffer") cumBufferPumped += slurryStep;
+      if (phase.kind === "foam") cumFoamPumpedSurface += foamStep;
+      if (phase.kind === "disp") cumDispPumped += slurryStep;
+      cumBaseSlurryPumped += slurryStep;
+
+      // ── Annulus composition ──
+      // Total volume that has exited the casing into annulus = cumulative pumped surface volume above pipe capacity.
+      // Order pumped (surface): buffer → foam (surface) → displacement.
+      const totalSurfacePumped = cumBufferPumped + cumFoamPumpedSurface + cumDispPumped;
+      const annExitedSurface = Math.max(0, totalSurfacePumped - pipeCapacity);
+
+      // Slices in annulus from bottom up: first that exits goes to bottom (no, displacing mud upward → first exits goes to bottom of annulus and pushes mud up).
+      // Sequence at annulus bottom (oldest first): buffer (bottom), then foam, then displacement at top.
+      // Cumulative tracking in annulus:
+      let bufferInAnn = Math.min(cumBufferPumped, annExitedSurface);
+      let remaining = annExitedSurface - bufferInAnn;
+      // For foam, surface→downhole the volume compresses. Estimate foam volume in annulus
+      // by integrating slurry-side: the volume of foam (downhole) = base slurry that has reached annulus.
+      // Base slurry exited = max(0, cumBaseSlurryPumped - pipeCapacity - cumBufferPumped) approximation.
+      const slurryFoamExited = Math.max(0, cumBaseSlurryPumped - pipeCapacity - cumBufferPumped - cumDispPumped);
+      // Foam downhole volume ≈ slurryFoamExited (since gas at high P shrinks → ~slurry vol)
+      const foamInAnnDownhole = Math.min(foamAnnVolume, slurryFoamExited);
+      // Displacement in annulus (mud) — happens only if foam fully placed
+      const dispInAnn = Math.max(0, annExitedSurface - bufferInAnn - foamInAnnDownhole);
+
+      const bufferH = volToHeight(bufferInAnn, annArea);
+      const foamH = volToHeight(foamInAnnDownhole, annArea);
+      const dispH = volToHeight(dispInAnn, annArea);
+      const mudH = Math.max(0, wd.casingDepthMD - bufferH - foamH - dispH);
+
+      // ── Hydrostatic from surface to bottom ──
+      // Order top→bottom: mud, displacement (over foam? no — displacement is at top of annulus AFTER foam fills bottom)
+      // Actually annulus order bottom→top: buffer | foam | displacement | mud(unreplaced)
+      // Wait. As fluids exit casing → they enter annulus at SHOE (bottom). First exited is at bottom.
+      // So bottom→top: BUFFER(first) → FOAM → DISP → MUD(remaining original)
+      // Top→bottom (for pressure integration): MUD, DISP(mud), FOAM, BUFFER
+      let p = input.backPressure;
+      let curTVD = 0;
+
+      // Mud column at top
+      if (mudH > 0) {
+        const topMD = 0;
+        const botMD = mudH;
+        const botTVD = interpolateTVD(botMD, traj);
+        p += input.mudDensity * G * (botTVD - curTVD) / 1000;
+        curTVD = botTVD;
+      }
+      // Displacement (mud-like) column
+      if (dispH > 0) {
+        const topMD = mudH;
+        const botMD = mudH + dispH;
+        const botTVD = interpolateTVD(botMD, traj);
+        p += input.mudDensity * G * (botTVD - curTVD) / 1000;
+        curTVD = botTVD;
+      }
+      // Foam column (variable density)
+      let foamDensTopVal = input.baseDensity, foamDensBotVal = input.baseDensity, fqTopVal = input.targetFoamQuality, fqBotVal = input.targetFoamQuality;
+      if (foamH > 0) {
+        const topMD = mudH + dispH;
+        const integ = integrateFoamColumn(topMD, foamH, p, input, traj);
+        p = integ.pBottom;
+        foamDensTopVal = integ.densTop;
+        foamDensBotVal = integ.densBottom;
+        fqTopVal = integ.fqTop;
+        fqBotVal = integ.fqBottom;
+        sumFoamDensAnn += integ.avgDens;
+        foamDensCount++;
+        curTVD = interpolateTVD(topMD + foamH, traj);
+      }
+      // Buffer column at bottom
+      if (bufferH > 0) {
+        const topMD = mudH + dispH + foamH;
+        const botMD = Math.min(wd.casingDepthMD, topMD + bufferH);
+        const botTVD = interpolateTVD(botMD, traj);
+        p += input.bufferDensity * G * (botTVD - curTVD) / 1000;
+        curTVD = botTVD;
+      }
+      // Extend to bottom if anything missing
+      if (curTVD < bottomTVD) {
+        p += input.mudDensity * G * (bottomTVD - curTVD) / 1000;
+      }
+
+      const bhp = p;
+      const ecd = bottomTVD > 0 ? bhp / (G * bottomTVD / 1000) : 0;
+
+      // ── Surface pressure (simplified: friction stub) ──
+      // Friction-free assumption; surface P ≈ pump pressure to push fluid down inside pipe & up annulus
+      // For dynamic display we estimate ΔP = BHP_ann - hydrostatic_inside_pipe
+      // Inside pipe: at this snapshot, pipe is mostly filled with whatever was pumped last.
+      // Use mud-density approximation for inside (acceptable since pipe holds displacement mud in late stage).
+      const innerHydro = input.mudDensity * G * bottomTVD / 1000;
+      const surfP = Math.max(0, bhp - innerHydro + input.backPressure);
+
+      // ── N₂ rate ──
+      let n2RateStd = 0;
+      if (isFoam) {
+        const surfaceP = input.backPressure + ATM_MPA;
+        const surfTK = input.surfaceTemperature + 273.15;
+        // N₂ at surface conditions → std: V_std = V_surf × P/P_std × T_std/T
+        const n2VolPerMin_surf = n2RateSurfaceLps * 60 / 1000; // m³/min at surface
+        n2RateStd = n2VolPerMin_surf * surfaceP / ATM_MPA * STD_TEMP_K / surfTK;
+        cumN2Std += n2RateStd * stepDt;
+        if (n2RateStd > peakN2) peakN2 = n2RateStd;
+      }
+
+      maxBHP = Math.max(maxBHP, bhp);
+      maxECD = Math.max(maxECD, ecd);
+
+      const annVelMps = (currentFoamRate / 1000) / annArea;
+      const foamSurfDens = isFoam ? input.baseDensity * (1 - input.targetFoamQuality / 100) : (phase.kind === "buffer" ? input.bufferDensity : input.mudDensity);
+
+      points.push({
+        stage: phase.name,
+        time: cumTime,
+        surfacePressure: surfP,
+        bottomholePressure: bhp,
+        fracturePressure: fracPMpa,
+        cumulativeVolume: cumBaseSlurryPumped,
+        pumpRateLps: currentSlurryRate,
+        n2RateStdM3min: n2RateStd,
+        cumulativeN2StdM3: cumN2Std,
+        foamQualitySurface: isFoam ? input.targetFoamQuality : 0,
+        foamQualityBottom: foamH > 0 ? fqBotVal : (isFoam ? input.targetFoamQuality : 0),
+        foamDensitySurface: foamSurfDens,
+        foamDensityBottom: foamH > 0 ? foamDensBotVal : foamSurfDens,
+        slurryRateLps: currentSlurryRate,
+        ecdAtBottom: ecd,
+        ecdStatic: ecd,
+        fracGradEcd,
+        annMudHeightM: mudH,
+        annBufferHeightM: bufferH,
+        annFoamHeightM: foamH,
+        foamTopMD: mudH + dispH,
+        annularVelocityMps: annVelMps,
+      });
+    }
+    stageBoundaries.push({ time: cumTime, label: phase.name });
+  }
+
+  return {
+    points, stageBoundaries,
+    totalN2StdM3: cumN2Std,
+    peakN2RateStdM3min: peakN2,
+    totalBaseSlurryM3: baseSlurryNeeded,
+    totalFoamVolumeAtSurfaceM3: foamVolSurface,
+    pumpingTimeMin,
+    bufferTimeMin,
+    foamTimeMin,
+    displacementTimeMin: dispTimeMin,
+    avgFoamDensityAnn: foamDensCount > 0 ? sumFoamDensAnn / foamDensCount : input.baseDensity,
+    maxBHPmpa: maxBHP,
+    maxECD,
   };
 }
