@@ -286,7 +286,7 @@ export function calculateComplications(
     : 0;
 
   // Contamination depth at bottom
-  const contaminationDepth = Math.min(
+  let contaminationDepth = Math.min(
     volumeLostM3 > 0 ? (volumeLostM3 / annArea) * 0.5 : 0,
     plugLenAnn * 0.3
   );
