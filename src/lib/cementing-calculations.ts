@@ -267,6 +267,7 @@ export interface VolumeResults {
   slurryVolumes: SlurryVolumeResult[];
   totalSlurryVolume: number;
   plugVolume: number; // объём цементного стакана (внутри ОК от ЦКОД до башмака), м³
+  warnings?: { type: 'error' | 'warning'; message: string }[];
 }
 
 export interface CementResults {
