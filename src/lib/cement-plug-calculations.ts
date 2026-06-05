@@ -141,6 +141,8 @@ export interface PlugResults {
   annArea: number;
   pipeArea: number;
   plugLengthMD: number;
+  plugTopMD: number;
+  plugBottomMD: number;
   plugTopTVD: number;
   plugBottomTVD: number;
   plugLengthTVD: number;
@@ -748,6 +750,8 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     annArea: annA,
     pipeArea: pipeA,
     plugLengthMD: plugLenMD,
+    plugTopMD: plug.topMD,
+    plugBottomMD: plug.bottomMD,
     plugTopTVD,
     plugBottomTVD,
     plugLengthTVD: plugLenTVD,

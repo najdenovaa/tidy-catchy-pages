@@ -80,6 +80,12 @@ export interface ComplicationResult {
   fillTimeMin: number;
   /** Volume lost to formation during placement, m³ */
   volumeLostM3: number;
+  /** Cement volume lost to formation, m³ */
+  cementLostM3: number;
+  /** Lower viscous pad volume lost to formation, m³ */
+  padLostM3: number;
+  /** Downward settlement of cement after lower losses, m */
+  settlementM: number;
   /** Real cement volume remaining, m³ */
   realCementVolumeM3: number;
   /** Real plug length, m */
@@ -102,6 +108,10 @@ export interface ComplicationResult {
   hasViscousPadBelow: boolean;
   /** Designed pad height in annulus, m */
   padHeightMD: number;
+  /** Designed lower viscous pad top MD */
+  designedPadTopMD: number;
+  /** Designed lower viscous pad bottom MD */
+  designedPadBottomMD: number;
   /** Real pad top MD (after kick invasion), m */
   realPadTopMD: number;
   /** Real pad bottom MD (after kick invasion), m */
@@ -284,6 +294,18 @@ export function calculateComplications(
       break;
   }
 
+  const finalBoreArea = plugLenAnn > 0 && params.cementVolumeTotalM3 > 0
+    ? params.cementVolumeTotalM3 / plugLenAnn
+    : Math.max(annArea + params.pipeAreaM2, annArea, 1e-6);
+  const totalArea = finalBoreArea;
+  const padHeightMD = usePadInZone && totalArea > 0
+    ? params.spacerVolumeBelowM3 / totalArea
+    : 0;
+  const designedPlugTopMD = params.plugTopMD;
+  const designedPlugBottomMD = params.plugBottomMD;
+  const designedPadTopMD = designedPlugBottomMD;
+  const designedPadBottomMD = designedPlugBottomMD + padHeightMD;
+
   // ── Factor 7: Geometric position of complication zone vs plug ──
   // КЛЮЧЕВАЯ ЛОГИКА: потери возникают ТОЛЬКО там, где цемент контактирует с зоной.
   //  • Зона ВНУТРИ моста   → прямой контакт, полные потери (фактор = 1.0)
@@ -297,21 +319,24 @@ export function calculateComplications(
   const plugBot = params.plugBottomMD;
 
   let zonePositionFactor = 1.0;
-  let zonePosition: 'inside' | 'below' | 'above' | 'unknown' = 'unknown';
+  let zonePosition: 'insideCement' | 'insidePad' | 'belowPad' | 'above' | 'unknown' = 'unknown';
   let distanceToZoneM = 0;
 
   if (zoneMD > 0) {
     if (zoneBotMD >= plugTop && zoneTopMD <= plugBot) {
-      zonePosition = 'inside';
+      zonePosition = 'insideCement';
       zonePositionFactor = 1.0;
+    } else if (usePadInZone && padHeightMD > 0 && zoneBotMD >= designedPadTopMD && zoneTopMD <= designedPadBottomMD) {
+      zonePosition = 'insidePad';
+      zonePositionFactor = Math.max(0.04, 0.18 - Math.min(params.spacerVolumeBelowM3, 2) * 0.04 - Math.min(effectiveGel, 80) / 1000);
     } else if (zoneTopMD > plugBot) {
-      zonePosition = 'below';
-      distanceToZoneM = zoneTopMD - plugBot;
-      // Без пачки: ~30% базовых потерь. С пачкой: 5–15% (СНС + объём пачки гасят канал).
+      zonePosition = 'belowPad';
+      distanceToZoneM = usePadInZone && padHeightMD > 0 ? Math.max(0, zoneTopMD - designedPadBottomMD) : zoneTopMD - plugBot;
+      // Ниже пачки/моста: потери передаются через столб жидкости; геометрию гасим расстоянием, но не прячем потери пачки.
       const padProtection = usePadInZone
-        ? Math.max(0.05, 0.20 - Math.min(params.spacerVolumeBelowM3, 2) * 0.06 - Math.min(effectiveGel, 60) / 600)
+        ? Math.max(0.20, 0.55 - Math.min(params.spacerVolumeBelowM3, 2) * 0.10 - Math.min(effectiveGel, 60) / 300)
         : 0.30;
-      const distAttenuation = Math.max(0.5, 1 - distanceToZoneM / 100);
+      const distAttenuation = Math.max(0.35, 1 - distanceToZoneM / 120);
       zonePositionFactor = padProtection * distAttenuation;
     } else if (zoneBotMD < plugTop) {
       zonePosition = 'above';
@@ -323,23 +348,38 @@ export function calculateComplications(
   // ── Combined effective loss rate ──
   const effectiveLossRateM3h = lossRateM3h * hydrostaticFactor * rheologyFactor * gelFactor * thickeningFactor * padBarrierFactor * behaviorFactor * zonePositionFactor;
 
-  // Volume lost during placement
+  // Volume lost during placement. Важно: ниже моста сначала уходит НИЖНЯЯ вязкая пачка,
+  // а цемент не может «подпрыгнуть» вверх. Потери снизу дают осадку колонны вниз.
   const lossRateM3s = effectiveLossRateM3h / 3600;
   const volumeLostM3 = lossRateM3s * totalOpTimeSec;
+  const zoneIntersectsPad = usePadInZone && padHeightMD > 0 && zoneBotMD >= designedPadTopMD && zoneTopMD <= designedPadBottomMD;
+  const zoneBelowCement = zoneTopMD >= designedPlugBottomMD;
+  const zoneIntersectsCement = zoneBotMD >= designedPlugTopMD && zoneTopMD <= designedPlugBottomMD;
 
-  // Real cement volume
-  const realCementVol = Math.max(0, params.cementVolumeTotalM3 - volumeLostM3);
-  const totalArea = annArea + params.pipeAreaM2;
+  let padLostM3 = 0;
+  let cementLostM3 = 0;
+  if (type === 'loss' || type === 'both') {
+    if (usePadInZone && (zoneIntersectsPad || zoneBelowCement)) {
+      padLostM3 = Math.min(volumeLostM3, params.spacerVolumeBelowM3);
+      cementLostM3 = Math.max(0, volumeLostM3 - padLostM3);
+    } else if (zoneIntersectsCement || !usePadInZone) {
+      cementLostM3 = volumeLostM3;
+    }
+  }
+
+  const padLostHeightM = totalArea > 0 ? padLostM3 / totalArea : 0;
+  const settlementM = Math.min(padHeightMD, padLostHeightM);
+  const realCementVol = Math.max(0, params.cementVolumeTotalM3 - cementLostM3);
   const realPlugLength = totalArea > 0 ? realCementVol / totalArea : 0;
   const lossPercent = params.cementVolumeTotalM3 > 0
-    ? (volumeLostM3 / params.cementVolumeTotalM3) * 100
+    ? (cementLostM3 / params.cementVolumeTotalM3) * 100
     : 0;
 
-  // Contamination depth at bottom
-  let contaminationDepth = Math.min(
-    volumeLostM3 > 0 ? (volumeLostM3 / annArea) * 0.5 : 0,
+  // Contamination depth at bottom. Если потери приняла нижняя пачка — цемент чистый, только просел.
+  let contaminationDepth = cementLostM3 > 0 ? Math.min(
+    (cementLostM3 / totalArea) * 0.5,
     plugLenAnn * 0.3
-  );
+  ) : 0;
 
   // ═══ KICK CALCULATIONS ═══
   const plugBottomTVD = params.plugBottomTVD;
@@ -354,12 +394,8 @@ export function calculateComplications(
     : cement.densityGcm3;
 
   // ═══ REAL PLUG INTERVALS (с учётом нижней вязкой пачки) ═══
-  // Если применяется вязкая пачка снизу — она занимает нижнюю часть моста (под цементом),
-  // выполняя роль барьера против поглощения / прорыва. Цемент садится ПОВЕРХ пачки.
-  const padHeightMD = usePadInZone && totalArea > 0
-    ? params.spacerVolumeBelowM3 / totalArea
-    : 0;
-
+  // Нижняя пачка находится ПОД подошвой цементного моста: plugBottom → plugBottom + height.
+  // При поглощении ниже башмака/подошвы уходит пачка, а цементная колонна оседает вниз.
   // Прорыв пластового флюида сначала «съедает» вязкую пачку, и только затем цемент.
   let kickInvasionM = 0;
   let padInvasionM = 0;
@@ -377,40 +413,28 @@ export function calculateComplications(
     contaminationDepth = Math.max(contaminationDepth, cementInvasionM);
   }
 
-  // При поглощении пачка тоже частично защищает низ цемента (часть потерь — пачка, не цемент).
-  if ((type === 'loss' || type === 'both') && usePadInZone && padHeightMD > 0) {
-    // Загрязнение цемента уменьшается на высоту пачки (пачка «принимает удар»).
-    contaminationDepth = Math.max(0, contaminationDepth - padHeightMD * 0.5);
-  }
-
-  const designedPlugTopMD = params.plugTopMD;
-  const designedPlugBottomMD = params.plugBottomMD;
-  // Подошва вязкой пачки = проектная подошва моста.
-  // Подошва ЦЕМЕНТА (проектная) = подошва моста − высота пачки.
-  const designedCementBottomMD = designedPlugBottomMD - padHeightMD;
-  // Реальная подошва пачки приподнимается на padInvasionM (внедрение пластового флюида в пачку).
-  const realPadBottomMD = designedPlugBottomMD - padInvasionM;
-  const realPadTopMD = realPadBottomMD - Math.max(0, padHeightMD - padInvasionM);
-  // Реальная подошва цемента = подошва пачки (после внедрения) − глубина внедрения в цемент.
-  const realCementBottomMD = realPadTopMD - cementInvasionM;
-  // Высота цемента уменьшается на потери (объёмные потери / площадь).
+  const realPadTopMD = usePadInZone ? designedPadTopMD + settlementM + padInvasionM : designedPadTopMD;
+  const remainingPadHeightM = Math.max(0, padHeightMD - settlementM - padInvasionM);
+  const realPadBottomMD = usePadInZone ? realPadTopMD + remainingPadHeightM : designedPadBottomMD;
+  const realCementBottomMD = designedPlugBottomMD + settlementM - cementInvasionM;
   const realPlugTopMD = realCementBottomMD - realPlugLength;
-  // «Реальный мост» = от верха цемента до подошвы пачки (или цемента, если пачки нет).
-  const realPlugBottomMD = usePadInZone ? realPadBottomMD : realCementBottomMD;
-  // Чистый цемент (рабочий мост) = от верха до подошвы цемента минус контаминация.
-  const cleanPlugBottomMD = realCementBottomMD - (usePadInZone ? 0 : contaminationDepth);
+  const realPlugBottomMD = realCementBottomMD;
+  const cleanPlugBottomMD = realCementBottomMD - contaminationDepth;
   const cleanPlugTopMD = realPlugTopMD;
 
 
 
   // ═══ CORRECTED VOLUMES ═══
   const compensationFactor = 1.3; // 30% extra
-  const correctedCement = params.cementVolumeTotalM3 + volumeLostM3 * compensationFactor;
-  const correctedSpacerBelow = intensity === 'catastrophic'
+  const correctedCement = params.cementVolumeTotalM3 + cementLostM3 * compensationFactor;
+  const minSpacerByIntensity = intensity === 'catastrophic'
     ? Math.max(params.spacerVolumeBelowM3, 0.5)
     : intensity === 'intense'
       ? Math.max(params.spacerVolumeBelowM3, 0.3)
       : params.spacerVolumeBelowM3;
+  const correctedSpacerBelow = usePadInZone
+    ? Math.max(minSpacerByIntensity, params.spacerVolumeBelowM3 + padLostM3 * compensationFactor)
+    : minSpacerByIntensity;
 
   // ═══ TIME ANALYSIS ═══
   const totalOpTime = totalOpTimeMin;
@@ -464,12 +488,14 @@ export function calculateComplications(
   // ═══ ПОЗИЦИОННАЯ ДИАГНОСТИКА: правильно ли установлен мост относительно зоны ═══
   if (zoneMD > 0 && zonePosition !== 'unknown') {
     const zoneLabel = type === 'kick' || type === 'both' ? 'зона проявления' : 'зона поглощения';
-    if (zonePosition === 'inside') {
-      recs.push(`📍 ${zoneLabel[0].toUpperCase() + zoneLabel.slice(1)} (${zoneMD.toFixed(0)} м) находится ВНУТРИ моста (${plugTop.toFixed(0)}–${plugBot.toFixed(0)} м) — прямой контакт цемента с пластом. Это правильная схема для изоляции, но требует кольматантов/газоблокаторов в самом цементе.`);
-    } else if (zonePosition === 'below') {
+    if (zonePosition === 'insideCement') {
+      recs.push(`📍 ${zoneLabel[0].toUpperCase() + zoneLabel.slice(1)} (${zoneMD.toFixed(0)} м) находится В ТЕЛЕ цементного моста (${plugTop.toFixed(0)}–${plugBot.toFixed(0)} м) — прямой контакт цемента с пластом. Для поглощения это риск ухода цемента; для проявления — нужна низкопроницаемая рецептура.`);
+    } else if (zonePosition === 'insidePad') {
+      recs.push(`📍 ${zoneLabel[0].toUpperCase() + zoneLabel.slice(1)} (${zoneMD.toFixed(0)} м) попадает в НИЖНЮЮ вязкую пачку (${designedPadTopMD.toFixed(0)}–${designedPadBottomMD.toFixed(0)} м). При поглощении должна уходить пачка, цементный мост оседает вниз, но не поднимается вверх.`);
+    } else if (zonePosition === 'belowPad') {
       if (type === 'loss' || type === 'both') {
         if (usePadInZone && params.spacerVolumeBelowM3 >= 0.3) {
-          recs.push(`✅ Грамотная схема: ${zoneLabel} (${zoneMD.toFixed(0)} м) на ${distanceToZoneM.toFixed(0)} м НИЖЕ подошвы моста (${plugBot.toFixed(0)} м), снизу — вязкая пачка ${params.spacerVolumeBelowM3.toFixed(2)} м³. Пачка работает буфером, цемент в пласт не уходит (потери ≈${(zonePositionFactor*100).toFixed(0)}% от базовых).`);
+          recs.push(`✅ Схема допустима: ${zoneLabel} (${zoneMD.toFixed(0)} м) ниже вязкой пачки на ${distanceToZoneM.toFixed(0)} м. При поглощении сначала теряется нижняя пачка (${padLostM3.toFixed(2)} м³), цемент должен ПРОСЕСТЬ вниз примерно на ${settlementM.toFixed(1)} м; потери цемента: ${cementLostM3.toFixed(2)} м³.`);
         } else {
           recs.push(`⚠ ${zoneLabel[0].toUpperCase()+zoneLabel.slice(1)} (${zoneMD.toFixed(0)} м) на ${distanceToZoneM.toFixed(0)} м НИЖЕ подошвы моста. Без вязкой пачки снизу столб жидкости под мостом может «провалиться» в пласт — РЕКОМЕНДУЕТСЯ установить вязкую пачку ≥0.5 м³ (СНС ≥30 Па) между подошвой моста и кровлей зоны.`);
         }
@@ -481,10 +507,10 @@ export function calculateComplications(
     }
 
     // Рекомендации по идеальной схеме
-    if (zonePosition === 'below' && (type === 'loss' || type === 'both')) {
-      recs.push(`💡 Идеальная схема для борьбы с поглощением: цемент над зоной → вязкая пачка ПОВЕРХ кровли зоны (0.5–2 м³, СНС 30–80 Па) → между ними никакой буферной воды. Кровля зоны должна быть «накрыта» пачкой, цемент садится на пачку.`);
+    if ((zonePosition === 'belowPad' || zonePosition === 'insidePad') && (type === 'loss' || type === 'both')) {
+      recs.push(`💡 Лучшая практика при поглощении под башмаком: низ цемента держать выше зоны, а нижнюю вязко-кольматирующую пачку ставить от подошвы цемента до кровли зоны/чуть ниже неё. Пачка должна быть жертвенным и кольматирующим барьером, цемент — садиться на неё после возможной осадки.`);
     }
-    if (zonePosition === 'inside' && (type === 'kick' || type === 'both')) {
+    if (zonePosition === 'insideCement' && (type === 'kick' || type === 'both')) {
       recs.push(`💡 Идеальная схема для изоляции проявления: подошва моста на ≥30–50 м НИЖЕ подошвы зоны, кровля моста на ≥50–100 м ВЫШЕ кровли зоны. Перекрытие гарантирует изоляцию даже при частичной контаминации.`);
     }
   } else if (zoneMD <= 0 && (type !== 'loss' || lossRateM3h > 0)) {
@@ -503,9 +529,9 @@ export function calculateComplications(
     const factorsNote = factors.length > 0 ? ` (эфф. ${effectiveLossRateM3h.toFixed(1)} м³/ч: ${factors.join(', ')})` : '';
     if (intensity === 'partial') {
       if (riskLevel === 'low') riskLevel = 'medium';
-      recs.push(`Частичное поглощение (${lossRateM3h.toFixed(1)} м³/ч${factorsNote}). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
+      recs.push(`Частичное поглощение (${lossRateM3h.toFixed(1)} м³/ч${factorsNote}). Уход в пласт: всего ~${volumeLostM3.toFixed(2)} м³; цемент ${cementLostM3.toFixed(2)} м³, нижняя пачка ${padLostM3.toFixed(2)} м³.`);
       recs.push(`Снизьте плотность промывочной жидкости до минимально допустимой перед закачкой моста.`);
-      recs.push(`Увеличьте объём цемента на ${(volumeLostM3 * compensationFactor).toFixed(2)} м³ для компенсации потерь.`);
+      recs.push(cementLostM3 > 0 ? `Увеличьте объём цемента на ${(cementLostM3 * compensationFactor).toFixed(2)} м³ для компенсации потерь.` : `Цемент не должен компенсировать потери пачки: увеличивайте нижнюю вязко-кольматирующую пачку до ≥${correctedSpacerBelow.toFixed(2)} м³ и контролируйте осадку моста вниз.`);
       recs.push(`Снизьте скорость закачки для уменьшения динамических потерь давления.`);
       // Кольматант для частичного поглощения
       recs.push(`🧪 Кольматант в цемент: волокно 6 мм — 0.3–0.5% от массы сухого цемента (закупоривает микротрещины).`);
@@ -514,10 +540,10 @@ export function calculateComplications(
       }
     } else if (intensity === 'intense') {
       if (riskLevel !== 'critical') riskLevel = 'high';
-      recs.push(`Интенсивное поглощение (${lossRateM3h.toFixed(1)} м³/ч${factorsNote}). Потери цемента: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
-      recs.push(`Реальная длина моста: ${realPlugLength.toFixed(1)} м вместо ${plugLenAnn.toFixed(0)} м — потеряно ${lossPercent.toFixed(0)}%.`);
+      recs.push(`Интенсивное поглощение (${lossRateM3h.toFixed(1)} м³/ч${factorsNote}). Уход в пласт: всего ~${volumeLostM3.toFixed(2)} м³; цемент ${cementLostM3.toFixed(2)} м³, нижняя пачка ${padLostM3.toFixed(2)} м³.`);
+      recs.push(`Фактический цемент: ${realPlugLength.toFixed(1)} м вместо ${plugLenAnn.toFixed(0)} м; осадка вниз ${settlementM.toFixed(1)} м, потеря цемента ${lossPercent.toFixed(0)}%.`);
       recs.push(`ОБЯЗАТЕЛЬНО: закачайте ВИР/кольматант перед установкой моста.`);
-      recs.push(`Увеличьте объём цемента на ${(volumeLostM3 * compensationFactor).toFixed(2)} м³.`);
+      recs.push(cementLostM3 > 0 ? `Увеличьте объём цемента на ${(cementLostM3 * compensationFactor).toFixed(2)} м³.` : `Цемент пока защищён пачкой — увеличьте жертвенную нижнюю пачку до ≥${correctedSpacerBelow.toFixed(2)} м³, а цементный интервал задавайте с учётом осадки вниз.`);
       recs.push(`Используйте вязкую пачку (≥${correctedSpacerBelow.toFixed(1)} м³) снизу для создания «пробки» перед зоной поглощения.`);
       recs.push(`Снизьте скорость закачки до минимума (1.5–2 л/с).`);
       // Кольматант для интенсивного поглощения
@@ -526,8 +552,8 @@ export function calculateComplications(
       recs.push(`💡 Рекомендуется предварительная закачка кольматирующей пачки (ВИР): целлюлоза + карбонат + волокно в объёме 1.5–3 м³.`);
     } else {
       riskLevel = 'critical';
-      recs.push(`⛔ Катастрофическое поглощение (${lossRateM3h.toFixed(1)} м³/ч${factorsNote})! Потери: ~${volumeLostM3.toFixed(2)} м³ (${lossPercent.toFixed(0)}%).`);
-      recs.push(`Реальная длина моста: ${realPlugLength.toFixed(1)} м — потеряно ${lossPercent.toFixed(0)}% цемента.`);
+      recs.push(`⛔ Катастрофическое поглощение (${lossRateM3h.toFixed(1)} м³/ч${factorsNote})! Уход в пласт: всего ~${volumeLostM3.toFixed(2)} м³; цемент ${cementLostM3.toFixed(2)} м³, нижняя пачка ${padLostM3.toFixed(2)} м³.`);
+      recs.push(`Фактический цемент: ${realPlugLength.toFixed(1)} м, осадка вниз ${settlementM.toFixed(1)} м, потеря цемента ${lossPercent.toFixed(0)}%.`);
       recs.push(`Установка моста без предварительных мероприятий НЕВОЗМОЖНА.`);
       recs.push(`1. Закачайте ВИР/кольматант для ликвидации поглощения.`);
       recs.push(`2. Рассмотрите установку пакера/кольца ниже моста.`);
@@ -589,6 +615,9 @@ export function calculateComplications(
     lossIntensity: intensity,
     fillTimeMin: Math.round(totalOpTime * 10) / 10,
     volumeLostM3: Math.round(volumeLostM3 * 1000) / 1000,
+    cementLostM3: Math.round(cementLostM3 * 1000) / 1000,
+    padLostM3: Math.round(padLostM3 * 1000) / 1000,
+    settlementM: Math.round(settlementM * 10) / 10,
     realCementVolumeM3: Math.round(realCementVol * 1000) / 1000,
     realPlugLengthM: Math.round(realPlugLength * 10) / 10,
     designedPlugLengthM: plugLenAnn,
@@ -600,6 +629,8 @@ export function calculateComplications(
     cleanPlugBottomMD: Math.round(cleanPlugBottomMD * 10) / 10,
     hasViscousPadBelow: usePadInZone,
     padHeightMD: Math.round(padHeightMD * 10) / 10,
+    designedPadTopMD: Math.round(designedPadTopMD * 10) / 10,
+    designedPadBottomMD: Math.round(designedPadBottomMD * 10) / 10,
     realPadTopMD: Math.round(realPadTopMD * 10) / 10,
     realPadBottomMD: Math.round(realPadBottomMD * 10) / 10,
     realCementBottomMD: Math.round(realCementBottomMD * 10) / 10,
