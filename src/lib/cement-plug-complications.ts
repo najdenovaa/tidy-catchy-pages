@@ -98,6 +98,20 @@ export interface ComplicationResult {
   cleanPlugTopMD: number;
   /** Clean (uncontaminated) plug bottom MD, m */
   cleanPlugBottomMD: number;
+  /** Has viscous pad below? */
+  hasViscousPadBelow: boolean;
+  /** Designed pad height in annulus, m */
+  padHeightMD: number;
+  /** Real pad top MD (after kick invasion), m */
+  realPadTopMD: number;
+  /** Real pad bottom MD (after kick invasion), m */
+  realPadBottomMD: number;
+  /** Real cement bottom MD (above the pad), m */
+  realCementBottomMD: number;
+  /** Pad invasion height (kick eats pad first), m */
+  padInvasionM: number;
+  /** Cement invasion height (kick reaches cement after pad), m */
+  cementInvasionM: number;
   /** Percentage of plug lost */
   lossPercentage: number;
   /** Contamination depth at bottom, m */
