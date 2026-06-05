@@ -53,6 +53,11 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
     let vol = wellData
       ? annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals)
       : annularVPM * height;
+    // Стакан для нижнего раствора (от ЦКОД до башмака ОК)
+    if (wellData && origIdx === lastIdx && wellData.ckodDepth > 0 && wellData.ckodDepth < casingDepthMD) {
+      const pipeVPM = Math.PI / 4 * Math.pow((wellData.casingOD - 2 * wellData.casingWall) / 1000, 2);
+      vol += pipeVPM * (casingDepthMD - wellData.ckodDepth);
+    }
     if (origIdx === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
     if (vol > 0) {
       if (s.flowRateSteps.length > 1) {
