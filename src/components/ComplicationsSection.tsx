@@ -458,7 +458,15 @@ export default function ComplicationsSection({
                         {complicationResult.realPlugTopMD.toFixed(1)} — {complicationResult.realPlugBottomMD.toFixed(1)} м
                       </span>
                       <span className="text-muted-foreground">Внедрение пластового флюида:</span>
-                      <span className="text-destructive">~{(complicationResult.designedPlugBottomMD - complicationResult.realPlugBottomMD).toFixed(1)} м</span>
+                      <span className="text-destructive">~{(complicationResult.padInvasionM + complicationResult.cementInvasionM).toFixed(1)} м</span>
+                      {complicationResult.hasViscousPadBelow && (
+                        <>
+                          <span className="text-muted-foreground">  • в вязкую пачку:</span>
+                          <span className="text-blue-400">{complicationResult.padInvasionM.toFixed(1)} м {complicationResult.padInvasionM >= complicationResult.padHeightMD && complicationResult.padHeightMD > 0 ? '(пробита)' : '(удержана)'}</span>
+                          <span className="text-muted-foreground">  • в цемент:</span>
+                          <span className={complicationResult.cementInvasionM > 0 ? 'text-destructive' : 'text-green-500'}>{complicationResult.cementInvasionM.toFixed(1)} м</span>
+                        </>
+                      )}
                       <span className="text-muted-foreground font-semibold">Чистый цемент (рабочий мост):</span>
                       <span className="text-green-500 font-semibold">
                         {complicationResult.cleanPlugTopMD.toFixed(1)} — {complicationResult.cleanPlugBottomMD.toFixed(1)} м
