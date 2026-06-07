@@ -116,6 +116,7 @@ export default function CementPlug() {
   const selectedWellId = searchParams.get("well");
   const fromDashboard = searchParams.get("from") === "dashboard";
   const [saving, setSaving] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [loadingSavedCalc, setLoadingSavedCalc] = useState(false);
 
   /* ── State ── */
