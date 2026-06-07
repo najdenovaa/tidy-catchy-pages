@@ -163,6 +163,8 @@ export default function Dashboard() {
   const moduleIcon = (m: string) => {
     if (m === "cementing") return <FlaskConical className="w-4 h-4 text-primary" />;
     if (m === "cement-plug") return <Blocks className="w-4 h-4 text-orange-500" />;
+    if (m === "coiled-tubing") return <Cable className="w-4 h-4 text-purple-500" />;
+    if (m === "cementing-analysis") return <Cpu className="w-4 h-4 text-cyan-500" />;
     if (m === "drilling-fluids") return <Droplets className="w-4 h-4 text-blue-500" />;
     return <Zap className="w-4 h-4 text-yellow-500" />;
   };
@@ -170,9 +172,20 @@ export default function Dashboard() {
   const moduleLabel = (m: string) => {
     if (m === "cementing") return "Цементирование";
     if (m === "cement-plug") return "Цементный мост";
+    if (m === "coiled-tubing") return "ГНКТ";
+    if (m === "cementing-analysis") return "Анализ цементирования";
     if (m === "drilling-fluids") return "Буровые растворы";
     return "ГРП";
   };
+
+  const calcLink = (c: SavedCalc) => {
+    const base = c.module === "cement-plug" ? "/cementing/plugs"
+      : c.module === "coiled-tubing" ? "/coiled-tubing"
+      : c.module === "cementing-analysis" ? "/cementing/analysis"
+      : "/cementing/program";
+    return `${base}?from=dashboard&well=${c.well_id}&calc=${c.id}`;
+  };
+
 
   const formatDate = (iso: string) => new Date(iso).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const cementingLink = selectedWell ? `/cementing/program?from=dashboard&well=${selectedWell}` : "/cementing/program?from=dashboard";
