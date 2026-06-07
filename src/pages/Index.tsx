@@ -399,118 +399,40 @@ export default function Index() {
   }, [calcSnapshot, wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient]);
 
   const handleSaveToAccount = useCallback(async () => {
+  const buildSavePayload = useCallback((): SaveCalcPayload => {
+    const freshSnapshot = normalizeCementingSnapshot({
+      wellData, drillingFluid, slurries, buffers, displacementFluids,
+      fractureGradient, flushTimeMin, flushVolumeM3,
+    });
+    const computedVolumes = calculateVolumes(
+      freshSnapshot.wellData, freshSnapshot.slurries,
+      freshSnapshot.displacementFluids?.[0]?.compressionCoeff ?? 1.0
+    );
+    const computedMaterials = calculateMaterials(freshSnapshot.slurries, freshSnapshot.buffers, freshSnapshot.wellData);
+    const computedPressure = calculatePressureProfile(
+      freshSnapshot.wellData, freshSnapshot.slurries, freshSnapshot.buffers,
+      freshSnapshot.drillingFluid, freshSnapshot.displacementFluids,
+      freshSnapshot.fractureGradient, computedVolumes.displacementVolumeWithCompression,
+      freshSnapshot.flushTimeMin, freshSnapshot.flushVolumeM3,
+    );
+    return {
+      module: "cementing",
+      title: `Расчёт ${new Date().toLocaleDateString("ru-RU")}`,
+      well_data: freshSnapshot.wellData,
+      calc_params: { slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3, drillingFluid },
+      results: { volumes: computedVolumes, materials: computedMaterials, pressureResult: computedPressure },
+    };
+  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3]);
+
+  const handleSaveToAccount = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       alert("Для сохранения расчёта войдите в личный кабинет");
       return;
     }
+    setSaveDialogOpen(true);
+  }, []);
 
-    if (!selectedWellId) {
-      alert("Откройте расчёт из личного кабинета и выберите скважину, чтобы сохранить в нужную папку");
-      return;
-    }
-
-    const wellName = prompt("Введите название расчёта:", `Расчёт ${new Date().toLocaleDateString("ru-RU")}`);
-    if (!wellName) return;
-
-    const freshSnapshot = normalizeCementingSnapshot({
-      wellData,
-      drillingFluid,
-      slurries,
-      buffers,
-      displacementFluids,
-      fractureGradient,
-      flushTimeMin,
-      flushVolumeM3,
-    });
-
-    const computedVolumes = calculateVolumes(freshSnapshot.wellData, freshSnapshot.slurries, freshSnapshot.displacementFluids?.[0]?.compressionCoeff ?? 1.0);
-    const computedMaterials = calculateMaterials(freshSnapshot.slurries, freshSnapshot.buffers, freshSnapshot.wellData);
-    const computedPressure = calculatePressureProfile(
-      freshSnapshot.wellData,
-      freshSnapshot.slurries,
-      freshSnapshot.buffers,
-      freshSnapshot.drillingFluid,
-      freshSnapshot.displacementFluids,
-      freshSnapshot.fractureGradient,
-      computedVolumes.displacementVolumeWithCompression,
-      freshSnapshot.flushTimeMin,
-      freshSnapshot.flushVolumeM3
-    );
-
-    setSaving(true);
-    try {
-      if (calcId) {
-        const { error } = await supabase
-          .from("saved_calculations")
-          .update({
-            title: wellName,
-            well_data: freshSnapshot.wellData as any,
-            calc_params: {
-              slurries,
-              buffers,
-              displacementFluids,
-              fractureGradient,
-              flushTimeMin,
-              flushVolumeM3,
-              drillingFluid,
-            } as any,
-            results: {
-              volumes: computedVolumes,
-              materials: computedMaterials,
-              pressureResult: computedPressure,
-            } as any,
-          } as any)
-          .eq("id", calcId)
-          .eq("user_id", session.user.id);
-
-        if (error) throw error;
-        alert("Расчёт обновлён в личном кабинете");
-      } else {
-        const { error } = await supabase.from("saved_calculations").insert({
-          user_id: session.user.id,
-          well_id: selectedWellId,
-          module: "cementing",
-          title: wellName,
-          well_data: freshSnapshot.wellData as any,
-          calc_params: {
-            slurries,
-            buffers,
-            displacementFluids,
-            fractureGradient,
-            flushTimeMin,
-            flushVolumeM3,
-            drillingFluid,
-          } as any,
-          results: {
-            volumes: computedVolumes,
-            materials: computedMaterials,
-            pressureResult: computedPressure,
-          } as any,
-        } as any);
-
-        if (error) throw error;
-        alert("Расчёт сохранён в личный кабинет");
-      }
-
-      setCalcSnapshot(freshSnapshot);
-    } catch (e: any) {
-      alert("Ошибка сохранения: " + e.message);
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    selectedWellId,
-    calcId,
-    wellData,
-    slurries,
-    buffers,
-    displacementFluids,
-    fractureGradient,
-    flushTimeMin,
-    flushVolumeM3,
-    drillingFluid,
-  ]);
 
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
