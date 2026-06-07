@@ -398,7 +398,6 @@ export default function Index() {
     }
   }, [calcSnapshot, wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient]);
 
-  const handleSaveToAccount = useCallback(async () => {
   const buildSavePayload = useCallback((): SaveCalcPayload => {
     const freshSnapshot = normalizeCementingSnapshot({
       wellData, drillingFluid, slurries, buffers, displacementFluids,
