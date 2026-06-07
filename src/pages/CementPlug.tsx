@@ -194,27 +194,77 @@ export default function CementPlug() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const wb = XLSX.read(ev.target?.result, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows: any[] = XLSX.utils.sheet_to_json(ws);
-      if (!rows.length) return;
-      const find = (row: any, keys: string[]) => {
-        for (const k of Object.keys(row)) {
-          if (keys.some(s => k.toLowerCase().includes(s))) return row[k];
+      try {
+        const wb = XLSX.read(ev.target?.result, { type: "array" });
+        const getNum = (v: unknown): number | null => {
+          if (v === null || v === undefined || v === "") return null;
+          if (typeof v === "number") return Number.isFinite(v) ? v : null;
+          const n = Number(String(v).replace(/\s/g, "").replace(",", "."));
+          return Number.isFinite(n) ? n : null;
+        };
+        const norm = (v: unknown) => String(v ?? "").toLowerCase().replace(/[\s\n\r,.;:°()/\\-]+/g, " ").trim();
+        const isMd = (s: string) => /\bmd\b/.test(s) || s.includes("глубина") || s.includes("ствол") || s.includes("measured") || s.includes("depth");
+        const isZen = (s: string) => /\bzen/.test(s) || s.includes("зенит") || s.includes("inclination") || /\binc\b/.test(s) || s.includes("угол");
+        const isAz = (s: string) => /\baz/.test(s) || s.includes("азимут");
+        const isTvd = (s: string) => /\btvd\b/.test(s) || s.includes("верт") || s.includes("vertical");
+
+        let mapped: TrajectoryPoint[] = [];
+        for (const sheetName of wb.SheetNames) {
+          const ws = wb.Sheets[sheetName];
+          const grid = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "", blankrows: false });
+          if (!grid.length) continue;
+
+          let hdr = -1, mC = -1, zC = -1, aC = -1, tC = -1;
+          for (let r = 0; r < Math.min(grid.length, 20); r++) {
+            const row = grid[r] || [];
+            let m = -1, z = -1, a = -1, t = -1;
+            for (let c = 0; c < row.length; c++) {
+              const s = norm(row[c]);
+              if (!s) continue;
+              if (m < 0 && isMd(s) && !isTvd(s)) m = c;
+              else if (z < 0 && isZen(s)) z = c;
+              else if (a < 0 && isAz(s)) a = c;
+              else if (t < 0 && isTvd(s)) t = c;
+            }
+            if (m >= 0 && z >= 0 && a >= 0) { hdr = r; mC = m; zC = z; aC = a; tC = t; break; }
+          }
+
+          const candidate: TrajectoryPoint[] = [];
+          if (hdr >= 0) {
+            for (let r = hdr + 1; r < grid.length; r++) {
+              const row = grid[r] || [];
+              const md = getNum(row[mC]);
+              const zenith = getNum(row[zC]);
+              const azimuth = getNum(row[aC]);
+              if (md === null || zenith === null || azimuth === null) continue;
+              const tvd = tC >= 0 ? getNum(row[tC]) ?? 0 : 0;
+              candidate.push({ md, azimuth, zenith, tvd });
+            }
+          } else {
+            for (const row of grid) {
+              const r = row as unknown[];
+              const md = getNum(r[0]);
+              const zenith = getNum(r[1]);
+              const azimuth = getNum(r[2]);
+              if (md === null || zenith === null || azimuth === null) continue;
+              const tvd = getNum(r[3]) ?? 0;
+              candidate.push({ md, azimuth, zenith, tvd });
+            }
+          }
+          if (candidate.length >= 2) { mapped = candidate; break; }
         }
-        return null;
-      };
-      const mapped = rows.map(r => {
-        const md = parseFloat(find(r, ["md", "глубина", "depth", "ствол"]));
-        const az = parseFloat(find(r, ["azimuth", "азимут", "az"]));
-        const zen = parseFloat(find(r, ["zenith", "зенит", "incl", "угол"]));
-        if (isNaN(md) || isNaN(az) || isNaN(zen)) return null;
-        return { md, azimuth: az, zenith: zen, tvd: 0 } as TrajectoryPoint;
-      }).filter(Boolean) as TrajectoryPoint[];
-      if (mapped.length) {
+
+        if (mapped.length < 2) {
+          alert("Не удалось распознать данные. Используйте шаблон: колонки MD, Zenith, Azimuth. Минимум 2 строки данных.");
+          return;
+        }
+
         const calc = calculateTVDFromSurvey(mapped.sort((a, b) => a.md - b.md));
         setTrajPoints(calc);
         setWell(w => ({ ...w, trajectory: calc }));
+      } catch (err) {
+        console.error("Trajectory upload error:", err);
+        alert("Не удалось прочитать Excel-файл");
       }
     };
     reader.readAsArrayBuffer(file);
