@@ -1400,6 +1400,14 @@ export default function CementPlug() {
         </div>
       </main>
       <TermsFooter />
+      <SaveToCabinetDialog
+        open={saveDialogOpen}
+        onOpenChange={setSaveDialogOpen}
+        defaultTitle={`Мост ${new Date().toLocaleDateString("ru-RU")}`}
+        initialWellId={selectedWellId}
+        calcId={calcId}
+        buildPayload={buildPlugPayload}
+      />
     </div>
   );
 }
