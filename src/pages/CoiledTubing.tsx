@@ -1080,6 +1080,12 @@ export default function CoiledTubing() {
         </div>
       </main>
       <TermsFooter />
+      <SaveToCabinetDialog
+        open={saveDialogOpen}
+        onOpenChange={setSaveDialogOpen}
+        defaultTitle={`ГНКТ ${ct.od}мм ${ct.grade} — MD ${well.md}м`}
+        buildPayload={buildCTPayload}
+      />
     </div>
   );
 }
