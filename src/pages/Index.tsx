@@ -807,6 +807,15 @@ export default function Index() {
         </div>
       )}
       </div>{/* close flex-1 wrapper */}
+
+      <SaveToCabinetDialog
+        open={saveDialogOpen}
+        onOpenChange={setSaveDialogOpen}
+        defaultTitle={`Цементирование ${new Date().toLocaleDateString("ru-RU")}`}
+        initialWellId={selectedWellId}
+        calcId={calcId}
+        buildPayload={buildSavePayload}
+      />
     </div>
   );
 }
