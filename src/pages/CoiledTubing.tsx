@@ -142,6 +142,7 @@ export default function CoiledTubing() {
   const [ctSections, setCtSections] = useState<CTSection[]>(initial.ctSections);
   const [calculated, setCalculated] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
 
   // Collapsible sections
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
