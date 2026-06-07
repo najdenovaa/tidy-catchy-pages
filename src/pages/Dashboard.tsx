@@ -245,7 +245,7 @@ export default function Dashboard() {
 
 
         {/* Hierarchy browser */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Fields */}
           <Card>
             <CardHeader className="py-3"><CardTitle className="text-sm">Месторождения</CardTitle></CardHeader>
