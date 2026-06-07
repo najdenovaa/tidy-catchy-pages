@@ -320,34 +320,57 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* Calculations */}
-          <Card>
-            <CardHeader className="py-3"><CardTitle className="text-sm">Расчёты</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              {selectedWell ? (
-                <div className="space-y-1 max-h-80 overflow-y-auto">
-                  {calcs.length === 0 && <p className="text-xs text-muted-foreground">Нет сохранённых расчётов</p>}
-                  {calcs.map(c => (
-                    <div key={c.id} className="flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-muted group">
-                      <Link to={
-                        c.module === "cement-plug"
-                          ? `/cementing/plugs?from=dashboard&well=${selectedWell}&calc=${c.id}`
-                          : `/cementing/program?from=dashboard&well=${selectedWell}&calc=${c.id}`
-                      } className="flex items-center gap-1.5 flex-1 min-w-0">
-                        {moduleIcon(c.module)}
-                        <div className="min-w-0">
-                          <p className="truncate font-medium">{c.title}</p>
-                          <p className="text-[10px] text-muted-foreground">{moduleLabel(c.module)} · {formatDate(c.created_at)}</p>
-                        </div>
-                      </Link>
-                      <button onClick={() => deleteCalc(c.id)} className="text-destructive/50 hover:text-destructive opacity-0 group-hover:opacity-100"><Trash2 className="w-3 h-3" /></button>
-                    </div>
-                  ))}
-                </div>
-              ) : <p className="text-xs text-muted-foreground">Выберите скважину</p>}
-            </CardContent>
-          </Card>
         </div>
+
+        {/* Calculations by module — full width below the hierarchy */}
+        <Card>
+          <CardHeader className="py-3 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm">Сохранённые расчёты {selectedWell && wells.find(w => w.id === selectedWell) ? `· Скважина ${wells.find(w => w.id === selectedWell)?.name}` : ""}</CardTitle>
+            <span className="text-xs text-muted-foreground">{calcs.length} всего</span>
+          </CardHeader>
+          <CardContent>
+            {!selectedWell ? (
+              <p className="text-xs text-muted-foreground">Выберите скважину выше, чтобы увидеть её расчёты</p>
+            ) : (
+              <Tabs defaultValue="all" className="w-full">
+                <TabsList className="grid grid-cols-5 w-full max-w-2xl">
+                  <TabsTrigger value="all" className="text-xs">Все ({calcs.length})</TabsTrigger>
+                  <TabsTrigger value="cementing" className="text-xs"><FlaskConical className="w-3 h-3 mr-1" /> Цем. ({calcs.filter(c => c.module === "cementing").length})</TabsTrigger>
+                  <TabsTrigger value="cement-plug" className="text-xs"><Blocks className="w-3 h-3 mr-1" /> Мосты ({calcs.filter(c => c.module === "cement-plug").length})</TabsTrigger>
+                  <TabsTrigger value="coiled-tubing" className="text-xs"><Cable className="w-3 h-3 mr-1" /> ГНКТ ({calcs.filter(c => c.module === "coiled-tubing").length})</TabsTrigger>
+                  <TabsTrigger value="cementing-analysis" className="text-xs"><Cpu className="w-3 h-3 mr-1" /> Анализ ({calcs.filter(c => c.module === "cementing-analysis").length})</TabsTrigger>
+                </TabsList>
+                {(["all", "cementing", "cement-plug", "coiled-tubing", "cementing-analysis"] as const).map(tab => {
+                  const list = tab === "all" ? calcs : calcs.filter(c => c.module === tab);
+                  return (
+                    <TabsContent key={tab} value={tab} className="mt-3">
+                      {list.length === 0 ? (
+                        <p className="text-xs text-muted-foreground py-6 text-center">Нет сохранённых расчётов в этом разделе</p>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {list.map(c => (
+                            <div key={c.id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-muted/40 transition-colors group">
+                              <Link to={calcLink(c)} className="flex items-center gap-2 flex-1 min-w-0">
+                                {moduleIcon(c.module)}
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium">{c.title}</p>
+                                  <p className="text-[10px] text-muted-foreground">{moduleLabel(c.module)} · {formatDate(c.created_at)}</p>
+                                </div>
+                              </Link>
+                              <button onClick={() => deleteCalc(c.id)} className="text-destructive/40 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity" title="Удалить">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </TabsContent>
+                  );
+                })}
+              </Tabs>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Chat History */}
         <div className="mt-6">
