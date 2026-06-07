@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
 import TermsFooter from "@/components/TermsFooter";
+import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
 import { Badge } from "@/components/ui/badge";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, AreaChart, Area, ReferenceLine, ScatterChart, Scatter, ZAxis } from "recharts";
 import { BlurInput } from "@/components/BlurInput";
@@ -141,6 +142,7 @@ export default function CoiledTubing() {
   const [ctSections, setCtSections] = useState<CTSection[]>(initial.ctSections);
   const [calculated, setCalculated] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
 
   // Collapsible sections
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -293,34 +295,22 @@ export default function CoiledTubing() {
     toast.info("Данные обнулены");
   }, []);
 
-  // Save to database
+  // Build payload for save dialog
+  const buildCTPayload = useCallback((): SaveCalcPayload => ({
+    module: "coiled-tubing",
+    title: `ГНКТ ${ct.od}мм ${ct.grade} — MD ${well.md}м`,
+    well_data: { ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints },
+    calc_params: { forces, limits, hydraulics, fatigue, risks, ctSections },
+    results: { forces, limits, hydraulics, fatigue },
+  }), [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, forces, limits, hydraulics, fatigue, risks, ctSections]);
+
+  // Save to database (opens dialog)
   const handleSave = useCallback(async () => {
     if (!userId) { toast.error("Необходимо войти в систему"); navigate("/auth"); return; }
     if (!calculated || !forces) { toast.error("Сначала выполните расчёт"); return; }
+    setSaveDialogOpen(true);
+  }, [userId, calculated, forces, navigate]);
 
-    const { data: wells } = await supabase.from("wells").select("id, name").eq("user_id", userId).limit(100);
-    if (!wells || wells.length === 0) {
-      toast.error("Создайте скважину в личном кабинете");
-      navigate("/dashboard");
-      return;
-    }
-
-    const wellId = wells[0].id;
-    const title = `ГНКТ ${ct.od}мм ${ct.grade} — MD ${well.md}м`;
-
-    const { error } = await supabase.from("saved_calculations").upsert({
-      user_id: userId,
-      well_id: wellId,
-      module: "coiled-tubing",
-      title,
-      well_data: { ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints } as any,
-      calc_params: { forces, limits, hydraulics, fatigue, risks, ctSections } as any,
-      results: { forces, limits, hydraulics, fatigue } as any,
-    }, { onConflict: "id" });
-
-    if (error) { toast.error("Ошибка сохранения"); console.error(error); }
-    else toast.success("Расчёт сохранён в личном кабинете 💾");
-  }, [userId, calculated, forces, limits, hydraulics, fatigue, risks, ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, navigate]);
 
   // Export DOCX
   const handleExportDocx = useCallback(async () => {
@@ -1090,6 +1080,12 @@ export default function CoiledTubing() {
         </div>
       </main>
       <TermsFooter />
+      <SaveToCabinetDialog
+        open={saveDialogOpen}
+        onOpenChange={setSaveDialogOpen}
+        defaultTitle={`ГНКТ ${ct.od}мм ${ct.grade} — MD ${well.md}м`}
+        buildPayload={buildCTPayload}
+      />
     </div>
   );
 }

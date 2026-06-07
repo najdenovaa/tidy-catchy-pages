@@ -26,6 +26,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import TermsFooter from "@/components/TermsFooter";
+import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
 
 const SESSION_KEY = "cement_plug_session_v2";
 
@@ -115,6 +116,7 @@ export default function CementPlug() {
   const selectedWellId = searchParams.get("well");
   const fromDashboard = searchParams.get("from") === "dashboard";
   const [saving, setSaving] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [loadingSavedCalc, setLoadingSavedCalc] = useState(false);
 
   /* ── State ── */
@@ -395,59 +397,32 @@ export default function CementPlug() {
   }, [calcId]);
 
   /* ── Save to account ── */
+  const buildPlugPayload = useCallback((): SaveCalcPayload => {
+    const currentResults = results ?? calculateBalancedPlug(buildInputs());
+    return {
+      module: "cement-plug",
+      title: `Мост ${new Date().toLocaleDateString("ru-RU")}`,
+      well_data: well,
+      calc_params: {
+        plug, cement, spacer, wellFluid,
+        spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours,
+        pullOutAbove, washType, washCycles, tripSpeed, trajPoints,
+        wcRatio, slurryYield, additives, spacerAdditives,
+        pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient,
+        pipeSections, useViscousPad,
+        viscousPadFluid: useViscousPad ? viscousPadFluid : undefined,
+        viscousPadAdditives: useViscousPad ? viscousPadAdditives : undefined,
+      },
+      results: { plugResults: currentResults },
+    };
+  }, [results, well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives]);
+
   const handleSaveToAccount = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { alert("Для сохранения войдите в личный кабинет"); return; }
-    if (!selectedWellId) { alert("Откройте модуль из личного кабинета, выбрав скважину"); return; }
+    setSaveDialogOpen(true);
+  }, []);
 
-    const calcTitle = prompt("Название расчёта:", `Мост ${new Date().toLocaleDateString("ru-RU")}`);
-    if (!calcTitle) return;
-
-    const currentResults = results ?? calculateBalancedPlug(buildInputs());
-
-    const calcParams = {
-      plug, cement, spacer, wellFluid,
-      spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours,
-      pullOutAbove, washType, washCycles, tripSpeed, trajPoints,
-      wcRatio, slurryYield, additives, spacerAdditives,
-      pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient,
-      pipeSections, useViscousPad,
-      viscousPadFluid: useViscousPad ? viscousPadFluid : undefined,
-      viscousPadAdditives: useViscousPad ? viscousPadAdditives : undefined,
-    };
-
-    setSaving(true);
-    try {
-      if (calcId) {
-        const { error } = await supabase.from("saved_calculations")
-          .update({
-            title: calcTitle,
-            well_data: well as any,
-            calc_params: calcParams as any,
-            results: { plugResults: currentResults } as any,
-          } as any)
-          .eq("id", calcId).eq("user_id", session.user.id);
-        if (error) throw error;
-        alert("Расчёт обновлён");
-      } else {
-        const { error } = await supabase.from("saved_calculations").insert({
-          user_id: session.user.id,
-          well_id: selectedWellId,
-          module: "cement-plug",
-          title: calcTitle,
-          well_data: well as any,
-          calc_params: calcParams as any,
-          results: { plugResults: currentResults } as any,
-        } as any);
-        if (error) throw error;
-        alert("Расчёт сохранён в личный кабинет");
-      }
-    } catch (e: any) {
-      alert("Ошибка сохранения: " + e.message);
-    } finally {
-      setSaving(false);
-    }
-  }, [selectedWellId, calcId, well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, results, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives]);
 
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
@@ -1425,6 +1400,14 @@ export default function CementPlug() {
         </div>
       </main>
       <TermsFooter />
+      <SaveToCabinetDialog
+        open={saveDialogOpen}
+        onOpenChange={setSaveDialogOpen}
+        defaultTitle={`Мост ${new Date().toLocaleDateString("ru-RU")}`}
+        initialWellId={selectedWellId}
+        calcId={calcId}
+        buildPayload={buildPlugPayload}
+      />
     </div>
   );
 }
