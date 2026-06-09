@@ -1460,6 +1460,7 @@ export function calculatePressureProfile(
     if (mudExited > 0) exitBatches.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited, fluidType: 'mud' as AnnularFluidType });
     let pumpedExited = Math.max(0, totalPumped - pipeCapacity);
     for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
+      if (pumpHistory[i].fluidType === 'displacement') continue;
       const take = Math.min(pumpHistory[i].volumeM3, pumpedExited);
       if (take > 0) exitBatches.push({ densityGcm3: pumpHistory[i].densityGcm3, volumeM3: take, fluidType: pumpHistory[i].fluidType });
       pumpedExited -= take;
