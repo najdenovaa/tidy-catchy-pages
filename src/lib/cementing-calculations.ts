@@ -1394,6 +1394,7 @@ export function calculatePressureProfile(
 
     let pumpedExited = Math.max(0, totalPumped - pipeCapacity);
     for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
+      if (pumpHistory[i].fluidType === 'displacement') continue;
       const take = Math.min(pumpHistory[i].volumeM3, pumpedExited);
       if (take > 0) exitBatches.push({ densityGcm3: pumpHistory[i].densityGcm3, volumeM3: take, fluidType: pumpHistory[i].fluidType });
       pumpedExited -= take;
