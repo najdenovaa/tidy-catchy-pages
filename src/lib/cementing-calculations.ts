@@ -461,6 +461,45 @@ export function equivalentDiameter(holeDiamMm: number, cavCoeff: number): number
   return holeDiamMm * Math.sqrt(cavCoeff);
 }
 
+/**
+ * Объём ОТКРЫТОГО ствола (без колонны) для интервала [mdTop, mdBottom] с учётом
+ * поинтервального коэффициента кавернозности.
+ * V_факт = V_ном · K_к, где V_ном = π/4 · d²  (на каждом подинтервале свой K_к).
+ */
+export function openHoleVolumeForInterval(
+  mdTop: number, mdBottom: number,
+  holeDiamMm: number, defaultCavCoeff: number,
+  cavernIntervals?: CavernInterval[]
+): number {
+  const top = Math.max(0, mdTop);
+  const bot = Math.max(0, mdBottom);
+  if (bot <= top) return 0;
+  const nominalVPM = wellVolumePerMeter(holeDiamMm); // м³/м без каверны
+  if (!cavernIntervals || cavernIntervals.length === 0) {
+    return nominalVPM * defaultCavCoeff * (bot - top);
+  }
+  const sorted = [...cavernIntervals].sort((a, b) => a.fromMD - b.fromMD);
+  let vol = 0;
+  let cursor = top;
+  for (const iv of sorted) {
+    if (cursor >= bot) break;
+    if (cursor < iv.fromMD) {
+      const segEnd = Math.min(iv.fromMD, bot);
+      vol += nominalVPM * defaultCavCoeff * (segEnd - cursor);
+      cursor = segEnd;
+    }
+    if (cursor >= bot) break;
+    if (cursor < iv.toMD) {
+      const segStart = Math.max(cursor, iv.fromMD);
+      const segEnd = Math.min(iv.toMD, bot);
+      vol += nominalVPM * iv.coeff * (segEnd - segStart);
+      cursor = segEnd;
+    }
+  }
+  if (cursor < bot) vol += nominalVPM * defaultCavCoeff * (bot - cursor);
+  return vol;
+}
+
 // Объём кольцевого пространства для интервала [mdTop, mdBottom] с учётом двух зон:
 // 0..prevCasingDepth — межтрубное (prevCasingID vs casingOD)
 // prevCasingDepth..bottom — открытый ствол (holeDiam vs casingOD, с каверн.)
