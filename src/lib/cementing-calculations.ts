@@ -1531,11 +1531,14 @@ export function calculatePressureProfile(
       const batch = exitBatches[i];
       if (batch.volumeM3 <= 0 || currentBottomMD <= 0) continue;
       let volRemaining = batch.volumeM3;
+      // Сначала заполняем нижнюю секцию (открытый ствол) — с учётом поинтервального Kк
       if (currentBottomMD > prevShoe && volRemaining > 0) {
-        const availableLen = currentBottomMD - Math.max(prevShoe, 0);
-        const fillVol = Math.min(volRemaining, availableLen * lowerVPMhydro);
-        const fillLen = lowerVPMhydro > 0 ? fillVol / lowerVPMhydro : 0;
-        const topMD = currentBottomMD - fillLen;
+        const { topMD, capacity } = openHoleTopMDForVolume(
+          currentBottomMD, Math.max(prevShoe, 0),
+          wellData.holeDiameter, wellData.cavernCoeff,
+          wellData.cavernIntervals, volRemaining,
+        );
+        const fillVol = Math.min(volRemaining, capacity);
         const tvdBot = interpolateTVD(currentBottomMD, traj);
         const tvdTop = interpolateTVD(topMD, traj);
         pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
