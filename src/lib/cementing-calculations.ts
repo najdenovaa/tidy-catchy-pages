@@ -500,6 +500,68 @@ export function openHoleVolumeForInterval(
   return vol;
 }
 
+/**
+ * Обратная задача: для заданного объёма flus определить, до какой глубины (MD)
+ * снизу вверх этот объём заполнит открытый ствол [prevShoeMD, mdBottom] с учётом
+ * поинтервальной кавернозности. Возвращает верхнюю отметку MD и фактическую ёмкость
+ * интервала (для ограничения).
+ */
+export function openHoleTopMDForVolume(
+  mdBottom: number, prevShoeMD: number,
+  holeDiamMm: number, defaultCavCoeff: number,
+  cavernIntervals: CavernInterval[] | undefined,
+  volume: number,
+): { topMD: number; capacity: number } {
+  const top = Math.max(0, prevShoeMD);
+  const bot = Math.max(top, mdBottom);
+  const nominalVPM = wellVolumePerMeter(holeDiamMm);
+  if (bot <= top) return { topMD: bot, capacity: 0 };
+
+  // Собираем точки границ интервалов внутри [top, bot]
+  const boundSet = new Set<number>([top, bot]);
+  (cavernIntervals ?? []).forEach((iv) => {
+    if (iv.fromMD > top && iv.fromMD < bot) boundSet.add(iv.fromMD);
+    if (iv.toMD > top && iv.toMD < bot) boundSet.add(iv.toMD);
+  });
+  const bounds = Array.from(boundSet).sort((a, b) => a - b);
+
+  const kAt = (midDepth: number): number => {
+    const iv = (cavernIntervals ?? []).find((x) => x.fromMD <= midDepth && midDepth < x.toMD);
+    return iv ? iv.coeff : defaultCavCoeff;
+  };
+
+  // Общая ёмкость интервала
+  let capacity = 0;
+  for (let i = 0; i < bounds.length - 1; i++) {
+    const a = bounds[i];
+    const b = bounds[i + 1];
+    capacity += (b - a) * nominalVPM * kAt((a + b) / 2);
+  }
+
+  if (volume <= 0) return { topMD: bot, capacity };
+  if (volume >= capacity) return { topMD: top, capacity };
+
+  // Шагаем снизу вверх по сегментам
+  let remaining = volume;
+  let cursor = bot;
+  for (let i = bounds.length - 2; i >= 0 && remaining > 1e-12; i--) {
+    const segTop = bounds[i];
+    const segBot = bounds[i + 1];
+    if (cursor <= segTop) continue;
+    const segLen = Math.min(cursor, segBot) - segTop;
+    const segVPM = nominalVPM * kAt((segTop + Math.min(cursor, segBot)) / 2);
+    const segVol = segLen * segVPM;
+    if (segVol >= remaining) {
+      cursor -= segVPM > 0 ? remaining / segVPM : segLen;
+      remaining = 0;
+    } else {
+      cursor = segTop;
+      remaining -= segVol;
+    }
+  }
+  return { topMD: cursor, capacity };
+}
+
 // Объём кольцевого пространства для интервала [mdTop, mdBottom] с учётом двух зон:
 // 0..prevCasingDepth — межтрубное (prevCasingID vs casingOD)
 // prevCasingDepth..bottom — открытый ствол (holeDiam vs casingOD, с каверн.)
