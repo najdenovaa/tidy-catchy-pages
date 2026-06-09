@@ -627,9 +627,10 @@ export function calculateVolumes(
 
   // === Зумпф (открытый ствол ниже башмака ОК) ===
   // При продавке цемент выходит из башмака и заполняет зумпф снизу-вверх
+  // Учитываем поинтервальный коэфф. кавернозности
   const ratholeLen = Math.max(0, data.wellDepthMD - data.casingDepthMD);
   const ratholeVolume = ratholeLen > 0
-    ? wellVolumePerMeter(data.holeDiameter) * data.cavernCoeff * ratholeLen
+    ? openHoleVolumeForInterval(data.casingDepthMD, data.wellDepthMD, data.holeDiameter, data.cavernCoeff, data.cavernIntervals)
     : 0;
 
   // Стакан + зумпф заполняются нижним (последним) цементным раствором
