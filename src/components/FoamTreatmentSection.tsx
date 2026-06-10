@@ -692,17 +692,31 @@ function RecipeEditor({
           )}
           {recipe.additives.map((a, i) => (
             <div key={i} className="grid grid-cols-12 gap-2 items-end p-2 rounded-lg bg-background border border-border">
-              <div className="col-span-12 md:col-span-4">
+              <div className="col-span-12 md:col-span-3">
                 <Label className="text-[10px] text-muted-foreground">Название</Label>
                 <Input className="h-9" value={a.name}
                   onChange={(e) => updAdditive(i, { name: e.target.value })} />
               </div>
-              <div className="col-span-4 md:col-span-2">
+              <div className="col-span-6 md:col-span-3">
+                <Label className="text-[10px] text-muted-foreground">Категория (хим. эффект)</Label>
+                <Select
+                  value={a.category ?? "other"}
+                  onValueChange={(v) => updAdditive(i, { category: v as AdditiveCategory })}
+                >
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ADDITIVE_CATEGORIES.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-3 md:col-span-1">
                 <Label className="text-[10px] text-muted-foreground">Конц.</Label>
                 <Input className="h-9" type="number" step="0.1" value={a.concentration}
                   onChange={(e) => updAdditive(i, { concentration: num(e.target.value) })} />
               </div>
-              <div className="col-span-4 md:col-span-2">
+              <div className="col-span-3 md:col-span-1">
                 <Label className="text-[10px] text-muted-foreground">Ед.</Label>
                 <Select value={a.unit}
                   onValueChange={(v) => updAdditive(i, { unit: v as "%" | "кг/м³" })}>
@@ -713,7 +727,7 @@ function RecipeEditor({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="col-span-3 md:col-span-3">
+              <div className="col-span-5 md:col-span-3">
                 <Label className="text-[10px] text-muted-foreground">Назначение</Label>
                 <Input className="h-9" value={a.purpose}
                   onChange={(e) => updAdditive(i, { purpose: e.target.value })} />
