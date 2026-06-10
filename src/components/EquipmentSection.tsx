@@ -75,7 +75,7 @@ export default function EquipmentSection({ equipment, onChange }: Props) {
                   type="number"
                   value={p.count || ""}
                   onChange={(e) => updatePersonnel(idx, "count", e.target.value)}
-                  className="h-9 text-sm w-20"
+                  className="h-9 text-sm w-24"
                 />
                 <span className="text-xs text-muted-foreground">чел.</span>
                 {equipment.personnel.length > 1 && (
