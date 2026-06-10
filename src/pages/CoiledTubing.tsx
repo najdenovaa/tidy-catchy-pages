@@ -832,6 +832,18 @@ export default function CoiledTubing() {
                 </Card>
               </TabsContent>
 
+              {/* Reach Analysis */}
+              <TabsContent value="reach" forceMount className={tab !== "reach" ? "hidden" : ""}>
+                <CTReachAnalysisTab
+                  ct={ct}
+                  well={well}
+                  fluid={fluid}
+                  tools={tools}
+                  sections={ctSections}
+                  baselineFriction={friction}
+                />
+              </TabsContent>
+
               {/* Limits */}
               <TabsContent value="limits" forceMount className={tab !== "limits" ? "hidden" : ""}>
                 <Card>
