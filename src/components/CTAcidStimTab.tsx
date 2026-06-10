@@ -8,17 +8,21 @@ import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
 } from "recharts";
-import { FlaskConical, AlertTriangle, CheckCircle2, Beaker } from "lucide-react";
+import { FlaskConical, AlertTriangle, CheckCircle2, Beaker, FileDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   calculateAcidStim, AcidStimInputs, ACID_SYSTEMS, FORMATION_TYPES,
   type AcidSystem, type FormationType,
 } from "@/lib/ct-acid-stim";
 import type { CTStringData, WellGeometry, PumpData } from "@/lib/coiled-tubing-calculations";
+import { exportAcidStimDocx } from "@/lib/export-ct-modules-docx";
+import { toast } from "sonner";
 
 interface Props {
   ct: CTStringData;
   well: WellGeometry;
   pump: PumpData;
+  operationType?: string;
 }
 
 const Field = ({ label, value, onChange, unit, step = "any" }: {
@@ -50,7 +54,7 @@ const KPI = ({ label, value, unit, tone = "default" }: {
   );
 };
 
-export default function CTAcidStimTab({ ct, well, pump }: Props) {
+export default function CTAcidStimTab({ ct, well, pump, operationType }: Props) {
   const [formation, setFormation] = useState<FormationType>("carbonate");
   const [acidSystem, setAcidSystem] = useState<AcidSystem>("HCl-15");
   const [perfLength, setPerfLength] = useState(20);
@@ -84,14 +88,25 @@ export default function CTAcidStimTab({ ct, well, pump }: Props) {
     <div className="space-y-4">
       {/* Header */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <FlaskConical className="w-4 h-4" />
-            Кислотная обработка (Matrix Acidizing)
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Расчёт объёмов кислоты, макс. расхода ниже Pгрп, химической ёмкости и расписания закачки через ГНКТ.
-          </p>
+        <CardHeader className="pb-3 flex flex-row items-start justify-between gap-3">
+          <div className="space-y-1">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FlaskConical className="w-4 h-4" />
+              Кислотная обработка (Matrix Acidizing)
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Расчёт объёмов кислоты, макс. расхода ниже Pгрп, химической ёмкости и расписания закачки через ГНКТ.
+            </p>
+          </div>
+          <Button size="sm" variant="outline" className="h-8 text-[11px] gap-1 shrink-0"
+            onClick={async () => {
+              try {
+                await exportAcidStimDocx({ input: inputs, result: r, operationType });
+                toast.success("DOCX по кислотной обработке сформирован 📄");
+              } catch { toast.error("Ошибка экспорта DOCX"); }
+            }}>
+            <FileDown className="w-3.5 h-3.5" /> DOCX
+          </Button>
         </CardHeader>
       </Card>
 
