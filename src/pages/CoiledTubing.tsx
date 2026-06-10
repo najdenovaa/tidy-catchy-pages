@@ -31,6 +31,7 @@ import { exportCTDocx } from "@/lib/export-ct-docx";
 import CTOperationsLibrary from "@/components/CTOperationsLibrary";
 import CTReachAnalysisTab from "@/components/CTReachAnalysisTab";
 import CTCleanoutTab from "@/components/CTCleanoutTab";
+import CTNitrogenKickoffTab from "@/components/CTNitrogenKickoffTab";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import CopyImageButton from "@/components/CopyImageButton";
@@ -742,10 +743,11 @@ export default function CoiledTubing() {
           ) : forces && limits && hydraulics && fatigue && (
             <Tabs value={tab} onValueChange={setTab}>
               <div className="overflow-x-auto scrollbar-hide mb-3">
-                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-8">
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-9">
                   <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Дохождение</TabsTrigger>
                   <TabsTrigger value="reach" className="gap-1 text-xs whitespace-nowrap">🎯 Reach</TabsTrigger>
                   <TabsTrigger value="cleanout" className="gap-1 text-xs whitespace-nowrap">🧹 Промывка</TabsTrigger>
+                  <TabsTrigger value="n2" className="gap-1 text-xs whitespace-nowrap">💨 N₂ Освоение</TabsTrigger>
                   <TabsTrigger value="limits" className="gap-1 text-xs whitespace-nowrap">🛡 Пределы</TabsTrigger>
                   <TabsTrigger value="hydraulics" className="gap-1 text-xs whitespace-nowrap">💧 Гидравлика</TabsTrigger>
                   <TabsTrigger value="tempering" className="gap-1 text-xs whitespace-nowrap">🌡 Темперирование</TabsTrigger>
@@ -849,6 +851,11 @@ export default function CoiledTubing() {
               {/* Cleanout (wellbore wash) */}
               <TabsContent value="cleanout" forceMount className={tab !== "cleanout" ? "hidden" : ""}>
                 <CTCleanoutTab ct={ct} well={well} fluid={fluid} pump={pump} />
+              </TabsContent>
+
+              {/* N₂ Kickoff (nitrogen well unloading) */}
+              <TabsContent value="n2" forceMount className={tab !== "n2" ? "hidden" : ""}>
+                <CTNitrogenKickoffTab ct={ct} well={well} fluid={fluid} />
               </TabsContent>
 
               {/* Limits */}
