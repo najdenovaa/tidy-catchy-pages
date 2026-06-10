@@ -44,7 +44,7 @@ function ScrollableChart({ children, chartRef, height }: { children: React.React
   );
 }
 
-export default function ContactTimeSection({ pressureData, casingDepthMD, annVPM }: Props) {
+export default function ContactTimeSection({ pressureData, casingDepthMD, annVPM, wellData, slurries, buffers, drillingFluid, centralizationResults, prevCasingDepth }: Props) {
   const chartRef1 = useRef<HTMLDivElement>(null);
   const chartRef2 = useRef<HTMLDivElement>(null);
   const chartRef3 = useRef<HTMLDivElement>(null);
