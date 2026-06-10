@@ -1,13 +1,21 @@
 import { useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
-import type { PressurePoint } from "@/lib/cementing-calculations";
+import type { PressurePoint, WellData, SlurryInput, BufferFluid, DrillingFluid } from "@/lib/cementing-calculations";
+import type { CentralizationResult } from "@/lib/centralization-calculations";
 import CopyImageButton from "./CopyImageButton";
+import CementQualitySection from "./CementQualitySection";
 
 interface Props {
   pressureData: PressurePoint[];
   casingDepthMD: number;
   annVPM: number; // annular volume per meter, m³/m
+  wellData?: WellData;
+  slurries?: SlurryInput[];
+  buffers?: BufferFluid[];
+  drillingFluid?: DrillingFluid;
+  centralizationResults?: CentralizationResult[];
+  prevCasingDepth?: number;
 }
 
 interface ContactData {
