@@ -31,8 +31,8 @@ const DEFAULT_WELL: FoamTreatmentWellData = {
   nktID_mm: 62,
   nktDepthMD: 2700,
   trajectory: [
-    { md: 0, inc: 0, azi: 0, tvd: 0, north: 0, east: 0, dls: 0 },
-    { md: 2800, inc: 0, azi: 0, tvd: 2800, north: 0, east: 0, dls: 0 },
+    { md: 0, azimuth: 0, zenith: 0, tvd: 0 },
+    { md: 2800, azimuth: 0, zenith: 0, tvd: 2800 },
   ],
   reservoirTopMD: 2720,
   reservoirBottomMD: 2790,
