@@ -1085,8 +1085,11 @@ export function buildProductionForecast(
   const finalRate = result.expectedRateTpd ?? baseRate;
   const gain = Math.max(0, finalRate - baseRate);
 
-  const tauHours = 8;
-  const halfLifeDays = 180;
+  // Базовые параметры скорректированы химией:
+  //   деэмульгатор/взаимный растворитель уменьшают τ (быстрее выход на режим),
+  //   стабилизатор глин / ингибитор солеотложения увеличивают T½ (дольше эффект).
+  const tauHours    = Math.max(1, 8 * (result.chemistry?.tauHoursFactor ?? 1));
+  const halfLifeDays = Math.max(30, 180 * (result.chemistry?.halfLifeFactor ?? 1));
   const k = Math.log(2) / halfLifeDays;
 
   const points: ProductionPoint[] = [];
