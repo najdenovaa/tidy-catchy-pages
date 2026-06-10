@@ -6,6 +6,7 @@ import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFlu
 import { getCasingID } from "@/lib/cementing-calculations";
 import type { CentralizationResult, CentralizerInterval } from "@/lib/centralization-calculations";
 import CopyImageButton from "./CopyImageButton";
+import TripSimulator from "./TripSimulator";
 
 interface Props {
   wellData: WellData;
@@ -462,6 +463,19 @@ export default function TorqueDragSection({ wellData, mudDensity, drillingFluid,
             ✓ Зон риска посадки/прихвата не обнаружено по текущим параметрам.
           </CardContent>
         </Card>
+      )}
+
+      {/* V4: Step-by-step trip simulator */}
+      {stuckZones && surgeSwab && (
+        <TripSimulator
+          tripIn={summary.tripIn}
+          tripOut={summary.tripOut}
+          surgeSwab={surgeSwab}
+          stuckZones={stuckZones}
+          totalDepthMD={wellData.casingDepthMD}
+          maxHookLoad={maxHookLoad}
+          fracGradKpa={fracGradKpa}
+        />
       )}
 
       {/* Summary table - all 9 modes */}
