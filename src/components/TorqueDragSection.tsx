@@ -297,6 +297,42 @@ export default function TorqueDragSection({ wellData, mudDensity, drillingFluid,
             </div>
           </div>
 
+          {/* V3: Fill / Surge-Swab / Rig limit inputs */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mt-4 pt-4 border-t border-border">
+            <div>
+              <label className="text-xs text-muted-foreground">Заполнение колонны, %</label>
+              <input type="number" step="5" min="0" max="100" value={fillLevel} onChange={e => setFillLevel(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+              <div className="text-[10px] text-muted-foreground mt-0.5">100 = долив, 0 = воздух</div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">ρ жидк. внутри, г/см³</label>
+              <input type="number" step="0.01" min="0" max="2.5" value={fillFluidDensity} onChange={e => setFillFluidDensity(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Грузоподъёмность, кН</label>
+              <input type="number" step="100" min="500" max="10000" value={maxHookLoad} onChange={e => setMaxHookLoad(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Градиент ГРП, кПа/м</label>
+              <input type="number" step="0.5" min="10" max="30" value={fracGradKpa} onChange={e => setFracGradKpa(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Градиент пласт., кПа/м</label>
+              <input type="number" step="0.5" min="5" max="20" value={poreGradKpa} onChange={e => setPoreGradKpa(+e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 cursor-pointer text-xs">
+                <input type="checkbox" checked={isOpenEnded} onChange={e => setIsOpenEnded(e.target.checked)} className="rounded border-border" />
+                <span className="text-muted-foreground">Открытый конец (без БКМ)</span>
+              </label>
+            </div>
+          </div>
+
           {/* Toggles for rheology and centralizer effects */}
           <div className="flex flex-wrap gap-4 mt-4 text-xs">
             <label className="flex items-center gap-2 cursor-pointer">
