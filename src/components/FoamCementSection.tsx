@@ -6,9 +6,12 @@ import {
 } from "recharts";
 import {
   calculateFoamCement, calculateFoamPressureProfile,
-  type FoamCementInput, type FoamPumpingInput,
+  FOAM_CEMENT_RECIPES,
+  type FoamCementInput, type FoamPumpingInput, type FoamQualityZone, type FoamCementRecipe,
 } from "@/lib/foam-cement-calculations";
 import type { WellData, SlurryInput, BufferFluid } from "@/lib/cementing-calculations";
+import { Button } from "@/components/ui/button";
+import { Plus, Trash2 } from "lucide-react";
 import CopyImageButton from "./CopyImageButton";
 
 interface Props {
