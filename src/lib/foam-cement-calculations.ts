@@ -220,13 +220,14 @@ export function calculateFoamCement(input: FoamCementInput): FoamCementResult {
 
   const surfacePressure = backPressure + ATM_MPA;
   const surfTK = surfaceTemperature + 273.15;
-  const surfGasR = targetFoamQuality / Math.max(0.0001, 100 - targetFoamQuality);
+  const fallbackSurfGasR = targetFoamQuality / Math.max(0.0001, 100 - targetFoamQuality);
+  const zones = input.foamQualityZones;
 
   const topTVD = interpolateTVD(cementTopMD, traj);
   const bottomTVD = interpolateTVD(cementBottomMD, traj);
   let cumulativePressure = backPressure + mudDensity * G * topTVD / 1000;
 
-  const points: FoamCementPoint[] = [];
+  const points: (FoamCementPoint & { _surfFQ: number })[] = [];
   let prevTVD = topTVD;
   let totalN2Std = 0;
   let sumFQ = 0, sumDens = 0, minFQ = 100, maxFQ = 0, minDens = baseDensity, maxDens = 0;
@@ -240,6 +241,10 @@ export function calculateFoamCement(input: FoamCementInput): FoamCementResult {
     const tempFrac = bottomTVD > topTVD ? (tvd - topTVD) / (bottomTVD - topTVD) : 0;
     const tempC = surfaceTemperature + tempFrac * (bottomTemperature - surfaceTemperature);
     const tempK = tempC + 273.15;
+
+    // Per-zone surface FQ → per-zone surface gas ratio
+    const surfFQAtMd = getZonalFQ(md, zones, targetFoamQuality);
+    const surfGasR = surfFQAtMd / Math.max(0.0001, 100 - surfFQAtMd);
 
     const Z = calcN2ZFactor(cumulativePressure, tempK);
     const depthGasR = surfGasR * (surfacePressure * tempK) / (cumulativePressure * surfTK) * Z;
@@ -256,6 +261,7 @@ export function calculateFoamCement(input: FoamCementInput): FoamCementResult {
       md, tvd, pressure: cumulativePressure, temperature: tempC,
       foamQuality, foamDensity,
       n2VolumeRatio: foamQuality / 100, compressionFactor, zFactor: Z,
+      _surfFQ: surfFQAtMd,
     });
     sumFQ += foamQuality;
     sumDens += foamDensity;
@@ -276,7 +282,11 @@ export function calculateFoamCement(input: FoamCementInput): FoamCementResult {
     const tempK = pt.temperature + 273.15;
     totalN2Std += gasV * pt.pressure / ATM_MPA * STD_TEMP_K / tempK / pt.zFactor;
   }
-  const initialVolumeM3 = slurryVolumeM3 / Math.max(1e-6, 1 - targetFoamQuality / 100);
+  // Initial (surface) volume — use average surface FQ across the column
+  const avgSurfFQ = count > 0 ? points.reduce((s, p) => s + p._surfFQ, 0) / count : targetFoamQuality;
+  const initialVolumeM3 = slurryVolumeM3 / Math.max(1e-6, 1 - avgSurfFQ / 100);
+  void fallbackSurfGasR;
+
 
   let pumpingTimeMin: number;
   if (input.pumpingTimeMin && input.pumpingTimeMin > 0) pumpingTimeMin = input.pumpingTimeMin;
