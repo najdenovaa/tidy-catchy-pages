@@ -43,6 +43,30 @@ import {
 const fmt = (v: number | undefined, d = 2) =>
   Number.isFinite(v as number) ? (v as number).toFixed(d) : "—";
 
+const SURF_LABEL: Record<string, string> = {
+  fluorinated: "Фторированное",
+  amphoteric: "Амфотерное",
+  nonionic: "Неионогенное",
+  anionic: "Анионное",
+  cationic: "Катионное",
+  none: "Без ПАВ",
+};
+
+const ADDITIVE_CATEGORIES: { value: AdditiveCategory; label: string }[] = [
+  { value: "corrosion_inhibitor", label: "Ингибитор коррозии" },
+  { value: "iron_control",        label: "Стабилизатор Fe³⁺" },
+  { value: "clay_stabilizer",     label: "Стабилизатор глин" },
+  { value: "mutual_solvent",      label: "Взаимный растворитель" },
+  { value: "demulsifier",         label: "Деэмульгатор" },
+  { value: "scale_inhibitor",     label: "Ингибитор солеотложения" },
+  { value: "gelling_agent",       label: "Гелянт / загуститель" },
+  { value: "polymer",             label: "Полимер" },
+  { value: "foam_stabilizer",     label: "Стабилизатор пены" },
+  { value: "solvent",             label: "Орг. растворитель" },
+  { value: "gas_generator",       label: "Газогенерирующий" },
+  { value: "other",               label: "Прочее (авто)" },
+];
+
 const DEFAULT_WELL: FoamTreatmentWellData = {
   wellDepthMD: 2800, casingID_mm: 130, nktOD_mm: 73, nktID_mm: 62, nktDepthMD: 2700,
   trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }, { md: 2800, azimuth: 0, zenith: 0, tvd: 2800 }],
