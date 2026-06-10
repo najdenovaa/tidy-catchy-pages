@@ -686,7 +686,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                     return (
                     <TableRow key={tp.id}>
                       <TableCell className="px-1 py-0.5">
-                        <Input type="number" value={tp.md || ""} onChange={e => updateTurbPoint(tp.id, { md: +e.target.value })} className="h-7 text-xs w-20" />
+                        <Input type="number" value={tp.md || ""} onChange={e => updateTurbPoint(tp.id, { md: +e.target.value })} className="h-7 text-xs w-28" />
                       </TableCell>
                       <TableCell className="px-1 py-0.5">
                         <Input type="number" min={2} max={8} value={tp.bladesCount} onChange={e => updateTurbPoint(tp.id, { bladesCount: +e.target.value })} className="h-7 text-xs w-14" />
