@@ -32,6 +32,7 @@ import CTOperationsLibrary from "@/components/CTOperationsLibrary";
 import CTReachAnalysisTab from "@/components/CTReachAnalysisTab";
 import CTCleanoutTab from "@/components/CTCleanoutTab";
 import CTNitrogenKickoffTab from "@/components/CTNitrogenKickoffTab";
+import CTAcidStimTab from "@/components/CTAcidStimTab";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import CopyImageButton from "@/components/CopyImageButton";
@@ -743,11 +744,12 @@ export default function CoiledTubing() {
           ) : forces && limits && hydraulics && fatigue && (
             <Tabs value={tab} onValueChange={setTab}>
               <div className="overflow-x-auto scrollbar-hide mb-3">
-                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-9">
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-10">
                   <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Дохождение</TabsTrigger>
                   <TabsTrigger value="reach" className="gap-1 text-xs whitespace-nowrap">🎯 Reach</TabsTrigger>
                   <TabsTrigger value="cleanout" className="gap-1 text-xs whitespace-nowrap">🧹 Промывка</TabsTrigger>
                   <TabsTrigger value="n2" className="gap-1 text-xs whitespace-nowrap">💨 N₂ Освоение</TabsTrigger>
+                  <TabsTrigger value="acid" className="gap-1 text-xs whitespace-nowrap">🧪 Кислота</TabsTrigger>
                   <TabsTrigger value="limits" className="gap-1 text-xs whitespace-nowrap">🛡 Пределы</TabsTrigger>
                   <TabsTrigger value="hydraulics" className="gap-1 text-xs whitespace-nowrap">💧 Гидравлика</TabsTrigger>
                   <TabsTrigger value="tempering" className="gap-1 text-xs whitespace-nowrap">🌡 Темперирование</TabsTrigger>
@@ -856,6 +858,11 @@ export default function CoiledTubing() {
               {/* N₂ Kickoff (nitrogen well unloading) */}
               <TabsContent value="n2" forceMount className={tab !== "n2" ? "hidden" : ""}>
                 <CTNitrogenKickoffTab ct={ct} well={well} fluid={fluid} />
+              </TabsContent>
+
+              {/* Acid stimulation */}
+              <TabsContent value="acid" forceMount className={tab !== "acid" ? "hidden" : ""}>
+                <CTAcidStimTab ct={ct} well={well} pump={pump} />
               </TabsContent>
 
               {/* Limits */}
