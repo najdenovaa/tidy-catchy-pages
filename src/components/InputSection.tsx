@@ -81,7 +81,7 @@ const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolu
               <div className="flex items-center gap-1 flex-1">
                 <DebouncedInput type="number" step="0.1" value={step.rateLps || ""} onChange={(e) => {
                   const u = [...steps]; u[i] = { ...u[i], rateLps: parseFloat(e.target.value) || 0 }; onChange(u);
-                }} className="h-7 text-xs w-20" placeholder="л/с" />
+                }} className="h-7 text-xs w-28" placeholder="л/с" />
                 <span className="text-xs text-muted-foreground">л/с</span>
               </div>
               <div className="flex items-center gap-1">
