@@ -540,15 +540,15 @@ export default function InputSection(props: Props) {
                       <Input type="number" step="any" value={sec.fromMD || ""} onChange={(e) => {
                         const s = [...wellData.casingSections!]; s[i] = { ...s[i], fromMD: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, casingSections: s });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <Input type="number" step="any" value={sec.toMD || ""} onChange={(e) => {
                         const s = [...wellData.casingSections!]; s[i] = { ...s[i], toMD: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, casingSections: s });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <Input type="number" step="any" value={sec.wallThickness || ""} onChange={(e) => {
                         const s = [...wellData.casingSections!]; s[i] = { ...s[i], wallThickness: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, casingSections: s });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <button onClick={() => {
                         const s = wellData.casingSections!.filter((_, j) => j !== i);
                         onWellDataChange({ ...wellData, casingSections: s.length > 0 ? s : undefined });
