@@ -278,10 +278,10 @@ export async function exportCleanoutDocx(args: {
     children.push(sectionTitle("4. План закачки (multi-fluid)"));
     children.push(dataTable(
       ["#", "Жидкость", "ρ, г/см³", "μ, сП", "V, м³", "Время, мин", "ΣV, м³", "Σt, мин"],
-      schedule.items.map((it, i) => [
+      schedule.stages.map((it, i) => [
         `${i + 1}`, it.name, fmt(it.densityGcc, 2), fmt(it.viscosityCp, 1),
-        fmt(it.volumeM3, 2), fmt(it.pumpTimeMin, 1),
-        fmt(it.cumVolumeM3, 2), fmt(it.cumTimeMin, 1),
+        fmt(it.volumeM3, 2), fmt(it.durationMin, 1),
+        fmt(it.cumVolumeM3, 2), fmt(it.endMin, 1),
       ]),
     ));
     children.push(new Paragraph({ spacing: { before: 80 },
