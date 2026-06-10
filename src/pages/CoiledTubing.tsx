@@ -852,17 +852,17 @@ export default function CoiledTubing() {
 
               {/* Cleanout (wellbore wash) */}
               <TabsContent value="cleanout" forceMount className={tab !== "cleanout" ? "hidden" : ""}>
-                <CTCleanoutTab ct={ct} well={well} fluid={fluid} pump={pump} />
+                <CTCleanoutTab ct={ct} well={well} fluid={fluid} pump={pump} operationType={operationType} />
               </TabsContent>
 
               {/* N₂ Kickoff (nitrogen well unloading) */}
               <TabsContent value="n2" forceMount className={tab !== "n2" ? "hidden" : ""}>
-                <CTNitrogenKickoffTab ct={ct} well={well} fluid={fluid} />
+                <CTNitrogenKickoffTab ct={ct} well={well} fluid={fluid} operationType={operationType} />
               </TabsContent>
 
               {/* Acid stimulation */}
               <TabsContent value="acid" forceMount className={tab !== "acid" ? "hidden" : ""}>
-                <CTAcidStimTab ct={ct} well={well} pump={pump} />
+                <CTAcidStimTab ct={ct} well={well} pump={pump} operationType={operationType} />
               </TabsContent>
 
               {/* Limits */}

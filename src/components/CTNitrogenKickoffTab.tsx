@@ -11,12 +11,16 @@ import {
   calculateN2Kickoff, N2KickoffInputs,
 } from "@/lib/ct-nitrogen-kickoff";
 import type { WellGeometry, FluidData, CTStringData } from "@/lib/coiled-tubing-calculations";
-import { Wind, Gauge, Droplets, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Wind, Gauge, Droplets, AlertTriangle, CheckCircle2, FileDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { exportN2KickoffDocx } from "@/lib/export-ct-modules-docx";
+import { toast } from "sonner";
 
 interface Props {
   ct: CTStringData;
   well: WellGeometry;
   fluid: FluidData;
+  operationType?: string;
 }
 
 const Field = ({ label, value, onChange, unit, step = "any" }: {
@@ -54,7 +58,7 @@ const KPI = ({ label, value, unit, tone = "default", icon }: {
   );
 };
 
-export default function CTNitrogenKickoffTab({ ct, well, fluid }: Props) {
+export default function CTNitrogenKickoffTab({ ct, well, fluid, operationType }: Props) {
   const [reservoirPressure, setReservoirPressure] = useState(20);
   const [drawdownTarget, setDrawdownTarget] = useState(5);
   const [n2Rate, setN2Rate] = useState(30);
@@ -92,15 +96,26 @@ export default function CTNitrogenKickoffTab({ ct, well, fluid }: Props) {
     <div className="space-y-4">
       {/* Header */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Wind className="w-4 h-4" />
-            Освоение скважины азотом (N₂ Kickoff)
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Газлифтное снижение забойного давления: расчёт Pзаб, депрессии и потребного объёма N₂.
-            Модель — реальный газ (Papay Z-factor), скважинный профиль.
-          </p>
+        <CardHeader className="pb-3 flex flex-row items-start justify-between gap-3">
+          <div className="space-y-1">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Wind className="w-4 h-4" />
+              Освоение скважины азотом (N₂ Kickoff)
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Газлифтное снижение забойного давления: расчёт Pзаб, депрессии и потребного объёма N₂.
+              Модель — реальный газ (Papay Z-factor), скважинный профиль.
+            </p>
+          </div>
+          <Button size="sm" variant="outline" className="h-8 text-[11px] gap-1 shrink-0"
+            onClick={async () => {
+              try {
+                await exportN2KickoffDocx({ input: inputs, result, operationType });
+                toast.success("DOCX по N₂ освоению сформирован 📄");
+              } catch { toast.error("Ошибка экспорта DOCX"); }
+            }}>
+            <FileDown className="w-3.5 h-3.5" /> DOCX
+          </Button>
         </CardHeader>
       </Card>
 
