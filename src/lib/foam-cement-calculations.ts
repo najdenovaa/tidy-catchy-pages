@@ -48,6 +48,103 @@ function n2DensityKgM3(pressureMPa: number, tempK: number): number {
   return (pressureMPa * 1e6 * M_N2) / (Z * R * tempK);
 }
 
+/* ──────────── Recipe library (база рецептур пеноцемента) ──────────── */
+
+export interface FoamCementRecipe {
+  id: string;
+  name: string;
+  nameRu: string;
+  baseDensity: number;        // г/см³
+  waterCementRatio: number;
+  yieldM3PerTon: number;
+  pvCp: number;
+  ypPa: number;
+  thickeningTime30Bc: number; // мин
+  maxTemp: number;            // °C
+  foamStabilizerType: string;
+  foamStabilizerConc: number; // % к массе цемента
+  recommendedFQ: [number, number];
+  description: string;
+}
+
+export const FOAM_CEMENT_RECIPES: FoamCementRecipe[] = [
+  {
+    id: "class-g-standard",
+    name: "Class G + Standard Foamer",
+    nameRu: "API Class G + Стандартный ПАВ",
+    baseDensity: 1.90, waterCementRatio: 0.44, yieldM3PerTon: 0.76,
+    pvCp: 45, ypPa: 8, thickeningTime30Bc: 240, maxTemp: 120,
+    foamStabilizerType: "АОС", foamStabilizerConc: 0.5,
+    recommendedFQ: [20, 75],
+    description: "Стандартный пеноцемент для скважин до 3000 м",
+  },
+  {
+    id: "lightweight-micro",
+    name: "Lightweight Microsphere Blend",
+    nameRu: "Облегчённый на микросферах + N₂",
+    baseDensity: 1.50, waterCementRatio: 0.65, yieldM3PerTon: 1.10,
+    pvCp: 30, ypPa: 5, thickeningTime30Bc: 300, maxTemp: 150,
+    foamStabilizerType: "КПАВ", foamStabilizerConc: 0.3,
+    recommendedFQ: [15, 50],
+    description: "Для зон с низким градиентом ГРП",
+  },
+  {
+    id: "heavy-foam",
+    name: "Heavy Base + Foam",
+    nameRu: "Утяжелённый базовый + N₂",
+    baseDensity: 2.10, waterCementRatio: 0.38, yieldM3PerTon: 0.65,
+    pvCp: 60, ypPa: 12, thickeningTime30Bc: 200, maxTemp: 100,
+    foamStabilizerType: "АОС-М", foamStabilizerConc: 0.7,
+    recommendedFQ: [25, 60],
+    description: "Получение ρ 1.40–1.80 г/см³ из тяжёлого базового",
+  },
+  {
+    id: "pct-i-g-cc-1",
+    name: "PCT-I-G-CC-1",
+    nameRu: "ПЦТ-I-G-CC-1 (ГОСТ 1581-2019)",
+    baseDensity: 1.88, waterCementRatio: 0.44, yieldM3PerTon: 0.78,
+    pvCp: 42, ypPa: 7, thickeningTime30Bc: 220, maxTemp: 110,
+    foamStabilizerType: "АОС (сульфонол)", foamStabilizerConc: 0.5,
+    recommendedFQ: [20, 70],
+    description: "Российский тампонажный для умеренных температур",
+  },
+  {
+    id: "pct-iii-ob-4",
+    name: "PCT-III-Ob-4-50",
+    nameRu: "ПЦТ-III-Об-4-50 (облегчённый)",
+    baseDensity: 1.45, waterCementRatio: 0.70, yieldM3PerTon: 1.15,
+    pvCp: 28, ypPa: 4, thickeningTime30Bc: 280, maxTemp: 50,
+    foamStabilizerType: "Неонол АФ 9-12", foamStabilizerConc: 0.4,
+    recommendedFQ: [15, 45],
+    description: "Облегчённый ПЦТ для верхних интервалов до 50 °C",
+  },
+  {
+    id: "pct-ii-50",
+    name: "PCT-II-50",
+    nameRu: "ПЦТ-II-50 (утяжелённый сульфатостойкий)",
+    baseDensity: 2.05, waterCementRatio: 0.40, yieldM3PerTon: 0.68,
+    pvCp: 55, ypPa: 11, thickeningTime30Bc: 210, maxTemp: 100,
+    foamStabilizerType: "АОС-М", foamStabilizerConc: 0.6,
+    recommendedFQ: [25, 55],
+    description: "Сульфатостойкий утяжелённый для агрессивных сред",
+  },
+];
+
+/* ──────────── Multi-zone foam quality ──────────── */
+
+export interface FoamQualityZone {
+  topMD: number;
+  bottomMD: number;
+  targetFQ: number; // %
+}
+
+/** Returns target FQ at given MD: explicit zone if defined, else fallback. */
+export function getZonalFQ(md: number, zones: FoamQualityZone[] | undefined, fallback: number): number {
+  if (!zones || zones.length === 0) return fallback;
+  const z = zones.find(zn => md >= zn.topMD && md <= zn.bottomMD);
+  return z ? z.targetFQ : fallback;
+}
+
 /* ──────────── A. STATIC PROFILE ──────────── */
 
 export interface FoamCementInput {
@@ -67,6 +164,10 @@ export interface FoamCementInput {
   cavernCoeff?: number;
   pumpingTimeMin?: number;
   pumpRateLps?: number;
+  /** Optional multi-zone FQ — overrides targetFoamQuality per depth interval */
+  foamQualityZones?: FoamQualityZone[];
+  /** Recipe id (for traceability/UI) */
+  recipeId?: string;
 }
 
 export interface FoamCementPoint {
@@ -119,13 +220,14 @@ export function calculateFoamCement(input: FoamCementInput): FoamCementResult {
 
   const surfacePressure = backPressure + ATM_MPA;
   const surfTK = surfaceTemperature + 273.15;
-  const surfGasR = targetFoamQuality / Math.max(0.0001, 100 - targetFoamQuality);
+  const fallbackSurfGasR = targetFoamQuality / Math.max(0.0001, 100 - targetFoamQuality);
+  const zones = input.foamQualityZones;
 
   const topTVD = interpolateTVD(cementTopMD, traj);
   const bottomTVD = interpolateTVD(cementBottomMD, traj);
   let cumulativePressure = backPressure + mudDensity * G * topTVD / 1000;
 
-  const points: FoamCementPoint[] = [];
+  const points: (FoamCementPoint & { _surfFQ: number })[] = [];
   let prevTVD = topTVD;
   let totalN2Std = 0;
   let sumFQ = 0, sumDens = 0, minFQ = 100, maxFQ = 0, minDens = baseDensity, maxDens = 0;
@@ -139,6 +241,10 @@ export function calculateFoamCement(input: FoamCementInput): FoamCementResult {
     const tempFrac = bottomTVD > topTVD ? (tvd - topTVD) / (bottomTVD - topTVD) : 0;
     const tempC = surfaceTemperature + tempFrac * (bottomTemperature - surfaceTemperature);
     const tempK = tempC + 273.15;
+
+    // Per-zone surface FQ → per-zone surface gas ratio
+    const surfFQAtMd = getZonalFQ(md, zones, targetFoamQuality);
+    const surfGasR = surfFQAtMd / Math.max(0.0001, 100 - surfFQAtMd);
 
     const Z = calcN2ZFactor(cumulativePressure, tempK);
     const depthGasR = surfGasR * (surfacePressure * tempK) / (cumulativePressure * surfTK) * Z;
@@ -155,6 +261,7 @@ export function calculateFoamCement(input: FoamCementInput): FoamCementResult {
       md, tvd, pressure: cumulativePressure, temperature: tempC,
       foamQuality, foamDensity,
       n2VolumeRatio: foamQuality / 100, compressionFactor, zFactor: Z,
+      _surfFQ: surfFQAtMd,
     });
     sumFQ += foamQuality;
     sumDens += foamDensity;
@@ -175,7 +282,11 @@ export function calculateFoamCement(input: FoamCementInput): FoamCementResult {
     const tempK = pt.temperature + 273.15;
     totalN2Std += gasV * pt.pressure / ATM_MPA * STD_TEMP_K / tempK / pt.zFactor;
   }
-  const initialVolumeM3 = slurryVolumeM3 / Math.max(1e-6, 1 - targetFoamQuality / 100);
+  // Initial (surface) volume — use average surface FQ across the column
+  const avgSurfFQ = count > 0 ? points.reduce((s, p) => s + p._surfFQ, 0) / count : targetFoamQuality;
+  const initialVolumeM3 = slurryVolumeM3 / Math.max(1e-6, 1 - avgSurfFQ / 100);
+  void fallbackSurfGasR;
+
 
   let pumpingTimeMin: number;
   if (input.pumpingTimeMin && input.pumpingTimeMin > 0) pumpingTimeMin = input.pumpingTimeMin;
