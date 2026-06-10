@@ -15,6 +15,12 @@ import {
   ComposedChart,
 } from "recharts";
 import {
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { HelpCircle } from "lucide-react";
+import {
   calculateFoamTreatment,
   buildCyclogram,
   recommendEquipment,
@@ -645,12 +651,104 @@ function RecipeEditor({
   );
 }
 
+/* ─────────── Глоссарий терминов и аббревиатур ─────────── */
+
+const GLOSSARY: Record<string, string> = {
+  // Скважина / пласт
+  "Глубина скважины, м": "Глубина скважины по стволу (MD — Measured Depth) — длина ствола от устья до забоя.",
+  "ID эксп. колонны, мм": "Внутренний диаметр (Inner Diameter) эксплуатационной обсадной колонны.",
+  "OD НКТ, мм": "Наружный диаметр (Outer Diameter) насосно-компрессорных труб (НКТ / tubing).",
+  "ID НКТ, мм": "Внутренний диаметр НКТ — определяет потери на трение при закачке.",
+  "Спуск НКТ, м": "Глубина спуска башмака НКТ от устья (MD).",
+  "Перф. кровля, м": "Глубина верхнего интервала перфорации (кровля продуктивного пласта).",
+  "Перф. подошва, м": "Глубина нижнего интервала перфорации (подошва пласта).",
+  "Эфф. толщина h, м": "Эффективная (нефтенасыщенная) толщина пласта — сумма проницаемых пропластков, реально дающих приток. Используется в формуле Дюпюи и при расчёте объёма обработки на 1 м.",
+  "k, мД": "Проницаемость пласта в миллидарси (мД). Способность породы пропускать флюид. Чем выше k — тем глубже проникает раствор.",
+  "Пористость φ": "Доля порового пространства в породе (0…1). Влияет на объём проникновения раствора.",
+  "Pпл, МПа": "Пластовое давление (reservoir pressure) на глубине продуктивного пласта.",
+  "Tпл, °C": "Пластовая температура — определяет термостабильность ПАВ и реагентов.",
+  "P ГРП, МПа": "Давление гидроразрыва пласта (fracture pressure) — верхний предел забойного давления, который нельзя превышать.",
+  "Скин текущий S": "Скин-фактор (skin factor) — безразмерный показатель загрязнения призабойной зоны. S>0 — ПЗП загрязнена, S<0 — стимулирована.",
+  "ρ жидкости, г/см³": "Плотность скважинной жидкости в стволе перед обработкой.",
+  "Тек. дебит, т/сут": "Текущий дебит скважины по жидкости / нефти, тонн в сутки. База для расчёта прироста.",
+  // Параметры операции
+  "Количество циклов": "Число последовательных циклов «закачка → выдержка → стравливание» в рамках одной операции ОПЗ.",
+  "Расход закачки, л/с": "Темп закачки рабочего раствора на устье, литров в секунду.",
+  "Время выдержки, мин": "Время реакции раствора в пласте между закачкой и стравливанием.",
+  "Целевой радиус, м": "Желаемая глубина проникновения раствора в пласт от стенки скважины.",
+  // Результаты — Объёмы
+  "Раствор обр. (всего)": "Суммарный объём рабочего раствора (ПАВ/кислота) на все циклы операции.",
+  "Пена на устье": "Объём пены, замеренный в условиях устья (давление и температура устья).",
+  "Пена на забое": "Объём пены, пересчитанный на термобарические условия пласта (учитывается сжимаемость N₂).",
+  "N₂ (стд. усл.)": "Расход газообразного азота, приведённый к стандартным условиям (0,1 МПа, 20 °C).",
+  "Продавка (всего)": "Суммарный объём продавочной жидкости — выдавливает раствор из НКТ в пласт.",
+  // Результаты — Давления
+  "P устья (закачка)": "Расчётное давление на устье при закачке (нагнетательное давление насоса).",
+  "P забой": "Забойное давление во время закачки = P устья + гидростатика − потери на трение.",
+  "P ГРП": "Давление гидроразрыва — нельзя превышать.",
+  "Запас до ГРП": "Разница между давлением ГРП и максимальным забойным давлением. <1 МПа — опасно.",
+  "Потери на трение": "Потери давления на трение в НКТ при закачке (Δp friction).",
+  "FQ на забое": "Foam Quality — качество пены, объёмная доля газа в пене на забое (%). Оптимум 60–80%.",
+  // Операция
+  "Циклов": "Количество циклов в данной операции.",
+  "Длительность цикла": "Время одного цикла: закачка + выдержка + стравливание.",
+  "Общее время": "Общая длительность операции по всем циклам.",
+  "Пиковый расход N₂": "Максимальный мгновенный расход азота, м³/мин (стандартные условия).",
+  "Радиус проникновения": "Расчётная глубина проникновения раствора в пласт от стенки скважины.",
+  "ρ пены на забое": "Плотность пены в забойных условиях — зависит от FQ и давления.",
+  // Метрики
+  "Скин текущий": "Скин-фактор до обработки.",
+  "Скин ожидаемый": "Прогнозируемый скин-фактор после ОПЗ.",
+  "Снижение скина": "ΔS = S₀ − S_после. Чем больше — тем эффективнее обработка.",
+  "Прирост дебита": "Ожидаемый прирост дебита, % к текущему (по формуле Дюпюи).",
+  // MiniStat
+  "Через 24 ч": "Прогнозный дебит через 24 часа после пуска (выход на режим).",
+  "Через 7 сут": "Прогнозный дебит через 7 суток после обработки.",
+  "Через 30 сут": "Прогнозный дебит через 30 суток.",
+  "Доп. добыча / 90 сут": "Накопленная дополнительная добыча за 90 суток относительно базовой кривой.",
+  // Оборудование
+  "Насосный агрегат": "Цементировочный/нагнетательный агрегат (ЦА-320, СИН-32 и т.п.) для закачки раствора.",
+  "Азотная установка": "Передвижная криогенная установка (ПКСА / СДА) для подачи N₂.",
+  "Пеногенератор": "Узел смешения жидкости и газа для генерации пены заданного FQ.",
+  // Рецептура
+  "Название рецептуры": "Краткое наименование рецепта обработки.",
+  "Тип коллектора": "Литология пласта: терригенный (песчаник) или карбонатный (известняк/доломит). Определяет тип кислоты.",
+  "Тип базовой жидкости": "Основа раствора: вода, HCl-кислота, HF-смесь и т.п.",
+  "ρ базовой жидк., г/см³": "Плотность базовой жидкости при 20 °C.",
+  "Концентрация баз. жидк., %": "Массовая концентрация активного компонента (например, 15% HCl).",
+  "Макс. T, °C": "Максимальная температура, при которой рецепт сохраняет работоспособность.",
+  "Тип ПАВ": "Класс поверхностно-активного вещества: анионный, катионный, неионогенный, амфотерный, фторированный.",
+  "Концентрация ПАВ, %": "Массовая доля ПАВ в растворе.",
+  "Целевое FQ, %": "Целевое качество пены (объёмная доля газа), %.",
+  "Объём / м эфф.толщины, м³/м": "Удельный объём раствора на 1 м эффективной толщины пласта.",
+  "ΔS мин (ожид.)": "Минимальное ожидаемое снижение скин-фактора по данному рецепту.",
+  "ΔS макс (ожид.)": "Максимальное ожидаемое снижение скин-фактора по данному рецепту.",
+};
+
+function Hint({ text, children }: { text: string; children?: React.ReactNode }) {
+  const desc = GLOSSARY[text];
+  if (!desc) return <>{children ?? text}</>;
+  return (
+    <UITooltip delayDuration={150}>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center gap-1 cursor-help border-b border-dotted border-muted-foreground/50">
+          {children ?? text}
+          <HelpCircle className="w-3 h-3 text-muted-foreground/70 shrink-0" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+        {desc}
+      </TooltipContent>
+    </UITooltip>
+  );
+}
+
 /* ─────────── Вспомогательные UI ─────────── */
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Label className="text-xs text-muted-foreground"><Hint text={label} /></Label>
       {children}
     </div>
   );
@@ -662,7 +760,7 @@ function SliderRow({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-sm">
-        <Label>{label}</Label>
+        <Label><Hint text={label} /></Label>
         <span className="font-mono text-foreground">{display}</span>
       </div>
       <Slider value={[value]} min={min} max={max} step={step} onValueChange={(arr) => onChange(arr[0])} />
@@ -684,8 +782,8 @@ function Row({ k, v, accent }: { k: string; v: string; accent?: "ok" | "warn" | 
     : accent === "warn" ? "text-amber-500"
     : accent === "danger" ? "text-red-500" : "text-foreground";
   return (
-    <div className="flex justify-between text-sm">
-      <span className="text-muted-foreground">{k}</span>
+    <div className="flex justify-between text-sm gap-2">
+      <span className="text-muted-foreground"><Hint text={k} /></span>
       <span className={`font-mono font-medium ${cls}`}>{v}</span>
     </div>
   );
@@ -694,7 +792,7 @@ function Row({ k, v, accent }: { k: string; v: string; accent?: "ok" | "warn" | 
 function Metric({ label, value, accent }: { label: string; value: string; accent?: "ok" }) {
   return (
     <div>
-      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground"><Hint text={label} /></div>
       <div className={`text-xl font-bold mt-0.5 ${accent === "ok" ? "text-emerald-500" : "text-foreground"}`}>{value}</div>
     </div>
   );
@@ -703,7 +801,7 @@ function Metric({ label, value, accent }: { label: string; value: string; accent
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg bg-muted/40 px-3 py-2">
-      <div className="text-[10px] text-muted-foreground uppercase">{label}</div>
+      <div className="text-[10px] text-muted-foreground uppercase"><Hint text={label} /></div>
       <div className="text-sm font-semibold text-foreground mt-0.5">{value}</div>
     </div>
   );
@@ -712,7 +810,7 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 function EquipBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md bg-muted/50 px-3 py-2">
-      <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{label}</div>
+      <div className="text-[11px] text-muted-foreground uppercase tracking-wider"><Hint text={label} /></div>
       <div className="font-medium text-foreground mt-0.5">{value}</div>
     </div>
   );
