@@ -28,10 +28,12 @@ import {
   buildRateProfile,
   buildSkinEvolution,
   buildProductionForecast,
+  getAdditiveCategoryLabel,
   FOAM_TREATMENT_RECIPES,
   type FoamTreatmentWellData,
   type FoamTreatmentRecipe,
   type FoamTreatmentOptions,
+  type AdditiveCategory,
 } from "@/lib/foam-treatment-calculations";
 import {
   CheckCircle2, AlertTriangle, Beaker, FlaskConical, Droplets, Wind,
