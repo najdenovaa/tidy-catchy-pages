@@ -725,9 +725,9 @@ export default function CementPlug() {
                         <tbody>
                           {trajPoints.map((p, i) => (
                             <tr key={i}>
-                              <td><BlurInput type="number" className="h-6 text-[10px] w-16" value={p.md || ""} onValueCommit={v => updateTrajPoint(i, "md", v)} /></td>
-                              <td><BlurInput type="number" className="h-6 text-[10px] w-16" value={p.azimuth || ""} onValueCommit={v => updateTrajPoint(i, "azimuth", v)} /></td>
-                              <td><BlurInput type="number" className="h-6 text-[10px] w-16" value={p.zenith || ""} onValueCommit={v => updateTrajPoint(i, "zenith", v)} /></td>
+                              <td className="px-1"><BlurInput type="number" className="h-8 text-xs w-28 min-w-[110px]" value={p.md || ""} onValueCommit={v => updateTrajPoint(i, "md", v)} /></td>
+                              <td className="px-1"><BlurInput type="number" className="h-8 text-xs w-28 min-w-[110px]" value={p.azimuth || ""} onValueCommit={v => updateTrajPoint(i, "azimuth", v)} /></td>
+                              <td className="px-1"><BlurInput type="number" className="h-8 text-xs w-28 min-w-[110px]" value={p.zenith || ""} onValueCommit={v => updateTrajPoint(i, "zenith", v)} /></td>
                               <td className="text-center text-muted-foreground">{p.tvd?.toFixed(1)}</td>
                               <td>{trajPoints.length > 1 && <button className="text-destructive text-[10px]" onClick={() => removeTrajPoint(i)}>✕</button>}</td>
                             </tr>
