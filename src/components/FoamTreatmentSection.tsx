@@ -296,6 +296,60 @@ export default function FoamTreatmentSection() {
             </div>
           )}
 
+          {/* ═════════ Химико-реологический анализ ═════════ */}
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <FlaskConical className="w-4 h-4 text-primary" />
+              <h4 className="text-sm font-semibold">Химия и реология — применено к расчёту</h4>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <MiniStat label="Класс ПАВ" value={SURF_LABEL[result.chemistry.surfactantClass]} />
+              <MiniStat label="Стабильность пены" value={`×${result.chemistry.foamStabilityFactor.toFixed(2)}`} />
+              <MiniStat label="Tмакс эффективная" value={`${result.chemistry.effectiveMaxTempC.toFixed(0)} °C`} />
+              <MiniStat label="μ кажущаяся" value={`${result.chemistry.apparentViscosityCp.toFixed(1)} cP`} />
+              <MiniStat label="Множитель ΔS" value={`×${result.chemistry.skinReductionMultiplier.toFixed(2)}`} />
+              <MiniStat label="Множитель Rпрон" value={`×${result.chemistry.penetrationMultiplier.toFixed(2)}`} />
+              <MiniStat label="τ выхода на режим" value={`×${result.chemistry.tauHoursFactor.toFixed(2)}`} />
+              <MiniStat label="T½ эффекта" value={`×${result.chemistry.halfLifeFactor.toFixed(2)}`} />
+            </div>
+
+            {/* Перечень добавок с эффектами */}
+            {result.chemistry.perAdditive.length > 0 && (
+              <div className="rounded-lg bg-background/60 border border-border p-2.5 space-y-1.5">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">
+                  Вклад каждой добавки
+                </div>
+                {result.chemistry.perAdditive.map((p, i) => (
+                  <div key={i} className="text-xs flex flex-col md:flex-row md:items-center md:gap-2">
+                    <span className="font-medium text-foreground min-w-[180px]">{p.name}</span>
+                    <span className="text-muted-foreground">[{getAdditiveCategoryLabel(p.category)}]</span>
+                    <span className="text-primary/90 flex-1">{p.effect}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Примечания совместимости (мягкие) */}
+            {result.chemistry.compatibilityNotes.length > 0 && (
+              <div className="rounded-lg bg-amber-500/5 border border-amber-500/30 p-2.5 space-y-1">
+                {result.chemistry.compatibilityNotes.map((n, i) => (
+                  <div key={i} className="text-xs flex items-start gap-2">
+                    <span className="text-amber-500">⚠</span>
+                    <span className="text-foreground">{n}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <p className="text-[10px] text-muted-foreground italic">
+              Все множители ниже автоматически применены к: радиусу проникновения, прогнозу ΔS, потерям на трение,
+              устьевому давлению, времени выхода на режим и кривой затухания эффекта (графики 4–6).
+            </p>
+          </div>
+
+
+
           {/* ═════════════ ГРАФИКИ ═════════════ */}
 
           {/* 1. Циклограмма давления */}
