@@ -53,6 +53,15 @@ export interface TDInput {
   tripSpeedMps?: number;              // скорость спуска/подъёма, м/с (default 0.5)
   // V2: Centralizer drag
   centralizerDrag?: CentralizerDragItem[];
+  // V3: Fill level (недолив колонны)
+  fillLevel?: number;          // % заполнения колонны жидкостью (0-100, default 100)
+  fillFluidDensity?: number;   // плотность жидкости внутри, г/см³ (default = mudDensity)
+  // V3: Surge/Swab & stuck-zone limits
+  isOpenEnded?: boolean;       // открытый конец колонны (default false = с БКМ/обратным клапаном)
+  fracGradient_kPaPerM?: number;   // градиент ГРП, кПа/м (для surge/swab)
+  porePressureGrad_kPaPerM?: number; // градиент пластового давления, кПа/м
+  maxHookLoad_kN?: number;     // грузоподъёмность буровой, кН (для StuckZones)
+  jointLength?: number;        // длина свечи/трубы, м (default 12)
 }
 
 export type TDMode = 'trip_in' | 'trip_out' | 'rotate' | 'drill_rotary' | 'drill_motor' | 'back_ream' | 'pickup' | 'slackoff' | 'cement_rotate';
@@ -105,6 +114,28 @@ function toRad(deg: number): number {
 
 function buoyancyFactor(mudDensityGcm3: number, steelDensityGcm3: number = 7.85): number {
   return 1 - mudDensityGcm3 / steelDensityGcm3;
+}
+
+/**
+ * Buoyancy factor for a tubular with partial internal fill.
+ * Closed-bottom approximation: net upward force per unit length =
+ *   ρ_mud × A_o − ρ_internal_eff × A_i
+ * where ρ_internal_eff = ρ_fill × (fillLevel/100).
+ * fillLevel=100 & ρ_fill=ρ_mud → standard BF; fillLevel=0 → BF = 1 − ρ_mud×A_o/(ρ_steel×A_w)
+ */
+function buoyancyFactorFilled(
+  mudGcm3: number,
+  fillFluidGcm3: number,
+  fillLevelPct: number,
+  pipeOD_mm: number,
+  pipeID_mm: number,
+  steelGcm3 = 7.85,
+): number {
+  const Ao = (Math.PI / 4) * (pipeOD_mm / 1000) ** 2;
+  const Ai = (Math.PI / 4) * (pipeID_mm / 1000) ** 2;
+  const Aw = Math.max(1e-9, Ao - Ai);
+  const rhoFillEff = fillFluidGcm3 * Math.max(0, Math.min(100, fillLevelPct)) / 100;
+  return 1 - (mudGcm3 * Ao - rhoFillEff * Ai) / (steelGcm3 * Aw);
 }
 
 /** Dogleg severity between two survey points, °/30m */
@@ -194,7 +225,12 @@ function buildSegments(traj: TrajectoryPoint[], wellDepthMD: number): Trajectory
 
 export function calculateTD(input: TDInput, mode: TDMode): TDResult {
   const traj = buildSegments(input.trajectory, input.wellDepthMD);
-  const bf = buoyancyFactor(input.mudDensity);
+  const useFill = input.fillLevel !== undefined && input.fillLevel < 100;
+  const fillFluid = input.fillFluidDensity ?? input.mudDensity;
+  const pipeOD = input.pipeOD_mm ?? input.casingOD;
+  const bf = useFill
+    ? buoyancyFactorFilled(input.mudDensity, fillFluid, input.fillLevel ?? 100, pipeOD, input.casingID)
+    : buoyancyFactor(input.mudDensity);
   const unitWeight = input.pipeWeightKgPerM * 9.81 / 1000;
   const buoyantWeight = unitWeight * bf;
 
@@ -230,8 +266,7 @@ export function calculateTD(input: TDInput, mode: TDMode): TDResult {
   let cumViscousDrag = 0;
   let cumCentralizerDrag = 0;
   const yieldStr = input.yieldStrength ?? 550;
-  const pipeOD = input.pipeOD_mm ?? input.casingOD;
-  const tripSpeed = input.tripSpeedMps ?? 0.5; // м/с default
+  const tripSpeed = input.tripSpeedMps ?? 0.5; // м/с default — pipeOD already declared above
 
   // DC section
   const dcTop = input.dcLength ? Math.max(0, input.casingDepthMD - input.dcLength) : input.casingDepthMD;
@@ -389,9 +424,273 @@ export function calculateTDSummary(input: TDInput): TDSummary {
   const tripIn = calculateTD(input, 'trip_in');
   const tripOut = calculateTD(input, 'trip_out');
   const rotate = calculateTD(input, 'rotate');
-  const bf = buoyancyFactor(input.mudDensity);
+  const useFill = input.fillLevel !== undefined && input.fillLevel < 100;
+  const fillFluid = input.fillFluidDensity ?? input.mudDensity;
+  const pipeOD = input.pipeOD_mm ?? input.casingOD;
+  const bf = useFill
+    ? buoyancyFactorFilled(input.mudDensity, fillFluid, input.fillLevel ?? 100, pipeOD, input.casingID)
+    : buoyancyFactor(input.mudDensity);
   const freeWeight = input.pipeWeightKgPerM * 9.81 / 1000 * bf * input.casingDepthMD + input.blockWeight;
   return { tripIn, tripOut, rotate, freeWeight, buoyancyFactor: bf };
+}
+
+/* ───── Surge & Swab (Burkhardt simplified, Bingham plastic annulus) ───── */
+
+export interface SurgeSwabPoint {
+  md: number;
+  tvd: number;
+  hydrostaticMPa: number;       // статика бурового
+  surgePressureMPa: number;     // приращение при спуске
+  swabPressureMPa: number;      // разрежение при подъёме
+  totalBHPsurgeMPa: number;
+  totalBHPswabMPa: number;
+  fracPressureMPa: number;
+  porePressureMPa: number;
+  ecdSurge: number;             // г/см³
+  ecdSwab: number;
+  isSafeSurge: boolean;
+  isSafeSwab: boolean;
+}
+
+export interface SurgeSwabResult {
+  points: SurgeSwabPoint[];
+  maxSurgeMPa: number;
+  maxSwabMPa: number;
+  worstSurgeMargin: number;     // P_frac − BHP_surge на самой опасной глубине, МПа
+  worstSwabMargin: number;      // BHP_swab − P_pore (если <0 → приток)
+}
+
+/**
+ * Calculate Surge/Swab pressures vs depth.
+ * Burkhardt closed-end approximation: v_eff = v_pipe × Kp × (Dc² / (Dh² − Dc²))
+ * where Kp ≈ 1.5 (closed end) or 0.5 (open end).
+ * Shear stress on pipe (Bingham): τ = YP + PV·v_eff/gap
+ * ΔP_per_meter = 4 · τ · Dc / (Dh² − Dc²)
+ */
+export function calculateSurgeSwab(input: TDInput): SurgeSwabResult {
+  const traj = buildSegments(input.trajectory, input.wellDepthMD);
+  const pipeOD = input.pipeOD_mm ?? input.casingOD;
+  const v = input.tripSpeedMps ?? 0.5;
+  const Kp = input.isOpenEnded ? 0.5 : 1.5;
+  const fracGrad = input.fracGradient_kPaPerM ?? 18; // kPa/m default
+  const poreGrad = input.porePressureGrad_kPaPerM ?? 10.5; // gradient of normal pore pressure
+  const mud = input.mudDensity; // g/cm³
+  const G_KPA_PER_M = 9.81;
+
+  const step = 25;
+  const points: SurgeSwabPoint[] = [];
+  let cumSurgeMPa = 0;
+  let cumSwabMPa = 0;
+  let prevTVD = 0;
+
+  for (let md = 0; md <= input.casingDepthMD; md += step) {
+    const tvd = interpolateTVD(md, traj);
+    const dTVD = Math.max(0, tvd - prevTVD);
+    prevTVD = tvd;
+
+    const hole = md > input.casingShoe ? input.holeDiameter : input.casingID;
+    const Dc = pipeOD / 1000;
+    const Dh = hole / 1000;
+    const gap = Math.max(1e-4, (Dh - Dc) / 2);
+    const annArea = Math.PI / 4 * (Dh * Dh - Dc * Dc);
+
+    // Fluid rheology at this depth (fall back to mud)
+    const fl = input.fluidSegments?.find(s => md >= s.topMD && md <= s.bottomMD);
+    const pv = (fl?.pv ?? 30) * 0.001;   // Pa·s
+    const yp = fl?.yp ?? 5;              // Pa
+
+    // Effective annular flow velocity (closed-end displaces its area)
+    const vEff = v * Kp * (Math.PI / 4 * Dc * Dc) / Math.max(1e-6, annArea);
+    const shearStress = yp + pv * vEff / gap; // Pa
+    // ΔP per meter MD ≈ τ × perimeter_pipe / annular area
+    const dPperM = shearStress * (Math.PI * Dc) / Math.max(1e-6, annArea); // Pa/m
+
+    const dP_MPa = dPperM * step / 1e6;
+    cumSurgeMPa += dP_MPa;
+    cumSwabMPa += dP_MPa;
+
+    const hydrostaticMPa = mud * G_KPA_PER_M * tvd / 1000;
+    const fracPressureMPa = fracGrad * tvd / 1000;
+    const porePressureMPa = poreGrad * tvd / 1000;
+    const totalSurge = hydrostaticMPa + cumSurgeMPa;
+    const totalSwab = Math.max(0, hydrostaticMPa - cumSwabMPa);
+    const ecdSurge = tvd > 0 ? totalSurge / (G_KPA_PER_M * tvd / 1000) : mud;
+    const ecdSwab = tvd > 0 ? totalSwab / (G_KPA_PER_M * tvd / 1000) : mud;
+
+    void dTVD;
+    points.push({
+      md, tvd,
+      hydrostaticMPa,
+      surgePressureMPa: cumSurgeMPa,
+      swabPressureMPa: cumSwabMPa,
+      totalBHPsurgeMPa: totalSurge,
+      totalBHPswabMPa: totalSwab,
+      fracPressureMPa, porePressureMPa,
+      ecdSurge, ecdSwab,
+      isSafeSurge: totalSurge < fracPressureMPa,
+      isSafeSwab: totalSwab > porePressureMPa,
+    });
+  }
+
+  let worstSurge = Number.POSITIVE_INFINITY;
+  let worstSwab = Number.POSITIVE_INFINITY;
+  let maxSurge = 0, maxSwab = 0;
+  for (const p of points) {
+    worstSurge = Math.min(worstSurge, p.fracPressureMPa - p.totalBHPsurgeMPa);
+    worstSwab = Math.min(worstSwab, p.totalBHPswabMPa - p.porePressureMPa);
+    maxSurge = Math.max(maxSurge, p.surgePressureMPa);
+    maxSwab = Math.max(maxSwab, p.swabPressureMPa);
+  }
+
+  return {
+    points,
+    maxSurgeMPa: maxSurge,
+    maxSwabMPa: maxSwab,
+    worstSurgeMargin: Number.isFinite(worstSurge) ? worstSurge : 0,
+    worstSwabMargin: Number.isFinite(worstSwab) ? worstSwab : 0,
+  };
+}
+
+/* ───── Stuck zones (зоны риска посадки/прихвата) ───── */
+
+export interface StuckZone {
+  topMD: number;
+  bottomMD: number;
+  reason: 'buckling' | 'clearance' | 'hook_load' | 'dls' | 'surge_frac' | 'swab_kick' | 'yield';
+  severity: 'warning' | 'critical';
+  metric: string;       // короткое числовое описание
+  recommendation: string;
+}
+
+const DLS_LIMIT_DEG_30M = 5.0;       // жёсткий лимит DLS для крупной колонны
+const CLEARANCE_WARN_MM = 10;
+const CLEARANCE_CRIT_MM = 5;
+
+export function findStuckZones(
+  tripIn: TDResult,
+  tripOut: TDResult,
+  surgeSwab: SurgeSwabResult | null,
+  input: TDInput,
+): StuckZone[] {
+  const zones: StuckZone[] = [];
+  const maxHL = input.maxHookLoad_kN;
+  const yieldStr = input.yieldStrength ?? 550;
+  const pts = tripIn.points;
+
+  for (let i = 0; i < pts.length; i++) {
+    const pt = pts[i];
+    const next = pts[i + 1];
+    const span = next ? next.md - pt.md : 10;
+
+    // 1. Buckling — hookload < 0 (колонна теряет вес)
+    if (pt.hookLoad < 0) {
+      zones.push({
+        topMD: pt.md, bottomMD: pt.md + span,
+        reason: 'buckling', severity: 'critical',
+        metric: `HL = ${pt.hookLoad.toFixed(0)} кН`,
+        recommendation: 'Колонна теряет вес — риск продольного изгиба (buckling). Увеличьте ρ бурового или долейте колонну.',
+      });
+    }
+
+    // 2. Clearance
+    if (pt.clearance < CLEARANCE_CRIT_MM) {
+      zones.push({
+        topMD: pt.md, bottomMD: pt.md + span,
+        reason: 'clearance', severity: 'critical',
+        metric: `зазор ${pt.clearance.toFixed(0)} мм`,
+        recommendation: `Критически малый зазор (${pt.clearance.toFixed(0)} мм) — муфта/центратор не пройдут. Обязательна предварительная проработка.`,
+      });
+    } else if (pt.clearance < CLEARANCE_WARN_MM) {
+      zones.push({
+        topMD: pt.md, bottomMD: pt.md + span,
+        reason: 'clearance', severity: 'warning',
+        metric: `зазор ${pt.clearance.toFixed(0)} мм`,
+        recommendation: `Малый зазор (${pt.clearance.toFixed(0)} мм) — высокий риск посадки при наличии жёстких центраторов.`,
+      });
+    }
+
+    // 3. Hook load > rig capacity
+    if (maxHL && pt.hookLoad > maxHL) {
+      zones.push({
+        topMD: pt.md, bottomMD: pt.md + span,
+        reason: 'hook_load', severity: 'critical',
+        metric: `HL ${pt.hookLoad.toFixed(0)} > ${maxHL} кН`,
+        recommendation: `Нагрузка на крюке (${pt.hookLoad.toFixed(0)} кН) превышает грузоподъёмность буровой (${maxHL} кН).`,
+      });
+    }
+    if (maxHL && tripOut.points[i] && tripOut.points[i].hookLoad > maxHL) {
+      zones.push({
+        topMD: pt.md, bottomMD: pt.md + span,
+        reason: 'hook_load', severity: 'critical',
+        metric: `HL подъём ${tripOut.points[i].hookLoad.toFixed(0)} > ${maxHL} кН`,
+        recommendation: `Нагрузка при подъёме превышает грузоподъёмность буровой.`,
+      });
+    }
+
+    // 4. DLS
+    if (next) {
+      const dls = (() => {
+        const i1 = (pt.zenith * Math.PI) / 180, i2 = (next.zenith * Math.PI) / 180;
+        const a1 = (pt.azimuth * Math.PI) / 180, a2 = (next.azimuth * Math.PI) / 180;
+        const cosD = Math.cos(i2 - i1) - Math.sin(i1) * Math.sin(i2) * (1 - Math.cos(a2 - a1));
+        const dl = Math.acos(Math.min(1, Math.max(-1, cosD)));
+        return span > 0 ? (dl * 180 / Math.PI) * (30 / span) : 0;
+      })();
+      if (dls > DLS_LIMIT_DEG_30M) {
+        zones.push({
+          topMD: pt.md, bottomMD: next.md,
+          reason: 'dls', severity: 'warning',
+          metric: `DLS ${dls.toFixed(1)}°/30м`,
+          recommendation: `Высокая интенсивность искривления (${dls.toFixed(1)}°/30м > ${DLS_LIMIT_DEG_30M}°). Жёсткая колонна может застрять — рассмотрите гибкие соединения или промежуточную проработку.`,
+        });
+      }
+    }
+
+    // 5. Von Mises > yield
+    if (pt.vonMises && pt.vonMises > yieldStr) {
+      zones.push({
+        topMD: pt.md, bottomMD: pt.md + span,
+        reason: 'yield', severity: 'critical',
+        metric: `σ ${pt.vonMises.toFixed(0)} > ${yieldStr} МПа`,
+        recommendation: `Напряжение Von Mises (${pt.vonMises.toFixed(0)} МПа) превышает предел текучести материала (${yieldStr} МПа). Риск пластической деформации.`,
+      });
+    }
+  }
+
+  // 6. Surge/Swab zones
+  if (surgeSwab) {
+    for (const sp of surgeSwab.points) {
+      if (!sp.isSafeSurge) {
+        zones.push({
+          topMD: sp.md, bottomMD: sp.md + 25,
+          reason: 'surge_frac', severity: 'critical',
+          metric: `BHP+surge ${sp.totalBHPsurgeMPa.toFixed(1)} > P_ГРП ${sp.fracPressureMPa.toFixed(1)} МПа`,
+          recommendation: `Гидродинамическое давление при спуске превышает ГРП — снизьте скорость СПО или промежуточно промойте.`,
+        });
+      }
+      if (!sp.isSafeSwab) {
+        zones.push({
+          topMD: sp.md, bottomMD: sp.md + 25,
+          reason: 'swab_kick', severity: 'warning',
+          metric: `BHP−swab ${sp.totalBHPswabMPa.toFixed(1)} < P_пласт ${sp.porePressureMPa.toFixed(1)} МПа`,
+          recommendation: `Свабирование снижает забойное ниже пластового — риск притока (kick). Снизьте скорость подъёма.`,
+        });
+      }
+    }
+  }
+
+  // Compact: merge adjacent zones with same reason+severity
+  const merged: StuckZone[] = [];
+  for (const z of zones) {
+    const last = merged[merged.length - 1];
+    if (last && last.reason === z.reason && last.severity === z.severity && Math.abs(z.topMD - last.bottomMD) <= 30) {
+      last.bottomMD = Math.max(last.bottomMD, z.bottomMD);
+      last.metric = z.metric;
+    } else {
+      merged.push({ ...z });
+    }
+  }
+  return merged;
 }
 
 /* ───── Angle interpolation ───── */
