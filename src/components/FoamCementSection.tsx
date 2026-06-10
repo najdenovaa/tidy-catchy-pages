@@ -43,6 +43,7 @@ const tooltipStyle = {
 };
 
 export default function FoamCementSection({ wellData, slurries, buffers, mudDensity, pumpRateLps, fractureGradient }: Props) {
+  const [recipeId, setRecipeId] = useState<string>("custom");
   const [targetQuality, setTargetQuality] = useState(35);
   const [backPressure, setBackPressure] = useState(0.5);
   const [surfaceTemp, setSurfaceTemp] = useState(20);
@@ -52,6 +53,32 @@ export default function FoamCementSection({ wellData, slurries, buffers, mudDens
     return s ? (s.density >= 100 ? s.density / 1000 : s.density) : 1.85;
   });
   const [pumpRate, setPumpRate] = useState<number>(pumpRateLps && pumpRateLps > 0 ? pumpRateLps : 15);
+  const [fqZones, setFqZones] = useState<FoamQualityZone[]>([]);
+
+  const activeRecipe: FoamCementRecipe | null = recipeId === "custom"
+    ? null
+    : FOAM_CEMENT_RECIPES.find(r => r.id === recipeId) ?? null;
+
+  const applyRecipe = (id: string) => {
+    setRecipeId(id);
+    if (id === "custom") return;
+    const r = FOAM_CEMENT_RECIPES.find(x => x.id === id);
+    if (!r) return;
+    setBaseDensity(r.baseDensity);
+    // suggest mid of recommended FQ
+    setTargetQuality(Math.round((r.recommendedFQ[0] + r.recommendedFQ[1]) / 2));
+  };
+
+  const addZone = () => {
+    const last = fqZones[fqZones.length - 1];
+    const top = last ? last.bottomMD : cementTopMD;
+    setFqZones([...fqZones, { topMD: top, bottomMD: cementBottomMD, targetFQ: targetQuality }]);
+  };
+  const updateZone = (i: number, patch: Partial<FoamQualityZone>) => {
+    setFqZones(fqZones.map((z, idx) => idx === i ? { ...z, ...patch } : z));
+  };
+  const removeZone = (i: number) => setFqZones(fqZones.filter((_, idx) => idx !== i));
+
 
   const refs = Array.from({ length: 10 }, () => useRef<HTMLDivElement>(null));
 
