@@ -87,7 +87,7 @@ const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolu
               <div className="flex items-center gap-1">
                 <DebouncedInput type="number" step="0.1" value={step.volumeM3 || ""} onChange={(e) => {
                   const u = [...steps]; u[i] = { ...u[i], volumeM3: parseFloat(e.target.value) || 0 }; onChange(u);
-                }} className="h-7 text-xs w-20" placeholder="м³" />
+                }} className="h-7 text-xs w-28" placeholder="м³" />
                 <span className="text-xs text-muted-foreground">м³</span>
               </div>
               {steps.length > 1 && (
