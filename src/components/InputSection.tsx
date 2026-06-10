@@ -622,10 +622,10 @@ export default function InputSection(props: Props) {
                 <thead>
                   <tr className="border-b border-border text-xs text-muted-foreground">
                     <th className="text-left py-1 px-2 w-8">#</th>
-                    <th className="text-left py-1 px-2">По стволу (MD), м</th>
-                    <th className="text-left py-1 px-2">Азимут, °</th>
-                    <th className="text-left py-1 px-2">Зенит, °</th>
-                    <th className="text-left py-1 px-2">По вертикали (TVD), м <span className="text-primary font-normal">(авто)</span></th>
+                    <th className="text-left py-1 px-2 whitespace-nowrap">По стволу (MD), м</th>
+                    <th className="text-left py-1 px-2 whitespace-nowrap">Азимут, °</th>
+                    <th className="text-left py-1 px-2 whitespace-nowrap">Зенит, °</th>
+                    <th className="text-left py-1 px-2 whitespace-nowrap">По вертикали (TVD), м <span className="text-primary font-normal">(авто)</span></th>
                     <th className="py-1 px-2 w-10"></th>
                   </tr>
                 </thead>
@@ -633,10 +633,10 @@ export default function InputSection(props: Props) {
                   {(wellData.trajectory || []).map((pt, i) => (
                     <tr key={i} className="border-b border-border/30">
                       <td className="py-1 px-2 text-xs text-muted-foreground">{i + 1}</td>
-                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.md || ""} onChange={(e) => updateTrajectoryPoint(i, "md", e.target.value)} className="h-7 text-xs" /></td>
-                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.azimuth || ""} onChange={(e) => updateTrajectoryPoint(i, "azimuth", e.target.value)} className="h-7 text-xs" /></td>
-                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.zenith || ""} onChange={(e) => updateTrajectoryPoint(i, "zenith", e.target.value)} className="h-7 text-xs" /></td>
-                      <td className="py-1 px-2">
+                      <td className="py-1 px-2 min-w-[120px]"><Input type="number" step="any" value={pt.md || ""} onChange={(e) => updateTrajectoryPoint(i, "md", e.target.value)} className="h-7 text-xs w-full" /></td>
+                      <td className="py-1 px-2 min-w-[120px]"><Input type="number" step="any" value={pt.azimuth || ""} onChange={(e) => updateTrajectoryPoint(i, "azimuth", e.target.value)} className="h-7 text-xs w-full" /></td>
+                      <td className="py-1 px-2 min-w-[120px]"><Input type="number" step="any" value={pt.zenith || ""} onChange={(e) => updateTrajectoryPoint(i, "zenith", e.target.value)} className="h-7 text-xs w-full" /></td>
+                      <td className="py-1 px-2 min-w-[120px]">
                         <div className="h-7 flex items-center px-2 rounded bg-muted text-xs font-medium border border-border">
                           {pt.tvd ? pt.tvd.toFixed(2) : "—"}
                         </div>
