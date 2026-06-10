@@ -9,23 +9,26 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine, AreaChart, Area,
 } from "recharts";
-import { Trash2, Plus, CheckCircle2, AlertTriangle, Droplets } from "lucide-react";
+import { Trash2, Plus, CheckCircle2, AlertTriangle, Droplets, FileDown } from "lucide-react";
 import {
   calculateCleanout, calcMultiFluidSchedule,
   type CleanoutInput, type FluidSlug,
 } from "@/lib/ct-cleanout";
 import type { CTStringData, WellGeometry, FluidData, PumpData } from "@/lib/coiled-tubing-calculations";
+import { exportCleanoutDocx } from "@/lib/export-ct-modules-docx";
+import { toast } from "sonner";
 
 interface Props {
   ct: CTStringData;
   well: WellGeometry;
   fluid: FluidData;
   pump: PumpData;
+  operationType?: string;
 }
 
 const fmt = (v: number, d = 2) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
-export default function CTCleanoutTab({ ct, well, fluid, pump }: Props) {
+export default function CTCleanoutTab({ ct, well, fluid, pump, operationType }: Props) {
   // Cleanout inputs (с разумными дефолтами из well/fluid)
   const [input, setInput] = useState<CleanoutInput>({
     casingID_mm: well.casingID,
@@ -77,10 +80,19 @@ export default function CTCleanoutTab({ ct, well, fluid, pump }: Props) {
     <div className="space-y-3">
       {/* ───────── Cleanout inputs + result ───────── */}
       <Card>
-        <CardHeader className="py-3 px-4">
+        <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2">
             🧹 Промывка скважины (cleanout) — транспорт песка
           </CardTitle>
+          <Button size="sm" variant="outline" className="h-8 text-[11px] gap-1"
+            onClick={async () => {
+              try {
+                await exportCleanoutDocx({ input, result, schedule, slugs, operationType });
+                toast.success("DOCX по промывке сформирован 📄");
+              } catch { toast.error("Ошибка экспорта DOCX"); }
+            }}>
+            <FileDown className="w-3.5 h-3.5" /> DOCX
+          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Inputs */}
