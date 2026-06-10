@@ -519,6 +519,9 @@ export interface FoamTreatmentResult {
   expectedRateTpd?: number;
 
   warnings: string[];
+
+  // Химико-реологический анализ (применён к расчёту)
+  chemistry: ChemistryAnalysis;
 }
 
 export interface FoamTreatmentOptions {
