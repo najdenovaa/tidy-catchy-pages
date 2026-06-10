@@ -846,6 +846,11 @@ export default function CoiledTubing() {
                 />
               </TabsContent>
 
+              {/* Cleanout (wellbore wash) */}
+              <TabsContent value="cleanout" forceMount className={tab !== "cleanout" ? "hidden" : ""}>
+                <CTCleanoutTab ct={ct} well={well} fluid={fluid} pump={pump} />
+              </TabsContent>
+
               {/* Limits */}
               <TabsContent value="limits" forceMount className={tab !== "limits" ? "hidden" : ""}>
                 <Card>
