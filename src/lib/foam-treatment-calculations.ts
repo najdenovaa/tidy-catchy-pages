@@ -94,6 +94,7 @@ export interface FoamTreatmentRecipe {
     concentration: number;
     unit: "%" | "кг/м³";
     purpose: string;
+    category?: AdditiveCategory;
   }>;
 
   collectorType: "carbonate" | "terrigenous" | "any";
