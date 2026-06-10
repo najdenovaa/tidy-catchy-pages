@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
-import { calculateTDSummary, calculateTD, type TDInput, type TDMode, type TDResult, type TDSummary, type FluidSegment, type CentralizerDragItem } from "@/lib/torque-drag-calculations";
+import { calculateTDSummary, calculateTD, calculateSurgeSwab, findStuckZones, type TDInput, type TDMode, type TDResult, type TDSummary, type FluidSegment, type CentralizerDragItem, type StuckZone } from "@/lib/torque-drag-calculations";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid } from "@/lib/cementing-calculations";
 import { getCasingID } from "@/lib/cementing-calculations";
 import type { CentralizationResult, CentralizerInterval } from "@/lib/centralization-calculations";
