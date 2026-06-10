@@ -29,6 +29,7 @@ import { generateHookLoadProfile, type HookLoadPoint, type CTSection } from "@/l
 import CTWell3D from "@/components/CTWell3D";
 import { exportCTDocx } from "@/lib/export-ct-docx";
 import CTOperationsLibrary from "@/components/CTOperationsLibrary";
+import CTReachAnalysisTab from "@/components/CTReachAnalysisTab";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import CopyImageButton from "@/components/CopyImageButton";
@@ -740,8 +741,9 @@ export default function CoiledTubing() {
           ) : forces && limits && hydraulics && fatigue && (
             <Tabs value={tab} onValueChange={setTab}>
               <div className="overflow-x-auto scrollbar-hide mb-3">
-                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-6">
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-7">
                   <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Дохождение</TabsTrigger>
+                  <TabsTrigger value="reach" className="gap-1 text-xs whitespace-nowrap">🎯 Reach Analysis</TabsTrigger>
                   <TabsTrigger value="limits" className="gap-1 text-xs whitespace-nowrap">🛡 Пределы</TabsTrigger>
                   <TabsTrigger value="hydraulics" className="gap-1 text-xs whitespace-nowrap">💧 Гидравлика</TabsTrigger>
                   <TabsTrigger value="tempering" className="gap-1 text-xs whitespace-nowrap">🌡 Темперирование</TabsTrigger>
@@ -828,6 +830,18 @@ export default function CoiledTubing() {
                     </div>
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              {/* Reach Analysis */}
+              <TabsContent value="reach" forceMount className={tab !== "reach" ? "hidden" : ""}>
+                <CTReachAnalysisTab
+                  ct={ct}
+                  well={well}
+                  fluid={fluid}
+                  tools={tools}
+                  sections={ctSections}
+                  baselineFriction={friction}
+                />
               </TabsContent>
 
               {/* Limits */}
