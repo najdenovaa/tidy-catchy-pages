@@ -7,6 +7,10 @@ import { getCasingID } from "@/lib/cementing-calculations";
 import type { CentralizationResult, CentralizerInterval } from "@/lib/centralization-calculations";
 import CopyImageButton from "./CopyImageButton";
 import TripSimulator from "./TripSimulator";
+import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
+import { exportTorqueDragDocx } from "@/lib/export-td-docx";
+import { toast } from "sonner";
 
 interface Props {
   wellData: WellData;
@@ -231,7 +235,31 @@ export default function TorqueDragSection({ wellData, mudDensity, drillingFluid,
     <div className="space-y-6">
       {/* Inputs */}
       <Card>
-        <CardHeader className="pb-4"><CardTitle className="text-lg">⚙️ Параметры расчёта T&D</CardTitle></CardHeader>
+        <CardHeader className="pb-4 flex flex-row items-center justify-between">
+          <CardTitle className="text-lg">⚙️ Параметры расчёта T&D</CardTitle>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              try {
+                await exportTorqueDragDocx({
+                  well: wellData,
+                  input: makeInput(),
+                  summary,
+                  extraModes,
+                  surgeSwab,
+                  stuckZones: stuckZones ?? [],
+                });
+                toast.success("DOCX-отчёт T&D готов");
+              } catch (e) {
+                console.error(e);
+                toast.error("Ошибка генерации DOCX");
+              }
+            }}
+          >
+            <Download className="w-4 h-4 mr-1.5" /> Экспорт DOCX
+          </Button>
+        </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             <div>
