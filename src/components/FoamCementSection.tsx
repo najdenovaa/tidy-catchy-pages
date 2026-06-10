@@ -161,6 +161,43 @@ export default function FoamCementSection({ wellData, slurries, buffers, mudDens
 
   return (
     <div className="space-y-6">
+      {/* Recipe library */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">🧪 База рецептур пеноцемента</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-2">
+              <label className="text-xs text-muted-foreground">Тип базового раствора</label>
+              <select
+                value={recipeId}
+                onChange={e => applyRecipe(e.target.value)}
+                className="w-full border border-border rounded px-2 py-2 text-sm bg-background"
+              >
+                <option value="custom">— Своя рецептура (ручной ввод) —</option>
+                {FOAM_CEMENT_RECIPES.map(r => (
+                  <option key={r.id} value={r.id}>
+                    {r.nameRu} • ρ={r.baseDensity} • FQ {r.recommendedFQ[0]}–{r.recommendedFQ[1]}%
+                  </option>
+                ))}
+              </select>
+            </div>
+            {activeRecipe && (
+              <div className="text-[11px] text-muted-foreground leading-relaxed border border-border rounded p-2 bg-muted/30">
+                <div><b>В/Ц:</b> {activeRecipe.waterCementRatio}, <b>Выход:</b> {activeRecipe.yieldM3PerTon} м³/т</div>
+                <div><b>PV/YP:</b> {activeRecipe.pvCp} сПз / {activeRecipe.ypPa} Па</div>
+                <div><b>Загуст. 30 Bc:</b> {activeRecipe.thickeningTime30Bc} мин, <b>T<sub>max</sub>:</b> {activeRecipe.maxTemp} °C</div>
+                <div><b>Стабилизатор:</b> {activeRecipe.foamStabilizerType} ({activeRecipe.foamStabilizerConc}%)</div>
+              </div>
+            )}
+          </div>
+          {activeRecipe && (
+            <div className="mt-2 text-xs text-muted-foreground">{activeRecipe.description}</div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Inputs */}
       <Card>
         <CardHeader className="pb-4">
@@ -169,7 +206,7 @@ export default function FoamCementSection({ wellData, slurries, buffers, mudDens
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <Input label="Базовая плотность, г/см³" value={baseDensity} step={0.01} min={1} max={2.5} onChange={setBaseDensity} />
-            <Input label="Целевое качество пены, %" value={targetQuality} step={5} min={10} max={85} onChange={setTargetQuality} hint="20–80%" />
+            <Input label="Целевое качество пены, %" value={targetQuality} step={5} min={10} max={85} onChange={setTargetQuality} hint={activeRecipe ? `реком. ${activeRecipe.recommendedFQ[0]}–${activeRecipe.recommendedFQ[1]}%` : "20–80%"} />
             <Input label="Обратное давление, МПа" value={backPressure} step={0.1} min={0} max={10} onChange={setBackPressure} />
             <Input label="Температура устья, °C" value={surfaceTemp} step={1} min={-30} max={60} onChange={setSurfaceTemp} />
             <Input label="Расход суспензии, л/с" value={pumpRate} step={0.5} min={1} max={60} onChange={setPumpRate} />
@@ -185,41 +222,119 @@ export default function FoamCementSection({ wellData, slurries, buffers, mudDens
         </CardContent>
       </Card>
 
-      {/* Summary */}
+      {/* Multi-zone FQ */}
       <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">📊 Сводная таблица</CardTitle>
+        <CardHeader className="pb-4 flex flex-row items-center justify-between">
+          <CardTitle className="text-lg">🎯 Поинтервальный FQ (зоны качества пены)</CardTitle>
+          <Button size="sm" variant="outline" onClick={addZone}>
+            <Plus className="h-4 w-4 mr-1" /> Добавить зону
+          </Button>
         </CardHeader>
         <CardContent>
-          <div className="space-y-1">
-            <Row label="Базовая плотность суспензии" value={`${fmt(baseDensity, 2)} г/см³`} />
-            <Row label="Целевое качество пены (устье)" value={`${fmt(targetQuality, 0)}%`} />
-            <Row label="Качество пены на забое" value={`${fmt(staticResult.points.at(-1)?.foamQuality ?? 0, 1)}%`} />
-            <Row label="Плотность пеноцемента (устье / забой)" value={`${fmt(staticResult.points[0]?.foamDensity ?? 0, 3)} / ${fmt(staticResult.points.at(-1)?.foamDensity ?? 0, 3)} г/см³`} />
-            <Row label="Средняя плотность в затрубье" value={`${fmt(dynamicResult.avgFoamDensityAnn, 3)} г/см³`} />
-            <Row label="Объём базовой суспензии" value={`${fmt(dynamicResult.totalBaseSlurryM3, 2)} м³`} />
-            <Row label="Объём пеноцемента на устье" value={`${fmt(dynamicResult.totalFoamVolumeAtSurfaceM3, 2)} м³`} />
-            <Row label="Объём N₂ (стд. условия)" value={`${fmt(dynamicResult.totalN2StdM3, 1)} м³`} />
-            <Row label="Пиковый расход N₂" value={`${fmt(dynamicResult.peakN2RateStdM3min, 2)} м³/мин (стд.)`} />
-            <Row label="Макс. ЭЦП на забое" value={`${fmt(dynamicResult.maxECD, 3)} г/см³`} />
-            <Row label="ЭЦП ГРП" value={`${fmt(dynamicResult.points[0]?.fracGradEcd ?? 0, 3)} г/см³`} />
-            <Row label="Запас до ГРП" value={`${fmt(fracReserve, 3)} г/см³ ${fracReserve > 0 ? "✓" : "⚠"}`} />
-            <Row label="Время: Буфер / Пеноцемент / Продавка" value={`${fmt(dynamicResult.bufferTimeMin, 1)} / ${fmt(dynamicResult.foamTimeMin, 1)} / ${fmt(dynamicResult.displacementTimeMin, 1)} мин`} />
-            <Row label="ВСЕГО" value={`${fmt(dynamicResult.pumpingTimeMin, 1)} мин`} />
-            <Row label="Z-фактор N₂ на забое" value={`${fmt(staticResult.points.at(-1)?.zFactor ?? 1, 3)}`} />
-          </div>
-          <div className={`mt-3 p-3 rounded-lg text-sm font-medium ${qualityOk ? "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"}`}>
-            {qualityOk
-              ? "✓ Качество пены в допустимом диапазоне (20–80%) по всей глубине"
-              : `⚠ Качество пены выходит за диапазон 20–80% — скорректируйте параметры`}
-          </div>
-          {bottomFQwarn && (
-            <div className="mt-2 p-3 rounded-lg text-sm bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-              ⚠ Качество пены на забое ниже 20% — возможна потеря стабильности. Увеличьте целевой FQ до 45–50% или применяйте стабилизатор пены.
+          {fqZones.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              Зоны не заданы — используется единое целевое FQ {targetQuality}% по всей длине пеноцемента.
+              Добавьте зоны, чтобы задать разные значения FQ по интервалам глубины (например, верх 40%, низ 25%).
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="grid grid-cols-12 gap-2 text-[11px] text-muted-foreground font-medium px-1">
+                <div className="col-span-3">От, м (MD)</div>
+                <div className="col-span-3">До, м (MD)</div>
+                <div className="col-span-4">Целевое FQ (устье), %</div>
+                <div className="col-span-2"></div>
+              </div>
+              {fqZones.map((z, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                  <input type="number" value={z.topMD} step={10}
+                    onChange={e => updateZone(i, { topMD: +e.target.value })}
+                    className="col-span-3 min-w-[100px] border border-border rounded px-2 py-1.5 text-sm bg-background" />
+                  <input type="number" value={z.bottomMD} step={10}
+                    onChange={e => updateZone(i, { bottomMD: +e.target.value })}
+                    className="col-span-3 min-w-[100px] border border-border rounded px-2 py-1.5 text-sm bg-background" />
+                  <input type="number" value={z.targetFQ} step={1} min={5} max={85}
+                    onChange={e => updateZone(i, { targetFQ: +e.target.value })}
+                    className="col-span-4 min-w-[100px] border border-border rounded px-2 py-1.5 text-sm bg-background" />
+                  <Button size="sm" variant="ghost" className="col-span-2" onClick={() => removeZone(i)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <div className="text-[11px] text-muted-foreground mt-2">
+                ℹ Зоны применяются к статическому профилю по глубине. Динамическая симуляция использует единое целевое FQ устья.
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Summary */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">📊 Сводная карточка результатов</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+            <div className="space-y-1">
+              <div className="text-xs uppercase text-muted-foreground mt-2 mb-1">Плотности</div>
+              <Row label="Базовая суспензия" value={`${fmt(baseDensity, 2)} г/см³`} />
+              <Row label="Пеноцемент устье" value={`${fmt(staticResult.points[0]?.foamDensity ?? 0, 3)} г/см³`} />
+              <Row label="Пеноцемент забой" value={`${fmt(staticResult.points.at(-1)?.foamDensity ?? 0, 3)} г/см³`} />
+              <Row label="Средняя в затрубье" value={`${fmt(dynamicResult.avgFoamDensityAnn, 3)} г/см³`} />
+
+              <div className="text-xs uppercase text-muted-foreground mt-3 mb-1">Качество пены (FQ)</div>
+              <Row label="Целевое (устье)" value={fqZones.length > 0 ? `зональный (${fqZones.length} зон)` : `${fmt(targetQuality, 0)}%`} />
+              <Row label="FQ забой / устье / среднее" value={`${fmt(staticResult.points.at(-1)?.foamQuality ?? 0, 1)} / ${fmt(staticResult.points[0]?.foamQuality ?? 0, 1)} / ${fmt(staticResult.avgFoamQuality, 1)} %`} />
+              <Row label="FQ min / max" value={`${fmt(staticResult.minFoamQuality, 1)} / ${fmt(staticResult.maxFoamQuality, 1)} %`} />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs uppercase text-muted-foreground mt-2 mb-1">Объёмы и азот</div>
+              <Row label="Базовая суспензия" value={`${fmt(dynamicResult.totalBaseSlurryM3, 2)} м³`} />
+              <Row label="Пеноцемент на устье" value={`${fmt(dynamicResult.totalFoamVolumeAtSurfaceM3, 2)} м³`} />
+              <Row label="N₂ (стд. условия)" value={`${fmt(dynamicResult.totalN2StdM3, 1)} м³`} />
+              <Row label="Пиковый расход N₂" value={`${fmt(dynamicResult.peakN2RateStdM3min, 2)} м³/мин`} />
+              <Row label="Z-фактор на забое" value={fmt(staticResult.points.at(-1)?.zFactor ?? 1, 3)} />
+
+              <div className="text-xs uppercase text-muted-foreground mt-3 mb-1">Давление и время</div>
+              <Row label="Макс. ЭЦП на забое" value={`${fmt(dynamicResult.maxECD, 3)} г/см³`} />
+              <Row label="ЭЦП ГРП" value={`${fmt(dynamicResult.points[0]?.fracGradEcd ?? 0, 3)} г/см³`} />
+              <Row label="Запас до ГРП" value={`${fmt(fracReserve, 3)} г/см³ ${fracReserve > 0 ? "✓" : "⚠"}`} />
+              <Row label="Время: буф / пена / прод" value={`${fmt(dynamicResult.bufferTimeMin, 1)} / ${fmt(dynamicResult.foamTimeMin, 1)} / ${fmt(dynamicResult.displacementTimeMin, 1)} мин`} />
+              <Row label="ВСЕГО" value={`${fmt(dynamicResult.pumpingTimeMin, 1)} мин`} />
+            </div>
+          </div>
+
+          {/* Warnings */}
+          <div className="mt-4 space-y-2">
+            <div className={`p-3 rounded-lg text-sm font-medium ${qualityOk ? "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"}`}>
+              {qualityOk
+                ? "✓ Качество пены в допустимом диапазоне 20–80% по всей глубине"
+                : `⚠ FQ выходит за диапазон 20–80% (min ${fmt(staticResult.minFoamQuality, 1)}%, max ${fmt(staticResult.maxFoamQuality, 1)}%) — скорректируйте параметры или зоны`}
+            </div>
+            {bottomFQwarn && (
+              <div className="p-3 rounded-lg text-sm bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                ⚠ FQ на забое ниже 20% — возможна потеря стабильности пены. Увеличьте целевой FQ до 45–50% или примените стабилизатор.
+              </div>
+            )}
+            {fracReserve <= 0 && (
+              <div className="p-3 rounded-lg text-sm bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200">
+                ⚠ ЭЦП превышает градиент ГРП — риск поглощения. Снизьте плотность базы, увеличьте FQ или уменьшите расход.
+              </div>
+            )}
+            {activeRecipe && wellData.bottomTempStatic > activeRecipe.maxTemp && (
+              <div className="p-3 rounded-lg text-sm bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200">
+                ⚠ Температура забоя ({wellData.bottomTempStatic} °C) превышает T<sub>max</sub> рецептуры «{activeRecipe.nameRu}» ({activeRecipe.maxTemp} °C). Выберите более термостойкий рецепт.
+              </div>
+            )}
+            {activeRecipe && (targetQuality < activeRecipe.recommendedFQ[0] || targetQuality > activeRecipe.recommendedFQ[1]) && (
+              <div className="p-3 rounded-lg text-sm bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                ⚠ Целевое FQ {targetQuality}% вне рекомендуемого диапазона рецептуры {activeRecipe.recommendedFQ[0]}–{activeRecipe.recommendedFQ[1]}%.
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
 
       {/* Chart 1: Combined cementing diagram */}
       <ChartCard title="📊 Совмещённый график пеноцементирования" refEl={refs[0]}>
