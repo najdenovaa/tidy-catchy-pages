@@ -99,6 +99,13 @@ export default function TorqueDragSection({ wellData, mudDensity, drillingFluid,
   const [tripSpeed, setTripSpeed] = useState(0.5);
   const [useFluidRheology, setUseFluidRheology] = useState(true);
   const [useCentralizerDrag, setUseCentralizerDrag] = useState(true);
+  // V3 inputs
+  const [fillLevel, setFillLevel] = useState(100);
+  const [fillFluidDensity, setFillFluidDensity] = useState<number>(() => mudDensity / 1000);
+  const [isOpenEnded, setIsOpenEnded] = useState(false);
+  const [fracGradKpa, setFracGradKpa] = useState(18);
+  const [poreGradKpa, setPoreGradKpa] = useState(10.5);
+  const [maxHookLoad, setMaxHookLoad] = useState(3500);
 
   const chartRef1 = useRef<HTMLDivElement>(null);
   const chartRef2 = useRef<HTMLDivElement>(null);
