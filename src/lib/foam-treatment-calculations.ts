@@ -678,3 +678,238 @@ export function recommendEquipment(
 
   return { pumpUnit, n2Unit, foamGenerator, comments };
 }
+
+/* ─────────── Расход реагентов ─────────── */
+
+export interface ReagentItem {
+  name: string;
+  category: "base_fluid" | "surfactant" | "additive" | "nitrogen" | "displacement";
+  amount: number;
+  unit: string;
+  cost?: number;
+}
+
+/**
+ * Полная разбивка всех компонентов на операцию.
+ * Концентрации в % считаются массовыми (от базовой жидкости).
+ * Концентрации в кг/м³ применяются как есть.
+ */
+export function buildReagentConsumption(
+  recipe: FoamTreatmentRecipe,
+  result: FoamTreatmentResult,
+): ReagentItem[] {
+  const items: ReagentItem[] = [];
+  const baseVolM3 = result.treatmentVolumeM3; // объём базовой жидкости
+  const baseMassT = (baseVolM3 * recipe.baseFluidDensity * 1000) / 1000; // т
+
+  const baseLabel =
+    recipe.baseFluidType === "acid_hcl"
+      ? `HCl ${recipe.baseFluidConcentration ?? 15}%`
+      : recipe.baseFluidType === "acid_hf_mud"
+      ? `HCl/HF смесь`
+      : recipe.baseFluidType === "solvent"
+      ? "Растворитель"
+      : recipe.baseFluidType === "brine"
+      ? "Рассол"
+      : "Техническая вода";
+
+  items.push({
+    name: baseLabel,
+    category: "base_fluid",
+    amount: baseVolM3,
+    unit: "м³",
+  });
+
+  if (recipe.surfactantConc > 0 && recipe.surfactantType !== "—") {
+    items.push({
+      name: `ПАВ: ${recipe.surfactantType}`,
+      category: "surfactant",
+      amount: (baseMassT * recipe.surfactantConc) / 100 * 1000, // кг
+      unit: "кг",
+    });
+  }
+
+  for (const a of recipe.additives) {
+    const amount =
+      a.unit === "%" ? (baseMassT * a.concentration) / 100 * 1000 : a.concentration * baseVolM3;
+    items.push({
+      name: a.name,
+      category: "additive",
+      amount,
+      unit: "кг",
+    });
+  }
+
+  if (result.n2VolumeStdM3 > 0.1) {
+    items.push({
+      name: "Азот N₂ (стд)",
+      category: "nitrogen",
+      amount: result.n2VolumeStdM3,
+      unit: "м³",
+    });
+  }
+
+  if (result.displacementVolumeM3 > 0) {
+    items.push({
+      name: "Продавочная жидкость",
+      category: "displacement",
+      amount: result.displacementVolumeM3 * result.numberOfCycles,
+      unit: "м³",
+    });
+  }
+
+  return items;
+}
+
+/* ─────────── Профиль расхода q(t) ─────────── */
+
+export interface RateProfilePoint {
+  time: number; // мин
+  liquidRateLps: number;
+  n2RateM3min: number;
+  cycle: number;
+  phase: string;
+}
+
+export function buildRateProfile(
+  recipe: FoamTreatmentRecipe,
+  options: FoamTreatmentOptions,
+  result: FoamTreatmentResult,
+): RateProfilePoint[] {
+  const out: RateProfilePoint[] = [];
+  const rateLps = options.injectionRateLps;
+  const rateM3min = rateLps * 0.06;
+  const foamVolPerCycleSurf = result.foamVolumeAtSurfaceM3 / result.numberOfCycles;
+  const injTime = foamVolPerCycleSurf / Math.max(0.001, rateM3min);
+  const dispTime = result.displacementVolumeM3 / Math.max(0.001, rateM3min);
+  const soakTime = options.soakTimeMin;
+  const bleedTime = 30;
+
+  // Доля жидкости в пене ≈ (1 − FQ/100)
+  const liqFrac = 1 - recipe.targetFoamQuality / 100;
+  const liqRateDuringFoam = rateLps * liqFrac;
+  const n2Peak = result.n2PeakRateM3min;
+
+  let t = 0;
+  const push = (dt: number, ql: number, qn: number, phase: string, c: number) => {
+    out.push({ time: t, liquidRateLps: ql, n2RateM3min: qn, phase, cycle: c });
+    out.push({ time: t + dt, liquidRateLps: ql, n2RateM3min: qn, phase, cycle: c });
+    t += dt;
+  };
+
+  for (let c = 1; c <= result.numberOfCycles; c++) {
+    push(injTime, liqRateDuringFoam, n2Peak, "Закачка пены", c);
+    push(dispTime, rateLps, 0, "Продавка", c);
+    push(soakTime, 0, 0, "Выдержка", c);
+    push(bleedTime, 0, 0, "Стравливание", c);
+  }
+  return out;
+}
+
+/* ─────────── Эволюция скина по циклам ─────────── */
+
+export interface SkinPerCycle {
+  cycle: number;
+  skin: number;
+  productivityRatio: number;
+  rateTpd?: number;
+}
+
+export function buildSkinEvolution(
+  well: FoamTreatmentWellData,
+  recipe: FoamTreatmentRecipe,
+  result: FoamTreatmentResult,
+): SkinPerCycle[] {
+  const out: SkinPerCycle[] = [];
+  const rw = well.casingID_mm / 2000;
+  const Re = well.drainageRadiusM ?? 500;
+  const lnRr = Math.log(Re / Math.max(0.05, rw));
+  const totalReduction = result.expectedSkinReduction;
+
+  out.push({
+    cycle: 0,
+    skin: well.skinFactor,
+    productivityRatio: 1,
+    rateTpd: well.currentRateTpd,
+  });
+
+  // Закон убывающей отдачи по циклам: 1й — 60%, 2й — +25%, 3й — +10%, далее насыщение
+  const weights = [0.6, 0.25, 0.1, 0.04, 0.01];
+  let cum = 0;
+  for (let c = 1; c <= result.numberOfCycles; c++) {
+    cum += weights[Math.min(c - 1, weights.length - 1)];
+    const reductionSoFar = totalReduction * Math.min(1, cum);
+    const skin = Math.max(-2, well.skinFactor - reductionSoFar);
+    const pr = (lnRr + well.skinFactor) / Math.max(0.1, lnRr + skin);
+    out.push({
+      cycle: c,
+      skin,
+      productivityRatio: pr,
+      rateTpd: well.currentRateTpd != null ? well.currentRateTpd * pr : undefined,
+    });
+  }
+  return out;
+}
+
+/* ─────────── Прогноз дебита после обработки (часы и сутки) ─────────── */
+
+export interface ProductionPoint {
+  hours: number;
+  days: number;
+  rateTpd: number;
+  cumulativeT: number;
+  cumulativeGainT: number;
+}
+
+/**
+ * Динамика выхода на режим:
+ *   1) Чистка: первые 24 ч низкий дебит (вынос пены/реагентов), нарастает экспоненциально.
+ *      q_clean(t) = q_after * (1 − exp(−t/τ)), τ ≈ 8 ч
+ *   2) Период стабильного эффекта (1–60 сут): пик в районе 5–10 сут.
+ *   3) Постепенное снижение эффекта: экспоненциальное затухание прироста,
+ *      период полураспада ~180 сут (типично для ОПЗ).
+ */
+export function buildProductionForecast(
+  well: FoamTreatmentWellData,
+  result: FoamTreatmentResult,
+  horizonDays = 90,
+): ProductionPoint[] {
+  const baseRate = well.currentRateTpd ?? 0;
+  const finalRate = result.expectedRateTpd ?? baseRate;
+  const gain = Math.max(0, finalRate - baseRate);
+
+  const tauHours = 8;
+  const halfLifeDays = 180;
+  const k = Math.log(2) / halfLifeDays;
+
+  const points: ProductionPoint[] = [];
+  let cumulative = 0;
+  let cumulativeBase = 0;
+
+  // Шаг 1 ч в первые 3 суток, далее — 1 сутки
+  const hourSamples: number[] = [];
+  for (let h = 0; h <= 72; h += 1) hourSamples.push(h);
+  for (let d = 4; d <= horizonDays; d += 1) hourSamples.push(d * 24);
+
+  let prevH = 0;
+  for (const h of hourSamples) {
+    const days = h / 24;
+    const cleanup = 1 - Math.exp(-h / tauHours);
+    const decline = Math.exp(-k * days);
+    const rate = baseRate + gain * cleanup * decline;
+
+    const dt = (h - prevH) / 24; // сутки
+    cumulative += rate * dt;
+    cumulativeBase += baseRate * dt;
+    prevH = h;
+
+    points.push({
+      hours: h,
+      days: +days.toFixed(3),
+      rateTpd: rate,
+      cumulativeT: cumulative,
+      cumulativeGainT: cumulative - cumulativeBase,
+    });
+  }
+  return points;
+}
