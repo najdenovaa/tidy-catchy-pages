@@ -65,7 +65,7 @@ function title(text: string, size = 28, color = NAVY): Paragraph {
 function p(text: string, opts?: { italic?: boolean; color?: string }): Paragraph {
   return new Paragraph({
     spacing: { after: 80 },
-    children: [new TextRun({ text, size: 18, color: opts?.color ?? "2C3E50", italic: opts?.italic, font: "Calibri" })],
+    children: [new TextRun({ text, size: 18, color: opts?.color ?? "2C3E50", italics: opts?.italic, font: "Calibri" })],
   });
 }
 
@@ -199,7 +199,7 @@ export async function exportTorqueDragDocx(opts: {
       ],
     });
   } else {
-    surgeBlock.push(p("Анализ Surge/Swab недоступен (отсутствуют данные).", { italic: true, color: GRAY }));
+    surgeBlock.push(p("Анализ Surge/Swab недоступен (отсутствуют данные).", { italics: true, color: GRAY }));
   }
 
   // === Stuck zones ===
@@ -299,7 +299,7 @@ export async function exportTorqueDragDocx(opts: {
           spacing: { after: 240 },
           children: [new TextRun({ text: "Отчёт Torque & Drag", bold: true, size: 40, color: NAVY })],
         }),
-        p(`Дата формирования: ${dateStr}`, { italic: true, color: GRAY }),
+        p(`Дата формирования: ${dateStr}`, { italics: true, color: GRAY }),
 
         title("1. Исходные данные"),
         kvTable(inputRows),
@@ -320,7 +320,7 @@ export async function exportTorqueDragDocx(opts: {
           : [p("✓ Зон риска посадки/прихвата не обнаружено по текущим параметрам.", { color: GREEN })]),
 
         title("6. Пошаговый профиль СПО (свечами)"),
-        p(`Длина свечи: ${standLengthM} м · всего свечей: ${totalStands} · шаг выборки: каждая ${stepEvery}-я.`, { italic: true, color: GRAY }),
+        p(`Длина свечи: ${standLengthM} м · всего свечей: ${totalStands} · шаг выборки: каждая ${stepEvery}-я.`, { italics: true, color: GRAY }),
         simTable,
 
         title("7. Заключение"),
@@ -329,7 +329,7 @@ export async function exportTorqueDragDocx(opts: {
             ? "По текущим параметрам критических зон риска не выявлено. Рекомендуется придерживаться расчётной скорости СПО и поддерживать колонну заполненной."
             : `Выявлено ${stuckZones.filter(z => z.severity === "critical").length} критических и ${stuckZones.filter(z => z.severity === "warning").length} предупреждающих зон. См. раздел 5 для конкретных рекомендаций по каждому интервалу.`,
         ),
-        p("Расчёт выполнен по soft-string модели Johancsik с учётом плавучести (с учётом частичного заполнения), вязкого сопротивления Bingham, сопротивления центраторов и приращений давления Surge/Swab. Результаты носят информационный характер и подлежат проверке инженером-технологом.", { italic: true, color: GRAY }),
+        p("Расчёт выполнен по soft-string модели Johancsik с учётом плавучести (с учётом частичного заполнения), вязкого сопротивления Bingham, сопротивления центраторов и приращений давления Surge/Swab. Результаты носят информационный характер и подлежат проверке инженером-технологом.", { italics: true, color: GRAY }),
       ],
     }],
   });
