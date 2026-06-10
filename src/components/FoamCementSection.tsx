@@ -336,6 +336,19 @@ export default function FoamCementSection({ wellData, slurries, buffers, mudDens
         </CardContent>
       </Card>
 
+      {/* Equipment schematic */}
+      <FoamCementSchematic
+        baseSlurryRateLps={pumpRate}
+        n2RateStdM3Min={dynamicResult.peakN2RateStdM3min}
+        surfacePressureMPa={dynamicResult.points.reduce((m, pt) => Math.max(m, pt.surfacePressure), 0)}
+        backPressureMPa={backPressure}
+        baseSlurryVolumeM3={dynamicResult.totalBaseSlurryM3}
+        n2VolumeStdM3={dynamicResult.totalN2StdM3}
+        baseDensity={baseDensity}
+        foamDensitySurface={staticResult.points[0]?.foamDensity ?? baseDensity}
+        targetFQ={targetQuality}
+      />
+
 
       {/* Chart 1: Combined cementing diagram */}
       <ChartCard title="📊 Совмещённый график пеноцементирования" refEl={refs[0]}>
