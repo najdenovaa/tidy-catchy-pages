@@ -539,6 +539,9 @@ export function calculateFoamTreatment(
 ): FoamTreatmentResult {
   const cycles = Math.max(1, options.numberOfCycles);
 
+  // 0. Анализ химии — даёт множители и эффективные параметры
+  const chemistry = analyzeFoamChemistry(recipe, well);
+
   // 1. Объём обрабатывающей жидкости (на всю операцию)
   const treatmentVol = recipe.volumePerMeterPayZone * well.netPayM * cycles;
 
@@ -547,7 +550,7 @@ export function calculateFoamTreatment(
   const foamVolSurface =
     fq < 99 ? treatmentVol / (1 - fq / 100) : treatmentVol * 100;
 
-  // 3. Давление на забое
+  // 3. Давление на забое (трение с учётом кажущейся вязкости от полимеров/гелянтов)
   const perfMidMD = (well.perfIntervalTopMD + well.perfIntervalBottomMD) / 2;
   const perfTVD = interpolateTVD(perfMidMD, well.trajectory);
   const hydrostaticMPa = (well.wellFluidDensity * G * perfTVD) / 1000;
@@ -557,6 +560,7 @@ export function calculateFoamTreatment(
     well.nktID_mm,
     Math.min(well.nktDepthMD, well.wellDepthMD),
     recipe.baseFluidDensity,
+    chemistry.apparentViscosityCp,
   );
 
   // Целевое забойное давление = пластовое + 2 МПа (мин. перепад для приёмистости)
@@ -570,48 +574,47 @@ export function calculateFoamTreatment(
   const tempK = well.reservoirTemperatureC + 273.15;
   const Z = calcN2ZFactor(bhpInjection, tempK);
 
-  // Сжатый объём пены на забое: при тех же FQ пена сжимается с поверхностной до забойной
-  // FQ_bh = V_gas_bh / (V_gas_bh + V_liq) ; V_gas_bh = V_gas_surf * (P_atm * T_bh) / (P_bh * T_std * Z)
   const compression = (ATM_MPA * tempK) / (bhpInjection * STD_TEMP_K * Z);
   const n2VolSurfTotal = foamVolSurface - treatmentVol;
   const n2VolFormation = n2VolSurfTotal * compression;
   const foamVolFormation = treatmentVol + n2VolFormation;
   const fqFormation = (n2VolFormation / Math.max(1e-9, foamVolFormation)) * 100;
   const foamDensityFormation =
-    recipe.baseFluidDensity * (1 - fqFormation / 100); // газ пренебрежимо лёгкий
+    recipe.baseFluidDensity * (1 - fqFormation / 100);
 
-  // 6. Радиус проникновения (за один цикл)
+  // 6. Радиус проникновения (за один цикл) — с учётом химии (взаимный раств., гелянт)
   const rw = well.casingID_mm / 2000;
   const effectivePorosity = Math.max(0.01, well.porosity * (1 - 0.3));
   const treatPerCycle = treatmentVol / cycles;
-  const Rpenetration = Math.sqrt(
+  const RpenetrationRaw = Math.sqrt(
     treatPerCycle / (Math.PI * Math.max(0.1, well.netPayM) * effectivePorosity) + rw * rw,
   );
+  const Rpenetration = RpenetrationRaw * chemistry.penetrationMultiplier;
 
   // 7. Продавка = объём НКТ от устья до перфорации
   const nktArea = (Math.PI / 4) * Math.pow(well.nktID_mm / 1000, 2);
   const dispVolume = nktArea * Math.min(well.nktDepthMD, perfMidMD);
 
   // 8. Время
-  const rateM3min = options.injectionRateLps * 0.06; // л/с → м³/мин
+  const rateM3min = options.injectionRateLps * 0.06;
   const foamVolPerCycleSurface = foamVolSurface / cycles;
   const injectionTimeMin = foamVolPerCycleSurface / Math.max(0.001, rateM3min);
   const dispTimeMin = dispVolume / Math.max(0.001, rateM3min);
-  const cycleTimeMin = injectionTimeMin + dispTimeMin + options.soakTimeMin + 30; // 30 мин стравливание
+  const cycleTimeMin = injectionTimeMin + dispTimeMin + options.soakTimeMin + 30;
   const totalTimeMin = cycleTimeMin * cycles;
 
-  // Пиковый расход N₂: газ_на_цикл (стд) / время закачки
   const n2VolStdPerCycle = n2VolSurfTotal / cycles;
   const n2PeakRate = n2VolStdPerCycle / Math.max(0.1, injectionTimeMin);
 
-  // 9. Прогноз скина и дебита
+  // 9. Прогноз скина и дебита — с учётом химии (множитель ΔS)
   const reductionRange =
     recipe.skinReductionEstimate[1] - recipe.skinReductionEstimate[0];
   const penetrationFactor = Math.min(1, Rpenetration / 3);
   const cycleBonus = Math.min(1, (cycles - 1) * 0.15);
-  const skinReduction =
+  const skinReductionBase =
     recipe.skinReductionEstimate[0] +
     reductionRange * (0.5 * penetrationFactor + 0.5 * cycleBonus);
+  const skinReduction = skinReductionBase * chemistry.skinReductionMultiplier;
   const newSkin = Math.max(-2, well.skinFactor - skinReduction);
 
   const Re = well.drainageRadiusM ?? 500;
@@ -624,40 +627,24 @@ export function calculateFoamTreatment(
       ? well.currentRateTpd * productivityRatio
       : undefined;
 
-  // 10. Предупреждения
+  // 10. Предупреждения (физика + химия)
   const warnings: string[] = [];
   if (pressureMargin < 1.0)
-    warnings.push(
-      `Запас до ГРП всего ${pressureMargin.toFixed(1)} МПа — высокий риск гидроразрыва.`,
-    );
-  if (recipe.type === "foam_acid_hf" && well.reservoirTemperatureC > 80)
-    warnings.push(
-      "HF при температуре > 80°C — высокая скорость реакции, возможно вторичное осаждение.",
-    );
+    warnings.push(`Запас до ГРП всего ${pressureMargin.toFixed(1)} МПа — высокий риск гидроразрыва.`);
   if (recipe.targetFoamQuality > 80)
     warnings.push("FQ > 80% — риск нестабильности пены, возможен распад.");
   if (Rpenetration < 0.5)
+    warnings.push("Радиус проникновения < 0.5 м — увеличьте объём обработки или число циклов.");
+  if (well.reservoirTemperatureC > chemistry.effectiveMaxTempC)
     warnings.push(
-      "Радиус проникновения < 0.5 м — увеличьте объём обработки или число циклов.",
-    );
-  if (
-    recipe.collectorType !== "any" &&
-    recipe.collectorType === "carbonate" &&
-    recipe.type === "foam_acid_hf"
-  )
-    warnings.push("Глинокислота НЕ применяется для карбонатных коллекторов!");
-  if (well.reservoirTemperatureC > recipe.maxTempC)
-    warnings.push(
-      `Температура пласта ${well.reservoirTemperatureC}°C выше предела рецептуры ${recipe.maxTempC}°C.`,
+      `Температура пласта ${well.reservoirTemperatureC}°C выше эффективного предела рецептуры ${chemistry.effectiveMaxTempC.toFixed(0)}°C (с учётом ингибитора).`,
     );
   if (surfacePressure > 32)
-    warnings.push(
-      `Устьевое давление ${surfacePressure.toFixed(1)} МПа > 32 МПа — нужен агрегат высокого давления.`,
-    );
+    warnings.push(`Устьевое давление ${surfacePressure.toFixed(1)} МПа > 32 МПа — нужен агрегат высокого давления.`);
   if (!options.usePacker && recipe.type.startsWith("foam_acid"))
-    warnings.push(
-      "Кислотная обработка без пакера — обсадная колонна подвергается коррозии.",
-    );
+    warnings.push("Кислотная обработка без пакера — обсадная колонна подвергается коррозии.");
+  // Подмешиваем критические предупреждения химии
+  for (const w of chemistry.compatibilityWarnings) warnings.push(w);
 
   return {
     treatmentVolumeM3: treatmentVol,
@@ -692,6 +679,7 @@ export function calculateFoamTreatment(
     expectedRateTpd: expectedRate,
 
     warnings,
+    chemistry,
   };
 }
 
