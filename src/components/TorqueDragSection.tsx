@@ -369,6 +369,101 @@ export default function TorqueDragSection({ wellData, mudDensity, drillingFluid,
         </CardContent>
       </Card>
 
+      {/* V3: Surge/Swab card */}
+      {surgeSwab && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-lg">🌊 Surge / Swab — гидродинамика СПО</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-3">
+              <div className="p-2 rounded bg-muted/30">
+                <div className="text-muted-foreground">Макс. Surge</div>
+                <div className="font-semibold text-base">{fmt(surgeSwab.maxSurgeMPa, 2)} МПа</div>
+              </div>
+              <div className="p-2 rounded bg-muted/30">
+                <div className="text-muted-foreground">Макс. Swab</div>
+                <div className="font-semibold text-base">{fmt(surgeSwab.maxSwabMPa, 2)} МПа</div>
+              </div>
+              <div className={`p-2 rounded ${surgeSwab.worstSurgeMargin > 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
+                <div className="text-muted-foreground">Запас до ГРП</div>
+                <div className="font-semibold text-base">{fmt(surgeSwab.worstSurgeMargin, 2)} МПа {surgeSwab.worstSurgeMargin > 0 ? "✓" : "⚠"}</div>
+              </div>
+              <div className={`p-2 rounded ${surgeSwab.worstSwabMargin > 0 ? "bg-green-500/10" : "bg-amber-500/10"}`}>
+                <div className="text-muted-foreground">Запас над пластовым</div>
+                <div className="font-semibold text-base">{fmt(surgeSwab.worstSwabMargin, 2)} МПа {surgeSwab.worstSwabMargin > 0 ? "✓" : "⚠"}</div>
+              </div>
+            </div>
+            <ScrollableChart chartRef={chartRef1} height="h-[380px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={surgeSwab.points} layout="vertical" margin={{ top: 5, right: 30, bottom: 30, left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
+                  <XAxis type="number" label={{ value: 'Давление, МПа', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
+                  <Tooltip contentStyle={ts} formatter={(v: number) => fmt(v, 2) + " МПа"} labelFormatter={(l: number) => `MD: ${l} м`} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line dataKey="hydrostaticMPa" name="Статика" stroke="hsl(var(--muted-foreground))" dot={false} strokeWidth={1.5} strokeDasharray="3 3" />
+                  <Line dataKey="totalBHPsurgeMPa" name="BHP + Surge (спуск)" stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
+                  <Line dataKey="totalBHPswabMPa" name="BHP − Swab (подъём)" stroke="hsl(160, 60%, 45%)" dot={false} strokeWidth={2} />
+                  <Line dataKey="fracPressureMPa" name="P ГРП" stroke="hsl(0, 80%, 50%)" dot={false} strokeWidth={2} strokeDasharray="6 3" />
+                  <Line dataKey="porePressureMPa" name="P пластовое" stroke="hsl(30, 80%, 50%)" dot={false} strokeWidth={2} strokeDasharray="6 3" />
+                </LineChart>
+              </ResponsiveContainer>
+            </ScrollableChart>
+            <div className="mt-2 text-[11px] text-muted-foreground">
+              Модель Burkhardt + Бингам-пластик. K<sub>p</sub> = {isOpenEnded ? "0.5 (открытый конец)" : "1.5 (с БКМ/закрытый)"}, скорость СПО = {tripSpeed} м/с.
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* V3: Stuck zones */}
+      {stuckZones && stuckZones.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">⚠️ Зоны риска посадки/прихвата ({stuckZones.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th className="text-left py-2 px-2">Интервал, м</th>
+                    <th className="text-left py-2 px-2">Причина</th>
+                    <th className="text-left py-2 px-2">Уровень</th>
+                    <th className="text-left py-2 px-2">Значение</th>
+                    <th className="text-left py-2 px-2">Рекомендация</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stuckZones.map((z, i) => (
+                    <tr key={i} className="border-b border-border/50">
+                      <td className="py-2 px-2 whitespace-nowrap">{z.topMD.toFixed(0)} – {z.bottomMD.toFixed(0)}</td>
+                      <td className="py-2 px-2">{({
+                        buckling: 'Buckling', clearance: 'Зазор', hook_load: 'HL > рига',
+                        dls: 'DLS', surge_frac: 'Surge>ГРП', swab_kick: 'Swab<пласт', yield: 'σ>предел',
+                      } as Record<string, string>)[z.reason]}</td>
+                      <td className="py-2 px-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${z.severity === 'critical' ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-400"}`}>
+                          {z.severity === 'critical' ? 'критич.' : 'внимание'}
+                        </span>
+                      </td>
+                      <td className="py-2 px-2 font-mono text-[11px]">{z.metric}</td>
+                      <td className="py-2 px-2 text-muted-foreground">{z.recommendation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {stuckZones && stuckZones.length === 0 && (
+        <Card>
+          <CardContent className="py-4 text-sm text-green-500">
+            ✓ Зон риска посадки/прихвата не обнаружено по текущим параметрам.
+          </CardContent>
+        </Card>
+      )}
+
       {/* Summary table - all 9 modes */}
       <Card>
         <CardHeader className="pb-4"><CardTitle className="text-lg">📊 Сводка Torque & Drag (9 режимов)</CardTitle></CardHeader>
