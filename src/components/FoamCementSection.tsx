@@ -13,6 +13,7 @@ import type { WellData, SlurryInput, BufferFluid } from "@/lib/cementing-calcula
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2 } from "lucide-react";
 import FoamCementSchematic from "./FoamCementSchematic";
+import FoamCement3D from "./FoamCement3D";
 import CopyImageButton from "./CopyImageButton";
 
 interface Props {
@@ -347,6 +348,15 @@ export default function FoamCementSection({ wellData, slurries, buffers, mudDens
         baseDensity={baseDensity}
         foamDensitySurface={staticResult.points[0]?.foamDensity ?? baseDensity}
         targetFQ={targetQuality}
+      />
+
+      {/* 3D foam-cement fill animation */}
+      <FoamCement3D
+        points={staticResult.points}
+        totalDepthMD={wellData.casingDepthMD}
+        holeDiameterMm={wellData.holeDiameter}
+        casingODmm={wellData.casingOD}
+        baseDensity={baseDensity}
       />
 
 
