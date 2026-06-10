@@ -225,7 +225,12 @@ function buildSegments(traj: TrajectoryPoint[], wellDepthMD: number): Trajectory
 
 export function calculateTD(input: TDInput, mode: TDMode): TDResult {
   const traj = buildSegments(input.trajectory, input.wellDepthMD);
-  const bf = buoyancyFactor(input.mudDensity);
+  const useFill = input.fillLevel !== undefined && input.fillLevel < 100;
+  const fillFluid = input.fillFluidDensity ?? input.mudDensity;
+  const pipeOD = input.pipeOD_mm ?? input.casingOD;
+  const bf = useFill
+    ? buoyancyFactorFilled(input.mudDensity, fillFluid, input.fillLevel ?? 100, pipeOD, input.casingID)
+    : buoyancyFactor(input.mudDensity);
   const unitWeight = input.pipeWeightKgPerM * 9.81 / 1000;
   const buoyantWeight = unitWeight * bf;
 
