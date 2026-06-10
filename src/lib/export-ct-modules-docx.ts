@@ -11,7 +11,7 @@ import {
   TextRun, AlignmentType, WidthType, BorderStyle, PageBreak, ShadingType,
 } from "docx";
 import { saveAs } from "file-saver";
-import type { CleanoutInput, CleanoutResult, FluidSlug, ScheduleResult } from "./ct-cleanout";
+import type { CleanoutInput, CleanoutResult, FluidSlug, MultiFluidScheduleResult } from "./ct-cleanout";
 import type { N2KickoffInputs, N2KickoffResult } from "./ct-nitrogen-kickoff";
 import type { AcidStimInputs, AcidStimResult } from "./ct-acid-stim";
 import { CT_OPERATIONS } from "./ct-operations";
@@ -209,7 +209,7 @@ function operationBlock(operationType?: string): (Paragraph | Table)[] {
 export async function exportCleanoutDocx(args: {
   input: CleanoutInput;
   result: CleanoutResult;
-  schedule?: ScheduleResult;
+  schedule?: MultiFluidScheduleResult;
   slugs?: FluidSlug[];
   operationType?: string;
 }) {
