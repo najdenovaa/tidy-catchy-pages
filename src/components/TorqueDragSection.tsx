@@ -144,12 +144,18 @@ export default function TorqueDragSection({ wellData, mudDensity, drillingFluid,
     fluidSegments,
     tripSpeedMps: tripSpeed,
     centralizerDrag,
+    fillLevel,
+    fillFluidDensity,
+    isOpenEnded,
+    fracGradient_kPaPerM: fracGradKpa,
+    porePressureGrad_kPaPerM: poreGradKpa,
+    maxHookLoad_kN: maxHookLoad,
   });
 
   const summary = useMemo<TDSummary | null>(() => {
     if (!wellData.casingDepthMD || wellData.casingDepthMD <= 0) return null;
     return calculateTDSummary(makeInput());
-  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID, yieldStrength, dcLength, dcOD, dcWeight, motorBendAngle, fluidSegments, centralizerDrag, tripSpeed]);
+  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID, yieldStrength, dcLength, dcOD, dcWeight, motorBendAngle, fluidSegments, centralizerDrag, tripSpeed, fillLevel, fillFluidDensity, isOpenEnded, fracGradKpa, poreGradKpa, maxHookLoad]);
 
   const extraModes = useMemo(() => {
     if (!wellData.casingDepthMD || wellData.casingDepthMD <= 0) return null;
@@ -162,7 +168,18 @@ export default function TorqueDragSection({ wellData, mudDensity, drillingFluid,
       slackoff: calculateTD(input, 'slackoff'),
       cementRotate: calculateTD(input, 'cement_rotate'),
     };
-  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID, yieldStrength, dcLength, dcOD, dcWeight, motorBendAngle, fluidSegments, centralizerDrag, tripSpeed]);
+  }, [wellData, mudDensity, frictionCased, frictionOpenhole, pipeWeight, wob, rpm, blockWeight, casingID, yieldStrength, dcLength, dcOD, dcWeight, motorBendAngle, fluidSegments, centralizerDrag, tripSpeed, fillLevel, fillFluidDensity, isOpenEnded, fracGradKpa, poreGradKpa, maxHookLoad]);
+
+  const surgeSwab = useMemo(() => {
+    if (!wellData.casingDepthMD || wellData.casingDepthMD <= 0) return null;
+    return calculateSurgeSwab(makeInput());
+  }, [wellData, mudDensity, pipeWeight, fluidSegments, tripSpeed, fracGradKpa, poreGradKpa, isOpenEnded]);
+
+  const stuckZones = useMemo<StuckZone[] | null>(() => {
+    if (!summary || !surgeSwab) return null;
+    return findStuckZones(summary.tripIn, summary.tripOut, surgeSwab, makeInput());
+  }, [summary, surgeSwab, maxHookLoad, yieldStrength]);
+
 
   if (!summary || !extraModes) {
     return (
