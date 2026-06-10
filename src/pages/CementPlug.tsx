@@ -772,19 +772,19 @@ export default function CementPlug() {
                             {pipeSections.map((sec, i) => (
                               <TableRow key={i}>
                                 <TableCell className="p-1">
-                                  <BlurInput className="h-7 text-[10px] w-24" value={sec.name || ""} onValueCommit={v => updatePipeSection(i, "name", v)} />
+                                  <BlurInput className="h-8 text-xs w-32 min-w-[120px]" value={sec.name || ""} onValueCommit={v => updatePipeSection(i, "name", v)} />
                                 </TableCell>
                                 <TableCell className="p-1">
-                                  <BlurInput type="number" className="h-7 text-[10px] w-20" value={sec.fromMD || ""} onValueCommit={v => updatePipeSection(i, "fromMD", v)} />
+                                  <BlurInput type="number" className="h-8 text-xs w-28 min-w-[100px]" value={sec.fromMD || ""} onValueCommit={v => updatePipeSection(i, "fromMD", v)} />
                                 </TableCell>
                                 <TableCell className="p-1">
-                                  <BlurInput type="number" className="h-7 text-[10px] w-20" value={sec.toMD || ""} onValueCommit={v => updatePipeSection(i, "toMD", v)} />
+                                  <BlurInput type="number" className="h-8 text-xs w-28 min-w-[100px]" value={sec.toMD || ""} onValueCommit={v => updatePipeSection(i, "toMD", v)} />
                                 </TableCell>
                                 <TableCell className="p-1">
-                                  <BlurInput type="number" className="h-7 text-[10px] w-20" value={sec.od || ""} onValueCommit={v => updatePipeSection(i, "od", v)} />
+                                  <BlurInput type="number" className="h-8 text-xs w-28 min-w-[100px]" value={sec.od || ""} onValueCommit={v => updatePipeSection(i, "od", v)} />
                                 </TableCell>
                                 <TableCell className="p-1">
-                                  <BlurInput type="number" className="h-7 text-[10px] w-20" value={sec.id || ""} onValueCommit={v => updatePipeSection(i, "id", v)} />
+                                  <BlurInput type="number" className="h-8 text-xs w-28 min-w-[100px]" value={sec.id || ""} onValueCommit={v => updatePipeSection(i, "id", v)} />
                                 </TableCell>
                                 <TableCell className="p-1">
                                   <button className="text-destructive hover:text-destructive/80" onClick={() => removePipeSection(i)}>
