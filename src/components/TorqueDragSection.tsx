@@ -440,6 +440,94 @@ export default function TorqueDragSection({ wellData, mudDensity, drillingFluid,
             <div className="mt-2 text-[11px] text-muted-foreground">
               Модель Burkhardt + Бингам-пластик. K<sub>p</sub> = {isOpenEnded ? "0.5 (открытый конец)" : "1.5 (с БКМ/закрытый)"}, скорость СПО = {tripSpeed} м/с.
             </div>
+
+            {/* Sensitivity: max surge/swab vs trip speed */}
+            <div className="mt-6 pt-4 border-t border-border">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-medium">📉 Чувствительность к скорости СПО</div>
+                <div className="text-[11px] text-muted-foreground">опасные зоны выделены</div>
+              </div>
+              {(() => {
+                const speeds = [0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+                const baseInput = makeInput();
+                const worstFrac = surgeSwab.points.reduce((m, p) => Math.min(m, p.fracPressureMPa - p.hydrostaticMPa), Infinity);
+                const worstPore = surgeSwab.points.reduce((m, p) => Math.min(m, p.hydrostaticMPa - p.porePressureMPa), Infinity);
+                const sensData = speeds.map(v => {
+                  const r = calculateSurgeSwab({ ...baseInput, tripSpeedMps: v });
+                  return {
+                    speed: v,
+                    maxSurge: +r.maxSurgeMPa.toFixed(2),
+                    maxSwab: +r.maxSwabMPa.toFixed(2),
+                    surgeMargin: +r.worstSurgeMargin.toFixed(2),
+                    swabMargin: +r.worstSwabMargin.toFixed(2),
+                    safe: r.worstSurgeMargin > 0 && r.worstSwabMargin > 0,
+                    fracLimit: +worstFrac.toFixed(2),
+                    poreLimit: +worstPore.toFixed(2),
+                  };
+                });
+                const vCrit = sensData.find(d => !d.safe)?.speed;
+                return (
+                  <>
+                    <ScrollableChart chartRef={chartRef2} height="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={sensData} margin={{ top: 5, right: 30, bottom: 30, left: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                          <XAxis dataKey="speed" type="number" label={{ value: 'Скорость СПО, м/с', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
+                          <YAxis label={{ value: 'Δ давления, МПа', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
+                          <Tooltip contentStyle={ts} formatter={(v: number) => fmt(v, 2) + " МПа"} labelFormatter={(l: number) => `v = ${l} м/с`} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                          <ReferenceLine y={sensData[0].fracLimit} stroke="hsl(0, 80%, 50%)" strokeDasharray="6 3" label={{ value: `лимит ГРП (${sensData[0].fracLimit})`, fontSize: 10, fill: 'hsl(0, 80%, 50%)', position: 'insideTopRight' }} />
+                          {vCrit !== undefined && (
+                            <ReferenceLine x={vCrit} stroke="hsl(30, 80%, 50%)" strokeDasharray="4 2" label={{ value: `v_крит ≈ ${vCrit}`, fontSize: 10, fill: 'hsl(30, 80%, 50%)', position: 'top' }} />
+                          )}
+                          <Line dataKey="maxSurge" name="Δ Surge (макс)" stroke="hsl(200, 70%, 50%)" strokeWidth={2} dot={{ r: 4 }} />
+                          <Line dataKey="maxSwab" name="Δ Swab (макс)" stroke="hsl(160, 60%, 45%)" strokeWidth={2} dot={{ r: 4 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </ScrollableChart>
+                    <div className="overflow-x-auto mt-3">
+                      <table className="w-full text-xs">
+                        <thead className="text-muted-foreground">
+                          <tr className="border-b border-border">
+                            <th className="text-left py-1.5 px-2">v, м/с</th>
+                            <th className="text-right py-1.5 px-2">Δ Surge, МПа</th>
+                            <th className="text-right py-1.5 px-2">Δ Swab, МПа</th>
+                            <th className="text-right py-1.5 px-2">Запас ГРП</th>
+                            <th className="text-right py-1.5 px-2">Запас пласт.</th>
+                            <th className="text-center py-1.5 px-2">Статус</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sensData.map((d, i) => (
+                            <tr key={i} className={`border-b border-border/50 ${d.speed === tripSpeed ? "bg-primary/10" : ""}`}>
+                              <td className="py-1 px-2 font-mono">{d.speed}{d.speed === tripSpeed && " ◀"}</td>
+                              <td className="py-1 px-2 text-right font-mono">{fmt(d.maxSurge, 2)}</td>
+                              <td className="py-1 px-2 text-right font-mono">{fmt(d.maxSwab, 2)}</td>
+                              <td className={`py-1 px-2 text-right font-mono ${d.surgeMargin < 0 ? "text-red-400" : ""}`}>{fmt(d.surgeMargin, 2)}</td>
+                              <td className={`py-1 px-2 text-right font-mono ${d.swabMargin < 0 ? "text-amber-400" : ""}`}>{fmt(d.swabMargin, 2)}</td>
+                              <td className="py-1 px-2 text-center">
+                                <span className={`px-2 py-0.5 rounded text-[10px] ${d.safe ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
+                                  {d.safe ? "ОК" : "риск"}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {vCrit !== undefined ? (
+                      <div className="mt-2 text-xs text-amber-400">
+                        ⚠ Критическая скорость ≈ <b>{vCrit} м/с</b>. Рекомендуется поддерживать v ≤ {(speeds[Math.max(0, speeds.indexOf(vCrit) - 1)]).toFixed(2)} м/с с запасом.
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-xs text-emerald-400">
+                        ✓ Во всём диапазоне v ≤ {speeds[speeds.length - 1]} м/с операция безопасна по текущим градиентам.
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </CardContent>
         </Card>
       )}
