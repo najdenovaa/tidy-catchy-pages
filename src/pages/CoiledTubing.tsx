@@ -438,6 +438,28 @@ export default function CoiledTubing() {
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto px-3 py-4 w-full">
+        {/* 🎯 Operations library — auto-applies recommended params on click */}
+        <div className="mb-3">
+          <CTOperationsLibrary
+            selectedType={operationType}
+            onSelect={(op, params) => {
+              setOperationType(op.type);
+              if (op.type !== "custom" && (params.flowRateLps > 0 || params.fluidDensityGcc > 0.05)) {
+                if (params.flowRateLps > 0) {
+                  setPump(p => ({ ...p, flowRate: Number(params.flowRateLps.toFixed(2)) }));
+                }
+                setFluid(f => ({ ...f, density: params.fluidDensityGcc }));
+                markDirty();
+                toast.success(`Применена операция: ${op.nameRu}`, {
+                  description: `Расход ${(params.flowRateLps * 60).toFixed(0)} л/мин · ρ ${params.fluidDensityGcc} г/см³`,
+                });
+              } else {
+                toast(`Выбрана операция: ${op.nameRu}`);
+              }
+            }}
+          />
+        </div>
+
         {/* Risks banner */}
         {calculated && risks.length > 0 && (
           <div className="space-y-1.5 mb-4">
