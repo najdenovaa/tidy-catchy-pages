@@ -19,6 +19,7 @@ import CementPlug from "./pages/CementPlug";
 import CoiledTubing from "./pages/CoiledTubing";
 import FleetDetail from "./pages/FleetDetail";
 import Terms from "./pages/Terms";
+import FoamTreatment from "./pages/FoamTreatment";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
