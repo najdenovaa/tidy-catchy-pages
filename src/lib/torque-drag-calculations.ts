@@ -53,6 +53,15 @@ export interface TDInput {
   tripSpeedMps?: number;              // скорость спуска/подъёма, м/с (default 0.5)
   // V2: Centralizer drag
   centralizerDrag?: CentralizerDragItem[];
+  // V3: Fill level (недолив колонны)
+  fillLevel?: number;          // % заполнения колонны жидкостью (0-100, default 100)
+  fillFluidDensity?: number;   // плотность жидкости внутри, г/см³ (default = mudDensity)
+  // V3: Surge/Swab & stuck-zone limits
+  isOpenEnded?: boolean;       // открытый конец колонны (default false = с БКМ/обратным клапаном)
+  fracGradient_kPaPerM?: number;   // градиент ГРП, кПа/м (для surge/swab)
+  porePressureGrad_kPaPerM?: number; // градиент пластового давления, кПа/м
+  maxHookLoad_kN?: number;     // грузоподъёмность буровой, кН (для StuckZones)
+  jointLength?: number;        // длина свечи/трубы, м (default 12)
 }
 
 export type TDMode = 'trip_in' | 'trip_out' | 'rotate' | 'drill_rotary' | 'drill_motor' | 'back_ream' | 'pickup' | 'slackoff' | 'cement_rotate';
