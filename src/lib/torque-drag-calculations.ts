@@ -116,6 +116,28 @@ function buoyancyFactor(mudDensityGcm3: number, steelDensityGcm3: number = 7.85)
   return 1 - mudDensityGcm3 / steelDensityGcm3;
 }
 
+/**
+ * Buoyancy factor for a tubular with partial internal fill.
+ * Closed-bottom approximation: net upward force per unit length =
+ *   ρ_mud × A_o − ρ_internal_eff × A_i
+ * where ρ_internal_eff = ρ_fill × (fillLevel/100).
+ * fillLevel=100 & ρ_fill=ρ_mud → standard BF; fillLevel=0 → BF = 1 − ρ_mud×A_o/(ρ_steel×A_w)
+ */
+function buoyancyFactorFilled(
+  mudGcm3: number,
+  fillFluidGcm3: number,
+  fillLevelPct: number,
+  pipeOD_mm: number,
+  pipeID_mm: number,
+  steelGcm3 = 7.85,
+): number {
+  const Ao = (Math.PI / 4) * (pipeOD_mm / 1000) ** 2;
+  const Ai = (Math.PI / 4) * (pipeID_mm / 1000) ** 2;
+  const Aw = Math.max(1e-9, Ao - Ai);
+  const rhoFillEff = fillFluidGcm3 * Math.max(0, Math.min(100, fillLevelPct)) / 100;
+  return 1 - (mudGcm3 * Ao - rhoFillEff * Ai) / (steelGcm3 * Aw);
+}
+
 /** Dogleg severity between two survey points, °/30m */
 function calcDLS(zen1: number, azi1: number, zen2: number, azi2: number, dMD: number): number {
   if (dMD <= 0) return 0;
