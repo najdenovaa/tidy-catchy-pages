@@ -104,9 +104,12 @@ export default function FoamCementSection({ wellData, slurries, buffers, mudDens
       mudDensity: mudDensity / 1000, cavernCoeff: wellData.cavernCoeff,
       pumpingTimeMin: typeof pumpingTime === "number" && pumpingTime > 0 ? pumpingTime : undefined,
       pumpRateLps: pumpRate,
+      foamQualityZones: fqZones.length > 0 ? fqZones : undefined,
+      recipeId: recipeId !== "custom" ? recipeId : undefined,
     };
     return calculateFoamCement(input);
-  }, [baseDensity, targetQuality, backPressure, surfaceTemp, pumpingTime, wellData, cementTopMD, cementBottomMD, mudDensity, pumpRate]);
+  }, [baseDensity, targetQuality, backPressure, surfaceTemp, pumpingTime, wellData, cementTopMD, cementBottomMD, mudDensity, pumpRate, fqZones, recipeId]);
+
 
   const dynamicResult = useMemo(() => {
     if (cementBottomMD <= cementTopMD) return null;
