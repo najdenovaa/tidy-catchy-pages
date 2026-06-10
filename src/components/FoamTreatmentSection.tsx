@@ -15,6 +15,12 @@ import {
   ComposedChart,
 } from "recharts";
 import {
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { HelpCircle } from "lucide-react";
+import {
   calculateFoamTreatment,
   buildCyclogram,
   recommendEquipment,
