@@ -12,6 +12,7 @@ import {
 import type { WellData, SlurryInput, BufferFluid } from "@/lib/cementing-calculations";
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2 } from "lucide-react";
+import FoamCementSchematic from "./FoamCementSchematic";
 import CopyImageButton from "./CopyImageButton";
 
 interface Props {
