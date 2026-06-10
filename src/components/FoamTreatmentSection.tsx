@@ -583,7 +583,7 @@ function RecipeEditor({
   const addAdditive = () =>
     setCR("additives", [
       ...recipe.additives,
-      { name: "Новая добавка", concentration: 0.5, unit: "%", purpose: "" },
+      { name: "Новая добавка", concentration: 0.5, unit: "%", purpose: "", category: "other" },
     ]);
   const removeAdditive = (i: number) =>
     setCR("additives", recipe.additives.filter((_, idx) => idx !== i));
