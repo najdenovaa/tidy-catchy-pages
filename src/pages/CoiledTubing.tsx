@@ -30,6 +30,7 @@ import CTWell3D from "@/components/CTWell3D";
 import { exportCTDocx } from "@/lib/export-ct-docx";
 import CTOperationsLibrary from "@/components/CTOperationsLibrary";
 import CTReachAnalysisTab from "@/components/CTReachAnalysisTab";
+import CTCleanoutTab from "@/components/CTCleanoutTab";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import CopyImageButton from "@/components/CopyImageButton";
