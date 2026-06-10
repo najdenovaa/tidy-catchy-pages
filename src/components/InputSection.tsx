@@ -585,15 +585,15 @@ export default function InputSection(props: Props) {
                       <Input type="number" step="any" value={iv.fromMD || ""} onChange={(e) => {
                         const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], fromMD: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, cavernIntervals: arr });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <Input type="number" step="any" value={iv.toMD || ""} onChange={(e) => {
                         const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], toMD: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, cavernIntervals: arr });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <Input type="number" step="0.01" value={iv.coeff || ""} onChange={(e) => {
                         const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], coeff: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, cavernIntervals: arr });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <button onClick={() => {
                         const arr = wellData.cavernIntervals!.filter((_, j) => j !== i);
                         onWellDataChange({ ...wellData, cavernIntervals: arr.length > 0 ? arr : undefined });
