@@ -7,6 +7,10 @@ import { getCasingID } from "@/lib/cementing-calculations";
 import type { CentralizationResult, CentralizerInterval } from "@/lib/centralization-calculations";
 import CopyImageButton from "./CopyImageButton";
 import TripSimulator from "./TripSimulator";
+import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
+import { exportTorqueDragDocx } from "@/lib/export-td-docx";
+import { toast } from "sonner";
 
 interface Props {
   wellData: WellData;
