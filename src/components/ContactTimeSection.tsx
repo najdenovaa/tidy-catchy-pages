@@ -163,7 +163,22 @@ export default function ContactTimeSection({ pressureData, casingDepthMD, annVPM
 
   return (
     <div className="space-y-4">
-      {/* Summary */}
+      {/* === CQI block (полярка, грейды A-F, развёртка, рекомендации) === */}
+      {wellData && slurries && buffers && drillingFluid && (
+        <CementQualitySection
+          pressureData={pressureData}
+          casingDepthMD={casingDepthMD}
+          annVPM={annVPM}
+          wellData={wellData}
+          slurries={slurries}
+          buffers={buffers}
+          drillingFluid={drillingFluid}
+          centralizationResults={centralizationResults}
+          prevCasingDepth={prevCasingDepth ?? 0}
+        />
+      )}
+
+      {/* === Временной анализ контакта === */}
       {summary && (
         <Card>
           <CardHeader className="pb-2">
