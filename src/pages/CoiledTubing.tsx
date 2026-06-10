@@ -742,14 +742,15 @@ export default function CoiledTubing() {
           ) : forces && limits && hydraulics && fatigue && (
             <Tabs value={tab} onValueChange={setTab}>
               <div className="overflow-x-auto scrollbar-hide mb-3">
-                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-7">
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-8">
                   <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Дохождение</TabsTrigger>
-                  <TabsTrigger value="reach" className="gap-1 text-xs whitespace-nowrap">🎯 Reach Analysis</TabsTrigger>
+                  <TabsTrigger value="reach" className="gap-1 text-xs whitespace-nowrap">🎯 Reach</TabsTrigger>
+                  <TabsTrigger value="cleanout" className="gap-1 text-xs whitespace-nowrap">🧹 Промывка</TabsTrigger>
                   <TabsTrigger value="limits" className="gap-1 text-xs whitespace-nowrap">🛡 Пределы</TabsTrigger>
                   <TabsTrigger value="hydraulics" className="gap-1 text-xs whitespace-nowrap">💧 Гидравлика</TabsTrigger>
                   <TabsTrigger value="tempering" className="gap-1 text-xs whitespace-nowrap">🌡 Темперирование</TabsTrigger>
                   <TabsTrigger value="fatigue" className="gap-1 text-xs whitespace-nowrap">🔄 Усталость</TabsTrigger>
-                  <TabsTrigger value="3d" className="gap-1 text-xs whitespace-nowrap">🌐 3D Профиль</TabsTrigger>
+                  <TabsTrigger value="3d" className="gap-1 text-xs whitespace-nowrap">🌐 3D</TabsTrigger>
                 </TabsList>
               </div>
               {/* Forces */}
