@@ -240,6 +240,220 @@ export const FOAM_TREATMENT_RECIPES: FoamTreatmentRecipe[] = [
   },
 ];
 
+/* ─────────── Химико-реологический движок ─────────── */
+
+export type AdditiveCategory =
+  | "corrosion_inhibitor"   // ингибитор коррозии
+  | "iron_control"          // стабилизатор Fe³⁺ (лимонная, NTA)
+  | "clay_stabilizer"       // стабилизатор глин (KCl, NH4Cl)
+  | "mutual_solvent"        // взаимный растворитель (EGMBE)
+  | "demulsifier"           // деэмульгатор
+  | "scale_inhibitor"       // ингибитор солеотложения (НТФ, ОЭДФ)
+  | "gelling_agent"         // гелянт / загуститель (КМЦ, ксантан)
+  | "polymer"               // полимер (ПАА, ПАВ-полимер)
+  | "foam_stabilizer"       // стабилизатор пены
+  | "solvent"               // органический растворитель (толуол, ксилол)
+  | "gas_generator"         // газогенерирующий (NH4Cl, NaNO2)
+  | "other";
+
+export type SurfactantClass =
+  | "fluorinated" | "amphoteric" | "nonionic" | "anionic" | "cationic" | "none";
+
+/** Автоопределение категории по названию и назначению. */
+export function detectAdditiveCategory(a: { name: string; purpose: string; category?: AdditiveCategory }): AdditiveCategory {
+  if (a.category) return a.category;
+  const s = `${a.name} ${a.purpose}`.toLowerCase();
+  if (/ингибитор\s*корроз|солинг|инкоргаз|corrosion/.test(s)) return "corrosion_inhibitor";
+  if (/железа|fe|iron|лимонн|уксусн|citric|acetic|nta/.test(s)) return "iron_control";
+  if (/стабилизатор\s*глин|kcl|nh4cl|хлорид\s*аммония|clay/.test(s) && !/газоген/.test(s)) return "clay_stabilizer";
+  if (/взаимн.*раствор|egmbe|бутилцеллозольв|mutual/.test(s)) return "mutual_solvent";
+  if (/деэмульг|demulsif|разрушитель\s*эмульс/.test(s)) return "demulsifier";
+  if (/солеотлож|scale\s*inhib|нтф|оэдф|ипхан/.test(s)) return "scale_inhibitor";
+  if (/паа|полиакрилам|polymer|гуар|guar/.test(s)) return "polymer";
+  if (/гелянт|загуст|кмц|ксантан|xanthan|gel/.test(s)) return "gelling_agent";
+  if (/стабилизатор\s*пены|foam\s*stab/.test(s)) return "foam_stabilizer";
+  if (/nh4cl|nano2|газоген|gas\s*gen/.test(s)) return "gas_generator";
+  if (/толуол|ксилол|бензин|нефрас|конденсат|растворитель|toluene|xylene/.test(s)) return "solvent";
+  return "other";
+}
+
+/** Классификация ПАВ по химической природе. */
+export function classifySurfactant(name: string): SurfactantClass {
+  const s = name.toLowerCase().trim();
+  if (!s || s === "—") return "none";
+  if (/фтор|fluor|fc-?\d|зонил/.test(s)) return "fluorinated";
+  if (/амфо|бетаин|capb|coco-?betaine/.test(s)) return "amphoteric";
+  if (/неонол|оп-?\d|превоцел|нефтенол\s*к|синтанол/.test(s)) return "nonionic";
+  if (/нефтенол\s*впк|катамин|катапин|cetac|катион|чак/.test(s)) return "cationic";
+  return "anionic"; // Сульфонол, АОС, ПО-3А и т.п.
+}
+
+/** Стабильность пены: множитель к ΔS и к окну допустимого FQ. */
+const FOAM_STABILITY_FACTOR: Record<SurfactantClass, number> = {
+  fluorinated: 1.30, amphoteric: 1.15, nonionic: 1.10,
+  anionic: 1.00,     cationic:   0.95, none:     0.40,
+};
+
+/** Кривая насыщения от концентрации добавки. */
+function sat(conc: number, scale: number): number {
+  if (conc <= 0) return 0;
+  return 1 - Math.exp(-conc / Math.max(1e-6, scale));
+}
+
+/** Эффекты по категориям добавок (зависят от концентрации). */
+const ADDITIVE_EFFECTS: Record<AdditiveCategory, (conc: number) => {
+  maxTempBonusC?: number;
+  skinReductionFactor?: number;   // множитель к ΔS
+  penetrationFactor?: number;     // множитель к Rpen
+  viscosityCp?: number;           // добавка к μ базовой жидкости
+  tauHoursFactor?: number;        // множитель к τ чистки (меньше = быстрее)
+  halfLifeFactor?: number;        // множитель к T½ (больше = дольше эффект)
+  protectsAgainstFe?: boolean;
+  protectsAgainstCorrosion?: boolean;
+}> = {
+  corrosion_inhibitor: (c) => ({ maxTempBonusC: 40 * sat(c, 0.3), protectsAgainstCorrosion: c >= 0.2 }),
+  iron_control:        (c) => ({ protectsAgainstFe: c >= 0.3, skinReductionFactor: 1 + 0.05 * sat(c, 0.5) }),
+  clay_stabilizer:     (c) => ({ skinReductionFactor: 1 + 0.10 * sat(c, 2),   halfLifeFactor: 1 + 0.40 * sat(c, 2) }),
+  mutual_solvent:      (c) => ({ skinReductionFactor: 1 + 0.25 * sat(c, 5),   penetrationFactor: 1 + 0.15 * sat(c, 5), tauHoursFactor: 1 - 0.20 * sat(c, 3) }),
+  demulsifier:         (c) => ({ tauHoursFactor: 1 - 0.45 * sat(c, 0.2) }),
+  scale_inhibitor:     (c) => ({ halfLifeFactor: 1 + 0.20 * sat(c, 0.5) }),
+  gelling_agent:       (c) => ({ viscosityCp: 30 * sat(c, 0.5),  penetrationFactor: 1 + 0.10 * sat(c, 0.5) }),
+  polymer:             (c) => ({ viscosityCp: 80 * sat(c, 0.5),  penetrationFactor: 1 + 0.15 * sat(c, 0.5), skinReductionFactor: 0.95 }),
+  foam_stabilizer:     (c) => ({ skinReductionFactor: 1 + 0.05 * sat(c, 0.5) }),
+  solvent:             (c) => ({ skinReductionFactor: 1 + 0.20 * sat(c, 30),  penetrationFactor: 1 + 0.10 * sat(c, 30) }),
+  gas_generator:       () => ({}),
+  other:               () => ({}),
+};
+
+export interface ChemistryAnalysis {
+  // Сводные множители, применённые к физике
+  surfactantClass: SurfactantClass;
+  foamStabilityFactor: number;
+  effectiveMaxTempC: number;
+  skinReductionMultiplier: number;
+  penetrationMultiplier: number;
+  apparentViscosityCp: number;
+  tauHoursFactor: number;
+  halfLifeFactor: number;
+  // Защита
+  hasCorrosionProtection: boolean;
+  hasIronControl: boolean;
+  // Разбор по добавкам
+  perAdditive: Array<{
+    name: string;
+    concentration: number;
+    unit: string;
+    category: AdditiveCategory;
+    effect: string;
+  }>;
+  // Совместимость
+  compatibilityWarnings: string[];
+  compatibilityNotes: string[];
+}
+
+const CAT_LABEL_RU: Record<AdditiveCategory, string> = {
+  corrosion_inhibitor: "Ингибитор коррозии",
+  iron_control: "Стабилизатор Fe³⁺",
+  clay_stabilizer: "Стабилизатор глин",
+  mutual_solvent: "Взаимный растворитель",
+  demulsifier: "Деэмульгатор",
+  scale_inhibitor: "Ингибитор солеотложения",
+  gelling_agent: "Гелянт / загуститель",
+  polymer: "Полимер",
+  foam_stabilizer: "Стабилизатор пены",
+  solvent: "Органический растворитель",
+  gas_generator: "Газогенерирующий реагент",
+  other: "Прочее",
+};
+
+export function getAdditiveCategoryLabel(c: AdditiveCategory): string {
+  return CAT_LABEL_RU[c] ?? c;
+}
+
+/** Главный анализатор химии рецепта. */
+export function analyzeFoamChemistry(
+  recipe: FoamTreatmentRecipe,
+  well: FoamTreatmentWellData,
+): ChemistryAnalysis {
+  const surfactantClass = classifySurfactant(recipe.surfactantType);
+  const foamStab = FOAM_STABILITY_FACTOR[surfactantClass];
+
+  let maxTempBonus = 0;
+  let skinMult = 1;
+  let penMult = 1;
+  let visc = 1; // базовая вода ~1 cP
+  let tauF = 1;
+  let halfF = 1;
+  let hasCorr = false;
+  let hasFe = false;
+
+  const perAdditive: ChemistryAnalysis["perAdditive"] = [];
+
+  for (const a of recipe.additives) {
+    const cat = detectAdditiveCategory(a);
+    const conc = a.concentration;
+    const eff = ADDITIVE_EFFECTS[cat](conc);
+    const parts: string[] = [];
+
+    if (eff.maxTempBonusC) { maxTempBonus += eff.maxTempBonusC; parts.push(`+${eff.maxTempBonusC.toFixed(0)}°C к Tмакс`); }
+    if (eff.skinReductionFactor) { skinMult *= eff.skinReductionFactor; parts.push(`×${eff.skinReductionFactor.toFixed(2)} к ΔS`); }
+    if (eff.penetrationFactor)   { penMult  *= eff.penetrationFactor;   parts.push(`×${eff.penetrationFactor.toFixed(2)} к Rпрон`); }
+    if (eff.viscosityCp)         { visc     += eff.viscosityCp;         parts.push(`+${eff.viscosityCp.toFixed(0)} cP к μ`); }
+    if (eff.tauHoursFactor)      { tauF     *= eff.tauHoursFactor;      parts.push(`τ чистки ×${eff.tauHoursFactor.toFixed(2)}`); }
+    if (eff.halfLifeFactor)      { halfF    *= eff.halfLifeFactor;      parts.push(`T½ эффекта ×${eff.halfLifeFactor.toFixed(2)}`); }
+    if (eff.protectsAgainstCorrosion) hasCorr = true;
+    if (eff.protectsAgainstFe)        hasFe   = true;
+
+    perAdditive.push({
+      name: a.name, concentration: conc, unit: a.unit, category: cat,
+      effect: parts.length ? parts.join("; ") : "учёт в составе реагентов",
+    });
+  }
+
+  // Подкорректировать ΔS на стабильность пены (хорошее ПАВ держит контакт)
+  skinMult *= foamStab;
+
+  // Совместимость
+  const warn: string[] = [];
+  const notes: string[] = [];
+  const isAcid = recipe.type === "foam_acid_hcl" || recipe.type === "foam_acid_hf";
+
+  if (isAcid && !hasCorr)
+    warn.push("Кислотный рецепт без ингибитора коррозии — НКТ и оборудование под угрозой (особенно при T > 60 °C).");
+  if (isAcid && well.reservoirTemperatureC > 80 && !hasFe)
+    warn.push("HCl при T > 80 °C без стабилизатора Fe³⁺ — риск вторичного осаждения гидроокиси железа в пласте.");
+  if (recipe.type === "foam_acid_hf" && recipe.collectorType === "carbonate")
+    warn.push("HF на карбонатах — мгновенное осаждение CaF₂ (фторид кальция), пласт будет закольматирован.");
+  if (surfactantClass === "cationic" && perAdditive.some(p => p.category === "polymer"))
+    warn.push("Катионный ПАВ + анионный полимер (ПАА) — образование нерастворимого комплекса, закупорка ПЗП.");
+  if (surfactantClass === "nonionic" && well.reservoirTemperatureC > 90)
+    notes.push("Неионогенное ПАВ при T > 90 °C — возможен переход через точку помутнения, фазовое расслоение.");
+  if (recipe.type === "foam_acid_hf" && !perAdditive.some(p => p.category === "mutual_solvent"))
+    notes.push("Глинокислота без взаимного растворителя — на 15–25 % ниже эффективность по удалению водяного блока.");
+  if (well.wellFluidType === "emulsion" && !perAdditive.some(p => p.category === "demulsifier"))
+    notes.push("Скважина с эмульсией — добавьте деэмульгатор, иначе выход на режим затянется.");
+  if (perAdditive.some(p => p.category === "polymer") && recipe.baseFluidType === "acid_hcl")
+    warn.push("ПАА в среде HCl ≥ 15 % быстро деградирует — загущение работать не будет.");
+  if (recipe.type === "foam_solvent" && well.skinFactor < 0)
+    notes.push("Скин уже отрицательный — обработка растворителем малоэффективна (нет органических отложений).");
+
+  return {
+    surfactantClass,
+    foamStabilityFactor: foamStab,
+    effectiveMaxTempC: recipe.maxTempC + maxTempBonus,
+    skinReductionMultiplier: skinMult,
+    penetrationMultiplier: penMult,
+    apparentViscosityCp: visc,
+    tauHoursFactor: tauF,
+    halfLifeFactor: halfF,
+    hasCorrosionProtection: hasCorr,
+    hasIronControl: hasFe,
+    perAdditive,
+    compatibilityWarnings: warn,
+    compatibilityNotes: notes,
+  };
+}
+
 /* ─────────── Внутренние хелперы ─────────── */
 
 function calcFrictionInNKT(
@@ -247,13 +461,14 @@ function calcFrictionInNKT(
   idMm: number,
   lengthM: number,
   densityGcc: number,
+  viscosityCp: number = 1,
 ): number {
   if (rateLps <= 0 || idMm <= 0 || lengthM <= 0) return 0;
   const d = idMm / 1000;
   const area = (Math.PI / 4) * d * d;
   const v = rateLps / 1000 / area; // м/с
   const rho = densityGcc * 1000;
-  const mu = 0.001; // вода ~1 cP
+  const mu = Math.max(0.0005, viscosityCp * 0.001); // Pa·s
   const Re = (rho * v * d) / mu;
   let f: number;
   if (Re < 2100) f = 64 / Math.max(1, Re);
