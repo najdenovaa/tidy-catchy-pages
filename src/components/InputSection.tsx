@@ -81,13 +81,13 @@ const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolu
               <div className="flex items-center gap-1 flex-1">
                 <DebouncedInput type="number" step="0.1" value={step.rateLps || ""} onChange={(e) => {
                   const u = [...steps]; u[i] = { ...u[i], rateLps: parseFloat(e.target.value) || 0 }; onChange(u);
-                }} className="h-7 text-xs w-20" placeholder="л/с" />
+                }} className="h-7 text-xs w-28" placeholder="л/с" />
                 <span className="text-xs text-muted-foreground">л/с</span>
               </div>
               <div className="flex items-center gap-1">
                 <DebouncedInput type="number" step="0.1" value={step.volumeM3 || ""} onChange={(e) => {
                   const u = [...steps]; u[i] = { ...u[i], volumeM3: parseFloat(e.target.value) || 0 }; onChange(u);
-                }} className="h-7 text-xs w-20" placeholder="м³" />
+                }} className="h-7 text-xs w-28" placeholder="м³" />
                 <span className="text-xs text-muted-foreground">м³</span>
               </div>
               {steps.length > 1 && (
@@ -540,15 +540,15 @@ export default function InputSection(props: Props) {
                       <Input type="number" step="any" value={sec.fromMD || ""} onChange={(e) => {
                         const s = [...wellData.casingSections!]; s[i] = { ...s[i], fromMD: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, casingSections: s });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <Input type="number" step="any" value={sec.toMD || ""} onChange={(e) => {
                         const s = [...wellData.casingSections!]; s[i] = { ...s[i], toMD: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, casingSections: s });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <Input type="number" step="any" value={sec.wallThickness || ""} onChange={(e) => {
                         const s = [...wellData.casingSections!]; s[i] = { ...s[i], wallThickness: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, casingSections: s });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <button onClick={() => {
                         const s = wellData.casingSections!.filter((_, j) => j !== i);
                         onWellDataChange({ ...wellData, casingSections: s.length > 0 ? s : undefined });
@@ -585,15 +585,15 @@ export default function InputSection(props: Props) {
                       <Input type="number" step="any" value={iv.fromMD || ""} onChange={(e) => {
                         const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], fromMD: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, cavernIntervals: arr });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <Input type="number" step="any" value={iv.toMD || ""} onChange={(e) => {
                         const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], toMD: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, cavernIntervals: arr });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <Input type="number" step="0.01" value={iv.coeff || ""} onChange={(e) => {
                         const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], coeff: parseFloat(e.target.value) || 0 };
                         onWellDataChange({ ...wellData, cavernIntervals: arr });
-                      }} className="h-7 text-xs" />
+                      }} className="h-7 text-xs min-w-[100px]" />
                       <button onClick={() => {
                         const arr = wellData.cavernIntervals!.filter((_, j) => j !== i);
                         onWellDataChange({ ...wellData, cavernIntervals: arr.length > 0 ? arr : undefined });
@@ -622,10 +622,10 @@ export default function InputSection(props: Props) {
                 <thead>
                   <tr className="border-b border-border text-xs text-muted-foreground">
                     <th className="text-left py-1 px-2 w-8">#</th>
-                    <th className="text-left py-1 px-2">По стволу (MD), м</th>
-                    <th className="text-left py-1 px-2">Азимут, °</th>
-                    <th className="text-left py-1 px-2">Зенит, °</th>
-                    <th className="text-left py-1 px-2">По вертикали (TVD), м <span className="text-primary font-normal">(авто)</span></th>
+                    <th className="text-left py-1 px-2 whitespace-nowrap">По стволу (MD), м</th>
+                    <th className="text-left py-1 px-2 whitespace-nowrap">Азимут, °</th>
+                    <th className="text-left py-1 px-2 whitespace-nowrap">Зенит, °</th>
+                    <th className="text-left py-1 px-2 whitespace-nowrap">По вертикали (TVD), м <span className="text-primary font-normal">(авто)</span></th>
                     <th className="py-1 px-2 w-10"></th>
                   </tr>
                 </thead>
@@ -633,10 +633,10 @@ export default function InputSection(props: Props) {
                   {(wellData.trajectory || []).map((pt, i) => (
                     <tr key={i} className="border-b border-border/30">
                       <td className="py-1 px-2 text-xs text-muted-foreground">{i + 1}</td>
-                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.md || ""} onChange={(e) => updateTrajectoryPoint(i, "md", e.target.value)} className="h-7 text-xs" /></td>
-                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.azimuth || ""} onChange={(e) => updateTrajectoryPoint(i, "azimuth", e.target.value)} className="h-7 text-xs" /></td>
-                      <td className="py-1 px-2"><Input type="number" step="any" value={pt.zenith || ""} onChange={(e) => updateTrajectoryPoint(i, "zenith", e.target.value)} className="h-7 text-xs" /></td>
-                      <td className="py-1 px-2">
+                      <td className="py-1 px-2 min-w-[120px]"><Input type="number" step="any" value={pt.md || ""} onChange={(e) => updateTrajectoryPoint(i, "md", e.target.value)} className="h-7 text-xs w-full" /></td>
+                      <td className="py-1 px-2 min-w-[120px]"><Input type="number" step="any" value={pt.azimuth || ""} onChange={(e) => updateTrajectoryPoint(i, "azimuth", e.target.value)} className="h-7 text-xs w-full" /></td>
+                      <td className="py-1 px-2 min-w-[120px]"><Input type="number" step="any" value={pt.zenith || ""} onChange={(e) => updateTrajectoryPoint(i, "zenith", e.target.value)} className="h-7 text-xs w-full" /></td>
+                      <td className="py-1 px-2 min-w-[120px]">
                         <div className="h-7 flex items-center px-2 rounded bg-muted text-xs font-medium border border-border">
                           {pt.tvd ? pt.tvd.toFixed(2) : "—"}
                         </div>
