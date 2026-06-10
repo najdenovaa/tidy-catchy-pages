@@ -707,6 +707,12 @@ export default function Index() {
                     pressureData={pressureResult.points}
                     casingDepthMD={calcSnapshot.wellData.casingDepthMD}
                     annVPM={volumes.annularVolumePerMeter}
+                    wellData={calcSnapshot.wellData}
+                    slurries={calcSnapshot.slurries}
+                    buffers={calcSnapshot.buffers}
+                    drillingFluid={calcSnapshot.drillingFluid}
+                    centralizationResults={centralizationResults ?? undefined}
+                    prevCasingDepth={calcSnapshot.wellData.prevCasingDepth || 0}
                   />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>

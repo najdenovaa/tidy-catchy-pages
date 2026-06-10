@@ -1,13 +1,21 @@
 import { useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
-import type { PressurePoint } from "@/lib/cementing-calculations";
+import type { PressurePoint, WellData, SlurryInput, BufferFluid, DrillingFluid } from "@/lib/cementing-calculations";
+import type { CentralizationResult } from "@/lib/centralization-calculations";
 import CopyImageButton from "./CopyImageButton";
+import CementQualitySection from "./CementQualitySection";
 
 interface Props {
   pressureData: PressurePoint[];
   casingDepthMD: number;
   annVPM: number; // annular volume per meter, m³/m
+  wellData?: WellData;
+  slurries?: SlurryInput[];
+  buffers?: BufferFluid[];
+  drillingFluid?: DrillingFluid;
+  centralizationResults?: CentralizationResult[];
+  prevCasingDepth?: number;
 }
 
 interface ContactData {
@@ -36,7 +44,7 @@ function ScrollableChart({ children, chartRef, height }: { children: React.React
   );
 }
 
-export default function ContactTimeSection({ pressureData, casingDepthMD, annVPM }: Props) {
+export default function ContactTimeSection({ pressureData, casingDepthMD, annVPM, wellData, slurries, buffers, drillingFluid, centralizationResults, prevCasingDepth }: Props) {
   const chartRef1 = useRef<HTMLDivElement>(null);
   const chartRef2 = useRef<HTMLDivElement>(null);
   const chartRef3 = useRef<HTMLDivElement>(null);
@@ -155,7 +163,22 @@ export default function ContactTimeSection({ pressureData, casingDepthMD, annVPM
 
   return (
     <div className="space-y-4">
-      {/* Summary */}
+      {/* === CQI block (полярка, грейды A-F, развёртка, рекомендации) === */}
+      {wellData && slurries && buffers && drillingFluid && (
+        <CementQualitySection
+          pressureData={pressureData}
+          casingDepthMD={casingDepthMD}
+          annVPM={annVPM}
+          wellData={wellData}
+          slurries={slurries}
+          buffers={buffers}
+          drillingFluid={drillingFluid}
+          centralizationResults={centralizationResults}
+          prevCasingDepth={prevCasingDepth ?? 0}
+        />
+      )}
+
+      {/* === Временной анализ контакта === */}
       {summary && (
         <Card>
           <CardHeader className="pb-2">
