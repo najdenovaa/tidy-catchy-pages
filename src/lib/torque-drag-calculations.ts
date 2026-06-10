@@ -266,8 +266,7 @@ export function calculateTD(input: TDInput, mode: TDMode): TDResult {
   let cumViscousDrag = 0;
   let cumCentralizerDrag = 0;
   const yieldStr = input.yieldStrength ?? 550;
-  const pipeOD = input.pipeOD_mm ?? input.casingOD;
-  const tripSpeed = input.tripSpeedMps ?? 0.5; // м/с default
+  const tripSpeed = input.tripSpeedMps ?? 0.5; // м/с default — pipeOD already declared above
 
   // DC section
   const dcTop = input.dcLength ? Math.max(0, input.casingDepthMD - input.dcLength) : input.casingDepthMD;
