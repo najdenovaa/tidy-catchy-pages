@@ -120,6 +120,15 @@ export default function FoamTreatmentDiagnostics({
   const [mineralogy, setMineralogy] = useState<Mineralogy>(DEFAULT_MINERALOGY);
   const [drilling, setDrilling] = useState<DrillingHistory>(DEFAULT_DRILLING);
   const [history, setHistory] = useState<ProductionPoint[]>(DEFAULT_HISTORY);
+  const [srtPoints, setSrtPoints] = useState<StepRatePoint[]>([
+    { rate: 50,  pressure: 8 },
+    { rate: 100, pressure: 11 },
+    { rate: 150, pressure: 14 },
+    { rate: 200, pressure: 17 },
+    { rate: 250, pressure: 19 },
+    { rate: 300, pressure: 20 },
+    { rate: 350, pressure: 21 },
+  ]);
 
   const [oilPrice, setOilPrice] = useState(35_000);
   const [chemCost, setChemCost] = useState(150_000);
