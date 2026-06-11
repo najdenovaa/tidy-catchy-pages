@@ -211,6 +211,8 @@ function calcEff(
 export default function DisplacementEfficiency({ wellData, slurries, buffers, drillingFluid, centralizationResults }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [rotationOn, setRotationOn] = useState(false);
+  const [rotationRPM, setRotationRPM] = useState(25);
 
   const zones = useMemo(
     () => buildFluidZones(wellData, slurries, buffers, drillingFluid),
