@@ -633,7 +633,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     ctx.fillText("Засвет (каналы БР)", legX, legY + legH + 12);
     ctx.textAlign = "right";
     ctx.fillText("Полное замещение", legX + legW, legY + legH + 12);
-  }, [zones, mdMin, mdMax, drillingFluid, avgRate, annArea, wellData, getCentDataAtMD, traj, centralizationResults]);
+  }, [zones, mdMin, mdMax, drillingFluid, avgRate, annArea, wellData, getCentDataAtMD, traj, centralizationResults, rotationOn, rotationRPM]);
 
   const range = zones.length > 0 ? `${mdMin.toFixed(0)} – ${mdMax.toFixed(0)} м` : "";
 
