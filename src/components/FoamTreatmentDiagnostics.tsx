@@ -205,7 +205,7 @@ export default function FoamTreatmentDiagnostics({
     if (!treatmentVolumeM3 || treatmentVolumeM3 <= 0) return null;
     const r = penetrationRadius(treatmentVolumeM3, reservoir.h, well.porosity ?? 0.18, 0.2, reservoir.rw, fqAtBottom);
     return { r, rDamage: 0.5, rWell: reservoir.rw };
-  }, [treatmentVolumeM3, reservoir, fqAtBottom]);
+  }, [treatmentVolumeM3, reservoir, fqAtBottom, well.porosity]);
 
   // Tornado: NPV sensitivity ±20%
   const tornado = useMemo(() => {
