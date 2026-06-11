@@ -299,24 +299,63 @@ export default function CasingRotationSection({
             )}
           </Card>
 
+          {result.weakestPoint && (() => {
+            const w = result.weakestPoint;
+            const grade = getSteelGrade(w.gradeId);
+            const isCrit = w.utilizationPct >= 100;
+            const isWarn = w.utilizationPct >= 80;
+            const toneClass = isCrit ? 'border-red-400 bg-red-50' : isWarn ? 'border-amber-400 bg-amber-50' : 'border-emerald-400 bg-emerald-50';
+            return (
+              <Card className={`p-4 border-2 ${toneClass}`}>
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  🎯 Самое слабое место (слом / деформация)
+                  <Badge variant={isCrit ? 'destructive' : isWarn ? 'secondary' : 'default'}>
+                    {isCrit ? 'ОПАСНО' : isWarn ? 'Внимание' : 'Безопасно'}
+                  </Badge>
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <Metric label="Глубина (MD / TVD)" value={`${w.depthMD.toFixed(0)} / ${w.tvd.toFixed(0)} м`} tone={isCrit ? 'red' : isWarn ? 'amber' : 'green'} />
+                  <Metric label="Лимитирующий элемент" value={w.limitingType === 'pipe-body' ? 'Тело трубы' : 'Резьба'} />
+                  <Metric label={w.limitingType === 'pipe-body' ? 'Марка стали' : 'Резьба'}
+                    value={w.limitingType === 'pipe-body' ? `${grade.name} (σ_y=${grade.yieldStrength_MPa} МПа)` : connection.nameRu} />
+                  <Metric label="Эффективный предел" value={`${(w.effectiveLimit / 1000).toFixed(1)} кН·м`} />
+                  <Metric label={`Момент в этой точке при ${rpm} об/мин`} value={`${(w.currentTorque / 1000).toFixed(1)} кН·м`} />
+                  <Metric label="Использование предела" value={`${w.utilizationPct.toFixed(0)}%`} tone={isCrit ? 'red' : isWarn ? 'amber' : 'green'} />
+                  <Metric label="Макс. RPM до слома" value={`${w.maxSafeRPM.toFixed(0)} об/мин`} tone={w.maxSafeRPM < rpm ? 'red' : 'green'} />
+                  <Metric label="Резерв момента" value={`${((w.effectiveLimit - w.currentTorque) / 1000).toFixed(1)} кН·м`} tone={w.effectiveLimit - w.currentTorque < 0 ? 'red' : 'green'} />
+                </div>
+                <p className="text-xs text-muted-foreground mt-3">{w.note}</p>
+              </Card>
+            );
+          })()}
+
           <Card className="p-4">
-            <h3 className="font-semibold mb-3">Крутящий момент по глубине</h3>
-            <ResponsiveContainer width="100%" height={400}>
+            <h3 className="font-semibold mb-3">Момент vs пределы (резьба / тело трубы)</h3>
+            <p className="text-xs text-muted-foreground mb-2">
+              Эффективный предел = min(резьба, тело трубы). Подсвечено самое слабое место — там запас исчерпывается первым.
+            </p>
+            <ResponsiveContainer width="100%" height={460}>
               <LineChart data={chartData} layout="vertical" margin={{ top: 10, right: 20, left: 20, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" label={{ value: 'Момент, кН·м', position: 'insideBottom', offset: -5 }} />
-                <YAxis type="number" dataKey="depth" reversed label={{ value: 'Глубина, м', angle: -90, position: 'insideLeft' }} domain={[0, 'dataMax']} />
+                <YAxis type="number" dataKey="depth" reversed label={{ value: 'Глубина MD, м', angle: -90, position: 'insideLeft' }} domain={[0, 'dataMax']} />
                 <Tooltip />
                 <Legend />
-                <ReferenceLine x={limitKNm} stroke="#dc2626" strokeWidth={2} label={{ value: 'Предел резьбы', fill: '#dc2626', position: 'top' }} />
-                <ReferenceLine x={limitKNm * 0.8} stroke="#ca8a04" strokeDasharray="4 4" label={{ value: '80%', fill: '#ca8a04' }} />
-                <Line type="monotone" dataKey="total" name="Суммарный" stroke="#1e40af" strokeWidth={2} dot={false} />
+                <Line type="stepAfter" dataKey="connLimit" name="Предел резьбы" stroke="#dc2626" strokeWidth={2} strokeDasharray="5 3" dot={false} />
+                <Line type="stepAfter" dataKey="pipeLimit" name="Предел тела трубы (σ_y/√3)" stroke="#9333ea" strokeWidth={2} strokeDasharray="5 3" dot={false} />
+                <Line type="stepAfter" dataKey="effLimit" name="Эффективный предел" stroke="#000" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="total" name="Суммарный момент" stroke="#1e40af" strokeWidth={2.5} dot={false} />
                 <Line type="monotone" dataKey="friction" name="Трение+муфты" stroke="#65a30d" dot={false} />
                 <Line type="monotone" dataKey="viscous" name="Вязкостный" stroke="#0891b2" dot={false} />
                 <Line type="monotone" dataKey="central" name="Центраторы" stroke="#a855f7" dot={false} />
+                {result.weakestPoint && (
+                  <ReferenceLine y={result.weakestPoint.depthMD} stroke="#dc2626" strokeWidth={2}
+                    label={{ value: `⚠ Слабое место: ${result.weakestPoint.depthMD.toFixed(0)}м (${result.weakestPoint.limitingType === 'pipe-body' ? 'тело трубы ' + getSteelGrade(result.weakestPoint.gradeId).name : 'резьба'})`, fill: '#dc2626', position: 'right', fontSize: 11 }} />
+                )}
               </LineChart>
             </ResponsiveContainer>
           </Card>
+
 
           <Card className="p-4">
             <h3 className="font-semibold mb-3">Момент по фазам цементирования</h3>
