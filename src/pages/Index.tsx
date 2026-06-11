@@ -15,6 +15,7 @@ import ContactTimeSection from "@/components/ContactTimeSection";
 import CementQualitySection from "@/components/CementQualitySection";
 import TrajectorySection from "@/components/TrajectorySection";
 import DrillingHydraulicsSection from "@/components/DrillingHydraulicsSection";
+import CasingRotationSection from "@/components/CasingRotationSection";
 import AnalysisChatPanel from "@/components/AnalysisChatPanel";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
