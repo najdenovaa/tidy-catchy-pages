@@ -16,9 +16,12 @@ import {
   calculateRotationTorque,
   getConnectionsForOD,
   getBondGrade,
+  STEEL_GRADES,
+  getSteelGrade,
   type ConnectionType,
   type RotationAnalysisResult,
   type FluidRheology,
+  type SteelSection,
 } from "@/lib/casing-rotation-calculations";
 import type { WellData, SlurryInput } from "@/lib/cementing-calculations";
 import type { CentralizerInterval } from "@/lib/centralization-calculations";
@@ -45,6 +48,8 @@ export default function CasingRotationSection({
   const [useCementRheology, setUseCementRheology] = useState(false);
   const [stopRings, setStopRings] = useState<{ depthMD: number; od_mm: number }[]>([]);
   const [crossovers, setCrossovers] = useState<{ depthMD: number; od_mm: number; torqueAdd_Nm: number }[]>([]);
+  const [defaultGradeId, setDefaultGradeId] = useState<string>('N80');
+  const [steelSections, setSteelSections] = useState<SteelSection[]>([]);
 
   // Превращаем интервалы центраторов в точечный массив
   const centralizers = useMemo(() => {
@@ -96,11 +101,13 @@ export default function CasingRotationSection({
         centralizers,
         stopRings,
         crossovers,
+        steelSections,
+        defaultGradeId,
         baseDisplacementEff,
         avgEccentricity,
       });
     } catch (e) { console.error(e); return null; }
-  }, [wellData, connection, rpm, frictionCoeff, annulusFluid.density, annulusFluid.pv, annulusFluid.yp, centralizers, stopRings, crossovers, baseDisplacementEff, avgEccentricity]);
+  }, [wellData, connection, rpm, frictionCoeff, annulusFluid.density, annulusFluid.pv, annulusFluid.yp, centralizers, stopRings, crossovers, steelSections, defaultGradeId, baseDisplacementEff, avgEccentricity]);
 
   if (!connection) {
     return (
@@ -116,6 +123,9 @@ export default function CasingRotationSection({
     friction: +(p.frictionTorque / 1000).toFixed(2),
     viscous: +(p.viscousTorque / 1000).toFixed(2),
     central: +(p.centralizerTorque / 1000).toFixed(2),
+    pipeLimit: +(p.pipeBodyLimit / 1000).toFixed(2),
+    connLimit: +(p.connectionLimit / 1000).toFixed(2),
+    effLimit: +(p.effectiveLimit / 1000).toFixed(2),
     maxRPM: +p.maxSafeRPM.toFixed(1),
     util: +p.utilizationPct.toFixed(1),
   })) || [];
@@ -175,6 +185,51 @@ export default function CasingRotationSection({
               </span>
             )}
           </Label>
+        </div>
+      </Card>
+
+      <Card className="p-4">
+        <h3 className="font-semibold mb-3">Марки стали по секциям колонны</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+          <div>
+            <Label>Основная марка стали</Label>
+            <Select value={defaultGradeId} onValueChange={setDefaultGradeId}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {STEEL_GRADES.map(g => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name} — σ_y={g.yieldStrength_MPa} МПа ({g.standard})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1">
+              Применяется к секциям без явной марки. Базовая стенка {wellData.casingWall} мм.
+            </p>
+          </div>
+          <div className="md:col-span-2">
+            <div className="flex items-center justify-between mb-2">
+              <Label>Секции с переменной маркой ({steelSections.length})</Label>
+              <Button size="sm" variant="outline" onClick={() => setSteelSections([...steelSections, { fromMD: 0, toMD: wellData.casingDepthMD, gradeId: defaultGradeId, wallThickness_mm: wellData.casingWall }])}>
+                <Plus className="h-3 w-3 mr-1" />Добавить секцию
+              </Button>
+            </div>
+            {steelSections.map((sec, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_1.5fr_1fr_auto] gap-2 mb-1 items-center">
+                <Input type="number" value={sec.fromMD} onChange={e => { const v = +e.target.value; setSteelSections(steelSections.map((x, j) => j === i ? { ...x, fromMD: v } : x)); }} placeholder="От, м" className="h-8" />
+                <Input type="number" value={sec.toMD} onChange={e => { const v = +e.target.value; setSteelSections(steelSections.map((x, j) => j === i ? { ...x, toMD: v } : x)); }} placeholder="До, м" className="h-8" />
+                <Select value={sec.gradeId} onValueChange={(v) => setSteelSections(steelSections.map((x, j) => j === i ? { ...x, gradeId: v } : x))}>
+                  <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {STEEL_GRADES.map(g => <SelectItem key={g.id} value={g.id}>{g.name} ({g.yieldStrength_MPa} МПа)</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Input type="number" value={sec.wallThickness_mm ?? ''} onChange={e => { const v = e.target.value === '' ? undefined : +e.target.value; setSteelSections(steelSections.map((x, j) => j === i ? { ...x, wallThickness_mm: v } : x)); }} placeholder="Стенка, мм" className="h-8" />
+                <Button size="icon" variant="ghost" onClick={() => setSteelSections(steelSections.filter((_, j) => j !== i))}><Trash2 className="h-3 w-3" /></Button>
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground mt-1">Предел тела трубы: T_y = (π/16)·(σ_y/√3)·(D⁴−d⁴)/D (критерий Мизеса).</p>
+          </div>
         </div>
       </Card>
 
@@ -244,24 +299,63 @@ export default function CasingRotationSection({
             )}
           </Card>
 
+          {result.weakestPoint && (() => {
+            const w = result.weakestPoint;
+            const grade = getSteelGrade(w.gradeId);
+            const isCrit = w.utilizationPct >= 100;
+            const isWarn = w.utilizationPct >= 80;
+            const toneClass = isCrit ? 'border-red-400 bg-red-50' : isWarn ? 'border-amber-400 bg-amber-50' : 'border-emerald-400 bg-emerald-50';
+            return (
+              <Card className={`p-4 border-2 ${toneClass}`}>
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  🎯 Самое слабое место (слом / деформация)
+                  <Badge variant={isCrit ? 'destructive' : isWarn ? 'secondary' : 'default'}>
+                    {isCrit ? 'ОПАСНО' : isWarn ? 'Внимание' : 'Безопасно'}
+                  </Badge>
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <Metric label="Глубина (MD / TVD)" value={`${w.depthMD.toFixed(0)} / ${w.tvd.toFixed(0)} м`} tone={isCrit ? 'red' : isWarn ? 'amber' : 'green'} />
+                  <Metric label="Лимитирующий элемент" value={w.limitingType === 'pipe-body' ? 'Тело трубы' : 'Резьба'} />
+                  <Metric label={w.limitingType === 'pipe-body' ? 'Марка стали' : 'Резьба'}
+                    value={w.limitingType === 'pipe-body' ? `${grade.name} (σ_y=${grade.yieldStrength_MPa} МПа)` : connection.nameRu} />
+                  <Metric label="Эффективный предел" value={`${(w.effectiveLimit / 1000).toFixed(1)} кН·м`} />
+                  <Metric label={`Момент в этой точке при ${rpm} об/мин`} value={`${(w.currentTorque / 1000).toFixed(1)} кН·м`} />
+                  <Metric label="Использование предела" value={`${w.utilizationPct.toFixed(0)}%`} tone={isCrit ? 'red' : isWarn ? 'amber' : 'green'} />
+                  <Metric label="Макс. RPM до слома" value={`${w.maxSafeRPM.toFixed(0)} об/мин`} tone={w.maxSafeRPM < rpm ? 'red' : 'green'} />
+                  <Metric label="Резерв момента" value={`${((w.effectiveLimit - w.currentTorque) / 1000).toFixed(1)} кН·м`} tone={w.effectiveLimit - w.currentTorque < 0 ? 'red' : 'green'} />
+                </div>
+                <p className="text-xs text-muted-foreground mt-3">{w.note}</p>
+              </Card>
+            );
+          })()}
+
           <Card className="p-4">
-            <h3 className="font-semibold mb-3">Крутящий момент по глубине</h3>
-            <ResponsiveContainer width="100%" height={400}>
+            <h3 className="font-semibold mb-3">Момент vs пределы (резьба / тело трубы)</h3>
+            <p className="text-xs text-muted-foreground mb-2">
+              Эффективный предел = min(резьба, тело трубы). Подсвечено самое слабое место — там запас исчерпывается первым.
+            </p>
+            <ResponsiveContainer width="100%" height={460}>
               <LineChart data={chartData} layout="vertical" margin={{ top: 10, right: 20, left: 20, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" label={{ value: 'Момент, кН·м', position: 'insideBottom', offset: -5 }} />
-                <YAxis type="number" dataKey="depth" reversed label={{ value: 'Глубина, м', angle: -90, position: 'insideLeft' }} domain={[0, 'dataMax']} />
+                <YAxis type="number" dataKey="depth" reversed label={{ value: 'Глубина MD, м', angle: -90, position: 'insideLeft' }} domain={[0, 'dataMax']} />
                 <Tooltip />
                 <Legend />
-                <ReferenceLine x={limitKNm} stroke="#dc2626" strokeWidth={2} label={{ value: 'Предел резьбы', fill: '#dc2626', position: 'top' }} />
-                <ReferenceLine x={limitKNm * 0.8} stroke="#ca8a04" strokeDasharray="4 4" label={{ value: '80%', fill: '#ca8a04' }} />
-                <Line type="monotone" dataKey="total" name="Суммарный" stroke="#1e40af" strokeWidth={2} dot={false} />
+                <Line type="stepAfter" dataKey="connLimit" name="Предел резьбы" stroke="#dc2626" strokeWidth={2} strokeDasharray="5 3" dot={false} />
+                <Line type="stepAfter" dataKey="pipeLimit" name="Предел тела трубы (σ_y/√3)" stroke="#9333ea" strokeWidth={2} strokeDasharray="5 3" dot={false} />
+                <Line type="stepAfter" dataKey="effLimit" name="Эффективный предел" stroke="#000" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="total" name="Суммарный момент" stroke="#1e40af" strokeWidth={2.5} dot={false} />
                 <Line type="monotone" dataKey="friction" name="Трение+муфты" stroke="#65a30d" dot={false} />
                 <Line type="monotone" dataKey="viscous" name="Вязкостный" stroke="#0891b2" dot={false} />
                 <Line type="monotone" dataKey="central" name="Центраторы" stroke="#a855f7" dot={false} />
+                {result.weakestPoint && (
+                  <ReferenceLine y={result.weakestPoint.depthMD} stroke="#dc2626" strokeWidth={2}
+                    label={{ value: `⚠ Слабое место: ${result.weakestPoint.depthMD.toFixed(0)}м (${result.weakestPoint.limitingType === 'pipe-body' ? 'тело трубы ' + getSteelGrade(result.weakestPoint.gradeId).name : 'резьба'})`, fill: '#dc2626', position: 'right', fontSize: 11 }} />
+                )}
               </LineChart>
             </ResponsiveContainer>
           </Card>
+
 
           <Card className="p-4">
             <h3 className="font-semibold mb-3">Момент по фазам цементирования</h3>
