@@ -123,6 +123,9 @@ export default function CasingRotationSection({
     friction: +(p.frictionTorque / 1000).toFixed(2),
     viscous: +(p.viscousTorque / 1000).toFixed(2),
     central: +(p.centralizerTorque / 1000).toFixed(2),
+    pipeLimit: +(p.pipeBodyLimit / 1000).toFixed(2),
+    connLimit: +(p.connectionLimit / 1000).toFixed(2),
+    effLimit: +(p.effectiveLimit / 1000).toFixed(2),
     maxRPM: +p.maxSafeRPM.toFixed(1),
     util: +p.utilizationPct.toFixed(1),
   })) || [];
