@@ -324,6 +324,41 @@ export default function FoamTreatmentDiagnostics({
     return scatter;
   }, [srtPoints]);
 
+  /* ── Эмиссия бандла наверх для DOCX-экспорта ── */
+  useEffect(() => {
+    if (!onDataChange) return;
+    onDataChange({
+      ipr,
+      iprAfterFE: iprAfter.flowEfficiency,
+      skinDecomp,
+      skinBefore: reservoir.skin,
+      skinAfter: skinNew,
+      damage,
+      arps: { qi: arps.qi, di: arps.di, b: arps.b, r2: arps.r2, type: arps.type },
+      forecast: {
+        incrementalOilM3: economics.incrementalOilM3,
+        firstYearBoostPct: forecast.length > 12 && forecast[0].qBaseline > 0
+          ? ((forecast[12].qTreated - forecast[12].qBaseline) / forecast[12].qBaseline) * 100
+          : 0,
+      },
+      economics: {
+        totalCost: economics.totalCost,
+        netProfit: economics.netProfit,
+        roi: economics.roi,
+        npv: economics.npv,
+        paybackMonths: economics.paybackMonths,
+      },
+      waterfall,
+      srt,
+      injectivityBefore: injectivity,
+      injectivityAfter: injectivityAfter,
+      mrf,
+      penetrationRadiusM: radiusInfo?.r ?? null,
+    });
+  }, [onDataChange, ipr, iprAfter, skinDecomp, reservoir.skin, skinNew, damage, arps, economics, forecast, waterfall, srt, injectivity, injectivityAfter, mrf, radiusInfo]);
+
+
+
 
 
 
