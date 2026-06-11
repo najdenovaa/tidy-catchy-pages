@@ -533,3 +533,98 @@ export function calculateEconomics(forecast: ForecastPoint[], costs: CostInputs)
     monthly,
   };
 }
+
+/* ───────────────────── 7. Реология пены в пористой среде (Hirasaki-Lawson) ───────────────────── */
+
+/**
+ * Кажущаяся вязкость пены в пористой среде по упрощённой модели Hirasaki-Lawson.
+ *   μ_app = μ_base · (1 + α · FQ / (1 − FQ))
+ *   α ~ √k · C_surf / max(0.01, v)
+ *
+ * @param FQ          качество пены, 0..1
+ * @param mu_base_cP  вязкость базовой жидкости, сПз
+ * @param k_mD        проницаемость пласта, мД
+ * @param v_mps       скорость Дарси, м/с
+ * @param surfPct     концентрация ПАВ, %
+ */
+export function foamApparentViscosity(
+  FQ: number, mu_base_cP: number, k_mD: number, v_mps: number, surfPct: number,
+): number {
+  const fq = Math.max(0, Math.min(0.95, FQ));
+  const alpha = (10 * Math.sqrt(Math.max(0.01, k_mD)) * Math.max(0, surfPct)) / Math.max(1e-3, v_mps * 1000);
+  const mu = mu_base_cP * (1 + alpha * fq / Math.max(0.01, 1 - fq));
+  return Math.min(10000, Math.max(mu_base_cP, mu));
+}
+
+/** Mobility Reduction Factor: во сколько раз пена снижает подвижность. */
+export function mobilityReductionFactor(FQ: number, surfPct: number): number {
+  return 1 + 50 * Math.pow(Math.max(0, Math.min(1, FQ)), 1.5) * Math.min(1, Math.max(0, surfPct) / 0.5);
+}
+
+/** Индекс приёмистости (закачка), м³/(сут·МПа). */
+export function calculateInjectivity(
+  k_mD: number, h: number, mu_cP: number, re: number, rw: number, skin: number,
+): number {
+  const denom = mu_cP * (Math.log(re / rw) + skin);
+  return denom > 0 ? (2 * Math.PI * k_mD * h * 86400) / (denom * 1e6) : 0;
+}
+
+/**
+ * Радиус проникновения раствора в пласт.
+ *   V_inj = π · (R² − rw²) · h · φ · (1 − Sor) · (1 − FQ)
+ */
+export function penetrationRadius(
+  volumeInjectedM3: number,
+  netPay: number,
+  porosity: number,
+  residualSat: number,
+  rw: number,
+  foamQuality: number,
+): number {
+  const effPV = porosity * Math.max(0.01, 1 - residualSat);
+  const liquidFrac = Math.max(0.05, 1 - foamQuality);
+  const argument = volumeInjectedM3 / (Math.PI * Math.max(0.1, netPay) * effPV * liquidFrac) + rw * rw;
+  return Math.sqrt(Math.max(0, argument));
+}
+
+/* ───────────────────── 8. Tornado sensitivity для NPV ───────────────────── */
+
+export interface SensitivityParam {
+  name: string;
+  baseValue: number;
+  /** Доля изменения, 0.2 = ±20%. */
+  variation: number;
+  /** Применяет новое значение к копии входа и возвращает NPV. */
+  evaluate: (val: number) => number;
+}
+
+export interface SensitivityResult {
+  name: string;
+  baseValue: number;
+  lowValue: number;
+  highValue: number;
+  lowNPV: number;
+  highNPV: number;
+  /** |highNPV − lowNPV| — для сортировки tornado. */
+  range: number;
+}
+
+export function tornadoSensitivity(baseNPV: number, params: SensitivityParam[]): SensitivityResult[] {
+  return params
+    .map((p) => {
+      const lo = p.baseValue * (1 - p.variation);
+      const hi = p.baseValue * (1 + p.variation);
+      const npvLo = p.evaluate(lo);
+      const npvHi = p.evaluate(hi);
+      return {
+        name: p.name,
+        baseValue: p.baseValue,
+        lowValue: lo,
+        highValue: hi,
+        lowNPV: npvLo,
+        highNPV: npvHi,
+        range: Math.abs(npvHi - npvLo),
+      };
+    })
+    .sort((a, b) => b.range - a.range);
+}
