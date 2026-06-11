@@ -64,6 +64,26 @@ export default function CasingRotationSection({
     return arr;
   }, [centralizerIntervals, wellData.holeDiameter]);
 
+  const cementFluid: FluidRheology | null = useMemo(() => {
+    const s = slurries[0];
+    if (!s) return null;
+    return {
+      density: (s.density || 1.85) * 1000,
+      pv: s.rheology?.pv ?? 50,
+      yp: s.rheology?.yp ?? 18,
+      name: s.name || 'цемент',
+    };
+  }, [slurries]);
+
+  const annulusFluid: FluidRheology = useCementRheology && cementFluid
+    ? cementFluid
+    : {
+        density: drillingFluid.density,
+        pv: drillingFluid.rheology?.pv ?? 25,
+        yp: drillingFluid.rheology?.yp ?? 12,
+        name: 'буровой раствор',
+      };
+
   const result: RotationAnalysisResult | null = useMemo(() => {
     if (!connection) return null;
     try {
@@ -72,18 +92,15 @@ export default function CasingRotationSection({
         connection,
         rpm,
         frictionCoeff,
-        annulusFluid: {
-          density: drillingFluid.density,
-          pv: drillingFluid.rheology?.pv ?? 25,
-          yp: drillingFluid.rheology?.yp ?? 12,
-          name: 'буровой раствор',
-        },
+        annulusFluid,
         centralizers,
+        stopRings,
+        crossovers,
         baseDisplacementEff,
         avgEccentricity,
       });
     } catch (e) { console.error(e); return null; }
-  }, [wellData, connection, rpm, frictionCoeff, drillingFluid.density, drillingFluid.rheology?.pv, drillingFluid.rheology?.yp, centralizers, baseDisplacementEff, avgEccentricity]);
+  }, [wellData, connection, rpm, frictionCoeff, annulusFluid.density, annulusFluid.pv, annulusFluid.yp, centralizers, stopRings, crossovers, baseDisplacementEff, avgEccentricity]);
 
   if (!connection) {
     return (
