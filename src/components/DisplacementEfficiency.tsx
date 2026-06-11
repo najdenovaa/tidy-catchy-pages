@@ -652,6 +652,19 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
         </div>
       </CardHeader>
       <CardContent>
+        <div className="flex flex-wrap items-center gap-4 mb-3 p-2 rounded-md bg-muted/40 border">
+          <div className="flex items-center gap-2">
+            <Switch id="rot-toggle" checked={rotationOn} onCheckedChange={setRotationOn} />
+            <Label htmlFor="rot-toggle" className="text-sm cursor-pointer">Вращение ОК</Label>
+          </div>
+          {rotationOn && (
+            <div className="flex items-center gap-2 min-w-[240px]">
+              <Label className="text-sm whitespace-nowrap">RPM: {rotationRPM}</Label>
+              <Slider value={[rotationRPM]} min={0} max={60} step={1} onValueChange={v => setRotationRPM(v[0])} className="w-40" />
+              <span className="text-xs text-muted-foreground">реком. 20–30</span>
+            </div>
+          )}
+        </div>
         <div ref={containerRef} className="flex justify-center">
           <canvas ref={canvasRef} />
         </div>
