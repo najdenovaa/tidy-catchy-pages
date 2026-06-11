@@ -4,6 +4,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import { Plus, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Legend,
@@ -15,20 +18,22 @@ import {
   getBondGrade,
   type ConnectionType,
   type RotationAnalysisResult,
+  type FluidRheology,
 } from "@/lib/casing-rotation-calculations";
-import type { WellData } from "@/lib/cementing-calculations";
+import type { WellData, SlurryInput } from "@/lib/cementing-calculations";
 import type { CentralizerInterval } from "@/lib/centralization-calculations";
 
 interface Props {
   wellData: WellData;
   drillingFluid: { density: number; rheology?: { pv: number; yp: number } };
+  slurries?: SlurryInput[];
   centralizerIntervals?: CentralizerInterval[];
-  baseDisplacementEff?: number; // % из CQI
-  avgEccentricity?: number;     // из Центрирования
+  baseDisplacementEff?: number;
+  avgEccentricity?: number;
 }
 
 export default function CasingRotationSection({
-  wellData, drillingFluid, centralizerIntervals = [], baseDisplacementEff = 65, avgEccentricity = 0.4,
+  wellData, drillingFluid, slurries = [], centralizerIntervals = [], baseDisplacementEff = 65, avgEccentricity = 0.4,
 }: Props) {
   const connOptions = useMemo(() => getConnectionsForOD(wellData.casingOD), [wellData.casingOD]);
   const [connId, setConnId] = useState<string>(connOptions[0]?.id || "");
@@ -37,6 +42,9 @@ export default function CasingRotationSection({
 
   const [rpm, setRpm] = useState(25);
   const [frictionCoeff, setFrictionCoeff] = useState(0.25);
+  const [useCementRheology, setUseCementRheology] = useState(false);
+  const [stopRings, setStopRings] = useState<{ depthMD: number; od_mm: number }[]>([]);
+  const [crossovers, setCrossovers] = useState<{ depthMD: number; od_mm: number; torqueAdd_Nm: number }[]>([]);
 
   // Превращаем интервалы центраторов в точечный массив
   const centralizers = useMemo(() => {
@@ -56,6 +64,26 @@ export default function CasingRotationSection({
     return arr;
   }, [centralizerIntervals, wellData.holeDiameter]);
 
+  const cementFluid: FluidRheology | null = useMemo(() => {
+    const s = slurries[0];
+    if (!s) return null;
+    return {
+      density: (s.density || 1.85) * 1000,
+      pv: s.rheology?.pv ?? 50,
+      yp: s.rheology?.yp ?? 18,
+      name: s.name || 'цемент',
+    };
+  }, [slurries]);
+
+  const annulusFluid: FluidRheology = useCementRheology && cementFluid
+    ? cementFluid
+    : {
+        density: drillingFluid.density,
+        pv: drillingFluid.rheology?.pv ?? 25,
+        yp: drillingFluid.rheology?.yp ?? 12,
+        name: 'буровой раствор',
+      };
+
   const result: RotationAnalysisResult | null = useMemo(() => {
     if (!connection) return null;
     try {
@@ -64,18 +92,15 @@ export default function CasingRotationSection({
         connection,
         rpm,
         frictionCoeff,
-        annulusFluid: {
-          density: drillingFluid.density,
-          pv: drillingFluid.rheology?.pv ?? 25,
-          yp: drillingFluid.rheology?.yp ?? 12,
-          name: 'буровой раствор',
-        },
+        annulusFluid,
         centralizers,
+        stopRings,
+        crossovers,
         baseDisplacementEff,
         avgEccentricity,
       });
     } catch (e) { console.error(e); return null; }
-  }, [wellData, connection, rpm, frictionCoeff, drillingFluid.density, drillingFluid.rheology?.pv, drillingFluid.rheology?.yp, centralizers, baseDisplacementEff, avgEccentricity]);
+  }, [wellData, connection, rpm, frictionCoeff, annulusFluid.density, annulusFluid.pv, annulusFluid.yp, centralizers, stopRings, crossovers, baseDisplacementEff, avgEccentricity]);
 
   if (!connection) {
     return (
@@ -139,6 +164,57 @@ export default function CasingRotationSection({
             <p className="text-xs text-muted-foreground mt-1">0.20 обсаженный, 0.30 открытый, 0.40 глинистый</p>
           </div>
         </div>
+
+        <div className="mt-4 flex items-center gap-3 p-2 rounded-md bg-muted/40 border">
+          <Switch id="cem-rheo" checked={useCementRheology} onCheckedChange={setUseCementRheology} disabled={!cementFluid} />
+          <Label htmlFor="cem-rheo" className="text-sm cursor-pointer">
+            Учитывать реологию при закачке цемента
+            {cementFluid && useCementRheology && (
+              <span className="text-xs text-muted-foreground ml-2">
+                (PV={cementFluid.pv}, YP={cementFluid.yp}, ρ={(cementFluid.density / 1000).toFixed(2)} г/см³)
+              </span>
+            )}
+          </Label>
+        </div>
+      </Card>
+
+      <Card className="p-4">
+        <h3 className="font-semibold mb-3">КНБК: упорные кольца и переводники</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label>Упорные кольца ({stopRings.length})</Label>
+              <Button size="sm" variant="outline" onClick={() => setStopRings([...stopRings, { depthMD: 1000, od_mm: wellData.holeDiameter - 5 }])}>
+                <Plus className="h-3 w-3 mr-1" />Добавить
+              </Button>
+            </div>
+            {stopRings.map((s, i) => (
+              <div key={i} className="flex gap-2 mb-1 items-center">
+                <Input type="number" value={s.depthMD} onChange={e => { const v = +e.target.value; setStopRings(stopRings.map((x, j) => j === i ? { ...x, depthMD: v } : x)); }} placeholder="Глубина, м" className="h-8" />
+                <Input type="number" value={s.od_mm} onChange={e => { const v = +e.target.value; setStopRings(stopRings.map((x, j) => j === i ? { ...x, od_mm: v } : x)); }} placeholder="OD, мм" className="h-8" />
+                <Button size="icon" variant="ghost" onClick={() => setStopRings(stopRings.filter((_, j) => j !== i))}><Trash2 className="h-3 w-3" /></Button>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label>Переводники ({crossovers.length})</Label>
+              <Button size="sm" variant="outline" onClick={() => setCrossovers([...crossovers, { depthMD: 500, od_mm: wellData.casingOD + 10, torqueAdd_Nm: 50 }])}>
+                <Plus className="h-3 w-3 mr-1" />Добавить
+              </Button>
+            </div>
+            {crossovers.map((c, i) => (
+              <div key={i} className="flex gap-2 mb-1 items-center">
+                <Input type="number" value={c.depthMD} onChange={e => { const v = +e.target.value; setCrossovers(crossovers.map((x, j) => j === i ? { ...x, depthMD: v } : x)); }} placeholder="Глубина, м" className="h-8" />
+                <Input type="number" value={c.od_mm} onChange={e => { const v = +e.target.value; setCrossovers(crossovers.map((x, j) => j === i ? { ...x, od_mm: v } : x)); }} placeholder="OD, мм" className="h-8" />
+                <Input type="number" value={c.torqueAdd_Nm} onChange={e => { const v = +e.target.value; setCrossovers(crossovers.map((x, j) => j === i ? { ...x, torqueAdd_Nm: v } : x)); }} placeholder="ΔM, Нм" className="h-8" />
+                <Button size="icon" variant="ghost" onClick={() => setCrossovers(crossovers.filter((_, j) => j !== i))}><Trash2 className="h-3 w-3" /></Button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">Башмак и ЦКОД учтены автоматически как граничные элементы колонны. Центраторы подгружены из вкладки «Центрирование».</p>
       </Card>
 
       {result && (

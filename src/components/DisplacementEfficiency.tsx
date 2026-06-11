@@ -1,9 +1,13 @@
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
 import CopyImageButton from "./CopyImageButton";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid } from "@/lib/cementing-calculations";
 import { getSlurryHeight, annularVolumePerMeter } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
+import { rotationEfficiencyBoost } from "@/lib/casing-rotation-calculations";
 
 interface Props {
   wellData: WellData;
@@ -207,6 +211,8 @@ function calcEff(
 export default function DisplacementEfficiency({ wellData, slurries, buffers, drillingFluid, centralizationResults }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [rotationOn, setRotationOn] = useState(false);
+  const [rotationRPM, setRotationRPM] = useState(25);
 
   const zones = useMemo(
     () => buildFluidZones(wellData, slurries, buffers, drillingFluid),
@@ -380,7 +386,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
             const distBoundary = Math.min(distTop, distBot) * 2;
             const eccPenalty = !isLeft ? ecc * ecc * 0.3 : 0;
 
-            const eff = Math.max(0, calcEff(
+            let eff = Math.max(0, calcEff(
               zenithDeg,
               zone.density,
               zone.yp,
@@ -400,6 +406,12 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
               zone.type,
               zone.bufferSubType,
             ) - eccPenalty);
+
+            // Rotation boost (SPE 2018): улучшение замещения на low side
+            if (rotationOn && rotationRPM > 0) {
+              const boosted = rotationEfficiencyBoost(rotationRPM, ecc, eff * 100) / 100;
+              eff = Math.max(eff, boosted);
+            }
 
             const isCement = zone.type === "cement";
             // Grayscale: dark = good cement, bright = mud channel
@@ -621,7 +633,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     ctx.fillText("Засвет (каналы БР)", legX, legY + legH + 12);
     ctx.textAlign = "right";
     ctx.fillText("Полное замещение", legX + legW, legY + legH + 12);
-  }, [zones, mdMin, mdMax, drillingFluid, avgRate, annArea, wellData, getCentDataAtMD, traj, centralizationResults]);
+  }, [zones, mdMin, mdMax, drillingFluid, avgRate, annArea, wellData, getCentDataAtMD, traj, centralizationResults, rotationOn, rotationRPM]);
 
   const range = zones.length > 0 ? `${mdMin.toFixed(0)} – ${mdMax.toFixed(0)} м` : "";
 
@@ -640,6 +652,19 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
         </div>
       </CardHeader>
       <CardContent>
+        <div className="flex flex-wrap items-center gap-4 mb-3 p-2 rounded-md bg-muted/40 border">
+          <div className="flex items-center gap-2">
+            <Switch id="rot-toggle" checked={rotationOn} onCheckedChange={setRotationOn} />
+            <Label htmlFor="rot-toggle" className="text-sm cursor-pointer">Вращение ОК</Label>
+          </div>
+          {rotationOn && (
+            <div className="flex items-center gap-2 min-w-[240px]">
+              <Label className="text-sm whitespace-nowrap">RPM: {rotationRPM}</Label>
+              <Slider value={[rotationRPM]} min={0} max={60} step={1} onValueChange={v => setRotationRPM(v[0])} className="w-40" />
+              <span className="text-xs text-muted-foreground">реком. 20–30</span>
+            </div>
+          )}
+        </div>
         <div ref={containerRef} className="flex justify-center">
           <canvas ref={canvasRef} />
         </div>
