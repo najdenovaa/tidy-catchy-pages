@@ -203,7 +203,7 @@ export default function FoamTreatmentDiagnostics({
   // Радиус проникновения (если задан объём)
   const radiusInfo = useMemo(() => {
     if (!treatmentVolumeM3 || treatmentVolumeM3 <= 0) return null;
-    const r = penetrationRadius(treatmentVolumeM3, reservoir.h, reservoir.porosity ?? 0.18, 0.2, reservoir.rw, fqAtBottom);
+    const r = penetrationRadius(treatmentVolumeM3, reservoir.h, well.porosity ?? 0.18, 0.2, reservoir.rw, fqAtBottom);
     return { r, rDamage: 0.5, rWell: reservoir.rw };
   }, [treatmentVolumeM3, reservoir, fqAtBottom]);
 
