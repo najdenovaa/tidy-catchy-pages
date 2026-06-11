@@ -20,6 +20,7 @@ import CoiledTubing from "./pages/CoiledTubing";
 import FleetDetail from "./pages/FleetDetail";
 import Terms from "./pages/Terms";
 import FoamTreatment from "./pages/FoamTreatment";
+import Stimulation from "./pages/Stimulation";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -49,6 +50,7 @@ const App = () => (
           <Route path="/admin/fleet/:id" element={<FleetDetail />} />
           <Route path="/coiled-tubing" element={<CoiledTubing />} />
           <Route path="/well-treatment/foam-opz" element={<FoamTreatment />} />
+          <Route path="/stimulation" element={<Stimulation />} />
           <Route path="/terms" element={<Terms />} />
           {/* Legacy routes */}
           <Route path="/cement-plug" element={<CementPlug />} />
