@@ -356,6 +356,15 @@ export default function FoamTreatmentDiagnostics({
     ]);
   const removeHistoryRow = (i: number) => setHistory((h) => h.filter((_, idx) => idx !== i));
 
+  const updSrtRow = (i: number, patch: Partial<StepRatePoint>) =>
+    setSrtPoints((s) => s.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
+  const addSrtRow = () =>
+    setSrtPoints((s) => [
+      ...s,
+      { rate: (s[s.length - 1]?.rate ?? 0) + 50, pressure: (s[s.length - 1]?.pressure ?? 0) + 1 },
+    ]);
+  const removeSrtRow = (i: number) => setSrtPoints((s) => s.filter((_, idx) => idx !== i));
+
   const num = (s: string) => {
     const n = parseFloat(s.replace(",", "."));
     return Number.isFinite(n) ? n : 0;
