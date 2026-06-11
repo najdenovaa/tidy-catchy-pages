@@ -22,6 +22,11 @@ import {
   fitArpsDecline,
   forecastPostTreatment,
   calculateEconomics,
+  foamApparentViscosity,
+  mobilityReductionFactor,
+  calculateInjectivity,
+  penetrationRadius,
+  tornadoSensitivity,
   DEFAULT_COSTS,
   type ReservoirSnapshot,
   type Mineralogy,
@@ -29,6 +34,7 @@ import {
   type CollectorType,
   type ProductionPoint,
   type DamageAssessment,
+  type SensitivityParam,
 } from "@/lib/foam-treatment-diagnostics";
 
 const fmt = (v: number | undefined | null, d = 1) =>
@@ -74,7 +80,17 @@ export interface FoamTreatmentDiagnosticsProps {
   expectedSkinReduction: number;
   /** Зенитный угол на интервале перфорации, ° (опционально). */
   zenithDeg?: number;
+  /** Опционально: объём раствора (для расчёта радиуса проникновения). */
+  treatmentVolumeM3?: number;
+  /** Опционально: качество пены на забое, % (для радиуса и μ_app). */
+  foamQualityAtFormationPct?: number;
+  /** Опционально: концентрация ПАВ в рецептуре, %. */
+  surfactantPct?: number;
+  /** Опционально: вязкость базовой жидкости, сПз. */
+  baseFluidViscosityCp?: number;
 }
+
+
 
 const DEFAULT_MINERALOGY: Mineralogy = {
   quartz: 65, feldspar: 10, calcite: 5, dolomite: 2, clay: 12, montmorillonite: 4,
@@ -94,6 +110,7 @@ const DEFAULT_HISTORY: ProductionPoint[] = [
 
 export default function FoamTreatmentDiagnostics({
   well, expectedSkinReduction, zenithDeg = 0,
+  treatmentVolumeM3, foamQualityAtFormationPct, surfactantPct = 0.5, baseFluidViscosityCp = 1,
 }: FoamTreatmentDiagnosticsProps) {
   /* ── Состояние ── */
   const [collector, setCollector] = useState<CollectorType>("sandstone");
@@ -155,6 +172,105 @@ export default function FoamTreatmentDiagnostics({
     equipmentDays: equipDays,
     oilPricePerM3: oilPrice,
   }), [forecast, chemCost, n2Cost, crewDays, equipDays, oilPrice]);
+
+  /* ── Реология пены, приёмистость, радиус ── */
+  const fqAtBottom = (foamQualityAtFormationPct ?? 70) / 100;
+  const injectivity = useMemo(
+    () => calculateInjectivity(reservoir.k_mD, reservoir.h, reservoir.mu_cP, reservoir.re, reservoir.rw, reservoir.skin),
+    [reservoir],
+  );
+  const injectivityAfter = useMemo(
+    () => calculateInjectivity(reservoir.k_mD, reservoir.h, reservoir.mu_cP, reservoir.re, reservoir.rw, skinNew),
+    [reservoir, skinNew],
+  );
+  const mrf = useMemo(() => mobilityReductionFactor(fqAtBottom, surfactantPct), [fqAtBottom, surfactantPct]);
+
+  // μ_app vs FQ для трёх скоростей фильтрации
+  const rheologyData = useMemo(() => {
+    const rows: Array<{ fq: number; vFast: number; vMed: number; vSlow: number }> = [];
+    for (let i = 0; i <= 18; i++) {
+      const fq = i * 0.05; // 0..0.90
+      rows.push({
+        fq: Math.round(fq * 100),
+        vFast: foamApparentViscosity(fq, baseFluidViscosityCp, reservoir.k_mD, 1e-3, surfactantPct),
+        vMed:  foamApparentViscosity(fq, baseFluidViscosityCp, reservoir.k_mD, 1e-4, surfactantPct),
+        vSlow: foamApparentViscosity(fq, baseFluidViscosityCp, reservoir.k_mD, 1e-5, surfactantPct),
+      });
+    }
+    return rows;
+  }, [baseFluidViscosityCp, reservoir.k_mD, surfactantPct]);
+
+  // Радиус проникновения (если задан объём)
+  const radiusInfo = useMemo(() => {
+    if (!treatmentVolumeM3 || treatmentVolumeM3 <= 0) return null;
+    const r = penetrationRadius(treatmentVolumeM3, reservoir.h, well.porosity ?? 0.18, 0.2, reservoir.rw, fqAtBottom);
+    return { r, rDamage: 0.5, rWell: reservoir.rw };
+  }, [treatmentVolumeM3, reservoir, fqAtBottom, well.porosity]);
+
+  // Tornado: NPV sensitivity ±20%
+  const tornado = useMemo(() => {
+    const baseCosts = {
+      ...DEFAULT_COSTS,
+      chemicalCost: chemCost, n2Cost, crewDays, equipmentDays: equipDays, oilPricePerM3: oilPrice,
+    };
+    const baseNPV = economics.npv;
+    const params: SensitivityParam[] = [
+      {
+        name: "Цена нефти",
+        baseValue: oilPrice,
+        variation: 0.2,
+        evaluate: (v) => calculateEconomics(forecast, { ...baseCosts, oilPricePerM3: v }).npv,
+      },
+      {
+        name: "Снижение скина ΔS",
+        baseValue: Math.max(0.1, expectedSkinReduction * efficiencyFactor),
+        variation: 0.3,
+        evaluate: (v) => {
+          const newSk = Math.max(-2, reservoir.skin - v);
+          const fc = forecastPostTreatment(arps, reservoir, reservoir.skin, newSk, 36, skinRecoveryPct / 100);
+          return calculateEconomics(fc, baseCosts).npv;
+        },
+      },
+      {
+        name: "Стоимость реагентов",
+        baseValue: Math.max(1, chemCost),
+        variation: 0.3,
+        evaluate: (v) => calculateEconomics(forecast, { ...baseCosts, chemicalCost: v }).npv,
+      },
+      {
+        name: "Стоимость N₂",
+        baseValue: Math.max(1, n2Cost),
+        variation: 0.3,
+        evaluate: (v) => calculateEconomics(forecast, { ...baseCosts, n2Cost: v }).npv,
+      },
+      {
+        name: "Скорость возврата скина",
+        baseValue: Math.max(0.5, skinRecoveryPct),
+        variation: 0.5,
+        evaluate: (v) => {
+          const fc = forecastPostTreatment(arps, reservoir, reservoir.skin, skinNew, 36, v / 100);
+          return calculateEconomics(fc, baseCosts).npv;
+        },
+      },
+      {
+        name: "Начальный дебит qi",
+        baseValue: Math.max(0.1, arps.qi),
+        variation: 0.2,
+        evaluate: (v) => {
+          const fc = forecastPostTreatment({ ...arps, qi: v }, reservoir, reservoir.skin, skinNew, 36, skinRecoveryPct / 100);
+          return calculateEconomics(fc, baseCosts).npv;
+        },
+      },
+    ];
+    return tornadoSensitivity(baseNPV, params).map((r) => ({
+      name: r.name,
+      low: r.lowNPV - baseNPV,
+      high: r.highNPV - baseNPV,
+      range: r.range,
+    }));
+  }, [forecast, economics.npv, chemCost, n2Cost, crewDays, equipDays, oilPrice, arps, reservoir, skinNew, skinRecoveryPct, expectedSkinReduction, efficiencyFactor]);
+
+
 
   /* ── Charts data ── */
   const iprChartData = ipr.iprCurve.map((p, i) => ({
@@ -516,7 +632,88 @@ export default function FoamTreatmentDiagnostics({
             Точка пересечения с нулём = срок окупаемости. Дисконтированный денежный поток учитывает ставку {(DEFAULT_COSTS.discountRateAnnual * 100).toFixed(0)}% годовых.
           </p>
         </div>
+
+        {/* ───── Гидродинамика закачки + реология пены ───── */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <MetricBox label="II до" value={`${fmt(injectivity, 2)} м³/сут·МПа`} />
+          <MetricBox label="II после" value={`${fmt(injectivityAfter, 2)} м³/сут·МПа`} tone="ok" />
+          <MetricBox label="MRF пены" value={`×${fmt(mrf, 1)}`} />
+          <MetricBox label="μ_app @ FQ забоя" value={`${fmt(foamApparentViscosity(fqAtBottom, baseFluidViscosityCp, reservoir.k_mD, 1e-4, surfactantPct), 1)} сПз`} />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Penetration radius (концентрические круги) */}
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h4 className="text-sm font-semibold mb-2">Радиус проникновения раствора</h4>
+            {radiusInfo ? (
+              <div className="flex items-center justify-center py-2">
+                <svg viewBox="-110 -110 220 220" className="w-full max-w-[260px] h-auto">
+                  {/* Reservoir background */}
+                  <circle cx="0" cy="0" r="100" fill="hsl(45 30% 90%)" stroke="hsl(45 20% 60%)" strokeDasharray="3 3" />
+                  {/* Penetration zone (foam) */}
+                  <circle cx="0" cy="0" r={Math.min(100, (radiusInfo.r / Math.max(1, radiusInfo.r)) * 80)} fill="hsl(160 70% 70% / 0.4)" stroke="hsl(160 60% 45%)" strokeWidth="1.5" />
+                  {/* Damage zone */}
+                  <circle cx="0" cy="0" r={Math.min(60, (radiusInfo.rDamage / Math.max(1, radiusInfo.r)) * 80)} fill="hsl(0 70% 60% / 0.3)" stroke="hsl(0 70% 50%)" strokeWidth="1.5" />
+                  {/* Wellbore */}
+                  <circle cx="0" cy="0" r="4" fill="hsl(220 80% 40%)" stroke="hsl(0 0% 100%)" strokeWidth="1" />
+                  <text x="0" y="-14" textAnchor="middle" fontSize="6" fill="hsl(220 80% 40%)">rw</text>
+                  <text x="0" y="-65" textAnchor="middle" fontSize="6" fill="hsl(0 70% 40%)">r_damage</text>
+                  <text x="0" y="-95" textAnchor="middle" fontSize="6" fill="hsl(160 60% 30%)">r_foam</text>
+                </svg>
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground py-8 text-center">Объём раствора не задан — радиус не рассчитан.</div>
+            )}
+            {radiusInfo && (
+              <div className="text-[11px] text-muted-foreground grid grid-cols-3 gap-2 mt-2">
+                <div>r_well: <span className="font-mono text-foreground">{fmt(radiusInfo.rWell, 2)} м</span></div>
+                <div>r_damage: <span className="font-mono text-foreground">{fmt(radiusInfo.rDamage, 2)} м</span></div>
+                <div>r_foam: <span className="font-mono text-emerald-600">{fmt(radiusInfo.r, 2)} м</span></div>
+              </div>
+            )}
+          </div>
+
+          {/* Foam apparent viscosity vs FQ */}
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h4 className="text-sm font-semibold mb-2">Реология пены в пласте (Hirasaki-Lawson)</h4>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={rheologyData}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis dataKey="fq" label={{ value: "FQ, %", position: "insideBottom", offset: -3 }} />
+                <YAxis label={{ value: "μ_app, сПз", angle: -90, position: "insideLeft" }} />
+                <Tooltip />
+                <Legend />
+                <Line dataKey="vSlow" stroke="hsl(0 70% 55%)" dot={false} name="v=1e-5 м/с (вглубь)" />
+                <Line dataKey="vMed"  stroke="hsl(45 80% 50%)" dot={false} name="v=1e-4 м/с" />
+                <Line dataKey="vFast" stroke="hsl(160 60% 45%)" dot={false} name="v=1e-3 м/с (у скв.)" />
+              </LineChart>
+            </ResponsiveContainer>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              μ_app растёт с FQ и снижается со скоростью фильтрации. Пена «густеет» вдали от скважины.
+            </p>
+          </div>
+        </div>
+
+        {/* Tornado NPV sensitivity */}
+        <div className="rounded-xl border border-border bg-card p-4">
+          <h4 className="text-sm font-semibold mb-2">Чувствительность NPV (±20…30%)</h4>
+          <ResponsiveContainer width="100%" height={Math.max(220, tornado.length * 38)}>
+            <BarChart data={tornado} layout="vertical" margin={{ left: 60, right: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis type="number" tickFormatter={(v) => `${(v / 1e6).toFixed(1)}M`} />
+              <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={120} />
+              <Tooltip formatter={(v: number) => fmtMoney(v)} />
+              <ReferenceLine x={0} stroke="hsl(var(--border))" />
+              <Bar dataKey="low" fill="hsl(0 70% 55%)" name="− изменение" />
+              <Bar dataKey="high" fill="hsl(160 60% 45%)" name="+ изменение" />
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Длина бара = диапазон ΔNPV при изменении параметра. Параметры сверху — самые влиятельные.
+          </p>
+        </div>
       </CardContent>
+
     </Card>
   );
 }
