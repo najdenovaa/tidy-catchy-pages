@@ -4,6 +4,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import { Plus, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Legend,
@@ -15,20 +18,22 @@ import {
   getBondGrade,
   type ConnectionType,
   type RotationAnalysisResult,
+  type FluidRheology,
 } from "@/lib/casing-rotation-calculations";
-import type { WellData } from "@/lib/cementing-calculations";
+import type { WellData, SlurryInput } from "@/lib/cementing-calculations";
 import type { CentralizerInterval } from "@/lib/centralization-calculations";
 
 interface Props {
   wellData: WellData;
   drillingFluid: { density: number; rheology?: { pv: number; yp: number } };
+  slurries?: SlurryInput[];
   centralizerIntervals?: CentralizerInterval[];
-  baseDisplacementEff?: number; // % из CQI
-  avgEccentricity?: number;     // из Центрирования
+  baseDisplacementEff?: number;
+  avgEccentricity?: number;
 }
 
 export default function CasingRotationSection({
-  wellData, drillingFluid, centralizerIntervals = [], baseDisplacementEff = 65, avgEccentricity = 0.4,
+  wellData, drillingFluid, slurries = [], centralizerIntervals = [], baseDisplacementEff = 65, avgEccentricity = 0.4,
 }: Props) {
   const connOptions = useMemo(() => getConnectionsForOD(wellData.casingOD), [wellData.casingOD]);
   const [connId, setConnId] = useState<string>(connOptions[0]?.id || "");
@@ -37,6 +42,9 @@ export default function CasingRotationSection({
 
   const [rpm, setRpm] = useState(25);
   const [frictionCoeff, setFrictionCoeff] = useState(0.25);
+  const [useCementRheology, setUseCementRheology] = useState(false);
+  const [stopRings, setStopRings] = useState<{ depthMD: number; od_mm: number }[]>([]);
+  const [crossovers, setCrossovers] = useState<{ depthMD: number; od_mm: number; torqueAdd_Nm: number }[]>([]);
 
   // Превращаем интервалы центраторов в точечный массив
   const centralizers = useMemo(() => {
