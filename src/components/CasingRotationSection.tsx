@@ -101,11 +101,13 @@ export default function CasingRotationSection({
         centralizers,
         stopRings,
         crossovers,
+        steelSections,
+        defaultGradeId,
         baseDisplacementEff,
         avgEccentricity,
       });
     } catch (e) { console.error(e); return null; }
-  }, [wellData, connection, rpm, frictionCoeff, annulusFluid.density, annulusFluid.pv, annulusFluid.yp, centralizers, stopRings, crossovers, baseDisplacementEff, avgEccentricity]);
+  }, [wellData, connection, rpm, frictionCoeff, annulusFluid.density, annulusFluid.pv, annulusFluid.yp, centralizers, stopRings, crossovers, steelSections, defaultGradeId, baseDisplacementEff, avgEccentricity]);
 
   if (!connection) {
     return (
