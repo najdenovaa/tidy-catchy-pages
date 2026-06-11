@@ -16,9 +16,12 @@ import {
   calculateRotationTorque,
   getConnectionsForOD,
   getBondGrade,
+  STEEL_GRADES,
+  getSteelGrade,
   type ConnectionType,
   type RotationAnalysisResult,
   type FluidRheology,
+  type SteelSection,
 } from "@/lib/casing-rotation-calculations";
 import type { WellData, SlurryInput } from "@/lib/cementing-calculations";
 import type { CentralizerInterval } from "@/lib/centralization-calculations";
