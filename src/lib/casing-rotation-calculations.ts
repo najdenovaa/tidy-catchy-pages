@@ -347,9 +347,17 @@ function singlePhaseTorque(input: RotationInput, fluid: FluidRheology, rpm: numb
     const dryAccum = frictionTorque + centralizerTorque + couplingTorque + xoverTorque + stopTorque;
     sumFric += dryAccum; sumVisc += viscousTorque; n++;
 
-    const utilization = cumTorque / connectionLimit * 100;
+    // Предел тела трубы по марке стали на этой глубине
+    const section = getSteelSectionAtMD(md, input.steelSections, input.defaultGradeId || 'N80');
+    const grade = getSteelGrade(section.gradeId);
+    const wall = section.wallThickness_mm ?? input.wellData.casingWall;
+    const pipeBodyLimit = pipeBodyTorsionalYield(input.wellData.casingOD, wall, grade.yieldStrength_MPa);
+    const effectiveLimit = Math.min(connectionLimit, pipeBodyLimit);
+    const limitingType: 'connection' | 'pipe-body' = pipeBodyLimit < connectionLimit ? 'pipe-body' : 'connection';
+
+    const utilization = cumTorque / effectiveLimit * 100;
     const maxSafeRPM = viscousTorque > 1e-6
-      ? Math.max(0, Math.min(120, rpm * (connectionLimit - dryAccum * (points.length + 1)) / Math.max(1, cumTorque)))
+      ? Math.max(0, Math.min(120, rpm * (effectiveLimit - dryAccum * (points.length + 1)) / Math.max(1, cumTorque)))
       : 120;
 
     points.push({
@@ -360,8 +368,12 @@ function singlePhaseTorque(input: RotationInput, fluid: FluidRheology, rpm: numb
       couplingTorque: couplingTorque + xoverTorque + stopTorque,
       totalTorque: cumTorque,
       connectionLimit,
+      pipeBodyLimit,
+      effectiveLimit,
+      limitingType,
+      gradeId: section.gradeId,
       utilizationPct: utilization,
-      canRotate: cumTorque < connectionLimit,
+      canRotate: cumTorque < effectiveLimit,
       maxSafeRPM,
     });
   }
