@@ -559,6 +559,7 @@ export default function Index() {
              <TabsTrigger value="torquedrag" className="text-xs py-2 px-3 sm:px-1">T&D</TabsTrigger>
              <TabsTrigger value="drillhydr" className="text-xs py-2 px-3 sm:px-1">Гидр. бур.</TabsTrigger>
              <TabsTrigger value="foam" className="text-xs py-2 px-3 sm:px-1">Пена</TabsTrigger>
+             <TabsTrigger value="rotation" className="text-xs py-2 px-3 sm:px-1">Вращение</TabsTrigger>
            </TabsList>
           </div>
         </div>
