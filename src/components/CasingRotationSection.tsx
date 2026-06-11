@@ -42,10 +42,13 @@ export default function CasingRotationSection({
   const centralizers = useMemo(() => {
     const arr: { depthMD: number; type: 'rigid' | 'spring' | 'solid'; od_mm: number; dragTorque_Nm?: number }[] = [];
     for (const iv of centralizerIntervals) {
-      const count = iv.actualCount ?? iv.recommendedCount ?? 0;
-      if (count <= 0 || iv.toMD <= iv.fromMD) continue;
-      const step = (iv.toMD - iv.fromMD) / count;
-      const type = (iv.centralizerType === 'solid' ? 'solid' : iv.centralizerType === 'spring' ? 'spring' : 'rigid') as any;
+      const length = iv.toMD - iv.fromMD;
+      const joints = Math.max(1, Math.floor(length / Math.max(1, iv.jointLength)));
+      const count = Math.max(0, Math.round(joints * (iv.centralizersPerJoint || 0)));
+      if (count <= 0) continue;
+      const step = length / count;
+      const t = iv.spec?.type as string | undefined;
+      const type = (t === 'solid' || t === 'rigid' || t === 'spring' ? t : 'rigid') as 'rigid' | 'spring' | 'solid';
       for (let i = 0; i < count; i++) {
         arr.push({ depthMD: iv.fromMD + step * (i + 0.5), type, od_mm: wellData.holeDiameter * 0.95 });
       }
