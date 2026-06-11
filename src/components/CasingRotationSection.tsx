@@ -189,6 +189,51 @@ export default function CasingRotationSection({
       </Card>
 
       <Card className="p-4">
+        <h3 className="font-semibold mb-3">Марки стали по секциям колонны</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+          <div>
+            <Label>Основная марка стали</Label>
+            <Select value={defaultGradeId} onValueChange={setDefaultGradeId}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {STEEL_GRADES.map(g => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name} — σ_y={g.yieldStrength_MPa} МПа ({g.standard})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1">
+              Применяется к секциям без явной марки. Базовая стенка {wellData.casingWall} мм.
+            </p>
+          </div>
+          <div className="md:col-span-2">
+            <div className="flex items-center justify-between mb-2">
+              <Label>Секции с переменной маркой ({steelSections.length})</Label>
+              <Button size="sm" variant="outline" onClick={() => setSteelSections([...steelSections, { fromMD: 0, toMD: wellData.casingDepthMD, gradeId: defaultGradeId, wallThickness_mm: wellData.casingWall }])}>
+                <Plus className="h-3 w-3 mr-1" />Добавить секцию
+              </Button>
+            </div>
+            {steelSections.map((sec, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_1.5fr_1fr_auto] gap-2 mb-1 items-center">
+                <Input type="number" value={sec.fromMD} onChange={e => { const v = +e.target.value; setSteelSections(steelSections.map((x, j) => j === i ? { ...x, fromMD: v } : x)); }} placeholder="От, м" className="h-8" />
+                <Input type="number" value={sec.toMD} onChange={e => { const v = +e.target.value; setSteelSections(steelSections.map((x, j) => j === i ? { ...x, toMD: v } : x)); }} placeholder="До, м" className="h-8" />
+                <Select value={sec.gradeId} onValueChange={(v) => setSteelSections(steelSections.map((x, j) => j === i ? { ...x, gradeId: v } : x))}>
+                  <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {STEEL_GRADES.map(g => <SelectItem key={g.id} value={g.id}>{g.name} ({g.yieldStrength_MPa} МПа)</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Input type="number" value={sec.wallThickness_mm ?? ''} onChange={e => { const v = e.target.value === '' ? undefined : +e.target.value; setSteelSections(steelSections.map((x, j) => j === i ? { ...x, wallThickness_mm: v } : x)); }} placeholder="Стенка, мм" className="h-8" />
+                <Button size="icon" variant="ghost" onClick={() => setSteelSections(steelSections.filter((_, j) => j !== i))}><Trash2 className="h-3 w-3" /></Button>
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground mt-1">Предел тела трубы: T_y = (π/16)·(σ_y/√3)·(D⁴−d⁴)/D (критерий Мизеса).</p>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-4">
         <h3 className="font-semibold mb-3">КНБК: упорные кольца и переводники</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
