@@ -22,6 +22,11 @@ import {
   fitArpsDecline,
   forecastPostTreatment,
   calculateEconomics,
+  foamApparentViscosity,
+  mobilityReductionFactor,
+  calculateInjectivity,
+  penetrationRadius,
+  tornadoSensitivity,
   DEFAULT_COSTS,
   type ReservoirSnapshot,
   type Mineralogy,
@@ -29,6 +34,7 @@ import {
   type CollectorType,
   type ProductionPoint,
   type DamageAssessment,
+  type SensitivityParam,
 } from "@/lib/foam-treatment-diagnostics";
 
 const fmt = (v: number | undefined | null, d = 1) =>
