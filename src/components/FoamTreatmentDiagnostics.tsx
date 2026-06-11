@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, BarChart, Bar, Cell, ReferenceLine, ComposedChart, Area,
+  ResponsiveContainer, BarChart, Bar, Cell, ReferenceLine, ReferenceDot, ComposedChart, Area, Scatter,
 } from "recharts";
 import {
   AlertTriangle, CheckCircle2, TrendingUp, Wallet, Activity, Plus, Trash2,
