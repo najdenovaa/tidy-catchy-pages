@@ -48,6 +48,8 @@ export default function CasingRotationSection({
   const [useCementRheology, setUseCementRheology] = useState(false);
   const [stopRings, setStopRings] = useState<{ depthMD: number; od_mm: number }[]>([]);
   const [crossovers, setCrossovers] = useState<{ depthMD: number; od_mm: number; torqueAdd_Nm: number }[]>([]);
+  const [defaultGradeId, setDefaultGradeId] = useState<string>('N80');
+  const [steelSections, setSteelSections] = useState<SteelSection[]>([]);
 
   // Превращаем интервалы центраторов в точечный массив
   const centralizers = useMemo(() => {
