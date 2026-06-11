@@ -11,6 +11,7 @@ const modules = [
   { title: "Буровые растворы", description: "Подбор и расчёт буровых растворов", icon: Droplets, to: "/drilling-fluids", available: false },
   { title: "ГНКТ (Coiled Tubing)", description: "Силы, пределы, гидравлика, ресурс усталости", icon: Cable, to: "/coiled-tubing", available: true },
   { title: "Пенообработка ПЗП (ОПЗ)", description: "Расчёт обработки призабойной зоны пеной: рецептуры, циклограмма, прогноз дебита", icon: Sparkles, to: "/well-treatment/foam-opz", available: true },
+  { title: "Интенсификация добычи (ОПЗ)", description: "Кислотные, пенные, азотные и комбинированные обработки: подбор метода, расчёт, план, прогноз", icon: FlaskConical, to: "/stimulation", available: true },
   { title: "ГРП", description: "Проектирование и расчёт гидроразрыва пласта", icon: Zap, to: "/fracturing", available: false },
   { title: "Проектирование скважины", description: "Проектирование конструкции и траектории скважины", icon: Ruler, to: "/well-design", available: false },
 ];
