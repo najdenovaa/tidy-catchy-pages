@@ -173,6 +173,105 @@ export default function FoamTreatmentDiagnostics({
     oilPricePerM3: oilPrice,
   }), [forecast, chemCost, n2Cost, crewDays, equipDays, oilPrice]);
 
+  /* ── Реология пены, приёмистость, радиус ── */
+  const fqAtBottom = (foamQualityAtFormationPct ?? 70) / 100;
+  const injectivity = useMemo(
+    () => calculateInjectivity(reservoir.k_mD, reservoir.h, reservoir.mu_cP, reservoir.re, reservoir.rw, reservoir.skin),
+    [reservoir],
+  );
+  const injectivityAfter = useMemo(
+    () => calculateInjectivity(reservoir.k_mD, reservoir.h, reservoir.mu_cP, reservoir.re, reservoir.rw, skinNew),
+    [reservoir, skinNew],
+  );
+  const mrf = useMemo(() => mobilityReductionFactor(fqAtBottom, surfactantPct), [fqAtBottom, surfactantPct]);
+
+  // μ_app vs FQ для трёх скоростей фильтрации
+  const rheologyData = useMemo(() => {
+    const rows: Array<{ fq: number; vFast: number; vMed: number; vSlow: number }> = [];
+    for (let i = 0; i <= 18; i++) {
+      const fq = i * 0.05; // 0..0.90
+      rows.push({
+        fq: Math.round(fq * 100),
+        vFast: foamApparentViscosity(fq, baseFluidViscosityCp, reservoir.k_mD, 1e-3, surfactantPct),
+        vMed:  foamApparentViscosity(fq, baseFluidViscosityCp, reservoir.k_mD, 1e-4, surfactantPct),
+        vSlow: foamApparentViscosity(fq, baseFluidViscosityCp, reservoir.k_mD, 1e-5, surfactantPct),
+      });
+    }
+    return rows;
+  }, [baseFluidViscosityCp, reservoir.k_mD, surfactantPct]);
+
+  // Радиус проникновения (если задан объём)
+  const radiusInfo = useMemo(() => {
+    if (!treatmentVolumeM3 || treatmentVolumeM3 <= 0) return null;
+    const r = penetrationRadius(treatmentVolumeM3, reservoir.h, reservoir.porosity ?? 0.18, 0.2, reservoir.rw, fqAtBottom);
+    return { r, rDamage: 0.5, rWell: reservoir.rw };
+  }, [treatmentVolumeM3, reservoir, fqAtBottom]);
+
+  // Tornado: NPV sensitivity ±20%
+  const tornado = useMemo(() => {
+    const baseCosts = {
+      ...DEFAULT_COSTS,
+      chemicalCost: chemCost, n2Cost, crewDays, equipmentDays: equipDays, oilPricePerM3: oilPrice,
+    };
+    const baseNPV = economics.npv;
+    const params: SensitivityParam[] = [
+      {
+        name: "Цена нефти",
+        baseValue: oilPrice,
+        variation: 0.2,
+        evaluate: (v) => calculateEconomics(forecast, { ...baseCosts, oilPricePerM3: v }).npv,
+      },
+      {
+        name: "Снижение скина ΔS",
+        baseValue: Math.max(0.1, expectedSkinReduction * efficiencyFactor),
+        variation: 0.3,
+        evaluate: (v) => {
+          const newSk = Math.max(-2, reservoir.skin - v);
+          const fc = forecastPostTreatment(arps, reservoir, reservoir.skin, newSk, 36, skinRecoveryPct / 100);
+          return calculateEconomics(fc, baseCosts).npv;
+        },
+      },
+      {
+        name: "Стоимость реагентов",
+        baseValue: Math.max(1, chemCost),
+        variation: 0.3,
+        evaluate: (v) => calculateEconomics(forecast, { ...baseCosts, chemicalCost: v }).npv,
+      },
+      {
+        name: "Стоимость N₂",
+        baseValue: Math.max(1, n2Cost),
+        variation: 0.3,
+        evaluate: (v) => calculateEconomics(forecast, { ...baseCosts, n2Cost: v }).npv,
+      },
+      {
+        name: "Скорость возврата скина",
+        baseValue: Math.max(0.5, skinRecoveryPct),
+        variation: 0.5,
+        evaluate: (v) => {
+          const fc = forecastPostTreatment(arps, reservoir, reservoir.skin, skinNew, 36, v / 100);
+          return calculateEconomics(fc, baseCosts).npv;
+        },
+      },
+      {
+        name: "Начальный дебит qi",
+        baseValue: Math.max(0.1, arps.qi),
+        variation: 0.2,
+        evaluate: (v) => {
+          const fc = forecastPostTreatment({ ...arps, qi: v }, reservoir, reservoir.skin, skinNew, 36, skinRecoveryPct / 100);
+          return calculateEconomics(fc, baseCosts).npv;
+        },
+      },
+    ];
+    return tornadoSensitivity(baseNPV, params).map((r) => ({
+      name: r.name,
+      low: r.lowNPV - baseNPV,
+      high: r.highNPV - baseNPV,
+      range: r.range,
+    }));
+  }, [forecast, economics.npv, chemCost, n2Cost, crewDays, equipDays, oilPrice, arps, reservoir, skinNew, skinRecoveryPct, expectedSkinReduction, efficiencyFactor]);
+
+
+
   /* ── Charts data ── */
   const iprChartData = ipr.iprCurve.map((p, i) => ({
     bhp: p.bhp,
