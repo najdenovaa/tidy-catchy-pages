@@ -88,6 +88,9 @@ export interface FoamTreatmentDiagnosticsProps {
   surfactantPct?: number;
   /** Опционально: вязкость базовой жидкости, сПз. */
   baseFluidViscosityCp?: number;
+}
+
+
 
 const DEFAULT_MINERALOGY: Mineralogy = {
   quartz: 65, feldspar: 10, calcite: 5, dolomite: 2, clay: 12, montmorillonite: 4,
