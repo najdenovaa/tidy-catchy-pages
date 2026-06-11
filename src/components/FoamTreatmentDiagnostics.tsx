@@ -575,7 +575,15 @@ export default function FoamTreatmentDiagnostics({
                     <Badge variant="outline" className="text-[10px]">{(d.probability * 100).toFixed(0)}%</Badge>
                   </div>
                   <p className="text-xs opacity-90 mb-1">{d.evidence}</p>
-                  <p className="text-[11px] opacity-75">Рекоменд. рецепт: <code className="font-mono">{d.recommendedRecipeId}</code></p>
+                  <div className="flex items-center justify-between mt-1 gap-2">
+                    <p className="text-[11px] opacity-75">Рецепт: <code className="font-mono">{d.recommendedRecipeId}</code></p>
+                    {onApplyRecipe && (
+                      <Button size="sm" variant="outline" className="h-6 text-[10px] px-2"
+                        onClick={() => onApplyRecipe(d.recommendedRecipeId)}>
+                        Применить
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
