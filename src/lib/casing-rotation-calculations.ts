@@ -396,12 +396,31 @@ export function calculateRotationTorque(input: RotationInput): RotationAnalysisR
   for (const p of main.points) {
     if (p.totalTorque > maxT) { maxT = p.totalTorque; maxD = p.depthMD; }
   }
-  const limit = input.connection.rotationTorqueLimit;
-  const criticalPoint = main.points.find(p => p.totalTorque >= limit);
 
-  // Макс. безопасные обороты по всей колонне:
-  // T(rpm) ≈ Tfric + Tvisc * (rpm / rpm_ref)
-  // limit = Tfric + Tvisc * (rpmMax / rpm_ref)
+  // ===== САМОЕ СЛАБОЕ МЕСТО — точка с максимальным использованием предела =====
+  let weakIdx = 0;
+  for (let i = 1; i < main.points.length; i++) {
+    if (main.points[i].utilizationPct > main.points[weakIdx].utilizationPct) weakIdx = i;
+  }
+  const weak = main.points[weakIdx] || main.points[0];
+  const weakGrade = getSteelGrade(weak.gradeId);
+  const weakestPoint: WeakestPoint = {
+    depthMD: weak.depthMD,
+    tvd: weak.tvd,
+    effectiveLimit: weak.effectiveLimit,
+    limitingType: weak.limitingType,
+    gradeId: weak.gradeId,
+    utilizationPct: weak.utilizationPct,
+    currentTorque: weak.totalTorque,
+    maxSafeRPM: weak.maxSafeRPM,
+    note: weak.limitingType === 'pipe-body'
+      ? `Лимитирует тело трубы (${weakGrade.name}, σ_y=${weakGrade.yieldStrength_MPa} МПа, стенка ${(input.steelSections?.find(s => weak.depthMD >= s.fromMD && weak.depthMD <= s.toMD)?.wallThickness_mm ?? input.wellData.casingWall)}мм)`
+      : `Лимитирует резьбовое соединение ${input.connection.nameRu}`,
+  };
+
+  const criticalPoint = main.points.find(p => p.totalTorque >= p.effectiveLimit);
+  const limit = weak.effectiveLimit;
+
   const totalFric = main.points.reduce((s, p) => s + p.frictionTorque + p.centralizerTorque + p.couplingTorque, 0);
   const totalVisc = main.points.reduce((s, p) => s + p.viscousTorque, 0);
   const rpmMax = totalVisc > 1e-6
