@@ -386,7 +386,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
             const distBoundary = Math.min(distTop, distBot) * 2;
             const eccPenalty = !isLeft ? ecc * ecc * 0.3 : 0;
 
-            const eff = Math.max(0, calcEff(
+            let eff = Math.max(0, calcEff(
               zenithDeg,
               zone.density,
               zone.yp,
@@ -406,6 +406,12 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
               zone.type,
               zone.bufferSubType,
             ) - eccPenalty);
+
+            // Rotation boost (SPE 2018): улучшение замещения на low side
+            if (rotationOn && rotationRPM > 0) {
+              const boosted = rotationEfficiencyBoost(rotationRPM, ecc, eff * 100) / 100;
+              eff = Math.max(eff, boosted);
+            }
 
             const isCement = zone.type === "cement";
             // Grayscale: dark = good cement, bright = mud channel
