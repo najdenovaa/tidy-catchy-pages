@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -91,6 +91,10 @@ export interface FoamTreatmentDiagnosticsProps {
   surfactantPct?: number;
   /** Опционально: вязкость базовой жидкости, сПз. */
   baseFluidViscosityCp?: number;
+  /** Callback: применить рецепт из авто-диагностики. */
+  onApplyRecipe?: (recipeId: string) => void;
+  /** Callback: бандл всех расчётов для DOCX-экспорта. */
+  onDataChange?: (bundle: import("@/lib/export-foam-treatment-docx").FoamDiagnosticsBundle) => void;
 }
 
 
@@ -114,6 +118,7 @@ const DEFAULT_HISTORY: ProductionPoint[] = [
 export default function FoamTreatmentDiagnostics({
   well, expectedSkinReduction, zenithDeg = 0,
   treatmentVolumeM3, foamQualityAtFormationPct, surfactantPct = 0.5, baseFluidViscosityCp = 1,
+  onApplyRecipe, onDataChange,
 }: FoamTreatmentDiagnosticsProps) {
   /* ── Состояние ── */
   const [collector, setCollector] = useState<CollectorType>("sandstone");
@@ -318,6 +323,41 @@ export default function FoamTreatmentDiagnostics({
     const scatter = srtPoints.map((p) => ({ rate: p.rate, pActual: p.pressure }));
     return scatter;
   }, [srtPoints]);
+
+  /* ── Эмиссия бандла наверх для DOCX-экспорта ── */
+  useEffect(() => {
+    if (!onDataChange) return;
+    onDataChange({
+      ipr,
+      iprAfterFE: iprAfter.flowEfficiency,
+      skinDecomp,
+      skinBefore: reservoir.skin,
+      skinAfter: skinNew,
+      damage,
+      arps: { qi: arps.qi, di: arps.di, b: arps.b, r2: arps.r2, type: arps.type },
+      forecast: {
+        incrementalOilM3: economics.incrementalOilM3,
+        firstYearBoostPct: forecast.length > 12 && forecast[0].qBaseline > 0
+          ? ((forecast[12].qTreated - forecast[12].qBaseline) / forecast[12].qBaseline) * 100
+          : 0,
+      },
+      economics: {
+        totalCost: economics.totalCost,
+        netProfit: economics.netProfit,
+        roi: economics.roi,
+        npv: economics.npv,
+        paybackMonths: economics.paybackMonths,
+      },
+      waterfall,
+      srt,
+      injectivityBefore: injectivity,
+      injectivityAfter: injectivityAfter,
+      mrf,
+      penetrationRadiusM: radiusInfo?.r ?? null,
+    });
+  }, [onDataChange, ipr, iprAfter, skinDecomp, reservoir.skin, skinNew, damage, arps, economics, forecast, waterfall, srt, injectivity, injectivityAfter, mrf, radiusInfo]);
+
+
 
 
 
@@ -535,7 +575,15 @@ export default function FoamTreatmentDiagnostics({
                     <Badge variant="outline" className="text-[10px]">{(d.probability * 100).toFixed(0)}%</Badge>
                   </div>
                   <p className="text-xs opacity-90 mb-1">{d.evidence}</p>
-                  <p className="text-[11px] opacity-75">Рекоменд. рецепт: <code className="font-mono">{d.recommendedRecipeId}</code></p>
+                  <div className="flex items-center justify-between mt-1 gap-2">
+                    <p className="text-[11px] opacity-75">Рецепт: <code className="font-mono">{d.recommendedRecipeId}</code></p>
+                    {onApplyRecipe && (
+                      <Button size="sm" variant="outline" className="h-6 text-[10px] px-2"
+                        onClick={() => onApplyRecipe(d.recommendedRecipeId)}>
+                        Применить
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

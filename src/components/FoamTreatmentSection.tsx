@@ -40,6 +40,9 @@ import {
   Layers, Sparkles, Pencil, Plus, Trash2, RotateCcw,
 } from "lucide-react";
 import FoamTreatmentDiagnostics from "@/components/FoamTreatmentDiagnostics";
+import { exportFoamTreatmentDocx, type FoamDiagnosticsBundle } from "@/lib/export-foam-treatment-docx";
+import { Download } from "lucide-react";
+import { toast } from "sonner";
 
 const fmt = (v: number | undefined, d = 2) =>
   Number.isFinite(v as number) ? (v as number).toFixed(d) : "—";
@@ -154,10 +157,63 @@ export default function FoamTreatmentSection() {
   const setCR = <K extends keyof FoamTreatmentRecipe>(k: K, v: FoamTreatmentRecipe[K]) =>
     setCustomRecipe((p) => (p ? { ...p, [k]: v } : p));
 
+  /* Применить рецепт по рекомендации диагностики */
+  const applyRecipeFromDiagnostics = (id: string) => {
+    const found = FOAM_TREATMENT_RECIPES.find((r) => r.id === id);
+    if (found) {
+      setRecipeId(found.id);
+      toast.success(`Применён рецепт: ${found.nameRu}`);
+      document.getElementById("ft-step-2")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      toast.error("Рецепт не найден в библиотеке");
+    }
+  };
+
+  /* Бандл диагностики для экспорта */
+  const [diagBundle, setDiagBundle] = useState<FoamDiagnosticsBundle | null>(null);
+
+  const handleExport = async () => {
+    try {
+      await exportFoamTreatmentDocx({ well, recipe, opts, result, diag: diagBundle });
+      toast.success("DOCX сформирован");
+    } catch (e) {
+      console.error(e);
+      toast.error("Ошибка экспорта DOCX");
+    }
+  };
+
+  /* Sticky stepper */
+  const steps = [
+    { id: "ft-step-1", label: "1. Скважина" },
+    { id: "ft-step-2", label: "2. Технология" },
+    { id: "ft-step-3", label: "3. Параметры" },
+    { id: "ft-step-4", label: "4. Результат" },
+    { id: "ft-step-5", label: "5. Диагностика" },
+  ];
+  const scrollTo = (id: string) =>
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
   return (
     <div className="space-y-6">
+      {/* ───── Sticky stepper ───── */}
+      <div className="sticky top-[57px] z-20 -mx-4 px-4 py-2 bg-background/95 backdrop-blur border-b border-border">
+        <div className="flex items-center gap-2 overflow-x-auto">
+          {steps.map((s, i) => (
+            <button key={s.id} onClick={() => scrollTo(s.id)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border border-border bg-card hover:bg-primary/10 hover:border-primary/40 transition-colors whitespace-nowrap">
+              <span className="w-5 h-5 rounded-full bg-primary/15 text-primary text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
+              {s.label.replace(/^\d+\.\s/, "")}
+            </button>
+          ))}
+          <div className="flex-1" />
+          <Button size="sm" onClick={handleExport} className="ml-auto whitespace-nowrap">
+            <Download className="w-4 h-4 mr-1.5" /> DOCX-отчёт
+          </Button>
+        </div>
+      </div>
+
       {/* ───────── Шаг 1: Данные ───────── */}
-      <Card>
+      <Card id="ft-step-1">
         <CardHeader>
           <CardTitle className="text-lg">Шаг 1 — Данные скважины и пласта</CardTitle>
         </CardHeader>
@@ -182,7 +238,7 @@ export default function FoamTreatmentSection() {
       </Card>
 
       {/* ───────── Шаг 2: Рецептура ───────── */}
-      <Card>
+      <Card id="ft-step-2">
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle className="text-lg">Шаг 2 — Выбор технологии обработки</CardTitle>
           <div className="flex items-center gap-2">
@@ -255,7 +311,7 @@ export default function FoamTreatmentSection() {
       </Card>
 
       {/* ───────── Шаг 3: Параметры ───────── */}
-      <Card>
+      <Card id="ft-step-3">
         <CardHeader><CardTitle className="text-lg">Шаг 3 — Параметры операции</CardTitle></CardHeader>
         <CardContent className="space-y-5">
           <SliderRow label="Количество циклов" value={opts.numberOfCycles} min={1} max={5} step={1}
@@ -274,7 +330,7 @@ export default function FoamTreatmentSection() {
       </Card>
 
       {/* ───────── Шаг 4: Результат ───────── */}
-      <Card>
+      <Card id="ft-step-4">
         <CardHeader><CardTitle className="text-lg">Шаг 4 — Результат расчёта</CardTitle></CardHeader>
         <CardContent className="space-y-6">
           {/* Сводка */}
@@ -569,26 +625,30 @@ export default function FoamTreatmentSection() {
         </CardContent>
       </Card>
 
-      <FoamTreatmentDiagnostics
-        well={{
-          netPayM: well.netPayM,
-          permeability_mD: well.permeability_mD,
-          porosity: well.porosity,
-          reservoirPressureMPa: well.reservoirPressureMPa,
-          reservoirTemperatureC: well.reservoirTemperatureC,
-          skinFactor: well.skinFactor,
-          perfDensity: well.perfDensity,
-          currentRateTpd: well.currentRateTpd,
-          oilViscosityCp: well.oilViscosityCp,
-          oilFVF: well.oilFVF,
-          drainageRadiusM: well.drainageRadiusM,
-        }}
-        expectedSkinReduction={result.expectedSkinReduction}
-        treatmentVolumeM3={result.treatmentVolumeM3}
-        foamQualityAtFormationPct={result.foamQualityAtFormation}
-        surfactantPct={recipe.surfactantConc}
-        baseFluidViscosityCp={recipe.baseFluidType === "solvent" ? 1.5 : recipe.baseFluidType === "acid_hcl" ? 1.2 : 1}
-      />
+      <div id="ft-step-5">
+        <FoamTreatmentDiagnostics
+          well={{
+            netPayM: well.netPayM,
+            permeability_mD: well.permeability_mD,
+            porosity: well.porosity,
+            reservoirPressureMPa: well.reservoirPressureMPa,
+            reservoirTemperatureC: well.reservoirTemperatureC,
+            skinFactor: well.skinFactor,
+            perfDensity: well.perfDensity,
+            currentRateTpd: well.currentRateTpd,
+            oilViscosityCp: well.oilViscosityCp,
+            oilFVF: well.oilFVF,
+            drainageRadiusM: well.drainageRadiusM,
+          }}
+          expectedSkinReduction={result.expectedSkinReduction}
+          treatmentVolumeM3={result.treatmentVolumeM3}
+          foamQualityAtFormationPct={result.foamQualityAtFormation}
+          surfactantPct={recipe.surfactantConc}
+          baseFluidViscosityCp={recipe.baseFluidType === "solvent" ? 1.5 : recipe.baseFluidType === "acid_hcl" ? 1.2 : 1}
+          onApplyRecipe={applyRecipeFromDiagnostics}
+          onDataChange={setDiagBundle}
+        />
+      </div>
     </div>
   );
 }
