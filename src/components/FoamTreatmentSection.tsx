@@ -584,6 +584,10 @@ export default function FoamTreatmentSection() {
           drainageRadiusM: well.drainageRadiusM,
         }}
         expectedSkinReduction={result.expectedSkinReduction}
+        treatmentVolumeM3={result.treatmentVolumeM3}
+        foamQualityAtFormationPct={result.foamQualityAtFormation}
+        surfactantPct={recipe.surfactantConc}
+        baseFluidViscosityCp={recipe.baseFluidType === "solvent" ? 1.5 : recipe.baseFluidType === "acid_hcl" ? 1.2 : 1}
       />
     </div>
   );
