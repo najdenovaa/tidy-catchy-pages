@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import FoamTreatmentDiagnostics from "@/components/FoamTreatmentDiagnostics";
 import { exportFoamTreatmentDocx, type FoamDiagnosticsBundle } from "@/lib/export-foam-treatment-docx";
-import { Download, FileText } from "lucide-react";
+import { Download } from "lucide-react";
 import { toast } from "sonner";
 
 const fmt = (v: number | undefined, d = 2) =>
