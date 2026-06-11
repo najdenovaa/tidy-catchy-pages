@@ -468,20 +468,24 @@ export function calculateRotationTorque(input: RotationInput): RotationAnalysisR
     warnings.push(`Зазор муфта-ствол < 5мм на ${tight.length} участках — возможен повышенный момент.`);
   }
   if (criticalPoint) {
-    warnings.push(`На глубине ${criticalPoint.depthMD.toFixed(0)}м момент достигает предела резьбы.`);
+    warnings.push(`На глубине ${criticalPoint.depthMD.toFixed(0)}м момент достигает предела (${criticalPoint.limitingType === 'pipe-body' ? 'тело трубы' : 'резьба'}).`);
   }
   if (!input.connection.canRotate) {
     warnings.push('Выбранная резьба не рекомендована для вращения.');
+  }
+  if (weakestPoint.limitingType === 'pipe-body') {
+    warnings.push(`Лимит — тело трубы на ${weakestPoint.depthMD.toFixed(0)}м (марка ${getSteelGrade(weakestPoint.gradeId).name}). Используйте сталь выше классом или увеличьте стенку.`);
   }
 
   return {
     points: main.points,
     maxTorque: maxT,
     maxTorqueDepth: maxD,
-    connectionLimit: limit,
+    connectionLimit: input.connection.rotationTorqueLimit,
     maxSafeRPM: Math.min(120, rpmMax),
     canRotateFullString: !criticalPoint,
     criticalDepth: criticalPoint ? criticalPoint.depthMD : null,
+    weakestPoint,
     torqueByPhase: phases,
     displacementImprovementPct: improvement,
     warnings,
