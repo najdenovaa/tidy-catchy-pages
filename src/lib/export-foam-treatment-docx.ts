@@ -160,9 +160,9 @@ export async function exportFoamTreatmentDocx(data: FoamTreatmentExportData, fil
       width: { size: 9360, type: WidthType.DXA },
       columnWidths: [4680, 2340, 2340],
       rows: [
-        new TableRow({ children: [hCell("Реагент"), hCell("Категория"), hCell("Концентрация, %")] }),
+        new TableRow({ children: [hCell("Реагент"), hCell("Назначение"), hCell("Концентрация")] }),
         ...recipe.additives.map((a) => new TableRow({
-          children: [c(a.nameRu || a.id), c(a.category), c(fmt(a.concentration, 2), { align: AlignmentType.CENTER })],
+          children: [c(a.name), c(a.purpose), c(`${fmt(a.concentration, 2)} ${a.unit}`, { align: AlignmentType.CENTER })],
         })),
       ],
     }));
@@ -172,15 +172,17 @@ export async function exportFoamTreatmentDocx(data: FoamTreatmentExportData, fil
   children.push(heading("3. Результаты расчёта операции"));
   children.push(kvTable([
     kvRow("Общий объём раствора, м³", fmt(result.treatmentVolumeM3, 2)),
-    kvRow("Объём базовой жидкости, м³", fmt(result.baseFluidVolumeM3, 2)),
-    kvRow("Объём ПАВ, кг", fmt(result.surfactantMassKg, 0)),
-    kvRow("Объём N₂ (станд. усл.), м³", fmt(result.nitrogenVolumeStdM3, 0)),
-    kvRow("FQ на устье, %", fmt(result.foamQualityAtSurface, 0)),
+    kvRow("Объём пены на устье, м³", fmt(result.foamVolumeAtSurfaceM3, 2)),
+    kvRow("Объём пены на забое, м³", fmt(result.foamVolumeAtFormationM3, 2)),
+    kvRow("Объём N₂ (станд. усл.), м³", fmt(result.n2VolumeStdM3, 0)),
     kvRow("FQ на забое, %", fmt(result.foamQualityAtFormation, 0)),
-    kvRow("Макс. давление закачки, МПа", fmt(result.maxInjectionPressureMPa, 1)),
-    kvRow("Длительность операции, ч", fmt(result.operationDurationH, 1)),
+    kvRow("Плотность пены на забое, кг/м³", fmt(result.foamDensityAtFormation, 0)),
+    kvRow("Радиус проникновения, м", fmt(result.penetrationRadiusM, 2)),
+    kvRow("Давление закачки, МПа", fmt(result.injectionPressureMPa, 1)),
+    kvRow("Запас до P_ГРП, МПа", fmt(result.pressureMarginMPa, 1)),
+    kvRow("Время операции, мин", fmt(result.totalTreatmentTimeMin, 0)),
     kvRow("Ожидаемое снижение скина ΔS", fmt(result.expectedSkinReduction, 2)),
-    kvRow("Прогноз прироста дебита, %", fmt(result.productionBoostPct, 0)),
+    kvRow("Прогноз прироста дебита, %", fmt(result.expectedProductionIncreasePct, 0)),
   ]));
 
   // ── 4. Диагностика ──
