@@ -271,10 +271,11 @@ export interface RotationInput {
   centralizers: Array<{ depthMD: number; type: 'rigid' | 'spring' | 'solid'; od_mm: number; dragTorque_Nm?: number }>;
   stopRings?: Array<{ depthMD: number; od_mm: number }>;
   crossovers?: Array<{ depthMD: number; od_mm: number; torqueAdd_Nm?: number }>;
-  // Для фазового анализа
+  steelSections?: SteelSection[];
+  defaultGradeId?: string; // дефолтная марка стали (если секции не покрывают всю глубину)
   phases?: Array<{ name: string; fluid: FluidRheology }>;
-  baseDisplacementEff?: number; // % — базовая эффективность без вращения
-  avgEccentricity?: number;     // 0..1
+  baseDisplacementEff?: number;
+  avgEccentricity?: number;
 }
 
 function singlePhaseTorque(input: RotationInput, fluid: FluidRheology, rpm: number): {
