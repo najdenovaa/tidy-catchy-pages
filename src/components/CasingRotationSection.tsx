@@ -164,6 +164,57 @@ export default function CasingRotationSection({
             <p className="text-xs text-muted-foreground mt-1">0.20 обсаженный, 0.30 открытый, 0.40 глинистый</p>
           </div>
         </div>
+
+        <div className="mt-4 flex items-center gap-3 p-2 rounded-md bg-muted/40 border">
+          <Switch id="cem-rheo" checked={useCementRheology} onCheckedChange={setUseCementRheology} disabled={!cementFluid} />
+          <Label htmlFor="cem-rheo" className="text-sm cursor-pointer">
+            Учитывать реологию при закачке цемента
+            {cementFluid && useCementRheology && (
+              <span className="text-xs text-muted-foreground ml-2">
+                (PV={cementFluid.pv}, YP={cementFluid.yp}, ρ={(cementFluid.density / 1000).toFixed(2)} г/см³)
+              </span>
+            )}
+          </Label>
+        </div>
+      </Card>
+
+      <Card className="p-4">
+        <h3 className="font-semibold mb-3">КНБК: упорные кольца и переводники</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label>Упорные кольца ({stopRings.length})</Label>
+              <Button size="sm" variant="outline" onClick={() => setStopRings([...stopRings, { depthMD: 1000, od_mm: wellData.holeDiameter - 5 }])}>
+                <Plus className="h-3 w-3 mr-1" />Добавить
+              </Button>
+            </div>
+            {stopRings.map((s, i) => (
+              <div key={i} className="flex gap-2 mb-1 items-center">
+                <Input type="number" value={s.depthMD} onChange={e => { const v = +e.target.value; setStopRings(stopRings.map((x, j) => j === i ? { ...x, depthMD: v } : x)); }} placeholder="Глубина, м" className="h-8" />
+                <Input type="number" value={s.od_mm} onChange={e => { const v = +e.target.value; setStopRings(stopRings.map((x, j) => j === i ? { ...x, od_mm: v } : x)); }} placeholder="OD, мм" className="h-8" />
+                <Button size="icon" variant="ghost" onClick={() => setStopRings(stopRings.filter((_, j) => j !== i))}><Trash2 className="h-3 w-3" /></Button>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label>Переводники ({crossovers.length})</Label>
+              <Button size="sm" variant="outline" onClick={() => setCrossovers([...crossovers, { depthMD: 500, od_mm: wellData.casingOD + 10, torqueAdd_Nm: 50 }])}>
+                <Plus className="h-3 w-3 mr-1" />Добавить
+              </Button>
+            </div>
+            {crossovers.map((c, i) => (
+              <div key={i} className="flex gap-2 mb-1 items-center">
+                <Input type="number" value={c.depthMD} onChange={e => { const v = +e.target.value; setCrossovers(crossovers.map((x, j) => j === i ? { ...x, depthMD: v } : x)); }} placeholder="Глубина, м" className="h-8" />
+                <Input type="number" value={c.od_mm} onChange={e => { const v = +e.target.value; setCrossovers(crossovers.map((x, j) => j === i ? { ...x, od_mm: v } : x)); }} placeholder="OD, мм" className="h-8" />
+                <Input type="number" value={c.torqueAdd_Nm} onChange={e => { const v = +e.target.value; setCrossovers(crossovers.map((x, j) => j === i ? { ...x, torqueAdd_Nm: v } : x)); }} placeholder="ΔM, Нм" className="h-8" />
+                <Button size="icon" variant="ghost" onClick={() => setCrossovers(crossovers.filter((_, j) => j !== i))}><Trash2 className="h-3 w-3" /></Button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">Башмак и ЦКОД учтены автоматически как граничные элементы колонны. Центраторы подгружены из вкладки «Центрирование».</p>
       </Card>
 
       {result && (
