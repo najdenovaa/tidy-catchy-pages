@@ -39,6 +39,7 @@ import {
   CheckCircle2, AlertTriangle, Beaker, FlaskConical, Droplets, Wind,
   Layers, Sparkles, Pencil, Plus, Trash2, RotateCcw,
 } from "lucide-react";
+import FoamTreatmentDiagnostics from "@/components/FoamTreatmentDiagnostics";
 
 const fmt = (v: number | undefined, d = 2) =>
   Number.isFinite(v as number) ? (v as number).toFixed(d) : "—";
@@ -567,6 +568,23 @@ export default function FoamTreatmentSection() {
           </div>
         </CardContent>
       </Card>
+
+      <FoamTreatmentDiagnostics
+        well={{
+          netPayM: well.netPayM,
+          permeability_mD: well.permeability_mD,
+          porosity: well.porosity,
+          reservoirPressureMPa: well.reservoirPressureMPa,
+          reservoirTemperatureC: well.reservoirTemperatureC,
+          skinFactor: well.skinFactor,
+          perfDensity: well.perfDensity,
+          currentRateTpd: well.currentRateTpd,
+          oilViscosityCp: well.oilViscosityCp,
+          oilFVF: well.oilFVF,
+          drainageRadiusM: well.drainageRadiusM,
+        }}
+        expectedSkinReduction={result.expectedSkinReduction}
+      />
     </div>
   );
 }
