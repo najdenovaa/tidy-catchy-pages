@@ -628,3 +628,211 @@ export function tornadoSensitivity(baseNPV: number, params: SensitivityParam[]):
     })
     .sort((a, b) => b.range - a.range);
 }
+
+/* ───────────────────── 9. Hawkins waterfall (поэтапное снятие скина) ───────────────────── */
+
+export interface WaterfallStage {
+  /** Короткий ID этапа */
+  id: string;
+  /** Подпись на оси */
+  label: string;
+  /** Скин ПОСЛЕ этого этапа */
+  skinAfter: number;
+  /** Изменение скина на этом этапе (отрицательное = снятие) */
+  delta: number;
+  /** Эффективная проницаемость ПЗП ПОСЛЕ этапа, мД */
+  effectivePermeability: number;
+  /** Краткое описание механизма */
+  mechanism: string;
+}
+
+/**
+ * Поэтапная декомпозиция снятия скина в процессе пенообработки.
+ * Имитирует физическую последовательность: дисперсия АСПО → растворение глин →
+ * деблокада водяной фазы → восстановление подвижности.
+ */
+export function hawkinsWaterfall(
+  initialSkin: number,
+  reservoir: ReservoirSnapshot,
+  damage: DamageAssessment[],
+  expectedTotalReduction: number,
+): WaterfallStage[] {
+  // Распределяем общее снятие скина по 4 механизмам с весами из диагноза.
+  const weights: Record<string, number> = {
+    wax_asphaltene: 0,
+    clay_swelling: 0,
+    water_block: 0,
+    mud_filtrate: 0,
+    fines_migration: 0,
+    emulsion_block: 0,
+    scale_deposition: 0,
+  };
+  damage.forEach((d) => {
+    weights[d.mechanism] = (weights[d.mechanism] || 0) + d.probability;
+  });
+  // Базовые веса, чтобы waterfall всегда показывал 4 этапа
+  weights.wax_asphaltene = Math.max(weights.wax_asphaltene || 0, 0.2);
+  weights.clay_swelling = Math.max(weights.clay_swelling || 0, 0.15);
+  weights.water_block = Math.max(weights.water_block || 0, 0.15);
+  weights.mud_filtrate = Math.max(weights.mud_filtrate || 0, 0.1);
+
+  const wSum = weights.wax_asphaltene + weights.clay_swelling + weights.water_block + weights.mud_filtrate;
+  const frac = (w: number) => (wSum > 0 ? w / wSum : 0.25);
+
+  const stages: Array<{ id: string; label: string; mechanism: string; share: number }> = [
+    { id: "solvent", label: "Растворитель / АСПО", mechanism: "Дисперсия парафинов и асфальтенов азотным лифтом", share: frac(weights.wax_asphaltene) },
+    { id: "acid", label: "Кислотный пакет", mechanism: "Растворение карбонатных мостиков, частиц бурового, продуктов осаждения", share: frac(weights.mud_filtrate + weights.scale_deposition) },
+    { id: "clay", label: "Стабилизатор глин + ПАВ", mechanism: "Подавление набухания глин, стабилизация мелких частиц", share: frac(weights.clay_swelling) },
+    { id: "foam", label: "Пенный отжим воды", mechanism: "Снятие водяной/эмульсионной блокады, восстановление фазовой проницаемости", share: frac(weights.water_block + weights.emulsion_block) },
+  ];
+
+  const totalShare = stages.reduce((s, x) => s + x.share, 0) || 1;
+  let runningSkin = initialSkin;
+  const lnRatio = Math.log(Math.max(0.5, reservoir.rw * 5) / reservoir.rw);
+
+  return stages.map((s) => {
+    const delta = -(s.share / totalShare) * expectedTotalReduction;
+    runningSkin = Math.max(-2, runningSkin + delta);
+    // Эффективная k ПЗП через Hawkins-обращение
+    const damageRatio = runningSkin > 0 ? 1 + runningSkin / lnRatio : 1;
+    return {
+      id: s.id,
+      label: s.label,
+      skinAfter: runningSkin,
+      delta,
+      effectivePermeability: reservoir.k_mD / Math.max(1, damageRatio),
+      mechanism: s.mechanism,
+    };
+  });
+}
+
+/* ───────────────────── 10. Step-Rate Test (SRT) интерпретация ───────────────────── */
+
+export interface StepRatePoint {
+  /** Расход закачки, м³/сут */
+  rate: number;
+  /** Стабильное забойное давление на этом шаге, МПа */
+  pressure: number;
+}
+
+export interface StepRateInterpretation {
+  /** Давление разрыва пласта (FPP), МПа. null если не обнаружено. */
+  formationPartingPressure: number | null;
+  /** Расход, при котором достигается FPP, м³/сут */
+  fppRate: number | null;
+  /** Индекс точки в массиве (для подсветки) */
+  fppIndex: number | null;
+  /** Наклон до FPP (матричный режим), МПа/(м³/сут) — это 1/II */
+  matrixSlope: number;
+  /** Наклон после FPP (трещинный режим) */
+  fractureSlope: number;
+  /** Индекс приёмистости в матричном режиме, м³/(сут·МПа) */
+  matrixInjectivity: number;
+  /** Безопасный максимум для пенообработки (90% от FPP) */
+  safeMaxPressure: number | null;
+  /** Безопасный максимум расхода */
+  safeMaxRate: number | null;
+  /** Точки регрессии (для отрисовки прямых) */
+  matrixLine: { rate: number; pressure: number }[];
+  fractureLine: { rate: number; pressure: number }[];
+  /** Качественная оценка */
+  verdict: "matrix_only" | "fracture_detected" | "insufficient_data";
+  verdictText: string;
+}
+
+/** Линейная регрессия y = a + b·x. Возвращает {a, b}. */
+function linearFit(pts: { x: number; y: number }[]): { a: number; b: number } {
+  const n = pts.length;
+  if (n < 2) return { a: 0, b: 0 };
+  const sx = pts.reduce((s, p) => s + p.x, 0);
+  const sy = pts.reduce((s, p) => s + p.y, 0);
+  const sxx = pts.reduce((s, p) => s + p.x * p.x, 0);
+  const sxy = pts.reduce((s, p) => s + p.x * p.y, 0);
+  const den = n * sxx - sx * sx;
+  if (Math.abs(den) < 1e-9) return { a: sy / n, b: 0 };
+  const b = (n * sxy - sx * sy) / den;
+  const a = (sy - b * sx) / n;
+  return { a, b };
+}
+
+export function interpretStepRateTest(points: StepRatePoint[]): StepRateInterpretation {
+  const pts = [...points].filter((p) => p.rate > 0 && p.pressure > 0).sort((a, b) => a.rate - b.rate);
+  if (pts.length < 4) {
+    return {
+      formationPartingPressure: null, fppRate: null, fppIndex: null,
+      matrixSlope: 0, fractureSlope: 0, matrixInjectivity: 0,
+      safeMaxPressure: null, safeMaxRate: null,
+      matrixLine: [], fractureLine: [],
+      verdict: "insufficient_data",
+      verdictText: "Для интерпретации нужно ≥ 4 точек ступенчатой закачки.",
+    };
+  }
+
+  // Поиск точки излома: минимизируем сумму SSE двух линейных регрессий.
+  let bestIdx = -1;
+  let bestSSE = Infinity;
+  for (let split = 2; split <= pts.length - 2; split++) {
+    const a = pts.slice(0, split).map((p) => ({ x: p.rate, y: p.pressure }));
+    const b = pts.slice(split).map((p) => ({ x: p.rate, y: p.pressure }));
+    const fitA = linearFit(a);
+    const fitB = linearFit(b);
+    const sseA = a.reduce((s, p) => s + Math.pow(p.y - (fitA.a + fitA.b * p.x), 2), 0);
+    const sseB = b.reduce((s, p) => s + Math.pow(p.y - (fitB.a + fitB.b * p.x), 2), 0);
+    const sse = sseA + sseB;
+    // Излом валиден только если наклон во второй части МЕНЬШЕ (трещина даёт пологий участок)
+    if (sse < bestSSE && fitB.b < fitA.b * 0.7) {
+      bestSSE = sse;
+      bestIdx = split;
+    }
+  }
+
+  // Если излом не найден — весь тест в матричном режиме
+  if (bestIdx < 0) {
+    const fit = linearFit(pts.map((p) => ({ x: p.rate, y: p.pressure })));
+    const matrixII = fit.b > 0 ? 1 / fit.b : 0;
+    return {
+      formationPartingPressure: null, fppRate: null, fppIndex: null,
+      matrixSlope: fit.b, fractureSlope: 0,
+      matrixInjectivity: matrixII,
+      safeMaxPressure: pts[pts.length - 1].pressure * 0.95,
+      safeMaxRate: pts[pts.length - 1].rate * 0.95,
+      matrixLine: [
+        { rate: pts[0].rate, pressure: fit.a + fit.b * pts[0].rate },
+        { rate: pts[pts.length - 1].rate, pressure: fit.a + fit.b * pts[pts.length - 1].rate },
+      ],
+      fractureLine: [],
+      verdict: "matrix_only",
+      verdictText: `Излом не обнаружен — закачка в матричном режиме до ${pts[pts.length - 1].pressure.toFixed(1)} МПа. Можно увеличивать темп.`,
+    };
+  }
+
+  const matrixPts = pts.slice(0, bestIdx);
+  const fracPts = pts.slice(bestIdx);
+  const fitM = linearFit(matrixPts.map((p) => ({ x: p.rate, y: p.pressure })));
+  const fitF = linearFit(fracPts.map((p) => ({ x: p.rate, y: p.pressure })));
+
+  // FPP = пересечение двух прямых
+  const fppRate = (fitF.a - fitM.a) / (fitM.b - fitF.b);
+  const fpp = fitM.a + fitM.b * fppRate;
+
+  return {
+    formationPartingPressure: fpp,
+    fppRate,
+    fppIndex: bestIdx,
+    matrixSlope: fitM.b,
+    fractureSlope: fitF.b,
+    matrixInjectivity: fitM.b > 0 ? 1 / fitM.b : 0,
+    safeMaxPressure: fpp * 0.9,
+    safeMaxRate: fppRate * 0.9,
+    matrixLine: [
+      { rate: pts[0].rate, pressure: fitM.a + fitM.b * pts[0].rate },
+      { rate: fppRate, pressure: fpp },
+    ],
+    fractureLine: [
+      { rate: fppRate, pressure: fpp },
+      { rate: pts[pts.length - 1].rate, pressure: fitF.a + fitF.b * pts[pts.length - 1].rate },
+    ],
+    verdict: "fracture_detected",
+    verdictText: `Обнаружено давление разрыва пласта ${fpp.toFixed(1)} МПа при ${fppRate.toFixed(0)} м³/сут. Безопасный максимум для пенообработки: ${(fpp * 0.9).toFixed(1)} МПа.`,
+  };
+}

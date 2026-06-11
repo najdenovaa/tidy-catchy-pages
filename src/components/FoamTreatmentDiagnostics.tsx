@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, BarChart, Bar, Cell, ReferenceLine, ComposedChart, Area,
+  ResponsiveContainer, BarChart, Bar, Cell, ReferenceLine, ReferenceDot, ComposedChart, Area, Scatter,
 } from "recharts";
 import {
   AlertTriangle, CheckCircle2, TrendingUp, Wallet, Activity, Plus, Trash2,
@@ -27,6 +27,8 @@ import {
   calculateInjectivity,
   penetrationRadius,
   tornadoSensitivity,
+  hawkinsWaterfall,
+  interpretStepRateTest,
   DEFAULT_COSTS,
   type ReservoirSnapshot,
   type Mineralogy,
@@ -35,6 +37,7 @@ import {
   type ProductionPoint,
   type DamageAssessment,
   type SensitivityParam,
+  type StepRatePoint,
 } from "@/lib/foam-treatment-diagnostics";
 
 const fmt = (v: number | undefined | null, d = 1) =>
@@ -117,6 +120,15 @@ export default function FoamTreatmentDiagnostics({
   const [mineralogy, setMineralogy] = useState<Mineralogy>(DEFAULT_MINERALOGY);
   const [drilling, setDrilling] = useState<DrillingHistory>(DEFAULT_DRILLING);
   const [history, setHistory] = useState<ProductionPoint[]>(DEFAULT_HISTORY);
+  const [srtPoints, setSrtPoints] = useState<StepRatePoint[]>([
+    { rate: 50,  pressure: 8 },
+    { rate: 100, pressure: 11 },
+    { rate: 150, pressure: 14 },
+    { rate: 200, pressure: 17 },
+    { rate: 250, pressure: 19 },
+    { rate: 300, pressure: 20 },
+    { rate: 350, pressure: 21 },
+  ]);
 
   const [oilPrice, setOilPrice] = useState(35_000);
   const [chemCost, setChemCost] = useState(150_000);
@@ -270,6 +282,45 @@ export default function FoamTreatmentDiagnostics({
     }));
   }, [forecast, economics.npv, chemCost, n2Cost, crewDays, equipDays, oilPrice, arps, reservoir, skinNew, skinRecoveryPct, expectedSkinReduction, efficiencyFactor]);
 
+  /* ── Hawkins waterfall ── */
+  const waterfall = useMemo(
+    () => hawkinsWaterfall(reservoir.skin, reservoir, damage, Math.max(0.1, expectedSkinReduction * efficiencyFactor)),
+    [reservoir, damage, expectedSkinReduction, efficiencyFactor],
+  );
+
+  // Waterfall chart data: floating bars (running skin with delta segments)
+  const waterfallChart = useMemo(() => {
+    const rows: Array<{ label: string; base: number; delta: number; skinAfter: number; fill: string }> = [
+      { label: "Скин до", base: 0, delta: reservoir.skin, skinAfter: reservoir.skin, fill: "hsl(0 70% 55%)" },
+    ];
+    let running = reservoir.skin;
+    waterfall.forEach((st) => {
+      const newRun = st.skinAfter;
+      // floating bar: base = min(running,newRun), delta = |running - newRun|, sign negative
+      const base = Math.min(running, newRun);
+      const height = Math.abs(running - newRun);
+      rows.push({
+        label: st.label,
+        base,
+        delta: height,
+        skinAfter: newRun,
+        fill: "hsl(160 60% 45%)",
+      });
+      running = newRun;
+    });
+    rows.push({ label: "Скин после", base: 0, delta: running, skinAfter: running, fill: "hsl(220 80% 55%)" });
+    return rows;
+  }, [waterfall, reservoir.skin]);
+
+  /* ── Step-Rate Test интерпретация ── */
+  const srt = useMemo(() => interpretStepRateTest(srtPoints), [srtPoints]);
+  const srtChartData = useMemo(() => {
+    const scatter = srtPoints.map((p) => ({ rate: p.rate, pActual: p.pressure }));
+    return scatter;
+  }, [srtPoints]);
+
+
+
 
 
   /* ── Charts data ── */
@@ -304,6 +355,15 @@ export default function FoamTreatmentDiagnostics({
       { month: (h[h.length - 1]?.month ?? 0) + 3, qOil: h[h.length - 1]?.qOil ?? 5, waterCut: 0, bhpMPa: reservoir.Pr * 0.7 },
     ]);
   const removeHistoryRow = (i: number) => setHistory((h) => h.filter((_, idx) => idx !== i));
+
+  const updSrtRow = (i: number, patch: Partial<StepRatePoint>) =>
+    setSrtPoints((s) => s.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
+  const addSrtRow = () =>
+    setSrtPoints((s) => [
+      ...s,
+      { rate: (s[s.length - 1]?.rate ?? 0) + 50, pressure: (s[s.length - 1]?.pressure ?? 0) + 1 },
+    ]);
+  const removeSrtRow = (i: number) => setSrtPoints((s) => s.filter((_, idx) => idx !== i));
 
   const num = (s: string) => {
     const n = parseFloat(s.replace(",", "."));
@@ -712,6 +772,152 @@ export default function FoamTreatmentDiagnostics({
             Длина бара = диапазон ΔNPV при изменении параметра. Параметры сверху — самые влиятельные.
           </p>
         </div>
+        {/* ───── Hawkins waterfall — поэтапное снятие скина ───── */}
+        <div className="rounded-xl border border-border bg-card p-4">
+          <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-primary" />
+            Waterfall снятия скина (Hawkins) по этапам обработки
+          </h4>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={waterfallChart} margin={{ top: 10, right: 10, bottom: 30, left: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={50} />
+              <YAxis label={{ value: "Скин S", angle: -90, position: "insideLeft" }} />
+              <Tooltip
+                formatter={(_: number, __: string, ctx: { payload?: { skinAfter?: number; delta?: number } }) => {
+                  const p = ctx?.payload;
+                  if (!p) return "";
+                  return [`S после = ${(p.skinAfter ?? 0).toFixed(2)}, Δ = ${(p.delta ?? 0).toFixed(2)}`, ""];
+                }}
+              />
+              <ReferenceLine y={0} stroke="hsl(var(--border))" />
+              <Bar dataKey="base" stackId="w" fill="transparent" />
+              <Bar dataKey="delta" stackId="w">
+                {waterfallChart.map((r, i) => <Cell key={i} fill={r.fill} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
+            {waterfall.map((st) => (
+              <div key={st.id} className="rounded-md border border-border bg-muted/30 p-2 text-xs">
+                <div className="flex justify-between font-semibold">
+                  <span>{st.label}</span>
+                  <span className="text-emerald-600 font-mono">ΔS = {st.delta.toFixed(2)}</span>
+                </div>
+                <div className="text-muted-foreground mt-0.5">{st.mechanism}</div>
+                <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+                  <span>S после: <span className="font-mono text-foreground">{st.skinAfter.toFixed(2)}</span></span>
+                  <span>k_ПЗП: <span className="font-mono text-foreground">{st.effectivePermeability.toFixed(1)} мД</span></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ───── Step-Rate Test — давление разрыва пласта ───── */}
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              Step-Rate Test (SRT) — определение давления разрыва пласта
+            </h4>
+            <Button size="sm" variant="outline" onClick={addSrtRow}>
+              <Plus className="w-4 h-4 mr-1" /> Ступень
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Введите ступенчатую закачку: на каждой ступени — стабильное забойное давление при заданном расходе.
+            Излом на p–q диаграмме = формационное давление разрыва (FPP). Безопасный максимум для пенообработки = 0.9·FPP.
+          </p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Таблица ступеней */}
+            <div className="rounded-lg border border-border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40">
+                  <tr className="text-left">
+                    <th className="px-3 py-2 font-medium text-muted-foreground">#</th>
+                    <th className="px-3 py-2 font-medium text-muted-foreground">Расход, м³/сут</th>
+                    <th className="px-3 py-2 font-medium text-muted-foreground">Pзаб, МПа</th>
+                    <th className="px-3 py-2 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {srtPoints.map((p, i) => (
+                    <tr key={i} className={`border-t border-border ${srt.fppIndex !== null && i === srt.fppIndex ? "bg-amber-500/10" : ""}`}>
+                      <td className="px-3 py-1 text-muted-foreground">{i + 1}</td>
+                      <td className="px-2 py-1"><Input className="h-8" type="number" step="10" value={p.rate}
+                        onChange={(e) => updSrtRow(i, { rate: num(e.target.value) })} /></td>
+                      <td className="px-2 py-1"><Input className="h-8" type="number" step="0.5" value={p.pressure}
+                        onChange={(e) => updSrtRow(i, { pressure: num(e.target.value) })} /></td>
+                      <td className="px-2 py-1 text-right">
+                        <Button size="icon" variant="ghost" onClick={() => removeSrtRow(i)}>
+                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* График */}
+            <div>
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={srtChartData} margin={{ top: 10, right: 20, bottom: 25, left: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <XAxis dataKey="rate" type="number" label={{ value: "q, м³/сут", position: "insideBottom", offset: -3 }} />
+                  <YAxis label={{ value: "Pзаб, МПа", angle: -90, position: "insideLeft" }} />
+                  <Tooltip />
+                  <Legend />
+                  <Scatter dataKey="pActual" name="Замеры" fill="hsl(217 91% 60%)" />
+                  {srt.matrixLine.length === 2 && (
+                    <Line
+                      data={srt.matrixLine.map((p) => ({ rate: p.rate, pMatrix: p.pressure }))}
+                      dataKey="pMatrix" stroke="hsl(160 60% 45%)" strokeWidth={2} dot={false} name="Матричный режим"
+                    />
+                  )}
+                  {srt.fractureLine.length === 2 && (
+                    <Line
+                      data={srt.fractureLine.map((p) => ({ rate: p.rate, pFrac: p.pressure }))}
+                      dataKey="pFrac" stroke="hsl(0 70% 55%)" strokeWidth={2} strokeDasharray="5 3" dot={false} name="Трещинный режим"
+                    />
+                  )}
+                  {srt.formationPartingPressure !== null && (
+                    <ReferenceLine y={srt.formationPartingPressure} stroke="hsl(45 90% 50%)" strokeDasharray="3 3"
+                      label={{ value: `FPP = ${srt.formationPartingPressure.toFixed(1)} МПа`, fontSize: 10, fill: "hsl(45 90% 40%)", position: "insideTopRight" }} />
+                  )}
+                  {srt.safeMaxPressure !== null && (
+                    <ReferenceLine y={srt.safeMaxPressure} stroke="hsl(160 60% 45%)" strokeDasharray="2 2"
+                      label={{ value: `Безоп. макс ${srt.safeMaxPressure.toFixed(1)}`, fontSize: 10, fill: "hsl(160 60% 30%)", position: "insideBottomRight" }} />
+                  )}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className={`rounded-lg border p-3 text-sm ${
+            srt.verdict === "fracture_detected" ? "bg-amber-500/10 border-amber-500/30 text-amber-700"
+              : srt.verdict === "matrix_only" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700"
+              : "bg-muted/30 border-border text-muted-foreground"
+          }`}>
+            <div className="font-semibold mb-1">Интерпретация:</div>
+            <div>{srt.verdictText}</div>
+            {srt.verdict !== "insufficient_data" && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2 text-xs">
+                <div>II матричный: <span className="font-mono">{srt.matrixInjectivity.toFixed(2)} м³/сут·МПа</span></div>
+                <div>Наклон матр.: <span className="font-mono">{srt.matrixSlope.toFixed(3)}</span></div>
+                {srt.verdict === "fracture_detected" && (
+                  <>
+                    <div>Наклон трещ.: <span className="font-mono">{srt.fractureSlope.toFixed(3)}</span></div>
+                    <div>Расход @ FPP: <span className="font-mono">{srt.fppRate?.toFixed(0)} м³/сут</span></div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
       </CardContent>
 
     </Card>
