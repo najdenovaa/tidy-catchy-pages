@@ -110,6 +110,7 @@ const DEFAULT_HISTORY: ProductionPoint[] = [
 
 export default function FoamTreatmentDiagnostics({
   well, expectedSkinReduction, zenithDeg = 0,
+  treatmentVolumeM3, foamQualityAtFormationPct, surfactantPct = 0.5, baseFluidViscosityCp = 1,
 }: FoamTreatmentDiagnosticsProps) {
   /* ── Состояние ── */
   const [collector, setCollector] = useState<CollectorType>("sandstone");
