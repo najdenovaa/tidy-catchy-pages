@@ -238,7 +238,7 @@ export default function FoamTreatmentSection() {
       </Card>
 
       {/* ───────── Шаг 2: Рецептура ───────── */}
-      <Card>
+      <Card id="ft-step-2">
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle className="text-lg">Шаг 2 — Выбор технологии обработки</CardTitle>
           <div className="flex items-center gap-2">
@@ -311,7 +311,7 @@ export default function FoamTreatmentSection() {
       </Card>
 
       {/* ───────── Шаг 3: Параметры ───────── */}
-      <Card>
+      <Card id="ft-step-3">
         <CardHeader><CardTitle className="text-lg">Шаг 3 — Параметры операции</CardTitle></CardHeader>
         <CardContent className="space-y-5">
           <SliderRow label="Количество циклов" value={opts.numberOfCycles} min={1} max={5} step={1}
@@ -330,7 +330,7 @@ export default function FoamTreatmentSection() {
       </Card>
 
       {/* ───────── Шаг 4: Результат ───────── */}
-      <Card>
+      <Card id="ft-step-4">
         <CardHeader><CardTitle className="text-lg">Шаг 4 — Результат расчёта</CardTitle></CardHeader>
         <CardContent className="space-y-6">
           {/* Сводка */}
@@ -625,26 +625,30 @@ export default function FoamTreatmentSection() {
         </CardContent>
       </Card>
 
-      <FoamTreatmentDiagnostics
-        well={{
-          netPayM: well.netPayM,
-          permeability_mD: well.permeability_mD,
-          porosity: well.porosity,
-          reservoirPressureMPa: well.reservoirPressureMPa,
-          reservoirTemperatureC: well.reservoirTemperatureC,
-          skinFactor: well.skinFactor,
-          perfDensity: well.perfDensity,
-          currentRateTpd: well.currentRateTpd,
-          oilViscosityCp: well.oilViscosityCp,
-          oilFVF: well.oilFVF,
-          drainageRadiusM: well.drainageRadiusM,
-        }}
-        expectedSkinReduction={result.expectedSkinReduction}
-        treatmentVolumeM3={result.treatmentVolumeM3}
-        foamQualityAtFormationPct={result.foamQualityAtFormation}
-        surfactantPct={recipe.surfactantConc}
-        baseFluidViscosityCp={recipe.baseFluidType === "solvent" ? 1.5 : recipe.baseFluidType === "acid_hcl" ? 1.2 : 1}
-      />
+      <div id="ft-step-5">
+        <FoamTreatmentDiagnostics
+          well={{
+            netPayM: well.netPayM,
+            permeability_mD: well.permeability_mD,
+            porosity: well.porosity,
+            reservoirPressureMPa: well.reservoirPressureMPa,
+            reservoirTemperatureC: well.reservoirTemperatureC,
+            skinFactor: well.skinFactor,
+            perfDensity: well.perfDensity,
+            currentRateTpd: well.currentRateTpd,
+            oilViscosityCp: well.oilViscosityCp,
+            oilFVF: well.oilFVF,
+            drainageRadiusM: well.drainageRadiusM,
+          }}
+          expectedSkinReduction={result.expectedSkinReduction}
+          treatmentVolumeM3={result.treatmentVolumeM3}
+          foamQualityAtFormationPct={result.foamQualityAtFormation}
+          surfactantPct={recipe.surfactantConc}
+          baseFluidViscosityCp={recipe.baseFluidType === "solvent" ? 1.5 : recipe.baseFluidType === "acid_hcl" ? 1.2 : 1}
+          onApplyRecipe={applyRecipeFromDiagnostics}
+          onDataChange={setDiagBundle}
+        />
+      </div>
     </div>
   );
 }
