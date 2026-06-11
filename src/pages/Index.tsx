@@ -15,6 +15,7 @@ import ContactTimeSection from "@/components/ContactTimeSection";
 import CementQualitySection from "@/components/CementQualitySection";
 import TrajectorySection from "@/components/TrajectorySection";
 import DrillingHydraulicsSection from "@/components/DrillingHydraulicsSection";
+import CasingRotationSection from "@/components/CasingRotationSection";
 import AnalysisChatPanel from "@/components/AnalysisChatPanel";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
@@ -558,6 +559,7 @@ export default function Index() {
              <TabsTrigger value="torquedrag" className="text-xs py-2 px-3 sm:px-1">T&D</TabsTrigger>
              <TabsTrigger value="drillhydr" className="text-xs py-2 px-3 sm:px-1">Гидр. бур.</TabsTrigger>
              <TabsTrigger value="foam" className="text-xs py-2 px-3 sm:px-1">Пена</TabsTrigger>
+             <TabsTrigger value="rotation" className="text-xs py-2 px-3 sm:px-1">Вращение</TabsTrigger>
            </TabsList>
           </div>
         </div>
@@ -816,6 +818,20 @@ export default function Index() {
               </div>
             </TabsContent>
           </div>
+
+          <div className={activeTab !== "rotation" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="rotation" forceMount>
+              <div data-tab-content="rotation">
+                <CasingRotationSection
+                  wellData={wellData}
+                  drillingFluid={drillingFluid}
+                  centralizerIntervals={centralizerIntervals}
+                />
+              </div>
+            </TabsContent>
+          </div>
+
+
 
 
         </main>
