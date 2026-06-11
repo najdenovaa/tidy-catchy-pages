@@ -819,6 +819,20 @@ export default function Index() {
             </TabsContent>
           </div>
 
+          <div className={activeTab !== "rotation" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="rotation" forceMount>
+              <div data-tab-content="rotation">
+                <CasingRotationSection
+                  wellData={wellData}
+                  drillingFluid={drillingFluid}
+                  centralizerIntervals={centralizerIntervals}
+                />
+              </div>
+            </TabsContent>
+          </div>
+
+
+
 
         </main>
       </Tabs>
