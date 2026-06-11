@@ -282,6 +282,45 @@ export default function FoamTreatmentDiagnostics({
     }));
   }, [forecast, economics.npv, chemCost, n2Cost, crewDays, equipDays, oilPrice, arps, reservoir, skinNew, skinRecoveryPct, expectedSkinReduction, efficiencyFactor]);
 
+  /* ── Hawkins waterfall ── */
+  const waterfall = useMemo(
+    () => hawkinsWaterfall(reservoir.skin, reservoir, damage, Math.max(0.1, expectedSkinReduction * efficiencyFactor)),
+    [reservoir, damage, expectedSkinReduction, efficiencyFactor],
+  );
+
+  // Waterfall chart data: floating bars (running skin with delta segments)
+  const waterfallChart = useMemo(() => {
+    const rows: Array<{ label: string; base: number; delta: number; skinAfter: number; fill: string }> = [
+      { label: "Скин до", base: 0, delta: reservoir.skin, skinAfter: reservoir.skin, fill: "hsl(0 70% 55%)" },
+    ];
+    let running = reservoir.skin;
+    waterfall.forEach((st) => {
+      const newRun = st.skinAfter;
+      // floating bar: base = min(running,newRun), delta = |running - newRun|, sign negative
+      const base = Math.min(running, newRun);
+      const height = Math.abs(running - newRun);
+      rows.push({
+        label: st.label,
+        base,
+        delta: height,
+        skinAfter: newRun,
+        fill: "hsl(160 60% 45%)",
+      });
+      running = newRun;
+    });
+    rows.push({ label: "Скин после", base: 0, delta: running, skinAfter: running, fill: "hsl(220 80% 55%)" });
+    return rows;
+  }, [waterfall, reservoir.skin]);
+
+  /* ── Step-Rate Test интерпретация ── */
+  const srt = useMemo(() => interpretStepRateTest(srtPoints), [srtPoints]);
+  const srtChartData = useMemo(() => {
+    const scatter = srtPoints.map((p) => ({ rate: p.rate, pActual: p.pressure }));
+    return scatter;
+  }, [srtPoints]);
+
+
+
 
 
   /* ── Charts data ── */
