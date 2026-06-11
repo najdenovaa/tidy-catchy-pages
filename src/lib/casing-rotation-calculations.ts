@@ -211,6 +211,10 @@ export interface RotationTorquePoint {
   couplingTorque: number;
   totalTorque: number;
   connectionLimit: number;
+  pipeBodyLimit: number;     // Н·м — предел тела трубы (Мизес)
+  effectiveLimit: number;    // min(connection, pipe-body)
+  limitingType: 'connection' | 'pipe-body';
+  gradeId: string;
   utilizationPct: number;
   canRotate: boolean;
   maxSafeRPM: number;
@@ -224,6 +228,18 @@ export interface PhaseTorque {
   maxRPM: number;
 }
 
+export interface WeakestPoint {
+  depthMD: number;
+  tvd: number;
+  effectiveLimit: number;
+  limitingType: 'connection' | 'pipe-body';
+  gradeId: string;
+  utilizationPct: number;
+  currentTorque: number;
+  maxSafeRPM: number;
+  note: string;
+}
+
 export interface RotationAnalysisResult {
   points: RotationTorquePoint[];
   maxTorque: number;
@@ -232,6 +248,7 @@ export interface RotationAnalysisResult {
   maxSafeRPM: number;
   canRotateFullString: boolean;
   criticalDepth: number | null;
+  weakestPoint: WeakestPoint;
   torqueByPhase: PhaseTorque[];
   displacementImprovementPct: number;
   warnings: string[];
