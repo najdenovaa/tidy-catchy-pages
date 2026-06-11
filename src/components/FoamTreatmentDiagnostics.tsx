@@ -91,6 +91,10 @@ export interface FoamTreatmentDiagnosticsProps {
   surfactantPct?: number;
   /** Опционально: вязкость базовой жидкости, сПз. */
   baseFluidViscosityCp?: number;
+  /** Callback: применить рецепт из авто-диагностики. */
+  onApplyRecipe?: (recipeId: string) => void;
+  /** Callback: бандл всех расчётов для DOCX-экспорта. */
+  onDataChange?: (bundle: import("@/lib/export-foam-treatment-docx").FoamDiagnosticsBundle) => void;
 }
 
 
