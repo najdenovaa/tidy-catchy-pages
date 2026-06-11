@@ -80,7 +80,14 @@ export interface FoamTreatmentDiagnosticsProps {
   expectedSkinReduction: number;
   /** Зенитный угол на интервале перфорации, ° (опционально). */
   zenithDeg?: number;
-}
+  /** Опционально: объём раствора (для расчёта радиуса проникновения). */
+  treatmentVolumeM3?: number;
+  /** Опционально: качество пены на забое, % (для радиуса и μ_app). */
+  foamQualityAtFormationPct?: number;
+  /** Опционально: концентрация ПАВ в рецептуре, %. */
+  surfactantPct?: number;
+  /** Опционально: вязкость базовой жидкости, сПз. */
+  baseFluidViscosityCp?: number;
 
 const DEFAULT_MINERALOGY: Mineralogy = {
   quartz: 65, feldspar: 10, calcite: 5, dolomite: 2, clay: 12, montmorillonite: 4,
