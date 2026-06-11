@@ -33,6 +33,7 @@ interface FluidZone {
   topMD: number;
   botMD: number;
   type: "cement" | "buffer" | "mud";
+  bufferSubType?: BufferFluid["bufferType"];
   density: number;
   yp: number;
   pv: number;
@@ -91,6 +92,7 @@ function buildFluidZones(
       topMD: top,
       botMD: bot,
       type: "buffer",
+      bufferSubType: buffers[i].bufferType,
       density: buffers[i].density,
       yp: buffers[i].rheology.yp,
       pv: buffers[i].rheology.pv,
@@ -145,6 +147,7 @@ function calcEff(
   turbMult: number,
   avgVel: number,
   fluidType: "cement" | "buffer" | "mud",
+  bufferSubType?: BufferFluid["bufferType"],
 ): number {
   if (fluidType === "mud") return 0;
 
@@ -154,17 +157,25 @@ function calcEff(
   const vScore = Math.min(1, avgVel / 1.0);
   let eff = 0.30 * dScore + 0.25 * ypScore + 0.45 * vScore;
 
-  // Directional penalty scaled by ACTUAL eccentricity, not just inclination
-  // When ecc≈0 (good centering), no directional variation regardless of zenith
+  // Directional effect by actual eccentricity: high side (wide gap) improves,
+  // low side (narrow gap) loses displacement and forms mud channels.
   const cosA = Math.cos(angle);
-  eff -= ecc * cosA * 0.35;
-  eff -= ecc * 0.25 * Math.max(0, cosA);
+  eff += ecc * cosA * 0.35;
+  eff += ecc * 0.25 * Math.min(0, cosA);
 
   if (turbMult > 1) eff += (turbMult - 1) * 0.08;
 
   if (isOpenHole) eff *= 0.90;
   if (cavernCoeff > 1.05) eff *= 1.0 - (cavernCoeff - 1.0) * 0.25;
-  if (fluidType === "buffer") eff *= 0.5;
+  if (fluidType === "buffer") {
+    switch (bufferSubType) {
+      case "chemical_wash": eff *= 0.85; break;
+      case "elastic_spacer": eff *= 0.70; break;
+      case "cement_wash": eff *= 0.60; break;
+      case "weighted": eff *= 0.75; break;
+      default: eff *= 0.40; break;
+    }
+  }
 
   eff -= (1 - distFromTop) * 0.18;
   eff -= (1 - distFromBoundary) * 0.22;
@@ -351,9 +362,9 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
             localFrac = rightW > 0 ? (xFrac - rightStart) / rightW : 0;
           }
 
-          // Wide side (left) = good cement (angle→π, cosA<0 → eff increases)
-          // Narrow side (right) = mud channel (angle→0, cosA>0 → eff decreases)
-          const baseAngle = isLeft ? Math.PI : 0;
+          // High side / wide gap (left) = good cement (angle→0, cosA>0)
+          // Low side / narrow gap (right) = mud channel (angle→π, cosA<0)
+          const baseAngle = isLeft ? 0 : Math.PI;
           // Small variation within each side for texture
           const angleVariation = (isLeft ? (1 - localFrac) : localFrac) * 0.3;
           const angle = baseAngle + angleVariation;
@@ -387,6 +398,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
               turbMult,
               avgVel,
               zone.type,
+              zone.bufferSubType,
             ) - eccPenalty);
 
             const isCement = zone.type === "cement";

@@ -76,6 +76,19 @@ const toNumber = (value: unknown, fallback = 0): number => {
 const toString = (value: unknown, fallback = ""): string =>
   typeof value === "string" ? value : fallback;
 
+const normalizeBufferType = (value: unknown): BufferFluid["bufferType"] => {
+  if (
+    value === "chemical_wash" ||
+    value === "elastic_spacer" ||
+    value === "cement_wash" ||
+    value === "water" ||
+    value === "weighted"
+  ) {
+    return value;
+  }
+  return undefined;
+};
+
 function normalizeRheology(value: unknown, fallback: Rheology = { pv: 0, yp: 0 }): Rheology {
   const source = isRecord(value) ? value : {};
   return {
@@ -240,6 +253,7 @@ export function normalizeBufferFluid(value: unknown, index = 0): BufferFluid {
 
   return {
     name: toString(source.name, `Буфер ${index + 1}`),
+    bufferType: normalizeBufferType(source.bufferType),
     density: toNumber(source.density, 0),
     volume,
     rheology: normalizeRheology(
