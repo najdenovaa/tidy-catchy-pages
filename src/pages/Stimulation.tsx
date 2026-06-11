@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, AlertTriangle, FlaskConical, Sparkles, Calculator, ListChecks, TrendingUp, FileText } from "lucide-react";
+import { ArrowLeft, CheckCircle2, AlertTriangle, FlaskConical, Sparkles, Calculator, ListChecks, TrendingUp, FileText, Activity } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,22 +9,30 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from "recharts";
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
-import { buildAcidStages, computeAcidKinetics, acidDistribution } from "@/lib/stimulation-acid";
-import type { DamageAssessment } from "@/lib/foam-treatment-diagnostics";
+import { buildAcidStages, computeAcidKinetics } from "@/lib/stimulation-acid";
+import {
+  diagnoseDamage, fitArpsDecline, forecastPostTreatment, calculateEconomics, DEFAULT_COSTS,
+  type DamageAssessment, type ReservoirSnapshot, type Mineralogy, type DrillingHistory,
+  type ProductionPoint, type CostInputs,
+} from "@/lib/foam-treatment-diagnostics";
+import { exportStimulationDocx } from "@/lib/export-stimulation-docx";
 
 const TABS = [
   { id: "diag", label: "Диагностика", icon: FlaskConical },
   { id: "method", label: "Метод", icon: Sparkles },
   { id: "calc", label: "Расчёт", icon: Calculator },
-  { id: "plan", label: "План операции", icon: ListChecks },
+  { id: "plan", label: "План", icon: ListChecks },
   { id: "forecast", label: "Прогноз", icon: TrendingUp },
+  { id: "econ", label: "Экономика", icon: Activity },
   { id: "report", label: "Отчёт", icon: FileText },
 ] as const;
 
 export default function Stimulation() {
   const [tab, setTab] = useState<string>("diag");
+  const [wellName, setWellName] = useState("Скважина-1");
 
   // Reservoir input
   const [reservoir, setReservoir] = useState<ReservoirData>({
@@ -35,14 +43,75 @@ export default function Stimulation() {
     payZoneM: 12,
     reservoirPressureMPa: 22,
   });
-  const [damage, setDamage] = useState<DamageAssessment[]>([]);
+
+  // Production history (used for auto-diagnosis + Arps)
+  const [qInitial, setQInitial] = useState(80);
+  const [qCurrent, setQCurrent] = useState(35);
+  const [waterCut, setWaterCut] = useState(30);
+  const [monthsHistory, setMonthsHistory] = useState(18);
+  const [skinCurrent, setSkinCurrent] = useState(8);
+
+  // Mineralogy / drilling
+  const [clayPct, setClayPct] = useState(6);
+  const [montPct, setMontPct] = useState(2);
+  const [perfDensity, setPerfDensity] = useState(20);
+  const [mudType, setMudType] = useState<"wbm" | "obm" | "sbm">("wbm");
+  const [overbalanceMPa, setOverbalanceMPa] = useState(3);
+  const [soakDays, setSoakDays] = useState(7);
+
   const [selectedMethodId, setSelectedMethodId] = useState<string>("hcl-matrix");
   const [categoryFilter, setCategoryFilter] = useState<MethodCategory | "all">("all");
 
+  // Costs
+  const [costs, setCosts] = useState<CostInputs>(DEFAULT_COSTS);
+
+  // ── Derived: build synthetic history ───────────────────────────────
+  const history: ProductionPoint[] = useMemo(() => {
+    const pts: ProductionPoint[] = [];
+    const months = Math.max(3, monthsHistory);
+    const d = qInitial > 0 ? Math.log(Math.max(0.05, qCurrent) / qInitial) / months : 0;
+    for (let m = 0; m <= months; m++) {
+      const q = qInitial * Math.exp(d * m);
+      pts.push({ month: m, qOil: q, waterCut });
+    }
+    return pts;
+  }, [qInitial, qCurrent, monthsHistory, waterCut]);
+
+  const reservoirSnap: ReservoirSnapshot = useMemo(() => ({
+    Pr: reservoir.reservoirPressureMPa,
+    Pb: reservoir.reservoirPressureMPa * 0.7,
+    k_mD: reservoir.permeability_mD,
+    h: reservoir.payZoneM,
+    mu_cP: 1.2,
+    Bo: 1.15,
+    re: 250,
+    rw: 0.108,
+    skin: skinCurrent,
+    tempC: reservoir.temperatureC,
+  }), [reservoir, skinCurrent]);
+
+  const mineralogy: Mineralogy = useMemo(() => ({
+    quartz: 60, feldspar: 10, calcite: reservoir.collectorType === "carbonate" ? 80 : 5,
+    dolomite: 0, clay: clayPct, montmorillonite: montPct,
+  }), [clayPct, montPct, reservoir.collectorType]);
+
+  const drilling: DrillingHistory = useMemo(() => ({
+    mudType, mudWeight: 1.18, overbalanceMPa, soakTimeDays: soakDays,
+  }), [mudType, overbalanceMPa, soakDays]);
+
+  const damage = useMemo(
+    () => diagnoseDamage(reservoirSnap, mineralogy, reservoir.collectorType, history, drilling, perfDensity),
+    [reservoirSnap, mineralogy, reservoir.collectorType, history, drilling, perfDensity]
+  );
+
   const ranked = useMemo(() => rankMethods(reservoir, damage), [reservoir, damage]);
   const selected = useMemo(() => STIMULATION_METHODS.find((m) => m.id === selectedMethodId)!, [selectedMethodId]);
+  const selectedRanked = useMemo(() => ranked.find((r) => r.method.id === selectedMethodId), [ranked, selectedMethodId]);
 
-  const acidVol = useMemo(() => selected.volumePerMeterPay * reservoir.payZoneM * selected.numberOfCycles, [selected, reservoir]);
+  const acidVol = useMemo(
+    () => selected.volumePerMeterPay * reservoir.payZoneM * selected.numberOfCycles,
+    [selected, reservoir]
+  );
 
   const kinetics = useMemo(() => {
     if (selected.category !== "acid" && selected.category !== "foam" && selected.category !== "combo") return null;
@@ -72,11 +141,51 @@ export default function Stimulation() {
     const main = acidVol * selected.mainReagent.costPerM3;
     const adds = selected.additives.reduce((s, a) => {
       if (!a.required) return s;
-      const perM3 = a.unit === "%" ? a.concentration / 100 * 1000 : a.unit === "кг/м³" ? a.concentration : a.concentration;
+      const perM3 = a.unit === "%" ? a.concentration / 100 * 1000 : a.concentration;
       return s + acidVol * perM3 * a.costPerUnit;
     }, 0);
     return Math.round(main + adds);
   }, [selected, acidVol]);
+
+  // Forecast & economics
+  const arps = useMemo(() => fitArpsDecline(history), [history]);
+  const forecast = useMemo(() => {
+    const dS = (selected.skinReductionRange[0] + selected.skinReductionRange[1]) / 2;
+    const skinNew = Math.max(-2, skinCurrent - dS);
+    return forecastPostTreatment(arps, reservoirSnap, skinCurrent, skinNew, 36, 0.025);
+  }, [arps, reservoirSnap, skinCurrent, selected]);
+
+  const economics = useMemo(() => {
+    const c: CostInputs = { ...costs, chemicalCost: costEstimate, n2Cost: selected.requiresN2 ? 300_000 : 0 };
+    return calculateEconomics(forecast, c);
+  }, [forecast, costs, costEstimate, selected.requiresN2]);
+
+  const chartData = useMemo(() => forecast.map((p) => ({
+    month: p.month,
+    baseline: Number(p.qBaseline.toFixed(2)),
+    treated: Number(p.qTreated.toFixed(2)),
+    delta: Number(Math.max(0, p.deltaQ).toFixed(2)),
+    cum: Number(p.cumulativeDeltaM3.toFixed(0)),
+  })), [forecast]);
+
+  const cashflowData = useMemo(() => economics.monthly.filter((_, i) => i % 2 === 0).map((m) => ({
+    month: m.month,
+    profit: Math.round(m.cumulativeProfit / 1000),
+    npv: Math.round(m.cumulativeProfitDiscounted / 1000),
+  })), [economics]);
+
+  async function handleExport() {
+    try {
+      await exportStimulationDocx({
+        reservoir, method: selected, ranked: selectedRanked,
+        acidVolM3: acidVol, costEstimate, damage, kinetics, stages, forecast, economics, wellName,
+      });
+      toast.success("DOCX-отчёт сформирован");
+    } catch (e) {
+      console.error(e);
+      toast.error("Не удалось сформировать DOCX");
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -91,13 +200,8 @@ export default function Stimulation() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-        <p className="text-sm text-muted-foreground max-w-3xl">
-          Единый модуль выбора и расчёта обработки ПЗП: кислотные, пенные, комбинированные, азотные, растворительные
-          и физические методы. Диагностика → подбор технологии → расчёт → план → прогноз → отчёт.
-        </p>
-
         <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto">
+          <TabsList className="grid w-full grid-cols-4 sm:grid-cols-7 h-auto">
             {TABS.map((t) => (
               <TabsTrigger key={t.id} value={t.id} className="text-xs sm:text-sm py-2 gap-1.5">
                 <t.icon className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t.label}</span>
@@ -105,11 +209,15 @@ export default function Stimulation() {
             ))}
           </TabsList>
 
-          {/* DIAGNOSTICS */}
+          {/* ─────────── DIAGNOSTICS ─────────── */}
           <TabsContent value="diag" className="space-y-4 mt-4">
             <Card className="p-4 space-y-4">
-              <h2 className="font-semibold">Параметры скважины и коллектора</h2>
+              <h2 className="font-semibold">Параметры коллектора</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label>Имя скважины</Label>
+                  <Input value={wellName} onChange={(e) => setWellName(e.target.value)} />
+                </div>
                 <div className="space-y-1">
                   <Label>Тип коллектора</Label>
                   <Select value={reservoir.collectorType} onValueChange={(v) => setReservoir({ ...reservoir, collectorType: v as CollectorType })}>
@@ -126,19 +234,71 @@ export default function Stimulation() {
                 <Field label="Пористость, д.ед." value={reservoir.porosity} onChange={(v) => setReservoir({ ...reservoir, porosity: v })} step={0.01} />
                 <Field label="h эфф, м" value={reservoir.payZoneM} onChange={(v) => setReservoir({ ...reservoir, payZoneM: v })} step={0.5} />
                 <Field label="P пл, МПа" value={reservoir.reservoirPressureMPa} onChange={(v) => setReservoir({ ...reservoir, reservoirPressureMPa: v })} step={0.5} />
+                <Field label="Текущий скин" value={skinCurrent} onChange={setSkinCurrent} step={0.5} />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Полная диагностика (IPR Вогель/Дюпюи, скин-декомпозиция, кривые Арпса, авто-механизм повреждения)
-                доступна в модуле <Link to="/well-treatment/foam-opz" className="underline">Пенообработка ПЗП</Link>.
-                В этой версии задайте параметры вручную; результат диагностики используется ниже для ранжирования методов.
-              </p>
             </Card>
-            <Card className="p-4">
-              <Button onClick={() => setTab("method")}>Перейти к выбору метода →</Button>
+
+            <Card className="p-4 space-y-4">
+              <h2 className="font-semibold">История добычи</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <Field label="Q начальный, м³/сут" value={qInitial} onChange={setQInitial} />
+                <Field label="Q текущий, м³/сут" value={qCurrent} onChange={setQCurrent} />
+                <Field label="Обводнённость, %" value={waterCut} onChange={setWaterCut} />
+                <Field label="Период истории, мес" value={monthsHistory} onChange={setMonthsHistory} />
+              </div>
+            </Card>
+
+            <Card className="p-4 space-y-4">
+              <h2 className="font-semibold">Минералогия и заканчивание</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <Field label="Глинистость, %" value={clayPct} onChange={setClayPct} step={0.5} />
+                <Field label="Монтмориллонит, %" value={montPct} onChange={setMontPct} step={0.5} />
+                <Field label="Плотность перф., отв/м" value={perfDensity} onChange={setPerfDensity} />
+                <div className="space-y-1">
+                  <Label>Тип бурового раствора</Label>
+                  <Select value={mudType} onValueChange={(v) => setMudType(v as "wbm" | "obm" | "sbm")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="wbm">На водной основе (WBM)</SelectItem>
+                      <SelectItem value="obm">На нефтяной основе (OBM)</SelectItem>
+                      <SelectItem value="sbm">Синтетический (SBM)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Field label="Репрессия, МПа" value={overbalanceMPa} onChange={setOverbalanceMPa} step={0.5} />
+                <Field label="Контакт с буровым, сут" value={soakDays} onChange={setSoakDays} />
+              </div>
+            </Card>
+
+            <Card className="p-4 space-y-3">
+              <h2 className="font-semibold flex items-center gap-2">
+                <FlaskConical className="w-4 h-4" /> Выявленные механизмы повреждения ({damage.length})
+              </h2>
+              {damage.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Повреждения не выявлены при текущих параметрах. Проверьте историю добычи и минералогию.</p>
+              ) : (
+                <div className="space-y-2">
+                  {damage.map((d) => (
+                    <div key={d.mechanism} className="flex items-start justify-between gap-3 border-b border-border/40 pb-2">
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">{d.nameRu}</div>
+                        <div className="text-xs text-muted-foreground">{d.evidence}</div>
+                      </div>
+                      <div className="text-right">
+                        <Badge variant={d.severity === "high" ? "destructive" : d.severity === "medium" ? "default" : "secondary"}>
+                          {(d.probability * 100).toFixed(0)}%
+                        </Badge>
+                        <div className="text-[10px] text-muted-foreground mt-1">{d.severity}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button onClick={() => setTab("method")}>Перейти к подбору метода →</Button>
             </Card>
           </TabsContent>
 
-          {/* METHOD SELECTION */}
+          {/* ─────────── METHOD ─────────── */}
           <TabsContent value="method" className="space-y-4 mt-4">
             <div className="flex flex-wrap gap-2 items-center">
               <span className="text-sm text-muted-foreground">Фильтр:</span>
@@ -150,15 +310,15 @@ export default function Stimulation() {
               ))}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {ranked
-                .filter((r) => categoryFilter === "all" || r.method.category === categoryFilter)
+              {ranked.filter((r) => categoryFilter === "all" || r.method.category === categoryFilter)
                 .map((r) => (
-                  <MethodCard key={r.method.id} ranked={r} selected={selectedMethodId === r.method.id} onSelect={() => { setSelectedMethodId(r.method.id); toast.success(`Выбран: ${r.method.nameRu}`); setTab("calc"); }} />
+                  <MethodCard key={r.method.id} ranked={r} selected={selectedMethodId === r.method.id}
+                    onSelect={() => { setSelectedMethodId(r.method.id); toast.success(`Выбран: ${r.method.nameRu}`); setTab("calc"); }} />
                 ))}
             </div>
           </TabsContent>
 
-          {/* CALCULATION */}
+          {/* ─────────── CALCULATION ─────────── */}
           <TabsContent value="calc" className="space-y-4 mt-4">
             <Card className="p-4">
               <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -208,7 +368,7 @@ export default function Stimulation() {
             </Card>
           </TabsContent>
 
-          {/* PLAN */}
+          {/* ─────────── PLAN ─────────── */}
           <TabsContent value="plan" className="space-y-4 mt-4">
             {stages ? (
               <Card className="p-4 space-y-3">
@@ -221,8 +381,7 @@ export default function Stimulation() {
               </Card>
             ) : (
               <Card className="p-4 text-sm text-muted-foreground">
-                Детальная циклограмма формируется для кислотных и комбинированных методов. Для метода
-                «{selected.nameRu}» используйте параметры закачки из вкладки «Расчёт».
+                Детальная циклограмма формируется для кислотных и комбинированных методов.
               </Card>
             )}
 
@@ -240,9 +399,9 @@ export default function Stimulation() {
               </ol>
             </Card>
 
-            {selected.risks.length > 0 && (
+            {(selected.risks.length > 0 || selected.contraindications.length > 0) && (
               <Card className="p-4 border-amber-500/40">
-                <h3 className="font-semibold mb-2 flex items-center gap-2 text-amber-600 dark:text-amber-400"><AlertTriangle className="w-4 h-4" /> Риски и противопоказания</h3>
+                <h3 className="font-semibold mb-2 flex items-center gap-2 text-amber-600 dark:text-amber-400"><AlertTriangle className="w-4 h-4" /> Риски</h3>
                 <ul className="text-sm space-y-1 list-disc pl-5">
                   {selected.risks.map((r, i) => <li key={i}>{r}</li>)}
                   {selected.contraindications.map((c, i) => <li key={`c${i}`} className="text-destructive">Противопоказано: {c}</li>)}
@@ -251,31 +410,96 @@ export default function Stimulation() {
             )}
           </TabsContent>
 
-          {/* FORECAST (simple stub linking to foam module) */}
+          {/* ─────────── FORECAST ─────────── */}
           <TabsContent value="forecast" className="space-y-4 mt-4">
-            <Card className="p-4 space-y-3">
-              <h3 className="font-semibold">Прогноз эффекта</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Stat label="ΔS (мин)" value={`-${selected.skinReductionRange[0]}`} />
-                <Stat label="ΔS (макс)" value={`-${selected.skinReductionRange[1]}`} />
-                <Stat label="Эффект" value={`${selected.effectDurationMonths[0]}–${selected.effectDurationMonths[1]} мес`} />
-                <Stat label="Успешность" value={`${selected.successRate}%`} />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Stat label="Арпс qi" value={`${arps.qi.toFixed(1)} м³/сут`} />
+              <Stat label="Арпс di" value={`${(arps.di * 100).toFixed(2)} %/мес`} />
+              <Stat label="Тип падения" value={arps.type} sub={`b=${arps.b.toFixed(2)}, R²=${arps.r2.toFixed(2)}`} />
+              <Stat label="Накопленный ΔQ (36 мес)" value={`${(forecast[forecast.length - 1]?.cumulativeDeltaM3 ?? 0).toFixed(0)} м³`} />
+            </div>
+
+            <Card className="p-4">
+              <h3 className="font-semibold mb-3">Дебит: baseline vs treated (36 мес)</h3>
+              <div style={{ width: "100%", height: 280 }}>
+                <ResponsiveContainer>
+                  <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" label={{ value: "мес", position: "insideBottom", offset: -2, fontSize: 11 }} />
+                    <YAxis stroke="hsl(var(--muted-foreground))" label={{ value: "м³/сут", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+                    <Legend />
+                    <Line type="monotone" dataKey="baseline" stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" name="Без обработки" dot={false} />
+                    <Line type="monotone" dataKey="treated" stroke="hsl(var(--primary))" name="С обработкой" dot={false} strokeWidth={2} />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Полный прогноз IPR/Арпс/NPV доступен в модуле{" "}
-                <Link to="/well-treatment/foam-opz" className="underline">Пенообработка ПЗП</Link>{" "}
-                — там же экономика и tornado-анализ чувствительности.
-              </p>
+            </Card>
+
+            <Card className="p-4">
+              <h3 className="font-semibold mb-3">Накопленный прирост, м³</h3>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
+                    <YAxis stroke="hsl(var(--muted-foreground))" />
+                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+                    <Area type="monotone" dataKey="cum" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.2)" name="Накоп. ΔQ, м³" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </Card>
           </TabsContent>
 
-          {/* REPORT */}
+          {/* ─────────── ECONOMICS ─────────── */}
+          <TabsContent value="econ" className="space-y-4 mt-4">
+            <Card className="p-4 space-y-3">
+              <h3 className="font-semibold">Стоимостные параметры</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <Field label="Мобилизация, ₽" value={costs.mobilization} onChange={(v) => setCosts({ ...costs, mobilization: v })} step={50000} />
+                <Field label="Дней оборудование" value={costs.equipmentDays} onChange={(v) => setCosts({ ...costs, equipmentDays: v })} />
+                <Field label="Дней бригада" value={costs.crewDays} onChange={(v) => setCosts({ ...costs, crewDays: v })} />
+                <Field label="Цена нефти, ₽/м³" value={costs.oilPricePerM3} onChange={(v) => setCosts({ ...costs, oilPricePerM3: v })} step={500} />
+                <Field label="Ставка дисконт., д.ед./год" value={costs.discountRateAnnual} onChange={(v) => setCosts({ ...costs, discountRateAnnual: v })} step={0.01} />
+              </div>
+            </Card>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Stat label="Полная стоимость" value={`${(economics.totalCost / 1e6).toFixed(2)} млн ₽`} />
+              <Stat label="Доход" value={`${(economics.incrementalRevenue / 1e6).toFixed(2)} млн ₽`} />
+              <Stat label="NPV" value={`${(economics.npv / 1e6).toFixed(2)} млн ₽`} sub={`ROI ${economics.roi.toFixed(1)}%`} />
+              <Stat label="Окупаемость" value={economics.paybackMonths === null ? "не окуп." : `${economics.paybackMonths} мес`} />
+            </div>
+
+            <Card className="p-4">
+              <h3 className="font-semibold mb-3">Кэшфлоу (тыс. ₽)</h3>
+              <div style={{ width: "100%", height: 260 }}>
+                <ResponsiveContainer>
+                  <BarChart data={cashflowData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
+                    <YAxis stroke="hsl(var(--muted-foreground))" />
+                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+                    <Legend />
+                    <Bar dataKey="profit" fill="hsl(var(--primary))" name="Накоп. прибыль" />
+                    <Bar dataKey="npv" fill="hsl(var(--muted-foreground))" name="NPV" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          </TabsContent>
+
+          {/* ─────────── REPORT ─────────── */}
           <TabsContent value="report" className="space-y-4 mt-4">
             <Card className="p-4 space-y-3">
               <h3 className="font-semibold">DOCX-отчёт</h3>
-              <p className="text-sm text-muted-foreground">План-программа ОПЗ со всеми этапами, реагентами, режимами и рисками.</p>
-              <Button onClick={() => toast.info("Экспорт в DOCX будет добавлен в следующем релизе модуля стимуляции.")}>
-                <FileText className="w-4 h-4 mr-2" /> Скачать план-программу
+              <p className="text-sm text-muted-foreground">
+                Полная план-программа ОПЗ: коллектор, диагностика повреждений, выбранный метод,
+                рецептура, многоступенчатая обработка, кинетика, прогноз 36 мес, экономика.
+              </p>
+              <Button onClick={handleExport}>
+                <FileText className="w-4 h-4 mr-2" /> Скачать план-программу (DOCX)
               </Button>
             </Card>
           </TabsContent>
@@ -300,7 +524,6 @@ function Field({ label, value, onChange, step = 1 }: { label: string; value: num
     </div>
   );
 }
-
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <Card className="p-3">
@@ -310,7 +533,6 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
     </Card>
   );
 }
-
 function KV({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex justify-between border-b border-border/40 pb-1">
@@ -319,7 +541,6 @@ function KV({ k, v }: { k: string; v: string }) {
     </div>
   );
 }
-
 function StageRow({ n, fluid, volumePerMeterPay, volumeM3, purpose }: { n: string; fluid: string; volumePerMeterPay?: number; volumeM3: number; purpose: string }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-sm border-b border-border/40 pb-2">
@@ -334,7 +555,6 @@ function StageRow({ n, fluid, volumePerMeterPay, volumeM3, purpose }: { n: strin
     </div>
   );
 }
-
 function MethodCard({ ranked, selected, onSelect }: { ranked: RankedMethod; selected: boolean; onSelect: () => void }) {
   const c = scoreColor(ranked.score);
   const colorCls = c === "green" ? "border-emerald-500/60 bg-emerald-500/5" : c === "yellow" ? "border-amber-500/60 bg-amber-500/5" : "border-border";
