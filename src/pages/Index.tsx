@@ -825,6 +825,7 @@ export default function Index() {
                 <CasingRotationSection
                   wellData={wellData}
                   drillingFluid={drillingFluid}
+                  slurries={slurries}
                   centralizerIntervals={centralizerIntervals}
                 />
               </div>
