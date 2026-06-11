@@ -1,9 +1,13 @@
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
 import CopyImageButton from "./CopyImageButton";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid } from "@/lib/cementing-calculations";
 import { getSlurryHeight, annularVolumePerMeter } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
+import { rotationEfficiencyBoost } from "@/lib/casing-rotation-calculations";
 
 interface Props {
   wellData: WellData;
