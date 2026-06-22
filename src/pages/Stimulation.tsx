@@ -12,7 +12,10 @@ import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from "recharts";
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
-import { buildAcidStages, computeAcidKinetics } from "@/lib/stimulation-acid";
+import { buildAcidStages, computeAcidKinetics, optimalAcidRate } from "@/lib/stimulation-acid";
+import WormholeVisualization from "@/components/WormholeVisualization";
+import NpvTornado from "@/components/NpvTornado";
+import type { SensitivityParam } from "@/lib/foam-treatment-diagnostics";
 import {
   diagnoseDamage, fitArpsDecline, forecastPostTreatment, calculateEconomics, DEFAULT_COSTS,
   type DamageAssessment, type ReservoirSnapshot, type Mineralogy, type DrillingHistory,
