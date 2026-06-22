@@ -669,24 +669,8 @@ export default function FoamTreatmentDiagnostics({
           </div>
         </div>
 
-        {/* Tornado NPV sensitivity */}
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h4 className="text-sm font-semibold mb-2">Чувствительность NPV (±20…30%)</h4>
-          <ResponsiveContainer width="100%" height={Math.max(220, tornado.length * 38)}>
-            <BarChart data={tornado} layout="vertical" margin={{ left: 60, right: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis type="number" tickFormatter={(v) => `${(v / 1e6).toFixed(1)}M`} />
-              <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={120} />
-              <Tooltip formatter={(v: number) => fmtMoney(v)} />
-              <ReferenceLine x={0} stroke="hsl(var(--border))" />
-              <Bar dataKey="low" fill="hsl(0 70% 55%)" name="− изменение" />
-              <Bar dataKey="high" fill="hsl(160 60% 45%)" name="+ изменение" />
-            </BarChart>
-          </ResponsiveContainer>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            Длина бара = диапазон ΔNPV при изменении параметра. Параметры сверху — самые влиятельные.
-          </p>
-        </div>
+        {/* (Tornado NPV удалён — финансы вне инженерного контура) */}
+
         {/* ───── Hawkins waterfall — поэтапное снятие скина ───── */}
         <div className="rounded-xl border border-border bg-card p-4">
           <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
