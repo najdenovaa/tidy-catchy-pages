@@ -533,6 +533,7 @@ export default function CementPlug() {
         trajPoints, wocTimeHours,
         visualizationImage: vizImage, pressureChartImage: chartImage,
       };
+      try { sessionStorage.setItem("cement_plug_export_bundle_v1", JSON.stringify(exportData)); } catch {}
       await exportCementPlugToDocx(exportData);
       toast.success("Документ сохранён!");
     } catch (e) {

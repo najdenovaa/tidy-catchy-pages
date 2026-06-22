@@ -13,6 +13,8 @@ import {
 import { getSharedWell, type SharedWellData } from "./shared-well-store";
 import { normalizeCementingSnapshot } from "./cementing-normalizers";
 import { exportToDocx } from "./export-docx";
+import { exportCementPlugToDocx, type CementPlugExportData } from "./export-cement-plug-docx";
+import { exportCTDocx } from "./export-ct-docx";
 
 const BORDER = {
   top: { style: BorderStyle.SINGLE, size: 1, color: "999999" },
@@ -52,7 +54,7 @@ const FIELD_LABEL: Partial<Record<keyof SharedWellData, string>> = {
   mudDensity: "ρ ПЖ, кг/м³",
 };
 
-async function buildSummaryDocx(shared: SharedWellData, modules: string[]): Promise<Blob> {
+async function buildSummaryDocx(shared: SharedWellData, modules: string[], skipped: string[] = []): Promise<Blob> {
   const now = new Date();
   const rows: TableRow[] = [];
   for (const [key, label] of Object.entries(FIELD_LABEL)) {
@@ -101,6 +103,14 @@ async function buildSummaryDocx(shared: SharedWellData, modules: string[]): Prom
           children: [new TextRun({ text: "Состав пакета отчётов", bold: true, size: 28, color: "1A3A5C", font: "Calibri" })],
         }),
         ...modList,
+        ...(skipped.length ? [
+          new Paragraph({ children: [new TextRun({ text: "" })] }),
+          new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            children: [new TextRun({ text: "Пропущенные модули", bold: true, size: 26, color: "8A4A1A", font: "Calibri" })],
+          }),
+          ...skipped.map(s => new Paragraph({ children: [new TextRun({ text: `• ${s}`, size: 22, color: "8A4A1A", font: "Calibri" })] })),
+        ] : []),
         new Paragraph({ children: [new TextRun({ text: "" })] }),
         new Paragraph({
           children: [new TextRun({
@@ -138,21 +148,62 @@ async function tryBuildCementingDocx(): Promise<Blob | null> {
   }
 }
 
+async function tryBuildCementPlugDocx(): Promise<Blob | null> {
+  try {
+    const raw = sessionStorage.getItem("cement_plug_export_bundle_v1");
+    if (!raw) return null;
+    const data = JSON.parse(raw) as CementPlugExportData;
+    const blob = await exportCementPlugToDocx(data, { returnBlob: true }) as Blob | undefined;
+    return blob ?? null;
+  } catch (e) { console.error("CementPlug DOCX failed:", e); return null; }
+}
+
+async function tryBuildCTDocx(): Promise<Blob | null> {
+  try {
+    const raw = sessionStorage.getItem("ct_export_bundle_v1");
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    const blob = await exportCTDocx(data, { returnBlob: true }) as Blob | undefined;
+    return blob ?? null;
+  } catch (e) { console.error("CT DOCX failed:", e); return null; }
+}
+
 /** Сборка ZIP-пакета DOCX по скважине */
 export async function exportWellBatchZip() {
   const shared = getSharedWell();
   const zip = new JSZip();
   const included: string[] = [];
+  const skipped: string[] = [];
 
   // 1) Цементирование — программа
   const cementBlob = await tryBuildCementingDocx();
   if (cementBlob) {
     zip.file("01_Цементирование_программа.docx", cementBlob);
-    included.push("Цементирование — программа");
+    included.push("Цементирование — программа (с блоком ОЗЦ)");
+  } else {
+    skipped.push("Цементирование — сессия не найдена");
   }
 
-  // 2) Сводка по скважине (всегда)
-  const summary = await buildSummaryDocx(shared, included);
+  // 2) Цементный мост
+  const plugBlob = await tryBuildCementPlugDocx();
+  if (plugBlob) {
+    zip.file("02_Цементный_мост.docx", plugBlob);
+    included.push("Цементный мост");
+  } else {
+    skipped.push("Цементный мост — откройте модуль и выгрузите DOCX хотя бы раз");
+  }
+
+  // 3) ГНКТ
+  const ctBlob = await tryBuildCTDocx();
+  if (ctBlob) {
+    zip.file("03_ГНКТ.docx", ctBlob);
+    included.push("ГНКТ — отчёт");
+  } else {
+    skipped.push("ГНКТ — откройте модуль и выгрузите DOCX хотя бы раз");
+  }
+
+  // 0) Сводка по скважине (всегда)
+  const summary = await buildSummaryDocx(shared, included, skipped);
   zip.file("00_Сводка_по_скважине.docx", summary);
 
   // Имя архива
@@ -163,5 +214,5 @@ export async function exportWellBatchZip() {
   const blob = await zip.generateAsync({ type: "blob" });
   saveAs(blob, fname);
 
-  return { filename: fname, modules: included };
+  return { filename: fname, modules: included, skipped };
 }

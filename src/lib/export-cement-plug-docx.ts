@@ -78,7 +78,7 @@ export interface CementPlugExportData {
   pressureChartImage?: string;
 }
 
-export async function exportCementPlugToDocx(data: CementPlugExportData) {
+export async function exportCementPlugToDocx(data: CementPlugExportData, options?: { returnBlob?: boolean; filename?: string }): Promise<Blob | void> {
   const { inputs, results, fracGradient, wcRatio, slurryYield, additives, spacerAdditives, viscousPadAdditives, trajPoints } = data;
   const { well, plug, cement, spacer, wellFluid } = inputs;
   const padFluid = inputs.viscousPadFluid || spacer;
@@ -458,5 +458,6 @@ export async function exportCementPlugToDocx(data: CementPlugExportData) {
   });
 
   const blob = await Packer.toBlob(doc);
-  saveAs(blob, "Цементный_мост_программа.docx");
+  if (options?.returnBlob) return blob;
+  saveAs(blob, options?.filename ?? "Цементный_мост_программа.docx");
 }
