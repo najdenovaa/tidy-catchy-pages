@@ -34,6 +34,7 @@ import CTCleanoutTab from "@/components/CTCleanoutTab";
 import CTNitrogenKickoffTab from "@/components/CTNitrogenKickoffTab";
 import CTAcidStimTab from "@/components/CTAcidStimTab";
 import CTTripSimulator from "@/components/CTTripSimulator";
+import CTOperationSummary from "@/components/CTOperationSummary";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import CopyImageButton from "@/components/CopyImageButton";
@@ -760,7 +761,8 @@ export default function CoiledTubing() {
           ) : forces && limits && hydraulics && fatigue && (
             <Tabs value={tab} onValueChange={setTab}>
               <div className="overflow-x-auto scrollbar-hide mb-3">
-                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-10">
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-11">
+                  <TabsTrigger value="summary" className="gap-1 text-xs whitespace-nowrap">📋 Сводка</TabsTrigger>
                   <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Дохождение</TabsTrigger>
                   <TabsTrigger value="reach" className="gap-1 text-xs whitespace-nowrap">🎯 Reach</TabsTrigger>
                   <TabsTrigger value="trip" className="gap-1 text-xs whitespace-nowrap">🎬 СПО</TabsTrigger>
