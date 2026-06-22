@@ -38,6 +38,14 @@ export default function Stimulation() {
   const [tab, setTab] = useState<string>("diag");
   const [wellName, setWellName] = useState("Скважина-1");
 
+  // Тип скважины (нефть/газ/конденсат/нагнетательная)
+  const [fluidType, setFluidType] = useState<WellFluidType>("oil");
+  const [gasGravity, setGasGravity] = useState(0.68);
+  const [zFactorManual, setZFactorManual] = useState(0); // 0 = авто (Papay)
+  const [dewPointMPa, setDewPointMPa] = useState(18);
+  const [condGasRatio, setCondGasRatio] = useState(150);
+  const [bhpCurrentMPa, setBhpCurrentMPa] = useState(10);
+
   // Reservoir input
   const [reservoir, setReservoir] = useState<ReservoirData>({
     collectorType: "carbonate",
@@ -68,6 +76,10 @@ export default function Stimulation() {
 
   // Costs
   const [costs, setCosts] = useState<CostInputs>(DEFAULT_COSTS);
+
+  const isGas = fluidType === "gas" || fluidType === "gas_condensate";
+  const rateUnit = isGas ? "тыс.м³/сут" : "м³/сут";
+  const priceUnit = isGas ? "₽/тыс.м³" : "₽/м³";
 
   // ── Derived: build synthetic history ───────────────────────────────
   const history: ProductionPoint[] = useMemo(() => {
