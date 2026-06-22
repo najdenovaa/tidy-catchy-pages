@@ -855,13 +855,17 @@ export default function CoiledTubing() {
 
               {/* СПО Simulator */}
               <TabsContent value="trip" forceMount className={tab !== "trip" ? "hidden" : ""}>
-                <CTTripSimulator
-                  hookLoadData={hookLoadData}
-                  forceProfile={forceProfile}
-                  totalDepthMD={well.md}
-                  lockUpDepth={forces?.lockUpDepth ?? 0}
-                  helicalBucklingLoad={forces?.helicalBucklingLoad ?? 0}
-                />
+                {calculated && forces && hookLoadData.length > 0 ? (
+                  <CTTripSimulator
+                    hookLoadData={hookLoadData}
+                    forceProfile={forceProfile}
+                    totalDepthMD={well.md}
+                    lockUpDepth={forces.lockUpDepth ?? 0}
+                    helicalBucklingLoad={forces.helicalBucklingLoad ?? 0}
+                  />
+                ) : (
+                  <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Запустите расчёт, чтобы построить симулятор СПО.</CardContent></Card>
+                )}
               </TabsContent>
 
               {/* Cleanout (wellbore wash) */}
