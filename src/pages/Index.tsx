@@ -749,6 +749,12 @@ export default function Index() {
                         casingODmm={calcSnapshot.wellData.casingOD}
                       />
                     )}
+                    <GasMigrationCard
+                      wellData={calcSnapshot.wellData}
+                      drillingFluid={calcSnapshot.drillingFluid}
+                      slurries={calcSnapshot.slurries}
+                      annVPM={volumes.annularVolumePerMeter}
+                    />
                   </>
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
