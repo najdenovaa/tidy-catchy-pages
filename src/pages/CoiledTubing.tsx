@@ -853,6 +853,17 @@ export default function CoiledTubing() {
                 />
               </TabsContent>
 
+              {/* СПО Simulator */}
+              <TabsContent value="trip" forceMount className={tab !== "trip" ? "hidden" : ""}>
+                <CTTripSimulator
+                  hookLoadData={hookLoadData}
+                  forceProfile={forceProfile}
+                  totalDepthMD={well.md}
+                  lockUpDepth={forces?.lockUpDepth ?? 0}
+                  helicalBucklingLoad={forces?.helicalBucklingLoad ?? 0}
+                />
+              </TabsContent>
+
               {/* Cleanout (wellbore wash) */}
               <TabsContent value="cleanout" forceMount className={tab !== "cleanout" ? "hidden" : ""}>
                 <CTCleanoutTab ct={ct} well={well} fluid={fluid} pump={pump} operationType={operationType} />
