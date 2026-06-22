@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
-import { buildAcidStages, computeAcidKinetics, optimalAcidRate } from "@/lib/stimulation-acid";
+import { buildAcidStages, computeAcidKinetics, optimalAcidRate, computeAcidStoichiometry } from "@/lib/stimulation-acid";
 import WormholeVisualization from "@/components/WormholeVisualization";
 import {
   diagnoseDamage, fitArpsDecline, forecastPostTreatment,
@@ -194,6 +194,33 @@ export default function Stimulation() {
       tubingVolumeM3: 4.0,
     });
   }, [selected, reservoir]);
+
+  // Стехиометрия растворения породы (CaCO₃ / CaMg(CO₃)₂ / SiO₂)
+  const stoichiometry = useMemo(() => {
+    if (selected.category !== "acid" && selected.category !== "combo") return null;
+    const name = selected.mainReagent.name;
+    const hasHF = /HF/i.test(name);
+    // если в названии есть "доломит" — считаем по доломиту
+    const rock: "carbonate" | "dolomite" | "sandstone" =
+      reservoir.collectorType === "sandstone" ? "sandstone"
+      : /доломит|dolomit/i.test(name) ? "dolomite"
+      : "carbonate";
+    // HF % — попытка вытащить из строки "HCl 12% + HF 3%"
+    const hfMatch = name.match(/HF[^\d]*(\d+(?:\.\d+)?)\s*%/i);
+    const hfPct = hasHF ? (hfMatch ? parseFloat(hfMatch[1]) : 3) : 0;
+    // HCl % — основная концентрация, если HF указан отдельно — оставшаяся часть
+    const hclPct = hasHF ? selected.mainReagent.concentration - hfPct : selected.mainReagent.concentration;
+    return computeAcidStoichiometry({
+      acidVolumeM3: acidVol,
+      acidDensityKgM3: selected.mainReagent.density * 1000,
+      hclConcentrationPct: Math.max(0, hclPct),
+      hfConcentrationPct: hfPct,
+      rock,
+      preflushUsed: true, // мы строим 3-стадийную схему — preflush есть всегда
+      bhPressureMPa: reservoir.reservoirPressureMPa,
+      bhTemperatureC: reservoir.temperatureC,
+    });
+  }, [selected, reservoir, acidVol]);
 
   // Forecast (технический прогноз, без денег)
   const arps = useMemo(() => fitArpsDecline(history), [history]);
@@ -505,6 +532,42 @@ export default function Stimulation() {
               </Card>
             )}
 
+            {stoichiometry && (
+              <Card className="p-4 space-y-3">
+                <h3 className="font-semibold">Стехиометрия растворения породы</h3>
+                <div className="text-xs text-muted-foreground">
+                  Реакция:{" "}
+                  {stoichiometry.rock === "carbonate" && "2 HCl + CaCO₃ → CaCl₂ + H₂O + CO₂"}
+                  {stoichiometry.rock === "dolomite" && "4 HCl + CaMg(CO₃)₂ → CaCl₂ + MgCl₂ + 2 H₂O + 2 CO₂"}
+                  {stoichiometry.rock === "sandstone" && "4 HF + SiO₂ → SiF₄ + 2 H₂O   (+ HCl растворяет карбонатный цемент)"}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                  <KV k="HCl в реагенте" v={`${stoichiometry.hclMassKg.toFixed(0)} кг`} />
+                  {stoichiometry.hfMassKg > 0 && <KV k="HF в реагенте" v={`${stoichiometry.hfMassKg.toFixed(0)} кг`} />}
+                  <KV k="Растворено породы" v={`${stoichiometry.rockDissolvedKg.toFixed(0)} кг (${stoichiometry.rockDissolvedM3.toFixed(2)} м³)`} />
+                  {stoichiometry.co2VolumeStdM3 > 0 && (
+                    <>
+                      <KV k="CO₂ при н.у." v={`${stoichiometry.co2VolumeStdM3.toFixed(1)} м³ст`} />
+                      <KV k="CO₂ в забое" v={`${stoichiometry.co2VolumeBhM3.toFixed(2)} м³`} />
+                    </>
+                  )}
+                  <KV k="CaCl₂ (раствор)" v={`${stoichiometry.caCl2MassKg.toFixed(0)} кг`} />
+                  {stoichiometry.caF2RiskKg != null && (
+                    <KV k="⚠ CaF₂ риск" v={`до ${stoichiometry.caF2RiskKg.toFixed(0)} кг осадка`} />
+                  )}
+                </div>
+                {stoichiometry.notes.length > 0 && (
+                  <div className="space-y-1 pt-2 border-t border-border/40">
+                    {stoichiometry.notes.map((n, i) => (
+                      <div key={i} className={`text-xs ${n.startsWith("ВНИМАНИЕ") ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground"}`}>
+                        {n}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+
             <Card className="p-4">
               <h3 className="font-semibold mb-3">Рецептура и добавки</h3>
               <div className="space-y-2 text-sm">
@@ -542,12 +605,29 @@ export default function Stimulation() {
           <TabsContent value="plan" className="space-y-4 mt-4">
             {stages ? (
               <Card className="p-4 space-y-3">
-                <h3 className="font-semibold">Многоступенчатая обработка</h3>
-                <StageRow n="1. Preflush" {...stages.preflush} />
-                <StageRow n="2. Основная кислота" {...stages.mainAcid} />
-                <StageRow n="3. Afterflush" {...stages.afterflush} />
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h3 className="font-semibold">Многоступенчатая обработка</h3>
+                  <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded ${
+                    stages.scheme === "sandstone-glinokislota-3stage"
+                      ? "bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/40"
+                      : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/40"
+                  }`}>
+                    {stages.scheme === "sandstone-glinokislota-3stage" ? "Глинокислота · 3 стадии (обязательно)" : "Карбонатная схема · 3 стадии"}
+                  </span>
+                </div>
+                <StageRow n={stages.preflush.label} {...stages.preflush} />
+                <StageRow n={stages.mainAcid.label} {...stages.mainAcid} />
+                <StageRow n={stages.afterflush.label} {...stages.afterflush} />
                 <StageRow n="4. Продавка" fluid={stages.displacement.fluid} volumeM3={stages.displacement.volumeM3} purpose="Доставка реагентов в пласт" />
                 <div className="border-t pt-2 text-sm font-medium">Итого: {stages.totalVolumeM3.toFixed(1)} м³</div>
+                {stages.recommendations.length > 0 && (
+                  <div className="pt-2 border-t border-border/40 space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Технологические требования</div>
+                    {stages.recommendations.map((r, i) => (
+                      <div key={i} className="text-xs text-muted-foreground flex gap-2"><span>•</span><span>{r}</span></div>
+                    ))}
+                  </div>
+                )}
               </Card>
             ) : (
               <Card className="p-4 text-sm text-muted-foreground">
