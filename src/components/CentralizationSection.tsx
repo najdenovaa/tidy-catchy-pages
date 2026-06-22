@@ -1035,6 +1035,8 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
               centralization={results}
             />
           )}
+
+          <TriaxialCasingCard wellData={wellData} mudDensity={mudDensity} />
         </>
       )}
     </div>
