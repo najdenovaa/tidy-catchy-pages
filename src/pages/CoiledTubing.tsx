@@ -776,6 +776,15 @@ export default function CoiledTubing() {
                   <TabsTrigger value="3d" className="gap-1 text-xs whitespace-nowrap">🌐 3D</TabsTrigger>
                 </TabsList>
               </div>
+              {/* Summary */}
+              <TabsContent value="summary" forceMount className={tab !== "summary" ? "hidden" : ""}>
+                <CTOperationSummary
+                  operationType={operationType}
+                  ct={ct} well={wellWithTraj} fluid={fluid} pump={pump}
+                  forces={forces} fatigue={fatigue} risks={risks}
+                />
+              </TabsContent>
+
               {/* Forces */}
               <TabsContent value="forces" forceMount className={tab !== "forces" ? "hidden" : ""}>
                 <Card>
