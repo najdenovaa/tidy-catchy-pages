@@ -133,7 +133,7 @@ export default function FoamTreatmentSection() {
   const result = useMemo(() => calculateFoamTreatment(well, recipe, opts), [well, recipe, opts]);
   const cyclo = useMemo(() => buildCyclogram(well, recipe, opts, result), [well, recipe, opts, result]);
   const n2Physics = useMemo(() => {
-    if (!recipe.useN2 && recipe.id !== "n2_lift") return null;
+    if (!recipe.targetFoamQuality || recipe.targetFoamQuality <= 0) return null;
     const perfMidMD = (well.perfIntervalTopMD + well.perfIntervalBottomMD) / 2;
     const perfTVD = interpolateTVD(perfMidMD, well.trajectory);
     return computeFoamN2Physics({
