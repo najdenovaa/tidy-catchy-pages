@@ -19,6 +19,10 @@ import {
   type ProductionPoint, type CostInputs,
 } from "@/lib/foam-treatment-diagnostics";
 import { exportStimulationDocx } from "@/lib/export-stimulation-docx";
+import {
+  calculateGasIPR, diagnoseGasDamage, WELL_FLUID_LABEL,
+  type WellFluidType, type GasDamage,
+} from "@/lib/stimulation-gas-ipr";
 
 const TABS = [
   { id: "diag", label: "Диагностика", icon: FlaskConical },
@@ -33,6 +37,14 @@ const TABS = [
 export default function Stimulation() {
   const [tab, setTab] = useState<string>("diag");
   const [wellName, setWellName] = useState("Скважина-1");
+
+  // Тип скважины (нефть/газ/конденсат/нагнетательная)
+  const [fluidType, setFluidType] = useState<WellFluidType>("oil");
+  const [gasGravity, setGasGravity] = useState(0.68);
+  const [zFactorManual, setZFactorManual] = useState(0); // 0 = авто (Papay)
+  const [dewPointMPa, setDewPointMPa] = useState(18);
+  const [condGasRatio, setCondGasRatio] = useState(150);
+  const [bhpCurrentMPa, setBhpCurrentMPa] = useState(10);
 
   // Reservoir input
   const [reservoir, setReservoir] = useState<ReservoirData>({
@@ -64,6 +76,10 @@ export default function Stimulation() {
 
   // Costs
   const [costs, setCosts] = useState<CostInputs>(DEFAULT_COSTS);
+
+  const isGas = fluidType === "gas" || fluidType === "gas_condensate";
+  const rateUnit = isGas ? "тыс.м³/сут" : "м³/сут";
+  const priceUnit = isGas ? "₽/тыс.м³" : "₽/м³";
 
   // ── Derived: build synthetic history ───────────────────────────────
   const history: ProductionPoint[] = useMemo(() => {
@@ -103,6 +119,38 @@ export default function Stimulation() {
     () => diagnoseDamage(reservoirSnap, mineralogy, reservoir.collectorType, history, drilling, perfDensity),
     [reservoirSnap, mineralogy, reservoir.collectorType, history, drilling, perfDensity]
   );
+
+  // Gas IPR (Rawlins-Schellhardt) — считаем только для газовых типов
+  const gasIPR = useMemo(() => {
+    if (!isGas) return null;
+    return calculateGasIPR({
+      reservoirPressureMPa: reservoir.reservoirPressureMPa,
+      reservoirTempC: reservoir.temperatureC,
+      permeability_mD: reservoir.permeability_mD,
+      netPayM: reservoir.payZoneM,
+      drainageRadiusM: 250,
+      wellboreRadiusM: 0.108,
+      skin: skinCurrent,
+      gasGravity,
+      zFactor: zFactorManual > 0 ? zFactorManual : undefined,
+    });
+  }, [isGas, reservoir, skinCurrent, gasGravity, zFactorManual]);
+
+  const gasDamage: GasDamage[] = useMemo(() => {
+    if (!gasIPR) return [];
+    return diagnoseGasDamage({
+      fluidType,
+      reservoirPressureMPa: reservoir.reservoirPressureMPa,
+      bottomholePressureMPa: bhpCurrentMPa,
+      dewPointMPa: fluidType === "gas_condensate" ? dewPointMPa : undefined,
+      condensateGasRatio: fluidType === "gas_condensate" ? condGasRatio : undefined,
+      waterCutPct: waterCut,
+      permeability_mD: reservoir.permeability_mD,
+      aofMcmd: gasIPR.aofMcmd,
+      currentRateMcmd: qCurrent, // для газа qCurrent в тыс.м³/сут
+      nonDarcySkinAtAOF: gasIPR.nonDarcySkinAtAOF,
+    });
+  }, [gasIPR, fluidType, reservoir, bhpCurrentMPa, dewPointMPa, condGasRatio, waterCut, qCurrent]);
 
   const ranked = useMemo(() => rankMethods(reservoir, damage), [reservoir, damage]);
   const selected = useMemo(() => STIMULATION_METHODS.find((m) => m.id === selectedMethodId)!, [selectedMethodId]);
@@ -212,6 +260,39 @@ export default function Stimulation() {
           {/* ─────────── DIAGNOSTICS ─────────── */}
           <TabsContent value="diag" className="space-y-4 mt-4">
             <Card className="p-4 space-y-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h2 className="font-semibold">Тип скважины</h2>
+                <Badge variant="outline" className="text-xs">{WELL_FLUID_LABEL[fluidType]}</Badge>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="space-y-1 col-span-2 sm:col-span-1">
+                  <Label>Флюид</Label>
+                  <Select value={fluidType} onValueChange={(v) => setFluidType(v as WellFluidType)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(WELL_FLUID_LABEL) as WellFluidType[]).map((k) => (
+                        <SelectItem key={k} value={k}>{WELL_FLUID_LABEL[k]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {isGas && (
+                  <>
+                    <Field label="γ газа (возд.=1)" value={gasGravity} onChange={setGasGravity} step={0.01} />
+                    <Field label="Z-фактор (0=авто Papay)" value={zFactorManual} onChange={setZFactorManual} step={0.01} />
+                    <Field label="P забоя текущая, МПа" value={bhpCurrentMPa} onChange={setBhpCurrentMPa} step={0.5} />
+                  </>
+                )}
+                {fluidType === "gas_condensate" && (
+                  <>
+                    <Field label="P росы, МПа" value={dewPointMPa} onChange={setDewPointMPa} step={0.5} />
+                    <Field label="КГФ, см³/м³" value={condGasRatio} onChange={setCondGasRatio} step={10} />
+                  </>
+                )}
+              </div>
+            </Card>
+
+            <Card className="p-4 space-y-4">
               <h2 className="font-semibold">Параметры коллектора</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
@@ -241,12 +322,60 @@ export default function Stimulation() {
             <Card className="p-4 space-y-4">
               <h2 className="font-semibold">История добычи</h2>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Field label="Q начальный, м³/сут" value={qInitial} onChange={setQInitial} />
-                <Field label="Q текущий, м³/сут" value={qCurrent} onChange={setQCurrent} />
-                <Field label="Обводнённость, %" value={waterCut} onChange={setWaterCut} />
+                <Field label={`Q начальный, ${rateUnit}`} value={qInitial} onChange={setQInitial} />
+                <Field label={`Q текущий, ${rateUnit}`} value={qCurrent} onChange={setQCurrent} />
+                <Field label={isGas ? "Влагосодержание, %" : "Обводнённость, %"} value={waterCut} onChange={setWaterCut} />
                 <Field label="Период истории, мес" value={monthsHistory} onChange={setMonthsHistory} />
               </div>
             </Card>
+
+            {gasIPR && (
+              <Card className="p-4 space-y-3">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <Activity className="w-4 h-4" /> Газовый IPR (Rawlins-Schellhardt + не-Дарси)
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <KV k="AOF (Pwf→0)" v={`${gasIPR.aofMcmd.toFixed(1)} тыс.м³/сут`} />
+                  <KV k="Z-фактор" v={gasIPR.zFactor.toFixed(3)} />
+                  <KV k="μ газа" v={`${gasIPR.gasViscosityCP.toFixed(4)} сПз`} />
+                  <KV k="P_pc / T_pc" v={`${gasIPR.ppc.toFixed(2)} МПа / ${gasIPR.tpc.toFixed(0)} K`} />
+                  <KV k="Не-Дарси скин на AOF" v={gasIPR.nonDarcySkinAtAOF.toFixed(2)} />
+                  <KV k="Текущий q / AOF" v={`${(100 * qCurrent / Math.max(0.01, gasIPR.aofMcmd)).toFixed(0)}%`} />
+                </div>
+                <div style={{ width: "100%", height: 220 }}>
+                  <ResponsiveContainer>
+                    <LineChart data={gasIPR.iprCurve.map(p => ({ pwf: Number(p.pwf.toFixed(2)), q: Number(p.qGas.toFixed(2)) }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="q" stroke="hsl(var(--muted-foreground))" label={{ value: "q, тыс.м³/сут", position: "insideBottom", offset: -2, fontSize: 11 }} />
+                      <YAxis dataKey="pwf" stroke="hsl(var(--muted-foreground))" label={{ value: "Pwf, МПа", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                      <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+                      <Line type="monotone" dataKey="pwf" stroke="hsl(var(--primary))" name="IPR (q vs Pwf)" dot={false} strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                {gasDamage.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-border/40">
+                    <div className="text-sm font-medium">Газоспецифичные повреждения ({gasDamage.length})</div>
+                    {gasDamage.map((d) => (
+                      <div key={d.mechanism} className="border border-border/40 rounded p-2 space-y-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <div className="text-sm font-medium">{d.nameRu}</div>
+                            <div className="text-xs text-muted-foreground">{d.evidence}</div>
+                          </div>
+                          <Badge variant={d.severity === "high" ? "destructive" : d.severity === "medium" ? "default" : "secondary"}>
+                            {(d.probability * 100).toFixed(0)}%
+                          </Badge>
+                        </div>
+                        <div className="text-xs text-emerald-700 dark:text-emerald-300">
+                          <CheckCircle2 className="w-3 h-3 inline mr-1" />{d.recommendedTreatment}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
 
             <Card className="p-4 space-y-4">
               <h2 className="font-semibold">Минералогия и заканчивание</h2>
@@ -413,7 +542,7 @@ export default function Stimulation() {
           {/* ─────────── FORECAST ─────────── */}
           <TabsContent value="forecast" className="space-y-4 mt-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Stat label="Арпс qi" value={`${arps.qi.toFixed(1)} м³/сут`} />
+              <Stat label="Арпс qi" value={`${arps.qi.toFixed(1)} ${rateUnit}`} />
               <Stat label="Арпс di" value={`${(arps.di * 100).toFixed(2)} %/мес`} />
               <Stat label="Тип падения" value={arps.type} sub={`b=${arps.b.toFixed(2)}, R²=${arps.r2.toFixed(2)}`} />
               <Stat label="Накопленный ΔQ (36 мес)" value={`${(forecast[forecast.length - 1]?.cumulativeDeltaM3 ?? 0).toFixed(0)} м³`} />
@@ -426,7 +555,7 @@ export default function Stimulation() {
                   <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" label={{ value: "мес", position: "insideBottom", offset: -2, fontSize: 11 }} />
-                    <YAxis stroke="hsl(var(--muted-foreground))" label={{ value: "м³/сут", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                    <YAxis stroke="hsl(var(--muted-foreground))" label={{ value: rateUnit, angle: -90, position: "insideLeft", fontSize: 11 }} />
                     <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
                     <Legend />
                     <Line type="monotone" dataKey="baseline" stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" name="Без обработки" dot={false} />
@@ -460,7 +589,7 @@ export default function Stimulation() {
                 <Field label="Мобилизация, ₽" value={costs.mobilization} onChange={(v) => setCosts({ ...costs, mobilization: v })} step={50000} />
                 <Field label="Дней оборудование" value={costs.equipmentDays} onChange={(v) => setCosts({ ...costs, equipmentDays: v })} />
                 <Field label="Дней бригада" value={costs.crewDays} onChange={(v) => setCosts({ ...costs, crewDays: v })} />
-                <Field label="Цена нефти, ₽/м³" value={costs.oilPricePerM3} onChange={(v) => setCosts({ ...costs, oilPricePerM3: v })} step={500} />
+                <Field label={`Цена ${isGas ? "газа" : "нефти"}, ${priceUnit}`} value={costs.oilPricePerM3} onChange={(v) => setCosts({ ...costs, oilPricePerM3: v })} step={500} />
                 <Field label="Ставка дисконт., д.ед./год" value={costs.discountRateAnnual} onChange={(v) => setCosts({ ...costs, discountRateAnnual: v })} step={0.01} />
               </div>
             </Card>
