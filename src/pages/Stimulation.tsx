@@ -85,12 +85,9 @@ export default function Stimulation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Costs
-  const [costs, setCosts] = useState<CostInputs>(DEFAULT_COSTS);
-
   const isGas = fluidType === "gas" || fluidType === "gas_condensate";
   const rateUnit = isGas ? "тыс.м³/сут" : "м³/сут";
-  const priceUnit = isGas ? "₽/тыс.м³" : "₽/м³";
+
 
   // ── Derived: build synthetic history ───────────────────────────────
   const history: ProductionPoint[] = useMemo(() => {
