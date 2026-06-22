@@ -103,6 +103,14 @@ async function buildSummaryDocx(shared: SharedWellData, modules: string[], skipp
           children: [new TextRun({ text: "Состав пакета отчётов", bold: true, size: 28, color: "1A3A5C", font: "Calibri" })],
         }),
         ...modList,
+        ...(skipped.length ? [
+          new Paragraph({ children: [new TextRun({ text: "" })] }),
+          new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            children: [new TextRun({ text: "Пропущенные модули", bold: true, size: 26, color: "8A4A1A", font: "Calibri" })],
+          }),
+          ...skipped.map(s => new Paragraph({ children: [new TextRun({ text: `• ${s}`, size: 22, color: "8A4A1A", font: "Calibri" })] })),
+        ] : []),
         new Paragraph({ children: [new TextRun({ text: "" })] }),
         new Paragraph({
           children: [new TextRun({
