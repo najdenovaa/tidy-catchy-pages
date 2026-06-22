@@ -28,6 +28,7 @@ import * as XLSX from "xlsx";
 import TermsFooter from "@/components/TermsFooter";
 import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
 import CementPlugTypesCard from "@/components/CementPlugTypesCard";
+import { SharedWellCard } from "@/components/SharedWellCard";
 
 const SESSION_KEY = "cement_plug_session_v2";
 
@@ -670,6 +671,25 @@ export default function CementPlug() {
                 )}
               </CardContent>
             </Card>
+
+            <SharedWellCard
+              module="cement-plug"
+              current={{
+                wellDepthMD: well.wellDepthMD,
+                holeDiameter: well.holeDiameter,
+                casingShoe: well.casingShoe,
+                casingID: well.casingID,
+              }}
+              onApply={(d) => {
+                setWell((w) => ({
+                  ...w,
+                  wellDepthMD: d.wellDepthMD ?? w.wellDepthMD,
+                  holeDiameter: d.holeDiameter ?? w.holeDiameter,
+                  casingShoe: d.casingShoe ?? w.casingShoe,
+                  casingID: d.casingID ?? w.casingID,
+                }));
+              }}
+            />
 
             {/* Well data */}
             <Collapsible open={openSections.well} onOpenChange={() => toggle("well")}>
