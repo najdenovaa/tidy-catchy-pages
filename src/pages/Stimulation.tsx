@@ -72,7 +72,16 @@ export default function Stimulation() {
   const [soakDays, setSoakDays] = useState(7);
 
   const [selectedMethodId, setSelectedMethodId] = useState<string>("hcl-matrix");
-  const [categoryFilter, setCategoryFilter] = useState<MethodCategory | "all">("all");
+  const [searchParams] = useSearchParams();
+  const initialCategory = (searchParams.get("category") as MethodCategory | null) ?? null;
+  const [categoryFilter, setCategoryFilter] = useState<MethodCategory | "all">(initialCategory ?? "all");
+
+  // При первом заходе с ?category=foam (после редиректа со старой страницы пенообработки)
+  // — переключаемся сразу на вкладку выбора метода
+  useEffect(() => {
+    if (initialCategory) setTab("method");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Costs
   const [costs, setCosts] = useState<CostInputs>(DEFAULT_COSTS);
