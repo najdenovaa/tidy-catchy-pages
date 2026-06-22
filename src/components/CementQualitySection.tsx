@@ -2,7 +2,10 @@ import { useMemo, useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, CheckCircle2, Info, Lightbulb } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, CheckCircle2, Info, Lightbulb, Dices, Loader2 } from "lucide-react";
+import { runMonteCarloCQI, type MonteCarloResult } from "@/lib/cement-monte-carlo";
+import type { CQIInput } from "@/lib/cement-quality-index";
 import type { PressurePoint, WellData, SlurryInput, BufferFluid, DrillingFluid } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import {
@@ -261,6 +264,14 @@ export default function CementQualitySection(props: Props) {
           </CardContent>
         </Card>
       )}
+
+      <MonteCarloCard
+        cqiInput={{
+          wellData, slurries, buffers, drillingFluid,
+          centralization: centralizationResults,
+          pressureData, casingDepthMD, annVPM, prevCasingDepth, contactTimeByDepth,
+        }}
+      />
     </div>
   );
 }
@@ -495,6 +506,131 @@ function Legend() {
           <span><b>{g}</b> {labels[i]}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Monte Carlo card ────────────────────────────────────────────
+
+function MonteCarloCard({ cqiInput }: { cqiInput: CQIInput }) {
+  const [result, setResult] = useState<MonteCarloResult | null>(null);
+  const [running, setRunning] = useState(false);
+  const [iterations, setIterations] = useState(200);
+
+  const run = () => {
+    if (cqiInput.pressureData.length < 2) return;
+    setRunning(true);
+    // Defer to next tick so UI shows loader
+    setTimeout(() => {
+      try {
+        const r = runMonteCarloCQI(cqiInput, { iterations });
+        setResult(r);
+      } finally {
+        setRunning(false);
+      }
+    }, 30);
+  };
+
+  const successPct = result ? (result.successProbability * 100).toFixed(0) : "—";
+  const successColor = result
+    ? result.successProbability >= 0.8
+      ? "text-emerald-600 dark:text-emerald-400"
+      : result.successProbability >= 0.5
+      ? "text-amber-600 dark:text-amber-400"
+      : "text-red-600 dark:text-red-400"
+    : "text-muted-foreground";
+
+  return (
+    <Card>
+      <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Dices className="h-4 w-4" />
+          Анализ неопределённости (Monte Carlo)
+        </CardTitle>
+        <div className="flex items-center gap-2">
+          <Slider
+            value={[iterations]}
+            onValueChange={(v) => setIterations(v[0])}
+            min={50}
+            max={1000}
+            step={50}
+            className="w-32"
+          />
+          <span className="text-[10px] text-muted-foreground font-mono w-16">{iterations} итер.</span>
+          <Button size="sm" onClick={run} disabled={running}>
+            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Запуск"}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <p className="text-xs text-muted-foreground mb-3">
+          Случайно варьируются: кавернозность ±15%, реология (ПВ, ДНС) ±20%, эксцентриситет ±0.10.
+          Получаем распределение средней CQI по N сценариям — P10/P50/P90 и вероятность успеха (CQI ≥ 70, грейд B+).
+        </p>
+
+        {!result && !running && (
+          <div className="text-xs text-muted-foreground text-center py-6 border border-dashed rounded-lg">
+            Нажмите «Запуск», чтобы оценить устойчивость качества цементирования к неопределённости входных данных.
+          </div>
+        )}
+
+        {running && (
+          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground py-6">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Идёт расчёт {iterations} сценариев…
+          </div>
+        )}
+
+        {result && !running && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <MCStat label="P10 (пессим.)" value={result.p10.toFixed(0)} sub="низ. 10%" />
+              <MCStat label="P50 (медиана)" value={result.p50.toFixed(0)} sub="центр" highlight />
+              <MCStat label="P90 (оптим.)" value={result.p90.toFixed(0)} sub="верх. 10%" />
+              <MCStat label="Среднее" value={result.mean.toFixed(0)} sub={`σ ${result.stdev.toFixed(1)}`} />
+              <div className="rounded-lg border p-2">
+                <div className="text-[10px] text-muted-foreground">Вероятность успеха</div>
+                <div className={`text-base font-bold font-mono ${successColor}`}>{successPct}%</div>
+                <div className="text-[10px] text-muted-foreground">CQI ≥ 70</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[11px] text-muted-foreground mb-1.5">Распределение грейдов</div>
+              <div className="flex h-6 rounded-md overflow-hidden border">
+                {(["A", "B", "C", "D", "F"] as const).map((g) => {
+                  const frac = result.gradeDistribution[g] ?? 0;
+                  if (frac < 0.001) return null;
+                  return (
+                    <div
+                      key={g}
+                      className="flex items-center justify-center text-[10px] font-bold text-white"
+                      style={{ width: `${frac * 100}%`, background: gradeColor(g) }}
+                      title={`${g}: ${(frac * 100).toFixed(1)}%`}
+                    >
+                      {frac >= 0.07 ? `${g} ${(frac * 100).toFixed(0)}%` : ""}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="text-[10px] text-muted-foreground">
+              Выполнено сценариев: {result.iterations}. Чем уже разброс P10–P90, тем устойчивее проект к неопределённости.
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MCStat({ label, value, sub, highlight }: { label: string; value: string; sub?: string; highlight?: boolean }) {
+  return (
+    <div className={`rounded-lg border p-2 ${highlight ? "border-primary/50 bg-primary/5" : ""}`}>
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className="text-base font-bold font-mono">{value}</div>
+      {sub && <div className="text-[10px] text-muted-foreground">{sub}</div>}
     </div>
   );
 }
