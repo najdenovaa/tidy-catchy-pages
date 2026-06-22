@@ -1023,6 +1023,16 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             fluidPV={fluidPV}
             fluidYP={fluidYP}
           />
+
+          {results && results.length > 0 && (
+            <RunningForcesCard
+              wellData={wellData}
+              mudDensity={mudDensity}
+              frictionCoeff={frictionOpenhole}
+              centralizerIntervals={intervals}
+              centralization={results}
+            />
+          )}
         </>
       )}
     </div>
