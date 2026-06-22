@@ -120,6 +120,38 @@ export default function Stimulation() {
     [reservoirSnap, mineralogy, reservoir.collectorType, history, drilling, perfDensity]
   );
 
+  // Gas IPR (Rawlins-Schellhardt) — считаем только для газовых типов
+  const gasIPR = useMemo(() => {
+    if (!isGas) return null;
+    return calculateGasIPR({
+      reservoirPressureMPa: reservoir.reservoirPressureMPa,
+      reservoirTempC: reservoir.temperatureC,
+      permeability_mD: reservoir.permeability_mD,
+      netPayM: reservoir.payZoneM,
+      drainageRadiusM: 250,
+      wellboreRadiusM: 0.108,
+      skin: skinCurrent,
+      gasGravity,
+      zFactor: zFactorManual > 0 ? zFactorManual : undefined,
+    });
+  }, [isGas, reservoir, skinCurrent, gasGravity, zFactorManual]);
+
+  const gasDamage: GasDamage[] = useMemo(() => {
+    if (!gasIPR) return [];
+    return diagnoseGasDamage({
+      fluidType,
+      reservoirPressureMPa: reservoir.reservoirPressureMPa,
+      bottomholePressureMPa: bhpCurrentMPa,
+      dewPointMPa: fluidType === "gas_condensate" ? dewPointMPa : undefined,
+      condensateGasRatio: fluidType === "gas_condensate" ? condGasRatio : undefined,
+      waterCutPct: waterCut,
+      permeability_mD: reservoir.permeability_mD,
+      aofMcmd: gasIPR.aofMcmd,
+      currentRateMcmd: qCurrent, // для газа qCurrent в тыс.м³/сут
+      nonDarcySkinAtAOF: gasIPR.nonDarcySkinAtAOF,
+    });
+  }, [gasIPR, fluidType, reservoir, bhpCurrentMPa, dewPointMPa, condGasRatio, waterCut, qCurrent]);
+
   const ranked = useMemo(() => rankMethods(reservoir, damage), [reservoir, damage]);
   const selected = useMemo(() => STIMULATION_METHODS.find((m) => m.id === selectedMethodId)!, [selectedMethodId]);
   const selectedRanked = useMemo(() => ranked.find((r) => r.method.id === selectedMethodId), [ranked, selectedMethodId]);
