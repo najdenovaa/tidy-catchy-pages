@@ -3,6 +3,7 @@ import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TabbedNavigation from "@/components/TabbedNavigation";
 import SafetyTrafficLight from "@/components/SafetyTrafficLight";
+import ScenarioCompare from "@/components/ScenarioCompare";
 import InputSection from "@/components/InputSection";
 import PumpingSchedule from "@/components/PumpingSchedule";
 import HydraulicsSection from "@/components/HydraulicsSection";
