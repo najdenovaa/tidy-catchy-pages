@@ -556,6 +556,14 @@ export default function Index() {
 
         <main className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
 
+          <ScenarioCompare
+            wellData={wellData}
+            pressureResult={pressureResult}
+            volumes={volumes}
+            centralizationResults={centralizationResults}
+          />
+
+
           {fromAnalysis && (
             <div className="flex items-center gap-2 text-sm bg-primary/10 text-primary rounded-lg p-3 border border-primary/20">
               <span>📄</span>
