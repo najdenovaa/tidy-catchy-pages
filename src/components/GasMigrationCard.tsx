@@ -29,7 +29,7 @@ export default function GasMigrationCard({ wellData, drillingFluid, slurries, an
   const defaultLayer = gasLayers[0] ?? (wellData.reservoirLayers ?? [])[0];
 
   const [gasZoneTvd, setGasZoneTvd] = useState(
-    defaultLayer ? interpolateTVD(wellData.trajectory, defaultLayer.topMD) : Math.round(wellData.wellDepthTVD * 0.85),
+    defaultLayer ? interpolateTVD(defaultLayer.topMD, wellData.trajectory) : Math.round(wellData.wellDepthTVD * 0.85),
   );
   const [porePressureMPa, setPorePressureMPa] = useState(
     defaultLayer ? +(defaultLayer.porePressureGrad * gasZoneTvd / 1000).toFixed(2) : +(1.05 * 9.81 * gasZoneTvd / 1000).toFixed(2),
@@ -57,10 +57,10 @@ export default function GasMigrationCard({ wellData, drillingFluid, slurries, an
     const tailDens = tailSlurry.density > 100 ? tailSlurry.density : tailSlurry.density * 1000;
     const leadDens = leadSlurry ? (leadSlurry.density > 100 ? leadSlurry.density : leadSlurry.density * 1000) : undefined;
     const minTopMD = Math.min(...slurries.map(s => s.topDepthMD));
-    const tocTvd = interpolateTVD(wellData.trajectory, minTopMD);
-    const shoeTvd = interpolateTVD(wellData.trajectory, wellData.casingDepthMD);
+    const tocTvd = interpolateTVD(minTopMD, wellData.trajectory);
+    const shoeTvd = interpolateTVD(wellData.casingDepthMD, wellData.trajectory);
     const leadInterfaceTvd = leadSlurry && slurries.length > 1
-      ? interpolateTVD(wellData.trajectory, slurries[1].topDepthMD)
+      ? interpolateTVD(slurries[1].topDepthMD, wellData.trajectory)
       : undefined;
 
     return calculateGMS({
