@@ -108,23 +108,13 @@ export default function CementPlugTypesCard({
           <Mini k="Опрессовка треб." v={`${compliance.requirements.testPressureMPa.toFixed(1)} МПа`} />
         </div>
 
-        {/* Кривая UCS */}
-        <div>
-          <div className="text-xs font-medium mb-1">Набор прочности UCS(t)</div>
-          <div style={{ width: "100%", height: 200 }}>
-            <ResponsiveContainer>
-              <LineChart data={ucsCurve} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="h" stroke="hsl(var(--muted-foreground))" label={{ value: "ч", position: "insideBottom", offset: -2, fontSize: 10 }} />
-                <YAxis stroke="hsl(var(--muted-foreground))" label={{ value: "UCS, МПа", angle: -90, position: "insideLeft", fontSize: 10 }} />
-                <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
-                <ReferenceLine y={compliance.requirements.minCompressiveStrengthMPa} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: "min", fontSize: 10, fill: "hsl(var(--destructive))" }} />
-                <ReferenceLine x={wocHours} stroke="hsl(var(--primary))" strokeDasharray="2 2" label={{ value: "ОЗЦ", fontSize: 10, fill: "hsl(var(--primary))" }} />
-                <Line type="monotone" dataKey="ucs" stroke="hsl(var(--primary))" dot={false} strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        {/* Кривая UCS с анимацией ОЗЦ */}
+        <UcsAnimatedChart
+          curve={ucsCurve}
+          wocHours={wocHours}
+          minUcs={compliance.requirements.minCompressiveStrengthMPa}
+        />
+
 
         {/* Чек-лист соответствия */}
         <div className="space-y-1">
