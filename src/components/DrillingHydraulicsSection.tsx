@@ -342,6 +342,195 @@ export default function DrillingHydraulicsSection({ wellData, mudDensity, mudRhe
           </div>
         </CardContent>
       </Card>
+
+      {/* Gas Kick Tolerance (Part 3.3) */}
+      <GasKickToleranceCard wellData={wellData} mudDensity={mudDensity} />
+    </div>
+  );
+}
+
+function GasKickToleranceCard({ wellData, mudDensity }: { wellData: WellData; mudDensity: number }) {
+  const [porePressureGrad, setPorePressureGrad] = useState(1.05);
+  const [fracPressureGrad, setFracPressureGrad] = useState(1.65);
+  const [gasSG, setGasSG] = useState(0.65);
+  const [drillPipeOD, setDrillPipeOD] = useState(127);
+  const [influxBh, setInfluxBh] = useState(2.0);
+
+  const chartRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  const tvdShoe = wellData.prevCasingDepth || Math.min(wellData.wellDepthTVD * 0.5, 1500);
+  const prevID = wellData.prevCasingID || 220;
+
+  const kick = useMemo(() => {
+    if (!wellData.wellDepthTVD || wellData.wellDepthTVD <= 0 || tvdShoe <= 0) return null;
+    return calculateGasKick({
+      tvdBottom: wellData.wellDepthTVD,
+      tvdShoe,
+      holeDiameter: wellData.holeDiameter,
+      prevCasingID: prevID,
+      drillPipeOD,
+      mudDensity,
+      porePressureGrad,
+      fracPressureGradShoe: fracPressureGrad,
+      gasSpecificGravity: gasSG,
+      surfaceTempC: 20,
+      bottomTempC: wellData.bottomTempStatic,
+      influxVolumeBhM3: influxBh,
+    });
+  }, [wellData, mudDensity, porePressureGrad, fracPressureGrad, gasSG, drillPipeOD, influxBh, tvdShoe, prevID]);
+
+  const profile = useMemo(() => {
+    if (!kick || !wellData.wellDepthTVD) return null;
+    return kickMigrationProfile({
+      tvdBottom: wellData.wellDepthTVD,
+      tvdShoe,
+      holeDiameter: wellData.holeDiameter,
+      prevCasingID: prevID,
+      drillPipeOD,
+      mudDensity,
+      porePressureGrad,
+      fracPressureGradShoe: fracPressureGrad,
+      gasSpecificGravity: gasSG,
+      surfaceTempC: 20,
+      bottomTempC: wellData.bottomTempStatic,
+    }, influxBh, 25);
+  }, [kick, wellData, mudDensity, porePressureGrad, fracPressureGrad, gasSG, drillPipeOD, influxBh, tvdShoe, prevID]);
+
+  if (!kick) return null;
+
+  const ts = { backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" };
+  const profileData = profile?.points.map(p => ({
+    tvd: +p.tvdTop.toFixed(0),
+    volume: +p.volumeM3.toFixed(2),
+    height: +p.heightM.toFixed(1),
+    pShoe: +p.pShoeMPa.toFixed(2),
+    safe: p.safe,
+  })) ?? [];
+
+  const safe = kick.current?.safe ?? true;
+
+  return (
+    <Card>
+      <CardHeader className="pb-4">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Wind className="h-5 w-5 text-cyan-600" />
+          Сжимаемость газа · Kick Tolerance (Papay Z)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Inputs */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div>
+            <label className="text-xs text-muted-foreground">Град. пласт. давл., S.G.</label>
+            <input type="number" step="0.01" value={porePressureGrad} onChange={e => setPorePressureGrad(+e.target.value)}
+              className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Град. ГРП у башмака, S.G.</label>
+            <input type="number" step="0.01" value={fracPressureGrad} onChange={e => setFracPressureGrad(+e.target.value)}
+              className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">γ газа (возд.=1)</label>
+            <input type="number" step="0.01" value={gasSG} onChange={e => setGasSG(+e.target.value)}
+              className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">OD БТ, мм</label>
+            <input type="number" step="1" value={drillPipeOD} onChange={e => setDrillPipeOD(+e.target.value)}
+              className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Приток на забое, м³</label>
+            <input type="number" step="0.5" value={influxBh} onChange={e => setInfluxBh(+e.target.value)}
+              className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
+          </div>
+        </div>
+
+        {/* Z & gas density */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Metric label="Z (забой)" value={kick.zBottom.toFixed(3)} sub={`P=${kick.bhpShutInMPa.toFixed(1)} МПа`} />
+          <Metric label="Z (башмак)" value={kick.zShoe.toFixed(3)} sub={`P≈${(kick.bhpShutInMPa - mudDensity * 9.81 * (wellData.wellDepthTVD - tvdShoe) / 1e6).toFixed(1)} МПа`} />
+          <Metric label="ρ газа на забое" value={`${kick.gasDensityBottom.toFixed(0)} кг/м³`} />
+          <Metric label="ρ газа у башмака" value={`${kick.gasDensityShoe.toFixed(0)} кг/м³`} />
+        </div>
+
+        {/* Tolerance & shoe */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="border border-border rounded-lg p-3 bg-card">
+            <div className="text-xs text-muted-foreground mb-1">Допустимый объём кика (на забое)</div>
+            <div className="text-2xl font-bold text-emerald-600">{kick.maxKickVolumeBhM3.toFixed(2)} м³</div>
+            <div className="text-xs text-muted-foreground mt-0.5">высота у башмака: {kick.maxKickHeightShoeM.toFixed(0)} м</div>
+          </div>
+          <div className="border border-border rounded-lg p-3 bg-card">
+            <div className="text-xs text-muted-foreground mb-1">Давление ГРП у башмака</div>
+            <div className="text-2xl font-bold">{kick.fracPressureShoeMPa.toFixed(2)} МПа</div>
+            <div className="text-xs text-muted-foreground mt-0.5">гидростат: {kick.hydrostaticShoeMPa.toFixed(2)} МПа</div>
+          </div>
+          <div className={`border rounded-lg p-3 ${safe ? "border-emerald-500/40 bg-emerald-500/5" : "border-red-500/40 bg-red-500/5"}`}>
+            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+              {safe ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <AlertTriangle className="h-3.5 w-3.5 text-red-600" />}
+              Текущий приток {influxBh.toFixed(1)} м³
+            </div>
+            <div className={`text-2xl font-bold ${safe ? "text-emerald-600" : "text-red-600"}`}>
+              {kick.current ? `×${kick.current.expansionRatio.toFixed(1)}` : "—"}
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              запас по ГРП: {kick.current ? kick.current.shoeMarginMPa.toFixed(2) : "—"} МПа
+            </div>
+          </div>
+        </div>
+
+        {/* Migration profile chart */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm font-medium">Миграция пузыря: объём и давление у башмака vs TVD верха пузыря</div>
+            <CopyImageButton targetRef={profileRef} />
+          </div>
+          <div ref={profileRef} className="h-[320px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={profileData} margin={{ top: 5, right: 40, bottom: 5, left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis dataKey="tvd" reversed type="number" domain={['dataMin', 'dataMax']} label={{ value: 'TVD верха пузыря, м', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="L" label={{ value: 'V, м³', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="R" orientation="right" label={{ value: 'P у башмака, МПа', angle: 90, position: 'insideRight' }} tick={{ fontSize: 11 }} />
+                <Tooltip contentStyle={ts} />
+                <Legend />
+                <ReferenceLine yAxisId="R" y={kick.fracPressureShoeMPa} stroke="hsl(0,80%,55%)" strokeDasharray="4 4" label={{ value: 'P ГРП', fill: 'hsl(0,80%,55%)', fontSize: 11 }} />
+                <Line yAxisId="L" dataKey="volume" name="Объём, м³" stroke="hsl(200,70%,50%)" strokeWidth={2} dot={false} />
+                <Line yAxisId="R" dataKey="pShoe" name="P башмак, МПа" stroke="hsl(35,80%,50%)" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Warnings */}
+        {kick.warnings.length > 0 && (
+          <div className="space-y-1">
+            {kick.warnings.map((w, i) => (
+              <div key={i} className="text-xs flex items-start gap-2 p-2 rounded bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>{w}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="text-[11px] text-muted-foreground border-t border-border pt-2">
+          Модель: Z-фактор по Papay, псевдо-критические параметры по Sutton (γ_g). Допустимый объём кика — бинарный поиск V_bh, при котором давление у башмака после полной миграции газа ≤ P_ГРП.
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="border border-border rounded-lg p-3 bg-card">
+      <div className="text-xs text-muted-foreground mb-1">{label}</div>
+      <div className="text-lg font-semibold">{value}</div>
+      {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
     </div>
   );
 }
