@@ -1134,6 +1134,16 @@ export default function CoiledTubing() {
                     </div>
                   </CardContent>
                 </Card>
+
+                <div className="mt-4">
+                  <CTFatigueAdvancedCard
+                    ct={ct}
+                    reelSize={reelSize}
+                    totalLengthM={ct.length}
+                    currentDepthM={well.md}
+                    currentPressureMPa={pump.surfacePressure || (hydraulics?.dpTotal ?? 0)}
+                  />
+                </div>
               </TabsContent>
             </Tabs>
           )}
