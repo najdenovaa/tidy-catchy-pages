@@ -534,7 +534,7 @@ export default function Stimulation() {
                         penetrationRadiusM={kinetics.penetrationRadius}
                         wellboreRadiusM={0.108}
                         damkohler={damkohler}
-                        reservoirHeightM={reservoir.netPay_m ?? 10}
+                        reservoirHeightM={reservoir.payZoneM ?? 10}
                       />
                     </>
                   );
