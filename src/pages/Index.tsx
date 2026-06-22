@@ -18,6 +18,7 @@ import ContactTimeSection from "@/components/ContactTimeSection";
 import CementQualitySection from "@/components/CementQualitySection";
 import MudRemovalEfficiencyCard from "@/components/MudRemovalEfficiencyCard";
 import GasMigrationCard from "@/components/GasMigrationCard";
+import CementSheathIntegrityCard from "@/components/CementSheathIntegrityCard";
 import TrajectorySection from "@/components/TrajectorySection";
 import WellboreStabilityCard from "@/components/WellboreStabilityCard";
 import DrillingHydraulicsSection from "@/components/DrillingHydraulicsSection";
@@ -757,6 +758,7 @@ export default function Index() {
                       slurries={calcSnapshot.slurries}
                       annVPM={volumes.annularVolumePerMeter}
                     />
+                    <CementSheathIntegrityCard wellData={calcSnapshot.wellData} />
                   </>
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
