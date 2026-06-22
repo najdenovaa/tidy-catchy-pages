@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TabbedNavigation from "@/components/TabbedNavigation";
+import SafetyTrafficLight from "@/components/SafetyTrafficLight";
 import InputSection from "@/components/InputSection";
 import PumpingSchedule from "@/components/PumpingSchedule";
 import HydraulicsSection from "@/components/HydraulicsSection";
@@ -541,6 +542,12 @@ export default function Index() {
           </div>
         </div>
       </header>
+
+      <SafetyTrafficLight
+        pressureResult={pressureResult}
+        volumes={volumes}
+        centralizationResults={centralizationResults}
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabbedNavigation activeTab={activeTab} onTabChange={setActiveTab} />
