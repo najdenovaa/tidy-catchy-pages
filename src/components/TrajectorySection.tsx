@@ -1,10 +1,13 @@
 import { useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from "recharts";
+import { Slider } from "@/components/ui/slider";
 import CopyImageButton from "./CopyImageButton";
 import type { WellData } from "@/lib/cementing-calculations";
 import { calculateTrajectory, type TrajectoryCalcPoint, type TrajectoryResults } from "@/lib/trajectory-calculations";
 import { DebouncedInput } from "./DebouncedInput";
+import { transientBHCT, thickeningTimeMultiplier } from "@/lib/transient-bhct";
+import { Thermometer } from "lucide-react";
 
 interface Props {
   wellData: WellData;
@@ -104,6 +107,15 @@ export default function TrajectorySection({ wellData }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      <TransientBHCTCard
+        bhstC={results.bottomTempStaticC}
+        surfaceTempC={surfaceTemp}
+        depthTVD={wellData.wellDepthTVD || wellData.wellDepthMD}
+        holeDiameterMm={wellData.holeDiameter}
+      />
+
+
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* 1. Vertical Section */}
