@@ -21,6 +21,7 @@ import FleetDetail from "./pages/FleetDetail";
 import Terms from "./pages/Terms";
 import FoamTreatment from "./pages/FoamTreatment";
 import Stimulation from "./pages/Stimulation";
+import WOCSimulator from "./pages/WOCSimulator";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,6 +38,7 @@ const App = () => (
           <Route path="/cementing/program" element={<Index />} />
           <Route path="/cementing/plugs" element={<CementPlug />} />
           <Route path="/cementing/analysis" element={<AnalysisPage />} />
+          <Route path="/cementing/woc" element={<WOCSimulator />} />
           <Route path="/drilling-fluids" element={<ComingSoon />} />
           <Route path="/fracturing" element={<ComingSoon />} />
           <Route path="/well-design" element={<ComingSoon />} />
