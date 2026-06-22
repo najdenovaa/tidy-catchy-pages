@@ -26,6 +26,7 @@ import {
   calculateGasIPR, diagnoseGasDamage, WELL_FLUID_LABEL,
   type WellFluidType, type GasDamage,
 } from "@/lib/stimulation-gas-ipr";
+import { SharedWellCard } from "@/components/SharedWellCard";
 
 const TABS = [
   { id: "diag", label: "Диагностика", icon: FlaskConical },
@@ -271,6 +272,22 @@ export default function Stimulation() {
 
           {/* ─────────── DIAGNOSTICS ─────────── */}
           <TabsContent value="diag" className="space-y-4 mt-4">
+            <SharedWellCard
+              module="stimulation"
+              current={{
+                wellName,
+                reservoirPressureMPa: reservoir.reservoirPressureMPa,
+                reservoirTempC: reservoir.temperatureC,
+              }}
+              onApply={(d) => {
+                if (d.wellName) setWellName(d.wellName);
+                setReservoir((r) => ({
+                  ...r,
+                  reservoirPressureMPa: d.reservoirPressureMPa ?? r.reservoirPressureMPa,
+                  temperatureC: d.reservoirTempC ?? r.temperatureC,
+                }));
+              }}
+            />
             <Card className="p-4 space-y-4">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <h2 className="font-semibold">Тип скважины</h2>
