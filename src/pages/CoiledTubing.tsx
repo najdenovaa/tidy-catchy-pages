@@ -749,6 +749,7 @@ export default function CoiledTubing() {
                 <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-10">
                   <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Дохождение</TabsTrigger>
                   <TabsTrigger value="reach" className="gap-1 text-xs whitespace-nowrap">🎯 Reach</TabsTrigger>
+                  <TabsTrigger value="trip" className="gap-1 text-xs whitespace-nowrap">🎬 СПО</TabsTrigger>
                   <TabsTrigger value="cleanout" className="gap-1 text-xs whitespace-nowrap">🧹 Промывка</TabsTrigger>
                   <TabsTrigger value="n2" className="gap-1 text-xs whitespace-nowrap">💨 N₂ Освоение</TabsTrigger>
                   <TabsTrigger value="acid" className="gap-1 text-xs whitespace-nowrap">🧪 Кислота</TabsTrigger>
