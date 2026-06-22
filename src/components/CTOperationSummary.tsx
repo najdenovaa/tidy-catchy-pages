@@ -96,7 +96,7 @@ export default function CTOperationSummary({
   ];
 
   const reachOk = forces ? (forces.lockUpDepth === 0 || forces.lockUpDepth >= well.md * 0.95) : false;
-  const fatiguePct = fatigue ? Math.min(100, (fatigue.cycleUsage ?? 0) * 100) : 0;
+  const fatiguePct = fatigue ? Math.min(100, fatigue.fatigueLifeUsed ?? 0) : 0;
 
   return (
     <div className="space-y-3">
