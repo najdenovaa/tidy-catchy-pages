@@ -605,12 +605,29 @@ export default function Stimulation() {
           <TabsContent value="plan" className="space-y-4 mt-4">
             {stages ? (
               <Card className="p-4 space-y-3">
-                <h3 className="font-semibold">Многоступенчатая обработка</h3>
-                <StageRow n="1. Preflush" {...stages.preflush} />
-                <StageRow n="2. Основная кислота" {...stages.mainAcid} />
-                <StageRow n="3. Afterflush" {...stages.afterflush} />
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h3 className="font-semibold">Многоступенчатая обработка</h3>
+                  <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded ${
+                    stages.scheme === "sandstone-glinokislota-3stage"
+                      ? "bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/40"
+                      : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/40"
+                  }`}>
+                    {stages.scheme === "sandstone-glinokislota-3stage" ? "Глинокислота · 3 стадии (обязательно)" : "Карбонатная схема · 3 стадии"}
+                  </span>
+                </div>
+                <StageRow n={stages.preflush.label} {...stages.preflush} />
+                <StageRow n={stages.mainAcid.label} {...stages.mainAcid} />
+                <StageRow n={stages.afterflush.label} {...stages.afterflush} />
                 <StageRow n="4. Продавка" fluid={stages.displacement.fluid} volumeM3={stages.displacement.volumeM3} purpose="Доставка реагентов в пласт" />
                 <div className="border-t pt-2 text-sm font-medium">Итого: {stages.totalVolumeM3.toFixed(1)} м³</div>
+                {stages.recommendations.length > 0 && (
+                  <div className="pt-2 border-t border-border/40 space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Технологические требования</div>
+                    {stages.recommendations.map((r, i) => (
+                      <div key={i} className="text-xs text-muted-foreground flex gap-2"><span>•</span><span>{r}</span></div>
+                    ))}
+                  </div>
+                )}
               </Card>
             ) : (
               <Card className="p-4 text-sm text-muted-foreground">
