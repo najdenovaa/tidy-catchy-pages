@@ -19,6 +19,10 @@ import {
   type ProductionPoint, type CostInputs,
 } from "@/lib/foam-treatment-diagnostics";
 import { exportStimulationDocx } from "@/lib/export-stimulation-docx";
+import {
+  calculateGasIPR, diagnoseGasDamage, WELL_FLUID_LABEL,
+  type WellFluidType, type GasDamage,
+} from "@/lib/stimulation-gas-ipr";
 
 const TABS = [
   { id: "diag", label: "Диагностика", icon: FlaskConical },
