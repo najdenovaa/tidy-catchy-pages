@@ -132,13 +132,8 @@ export default function FoamTreatmentDiagnostics({
     { rate: 350, pressure: 21 },
   ]);
 
-  const [oilPrice, setOilPrice] = useState(35_000);
-  const [chemCost, setChemCost] = useState(150_000);
-  const [n2Cost, setN2Cost] = useState(120_000);
-  const [crewDays, setCrewDays] = useState(2);
-  const [equipDays, setEquipDays] = useState(2);
-
   /** Сколько от рассчитанного ΔS реально достигнем (0..1). */
+
   const [efficiencyFactor, setEfficiencyFactor] = useState(0.8);
   /** Скорость возврата скина, %/мес */
   const [skinRecoveryPct, setSkinRecoveryPct] = useState(2);
