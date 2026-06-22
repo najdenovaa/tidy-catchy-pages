@@ -542,7 +542,7 @@ export default function Stimulation() {
           {/* ─────────── FORECAST ─────────── */}
           <TabsContent value="forecast" className="space-y-4 mt-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Stat label="Арпс qi" value={`${arps.qi.toFixed(1)} м³/сут`} />
+              <Stat label="Арпс qi" value={`${arps.qi.toFixed(1)} ${rateUnit}`} />
               <Stat label="Арпс di" value={`${(arps.di * 100).toFixed(2)} %/мес`} />
               <Stat label="Тип падения" value={arps.type} sub={`b=${arps.b.toFixed(2)}, R²=${arps.r2.toFixed(2)}`} />
               <Stat label="Накопленный ΔQ (36 мес)" value={`${(forecast[forecast.length - 1]?.cumulativeDeltaM3 ?? 0).toFixed(0)} м³`} />
