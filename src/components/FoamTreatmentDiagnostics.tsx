@@ -605,64 +605,8 @@ export default function FoamTreatmentDiagnostics({
           </div>
         </div>
 
-        {/* ───── Экономика ───── */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-          <div className="flex items-center gap-2">
-            <Wallet className="w-5 h-5 text-primary" />
-            <h4 className="text-sm font-semibold">Экономика операции</h4>
-          </div>
+        {/* (блок «Экономика операции» удалён — финансы вне инженерного контура) */}
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Реагенты, ₽</Label>
-              <Input type="number" value={chemCost} onChange={(e) => setChemCost(num(e.target.value))} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">N₂, ₽</Label>
-              <Input type="number" value={n2Cost} onChange={(e) => setN2Cost(num(e.target.value))} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Техника, сут</Label>
-              <Input type="number" step="0.5" value={equipDays} onChange={(e) => setEquipDays(num(e.target.value))} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Бригада КРС, сут</Label>
-              <Input type="number" step="0.5" value={crewDays} onChange={(e) => setCrewDays(num(e.target.value))} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Цена нефти, ₽/м³</Label>
-              <Input type="number" value={oilPrice} onChange={(e) => setOilPrice(num(e.target.value))} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <MetricBox label="Затраты" value={fmtMoney(economics.totalCost)} tone="warn" />
-            <MetricBox label="Доп. добыча 36 мес" value={`${fmt(economics.incrementalOilM3, 0)} м³`} />
-            <MetricBox label="Окупаемость" value={economics.paybackMonths !== null ? `${economics.paybackMonths} мес` : "—"}
-              tone={economics.paybackMonths !== null && economics.paybackMonths <= 12 ? "ok" : "warn"} />
-            <MetricBox label="ROI" value={`${fmt(economics.roi, 0)}%`} tone={economics.roi > 100 ? "ok" : "warn"} />
-            <MetricBox label="Чист. прибыль" value={fmtMoney(economics.netProfit)}
-              tone={economics.netProfit > 0 ? "ok" : "danger"} />
-            <MetricBox label={`NPV @ ${(DEFAULT_COSTS.discountRateAnnual * 100).toFixed(0)}%`}
-              value={fmtMoney(economics.npv)} tone={economics.npv > 0 ? "ok" : "danger"} />
-          </div>
-
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={economics.monthly}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="month" label={{ value: "Мес.", position: "insideBottom", offset: -3 }} />
-              <YAxis tickFormatter={(v) => `${(v / 1e6).toFixed(1)}M`} label={{ value: "₽", angle: -90, position: "insideLeft" }} />
-              <Tooltip formatter={(v: number) => fmtMoney(v)} />
-              <Legend />
-              <ReferenceLine y={0} stroke="hsl(var(--border))" />
-              <Line dataKey="cumulativeProfit" stroke="hsl(217 91% 60%)" dot={false} name="Накопл. прибыль" />
-              <Line dataKey="cumulativeProfitDiscounted" stroke="hsl(280 70% 60%)" strokeDasharray="4 4" dot={false} name="NPV (диск.)" />
-            </LineChart>
-          </ResponsiveContainer>
-          <p className="text-[10px] text-muted-foreground">
-            Точка пересечения с нулём = срок окупаемости. Дисконтированный денежный поток учитывает ставку {(DEFAULT_COSTS.discountRateAnnual * 100).toFixed(0)}% годовых.
-          </p>
-        </div>
 
         {/* ───── Гидродинамика закачки + реология пены ───── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
