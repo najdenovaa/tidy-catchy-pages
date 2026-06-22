@@ -89,7 +89,7 @@ export interface FoamDiagnosticsBundle {
   damage: DamageAssessment[];
   arps: { qi: number; di: number; b: number; r2: number; type: string };
   forecast: { incrementalOilM3: number; firstYearBoostPct: number };
-  economics: { totalCost: number; netProfit: number; roi: number; npv: number; paybackMonths: number | null };
+  economics?: { totalCost: number; netProfit: number; roi: number; npv: number; paybackMonths: number | null };
   waterfall: WaterfallStage[];
   srt: StepRateInterpretation;
   injectivityBefore: number;
