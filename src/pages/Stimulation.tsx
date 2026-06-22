@@ -645,7 +645,47 @@ export default function Stimulation() {
                 </ResponsiveContainer>
               </div>
             </Card>
+
+            {/* Tornado: чувствительность NPV */}
+            <Card className="p-4">
+              {(() => {
+                const baseNPV = economics.npv;
+                const revenueDisc = baseNPV + economics.totalCost;       // выручка дисконтированная
+                const baseOilPrice = costs.oilPricePerM3;
+                const baseChem = costEstimate;
+                const baseDeltaSkin = (selected.skinReductionRange[0] + selected.skinReductionRange[1]) / 2;
+                const baseMobil = costs.mobilization;
+                const params: SensitivityParam[] = [
+                  {
+                    name: `Цена ${isGas ? "газа" : "нефти"}`,
+                    baseValue: baseOilPrice,
+                    variation: 0.25,
+                    evaluate: (v) => revenueDisc * (v / baseOilPrice) - economics.totalCost,
+                  },
+                  {
+                    name: "Стоимость реагентов",
+                    baseValue: baseChem,
+                    variation: 0.3,
+                    evaluate: (v) => baseNPV - (v - baseChem),
+                  },
+                  {
+                    name: "Снятие скина ΔS",
+                    baseValue: baseDeltaSkin,
+                    variation: 0.4,
+                    evaluate: (v) => revenueDisc * (v / Math.max(0.1, baseDeltaSkin)) - economics.totalCost,
+                  },
+                  {
+                    name: "Мобилизация",
+                    baseValue: baseMobil,
+                    variation: 0.3,
+                    evaluate: (v) => baseNPV - (v - baseMobil),
+                  },
+                ];
+                return <NpvTornado baseNPV={baseNPV} params={params} />;
+              })()}
+            </Card>
           </TabsContent>
+
 
           {/* ─────────── REPORT ─────────── */}
           <TabsContent value="report" className="space-y-4 mt-4">
