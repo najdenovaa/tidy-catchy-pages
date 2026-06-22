@@ -555,7 +555,7 @@ export default function Stimulation() {
                   <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" label={{ value: "мес", position: "insideBottom", offset: -2, fontSize: 11 }} />
-                    <YAxis stroke="hsl(var(--muted-foreground))" label={{ value: "м³/сут", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                    <YAxis stroke="hsl(var(--muted-foreground))" label={{ value: rateUnit, angle: -90, position: "insideLeft", fontSize: 11 }} />
                     <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
                     <Legend />
                     <Line type="monotone" dataKey="baseline" stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" name="Без обработки" dot={false} />
