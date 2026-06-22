@@ -475,6 +475,63 @@ export default function FoamTreatmentSection() {
             </ResponsiveContainer>
           </ChartBlock>
 
+          {/* Физика N₂: сжатие по глубине + энергия расширения */}
+          {n2Physics && (
+            <ChartBlock
+              title="Физика N₂ — сжатие по глубине и энергия расширения"
+              subtitle="Z-фактор по Papay, плотность N₂, локальный FQ; изотермическая работа стравливания"
+            >
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3 text-xs">
+                <MiniStat label="N₂ ст. усл." value={`${n2Physics.n2VolumeStdM3.toFixed(0)} м³ст / цикл`} />
+                <MiniStat label="N₂ в забое" value={`${n2Physics.n2VolumeBhM3.toFixed(2)} м³`} />
+                <MiniStat label="Степень сжатия" value={`${n2Physics.compressionRatio.toFixed(0)}×`} />
+                <MiniStat label="ρ N₂ забой" value={`${n2Physics.bhDensityN2KgM3.toFixed(0)} кг/м³`} />
+                <MiniStat label="FQ устье → забой" value={`${n2Physics.surfaceFQ_pct.toFixed(0)}% → ${n2Physics.bhFQ_pct.toFixed(0)}%`} />
+                <MiniStat label="Работа расширения" value={`${n2Physics.expansionEnergy.isothermalWorkMJ.toFixed(1)} МДж`} />
+                <MiniStat label="Пиковая мощность" value={`${n2Physics.expansionEnergy.peakPowerKW.toFixed(0)} кВт`} />
+                <MiniStat label="Подъём жидкости" value={`~${n2Physics.expansionEnergy.liftableMassKg.toFixed(0)} кг (${n2Physics.expansionEnergy.liftableVolumeM3.toFixed(2)} м³)`} />
+              </div>
+              <ResponsiveContainer width="100%" height={240}>
+                <ComposedChart data={n2Physics.profile} margin={{ top: 10, right: 30, left: 10, bottom: 30 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="depthM" type="number" domain={[0, "dataMax"]}
+                    label={{ value: "Глубина TVD, м", position: "insideBottom", offset: -5 }}
+                    stroke="hsl(var(--muted-foreground))" />
+                  <YAxis yAxisId="left" label={{ value: "ρ N₂, кг/м³ / FQ, %", angle: -90, position: "insideLeft" }}
+                    stroke="hsl(var(--muted-foreground))" />
+                  <YAxis yAxisId="right" orientation="right" domain={[0.7, 1.2]}
+                    label={{ value: "Z", angle: 90, position: "insideRight" }}
+                    stroke="hsl(280 70% 60%)" />
+                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }}
+                    labelFormatter={(d: number) => `TVD = ${d.toFixed(0)} м`}
+                    formatter={(v: number, n) => [
+                      n === "z" ? v.toFixed(3) : `${v.toFixed(1)}${n === "foamQualityPct" ? "%" : n === "densityKgM3" ? " кг/м³" : ""}`,
+                      n === "z" ? "Z-фактор" : n === "densityKgM3" ? "ρ N₂" : n === "foamQualityPct" ? "FQ локальный" : n as string,
+                    ]}
+                  />
+                  <Legend />
+                  <Area yAxisId="left" type="monotone" dataKey="densityKgM3" stroke="hsl(192 91% 60%)" fill="hsl(192 91% 60% / 0.20)" name="ρ N₂, кг/м³" />
+                  <Line yAxisId="left" type="monotone" dataKey="foamQualityPct" stroke="hsl(25 95% 53%)" dot={false} strokeWidth={2} name="FQ локальный, %" />
+                  <Line yAxisId="right" type="monotone" dataKey="z" stroke="hsl(280 70% 60%)" dot={false} strokeWidth={1.5} strokeDasharray="4 3" name="Z" />
+                  <ReferenceLine yAxisId="left" y={35} stroke="hsl(0 84% 60%)" strokeDasharray="2 2" label={{ value: "FQ min 35%", fill: "hsl(0 84% 60%)", position: "left", fontSize: 9 }} />
+                  <ReferenceLine yAxisId="left" y={75} stroke="hsl(0 84% 60%)" strokeDasharray="2 2" label={{ value: "FQ max 75%", fill: "hsl(0 84% 60%)", position: "left", fontSize: 9 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+              {n2Physics.recommendations.length > 0 && (
+                <div className="mt-3 space-y-1 pt-2 border-t border-border/40">
+                  {n2Physics.recommendations.map((r, i) => (
+                    <div key={i} className="text-[11px] text-muted-foreground flex gap-2"><span>•</span><span>{r}</span></div>
+                  ))}
+                </div>
+              )}
+              <p className="text-[10px] text-muted-foreground italic mt-2">
+                Работа изотермического расширения W = n·R·T·ln(P_заб/P_устье) — энергия, которая выносит кольматант
+                и поднимает столб жидкости при стравливании.
+              </p>
+            </ChartBlock>
+          )}
+
+
           {/* 2. Профиль расхода q(t) */}
           <ChartBlock title="График 2 — Профиль закачки q(t)"
             subtitle="Расход жидкости (ПАВ-раствор / кислота) и азота во времени">
