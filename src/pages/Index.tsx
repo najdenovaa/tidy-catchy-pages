@@ -3,6 +3,7 @@ import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TabbedNavigation from "@/components/TabbedNavigation";
 import SafetyTrafficLight from "@/components/SafetyTrafficLight";
+import ScenarioCompare from "@/components/ScenarioCompare";
 import InputSection from "@/components/InputSection";
 import PumpingSchedule from "@/components/PumpingSchedule";
 import HydraulicsSection from "@/components/HydraulicsSection";
@@ -554,6 +555,14 @@ export default function Index() {
 
 
         <main className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+
+          <ScenarioCompare
+            wellData={wellData}
+            pressureResult={pressureResult}
+            volumes={volumes}
+            centralizationResults={centralizationResults}
+          />
+
 
           {fromAnalysis && (
             <div className="flex items-center gap-2 text-sm bg-primary/10 text-primary rounded-lg p-3 border border-primary/20">
