@@ -338,10 +338,11 @@ export default function FoamTreatmentDiagnostics({
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <Activity className="w-5 h-5 text-primary" />
-          Диагностика, прогноз и экономика
+          Диагностика и прогноз
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
-          IPR (Вогель/Дюпюи) → декомпозиция скина → авто-диагностика повреждения → Арпс → прогноз добычи → NPV/ROI/окупаемость.
+          IPR (Вогель/Дюпюи) → декомпозиция скина → авто-диагностика повреждения → Арпс → прогноз добычи (36 мес).
+
         </p>
       </CardHeader>
 
