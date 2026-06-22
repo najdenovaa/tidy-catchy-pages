@@ -4,7 +4,7 @@ import { Wind, AlertTriangle, CheckCircle2, ShieldAlert } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import CopyImageButton from "@/components/CopyImageButton";
 import type { WellData, SlurryInput, DrillingFluid } from "@/lib/cementing-calculations";
-import { interpolateTVD } from "@/lib/coiled-tubing-calculations";
+import { interpolateTVD } from "@/lib/cementing-calculations";
 import { calculateGMS, type GMSResult } from "@/lib/gas-migration-severity";
 
 interface Props {
