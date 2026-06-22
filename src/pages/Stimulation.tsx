@@ -195,6 +195,33 @@ export default function Stimulation() {
     });
   }, [selected, reservoir]);
 
+  // Стехиометрия растворения породы (CaCO₃ / CaMg(CO₃)₂ / SiO₂)
+  const stoichiometry = useMemo(() => {
+    if (selected.category !== "acid" && selected.category !== "combo") return null;
+    const name = selected.mainReagent.name;
+    const hasHF = /HF/i.test(name);
+    // если в названии есть "доломит" — считаем по доломиту
+    const rock: "carbonate" | "dolomite" | "sandstone" =
+      reservoir.collectorType === "sandstone" ? "sandstone"
+      : /доломит|dolomit/i.test(name) ? "dolomite"
+      : "carbonate";
+    // HF % — попытка вытащить из строки "HCl 12% + HF 3%"
+    const hfMatch = name.match(/HF[^\d]*(\d+(?:\.\d+)?)\s*%/i);
+    const hfPct = hasHF ? (hfMatch ? parseFloat(hfMatch[1]) : 3) : 0;
+    // HCl % — основная концентрация, если HF указан отдельно — оставшаяся часть
+    const hclPct = hasHF ? selected.mainReagent.concentration - hfPct : selected.mainReagent.concentration;
+    return computeAcidStoichiometry({
+      acidVolumeM3: acidVol,
+      acidDensityKgM3: selected.mainReagent.density * 1000,
+      hclConcentrationPct: Math.max(0, hclPct),
+      hfConcentrationPct: hfPct,
+      rock,
+      preflushUsed: true, // мы строим 3-стадийную схему — preflush есть всегда
+      bhPressureMPa: reservoir.reservoirPressureMPa,
+      bhTemperatureC: reservoir.temperatureC,
+    });
+  }, [selected, reservoir, acidVol]);
+
   // Forecast (технический прогноз, без денег)
   const arps = useMemo(() => fitArpsDecline(history), [history]);
   const forecast = useMemo(() => {
