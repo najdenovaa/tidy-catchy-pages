@@ -321,6 +321,8 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   const standoffProfileRef = useRef<HTMLDivElement>(null);
   const resultsTableRef = useRef<HTMLDivElement>(null);
   const placementTableRef = useRef<HTMLDivElement>(null);
+  const jointScheduleTableRef = useRef<HTMLDivElement>(null);
+
 
   const casingID = wellData.casingOD - 2 * wellData.casingWall;
 
@@ -955,16 +957,19 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center justify-between">
-                  <span>📋 Таблица спуска — расстановка центраторов</span>
-                  <span className="text-xs font-normal text-muted-foreground">
-                    Всего Ф: <span className="text-primary font-bold">{jointSchedule.filter(j => j.hasCentralizer).length} шт.</span>
-                    {' '}/ {jointSchedule.length} труб
-                  </span>
+                  <span>Таблица спуска — расстановка центраторов</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-normal text-muted-foreground">
+                      Всего Ф: <span className="text-primary font-bold">{jointSchedule.filter(j => j.hasCentralizer).length} шт.</span>
+                      {' '}/ {jointSchedule.length} труб
+                    </span>
+                    <CopyImageButton targetRef={jointScheduleTableRef} label="Копировать" />
+                  </div>
                 </CardTitle>
                 <p className="text-[10px] text-muted-foreground">Спуск с устья. Ф — установить центратор на указанной глубине.</p>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="max-h-[500px] overflow-auto">
+                <div ref={jointScheduleTableRef} className="max-h-[500px] overflow-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -995,6 +1000,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
               </CardContent>
             </Card>
           )}
+
 
           {/* ═══════ T&D CHARTS — Спуск колонны с учётом центраторов ═══════ */}
           <TDChartsBlock
