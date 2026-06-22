@@ -16,6 +16,7 @@ import FoamCementSection from "@/components/FoamCementSection";
 import CementingAnimation from "@/components/CementingAnimation";
 import ContactTimeSection from "@/components/ContactTimeSection";
 import CementQualitySection from "@/components/CementQualitySection";
+import MudRemovalEfficiencyCard from "@/components/MudRemovalEfficiencyCard";
 import TrajectorySection from "@/components/TrajectorySection";
 import DrillingHydraulicsSection from "@/components/DrillingHydraulicsSection";
 import CasingRotationSection from "@/components/CasingRotationSection";
