@@ -186,7 +186,7 @@ export interface CTDocxInput {
 
 // ═══════════ MAIN EXPORT ═══════════
 
-export async function exportCTDocx(input: CTDocxInput) {
+export async function exportCTDocx(input: CTDocxInput, options?: { returnBlob?: boolean; filename?: string }): Promise<Blob | void> {
   const {
     ct, well, fluid, pump, tools, friction, forces, limits, hydraulics, fatigue, tempering,
     risks, trajPoints, ctSections, hookLoadData, forceProfile, tempProfile,
@@ -806,5 +806,6 @@ export async function exportCTDocx(input: CTDocxInput) {
   });
 
   const blob = await Packer.toBlob(doc);
-  saveAs(blob, `ГНКТ_Отчёт_${now.toISOString().slice(0, 10)}.docx`);
+  if (options?.returnBlob) return blob;
+  saveAs(blob, options?.filename ?? `ГНКТ_Отчёт_${now.toISOString().slice(0, 10)}.docx`);
 }
