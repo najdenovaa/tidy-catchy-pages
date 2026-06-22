@@ -350,7 +350,7 @@ export default function CoiledTubing() {
       captureChart(tempProfileChartRef),
     ]);
 
-    await exportCTDocx({
+    const ctBundle = {
       ct, well, fluid, pump, tools, friction, reelSize, prevTrips,
       forces, limits, hydraulics, fatigue, tempering, risks,
       trajPoints,
@@ -366,7 +366,9 @@ export default function CoiledTubing() {
         temperingDegradation: temperingDegImg, tempProfile: tempProfileImg,
         well3d: well3dImg,
       },
-    });
+    };
+    try { sessionStorage.setItem("ct_export_bundle_v1", JSON.stringify(ctBundle)); } catch {}
+    await exportCTDocx(ctBundle);
 
     toast.success("DOCX сформирован 📄");
   // eslint-disable-next-line react-hooks/exhaustive-deps
