@@ -543,6 +543,12 @@ export default function Index() {
         </div>
       </header>
 
+      <SafetyTrafficLight
+        pressureResult={pressureResult}
+        volumes={volumes}
+        centralizationResults={centralizationResults}
+      />
+
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabbedNavigation activeTab={activeTab} onTabChange={setActiveTab} />
 
