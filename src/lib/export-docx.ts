@@ -1055,6 +1055,18 @@ export async function exportToDocx(
         },
         children: centralizationContent,
       }] : []),
+      {
+        properties: {},
+        headers: {
+          default: new Header({
+            children: [new Paragraph({
+              alignment: AlignmentType.RIGHT,
+              children: [new TextRun({ text: "ОЗЦ", size: 16, color: "999999", font: "Calibri", italics: true })],
+            })],
+          }),
+        },
+        children: buildWOCPage(wellData, slurries),
+      },
     ],
   });
 
