@@ -238,7 +238,7 @@ export default function Stimulation() {
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 sm:grid-cols-7 h-auto">
+          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto">
             {TABS.map((t) => (
               <TabsTrigger key={t.id} value={t.id} className="text-xs sm:text-sm py-2 gap-1.5">
                 <t.icon className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t.label}</span>
