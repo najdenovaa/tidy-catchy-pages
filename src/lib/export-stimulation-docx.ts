@@ -138,8 +138,8 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
     ["Ожидаемое ΔS", `-${method.skinReductionRange[0]} … -${method.skinReductionRange[1]}`],
     ["Длительность эффекта", `${method.effectDurationMonths[0]}–${method.effectDurationMonths[1]} мес`],
     ["Успешность", `${method.successRate}%`],
-    ["Стоимость реагентов", `${(costEstimate / 1000).toFixed(0)} тыс. руб`],
   ]));
+
 
   // 4. Additives
   if (method.additives.length > 0) {
