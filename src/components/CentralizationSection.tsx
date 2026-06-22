@@ -26,6 +26,7 @@ import {
   type AutoTurbulatorResult,
 } from "@/lib/centralization-calculations";
 import { calculateRunningForces, type RunningForceResult } from "@/lib/casing-running-forces";
+import TriaxialCasingCard from "@/components/TriaxialCasingCard";
 import { Wrench } from "lucide-react";
 
 interface Props {
