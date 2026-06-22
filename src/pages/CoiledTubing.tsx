@@ -33,6 +33,7 @@ import CTReachAnalysisTab from "@/components/CTReachAnalysisTab";
 import CTCleanoutTab from "@/components/CTCleanoutTab";
 import CTNitrogenKickoffTab from "@/components/CTNitrogenKickoffTab";
 import CTAcidStimTab from "@/components/CTAcidStimTab";
+import CTTripSimulator from "@/components/CTTripSimulator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import CopyImageButton from "@/components/CopyImageButton";
@@ -748,6 +749,7 @@ export default function CoiledTubing() {
                 <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-10">
                   <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Дохождение</TabsTrigger>
                   <TabsTrigger value="reach" className="gap-1 text-xs whitespace-nowrap">🎯 Reach</TabsTrigger>
+                  <TabsTrigger value="trip" className="gap-1 text-xs whitespace-nowrap">🎬 СПО</TabsTrigger>
                   <TabsTrigger value="cleanout" className="gap-1 text-xs whitespace-nowrap">🧹 Промывка</TabsTrigger>
                   <TabsTrigger value="n2" className="gap-1 text-xs whitespace-nowrap">💨 N₂ Освоение</TabsTrigger>
                   <TabsTrigger value="acid" className="gap-1 text-xs whitespace-nowrap">🧪 Кислота</TabsTrigger>
@@ -849,6 +851,21 @@ export default function CoiledTubing() {
                   sections={ctSections}
                   baselineFriction={friction}
                 />
+              </TabsContent>
+
+              {/* СПО Simulator */}
+              <TabsContent value="trip" forceMount className={tab !== "trip" ? "hidden" : ""}>
+                {calculated && forces && hookLoadData.length > 0 ? (
+                  <CTTripSimulator
+                    hookLoadData={hookLoadData}
+                    forceProfile={forceProfile}
+                    totalDepthMD={well.md}
+                    lockUpDepth={forces.lockUpDepth ?? 0}
+                    helicalBucklingLoad={forces.helicalBucklingLoad ?? 0}
+                  />
+                ) : (
+                  <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Запустите расчёт, чтобы построить симулятор СПО.</CardContent></Card>
+                )}
               </TabsContent>
 
               {/* Cleanout (wellbore wash) */}
