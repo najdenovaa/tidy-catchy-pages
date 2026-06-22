@@ -17,6 +17,7 @@ import CementingAnimation from "@/components/CementingAnimation";
 import ContactTimeSection from "@/components/ContactTimeSection";
 import CementQualitySection from "@/components/CementQualitySection";
 import MudRemovalEfficiencyCard from "@/components/MudRemovalEfficiencyCard";
+import GasMigrationCard from "@/components/GasMigrationCard";
 import TrajectorySection from "@/components/TrajectorySection";
 import DrillingHydraulicsSection from "@/components/DrillingHydraulicsSection";
 import CasingRotationSection from "@/components/CasingRotationSection";
@@ -748,6 +749,12 @@ export default function Index() {
                         casingODmm={calcSnapshot.wellData.casingOD}
                       />
                     )}
+                    <GasMigrationCard
+                      wellData={calcSnapshot.wellData}
+                      drillingFluid={calcSnapshot.drillingFluid}
+                      slurries={calcSnapshot.slurries}
+                      annVPM={volumes.annularVolumePerMeter}
+                    />
                   </>
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
