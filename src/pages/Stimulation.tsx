@@ -481,8 +481,8 @@ export default function Stimulation() {
             </div>
 
             {kinetics && (
-              <Card className="p-4">
-                <h3 className="font-semibold mb-3">Кинетика и проникновение</h3>
+              <Card className="p-4 space-y-4">
+                <h3 className="font-semibold">Кинетика и проникновение</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                   <KV k="Скорость реакции" v={`${kinetics.reactionRate.toExponential(2)} моль/(м²·с)`} />
                   <KV k="Радиус проникновения" v={`${kinetics.penetrationRadius.toFixed(2)} м`} />
@@ -491,6 +491,22 @@ export default function Stimulation() {
                   <KV k="Отработанной кислоты" v={`${kinetics.spentAcidVolume.toFixed(2)} м³`} />
                   <KV k="Остаточная конц." v={`${kinetics.residualAcidConcentration.toFixed(1)}%`} />
                 </div>
+                {/* Wormhole visualization (Da-режим) */}
+                {(() => {
+                  const qOptLpm = optimalAcidRate(
+                    reservoir.permeability_mD, reservoir.porosity, reservoir.temperatureC, 0.216
+                  );
+                  const qActual = (selected.recommendedRate[0] + selected.recommendedRate[1]) / 2;
+                  const damkohler = 0.29 * (qOptLpm / Math.max(1, qActual));
+                  return (
+                    <WormholeVisualization
+                      wormholeLengthM={kinetics.wormholeLength}
+                      penetrationRadiusM={kinetics.penetrationRadius}
+                      wellboreRadiusM={0.108}
+                      damkohler={damkohler}
+                    />
+                  );
+                })()}
               </Card>
             )}
 
