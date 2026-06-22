@@ -35,6 +35,8 @@ import {
   type FoamTreatmentOptions,
   type AdditiveCategory,
 } from "@/lib/foam-treatment-calculations";
+import { computeFoamN2Physics } from "@/lib/foam-n2-physics";
+import { interpolateTVD } from "@/lib/cementing-calculations";
 import {
   CheckCircle2, AlertTriangle, Beaker, FlaskConical, Droplets, Wind,
   Layers, Sparkles, Pencil, Plus, Trash2, RotateCcw,
