@@ -11,7 +11,8 @@ import type { StimulationMethod } from "./stimulation-methods";
 import { METHOD_CATEGORY_LABEL, COLLECTOR_LABEL } from "./stimulation-methods";
 import type { ReservoirData, RankedMethod } from "./stimulation-ranking";
 import type { AcidReactionKinetics, AcidTreatmentStages } from "./stimulation-acid";
-import type { DamageAssessment, EconomicsResult, ForecastPoint } from "./foam-treatment-diagnostics";
+import type { DamageAssessment, ForecastPoint } from "./foam-treatment-diagnostics";
+
 
 const fmt = (v: number | null | undefined, d = 2) =>
   v === null || v === undefined || !Number.isFinite(v) ? "—" : v.toFixed(d);
