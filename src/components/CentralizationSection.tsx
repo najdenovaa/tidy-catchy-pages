@@ -25,6 +25,8 @@ import {
   type TurbulatorPoint,
   type AutoTurbulatorResult,
 } from "@/lib/centralization-calculations";
+import { calculateRunningForces, type RunningForceResult } from "@/lib/casing-running-forces";
+import { Wrench } from "lucide-react";
 
 interface Props {
   wellData: WellData;
@@ -1023,6 +1025,16 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             fluidPV={fluidPV}
             fluidYP={fluidYP}
           />
+
+          {results && results.length > 0 && (
+            <RunningForcesCard
+              wellData={wellData}
+              mudDensity={mudDensity}
+              frictionCoeff={frictionOpenhole}
+              centralizerIntervals={intervals}
+              centralization={results}
+            />
+          )}
         </>
       )}
     </div>
@@ -1297,6 +1309,142 @@ function TDChartsBlock({
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+// ─── Running forces / Bending stresses card ──────────────────────
+
+function RunningForcesCard({
+  wellData,
+  mudDensity,
+  frictionCoeff,
+  centralizerIntervals,
+  centralization,
+}: {
+  wellData: WellData;
+  mudDensity: number;
+  frictionCoeff: number;
+  centralizerIntervals: CentralizerInterval[];
+  centralization: CentralizationResult[];
+}) {
+  const [grade, setGrade] = useState<"K-55" | "N-80" | "P-110">("N-80");
+
+  const res: RunningForceResult = useMemo(
+    () =>
+      calculateRunningForces({
+        wellData,
+        mudDensity,
+        frictionCoeff,
+        centralizerIntervals,
+        centralization,
+        casingGrade: grade,
+      }),
+    [wellData, mudDensity, frictionCoeff, centralizerIntervals, centralization, grade],
+  );
+
+  const utilColor =
+    res.bendingUtilization >= 0.9
+      ? "text-red-600 dark:text-red-400"
+      : res.bendingUtilization >= 0.7
+      ? "text-amber-600 dark:text-amber-400"
+      : "text-emerald-600 dark:text-emerald-400";
+
+  return (
+    <Card>
+      <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Wrench className="h-4 w-4" />
+          Усилия установки колонны и изгибные напряжения
+        </CardTitle>
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="text-muted-foreground">Группа:</span>
+          {(["K-55", "N-80", "P-110"] as const).map((g) => (
+            <button
+              key={g}
+              type="button"
+              onClick={() => setGrade(g)}
+              className={`px-2 py-0.5 rounded text-[11px] font-mono ${
+                grade === g ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
+              }`}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-[11px] text-muted-foreground">
+          Soft-string модель (Johansik): осевые силы и боковая нагрузка от DLS,
+          изгиб от посадки между центраторами, сжатие bow-spring.
+        </p>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <MiniStat label="Сухой вес" value={`${res.hookloadDryKN.toFixed(0)} кН`} />
+          <MiniStat label="Вес с плавучестью" value={`${res.hookloadBuoyKN.toFixed(0)} кН`} />
+          <MiniStat
+            label="Слак-офф (спуск)"
+            value={`${res.hookloadRunningKN.toFixed(0)} кН`}
+            sub={res.willRunFreely ? "проходит свободно" : "может застрять"}
+            status={res.willRunFreely ? "ok" : "danger"}
+          />
+          <MiniStat label="Пик-ап (подъём)" value={`${res.hookloadPickupKN.toFixed(0)} кН`} />
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="rounded-lg border p-2.5">
+            <div className="text-[10px] text-muted-foreground">Макс. изгибное σ</div>
+            <div className={`text-base font-bold font-mono ${utilColor}`}>
+              {res.maxBendingStressMPa.toFixed(0)} МПа
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {(res.bendingUtilization * 100).toFixed(0)}% от σ_T ({res.yieldStrengthMPa.toFixed(0)} МПа)
+            </div>
+          </div>
+          <div className="rounded-lg border p-2.5">
+            <div className="text-[10px] text-muted-foreground">Ср. сжатие bow-spring</div>
+            <div className="text-base font-bold font-mono">{res.avgSpringCompression.toFixed(0)}%</div>
+            <div className="text-[10px] text-muted-foreground">от свободной длины</div>
+          </div>
+          <div className="rounded-lg border p-2.5">
+            <div className="text-[10px] text-muted-foreground">Макс. сжатие bow-spring</div>
+            <div className={`text-base font-bold font-mono ${res.maxSpringCompression > 90 ? "text-red-600 dark:text-red-400" : ""}`}>
+              {res.maxSpringCompression.toFixed(0)}%
+            </div>
+            <div className="text-[10px] text-muted-foreground">{res.maxSpringCompression > 90 ? "близко к пределу" : "в норме"}</div>
+          </div>
+        </div>
+
+        <ul className="space-y-1">
+          {res.warnings.map((w, i) => (
+            <li key={i} className="text-[11px] text-muted-foreground flex gap-2">
+              <span>•</span>
+              <span>{w}</span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  sub,
+  status,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  status?: "ok" | "danger";
+}) {
+  const c = status === "danger" ? "text-red-600 dark:text-red-400" : status === "ok" ? "text-emerald-600 dark:text-emerald-400" : "";
+  return (
+    <div className="rounded-lg border p-2">
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className={`text-sm font-bold font-mono ${c}`}>{value}</div>
+      {sub && <div className={`text-[10px] ${c || "text-muted-foreground"}`}>{sub}</div>}
     </div>
   );
 }
