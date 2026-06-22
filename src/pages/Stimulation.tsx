@@ -470,7 +470,7 @@ export default function Stimulation() {
               <Stat label="Выдержка" value={`${selected.soakTimeMin[0]}–${selected.soakTimeMin[1]} мин`} />
               <Stat label="Ожидаемое ΔS" value={`-${selected.skinReductionRange[0]}…-${selected.skinReductionRange[1]}`} sub={`Эффект ${selected.effectDurationMonths[0]}–${selected.effectDurationMonths[1]} мес`} />
               <Stat label="Успешность" value={`${selected.successRate}%`} />
-              <Stat label="Стоимость реагентов" value={`${(costEstimate / 1000).toFixed(0)} тыс.₽`} />
+
             </div>
 
             {kinetics && (
