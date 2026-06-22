@@ -512,3 +512,124 @@ function MiniCard({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+// ─── Transient BHCT (Kutasov-Targhi) ────────────────────────────
+
+function TransientBHCTCard({
+  bhstC,
+  surfaceTempC,
+  depthTVD,
+  holeDiameterMm,
+}: {
+  bhstC: number;
+  surfaceTempC: number;
+  depthTVD: number;
+  holeDiameterMm: number;
+}) {
+  const [circHours, setCircHours] = useState(2);
+  const [flowLps, setFlowLps] = useState(15);
+
+  const series = useMemo(() => {
+    const data: { tHours: number; bhctC: number }[] = [];
+    for (let h = 0; h <= Math.max(6, circHours * 1.5); h += 0.25) {
+      const r = transientBHCT({
+        bhstC, surfaceTempC, depthTVD, flowRateLps: flowLps,
+        circTimeHours: h, holeDiameterMm,
+      });
+      data.push({ tHours: h, bhctC: r.bhctC });
+    }
+    return data;
+  }, [bhstC, surfaceTempC, depthTVD, flowLps, holeDiameterMm, circHours]);
+
+  const current = useMemo(
+    () =>
+      transientBHCT({
+        bhstC, surfaceTempC, depthTVD, flowRateLps: flowLps,
+        circTimeHours: circHours, holeDiameterMm,
+      }),
+    [bhstC, surfaceTempC, depthTVD, flowLps, circHours, holeDiameterMm],
+  );
+
+  const ttMult = thickeningTimeMultiplier(current.coolingDeltaC);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Thermometer className="h-4 w-4" />
+          Переходная температура забоя (Kutasov-Targhi)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-[11px] text-muted-foreground">
+          Циркуляция охлаждает забой: BHCT падает с течением времени относительно статической BHST.
+          После остановки температура восстанавливается. Модель API 10TR3 / Kutasov, 1976.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <div className="flex justify-between text-[11px] mb-1">
+              <span className="text-muted-foreground">Длительность циркуляции</span>
+              <span className="font-mono font-bold">{circHours.toFixed(2)} ч</span>
+            </div>
+            <Slider value={[circHours]} onValueChange={(v) => setCircHours(v[0])} min={0.25} max={8} step={0.25} />
+          </div>
+          <div>
+            <div className="flex justify-between text-[11px] mb-1">
+              <span className="text-muted-foreground">Расход</span>
+              <span className="font-mono font-bold">{flowLps.toFixed(0)} л/с</span>
+            </div>
+            <Slider value={[flowLps]} onValueChange={(v) => setFlowLps(v[0])} min={3} max={40} step={1} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <MiniCard label="BHST (статич.)" value={`${bhstC.toFixed(0)} °C`} />
+          <MiniCard label="BHCT (переход.)" value={`${current.bhctC.toFixed(0)} °C`} />
+          <MiniCard label="Охлаждение" value={`−${current.coolingDeltaC.toFixed(1)} °C`} />
+          <MiniCard label="×Tзагуст." value={`${ttMult.toFixed(2)}×`} />
+        </div>
+
+        <div className="h-[220px]">
+          <ResponsiveContainer>
+            <LineChart data={series} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis
+                dataKey="tHours"
+                label={{ value: "Время циркуляции, ч", position: "insideBottom", offset: -2, style: { fontSize: 10 } }}
+                tick={{ fontSize: 10 }}
+              />
+              <YAxis
+                domain={[Math.floor(Math.min(...series.map(s => s.bhctC)) - 5), Math.ceil(bhstC + 2)]}
+                label={{ value: "T, °C", angle: -90, position: "insideLeft", style: { fontSize: 10 } }}
+                tick={{ fontSize: 10 }}
+              />
+              <Tooltip
+                contentStyle={tooltipStyle}
+                formatter={(v: number) => `${v.toFixed(1)} °C`}
+                labelFormatter={(t: number) => `${t.toFixed(2)} ч`}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line type="monotone" dataKey="bhctC" name="BHCT при циркуляции" stroke="hsl(200, 60%, 50%)" strokeWidth={2} dot={false} />
+              {/* BHST baseline */}
+              <Line
+                type="monotone"
+                dataKey={() => bhstC}
+                name="BHST (статич.)"
+                stroke="hsl(0, 60%, 50%)"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="text-[10px] text-muted-foreground">
+          Время полувосстановления после остановки циркуляции: ~{current.recoveryHalfLifeHours.toFixed(1)} ч.
+          Учёт BHCT в проекте даёт запас времени загустевания цемента ×{ttMult.toFixed(2)} относительно расчёта по BHST.
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
