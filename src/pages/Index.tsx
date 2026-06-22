@@ -19,6 +19,7 @@ import CementQualitySection from "@/components/CementQualitySection";
 import MudRemovalEfficiencyCard from "@/components/MudRemovalEfficiencyCard";
 import GasMigrationCard from "@/components/GasMigrationCard";
 import TrajectorySection from "@/components/TrajectorySection";
+import WellboreStabilityCard from "@/components/WellboreStabilityCard";
 import DrillingHydraulicsSection from "@/components/DrillingHydraulicsSection";
 import CasingRotationSection from "@/components/CasingRotationSection";
 import AnalysisChatPanel from "@/components/AnalysisChatPanel";
@@ -604,8 +605,9 @@ export default function Index() {
 
           <div className={activeTab !== "trajectory" ? "h-0 overflow-hidden" : ""}>
             <TabsContent value="trajectory" forceMount>
-              <div data-tab-content="trajectory">
+              <div data-tab-content="trajectory" className="space-y-4">
                 <TrajectorySection wellData={wellData} />
+                <WellboreStabilityCard wellData={wellData} />
               </div>
             </TabsContent>
           </div>
