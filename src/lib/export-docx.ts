@@ -794,6 +794,92 @@ function buildCentralizationPage(wellData: WellData, centralizationImages?: Reco
   return content;
 }
 
+// ======== WOC (ОЗЦ) section ========
+
+function wocStrength(t_h: number, bhct: number, cls: "G" | "H" = "G") {
+  const Ea = 38_000, R = 8.314, Tref = 273.15 + 50, T = 273.15 + bhct;
+  const k0 = cls === "H" ? 0.18 : 0.14;
+  const k = k0 * Math.exp((Ea / R) * (1 / Tref - 1 / T));
+  const x = 1 - Math.exp(-k * t_h);
+  const UCS_max = cls === "H" ? 28 : 22;
+  const SGS_max = 800;
+  return { ucs: UCS_max * Math.pow(x, 1.4), sgs: SGS_max * Math.pow(x, 0.85), x };
+}
+
+function wocTimeToUCS(target: number, bhct: number, cls: "G" | "H" = "G"): number | null {
+  for (let t = 0.1; t <= 72; t += 0.1) {
+    if (wocStrength(t, bhct, cls).ucs >= target) return t;
+  }
+  return null;
+}
+function wocTimeToSGS(target: number, bhct: number, cls: "G" | "H" = "G"): number | null {
+  for (let t = 0.1; t <= 72; t += 0.1) {
+    if (wocStrength(t, bhct, cls).sgs >= target) return t;
+  }
+  return null;
+}
+
+function buildWOCPage(wellData: WellData, slurries: SlurryInput[]): Paragraph[] {
+  const content: Paragraph[] = [sectionTitle("17. Ожидание затвердевания цемента (ОЗЦ)")];
+  const bhct = wellData.bottomTempCirc ?? 60;
+  const bhst = wellData.bottomTempStatic ?? bhct + 20;
+  const tail = slurries[slurries.length - 1] ?? slurries[0];
+  const cls: "G" | "H" = "G";
+
+  content.push(kvTable([
+    { label: "Класс цемента", value: cls },
+    { label: "BHCT (циркуляц. температура забоя)", value: `${fmt(bhct, 1)} °C` },
+    { label: "BHST (статич. температура забоя)", value: `${fmt(bhst, 1)} °C` },
+    { label: "Плотность тампонажного раствора", value: `${tail?.density ?? "—"} кг/м³` },
+    { label: "TVD", value: `${wellData.wellDepthTVD} м` },
+  ]) as any);
+
+  const tHandling = wocTimeToUCS(1.4, bhct, cls);
+  const tPerf = wocTimeToUCS(3.5, bhct, cls);
+  const tGasOff = wocTimeToSGS(500, bhct, cls);
+
+  content.push(new Paragraph({ spacing: { before: 200, after: 80 },
+    children: [new TextRun({ text: "Ключевые рубежи набора прочности:", bold: true, size: 20, font: "Calibri" })] }));
+  content.push(kvTable([
+    { label: "Выход из окна газопроявлений (SGS ≥ 500 lbf/100ft²)", value: tGasOff ? `${fmt(tGasOff, 1)} ч` : "не достигнут за 72 ч" },
+    { label: "Handling strength (UCS ≥ 1.4 МПа)", value: tHandling ? `${fmt(tHandling, 1)} ч` : "не достигнут" },
+    { label: "Разрешение перфорации (UCS ≥ 3.5 МПа)", value: tPerf ? `${fmt(tPerf, 1)} ч` : "не достигнут" },
+    { label: "Рекомендуемое ОЗЦ (с запасом 1.3×)", value: tPerf ? `${fmt(tPerf * 1.3, 1)} ч` : "≥ 24 ч" },
+  ]) as any);
+
+  // Таблица значений
+  const hours = [2, 4, 6, 8, 12, 16, 24, 36, 48];
+  const headers = ["t, ч", "UCS, МПа", "SGS, lbf/100ft²", "Степень гидр., %"];
+  const tableRows = [
+    new TableRow({ children: headers.map(h => headerCell(h)) }),
+    ...hours.map(t => {
+      const s = wocStrength(t, bhct, cls);
+      return new TableRow({ children: [
+        cell(String(t), { align: AlignmentType.RIGHT }),
+        cell(fmt(s.ucs, 2), { align: AlignmentType.RIGHT }),
+        cell(fmt(s.sgs, 0), { align: AlignmentType.RIGHT }),
+        cell(fmt(s.x * 100, 1), { align: AlignmentType.RIGHT }),
+      ]});
+    }),
+  ];
+  content.push(new Paragraph({ spacing: { before: 200, after: 80 },
+    children: [new TextRun({ text: "Динамика набора прочности (модель Аррениуса):", bold: true, size: 20, font: "Calibri" })] }));
+  content.push(new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
+    rows: tableRows,
+  }) as any);
+
+  content.push(new Paragraph({ spacing: { before: 200 },
+    children: [new TextRun({
+      text: "Примечание: Значения получены упрощённой кинетической моделью гидратации (правило Аррениуса). Для критических операций требуется лабораторное подтверждение УГН-2 / Чандлера на реальной рецептуре.",
+      italics: true, size: 18, color: "666666", font: "Calibri",
+    })],
+  }));
+
+  return content;
+}
+
 // ======== Main export function ========
 
 export interface DocxImages {
