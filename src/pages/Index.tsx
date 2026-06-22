@@ -16,6 +16,7 @@ import FoamCementSection from "@/components/FoamCementSection";
 import CementingAnimation from "@/components/CementingAnimation";
 import ContactTimeSection from "@/components/ContactTimeSection";
 import CementQualitySection from "@/components/CementQualitySection";
+import MudRemovalEfficiencyCard from "@/components/MudRemovalEfficiencyCard";
 import TrajectorySection from "@/components/TrajectorySection";
 import DrillingHydraulicsSection from "@/components/DrillingHydraulicsSection";
 import CasingRotationSection from "@/components/CasingRotationSection";
@@ -723,25 +724,38 @@ export default function Index() {
 
           <div className={activeTab !== "quality" ? "h-0 overflow-hidden" : ""}>
             <TabsContent value="quality" forceMount>
-              <div data-tab-content="quality">
+              <div data-tab-content="quality" className="space-y-4">
                 {calcSnapshot && pressureResult && volumes ? (
-                  <CementQualitySection
-                    pressureData={pressureResult.points}
-                    casingDepthMD={calcSnapshot.wellData.casingDepthMD}
-                    annVPM={volumes.annularVolumePerMeter}
-                    wellData={calcSnapshot.wellData}
-                    slurries={calcSnapshot.slurries}
-                    buffers={calcSnapshot.buffers}
-                    drillingFluid={calcSnapshot.drillingFluid}
-                    centralizationResults={centralizationResults ?? undefined}
-                    prevCasingDepth={calcSnapshot.wellData.prevCasingDepth || 0}
-                  />
+                  <>
+                    <CementQualitySection
+                      pressureData={pressureResult.points}
+                      casingDepthMD={calcSnapshot.wellData.casingDepthMD}
+                      annVPM={volumes.annularVolumePerMeter}
+                      wellData={calcSnapshot.wellData}
+                      slurries={calcSnapshot.slurries}
+                      buffers={calcSnapshot.buffers}
+                      drillingFluid={calcSnapshot.drillingFluid}
+                      centralizationResults={centralizationResults ?? undefined}
+                      prevCasingDepth={calcSnapshot.wellData.prevCasingDepth || 0}
+                    />
+                    {centralizationResults && centralizationResults.length > 0 && (
+                      <MudRemovalEfficiencyCard
+                        drillingFluid={calcSnapshot.drillingFluid}
+                        buffers={calcSnapshot.buffers}
+                        slurries={calcSnapshot.slurries}
+                        centralizationResults={centralizationResults}
+                        holeDiameterMm={calcSnapshot.wellData.holeDiameter}
+                        casingODmm={calcSnapshot.wellData.casingOD}
+                      />
+                    )}
+                  </>
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
                 )}
               </div>
             </TabsContent>
           </div>
+
 
           <div className={activeTab !== "visual" ? "h-0 overflow-hidden" : ""}>
             <TabsContent value="visual" forceMount>
