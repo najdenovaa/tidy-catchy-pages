@@ -113,20 +113,34 @@ export function analyzeReach(input: ReachAnalysisInput): ReachAnalysisResult {
   // Рекомендации
   const recs: string[] = [];
   if (!canReach) {
+    const requiredMu = criticalFriction ?? Math.max(0.05, input.baselineFriction - 0.10);
     recs.push(
-      `ГНКТ не достигает цели ${input.targetDepthMD.toFixed(0)} м при μ=${input.baselineFriction}: запирание на ${baseLockUp.toFixed(0)} м (недостача ${(-marginAtBaseline).toFixed(0)} м).`,
+      `✖ ГНКТ не достигает цели ${input.targetDepthMD.toFixed(0)} м при μ=${input.baselineFriction}: запирание на ${baseLockUp.toFixed(0)} м (недостача ${(-marginAtBaseline).toFixed(0)} м).`,
     );
-    recs.push("Снизить μ: ввод смазки/ингибитора трения (PIPE-LAX, FR-66) до 30%.");
-    recs.push("Увеличить плотность жидкости в затрубье для подъёма выталкивающей силы.");
-    recs.push("Применить tractor (тяговое устройство) на горизонтальном участке.");
+    recs.push(
+      `1) Снизить трение до μ < ${requiredMu.toFixed(2)} — смазка (PIPE-LAX, FR-66, 0.5–1.0%) или твёрдые ролики/боллы.`,
+    );
+    recs.push(
+      `2) Увеличить жёсткость ГНКТ — больший OD (${input.ct.od} → ${(input.ct.od + 6.35).toFixed(1)} мм) или толщина стенки.`,
+    );
+    recs.push(
+      `3) Применить тяговое усилие: CT tractor (электро/гидравлический) на горизонтальном участке, +10…30 кН тяги.`,
+    );
+    recs.push(
+      `4) Закачка через ГНКТ (lubricity flush) — снижает μ на 0.05–0.10 за счёт смачивания стенок.`,
+    );
+    recs.push(
+      `5) Вибратор/agitator на КНБК — снижает статическое трение, помогает преодолеть локальное запирание.`,
+    );
   } else if (marginAtBaseline < 200) {
     recs.push(
-      `Достижение цели на пределе: запас ${marginAtBaseline.toFixed(0)} м. Любое увеличение μ приведёт к запиранию.`,
+      `⚠ Достижение цели на пределе: запас ${marginAtBaseline.toFixed(0)} м. Любое увеличение μ приведёт к запиранию.`,
     );
-    recs.push("Готовь смазочную пачку — снизит μ на 0.05–0.10.");
+    recs.push("Готовь смазочную пачку — снизит μ на 0.05–0.10 и даст +200…400 м запаса.");
+    recs.push("Контролируй WOB на КНБК — избегай резких посадок и перегиба.");
   } else {
     recs.push(
-      `ГНКТ уверенно достигает цели: запас ${marginAtBaseline.toFixed(0)} м при μ=${input.baselineFriction}.`,
+      `✅ ГНКТ уверенно достигает цели: запас ${marginAtBaseline.toFixed(0)} м при μ=${input.baselineFriction}.`,
     );
   }
 
