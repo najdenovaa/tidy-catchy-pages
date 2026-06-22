@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ClipboardList, Calculator, BarChart3, Film } from "lucide-react";
+import { ClipboardList, BarChart3, Film } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TabItem {
