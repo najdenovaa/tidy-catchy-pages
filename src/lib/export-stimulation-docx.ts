@@ -11,7 +11,8 @@ import type { StimulationMethod } from "./stimulation-methods";
 import { METHOD_CATEGORY_LABEL, COLLECTOR_LABEL } from "./stimulation-methods";
 import type { ReservoirData, RankedMethod } from "./stimulation-ranking";
 import type { AcidReactionKinetics, AcidTreatmentStages } from "./stimulation-acid";
-import type { DamageAssessment, EconomicsResult, ForecastPoint } from "./foam-treatment-diagnostics";
+import type { DamageAssessment, ForecastPoint } from "./foam-treatment-diagnostics";
+
 
 const fmt = (v: number | null | undefined, d = 2) =>
   v === null || v === undefined || !Number.isFinite(v) ? "—" : v.toFixed(d);
@@ -72,17 +73,16 @@ export interface StimulationExportBundle {
   method: StimulationMethod;
   ranked?: RankedMethod;
   acidVolM3: number;
-  costEstimate: number;
   damage: DamageAssessment[];
   kinetics: AcidReactionKinetics | null;
   stages: AcidTreatmentStages | null;
   forecast: ForecastPoint[] | null;
-  economics: EconomicsResult | null;
   wellName?: string;
 }
 
 export async function exportStimulationDocx(b: StimulationExportBundle): Promise<void> {
-  const { reservoir, method, ranked, acidVolM3, costEstimate, damage, kinetics, stages, forecast, economics, wellName } = b;
+  const { reservoir, method, ranked, acidVolM3, damage, kinetics, stages, forecast, wellName } = b;
+
   const children: (Paragraph | Table)[] = [];
 
   children.push(new Paragraph({
@@ -138,8 +138,8 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
     ["Ожидаемое ΔS", `-${method.skinReductionRange[0]} … -${method.skinReductionRange[1]}`],
     ["Длительность эффекта", `${method.effectDurationMonths[0]}–${method.effectDurationMonths[1]} мес`],
     ["Успешность", `${method.successRate}%`],
-    ["Стоимость реагентов", `${(costEstimate / 1000).toFixed(0)} тыс. руб`],
   ]));
+
 
   // 4. Additives
   if (method.additives.length > 0) {
@@ -227,19 +227,8 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
     }));
   }
 
-  // 10. Economics
-  if (economics) {
-    children.push(heading("10. Экономика"));
-    children.push(kv([
-      ["Полная стоимость, руб", fmt(economics.totalCost, 0)],
-      ["Прирост добычи, м³", fmt(economics.incrementalOilM3, 0)],
-      ["Доход, руб", fmt(economics.incrementalRevenue, 0)],
-      ["Чистая прибыль, руб", fmt(economics.netProfit, 0)],
-      ["ROI, %", fmt(economics.roi, 1)],
-      ["NPV, руб", fmt(economics.npv, 0)],
-      ["Срок окупаемости, мес", economics.paybackMonths === null ? "не окупается" : String(economics.paybackMonths)],
-    ]));
-  }
+  // (раздел "Экономика" исключён — модуль инженерный, финансы заказчик считает отдельно)
+
 
   children.push(new Paragraph({
     spacing: { before: 300 },

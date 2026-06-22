@@ -21,24 +21,21 @@ import {
   diagnoseDamage,
   fitArpsDecline,
   forecastPostTreatment,
-  calculateEconomics,
   foamApparentViscosity,
   mobilityReductionFactor,
   calculateInjectivity,
   penetrationRadius,
-  tornadoSensitivity,
   hawkinsWaterfall,
   interpretStepRateTest,
-  DEFAULT_COSTS,
   type ReservoirSnapshot,
   type Mineralogy,
   type DrillingHistory,
   type CollectorType,
   type ProductionPoint,
   type DamageAssessment,
-  type SensitivityParam,
   type StepRatePoint,
 } from "@/lib/foam-treatment-diagnostics";
+
 
 const fmt = (v: number | undefined | null, d = 1) =>
   v === undefined || v === null || !Number.isFinite(v) ? "—" : v.toFixed(d);
@@ -135,13 +132,8 @@ export default function FoamTreatmentDiagnostics({
     { rate: 350, pressure: 21 },
   ]);
 
-  const [oilPrice, setOilPrice] = useState(35_000);
-  const [chemCost, setChemCost] = useState(150_000);
-  const [n2Cost, setN2Cost] = useState(120_000);
-  const [crewDays, setCrewDays] = useState(2);
-  const [equipDays, setEquipDays] = useState(2);
-
   /** Сколько от рассчитанного ΔS реально достигнем (0..1). */
+
   const [efficiencyFactor, setEfficiencyFactor] = useState(0.8);
   /** Скорость возврата скина, %/мес */
   const [skinRecoveryPct, setSkinRecoveryPct] = useState(2);
@@ -181,14 +173,8 @@ export default function FoamTreatmentDiagnostics({
     () => forecastPostTreatment(arps, reservoir, reservoir.skin, skinNew, 36, skinRecoveryPct / 100),
     [arps, reservoir, skinNew, skinRecoveryPct],
   );
-  const economics = useMemo(() => calculateEconomics(forecast, {
-    ...DEFAULT_COSTS,
-    chemicalCost: chemCost,
-    n2Cost,
-    crewDays,
-    equipmentDays: equipDays,
-    oilPricePerM3: oilPrice,
-  }), [forecast, chemCost, n2Cost, crewDays, equipDays, oilPrice]);
+  // (экономика убрана — модуль инженерный; финансы заказчик считает отдельно)
+
 
   /* ── Реология пены, приёмистость, радиус ── */
   const fqAtBottom = (foamQualityAtFormationPct ?? 70) / 100;
@@ -224,68 +210,9 @@ export default function FoamTreatmentDiagnostics({
     return { r, rDamage: 0.5, rWell: reservoir.rw };
   }, [treatmentVolumeM3, reservoir, fqAtBottom, well.porosity]);
 
-  // Tornado: NPV sensitivity ±20%
-  const tornado = useMemo(() => {
-    const baseCosts = {
-      ...DEFAULT_COSTS,
-      chemicalCost: chemCost, n2Cost, crewDays, equipmentDays: equipDays, oilPricePerM3: oilPrice,
-    };
-    const baseNPV = economics.npv;
-    const params: SensitivityParam[] = [
-      {
-        name: "Цена нефти",
-        baseValue: oilPrice,
-        variation: 0.2,
-        evaluate: (v) => calculateEconomics(forecast, { ...baseCosts, oilPricePerM3: v }).npv,
-      },
-      {
-        name: "Снижение скина ΔS",
-        baseValue: Math.max(0.1, expectedSkinReduction * efficiencyFactor),
-        variation: 0.3,
-        evaluate: (v) => {
-          const newSk = Math.max(-2, reservoir.skin - v);
-          const fc = forecastPostTreatment(arps, reservoir, reservoir.skin, newSk, 36, skinRecoveryPct / 100);
-          return calculateEconomics(fc, baseCosts).npv;
-        },
-      },
-      {
-        name: "Стоимость реагентов",
-        baseValue: Math.max(1, chemCost),
-        variation: 0.3,
-        evaluate: (v) => calculateEconomics(forecast, { ...baseCosts, chemicalCost: v }).npv,
-      },
-      {
-        name: "Стоимость N₂",
-        baseValue: Math.max(1, n2Cost),
-        variation: 0.3,
-        evaluate: (v) => calculateEconomics(forecast, { ...baseCosts, n2Cost: v }).npv,
-      },
-      {
-        name: "Скорость возврата скина",
-        baseValue: Math.max(0.5, skinRecoveryPct),
-        variation: 0.5,
-        evaluate: (v) => {
-          const fc = forecastPostTreatment(arps, reservoir, reservoir.skin, skinNew, 36, v / 100);
-          return calculateEconomics(fc, baseCosts).npv;
-        },
-      },
-      {
-        name: "Начальный дебит qi",
-        baseValue: Math.max(0.1, arps.qi),
-        variation: 0.2,
-        evaluate: (v) => {
-          const fc = forecastPostTreatment({ ...arps, qi: v }, reservoir, reservoir.skin, skinNew, 36, skinRecoveryPct / 100);
-          return calculateEconomics(fc, baseCosts).npv;
-        },
-      },
-    ];
-    return tornadoSensitivity(baseNPV, params).map((r) => ({
-      name: r.name,
-      low: r.lowNPV - baseNPV,
-      high: r.highNPV - baseNPV,
-      range: r.range,
-    }));
-  }, [forecast, economics.npv, chemCost, n2Cost, crewDays, equipDays, oilPrice, arps, reservoir, skinNew, skinRecoveryPct, expectedSkinReduction, efficiencyFactor]);
+  // (Tornado NPV убран — финансы вне инженерного контура)
+
+
 
   /* ── Hawkins waterfall ── */
   const waterfall = useMemo(
@@ -336,17 +263,12 @@ export default function FoamTreatmentDiagnostics({
       damage,
       arps: { qi: arps.qi, di: arps.di, b: arps.b, r2: arps.r2, type: arps.type },
       forecast: {
-        incrementalOilM3: economics.incrementalOilM3,
+        incrementalOilM3: forecast.length
+          ? forecast[forecast.length - 1].cumulativeDeltaM3
+          : 0,
         firstYearBoostPct: forecast.length > 12 && forecast[0].qBaseline > 0
           ? ((forecast[12].qTreated - forecast[12].qBaseline) / forecast[12].qBaseline) * 100
           : 0,
-      },
-      economics: {
-        totalCost: economics.totalCost,
-        netProfit: economics.netProfit,
-        roi: economics.roi,
-        npv: economics.npv,
-        paybackMonths: economics.paybackMonths,
       },
       waterfall,
       srt,
@@ -355,7 +277,8 @@ export default function FoamTreatmentDiagnostics({
       mrf,
       penetrationRadiusM: radiusInfo?.r ?? null,
     });
-  }, [onDataChange, ipr, iprAfter, skinDecomp, reservoir.skin, skinNew, damage, arps, economics, forecast, waterfall, srt, injectivity, injectivityAfter, mrf, radiusInfo]);
+  }, [onDataChange, ipr, iprAfter, skinDecomp, reservoir.skin, skinNew, damage, arps, forecast, waterfall, srt, injectivity, injectivityAfter, mrf, radiusInfo]);
+
 
 
 
@@ -415,10 +338,11 @@ export default function FoamTreatmentDiagnostics({
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <Activity className="w-5 h-5 text-primary" />
-          Диагностика, прогноз и экономика
+          Диагностика и прогноз
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
-          IPR (Вогель/Дюпюи) → декомпозиция скина → авто-диагностика повреждения → Арпс → прогноз добычи → NPV/ROI/окупаемость.
+          IPR (Вогель/Дюпюи) → декомпозиция скина → авто-диагностика повреждения → Арпс → прогноз добычи (36 мес).
+
         </p>
       </CardHeader>
 
@@ -682,64 +606,8 @@ export default function FoamTreatmentDiagnostics({
           </div>
         </div>
 
-        {/* ───── Экономика ───── */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-          <div className="flex items-center gap-2">
-            <Wallet className="w-5 h-5 text-primary" />
-            <h4 className="text-sm font-semibold">Экономика операции</h4>
-          </div>
+        {/* (блок «Экономика операции» удалён — финансы вне инженерного контура) */}
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Реагенты, ₽</Label>
-              <Input type="number" value={chemCost} onChange={(e) => setChemCost(num(e.target.value))} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">N₂, ₽</Label>
-              <Input type="number" value={n2Cost} onChange={(e) => setN2Cost(num(e.target.value))} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Техника, сут</Label>
-              <Input type="number" step="0.5" value={equipDays} onChange={(e) => setEquipDays(num(e.target.value))} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Бригада КРС, сут</Label>
-              <Input type="number" step="0.5" value={crewDays} onChange={(e) => setCrewDays(num(e.target.value))} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Цена нефти, ₽/м³</Label>
-              <Input type="number" value={oilPrice} onChange={(e) => setOilPrice(num(e.target.value))} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <MetricBox label="Затраты" value={fmtMoney(economics.totalCost)} tone="warn" />
-            <MetricBox label="Доп. добыча 36 мес" value={`${fmt(economics.incrementalOilM3, 0)} м³`} />
-            <MetricBox label="Окупаемость" value={economics.paybackMonths !== null ? `${economics.paybackMonths} мес` : "—"}
-              tone={economics.paybackMonths !== null && economics.paybackMonths <= 12 ? "ok" : "warn"} />
-            <MetricBox label="ROI" value={`${fmt(economics.roi, 0)}%`} tone={economics.roi > 100 ? "ok" : "warn"} />
-            <MetricBox label="Чист. прибыль" value={fmtMoney(economics.netProfit)}
-              tone={economics.netProfit > 0 ? "ok" : "danger"} />
-            <MetricBox label={`NPV @ ${(DEFAULT_COSTS.discountRateAnnual * 100).toFixed(0)}%`}
-              value={fmtMoney(economics.npv)} tone={economics.npv > 0 ? "ok" : "danger"} />
-          </div>
-
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={economics.monthly}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="month" label={{ value: "Мес.", position: "insideBottom", offset: -3 }} />
-              <YAxis tickFormatter={(v) => `${(v / 1e6).toFixed(1)}M`} label={{ value: "₽", angle: -90, position: "insideLeft" }} />
-              <Tooltip formatter={(v: number) => fmtMoney(v)} />
-              <Legend />
-              <ReferenceLine y={0} stroke="hsl(var(--border))" />
-              <Line dataKey="cumulativeProfit" stroke="hsl(217 91% 60%)" dot={false} name="Накопл. прибыль" />
-              <Line dataKey="cumulativeProfitDiscounted" stroke="hsl(280 70% 60%)" strokeDasharray="4 4" dot={false} name="NPV (диск.)" />
-            </LineChart>
-          </ResponsiveContainer>
-          <p className="text-[10px] text-muted-foreground">
-            Точка пересечения с нулём = срок окупаемости. Дисконтированный денежный поток учитывает ставку {(DEFAULT_COSTS.discountRateAnnual * 100).toFixed(0)}% годовых.
-          </p>
-        </div>
 
         {/* ───── Гидродинамика закачки + реология пены ───── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -802,24 +670,8 @@ export default function FoamTreatmentDiagnostics({
           </div>
         </div>
 
-        {/* Tornado NPV sensitivity */}
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h4 className="text-sm font-semibold mb-2">Чувствительность NPV (±20…30%)</h4>
-          <ResponsiveContainer width="100%" height={Math.max(220, tornado.length * 38)}>
-            <BarChart data={tornado} layout="vertical" margin={{ left: 60, right: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis type="number" tickFormatter={(v) => `${(v / 1e6).toFixed(1)}M`} />
-              <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={120} />
-              <Tooltip formatter={(v: number) => fmtMoney(v)} />
-              <ReferenceLine x={0} stroke="hsl(var(--border))" />
-              <Bar dataKey="low" fill="hsl(0 70% 55%)" name="− изменение" />
-              <Bar dataKey="high" fill="hsl(160 60% 45%)" name="+ изменение" />
-            </BarChart>
-          </ResponsiveContainer>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            Длина бара = диапазон ΔNPV при изменении параметра. Параметры сверху — самые влиятельные.
-          </p>
-        </div>
+        {/* (Tornado NPV удалён — финансы вне инженерного контура) */}
+
         {/* ───── Hawkins waterfall — поэтапное снятие скина ───── */}
         <div className="rounded-xl border border-border bg-card p-4">
           <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">

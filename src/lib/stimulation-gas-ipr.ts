@@ -118,23 +118,27 @@ export function calculateGasIPR(input: GasIPRInput): GasIPRResult {
   const D = input.nonDarcyD ?? estimateNonDarcyD(k, h, gasGravity);
   const lnRatio = Math.log(re / rw);
 
-  // Метрическая форма уравнения газовой радиальной фильтрации.
-  // Константа 1422 — из псевдо-давления для (P²)-формы при q [Mcm/d], k [мД], P [МПа], T [K].
-  const denom0 = 1422 * mu_g * z * T * (lnRatio + skin);
+  // Метрическая форма уравнения газовой радиальной фильтрации (P²-форма):
+  //   q_g [тыс.м³/сут] = (k[мД] × h[м] × (Pr²−Pwf²)[МПа²]) /
+  //                      (C_metric × μ_g[сПз] × Z × T[K] × (ln(re/rw) + S))
+  // C_metric ≈ 12.74 — выведено из псевдодавления для метрических единиц
+  // (эквивалент полевой константы 1422 при пересчёте psi→МПа, ft→м, Mscf/d→тыс.м³/сут).
+  const C_metric = 12.74;
+  const denom0 = C_metric * mu_g * z * T * (lnRatio + skin);
 
-  // Решаем неявно: q = (k·h·(Pr²−Pwf²)) / (1422·μ·Z·T·(lnR + S + D·q))
+  // Решаем неявно: q = (k·h·(Pr²−Pwf²)) / (C_metric·μ·Z·T·(lnR + S + D·q))
   function solveQ(pwf: number): number {
     const num = k * h * (Pr * Pr - pwf * pwf);
     if (num <= 0) return 0;
-    // итерации с не-Дарси скином
     let q = num / denom0;
     for (let i = 0; i < 8; i++) {
-      const denom = 1422 * mu_g * z * T * (lnRatio + skin + D * q);
+      const denom = C_metric * mu_g * z * T * (lnRatio + skin + D * q);
       q = num / denom;
       if (!isFinite(q) || q < 0) return 0;
     }
     return q;
   }
+
 
   const iprCurve: GasIPRPoint[] = [];
   for (let i = 0; i <= 20; i++) {

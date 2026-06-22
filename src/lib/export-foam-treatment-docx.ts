@@ -89,7 +89,7 @@ export interface FoamDiagnosticsBundle {
   damage: DamageAssessment[];
   arps: { qi: number; di: number; b: number; r2: number; type: string };
   forecast: { incrementalOilM3: number; firstYearBoostPct: number };
-  economics: { totalCost: number; netProfit: number; roi: number; npv: number; paybackMonths: number | null };
+  economics?: { totalCost: number; netProfit: number; roi: number; npv: number; paybackMonths: number | null };
   waterfall: WaterfallStage[];
   srt: StepRateInterpretation;
   injectivityBefore: number;
@@ -249,20 +249,26 @@ export async function exportFoamTreatmentDocx(data: FoamTreatmentExportData, fil
     }));
   }
 
-  // ── 6. Прогноз и экономика ──
+  // ── 6. Прогноз ──
   if (diag) {
-    children.push(heading("6. Прогноз добычи и экономика"));
+    children.push(heading("6. Прогноз добычи"));
     children.push(textP(`Кривая падения Арпса: тип ${diag.arps.type}, b = ${fmt(diag.arps.b, 2)}, di = ${fmt(diag.arps.di * 12, 3)} 1/год, R² = ${fmt(diag.arps.r2, 2)}.`));
-    children.push(kvTable([
-      kvRow("Доп. добыча за 36 мес, м³", fmt(diag.forecast.incrementalOilM3, 0)),
-      kvRow("Прирост дебита 1-го года, %", fmt(diag.forecast.firstYearBoostPct, 0)),
-      kvRow("Затраты, ₽", fmt(diag.economics.totalCost, 0)),
-      kvRow("Чистая прибыль, ₽", fmt(diag.economics.netProfit, 0)),
-      kvRow("ROI, %", fmt(diag.economics.roi, 0)),
-      kvRow("NPV, ₽", fmt(diag.economics.npv, 0)),
-      kvRow("Окупаемость, мес", diag.economics.paybackMonths !== null ? String(diag.economics.paybackMonths) : "не достигнута"),
-    ]));
+    const forecastRows: Array<[string, string]> = [
+      ["Доп. добыча за 36 мес, м³", fmt(diag.forecast.incrementalOilM3, 0)],
+      ["Прирост дебита 1-го года, %", fmt(diag.forecast.firstYearBoostPct, 0)],
+    ];
+    if (diag.economics) {
+      forecastRows.push(
+        ["Затраты, ₽", fmt(diag.economics.totalCost, 0)],
+        ["Чистая прибыль, ₽", fmt(diag.economics.netProfit, 0)],
+        ["ROI, %", fmt(diag.economics.roi, 0)],
+        ["NPV, ₽", fmt(diag.economics.npv, 0)],
+        ["Окупаемость, мес", diag.economics.paybackMonths !== null ? String(diag.economics.paybackMonths) : "не достигнута"],
+      );
+    }
+    children.push(kvTable(forecastRows.map(([k, v]) => kvRow(k, v))));
   }
+
 
   // ── 7. SRT ──
   if (diag && diag.srt.verdict !== "insufficient_data") {

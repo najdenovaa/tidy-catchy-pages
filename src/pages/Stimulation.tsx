@@ -9,17 +9,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
 import { buildAcidStages, computeAcidKinetics, optimalAcidRate } from "@/lib/stimulation-acid";
 import WormholeVisualization from "@/components/WormholeVisualization";
-import NpvTornado from "@/components/NpvTornado";
-import type { SensitivityParam } from "@/lib/foam-treatment-diagnostics";
 import {
-  diagnoseDamage, fitArpsDecline, forecastPostTreatment, calculateEconomics, DEFAULT_COSTS,
+  diagnoseDamage, fitArpsDecline, forecastPostTreatment,
   type DamageAssessment, type ReservoirSnapshot, type Mineralogy, type DrillingHistory,
-  type ProductionPoint, type CostInputs,
+  type ProductionPoint,
 } from "@/lib/foam-treatment-diagnostics";
 import { exportStimulationDocx } from "@/lib/export-stimulation-docx";
 import {
@@ -34,9 +32,9 @@ const TABS = [
   { id: "calc", label: "Расчёт", icon: Calculator },
   { id: "plan", label: "План", icon: ListChecks },
   { id: "forecast", label: "Прогноз", icon: TrendingUp },
-  { id: "econ", label: "Экономика", icon: Activity },
   { id: "report", label: "Отчёт", icon: FileText },
 ] as const;
+
 
 export default function Stimulation() {
   const [tab, setTab] = useState<string>("diag");
@@ -87,12 +85,9 @@ export default function Stimulation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Costs
-  const [costs, setCosts] = useState<CostInputs>(DEFAULT_COSTS);
-
   const isGas = fluidType === "gas" || fluidType === "gas_condensate";
   const rateUnit = isGas ? "тыс.м³/сут" : "м³/сут";
-  const priceUnit = isGas ? "₽/тыс.м³" : "₽/м³";
+
 
   // ── Derived: build synthetic history ───────────────────────────────
   const history: ProductionPoint[] = useMemo(() => {
@@ -198,28 +193,13 @@ export default function Stimulation() {
     });
   }, [selected, reservoir]);
 
-  const costEstimate = useMemo(() => {
-    const main = acidVol * selected.mainReagent.costPerM3;
-    const adds = selected.additives.reduce((s, a) => {
-      if (!a.required) return s;
-      const perM3 = a.unit === "%" ? a.concentration / 100 * 1000 : a.concentration;
-      return s + acidVol * perM3 * a.costPerUnit;
-    }, 0);
-    return Math.round(main + adds);
-  }, [selected, acidVol]);
-
-  // Forecast & economics
+  // Forecast (технический прогноз, без денег)
   const arps = useMemo(() => fitArpsDecline(history), [history]);
   const forecast = useMemo(() => {
     const dS = (selected.skinReductionRange[0] + selected.skinReductionRange[1]) / 2;
     const skinNew = Math.max(-2, skinCurrent - dS);
     return forecastPostTreatment(arps, reservoirSnap, skinCurrent, skinNew, 36, 0.025);
   }, [arps, reservoirSnap, skinCurrent, selected]);
-
-  const economics = useMemo(() => {
-    const c: CostInputs = { ...costs, chemicalCost: costEstimate, n2Cost: selected.requiresN2 ? 300_000 : 0 };
-    return calculateEconomics(forecast, c);
-  }, [forecast, costs, costEstimate, selected.requiresN2]);
 
   const chartData = useMemo(() => forecast.map((p) => ({
     month: p.month,
@@ -229,18 +209,14 @@ export default function Stimulation() {
     cum: Number(p.cumulativeDeltaM3.toFixed(0)),
   })), [forecast]);
 
-  const cashflowData = useMemo(() => economics.monthly.filter((_, i) => i % 2 === 0).map((m) => ({
-    month: m.month,
-    profit: Math.round(m.cumulativeProfit / 1000),
-    npv: Math.round(m.cumulativeProfitDiscounted / 1000),
-  })), [economics]);
 
   async function handleExport() {
     try {
       await exportStimulationDocx({
         reservoir, method: selected, ranked: selectedRanked,
-        acidVolM3: acidVol, costEstimate, damage, kinetics, stages, forecast, economics, wellName,
+        acidVolM3: acidVol, damage, kinetics, stages, forecast, wellName,
       });
+
       toast.success("DOCX-отчёт сформирован");
     } catch (e) {
       console.error(e);
@@ -262,7 +238,7 @@ export default function Stimulation() {
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 sm:grid-cols-7 h-auto">
+          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto">
             {TABS.map((t) => (
               <TabsTrigger key={t.id} value={t.id} className="text-xs sm:text-sm py-2 gap-1.5">
                 <t.icon className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t.label}</span>
@@ -494,7 +470,7 @@ export default function Stimulation() {
               <Stat label="Выдержка" value={`${selected.soakTimeMin[0]}–${selected.soakTimeMin[1]} мин`} />
               <Stat label="Ожидаемое ΔS" value={`-${selected.skinReductionRange[0]}…-${selected.skinReductionRange[1]}`} sub={`Эффект ${selected.effectDurationMonths[0]}–${selected.effectDurationMonths[1]} мес`} />
               <Stat label="Успешность" value={`${selected.successRate}%`} />
-              <Stat label="Стоимость реагентов" value={`${(costEstimate / 1000).toFixed(0)} тыс.₽`} />
+
             </div>
 
             {kinetics && (
@@ -626,92 +602,15 @@ export default function Stimulation() {
             </Card>
           </TabsContent>
 
-          {/* ─────────── ECONOMICS ─────────── */}
-          <TabsContent value="econ" className="space-y-4 mt-4">
-            <Card className="p-4 space-y-3">
-              <h3 className="font-semibold">Стоимостные параметры</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Field label="Мобилизация, ₽" value={costs.mobilization} onChange={(v) => setCosts({ ...costs, mobilization: v })} step={50000} />
-                <Field label="Дней оборудование" value={costs.equipmentDays} onChange={(v) => setCosts({ ...costs, equipmentDays: v })} />
-                <Field label="Дней бригада" value={costs.crewDays} onChange={(v) => setCosts({ ...costs, crewDays: v })} />
-                <Field label={`Цена ${isGas ? "газа" : "нефти"}, ${priceUnit}`} value={costs.oilPricePerM3} onChange={(v) => setCosts({ ...costs, oilPricePerM3: v })} step={500} />
-                <Field label="Ставка дисконт., д.ед./год" value={costs.discountRateAnnual} onChange={(v) => setCosts({ ...costs, discountRateAnnual: v })} step={0.01} />
-              </div>
-            </Card>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Stat label="Полная стоимость" value={`${(economics.totalCost / 1e6).toFixed(2)} млн ₽`} />
-              <Stat label="Доход" value={`${(economics.incrementalRevenue / 1e6).toFixed(2)} млн ₽`} />
-              <Stat label="NPV" value={`${(economics.npv / 1e6).toFixed(2)} млн ₽`} sub={`ROI ${economics.roi.toFixed(1)}%`} />
-              <Stat label="Окупаемость" value={economics.paybackMonths === null ? "не окуп." : `${economics.paybackMonths} мес`} />
-            </div>
-
-            <Card className="p-4">
-              <h3 className="font-semibold mb-3">Кэшфлоу (тыс. ₽)</h3>
-              <div style={{ width: "100%", height: 260 }}>
-                <ResponsiveContainer>
-                  <BarChart data={cashflowData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
-                    <YAxis stroke="hsl(var(--muted-foreground))" />
-                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
-                    <Legend />
-                    <Bar dataKey="profit" fill="hsl(var(--primary))" name="Накоп. прибыль" />
-                    <Bar dataKey="npv" fill="hsl(var(--muted-foreground))" name="NPV" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-
-            {/* Tornado: чувствительность NPV */}
-            <Card className="p-4">
-              {(() => {
-                const baseNPV = economics.npv;
-                const revenueDisc = baseNPV + economics.totalCost;       // выручка дисконтированная
-                const baseOilPrice = costs.oilPricePerM3;
-                const baseChem = costEstimate;
-                const baseDeltaSkin = (selected.skinReductionRange[0] + selected.skinReductionRange[1]) / 2;
-                const baseMobil = costs.mobilization;
-                const params: SensitivityParam[] = [
-                  {
-                    name: `Цена ${isGas ? "газа" : "нефти"}`,
-                    baseValue: baseOilPrice,
-                    variation: 0.25,
-                    evaluate: (v) => revenueDisc * (v / baseOilPrice) - economics.totalCost,
-                  },
-                  {
-                    name: "Стоимость реагентов",
-                    baseValue: baseChem,
-                    variation: 0.3,
-                    evaluate: (v) => baseNPV - (v - baseChem),
-                  },
-                  {
-                    name: "Снятие скина ΔS",
-                    baseValue: baseDeltaSkin,
-                    variation: 0.4,
-                    evaluate: (v) => revenueDisc * (v / Math.max(0.1, baseDeltaSkin)) - economics.totalCost,
-                  },
-                  {
-                    name: "Мобилизация",
-                    baseValue: baseMobil,
-                    variation: 0.3,
-                    evaluate: (v) => baseNPV - (v - baseMobil),
-                  },
-                ];
-                return <NpvTornado baseNPV={baseNPV} params={params} />;
-              })()}
-            </Card>
-          </TabsContent>
-
-
           {/* ─────────── REPORT ─────────── */}
           <TabsContent value="report" className="space-y-4 mt-4">
             <Card className="p-4 space-y-3">
               <h3 className="font-semibold">DOCX-отчёт</h3>
               <p className="text-sm text-muted-foreground">
-                Полная план-программа ОПЗ: коллектор, диагностика повреждений, выбранный метод,
-                рецептура, многоступенчатая обработка, кинетика, прогноз 36 мес, экономика.
+                Инженерная план-программа ОПЗ: коллектор, диагностика повреждений, выбранный метод,
+                рецептура, многоступенчатая обработка, кинетика, прогноз дебита 36 мес.
               </p>
+
               <Button onClick={handleExport}>
                 <FileText className="w-4 h-4 mr-2" /> Скачать план-программу (DOCX)
               </Button>
