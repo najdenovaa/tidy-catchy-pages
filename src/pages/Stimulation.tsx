@@ -214,8 +214,9 @@ export default function Stimulation() {
     try {
       await exportStimulationDocx({
         reservoir, method: selected, ranked: selectedRanked,
-        acidVolM3: acidVol, costEstimate, damage, kinetics, stages, forecast, economics, wellName,
+        acidVolM3: acidVol, damage, kinetics, stages, forecast, wellName,
       });
+
       toast.success("DOCX-отчёт сформирован");
     } catch (e) {
       console.error(e);
