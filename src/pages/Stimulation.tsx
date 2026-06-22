@@ -589,7 +589,7 @@ export default function Stimulation() {
                 <Field label="Мобилизация, ₽" value={costs.mobilization} onChange={(v) => setCosts({ ...costs, mobilization: v })} step={50000} />
                 <Field label="Дней оборудование" value={costs.equipmentDays} onChange={(v) => setCosts({ ...costs, equipmentDays: v })} />
                 <Field label="Дней бригада" value={costs.crewDays} onChange={(v) => setCosts({ ...costs, crewDays: v })} />
-                <Field label="Цена нефти, ₽/м³" value={costs.oilPricePerM3} onChange={(v) => setCosts({ ...costs, oilPricePerM3: v })} step={500} />
+                <Field label={`Цена ${isGas ? "газа" : "нефти"}, ${priceUnit}`} value={costs.oilPricePerM3} onChange={(v) => setCosts({ ...costs, oilPricePerM3: v })} step={500} />
                 <Field label="Ставка дисконт., д.ед./год" value={costs.discountRateAnnual} onChange={(v) => setCosts({ ...costs, discountRateAnnual: v })} step={0.01} />
               </div>
             </Card>
