@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { CheckCircle2, AlertTriangle, XCircle, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { PressureResult, VolumeResults } from "@/lib/cementing-calculations";
+import type { PressureProfileResult, VolumeResults } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 
 type Status = "ok" | "warning" | "danger" | "info" | "muted";
