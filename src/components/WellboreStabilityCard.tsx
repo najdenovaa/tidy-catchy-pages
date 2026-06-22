@@ -125,7 +125,7 @@ export default function WellboreStabilityCard({ wellData }: Props) {
             <DebouncedInput
               type="number"
               value={rock.ucsMPa}
-              onChange={(v) => updateRock("ucsMPa", Number(v) || 0)}
+              onChange={(e) => updateRock("ucsMPa", Number(e.target.value) || 0)}
               className="h-9 text-sm"
             />
           </div>
@@ -134,7 +134,7 @@ export default function WellboreStabilityCard({ wellData }: Props) {
             <DebouncedInput
               type="number"
               value={rock.frictionAngleDeg}
-              onChange={(v) => updateRock("frictionAngleDeg", Number(v) || 0)}
+              onChange={(e) => updateRock("frictionAngleDeg", Number(e.target.value) || 0)}
               className="h-9 text-sm"
             />
           </div>
@@ -143,7 +143,7 @@ export default function WellboreStabilityCard({ wellData }: Props) {
             <DebouncedInput
               type="number"
               value={rock.tensileStrengthMPa}
-              onChange={(v) => updateRock("tensileStrengthMPa", Number(v) || 0)}
+              onChange={(e) => updateRock("tensileStrengthMPa", Number(e.target.value) || 0)}
               className="h-9 text-sm"
             />
           </div>
@@ -153,7 +153,7 @@ export default function WellboreStabilityCard({ wellData }: Props) {
               type="number"
               step="0.01"
               value={mudDensity}
-              onChange={(v) => setMudDensity(Number(v) || 0)}
+              onChange={(e) => setMudDensity(Number(e.target.value) || 0)}
               className="h-9 text-sm"
             />
           </div>
