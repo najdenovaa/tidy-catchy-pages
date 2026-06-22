@@ -70,7 +70,7 @@ const GRAVITY = 9.81;
 const STEEL_DENSITY = 7850;
 
 /** Yield strength by grade, MPa */
-const GRADE_YIELD: Record<string, number> = {
+export const GRADE_YIELD: Record<string, number> = {
   "CT-70": 483,
   "CT-80": 552,
   "CT-90": 621,
@@ -78,12 +78,12 @@ const GRADE_YIELD: Record<string, number> = {
 };
 
 /** Reel & guide arch diameters for fatigue, m */
-const REEL_DIAMETERS: Record<string, number> = {
+export const REEL_DIAMETERS: Record<string, number> = {
   small: 1.37,
   medium: 1.83,
   large: 2.44,
 };
-const GUIDE_ARCH_DIAMETER = 1.83;
+export const GUIDE_ARCH_DIAMETER = 1.83;
 
 /**
  * Micro-tortuosity multiplier for friction.
