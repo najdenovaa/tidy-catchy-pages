@@ -61,8 +61,8 @@ export default function WOCFromProgram({ wellData, slurries }: Props) {
               value={slurry ? slurry.topDepthMD.toFixed(0) : "—"}
             />
             <ReadOnly
-              label="Тип пачки"
-              value={slurry?.type ?? "—"}
+              label="Название пачки"
+              value={slurry?.name ?? "—"}
             />
           </div>
 
@@ -78,7 +78,7 @@ export default function WOCFromProgram({ wellData, slurries }: Props) {
                 {slurries.length === 0 && <option>— нет пачек —</option>}
                 {slurries.map((s, i) => (
                   <option key={i} value={i}>
-                    {i + 1}. {s.name ?? s.type} · {s.density} кг/м³
+                    {i + 1}. {s.name} · {s.density} кг/м³
                   </option>
                 ))}
               </select>
