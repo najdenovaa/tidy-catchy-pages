@@ -227,19 +227,8 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
     }));
   }
 
-  // 10. Economics
-  if (economics) {
-    children.push(heading("10. Экономика"));
-    children.push(kv([
-      ["Полная стоимость, руб", fmt(economics.totalCost, 0)],
-      ["Прирост добычи, м³", fmt(economics.incrementalOilM3, 0)],
-      ["Доход, руб", fmt(economics.incrementalRevenue, 0)],
-      ["Чистая прибыль, руб", fmt(economics.netProfit, 0)],
-      ["ROI, %", fmt(economics.roi, 1)],
-      ["NPV, руб", fmt(economics.npv, 0)],
-      ["Срок окупаемости, мес", economics.paybackMonths === null ? "не окупается" : String(economics.paybackMonths)],
-    ]));
-  }
+  // (раздел "Экономика" исключён — модуль инженерный, финансы заказчик считает отдельно)
+
 
   children.push(new Paragraph({
     spacing: { before: 300 },
