@@ -2,7 +2,10 @@ import { useMemo, useState, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, CheckCircle2, Info, Lightbulb } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, CheckCircle2, Info, Lightbulb, Dices, Loader2 } from "lucide-react";
+import { runMonteCarloCQI, type MonteCarloResult } from "@/lib/cement-monte-carlo";
+import type { CQIInput } from "@/lib/cement-quality-index";
 import type { PressurePoint, WellData, SlurryInput, BufferFluid, DrillingFluid } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import {
@@ -261,6 +264,14 @@ export default function CementQualitySection(props: Props) {
           </CardContent>
         </Card>
       )}
+
+      <MonteCarloCard
+        cqiInput={{
+          wellData, slurries, buffers, drillingFluid,
+          centralization: centralizationResults,
+          pressureData, casingDepthMD, annVPM, prevCasingDepth, contactTimeByDepth,
+        }}
+      />
     </div>
   );
 }
