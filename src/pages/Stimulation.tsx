@@ -12,7 +12,10 @@ import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from "recharts";
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
-import { buildAcidStages, computeAcidKinetics } from "@/lib/stimulation-acid";
+import { buildAcidStages, computeAcidKinetics, optimalAcidRate } from "@/lib/stimulation-acid";
+import WormholeVisualization from "@/components/WormholeVisualization";
+import NpvTornado from "@/components/NpvTornado";
+import type { SensitivityParam } from "@/lib/foam-treatment-diagnostics";
 import {
   diagnoseDamage, fitArpsDecline, forecastPostTreatment, calculateEconomics, DEFAULT_COSTS,
   type DamageAssessment, type ReservoirSnapshot, type Mineralogy, type DrillingHistory,
@@ -478,8 +481,8 @@ export default function Stimulation() {
             </div>
 
             {kinetics && (
-              <Card className="p-4">
-                <h3 className="font-semibold mb-3">Кинетика и проникновение</h3>
+              <Card className="p-4 space-y-4">
+                <h3 className="font-semibold">Кинетика и проникновение</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                   <KV k="Скорость реакции" v={`${kinetics.reactionRate.toExponential(2)} моль/(м²·с)`} />
                   <KV k="Радиус проникновения" v={`${kinetics.penetrationRadius.toFixed(2)} м`} />
@@ -488,6 +491,22 @@ export default function Stimulation() {
                   <KV k="Отработанной кислоты" v={`${kinetics.spentAcidVolume.toFixed(2)} м³`} />
                   <KV k="Остаточная конц." v={`${kinetics.residualAcidConcentration.toFixed(1)}%`} />
                 </div>
+                {/* Wormhole visualization (Da-режим) */}
+                {(() => {
+                  const qOptLpm = optimalAcidRate(
+                    reservoir.permeability_mD, reservoir.porosity, reservoir.temperatureC, 0.216
+                  );
+                  const qActual = (selected.recommendedRate[0] + selected.recommendedRate[1]) / 2;
+                  const damkohler = 0.29 * (qOptLpm / Math.max(1, qActual));
+                  return (
+                    <WormholeVisualization
+                      wormholeLengthM={kinetics.wormholeLength}
+                      penetrationRadiusM={kinetics.penetrationRadius}
+                      wellboreRadiusM={0.108}
+                      damkohler={damkohler}
+                    />
+                  );
+                })()}
               </Card>
             )}
 
@@ -626,7 +645,47 @@ export default function Stimulation() {
                 </ResponsiveContainer>
               </div>
             </Card>
+
+            {/* Tornado: чувствительность NPV */}
+            <Card className="p-4">
+              {(() => {
+                const baseNPV = economics.npv;
+                const revenueDisc = baseNPV + economics.totalCost;       // выручка дисконтированная
+                const baseOilPrice = costs.oilPricePerM3;
+                const baseChem = costEstimate;
+                const baseDeltaSkin = (selected.skinReductionRange[0] + selected.skinReductionRange[1]) / 2;
+                const baseMobil = costs.mobilization;
+                const params: SensitivityParam[] = [
+                  {
+                    name: `Цена ${isGas ? "газа" : "нефти"}`,
+                    baseValue: baseOilPrice,
+                    variation: 0.25,
+                    evaluate: (v) => revenueDisc * (v / baseOilPrice) - economics.totalCost,
+                  },
+                  {
+                    name: "Стоимость реагентов",
+                    baseValue: baseChem,
+                    variation: 0.3,
+                    evaluate: (v) => baseNPV - (v - baseChem),
+                  },
+                  {
+                    name: "Снятие скина ΔS",
+                    baseValue: baseDeltaSkin,
+                    variation: 0.4,
+                    evaluate: (v) => revenueDisc * (v / Math.max(0.1, baseDeltaSkin)) - economics.totalCost,
+                  },
+                  {
+                    name: "Мобилизация",
+                    baseValue: baseMobil,
+                    variation: 0.3,
+                    evaluate: (v) => baseNPV - (v - baseMobil),
+                  },
+                ];
+                return <NpvTornado baseNPV={baseNPV} params={params} />;
+              })()}
+            </Card>
           </TabsContent>
+
 
           {/* ─────────── REPORT ─────────── */}
           <TabsContent value="report" className="space-y-4 mt-4">
