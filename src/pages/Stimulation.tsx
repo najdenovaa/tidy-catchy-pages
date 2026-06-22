@@ -25,6 +25,8 @@ import {
   type WellFluidType, type GasDamage,
 } from "@/lib/stimulation-gas-ipr";
 import { SharedWellCard } from "@/components/SharedWellCard";
+import SolventCalcPanel from "@/components/SolventCalcPanel";
+import NitrogenCalcPanel from "@/components/NitrogenCalcPanel";
 
 const TABS = [
   { id: "diag", label: "Диагностика", icon: FlaskConical },
