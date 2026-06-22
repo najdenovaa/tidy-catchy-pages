@@ -1,10 +1,12 @@
 import { useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, ReferenceLine } from "recharts";
 import { calculateDrillingHydraulics, type DrillingHydraulicsInput } from "@/lib/drilling-hydraulics-calculations";
+import { calculateGasKick, kickMigrationProfile } from "@/lib/gas-kick-tolerance";
 import type { WellData } from "@/lib/cementing-calculations";
 import { getCasingID } from "@/lib/cementing-calculations";
 import CopyImageButton from "./CopyImageButton";
+import { Wind, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 interface Props {
   wellData: WellData;
