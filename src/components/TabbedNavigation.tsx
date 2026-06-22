@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ClipboardList, Calculator, BarChart3, Film } from "lucide-react";
+import { ClipboardList, BarChart3, Film } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TabItem {
@@ -22,18 +22,9 @@ const GROUPS: TabGroup[] = [
     icon: ClipboardList,
     tabs: [
       { value: "input", label: "Данные" },
-      { value: "trajectory", label: "Траектория" },
-      { value: "schedule", label: "Закачка" },
-    ],
-  },
-  {
-    id: "calc",
-    label: "Расчёт",
-    icon: Calculator,
-    tabs: [
-      { value: "hydraulics", label: "Гидравлика" },
-      { value: "materials", label: "Материалы" },
-      { value: "drillhydr", label: "Гидр. бур." },
+      { value: "centralization", label: "Центрация (со спуском)" },
+      { value: "foam", label: "Пена" },
+      { value: "rotation", label: "Вращение" },
     ],
   },
   {
@@ -42,11 +33,14 @@ const GROUPS: TabGroup[] = [
     icon: BarChart3,
     tabs: [
       { value: "charts", label: "Графики" },
+      { value: "trajectory", label: "Траектория" },
+      { value: "materials", label: "Материалы" },
+      { value: "schedule", label: "Закачка" },
+      { value: "hydraulics", label: "Гидравлика" },
       { value: "contact", label: "Контакт" },
       { value: "quality", label: "Качество (CQI)" },
-      { value: "centralization", label: "Центрир." },
       { value: "torquedrag", label: "T&D" },
-      { value: "rotation", label: "Вращение" },
+      { value: "drillhydr", label: "Гидравлика бурения" },
     ],
   },
   {
@@ -55,8 +49,7 @@ const GROUPS: TabGroup[] = [
     icon: Film,
     tabs: [
       { value: "animation", label: "Анимация" },
-      { value: "visual", label: "Визуал" },
-      { value: "foam", label: "Пена" },
+      { value: "visual", label: "Визуализация" },
     ],
   },
 ];
