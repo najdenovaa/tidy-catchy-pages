@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
-import { buildAcidStages, computeAcidKinetics, optimalAcidRate } from "@/lib/stimulation-acid";
+import { buildAcidStages, computeAcidKinetics, optimalAcidRate, computeAcidStoichiometry } from "@/lib/stimulation-acid";
 import WormholeVisualization from "@/components/WormholeVisualization";
 import {
   diagnoseDamage, fitArpsDecline, forecastPostTreatment,
