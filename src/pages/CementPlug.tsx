@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import TermsFooter from "@/components/TermsFooter";
 import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
+import CementPlugTypesCard from "@/components/CementPlugTypesCard";
 
 const SESSION_KEY = "cement_plug_session_v2";
 
@@ -830,6 +831,15 @@ export default function CementPlug() {
                 </CollapsibleContent>
               </Card>
             </Collapsible>
+
+            {/* Plug type, WOC, RF compliance */}
+            <CementPlugTypesCard
+              plugLengthMD={Math.max(0, plug.bottomMD - plug.topMD)}
+              plugTopMD={plug.topMD}
+              casingShoeMD={well.casingShoe ?? plug.bottomMD + 50}
+            />
+
+
 
             {/* Fluids */}
             <Collapsible open={openSections.fluids} onOpenChange={() => toggle("fluids")}>
