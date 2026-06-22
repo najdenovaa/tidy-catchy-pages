@@ -192,3 +192,71 @@ function Mini({ k, v, good }: { k: string; v: string; good?: boolean }) {
     </div>
   );
 }
+
+/** Анимированная кривая UCS(t) с прогрессом ОЗЦ от 0 до wocHours. */
+function UcsAnimatedChart({
+  curve, wocHours, minUcs,
+}: {
+  curve: { h: number; ucs: number }[];
+  wocHours: number;
+  minUcs: number;
+}) {
+  const [playT, setPlayT] = useState<number | null>(null);  // текущая "анимированная" точка времени
+  const rafRef = useRef<number | null>(null);
+
+  const play = () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    const start = performance.now();
+    const duration = 2500;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      setPlayT(t * wocHours);
+      if (t < 1) rafRef.current = requestAnimationFrame(step);
+      else { rafRef.current = null; setTimeout(() => setPlayT(null), 800); }
+    };
+    rafRef.current = requestAnimationFrame(step);
+  };
+
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
+
+  const animMark = playT ?? wocHours;
+  // данные с дополнительным полем "fill" — UCS только до animMark, далее null
+  const data = curve.map((p) => ({
+    ...p,
+    filled: p.h <= animMark ? p.ucs : null,
+  }));
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs font-medium">Набор прочности UCS(t)</div>
+        <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] gap-1" onClick={play}>
+          <Play className="w-3 h-3" /> ОЗЦ анимация
+        </Button>
+      </div>
+      <div style={{ width: "100%", height: 200 }}>
+        <ResponsiveContainer>
+          <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <defs>
+              <linearGradient id="ucsFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.4} />
+                <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.05} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <XAxis dataKey="h" stroke="hsl(var(--muted-foreground))" label={{ value: "ч", position: "insideBottom", offset: -2, fontSize: 10 }} />
+            <YAxis stroke="hsl(var(--muted-foreground))" label={{ value: "UCS, МПа", angle: -90, position: "insideLeft", fontSize: 10 }} />
+            <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+            <ReferenceLine y={minUcs} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: "min", fontSize: 10, fill: "hsl(var(--destructive))" }} />
+            <ReferenceLine x={animMark} stroke="hsl(var(--primary))" strokeDasharray="2 2"
+              label={{ value: playT !== null ? `${animMark.toFixed(1)} ч` : "ОЗЦ", fontSize: 10, fill: "hsl(var(--primary))" }} />
+            {/* фоновая кривая */}
+            <Area type="monotone" dataKey="ucs" stroke="hsl(var(--muted-foreground))" strokeOpacity={0.5} fill="transparent" strokeDasharray="2 2" isAnimationActive={false} />
+            {/* заливка до animMark */}
+            <Area type="monotone" dataKey="filled" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#ucsFill)" isAnimationActive={false} connectNulls={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
