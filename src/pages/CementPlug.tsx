@@ -832,6 +832,15 @@ export default function CementPlug() {
               </Card>
             </Collapsible>
 
+            {/* Plug type, WOC, RF compliance */}
+            <CementPlugTypesCard
+              plugLengthMD={Math.max(0, plug.bottomMD - plug.topMD)}
+              plugTopMD={plug.topMD}
+              bhctC={well.bhct ?? 60}
+              casingShoeMD={well.casingShoeMD ?? plug.bottomMD + 50}
+            />
+
+
             {/* Fluids */}
             <Collapsible open={openSections.fluids} onOpenChange={() => toggle("fluids")}>
               <Card>
