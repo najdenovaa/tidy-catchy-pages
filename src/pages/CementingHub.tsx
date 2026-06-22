@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { FlaskConical, Shield, Cpu, Home, ArrowLeft, LayoutDashboard, LogOut, Send, Timer } from "lucide-react";
+import { FlaskConical, Shield, Cpu, Home, ArrowLeft, LayoutDashboard, LogOut, Send } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import { supabase } from "@/integrations/supabase/client";
 import WellBatchExportCard from "@/components/WellBatchExportCard";
@@ -7,7 +7,7 @@ import WellBatchExportCard from "@/components/WellBatchExportCard";
 const subModules = [
   {
     title: "Составление программы цементирования",
-    description: "Расчёт обсадных колонн, гидравлика, объёмы, материалы, графики",
+    description: "Расчёт обсадных колонн, гидравлика, объёмы, материалы, графики + симулятор ОЗЦ",
     icon: FlaskConical,
     to: "/cementing/program",
   },
@@ -22,12 +22,6 @@ const subModules = [
     description: "Подробный анализ качества цементирования по документам",
     icon: Cpu,
     to: "/cementing/analysis",
-  },
-  {
-    title: "Симулятор ОЗЦ",
-    description: "Набор UCS/SGS, переход гидростатика→геостатика, экзотерма, усадка",
-    icon: Timer,
-    to: "/cementing/woc",
   },
 ];
 
