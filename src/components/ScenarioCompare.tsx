@@ -69,7 +69,7 @@ function computeMetrics(
   const fracP = pressureResult.points[0]?.fracturePressure ?? 0;
   const flowMax = Math.max(...pressureResult.points.map((p) => p.pumpRateLps || 0));
   const standoffs = cent && cent.length > 0 ? cent.map((c) => c.standoff) : [];
-  const cz = cent ? cent.reduce((s, c) => s + (c.hasCentralizer ? 1 : 0) * Math.max(1, c.cpj ?? 0), 0) : 0;
+  const cz = cent ? cent.filter((c) => c.hasCentralizer).length : 0;
   return {
     maxBHP,
     fracP,
@@ -80,7 +80,7 @@ function computeMetrics(
     minStandoff: standoffs.length ? Math.min(...standoffs) : 0,
     centralizerCount: cz,
     flowRateMaxLps: flowMax,
-    rotationRpm: wellData.casingRotationRpm ?? 0,
+    rotationRpm: 0,
   };
 }
 
@@ -105,7 +105,7 @@ export default function ScenarioCompare({ wellData, pressureResult, volumes, cen
       id,
       name: name.trim() || `Сценарий ${scenarios.length + 1}`,
       savedAt: Date.now(),
-      wellName: wellData.wellName || "—",
+      wellName: (wellData as { wellName?: string }).wellName || "—",
       metrics: currentMetrics,
     };
     const next = [snap, ...scenarios].slice(0, MAX_SCENARIOS);
