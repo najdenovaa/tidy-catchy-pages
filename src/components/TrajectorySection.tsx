@@ -266,7 +266,7 @@ export default function TrajectorySection({ wellData }: Props) {
           </CardHeader>
           <CardContent>
             <div ref={refs.schematic}>
-              <CasingSchematic wellData={wellData} />
+              <CasingSchematic wellData={wellData} trajectory={pts} />
             </div>
           </CardContent>
         </Card>
@@ -318,89 +318,175 @@ export default function TrajectorySection({ wellData }: Props) {
   );
 }
 
-// ── Casing Schematic SVG ──
+// ── Casing Schematic SVG (учитывает зенитный угол) ──
 
-function CasingSchematic({ wellData }: { wellData: WellData }) {
-  const svgW = 300;
-  const svgH = 450;
-  const topY = 30;
-  const botY = svgH - 30;
-  const usableH = botY - topY;
-  const centerX = svgW / 2;
+function CasingSchematic({ wellData, trajectory }: { wellData: WellData; trajectory: TrajectoryCalcPoint[] }) {
+  const svgW = 320;
+  const svgH = 480;
+  const marginT = 30;
+  const marginB = 40;
+  const marginL = 50;
+  const marginR = 70;
 
-  const maxDepth = Math.max(wellData.wellDepthMD, wellData.casingDepthMD, wellData.prevCasingDepth || 0);
-  if (maxDepth <= 0) return <div className="text-sm text-muted-foreground text-center py-4">Нет данных о колоннах</div>;
+  const maxDepthMD = Math.max(wellData.wellDepthMD, wellData.casingDepthMD, wellData.prevCasingDepth || 0);
+  if (maxDepthMD <= 0) return <div className="text-sm text-muted-foreground text-center py-4">Нет данных о колоннах</div>;
 
-  const scale = usableH / maxDepth;
-  const toY = (md: number) => topY + md * scale;
+  // Построить путь скважины: (horizontal, TVD) для каждой точки
+  // Если траектории нет — построим вертикаль
+  const pathPoints: { x: number; tvd: number; md: number }[] = [];
+  if (trajectory.length >= 2) {
+    for (const p of trajectory) {
+      const h = Math.sqrt(p.northM * p.northM + p.eastM * p.eastM);
+      pathPoints.push({ x: h, tvd: p.tvd, md: p.md });
+    }
+  } else {
+    // Fallback — вертикальная скважина
+    pathPoints.push({ x: 0, tvd: 0, md: 0 });
+    pathPoints.push({ x: 0, tvd: wellData.wellDepthTVD || maxDepthMD, md: maxDepthMD });
+  }
 
-  // Size scale: mm → px (approximate)
+  const maxX = Math.max(...pathPoints.map(p => p.x), 1);
+  const maxTVD = Math.max(...pathPoints.map(p => p.tvd), 1);
+
+  // Масштаб с сохранением пропорций
+  const usableW = svgW - marginL - marginR;
+  const usableH = svgH - marginT - marginB;
+  // Если скважина почти вертикальная — даём X немного места, чтобы стенки колонн были видны
+  const effectiveMaxX = Math.max(maxX, maxTVD * 0.05);
+  const scaleX = usableW / effectiveMaxX;
+  const scaleY = usableH / maxTVD;
+  const scale = Math.min(scaleX, scaleY);
+
+  const toX = (xVal: number) => marginL + xVal * scale;
+  const toY = (tvdVal: number) => marginT + tvdVal * scale;
+
+  // Интерполяция точки траектории по MD
+  const findPoint = (md: number): { x: number; y: number; tvd: number; horiz: number } => {
+    if (md <= pathPoints[0].md) {
+      return { x: toX(pathPoints[0].x), y: toY(pathPoints[0].tvd), tvd: pathPoints[0].tvd, horiz: pathPoints[0].x };
+    }
+    for (let i = 1; i < pathPoints.length; i++) {
+      if (pathPoints[i].md >= md) {
+        const a = pathPoints[i - 1];
+        const b = pathPoints[i];
+        const t = (md - a.md) / Math.max(1e-6, b.md - a.md);
+        const x = a.x + (b.x - a.x) * t;
+        const tvd = a.tvd + (b.tvd - a.tvd) * t;
+        return { x: toX(x), y: toY(tvd), tvd, horiz: x };
+      }
+    }
+    const last = pathPoints[pathPoints.length - 1];
+    return { x: toX(last.x), y: toY(last.tvd), tvd: last.tvd, horiz: last.x };
+  };
+
+  // SVG-путь от устья до глубины MD
+  const pathToMD = (maxMD: number): string => {
+    const segs: string[] = [];
+    let drawn = false;
+    for (let i = 0; i < pathPoints.length; i++) {
+      const p = pathPoints[i];
+      if (p.md <= maxMD) {
+        segs.push(`${!drawn ? "M" : "L"} ${toX(p.x).toFixed(1)} ${toY(p.tvd).toFixed(1)}`);
+        drawn = true;
+      } else {
+        const pt = findPoint(maxMD);
+        segs.push(`L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`);
+        break;
+      }
+    }
+    return segs.join(" ");
+  };
+
+  // Толщины (px) — пропорционально диаметрам, но с минимумом для видимости
   const maxDiamMm = Math.max(wellData.holeDiameter, wellData.prevCasingID || 0, wellData.casingOD);
-  const pixPerMm = maxDiamMm > 0 ? 80 / maxDiamMm : 0.3;
+  const pxPerMm = maxDiamMm > 0 ? Math.min(0.12, 30 / maxDiamMm) : 0.1;
+  const holeWidthPx = Math.max(10, wellData.holeDiameter * pxPerMm);
+  const prevCasingWidthPx = Math.max(6, (wellData.prevCasingOD || (wellData.prevCasingID || wellData.holeDiameter) + 20) * pxPerMm);
+  const casingWidthPx = Math.max(4, wellData.casingOD * pxPerMm);
 
-  const holeW = wellData.holeDiameter * pixPerMm;
-  const casingODw = wellData.casingOD * pixPerMm;
-  const casingIDw = (wellData.casingOD - 2 * wellData.casingWall) * pixPerMm;
-  const prevCasingIDw = (wellData.prevCasingID || wellData.holeDiameter) * pixPerMm;
-  const prevCasingODw = (wellData.prevCasingOD || (wellData.prevCasingID || wellData.holeDiameter) + 20) * pixPerMm;
+  const wellPathAll = pathToMD(wellData.wellDepthMD || maxDepthMD);
+  const prevCasingPath = wellData.prevCasingDepth > 0 ? pathToMD(wellData.prevCasingDepth) : "";
+  const casingPath = pathToMD(wellData.casingDepthMD);
 
-  const prevShoeY = toY(wellData.prevCasingDepth || 0);
-  const casingShoeY = toY(wellData.casingDepthMD);
-  const wellBottomY = toY(wellData.wellDepthMD);
+  const shoePt = findPoint(wellData.casingDepthMD);
+  const prevShoePt = wellData.prevCasingDepth > 0 ? findPoint(wellData.prevCasingDepth) : null;
+  const bottomPt = findPoint(wellData.wellDepthMD || maxDepthMD);
+  const ckodPt = wellData.ckodDepth > 0 ? findPoint(wellData.ckodDepth) : null;
+
+  // TVD-сетка (5 линий)
+  const tvdMarks: number[] = [];
+  for (let i = 0; i <= 4; i++) tvdMarks.push((maxTVD * i) / 4);
 
   return (
-    <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full max-w-[320px] mx-auto" style={{ height: svgH }}>
-      {/* Surface */}
-      <line x1={0} y1={topY} x2={svgW} y2={topY} stroke="hsl(var(--border))" strokeWidth="2" />
-      <text x={centerX} y={topY - 6} textAnchor="middle" className="text-[9px] fill-muted-foreground">Устье (0 м)</text>
+    <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full max-w-[340px] mx-auto" style={{ height: svgH }}>
+      {/* Сетка TVD */}
+      {tvdMarks.map((tvd, i) => (
+        <g key={i}>
+          <line x1={marginL - 4} y1={toY(tvd)} x2={svgW - marginR + 4} y2={toY(tvd)} stroke="hsl(var(--border))" strokeWidth={0.5} strokeDasharray="2,3" opacity={0.5} />
+          <text x={marginL - 6} y={toY(tvd) + 3} textAnchor="end" className="text-[7px] fill-muted-foreground">{tvd.toFixed(0)}</text>
+        </g>
+      ))}
+      <text x={10} y={marginT - 12} className="text-[8px] fill-muted-foreground">TVD, м</text>
 
-      {/* Open hole */}
-      <rect x={centerX - holeW / 2} y={prevShoeY} width={holeW} height={Math.max(0, wellBottomY - prevShoeY)} fill="hsl(30, 25%, 85%)" stroke="hsl(30, 30%, 50%)" strokeWidth="1" />
-      <text x={centerX + holeW / 2 + 5} y={(prevShoeY + wellBottomY) / 2} className="text-[7px] fill-muted-foreground" dominantBaseline="middle">
-        ⌀{wellData.holeDiameter.toFixed(0)} мм
-      </text>
+      {/* Устье */}
+      <line x1={marginL - 10} y1={marginT} x2={marginL + 30} y2={marginT} stroke="hsl(var(--foreground))" strokeWidth={2} />
+      <text x={marginL - 12} y={marginT - 6} textAnchor="start" className="text-[8px] fill-muted-foreground">Устье (0 м)</text>
 
-      {/* Previous casing */}
-      {wellData.prevCasingDepth > 0 && (
+      {/* Открытый ствол (от prevShoe до забоя) */}
+      {wellData.prevCasingDepth > 0 ? (
+        <path d={pathToMD(wellData.wellDepthMD || maxDepthMD).split("M").slice(1).map(s => "M" + s).join(" ")} fill="none" stroke="hsl(30, 25%, 75%)" strokeWidth={holeWidthPx} strokeLinecap="round" opacity={0.55} />
+      ) : (
+        <path d={wellPathAll} fill="none" stroke="hsl(30, 25%, 75%)" strokeWidth={holeWidthPx} strokeLinecap="round" opacity={0.55} />
+      )}
+
+      {/* Предыдущая колонна */}
+      {prevCasingPath && (
+        <path d={prevCasingPath} fill="none" stroke="hsl(210, 15%, 55%)" strokeWidth={prevCasingWidthPx} strokeLinecap="round" opacity={0.7} />
+      )}
+
+      {/* Текущая колонна */}
+      <path d={casingPath} fill="none" stroke="hsl(var(--foreground))" strokeWidth={casingWidthPx} strokeLinecap="round" opacity={0.55} />
+
+      {/* Башмак предыдущей колонны */}
+      {prevShoePt && (
         <>
-          <rect x={centerX - prevCasingODw / 2} y={topY} width={(prevCasingODw - prevCasingIDw) / 2} height={prevShoeY - topY} fill="hsl(210, 15%, 55%)" opacity={0.6} />
-          <rect x={centerX + prevCasingIDw / 2} y={topY} width={(prevCasingODw - prevCasingIDw) / 2} height={prevShoeY - topY} fill="hsl(210, 15%, 55%)" opacity={0.6} />
-          <line x1={centerX - prevCasingODw / 2} y1={prevShoeY} x2={centerX + prevCasingODw / 2} y2={prevShoeY} stroke="hsl(210, 15%, 45%)" strokeWidth="2" />
-          <text x={centerX - prevCasingODw / 2 - 5} y={prevShoeY + 3} textAnchor="end" className="text-[7px] fill-muted-foreground">
-            {(wellData.prevCasingDepth).toFixed(0)} м
-          </text>
-          <text x={centerX - prevCasingODw / 2 - 5} y={(topY + prevShoeY) / 2} textAnchor="end" className="text-[7px] fill-muted-foreground" dominantBaseline="middle">
-            ⌀{(wellData.prevCasingID || 0).toFixed(0)} мм
+          <circle cx={prevShoePt.x} cy={prevShoePt.y} r={3.5} fill="hsl(210, 15%, 45%)" />
+          <text x={prevShoePt.x + 6} y={prevShoePt.y - 3} className="text-[7px] fill-muted-foreground">
+            Пред. башмак {wellData.prevCasingDepth.toFixed(0)} м
           </text>
         </>
       )}
 
-      {/* Current casing */}
-      <rect x={centerX - casingODw / 2} y={topY} width={(casingODw - casingIDw) / 2} height={casingShoeY - topY} fill="hsl(var(--foreground))" opacity={0.35} />
-      <rect x={centerX + casingIDw / 2} y={topY} width={(casingODw - casingIDw) / 2} height={casingShoeY - topY} fill="hsl(var(--foreground))" opacity={0.35} />
-      {/* Shoe */}
-      <line x1={centerX - casingODw / 2} y1={casingShoeY} x2={centerX + casingODw / 2} y2={casingShoeY} stroke="hsl(var(--foreground))" strokeWidth="2" />
-      <text x={centerX + casingODw / 2 + 5} y={casingShoeY + 3} className="text-[7px] fill-foreground">
+      {/* Башмак текущей колонны */}
+      <path d={`M ${shoePt.x - 7} ${shoePt.y - 1} L ${shoePt.x} ${shoePt.y + 9} L ${shoePt.x + 7} ${shoePt.y - 1} Z`} fill="#FF6B35" stroke="#C84A1F" strokeWidth={0.5} />
+      <text x={shoePt.x + 9} y={shoePt.y + 3} className="text-[8px] fill-foreground font-medium">
         Башмак {wellData.casingDepthMD.toFixed(0)} м
       </text>
-      <text x={centerX + casingODw / 2 + 5} y={(topY + casingShoeY) / 2} className="text-[7px] fill-muted-foreground" dominantBaseline="middle">
+      <text x={shoePt.x + 9} y={shoePt.y + 12} className="text-[7px] fill-muted-foreground">
         ⌀{wellData.casingOD.toFixed(0)}×{wellData.casingWall.toFixed(1)} мм
       </text>
 
-      {/* Well bottom */}
-      <line x1={centerX - holeW / 2 - 5} y1={wellBottomY} x2={centerX + holeW / 2 + 5} y2={wellBottomY} stroke="hsl(30, 30%, 40%)" strokeWidth="3" />
-      <text x={centerX} y={wellBottomY + 14} textAnchor="middle" className="text-[8px] fill-muted-foreground">
-        Забой {wellData.wellDepthMD.toFixed(0)} м (TVD {wellData.wellDepthTVD.toFixed(0)} м)
-      </text>
-
-      {/* CKOD marker */}
-      {wellData.ckodDepth > 0 && (
+      {/* ЦКОД */}
+      {ckodPt && (
         <>
-          <line x1={centerX - casingIDw / 2} y1={toY(wellData.ckodDepth)} x2={centerX + casingIDw / 2} y2={toY(wellData.ckodDepth)} stroke="hsl(0, 70%, 50%)" strokeWidth="1.5" strokeDasharray="4,2" />
-          <text x={centerX - casingODw / 2 - 5} y={toY(wellData.ckodDepth) + 3} textAnchor="end" className="text-[7px]" fill="hsl(0, 70%, 50%)">
+          <circle cx={ckodPt.x} cy={ckodPt.y} r={3} fill="hsl(0, 70%, 50%)" />
+          <text x={ckodPt.x + 6} y={ckodPt.y + 3} className="text-[7px]" fill="hsl(0, 70%, 50%)">
             ЦКОД {wellData.ckodDepth.toFixed(0)} м
           </text>
         </>
+      )}
+
+      {/* Забой */}
+      <circle cx={bottomPt.x} cy={bottomPt.y} r={4} fill="hsl(30, 30%, 35%)" />
+      <text x={bottomPt.x} y={bottomPt.y + 16} textAnchor="middle" className="text-[8px] fill-muted-foreground">
+        Забой MD {wellData.wellDepthMD.toFixed(0)} / TVD {bottomPt.tvd.toFixed(0)} м
+      </text>
+
+      {/* Горизонтальное отклонение — подпись */}
+      {maxX > 5 && (
+        <text x={svgW - marginR + 6} y={svgH - marginB + 14} textAnchor="end" className="text-[8px] fill-muted-foreground">
+          Гориз. отклонение: {maxX.toFixed(0)} м
+        </text>
       )}
     </svg>
   );
