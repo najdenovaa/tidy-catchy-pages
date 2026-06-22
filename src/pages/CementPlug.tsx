@@ -836,9 +836,9 @@ export default function CementPlug() {
             <CementPlugTypesCard
               plugLengthMD={Math.max(0, plug.bottomMD - plug.topMD)}
               plugTopMD={plug.topMD}
-              bhctC={well.bhct ?? 60}
-              casingShoeMD={well.casingShoeMD ?? plug.bottomMD + 50}
+              casingShoeMD={well.casingShoe ?? plug.bottomMD + 50}
             />
+
 
 
             {/* Fluids */}
