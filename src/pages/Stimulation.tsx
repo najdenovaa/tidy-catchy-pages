@@ -14,6 +14,7 @@ import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
 import { buildAcidStages, computeAcidKinetics, optimalAcidRate, computeAcidStoichiometry } from "@/lib/stimulation-acid";
 import WormholeVisualization from "@/components/WormholeVisualization";
+import Wormhole3D from "@/components/Wormhole3D";
 import {
   diagnoseDamage, fitArpsDecline, forecastPostTreatment,
   type DamageAssessment, type ReservoirSnapshot, type Mineralogy, type DrillingHistory,
@@ -521,12 +522,21 @@ export default function Stimulation() {
                   const qActual = (selected.recommendedRate[0] + selected.recommendedRate[1]) / 2;
                   const damkohler = 0.29 * (qOptLpm / Math.max(1, qActual));
                   return (
-                    <WormholeVisualization
-                      wormholeLengthM={kinetics.wormholeLength}
-                      penetrationRadiusM={kinetics.penetrationRadius}
-                      wellboreRadiusM={0.108}
-                      damkohler={damkohler}
-                    />
+                    <>
+                      <WormholeVisualization
+                        wormholeLengthM={kinetics.wormholeLength}
+                        penetrationRadiusM={kinetics.penetrationRadius}
+                        wellboreRadiusM={0.108}
+                        damkohler={damkohler}
+                      />
+                      <Wormhole3D
+                        wormholeLengthM={kinetics.wormholeLength}
+                        penetrationRadiusM={kinetics.penetrationRadius}
+                        wellboreRadiusM={0.108}
+                        damkohler={damkohler}
+                        reservoirHeightM={reservoir.payZoneM ?? 10}
+                      />
+                    </>
                   );
                 })()}
               </Card>
