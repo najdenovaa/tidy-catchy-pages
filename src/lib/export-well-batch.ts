@@ -54,7 +54,7 @@ const FIELD_LABEL: Partial<Record<keyof SharedWellData, string>> = {
   mudDensity: "ρ ПЖ, кг/м³",
 };
 
-async function buildSummaryDocx(shared: SharedWellData, modules: string[]): Promise<Blob> {
+async function buildSummaryDocx(shared: SharedWellData, modules: string[], skipped: string[] = []): Promise<Blob> {
   const now = new Date();
   const rows: TableRow[] = [];
   for (const [key, label] of Object.entries(FIELD_LABEL)) {
