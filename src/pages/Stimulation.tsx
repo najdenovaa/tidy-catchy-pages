@@ -9,17 +9,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
 import { buildAcidStages, computeAcidKinetics, optimalAcidRate } from "@/lib/stimulation-acid";
 import WormholeVisualization from "@/components/WormholeVisualization";
-import NpvTornado from "@/components/NpvTornado";
-import type { SensitivityParam } from "@/lib/foam-treatment-diagnostics";
 import {
-  diagnoseDamage, fitArpsDecline, forecastPostTreatment, calculateEconomics, DEFAULT_COSTS,
+  diagnoseDamage, fitArpsDecline, forecastPostTreatment,
   type DamageAssessment, type ReservoirSnapshot, type Mineralogy, type DrillingHistory,
-  type ProductionPoint, type CostInputs,
+  type ProductionPoint,
 } from "@/lib/foam-treatment-diagnostics";
 import { exportStimulationDocx } from "@/lib/export-stimulation-docx";
 import {
@@ -34,9 +32,9 @@ const TABS = [
   { id: "calc", label: "Расчёт", icon: Calculator },
   { id: "plan", label: "План", icon: ListChecks },
   { id: "forecast", label: "Прогноз", icon: TrendingUp },
-  { id: "econ", label: "Экономика", icon: Activity },
   { id: "report", label: "Отчёт", icon: FileText },
 ] as const;
+
 
 export default function Stimulation() {
   const [tab, setTab] = useState<string>("diag");
