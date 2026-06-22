@@ -818,7 +818,8 @@ export async function exportToDocx(
     flushTimeMin?: number;
     flushVolumeM3?: number;
   },
-) {
+  options?: { returnBlob?: boolean; filename?: string },
+): Promise<Blob | void> {
   const volumes = preComputed?.volumes ?? calculateVolumes(wellData, slurries, displacementFluids?.[0]?.compressionCoeff ?? 1.0);
   const pressureResult = preComputed?.pressureResult ?? calculatePressureProfile(wellData, slurries, buffers, drillingFluid, displacementFluids, fractureGradient, volumes.displacementVolumeWithCompression, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
   const materials = preComputed?.materials ?? calculateMaterials(slurries, buffers, wellData);
@@ -972,5 +973,6 @@ export async function exportToDocx(
   });
 
   const blob = await Packer.toBlob(doc);
-  saveAs(blob, "cementing-program.docx");
+  if (options?.returnBlob) return blob;
+  saveAs(blob, options?.filename ?? "cementing-program.docx");
 }
