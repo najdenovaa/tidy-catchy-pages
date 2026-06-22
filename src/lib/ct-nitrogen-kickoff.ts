@@ -198,10 +198,27 @@ export function calculateN2Kickoff(inp: N2KickoffInputs): N2KickoffResult {
   } else {
     recs.push(`✅ Целевая депрессия ${inp.drawdownTarget} MPa достигнута`);
   }
-  if (main.avgRhoMix < 200) recs.push("ℹ Очень лёгкая смесь — контроль выноса флюидов, риск гидратообразования при дросселировании");
+  if (main.avgRhoMix < 200) recs.push("ℹ Очень лёгкая смесь — контроль выноса флюидов");
   if (main.avgRhoMix > 700) recs.push("ℹ Смесь тяжёлая — увеличьте расход N₂ или снизьте подачу жидкости");
   if (inp.ctRunDepth < inp.tvd * 0.6) recs.push("ℹ Рекомендуется спуск ГНКТ на ≥60% TVD для эффективного газлифта");
   if (surfaceP > 35) recs.push(`⚠ Давление нагнетания ~${surfaceP.toFixed(1)} MPa — проверьте паспорт ГНКТ и азотной установки`);
+
+  // ── Joule-Thomson охлаждение на штуцере/устье ──
+  // При дросселировании N₂: μ_JT ≈ 0.25 °C/бар (умеренные P, T).
+  const pressureDropBar = Math.max(0, (main.bhp - Math.max(0.1, inp.wellheadPressure)) * 10);
+  const jtCoolingC = 0.25 * pressureDropBar;
+  const tempAtChokeC = inp.whTemp - jtCoolingC;
+  // Эмпирический порог гидратообразования N₂+лёгкие УВ при P>3 МПа ≈ 10 °C.
+  const hydrateRiskTempC = main.bhp > 3 ? 10 : 0;
+  if (tempAtChokeC < hydrateRiskTempC) {
+    recs.push(
+      `❄ Риск гидратообразования: T на штуцере ≈ ${tempAtChokeC.toFixed(0)} °C (JT-охлаждение ${jtCoolingC.toFixed(0)} °C при ΔP=${pressureDropBar.toFixed(0)} бар). Подать ингибитор (метанол 20–40%, MEG/DEG) или обогрев линии.`,
+    );
+  } else if (tempAtChokeC < hydrateRiskTempC + 5) {
+    recs.push(
+      `ℹ Близко к границе гидратов: T на штуцере ≈ ${tempAtChokeC.toFixed(0)} °C. Держать ингибитор наготове, контроль T выкидной линии.`,
+    );
+  }
 
   return {
     steps: main.steps,

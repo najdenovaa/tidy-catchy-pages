@@ -34,6 +34,7 @@ import CTCleanoutTab from "@/components/CTCleanoutTab";
 import CTNitrogenKickoffTab from "@/components/CTNitrogenKickoffTab";
 import CTAcidStimTab from "@/components/CTAcidStimTab";
 import CTTripSimulator from "@/components/CTTripSimulator";
+import CTOperationSummary from "@/components/CTOperationSummary";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import CopyImageButton from "@/components/CopyImageButton";
@@ -462,6 +463,20 @@ export default function CoiledTubing() {
               } else {
                 toast(`Выбрана операция: ${op.nameRu}`);
               }
+              // Автопереключение на профильную вкладку
+              const tabMap: Record<string, string> = {
+                wellbore_cleanout: "cleanout",
+                scale_removal: "cleanout",
+                paraffin_removal: "cleanout",
+                sand_control: "cleanout",
+                acid_stimulation: "acid",
+                chemical_treatment: "acid",
+                nitrogen_kickoff: "n2",
+                gas_lift: "n2",
+                well_kill: "n2",
+              };
+              const targetTab = tabMap[op.type];
+              if (targetTab) setTab(targetTab);
             }}
           />
         </div>
@@ -746,7 +761,8 @@ export default function CoiledTubing() {
           ) : forces && limits && hydraulics && fatigue && (
             <Tabs value={tab} onValueChange={setTab}>
               <div className="overflow-x-auto scrollbar-hide mb-3">
-                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-10">
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-11">
+                  <TabsTrigger value="summary" className="gap-1 text-xs whitespace-nowrap">📋 Сводка</TabsTrigger>
                   <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Дохождение</TabsTrigger>
                   <TabsTrigger value="reach" className="gap-1 text-xs whitespace-nowrap">🎯 Reach</TabsTrigger>
                   <TabsTrigger value="trip" className="gap-1 text-xs whitespace-nowrap">🎬 СПО</TabsTrigger>
@@ -760,6 +776,15 @@ export default function CoiledTubing() {
                   <TabsTrigger value="3d" className="gap-1 text-xs whitespace-nowrap">🌐 3D</TabsTrigger>
                 </TabsList>
               </div>
+              {/* Summary */}
+              <TabsContent value="summary" forceMount className={tab !== "summary" ? "hidden" : ""}>
+                <CTOperationSummary
+                  operationType={operationType}
+                  ct={ct} well={wellWithTraj} fluid={fluid} pump={pump}
+                  forces={forces} fatigue={fatigue} risks={risks}
+                />
+              </TabsContent>
+
               {/* Forces */}
               <TabsContent value="forces" forceMount className={tab !== "forces" ? "hidden" : ""}>
                 <Card>
