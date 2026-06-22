@@ -7,7 +7,7 @@ import type { CentralizationResult } from "@/lib/centralization-calculations";
 type Status = "ok" | "warning" | "danger" | "info" | "muted";
 
 interface Props {
-  pressureResult: PressureResult | null;
+  pressureResult: PressureProfileResult | null;
   volumes: VolumeResults | null;
   centralizationResults: CentralizationResult[] | null;
   thickeningTimeMin?: number;
