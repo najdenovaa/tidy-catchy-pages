@@ -173,14 +173,8 @@ export default function FoamTreatmentDiagnostics({
     () => forecastPostTreatment(arps, reservoir, reservoir.skin, skinNew, 36, skinRecoveryPct / 100),
     [arps, reservoir, skinNew, skinRecoveryPct],
   );
-  const economics = useMemo(() => calculateEconomics(forecast, {
-    ...DEFAULT_COSTS,
-    chemicalCost: chemCost,
-    n2Cost,
-    crewDays,
-    equipmentDays: equipDays,
-    oilPricePerM3: oilPrice,
-  }), [forecast, chemCost, n2Cost, crewDays, equipDays, oilPrice]);
+  // (экономика убрана — модуль инженерный; финансы заказчик считает отдельно)
+
 
   /* ── Реология пены, приёмистость, радиус ── */
   const fqAtBottom = (foamQualityAtFormationPct ?? 70) / 100;
