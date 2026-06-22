@@ -518,6 +518,24 @@ export default function Stimulation() {
                 ))}
               </div>
             </Card>
+
+            {selected.category === "solvent" && (
+              <SolventCalcPanel
+                payZoneM={reservoir.payZoneM}
+                porosity={reservoir.porosity}
+                reservoirTempC={reservoir.temperatureC}
+                defaultDamage={selected.type === "solvent_paraffin" ? "paraffin" : "asphaltene"}
+              />
+            )}
+
+            {selected.category === "nitrogen" && (
+              <NitrogenCalcPanel
+                reservoirPressureMPa={reservoir.reservoirPressureMPa}
+                reservoirTempC={reservoir.temperatureC}
+                operationType={selected.type === "n2_foam_lift" ? "n2_foam_lift" : "n2_lift"}
+                defaultFoamQuality={selected.targetFoamQuality}
+              />
+            )}
           </TabsContent>
 
           {/* ─────────── PLAN ─────────── */}
