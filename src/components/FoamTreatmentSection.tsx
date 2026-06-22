@@ -132,6 +132,21 @@ export default function FoamTreatmentSection() {
 
   const result = useMemo(() => calculateFoamTreatment(well, recipe, opts), [well, recipe, opts]);
   const cyclo = useMemo(() => buildCyclogram(well, recipe, opts, result), [well, recipe, opts, result]);
+  const n2Physics = useMemo(() => {
+    if (!recipe.useN2 && recipe.id !== "n2_lift") return null;
+    const perfMidMD = (well.perfIntervalTopMD + well.perfIntervalBottomMD) / 2;
+    const perfTVD = interpolateTVD(perfMidMD, well.trajectory);
+    return computeFoamN2Physics({
+      surfacePressureMPa: Math.max(0.5, result.injectionPressureMPa),
+      bhPressureMPa: result.bottomholePressureMPa,
+      surfaceTempC: 15,
+      bhTempC: well.reservoirTemperatureC,
+      tvdM: perfTVD,
+      foamVolumeSurfaceM3: result.foamVolumeAtSurfaceM3 / Math.max(1, result.numberOfCycles),
+      surfaceFQ_pct: recipe.targetFoamQuality,
+      bleedDurationMin: 30,
+    });
+  }, [well, recipe, result]);
   const equipment = useMemo(() => recommendEquipment(result), [result]);
   const reagents = useMemo(() => buildReagentConsumption(recipe, result), [recipe, result]);
   const rateProfile = useMemo(() => buildRateProfile(recipe, opts, result), [recipe, opts, result]);
