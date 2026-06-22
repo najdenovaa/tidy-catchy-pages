@@ -67,14 +67,15 @@ export function runMonteCarloCQI(
   const gradeCounts: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, F: 0 };
 
   for (let i = 0; i < options.iterations; i++) {
-    // Perturb caverns (hole diameter scaling)
+    // Perturb caverns (hole diameter scaling + per-interval coeff)
     const cavernFactor = 1 + sampleSymmetric(options.cavernUncertainty);
     const perturbedWell = {
       ...baseInput.wellData,
       holeDiameter: baseInput.wellData.holeDiameter * cavernFactor,
-      caverns: baseInput.wellData.caverns?.map((cv) => ({
+      cavernCoeff: baseInput.wellData.cavernCoeff * (1 + sampleSymmetric(options.cavernUncertainty)),
+      cavernIntervals: baseInput.wellData.cavernIntervals?.map((cv) => ({
         ...cv,
-        diameter: cv.diameter * (1 + sampleSymmetric(options.cavernUncertainty)),
+        coeff: cv.coeff * (1 + sampleSymmetric(options.cavernUncertainty)),
       })),
     };
 
@@ -116,7 +117,7 @@ export function runMonteCarloCQI(
         slurries: perturbedSlurries,
         centralization: perturbedCent,
       });
-      const avg = r.summary.avgCqi ?? 0;
+      const avg = r.summary.avgCQI ?? 0;
       samples.push(avg);
       gradeCounts[gradeFromCqi(avg)]++;
     } catch {
