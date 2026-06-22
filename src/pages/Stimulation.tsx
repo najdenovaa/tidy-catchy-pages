@@ -532,6 +532,42 @@ export default function Stimulation() {
               </Card>
             )}
 
+            {stoichiometry && (
+              <Card className="p-4 space-y-3">
+                <h3 className="font-semibold">Стехиометрия растворения породы</h3>
+                <div className="text-xs text-muted-foreground">
+                  Реакция:{" "}
+                  {stoichiometry.rock === "carbonate" && "2 HCl + CaCO₃ → CaCl₂ + H₂O + CO₂"}
+                  {stoichiometry.rock === "dolomite" && "4 HCl + CaMg(CO₃)₂ → CaCl₂ + MgCl₂ + 2 H₂O + 2 CO₂"}
+                  {stoichiometry.rock === "sandstone" && "4 HF + SiO₂ → SiF₄ + 2 H₂O   (+ HCl растворяет карбонатный цемент)"}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                  <KV k="HCl в реагенте" v={`${stoichiometry.hclMassKg.toFixed(0)} кг`} />
+                  {stoichiometry.hfMassKg > 0 && <KV k="HF в реагенте" v={`${stoichiometry.hfMassKg.toFixed(0)} кг`} />}
+                  <KV k="Растворено породы" v={`${stoichiometry.rockDissolvedKg.toFixed(0)} кг (${stoichiometry.rockDissolvedM3.toFixed(2)} м³)`} />
+                  {stoichiometry.co2VolumeStdM3 > 0 && (
+                    <>
+                      <KV k="CO₂ при н.у." v={`${stoichiometry.co2VolumeStdM3.toFixed(1)} м³ст`} />
+                      <KV k="CO₂ в забое" v={`${stoichiometry.co2VolumeBhM3.toFixed(2)} м³`} />
+                    </>
+                  )}
+                  <KV k="CaCl₂ (раствор)" v={`${stoichiometry.caCl2MassKg.toFixed(0)} кг`} />
+                  {stoichiometry.caF2RiskKg != null && (
+                    <KV k="⚠ CaF₂ риск" v={`до ${stoichiometry.caF2RiskKg.toFixed(0)} кг осадка`} />
+                  )}
+                </div>
+                {stoichiometry.notes.length > 0 && (
+                  <div className="space-y-1 pt-2 border-t border-border/40">
+                    {stoichiometry.notes.map((n, i) => (
+                      <div key={i} className={`text-xs ${n.startsWith("ВНИМАНИЕ") ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground"}`}>
+                        {n}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+
             <Card className="p-4">
               <h3 className="font-semibold mb-3">Рецептура и добавки</h3>
               <div className="space-y-2 text-sm">
