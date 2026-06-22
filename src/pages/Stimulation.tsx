@@ -602,92 +602,15 @@ export default function Stimulation() {
             </Card>
           </TabsContent>
 
-          {/* ─────────── ECONOMICS ─────────── */}
-          <TabsContent value="econ" className="space-y-4 mt-4">
-            <Card className="p-4 space-y-3">
-              <h3 className="font-semibold">Стоимостные параметры</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Field label="Мобилизация, ₽" value={costs.mobilization} onChange={(v) => setCosts({ ...costs, mobilization: v })} step={50000} />
-                <Field label="Дней оборудование" value={costs.equipmentDays} onChange={(v) => setCosts({ ...costs, equipmentDays: v })} />
-                <Field label="Дней бригада" value={costs.crewDays} onChange={(v) => setCosts({ ...costs, crewDays: v })} />
-                <Field label={`Цена ${isGas ? "газа" : "нефти"}, ${priceUnit}`} value={costs.oilPricePerM3} onChange={(v) => setCosts({ ...costs, oilPricePerM3: v })} step={500} />
-                <Field label="Ставка дисконт., д.ед./год" value={costs.discountRateAnnual} onChange={(v) => setCosts({ ...costs, discountRateAnnual: v })} step={0.01} />
-              </div>
-            </Card>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Stat label="Полная стоимость" value={`${(economics.totalCost / 1e6).toFixed(2)} млн ₽`} />
-              <Stat label="Доход" value={`${(economics.incrementalRevenue / 1e6).toFixed(2)} млн ₽`} />
-              <Stat label="NPV" value={`${(economics.npv / 1e6).toFixed(2)} млн ₽`} sub={`ROI ${economics.roi.toFixed(1)}%`} />
-              <Stat label="Окупаемость" value={economics.paybackMonths === null ? "не окуп." : `${economics.paybackMonths} мес`} />
-            </div>
-
-            <Card className="p-4">
-              <h3 className="font-semibold mb-3">Кэшфлоу (тыс. ₽)</h3>
-              <div style={{ width: "100%", height: 260 }}>
-                <ResponsiveContainer>
-                  <BarChart data={cashflowData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
-                    <YAxis stroke="hsl(var(--muted-foreground))" />
-                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
-                    <Legend />
-                    <Bar dataKey="profit" fill="hsl(var(--primary))" name="Накоп. прибыль" />
-                    <Bar dataKey="npv" fill="hsl(var(--muted-foreground))" name="NPV" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-
-            {/* Tornado: чувствительность NPV */}
-            <Card className="p-4">
-              {(() => {
-                const baseNPV = economics.npv;
-                const revenueDisc = baseNPV + economics.totalCost;       // выручка дисконтированная
-                const baseOilPrice = costs.oilPricePerM3;
-                const baseChem = costEstimate;
-                const baseDeltaSkin = (selected.skinReductionRange[0] + selected.skinReductionRange[1]) / 2;
-                const baseMobil = costs.mobilization;
-                const params: SensitivityParam[] = [
-                  {
-                    name: `Цена ${isGas ? "газа" : "нефти"}`,
-                    baseValue: baseOilPrice,
-                    variation: 0.25,
-                    evaluate: (v) => revenueDisc * (v / baseOilPrice) - economics.totalCost,
-                  },
-                  {
-                    name: "Стоимость реагентов",
-                    baseValue: baseChem,
-                    variation: 0.3,
-                    evaluate: (v) => baseNPV - (v - baseChem),
-                  },
-                  {
-                    name: "Снятие скина ΔS",
-                    baseValue: baseDeltaSkin,
-                    variation: 0.4,
-                    evaluate: (v) => revenueDisc * (v / Math.max(0.1, baseDeltaSkin)) - economics.totalCost,
-                  },
-                  {
-                    name: "Мобилизация",
-                    baseValue: baseMobil,
-                    variation: 0.3,
-                    evaluate: (v) => baseNPV - (v - baseMobil),
-                  },
-                ];
-                return <NpvTornado baseNPV={baseNPV} params={params} />;
-              })()}
-            </Card>
-          </TabsContent>
-
-
           {/* ─────────── REPORT ─────────── */}
           <TabsContent value="report" className="space-y-4 mt-4">
             <Card className="p-4 space-y-3">
               <h3 className="font-semibold">DOCX-отчёт</h3>
               <p className="text-sm text-muted-foreground">
-                Полная план-программа ОПЗ: коллектор, диагностика повреждений, выбранный метод,
-                рецептура, многоступенчатая обработка, кинетика, прогноз 36 мес, экономика.
+                Инженерная план-программа ОПЗ: коллектор, диагностика повреждений, выбранный метод,
+                рецептура, многоступенчатая обработка, кинетика, прогноз дебита 36 мес.
               </p>
+
               <Button onClick={handleExport}>
                 <FileText className="w-4 h-4 mr-2" /> Скачать план-программу (DOCX)
               </Button>
