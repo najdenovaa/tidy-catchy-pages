@@ -462,6 +462,20 @@ export default function CoiledTubing() {
               } else {
                 toast(`Выбрана операция: ${op.nameRu}`);
               }
+              // Автопереключение на профильную вкладку
+              const tabMap: Record<string, string> = {
+                wellbore_cleanout: "cleanout",
+                scale_removal: "cleanout",
+                paraffin_removal: "cleanout",
+                sand_control: "cleanout",
+                acid_stimulation: "acid",
+                chemical_treatment: "acid",
+                nitrogen_kickoff: "n2",
+                gas_lift: "n2",
+                well_kill: "n2",
+              };
+              const targetTab = tabMap[op.type];
+              if (targetTab) setTab(targetTab);
             }}
           />
         </div>
