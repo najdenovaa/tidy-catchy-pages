@@ -21,24 +21,21 @@ import {
   diagnoseDamage,
   fitArpsDecline,
   forecastPostTreatment,
-  calculateEconomics,
   foamApparentViscosity,
   mobilityReductionFactor,
   calculateInjectivity,
   penetrationRadius,
-  tornadoSensitivity,
   hawkinsWaterfall,
   interpretStepRateTest,
-  DEFAULT_COSTS,
   type ReservoirSnapshot,
   type Mineralogy,
   type DrillingHistory,
   type CollectorType,
   type ProductionPoint,
   type DamageAssessment,
-  type SensitivityParam,
   type StepRatePoint,
 } from "@/lib/foam-treatment-diagnostics";
+
 
 const fmt = (v: number | undefined | null, d = 1) =>
   v === undefined || v === null || !Number.isFinite(v) ? "—" : v.toFixed(d);
