@@ -25,6 +25,7 @@ const GROUPS: TabGroup[] = [
       { value: "centralization", label: "Центрация (со спуском)" },
       { value: "foam", label: "Пена" },
       { value: "rotation", label: "Вращение" },
+      { value: "woc", label: "ОЗЦ" },
     ],
   },
   {

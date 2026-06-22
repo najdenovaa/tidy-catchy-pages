@@ -24,6 +24,7 @@ import WellboreStabilityCard from "@/components/WellboreStabilityCard";
 import DrillingHydraulicsSection from "@/components/DrillingHydraulicsSection";
 import CasingRotationSection from "@/components/CasingRotationSection";
 import AnalysisChatPanel from "@/components/AnalysisChatPanel";
+import WOCFromProgram from "@/components/WOCFromProgram";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
@@ -854,6 +855,20 @@ export default function Index() {
               </div>
             </TabsContent>
           </div>
+
+          <div className={activeTab !== "woc" ? "h-0 overflow-hidden" : ""}>
+            <TabsContent value="woc" forceMount>
+              <div data-tab-content="woc" className="space-y-3">
+                <WOCFromProgram
+                  wellData={wellData}
+                  slurries={slurries}
+                />
+              </div>
+            </TabsContent>
+          </div>
+
+
+
 
 
 
