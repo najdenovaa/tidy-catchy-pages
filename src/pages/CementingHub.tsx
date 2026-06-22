@@ -89,20 +89,6 @@ export default function CementingHub() {
 
         <WellBatchExportCard />
       </main>
-            <Link
-              key={m.to}
-              to={m.to}
-              className="group rounded-xl border border-border bg-card p-6 sm:p-8 flex flex-col items-center text-center gap-4 hover:border-primary/50 hover:shadow-lg transition-all"
-            >
-              <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                <m.icon className="w-7 h-7 text-primary" />
-              </div>
-              <h3 className="text-base sm:text-lg font-semibold text-foreground">{m.title}</h3>
-              <p className="text-xs sm:text-sm text-muted-foreground">{m.description}</p>
-            </Link>
-          ))}
-        </div>
-      </main>
     </div>
   );
 }
