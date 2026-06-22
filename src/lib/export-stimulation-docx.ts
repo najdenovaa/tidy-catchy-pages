@@ -73,17 +73,16 @@ export interface StimulationExportBundle {
   method: StimulationMethod;
   ranked?: RankedMethod;
   acidVolM3: number;
-  costEstimate: number;
   damage: DamageAssessment[];
   kinetics: AcidReactionKinetics | null;
   stages: AcidTreatmentStages | null;
   forecast: ForecastPoint[] | null;
-  economics: EconomicsResult | null;
   wellName?: string;
 }
 
 export async function exportStimulationDocx(b: StimulationExportBundle): Promise<void> {
-  const { reservoir, method, ranked, acidVolM3, costEstimate, damage, kinetics, stages, forecast, economics, wellName } = b;
+  const { reservoir, method, ranked, acidVolM3, damage, kinetics, stages, forecast, wellName } = b;
+
   const children: (Paragraph | Table)[] = [];
 
   children.push(new Paragraph({
