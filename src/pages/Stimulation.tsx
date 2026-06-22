@@ -193,28 +193,13 @@ export default function Stimulation() {
     });
   }, [selected, reservoir]);
 
-  const costEstimate = useMemo(() => {
-    const main = acidVol * selected.mainReagent.costPerM3;
-    const adds = selected.additives.reduce((s, a) => {
-      if (!a.required) return s;
-      const perM3 = a.unit === "%" ? a.concentration / 100 * 1000 : a.concentration;
-      return s + acidVol * perM3 * a.costPerUnit;
-    }, 0);
-    return Math.round(main + adds);
-  }, [selected, acidVol]);
-
-  // Forecast & economics
+  // Forecast (технический прогноз, без денег)
   const arps = useMemo(() => fitArpsDecline(history), [history]);
   const forecast = useMemo(() => {
     const dS = (selected.skinReductionRange[0] + selected.skinReductionRange[1]) / 2;
     const skinNew = Math.max(-2, skinCurrent - dS);
     return forecastPostTreatment(arps, reservoirSnap, skinCurrent, skinNew, 36, 0.025);
   }, [arps, reservoirSnap, skinCurrent, selected]);
-
-  const economics = useMemo(() => {
-    const c: CostInputs = { ...costs, chemicalCost: costEstimate, n2Cost: selected.requiresN2 ? 300_000 : 0 };
-    return calculateEconomics(forecast, c);
-  }, [forecast, costs, costEstimate, selected.requiresN2]);
 
   const chartData = useMemo(() => forecast.map((p) => ({
     month: p.month,
@@ -224,11 +209,6 @@ export default function Stimulation() {
     cum: Number(p.cumulativeDeltaM3.toFixed(0)),
   })), [forecast]);
 
-  const cashflowData = useMemo(() => economics.monthly.filter((_, i) => i % 2 === 0).map((m) => ({
-    month: m.month,
-    profit: Math.round(m.cumulativeProfit / 1000),
-    npv: Math.round(m.cumulativeProfitDiscounted / 1000),
-  })), [economics]);
 
   async function handleExport() {
     try {
