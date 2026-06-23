@@ -13,7 +13,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
 import { buildAcidStages, computeAcidKinetics, optimalAcidRate, computeAcidStoichiometry } from "@/lib/stimulation-acid";
-import { DEFAULT_ACID_COMPOSITION, calculateDissolvingPower, type AcidComposition } from "@/lib/acid-chemistry";
+import { DEFAULT_ACID_COMPOSITION, calculateDissolvingPower, formatAcidLabel, acidPenetration, type AcidComposition } from "@/lib/acid-chemistry";
 import AcidCompositionEditor from "@/components/AcidCompositionEditor";
 import WormholeVisualization from "@/components/WormholeVisualization";
 
@@ -234,23 +234,31 @@ export default function Stimulation() {
     });
   }, [selected, reservoir, acidVol, composition]);
 
+  // Live-метка состава и плотности (для всех текстов и стехиометрии)
+  const acidLabel = useMemo(() => formatAcidLabel(composition), [composition]);
+  const dissLive = useMemo(
+    () => calculateDissolvingPower(composition, reservoir.reservoirPressureMPa, reservoir.temperatureC),
+    [composition, reservoir.reservoirPressureMPa, reservoir.temperatureC]
+  );
+
   const stages = useMemo(() => {
     if (selected.category !== "acid" && selected.category !== "combo") return null;
     return buildAcidStages({
       collectorType: reservoir.collectorType === "sandstone" ? "sandstone" : "carbonate",
       payZoneM: reservoir.payZoneM,
-      mainAcidName: selected.mainReagent.name,
+      mainAcidName: acidLabel,
       mainAcidVolPerM: selected.volumePerMeterPay,
       tubingVolumeM3: 4.0,
+      hasHF: composition.hfPct > 0,
     });
-  }, [selected, reservoir]);
+  }, [selected, reservoir, acidLabel, composition.hfPct]);
 
-  // Стехиометрия растворения породы (CaCO₃ / CaMg(CO₃)₂ / SiO₂) — из пользовательского состава
+  // Стехиометрия растворения породы — плотность раствора из ЖИВОГО состава
   const stoichiometry = useMemo(() => {
     if (selected.category !== "acid" && selected.category !== "combo") return null;
     return computeAcidStoichiometry({
       acidVolumeM3: acidVol,
-      acidDensityKgM3: selected.mainReagent.density * 1000,
+      acidDensityKgM3: dissLive.densityGcc * 1000,
       hclConcentrationPct: composition.hclPct,
       hfConcentrationPct: composition.hfPct,
       rock: rockType,
@@ -258,13 +266,32 @@ export default function Stimulation() {
       bhPressureMPa: reservoir.reservoirPressureMPa,
       bhTemperatureC: reservoir.temperatureC,
     });
-  }, [selected, reservoir, acidVol, composition, rockType]);
+  }, [selected, reservoir, acidVol, composition, rockType, dissLive.densityGcc]);
 
   // Реальная растворяющая способность с учётом полного минерального состава
-  const mineralDissolution = useMemo(() => {
-    const diss = calculateDissolvingPower(composition, reservoir.reservoirPressureMPa, reservoir.temperatureC);
-    return stoichiometricDemandByMineralogy(detailedMin, diss.dissolvingPowerCalcite, diss.dissolvingPowerQuartz);
-  }, [composition, detailedMin, reservoir.reservoirPressureMPa, reservoir.temperatureC]);
+  const mineralDissolution = useMemo(
+    () => stoichiometricDemandByMineralogy(detailedMin, dissLive.dissolvingPowerCalcite, dissLive.dissolvingPowerQuartz),
+    [detailedMin, dissLive.dissolvingPowerCalcite, dissLive.dissolvingPowerQuartz]
+  );
+
+  // Чувствительность: радиус проникновения и масса растворённой породы от HCl%
+  const sensitivityData = useMemo(() => {
+    if (selected.category !== "acid" && selected.category !== "combo" && selected.category !== "foam") return [];
+    const rockKind: "carbonate" | "sandstone" | "dolomite" = rockType;
+    const pumpLpm = (selected.recommendedRate[0] + selected.recommendedRate[1]) / 2;
+    const pts: { hcl: number; rPen: number; rockKg: number; co2: number }[] = [];
+    for (let h = 5; h <= 30; h += 1) {
+      const comp = { ...composition, hclPct: h };
+      const d = calculateDissolvingPower(comp, reservoir.reservoirPressureMPa, reservoir.temperatureC);
+      const p = acidPenetration(comp, d, acidVol, reservoir.payZoneM, reservoir.porosity, 0.108, rockKind, reservoir.temperatureC, pumpLpm);
+      const rockKg = (rockKind === "carbonate" ? d.dissolvingPowerCalcite
+        : rockKind === "dolomite" ? d.dissolvingPowerDolomite
+        : d.dissolvingPowerQuartz) * acidVol;
+      pts.push({ hcl: h, rPen: +(p.penetrationRadiusM - 0.108).toFixed(3), rockKg: +rockKg.toFixed(0), co2: +(d.co2GeneratedStdM3PerM3 * acidVol).toFixed(1) });
+    }
+    return pts;
+  }, [selected.category, composition, reservoir, acidVol, rockType, selected.recommendedRate]);
+
 
 
   // Live results from sub-panels (solvent/nitrogen)
@@ -344,6 +371,11 @@ export default function Stimulation() {
       await exportStimulationDocx({
         reservoir, method: selected, ranked: selectedRanked,
         acidVolM3: acidVol, damage, kinetics, stages, forecast, wellName,
+        composition, acidLabel,
+        acidDensityGcc: dissLive.densityGcc,
+        effectiveAcidStrength: dissLive.effectiveAcidStrength,
+        stoichiometry, mineralDissolution, sensitivity: sensitivityData,
+        pFracMPa,
       });
 
       toast.success("DOCX-отчёт сформирован");
@@ -736,11 +768,45 @@ export default function Stimulation() {
               </Card>
             )}
 
+            {sensitivityData.length > 0 && (
+              <Card className="p-4">
+                <h3 className="font-semibold mb-2">Чувствительность к концентрации HCl</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Текущий состав: <b>{acidLabel}</b>. Сплошная вертикаль — выбранное значение.
+                </p>
+                <div style={{ width: "100%", height: 260 }}>
+                  <ResponsiveContainer>
+                    <LineChart data={sensitivityData} margin={{ top: 5, right: 25, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="hcl" stroke="hsl(var(--muted-foreground))" label={{ value: "HCl, %", position: "insideBottom", offset: -2, fontSize: 11 }} />
+                      <YAxis yAxisId="L" stroke="hsl(var(--primary))" label={{ value: "r проникн., м", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                      <YAxis yAxisId="R" orientation="right" stroke="hsl(var(--muted-foreground))" label={{ value: "порода, кг", angle: 90, position: "insideRight", fontSize: 11 }} />
+                      <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+                      <Legend />
+                      <Line yAxisId="L" type="monotone" dataKey="rPen" stroke="hsl(var(--primary))" name="Радиус, м" dot={false} strokeWidth={2} />
+                      <Line yAxisId="R" type="monotone" dataKey="rockKg" stroke="#ff6b35" name="Растворено, кг" dot={false} />
+                      <Line yAxisId="R" type="monotone" dataKey="co2" stroke="#10b981" name="CO₂ ст, м³" dot={false} strokeDasharray="4 4" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            )}
+
+
+
             <Card className="p-4">
               <h3 className="font-semibold mb-3">Рецептура и добавки</h3>
               <div className="space-y-2 text-sm">
-                <div className="font-medium">Основа: {selected.mainReagent.name} ({selected.mainReagent.concentration}%, ρ={selected.mainReagent.density} г/см³)</div>
-                {selected.additives.length === 0 && <div className="text-muted-foreground text-xs">Добавки не требуются</div>}
+                <div className="font-medium">
+                  Основа: <span className="text-primary">{acidLabel}</span>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    (ρ = {dissLive.densityGcc.toFixed(3)} г/см³, активная HCl = {dissLive.effectiveAcidStrength.toFixed(1)}%)
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Шаблон метода: {selected.mainReagent.name} — фактический состав задаётся слайдерами выше.
+                </div>
+                {selected.additives.length === 0 && <div className="text-muted-foreground text-xs">Доп. добавки шаблона не требуются</div>}
                 {selected.additives.map((a, i) => (
                   <div key={i} className="flex items-center justify-between border-b border-border/40 pb-1">
                     <span>{a.required ? "● " : "○ "}{a.name} <span className="text-xs text-muted-foreground">— {a.purpose}</span></span>

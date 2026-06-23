@@ -10,8 +10,17 @@ import { saveAs } from "file-saver";
 import type { StimulationMethod } from "./stimulation-methods";
 import { METHOD_CATEGORY_LABEL, COLLECTOR_LABEL } from "./stimulation-methods";
 import type { ReservoirData, RankedMethod } from "./stimulation-ranking";
-import type { AcidReactionKinetics, AcidTreatmentStages } from "./stimulation-acid";
+import type { AcidReactionKinetics, AcidTreatmentStages, AcidStoichiometry } from "./stimulation-acid";
+import type { AcidComposition } from "./acid-chemistry";
 import type { DamageAssessment, ForecastPoint } from "./foam-treatment-diagnostics";
+
+interface MineralDissolution {
+  carbonateKgPerM3: number;
+  silicateKgPerM3: number;
+  effectiveRockDensity_kgm3: number;
+  warnings: string[];
+}
+interface SensitivityPoint { hcl: number; rPen: number; rockKg: number; co2: number }
 
 
 const fmt = (v: number | null | undefined, d = 2) =>
@@ -78,10 +87,22 @@ export interface StimulationExportBundle {
   stages: AcidTreatmentStages | null;
   forecast: ForecastPoint[] | null;
   wellName?: string;
+  composition?: AcidComposition;
+  acidLabel?: string;
+  acidDensityGcc?: number;
+  effectiveAcidStrength?: number;
+  stoichiometry?: AcidStoichiometry | null;
+  mineralDissolution?: MineralDissolution | null;
+  sensitivity?: SensitivityPoint[];
+  pFracMPa?: number;
 }
 
 export async function exportStimulationDocx(b: StimulationExportBundle): Promise<void> {
-  const { reservoir, method, ranked, acidVolM3, damage, kinetics, stages, forecast, wellName } = b;
+  const {
+    reservoir, method, ranked, acidVolM3, damage, kinetics, stages, forecast, wellName,
+    composition, acidLabel, acidDensityGcc, effectiveAcidStrength,
+    stoichiometry, mineralDissolution, sensitivity, pFracMPa,
+  } = b;
 
   const children: (Paragraph | Table)[] = [];
 
@@ -130,7 +151,8 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
   children.push(kv([
     ["Категория", METHOD_CATEGORY_LABEL[method.category]],
     ["Совместимость (score)", ranked ? `${ranked.score} / 100` : "—"],
-    ["Основной реагент", `${method.mainReagent.name} (${method.mainReagent.concentration}%)`],
+    ["Основной реагент (фактический)", acidLabel ?? `${method.mainReagent.name} (${method.mainReagent.concentration}%)`],
+    ["Шаблон метода", `${method.mainReagent.name}`],
     ["Объём реагента", `${fmt(acidVolM3, 1)} м³`],
     ["Расход", `${method.recommendedRate[0]}–${method.recommendedRate[1]} л/мин`],
     ["Выдержка", `${method.soakTimeMin[0]}–${method.soakTimeMin[1]} мин`],
@@ -139,6 +161,22 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
     ["Длительность эффекта", `${method.effectDurationMonths[0]}–${method.effectDurationMonths[1]} мес`],
     ["Успешность", `${method.successRate}%`],
   ]));
+
+  // 3a. Полный фактический состав кислоты
+  if (composition) {
+    children.push(heading("3a. Фактический состав кислотного раствора"));
+    children.push(kv([
+      ["HCl, %", fmt(composition.hclPct, 1)],
+      ["HF, %", fmt(composition.hfPct, 1)],
+      ["Ингибитор коррозии, %", fmt(composition.corrosionInhibitorPct, 2)],
+      ["Стабилизатор Fe, %", fmt(composition.ironControlPct, 2)],
+      ["ПАВ, %", fmt(composition.surfactantPct, 2)],
+      ["Взаимный растворитель, %", fmt(composition.mutualSolventPct, 2)],
+      ["Замедлитель (гель), %", fmt(composition.retarderPct, 2)],
+      ["Плотность раствора, г/см³", fmt(acidDensityGcc, 3)],
+      ["Эффективная сила HCl, %", fmt(effectiveAcidStrength, 1)],
+    ]));
+  }
 
 
   // 4. Additives
@@ -185,6 +223,57 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
       ["Отработано кислоты, м³", fmt(kinetics.spentAcidVolume, 2)],
       ["Остаточная концентрация, %", fmt(kinetics.residualAcidConcentration, 1)],
     ]));
+  }
+
+  // 6a. Стехиометрия растворения
+  if (stoichiometry) {
+    children.push(heading("6a. Стехиометрия растворения породы"));
+    const stoichRows: Array<[string, string]> = [
+      ["HCl в реагенте, кг", fmt(stoichiometry.hclMassKg, 0)],
+      ["Растворено породы, кг", fmt(stoichiometry.rockDissolvedKg, 0)],
+      ["Растворено породы, м³", fmt(stoichiometry.rockDissolvedM3, 2)],
+      ["CaCl₂ в растворе, кг", fmt(stoichiometry.caCl2MassKg, 0)],
+    ];
+    if (stoichiometry.hfMassKg > 0) stoichRows.splice(1, 0, ["HF в реагенте, кг", fmt(stoichiometry.hfMassKg, 0)]);
+    if (stoichiometry.co2VolumeStdM3 > 0) {
+      stoichRows.push(["CO₂ при н.у., м³ст", fmt(stoichiometry.co2VolumeStdM3, 1)]);
+      stoichRows.push(["CO₂ в забое, м³", fmt(stoichiometry.co2VolumeBhM3, 2)]);
+    }
+    if (stoichiometry.caF2RiskKg != null) stoichRows.push(["⚠ CaF₂ риск, кг", fmt(stoichiometry.caF2RiskKg, 0)]);
+    children.push(kv(stoichRows));
+    stoichiometry.notes.forEach((n) => children.push(textP(`• ${n}`, n.startsWith("ВНИМАНИЕ") ? { color: "C0392B", bold: true } : undefined)));
+  }
+
+  // 6b. Растворение по реальной минералогии
+  if (mineralDissolution) {
+    children.push(heading("6b. По реальному минеральному составу"));
+    children.push(kv([
+      ["HCl растворит карбонатов, кг/м³", fmt(mineralDissolution.carbonateKgPerM3, 0)],
+      ["HF растворит силикатов, кг/м³", fmt(mineralDissolution.silicateKgPerM3, 1)],
+      ["Эфф. плотность породы, кг/м³", fmt(mineralDissolution.effectiveRockDensity_kgm3, 0)],
+      ...(pFracMPa != null ? [["P гидроразрыва (Eaton), МПа", fmt(pFracMPa, 1)] as [string, string]] : []),
+    ]));
+    mineralDissolution.warnings.forEach((w) => children.push(textP(`⚠ ${w}`, { color: "B8860B" })));
+  }
+
+  // 6c. Чувствительность к HCl%
+  if (sensitivity && sensitivity.length > 0) {
+    children.push(heading("6c. Чувствительность к концентрации HCl"));
+    children.push(textP("Радиус проникновения, растворённая масса и CO₂ как функция HCl% при том же объёме реагента."));
+    const sample = sensitivity.filter((_, i) => i % 5 === 0);
+    children.push(new Table({
+      width: { size: 9360, type: WidthType.DXA },
+      columnWidths: [2340, 2340, 2340, 2340],
+      rows: [
+        new TableRow({ children: [hCell("HCl, %"), hCell("r проникн., м"), hCell("Растворено, кг"), hCell("CO₂ ст, м³")] }),
+        ...sample.map((p) => new TableRow({ children: [
+          c(String(p.hcl), { align: AlignmentType.CENTER }),
+          c(fmt(p.rPen, 2), { align: AlignmentType.CENTER }),
+          c(fmt(p.rockKg, 0), { align: AlignmentType.CENTER }),
+          c(fmt(p.co2, 1), { align: AlignmentType.CENTER }),
+        ]})),
+      ],
+    }));
   }
 
   // 7. Operation steps
