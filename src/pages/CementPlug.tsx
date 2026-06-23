@@ -896,9 +896,15 @@ export default function CementPlug() {
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <CardContent className="pt-0 space-y-3">
-                    <p className="text-[10px] text-muted-foreground">
-                      Раскройте нужный модуль. Все блоки независимы и используют текущие параметры моста.
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] text-muted-foreground">
+                        Раскройте нужный модуль. Все блоки независимы и используют текущие параметры моста.
+                      </p>
+                      <Button variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => setAllAdv(!allAdvOpen)}>
+                        {allAdvOpen ? "Свернуть все" : "Раскрыть все"}
+                      </Button>
+                    </div>
+
 
                     <AdvancedItem id="adv-types" title="Типы мостов · ОЗЦ · РФ-нормы" open={advOpen.types} onToggle={() => toggleAdv("types")}>
                       <CementPlugTypesCard
