@@ -794,7 +794,35 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
+            {(() => {
+              const minSo = Math.min(...autoResults.map(r => r.standoffAchieved));
+              if (minSo >= targetStandoff - 0.5) return null;
+              const rc = Math.max(0, (wellData.holeDiameter - wellData.casingOD) / 2);
+              const bladeMaxSo = rc > 0 ? Math.round((autoSpec.bladeHeight / rc) * 1000) / 10 : 0;
+              const bladeLimited = autoSpec.bladeHeight < rc;
+              return (
+                <div className="mx-3 mt-3 mb-2 p-2.5 rounded-md border border-amber-500/40 bg-amber-500/10 text-xs">
+                  <div className="font-medium text-amber-700 dark:text-amber-400">
+                    ⚠ Целевой Standoff {targetStandoff}% не достигнут в части интервалов (мин. {minSo}%)
+                  </div>
+                  {bladeLimited && (
+                    <div className="mt-1 text-muted-foreground">
+                      Геометрический потолок по высоте планки: <b>{bladeMaxSo}%</b> при кольцевом зазоре {rc.toFixed(1)} мм
+                      и планке {autoSpec.bladeHeight} мм. Увеличьте высоту планки (вылет) до {Math.ceil(rc * (targetStandoff / 100))} мм
+                      или выберите центратор с большим вылетом — алгоритм уже расставил до {Math.max(...autoResults.map(r => r.centralizersPerJoint))} шт./трубу.
+                    </div>
+                  )}
+                  {!bladeLimited && (
+                    <div className="mt-1 text-muted-foreground">
+                      Достигнут предел плотности (до {Math.max(...autoResults.map(r => r.centralizersPerJoint))} шт./трубу).
+                      Попробуйте центратор с большей восстанавливающей силой.
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div ref={placementTableRef}>
+
               <Table>
                 <TableHeader>
                   <TableRow>
