@@ -371,6 +371,11 @@ export default function Stimulation() {
       await exportStimulationDocx({
         reservoir, method: selected, ranked: selectedRanked,
         acidVolM3: acidVol, damage, kinetics, stages, forecast, wellName,
+        composition, acidLabel,
+        acidDensityGcc: dissLive.densityGcc,
+        effectiveAcidStrength: dissLive.effectiveAcidStrength,
+        stoichiometry, mineralDissolution, sensitivity: sensitivityData,
+        pFracMPa,
       });
 
       toast.success("DOCX-отчёт сформирован");
