@@ -13,18 +13,22 @@
 //   - Объём CO₂ выделившегося газа (нм³)
 // ============================================================
 
+import {
+  AcidComposition, DEFAULT_ACID_COMPOSITION, calculateDissolvingPower,
+} from "./acid-chemistry";
+
 export type AcidSystem = "HCl-15" | "HCl-28" | "MudAcid-12-3" | "HCl-7.5";
 export type FormationType = "carbonate" | "sandstone" | "dolomite";
 
 const G = 9.81;
 
-// Реактивная (растворяющая) способность HCl/HF
-// β [кг CaCO₃ растворённого / м³ кислоты]
-const DISSOLVING_POWER: Record<AcidSystem, { carbonate: number; sandstone: number; dolomite: number; density: number; co2PerM3: number }> = {
-  "HCl-15":      { carbonate: 219, sandstone: 0,   dolomite: 200, density: 1.075, co2PerM3: 48.9 },
-  "HCl-28":      { carbonate: 440, sandstone: 0,   dolomite: 400, density: 1.142, co2PerM3: 98.0 },
-  "HCl-7.5":     { carbonate: 107, sandstone: 0,   dolomite: 98,  density: 1.037, co2PerM3: 24.0 },
-  "MudAcid-12-3":{ carbonate: 170, sandstone: 35,  dolomite: 150, density: 1.090, co2PerM3: 38.0 },
+// Пресеты соответствуют выбору в Select (для обратной совместимости).
+// Растворяющая способность ВСЕГДА вычисляется через acid-chemistry, а не из таблицы.
+const SYSTEM_TO_COMP: Record<AcidSystem, AcidComposition> = {
+  "HCl-7.5":      { ...DEFAULT_ACID_COMPOSITION, hclPct: 7.5, hfPct: 0 },
+  "HCl-15":       { ...DEFAULT_ACID_COMPOSITION, hclPct: 15,  hfPct: 0 },
+  "HCl-28":       { ...DEFAULT_ACID_COMPOSITION, hclPct: 28,  hfPct: 0 },
+  "MudAcid-12-3": { ...DEFAULT_ACID_COMPOSITION, hclPct: 12,  hfPct: 3 },
 };
 
 // Рекомендуемый удельный объём кислоты, м³/м перфорации
@@ -33,6 +37,7 @@ const ACID_VOLUME_PER_M: Record<FormationType, { min: number; typical: number; m
   sandstone:  { min: 0.3,  typical: 0.75, max: 1.5 },
   dolomite:   { min: 0.7,  typical: 1.2,  max: 2.5 },
 };
+
 
 export interface AcidStimInputs {
   tvd: number;             // м
@@ -51,7 +56,10 @@ export interface AcidStimInputs {
   preflushVolume: number;  // м³ HCl 7.5% предпоток (для песчаника)
   overflushVolume: number; // м³ продавки
   surfacePressure: number; // MPa — макс. рабочее давление насоса (для проверки)
+  /** Опциональный пользовательский состав. Если не задан — берётся пресет по acidSystem. */
+  composition?: AcidComposition;
 }
+
 
 export interface AcidStage {
   name: string;
@@ -120,26 +128,24 @@ function calcBHP(inp: AcidStimInputs, qLpm: number, density: number): {
 }
 
 export function calculateAcidStim(inp: AcidStimInputs): AcidStimResult {
-  const sys = DISSOLVING_POWER[inp.acidSystem];
+  const comp = inp.composition ?? SYSTEM_TO_COMP[inp.acidSystem];
+  // Растворяющая способность, плотность, CO₂ — вычисляются из стехиометрии
   const fracPressure = inp.fracGradient * inp.tvd;
   const rec = ACID_VOLUME_PER_M[inp.formation];
   const acidVolumeRec = rec.typical * inp.perforationLength;
   const acidVolumeUsed = inp.volumePerMeter * inp.perforationLength;
   const totalVol = inp.preflushVolume + acidVolumeUsed + inp.overflushVolume;
-  const density = sys.density;
+
+  // Давление в забое для расчёта Z(CO₂): берём оценку Pзаб
+  const hydroEst = (1100 * G * inp.tvd) / 1e6;
+  const bhpEstForChem = Math.max(inp.reservoirPressure, hydroEst);
+  const diss = calculateDissolvingPower(comp, bhpEstForChem, inp.bhct);
+  const density = diss.densityGcc;
 
   const main = calcBHP(inp, inp.pumpRate, density);
-  // Макс. расход — итеративно: при каком Q BHP = fracPressure
-  // BHP = Pуст + Hydro - Fric(Q).  Pуст_макс = inp.surfacePressure
-  // Дано фикс Pуст, ищем Q при котором BHP ≤ fracPressure
-  // Если main.bhp > frac → нужно снижать Q (увеличит fric? нет, fric растёт с Q)
-  // Снижение Q уменьшит fric → BHP вырастет ещё.  Значит лимит — Pуст, не Q.
-  // Поэтому maxRate ищем как Q, при котором Pуст = inp.surfacePressure даёт BHP = fracPressure
-  // → fric(Q_max) = inp.surfacePressure + hydro - fracPressure
   const fricBudget = inp.surfacePressure + main.hydro - fracPressure;
   let maxRate = inp.pumpRate;
   if (fricBudget > 0) {
-    // решаем fric(Q) = fricBudget итерациями
     let lo = 1, hi = 5000;
     for (let i = 0; i < 40; i++) {
       const mid = (lo + hi) / 2;
@@ -148,13 +154,17 @@ export function calculateAcidStim(inp: AcidStimInputs): AcidStimResult {
     }
     maxRate = +lo.toFixed(0);
   } else {
-    maxRate = 0; // даже при 0 расхода BHP > frac (хвостовое давление)
+    maxRate = 0;
   }
 
-  // Химия
-  const beta = sys[inp.formation];
+  // Химия — чистая стехиометрия
+  const beta = inp.formation === "carbonate" ? diss.dissolvingPowerCalcite
+             : inp.formation === "dolomite"  ? diss.dissolvingPowerDolomite
+             : diss.dissolvingPowerQuartz;
   const dissolved = beta * acidVolumeUsed;
-  const co2 = sys.co2PerM3 * acidVolumeUsed * (inp.formation === "sandstone" ? 0.2 : 1);
+  // CO₂ в забое (м³ при пластовых P,T)
+  const co2 = diss.co2GeneratedM3PerM3 * acidVolumeUsed * (inp.formation === "sandstone" && comp.hclPct === 0 ? 0 : 1);
+
 
   // Расписание
   const stages: AcidStage[] = [];

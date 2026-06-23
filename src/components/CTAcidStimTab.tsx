@@ -14,9 +14,12 @@ import {
   calculateAcidStim, AcidStimInputs, ACID_SYSTEMS, FORMATION_TYPES,
   type AcidSystem, type FormationType,
 } from "@/lib/ct-acid-stim";
+import { DEFAULT_ACID_COMPOSITION, type AcidComposition } from "@/lib/acid-chemistry";
+import AcidCompositionEditor from "@/components/AcidCompositionEditor";
 import type { CTStringData, WellGeometry, PumpData } from "@/lib/coiled-tubing-calculations";
 import { exportAcidStimDocx } from "@/lib/export-ct-modules-docx";
 import { toast } from "sonner";
+
 
 interface Props {
   ct: CTStringData;
@@ -66,6 +69,7 @@ export default function CTAcidStimTab({ ct, well, pump, operationType }: Props) 
   const [fracGrad, setFracGrad] = useState(well.fracGradient || 0.017);
   const [surfP, setSurfP] = useState(35);
   const [fricFactor, setFricFactor] = useState(1.0);
+  const [composition, setComposition] = useState<AcidComposition>({ ...DEFAULT_ACID_COMPOSITION, hclPct: 15 });
 
   const inputs: AcidStimInputs = useMemo(() => ({
     tvd: well.tvd, md: well.md,
@@ -80,7 +84,9 @@ export default function CTAcidStimTab({ ct, well, pump, operationType }: Props) 
     preflushVolume: preflush,
     overflushVolume: overflush,
     surfacePressure: surfP,
-  }), [well, ct, formation, acidSystem, perfLength, volumePerM, pumpRate, preflush, overflush, reservoirP, fracGrad, surfP, fricFactor]);
+    composition,
+  }), [well, ct, formation, acidSystem, perfLength, volumePerM, pumpRate, preflush, overflush, reservoirP, fracGrad, surfP, fricFactor, composition]);
+
 
   const r = useMemo(() => calculateAcidStim(inputs), [inputs]);
 
@@ -145,6 +151,17 @@ export default function CTAcidStimTab({ ct, well, pump, operationType }: Props) 
           </div>
         </CardContent>
       </Card>
+
+      {/* Универсальный редактор состава */}
+      <AcidCompositionEditor
+        value={composition}
+        onChange={setComposition}
+        rockType={formation}
+        bhPressureMPa={Math.max(reservoirP, well.tvd * 0.0108)}
+        bhTemperatureC={well.bhct}
+      />
+
+
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

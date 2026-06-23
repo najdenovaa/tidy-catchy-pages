@@ -13,7 +13,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
 import { buildAcidStages, computeAcidKinetics, optimalAcidRate, computeAcidStoichiometry } from "@/lib/stimulation-acid";
+import { DEFAULT_ACID_COMPOSITION, type AcidComposition } from "@/lib/acid-chemistry";
+import AcidCompositionEditor from "@/components/AcidCompositionEditor";
 import WormholeVisualization from "@/components/WormholeVisualization";
+
 import Wormhole3D from "@/components/Wormhole3D";
 import {
   diagnoseDamage, decomposeSkin, fitArpsDecline, forecastPostTreatment,
@@ -177,18 +180,37 @@ export default function Stimulation() {
     [selected, reservoir]
   );
 
+  // Универсальный пользовательский состав. Инициализируется из выбранного метода
+  // и далее редактируется пользователем (слайдеры HCl/HF/добавки).
+  const [composition, setComposition] = useState<AcidComposition>(DEFAULT_ACID_COMPOSITION);
+  useEffect(() => {
+    const name = selected.mainReagent.name;
+    const hasHF = /HF/i.test(name);
+    const hfMatch = name.match(/HF[^\d]*(\d+(?:\.\d+)?)\s*%/i);
+    const hfPct = hasHF ? (hfMatch ? parseFloat(hfMatch[1]) : 3) : 0;
+    const hclPct = hasHF
+      ? Math.max(0, selected.mainReagent.concentration - hfPct)
+      : selected.mainReagent.concentration;
+    setComposition(c => ({ ...c, hclPct, hfPct }));
+  }, [selected.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const rockType: "carbonate" | "dolomite" | "sandstone" =
+    reservoir.collectorType === "sandstone" ? "sandstone"
+    : /доломит|dolomit/i.test(selected.mainReagent.name) ? "dolomite"
+    : "carbonate";
+
   const kinetics = useMemo(() => {
     if (selected.category !== "acid" && selected.category !== "foam" && selected.category !== "combo") return null;
     return computeAcidKinetics({
       tempC: reservoir.temperatureC,
-      concentration: selected.mainReagent.concentration,
+      concentration: composition.hclPct + composition.hfPct,
       acidVolumeM3: acidVol,
       payZoneM: reservoir.payZoneM,
       porosity: reservoir.porosity,
       wellboreRadiusM: 0.108,
       collectorType: reservoir.collectorType === "sandstone" ? "sandstone" : "carbonate",
     });
-  }, [selected, reservoir, acidVol]);
+  }, [selected, reservoir, acidVol, composition]);
 
   const stages = useMemo(() => {
     if (selected.category !== "acid" && selected.category !== "combo") return null;
@@ -201,32 +223,21 @@ export default function Stimulation() {
     });
   }, [selected, reservoir]);
 
-  // Стехиометрия растворения породы (CaCO₃ / CaMg(CO₃)₂ / SiO₂)
+  // Стехиометрия растворения породы (CaCO₃ / CaMg(CO₃)₂ / SiO₂) — из пользовательского состава
   const stoichiometry = useMemo(() => {
     if (selected.category !== "acid" && selected.category !== "combo") return null;
-    const name = selected.mainReagent.name;
-    const hasHF = /HF/i.test(name);
-    // если в названии есть "доломит" — считаем по доломиту
-    const rock: "carbonate" | "dolomite" | "sandstone" =
-      reservoir.collectorType === "sandstone" ? "sandstone"
-      : /доломит|dolomit/i.test(name) ? "dolomite"
-      : "carbonate";
-    // HF % — попытка вытащить из строки "HCl 12% + HF 3%"
-    const hfMatch = name.match(/HF[^\d]*(\d+(?:\.\d+)?)\s*%/i);
-    const hfPct = hasHF ? (hfMatch ? parseFloat(hfMatch[1]) : 3) : 0;
-    // HCl % — основная концентрация, если HF указан отдельно — оставшаяся часть
-    const hclPct = hasHF ? selected.mainReagent.concentration - hfPct : selected.mainReagent.concentration;
     return computeAcidStoichiometry({
       acidVolumeM3: acidVol,
       acidDensityKgM3: selected.mainReagent.density * 1000,
-      hclConcentrationPct: Math.max(0, hclPct),
-      hfConcentrationPct: hfPct,
-      rock,
-      preflushUsed: true, // мы строим 3-стадийную схему — preflush есть всегда
+      hclConcentrationPct: composition.hclPct,
+      hfConcentrationPct: composition.hfPct,
+      rock: rockType,
+      preflushUsed: true,
       bhPressureMPa: reservoir.reservoirPressureMPa,
       bhTemperatureC: reservoir.temperatureC,
     });
-  }, [selected, reservoir, acidVol]);
+  }, [selected, reservoir, acidVol, composition, rockType]);
+
 
   // Live results from sub-panels (solvent/nitrogen)
   const [solventResult, setSolventResult] = useState<(SolventResult & { penetrationRadiusM: number }) | null>(null);
@@ -570,7 +581,18 @@ export default function Stimulation() {
               <Stat label="Успешность" value={`${selected.successRate}%`} />
             </div>
 
+            {(selected.category === "acid" || selected.category === "foam" || selected.category === "combo") && (
+              <AcidCompositionEditor
+                value={composition}
+                onChange={setComposition}
+                rockType={rockType}
+                bhPressureMPa={reservoir.reservoirPressureMPa}
+                bhTemperatureC={reservoir.temperatureC}
+              />
+            )}
+
             {kinetics && (
+
               <Card className="p-4 space-y-4">
                 <h3 className="font-semibold">Кинетика и проникновение</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
