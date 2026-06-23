@@ -13,7 +13,9 @@ import {
   suggestedReservoirPressureMPa, suggestedReservoirTempC,
   overburdenPressureMPa, fracturePressureMPa,
   DEFAULT_MINERALOGY_SANDSTONE, DEFAULT_MINERALOGY_CARBONATE, DEFAULT_MINERALOGY_DOLOMITE,
+  AveragedMineralogy, toAveragedMineralogy, fromAveragedMineralogy, totalAveragedPct,
 } from "@/lib/geology-model";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 interface Props {
   mineralogy: DetailedMineralogy;
