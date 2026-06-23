@@ -864,7 +864,10 @@ export default function Index() {
                   wellData={wellData}
                   slurries={slurries}
                 />
+              </div>
+            </TabsContent>
           </div>
+
 
           {/* Сценарии сравнения — в самом низу страницы */}
           <ScenarioCompare
