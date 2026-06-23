@@ -39,6 +39,8 @@ export const defaultWellData: WellData = {
   cavernCoeff: 1.0,
   bottomTempStatic: 0,
   bottomTempCirc: 0,
+  pumpZoneTop: 0,
+  pumpZoneBottom: 0,
   trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }],
   reservoirLayers: [],
 };
