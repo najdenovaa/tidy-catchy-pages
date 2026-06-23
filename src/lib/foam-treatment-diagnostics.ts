@@ -52,8 +52,17 @@ export interface Mineralogy {
   calcite: number;
   dolomite: number;
   clay: number;
-  /** % монтмориллонита от общего объёма */
+  /** % монтмориллонита (= smectite) от общего объёма */
   montmorillonite: number;
+  // ── расширенные поля (опционально, используются если заданы) ──
+  kaolinite?: number;
+  illite?: number;
+  chlorite?: number;
+  smectite?: number;
+  chalk?: number;
+  siderite?: number;
+  anhydrite?: number;
+  pyrite?: number;
 }
 
 export interface DrillingHistory {
@@ -239,16 +248,26 @@ export function diagnoseDamage(
     });
   }
 
-  // 2) Набухание глин
-  if (mineralogy && mineralogy.clay >= 8) {
-    const mmt = mineralogy.montmorillonite ?? 0;
-    if (mmt >= 3 || mineralogy.clay >= 15) {
+  // 2) Набухание глин — взвешенный риск по типам
+  if (mineralogy && mineralogy.clay >= 6) {
+    const smectite = mineralogy.smectite ?? mineralogy.montmorillonite ?? 0;
+    const illite = mineralogy.illite ?? 0;
+    const chlorite = mineralogy.chlorite ?? 0;
+    const kaolinite = mineralogy.kaolinite ?? 0;
+    // индекс набухания: смектит — основной, иллит ~1/3, хлорит и каолинит почти не набухают
+    const swellIdx = smectite + illite / 3 + chlorite / 6 + kaolinite / 10;
+    if (swellIdx >= 2 || mineralogy.clay >= 12) {
+      const parts: string[] = [];
+      if (smectite) parts.push(`смектит ${smectite.toFixed(1)}%`);
+      if (illite) parts.push(`иллит ${illite.toFixed(1)}%`);
+      if (chlorite) parts.push(`хлорит ${chlorite.toFixed(1)}%`);
+      if (kaolinite) parts.push(`каолинит ${kaolinite.toFixed(1)}%`);
       out.push({
         mechanism: "clay_swelling",
         nameRu: MECH_NAME.clay_swelling,
-        probability: Math.min(0.95, 0.4 + 0.04 * mmt + 0.015 * mineralogy.clay),
-        severity: mmt >= 15 ? "high" : mmt >= 8 ? "medium" : "low",
-        evidence: `Глинистость ${mineralogy.clay}%, монтмориллонит ${mmt}%`,
+        probability: Math.min(0.95, 0.35 + 0.05 * swellIdx + 0.012 * mineralogy.clay),
+        severity: swellIdx >= 10 ? "high" : swellIdx >= 5 ? "medium" : "low",
+        evidence: `Глины ${mineralogy.clay.toFixed(1)}% (${parts.join(", ") || "состав не уточнён"})`,
         recommendedRecipeId: collector === "carbonate" ? "foam_acid_hcl_carb" : "foam_acid_glina",
       });
     }

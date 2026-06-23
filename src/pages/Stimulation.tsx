@@ -13,7 +13,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
 import { buildAcidStages, computeAcidKinetics, optimalAcidRate, computeAcidStoichiometry } from "@/lib/stimulation-acid";
-import { DEFAULT_ACID_COMPOSITION, type AcidComposition } from "@/lib/acid-chemistry";
+import { DEFAULT_ACID_COMPOSITION, calculateDissolvingPower, type AcidComposition } from "@/lib/acid-chemistry";
 import AcidCompositionEditor from "@/components/AcidCompositionEditor";
 import WormholeVisualization from "@/components/WormholeVisualization";
 
@@ -23,6 +23,12 @@ import {
   type DamageAssessment, type ReservoirSnapshot, type Mineralogy, type DrillingHistory,
   type ProductionPoint,
 } from "@/lib/foam-treatment-diagnostics";
+import {
+  DEFAULT_MINERALOGY_CARBONATE, DEFAULT_MINERALOGY_SANDSTONE, DEFAULT_FLUID, DEFAULT_DEPTH, DEFAULT_STRESS,
+  toLegacyMineralogy, stoichiometricDemandByMineralogy, fracturePressureMPa,
+  type DetailedMineralogy, type FluidProperties, type DepthProfile, type StressState,
+} from "@/lib/geology-model";
+import GeologyEditor from "@/components/GeologyEditor";
 import { exportStimulationDocx } from "@/lib/export-stimulation-docx";
 import {
   calculateGasIPR, diagnoseGasDamage, WELL_FLUID_LABEL,
@@ -76,13 +82,24 @@ export default function Stimulation() {
   const [monthsHistory, setMonthsHistory] = useState(18);
   const [skinCurrent, setSkinCurrent] = useState(8);
 
-  // Mineralogy / drilling
-  const [clayPct, setClayPct] = useState(6);
-  const [montPct, setMontPct] = useState(2);
+  // Геология: детальная минералогия + флюид + глубина + геомеханика
+  const [detailedMin, setDetailedMin] = useState<DetailedMineralogy>(DEFAULT_MINERALOGY_CARBONATE);
+  const [fluidProps, setFluidProps] = useState<FluidProperties>(DEFAULT_FLUID);
+  const [depthProfile, setDepthProfile] = useState<DepthProfile>(DEFAULT_DEPTH);
+  const [stressState, setStressState] = useState<StressState>(DEFAULT_STRESS);
+
+  // Заканчивание / буровая история
   const [perfDensity, setPerfDensity] = useState(20);
   const [mudType, setMudType] = useState<"wbm" | "obm" | "sbm">("wbm");
   const [overbalanceMPa, setOverbalanceMPa] = useState(3);
   const [soakDays, setSoakDays] = useState(7);
+
+  // Авто-подмена дефолтов минералогии при смене типа коллектора
+  useEffect(() => {
+    if (reservoir.collectorType === "sandstone") setDetailedMin(DEFAULT_MINERALOGY_SANDSTONE);
+    else setDetailedMin(DEFAULT_MINERALOGY_CARBONATE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservoir.collectorType]);
 
   const [selectedMethodId, setSelectedMethodId] = useState<string>("hcl-matrix");
   const [searchParams] = useSearchParams();
@@ -117,18 +134,22 @@ export default function Stimulation() {
     Pb: reservoir.reservoirPressureMPa * 0.7,
     k_mD: reservoir.permeability_mD,
     h: reservoir.payZoneM,
-    mu_cP: 1.2,
-    Bo: 1.15,
+    mu_cP: fluidProps.oilViscosity_cP,
+    Bo: fluidProps.Bo,
     re: 250,
     rw: 0.108,
     skin: skinCurrent,
     tempC: reservoir.temperatureC,
-  }), [reservoir, skinCurrent]);
+  }), [reservoir, skinCurrent, fluidProps.oilViscosity_cP, fluidProps.Bo]);
 
-  const mineralogy: Mineralogy = useMemo(() => ({
-    quartz: 60, feldspar: 10, calcite: reservoir.collectorType === "carbonate" ? 80 : 5,
-    dolomite: 0, clay: clayPct, montmorillonite: montPct,
-  }), [clayPct, montPct, reservoir.collectorType]);
+  // Совместимое представление минералогии для diagnoseDamage
+  const mineralogy: Mineralogy = useMemo(() => toLegacyMineralogy(detailedMin), [detailedMin]);
+
+  // Давление гидроразрыва (упрощённая Eaton) — для сравнения с давлением обработки
+  const pFracMPa = useMemo(
+    () => fracturePressureMPa(depthProfile, reservoir.reservoirPressureMPa, stressState),
+    [depthProfile, reservoir.reservoirPressureMPa, stressState]
+  );
 
   const drilling: DrillingHistory = useMemo(() => ({
     mudType, mudWeight: 1.18, overbalanceMPa, soakTimeDays: soakDays,
@@ -237,6 +258,12 @@ export default function Stimulation() {
       bhTemperatureC: reservoir.temperatureC,
     });
   }, [selected, reservoir, acidVol, composition, rockType]);
+
+  // Реальная растворяющая способность с учётом полного минерального состава
+  const mineralDissolution = useMemo(() => {
+    const diss = calculateDissolvingPower(composition, reservoir.reservoirPressureMPa, reservoir.temperatureC);
+    return stoichiometricDemandByMineralogy(detailedMin, diss.dissolvingPowerCalcite, diss.dissolvingPowerQuartz);
+  }, [composition, detailedMin, reservoir.reservoirPressureMPa, reservoir.temperatureC]);
 
 
   // Live results from sub-panels (solvent/nitrogen)
@@ -483,11 +510,24 @@ export default function Stimulation() {
               </Card>
             )}
 
+            <GeologyEditor
+              mineralogy={detailedMin}
+              setMineralogy={setDetailedMin}
+              fluid={fluidProps}
+              setFluid={setFluidProps}
+              depth={depthProfile}
+              setDepth={setDepthProfile}
+              stress={stressState}
+              setStress={setStressState}
+              currentReservoirPressureMPa={reservoir.reservoirPressureMPa}
+              currentReservoirTempC={reservoir.temperatureC}
+              onApplyPressure={(p) => setReservoir((r) => ({ ...r, reservoirPressureMPa: p }))}
+              onApplyTemperature={(t) => setReservoir((r) => ({ ...r, temperatureC: t }))}
+            />
+
             <Card className="p-4 space-y-4">
-              <h2 className="font-semibold">Минералогия и заканчивание</h2>
+              <h2 className="font-semibold">Заканчивание и буровая история</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <Field label="Глинистость, %" value={clayPct} onChange={setClayPct} step={0.5} />
-                <Field label="Монтмориллонит, %" value={montPct} onChange={setMontPct} step={0.5} />
                 <Field label="Плотность перф., отв/м" value={perfDensity} onChange={setPerfDensity} />
                 <div className="space-y-1">
                   <Label>Тип бурового раствора</Label>
@@ -667,6 +707,29 @@ export default function Stimulation() {
                     ))}
                   </div>
                 )}
+
+                {/* Реальная растворяющая способность по минералогии */}
+                <div className="pt-2 border-t border-border/40 space-y-1.5">
+                  <div className="text-xs font-medium">По реальному минеральному составу:</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                    <KV k="HCl растворит карбонатов" v={`${mineralDissolution.carbonateKgPerM3.toFixed(0)} кг/м³`} />
+                    <KV k="HF растворит силикатов" v={`${mineralDissolution.silicateKgPerM3.toFixed(1)} кг/м³`} />
+                    <KV k="Эфф. ρ породы" v={`${mineralDissolution.effectiveRockDensity_kgm3.toFixed(0)} кг/м³`} />
+                  </div>
+                  {mineralDissolution.warnings.map((w, i) => (
+                    <div key={i} className="text-xs text-amber-700 dark:text-amber-300">{w}</div>
+                  ))}
+                </div>
+
+                {/* Давление гидроразрыва (Eaton) */}
+                <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2 flex-wrap">
+                  <div className="text-xs text-muted-foreground">
+                    🪨 Pfrac (Eaton) ≈ <b>{pFracMPa.toFixed(1)} МПа</b>
+                  </div>
+                  <Badge variant={pFracMPa - reservoir.reservoirPressureMPa < 5 ? "destructive" : "outline"} className="text-[10px]">
+                    запас ΔP = {(pFracMPa - reservoir.reservoirPressureMPa).toFixed(1)} МПа
+                  </Badge>
+                </div>
               </Card>
             )}
 
