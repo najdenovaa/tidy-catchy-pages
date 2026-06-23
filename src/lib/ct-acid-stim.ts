@@ -128,26 +128,24 @@ function calcBHP(inp: AcidStimInputs, qLpm: number, density: number): {
 }
 
 export function calculateAcidStim(inp: AcidStimInputs): AcidStimResult {
-  const sys = DISSOLVING_POWER[inp.acidSystem];
+  const comp = inp.composition ?? SYSTEM_TO_COMP[inp.acidSystem];
+  // Растворяющая способность, плотность, CO₂ — вычисляются из стехиометрии
   const fracPressure = inp.fracGradient * inp.tvd;
   const rec = ACID_VOLUME_PER_M[inp.formation];
   const acidVolumeRec = rec.typical * inp.perforationLength;
   const acidVolumeUsed = inp.volumePerMeter * inp.perforationLength;
   const totalVol = inp.preflushVolume + acidVolumeUsed + inp.overflushVolume;
-  const density = sys.density;
+
+  // Давление в забое для расчёта Z(CO₂): берём оценку Pзаб
+  const hydroEst = (1100 * G * inp.tvd) / 1e6;
+  const bhpEstForChem = Math.max(inp.reservoirPressure, hydroEst);
+  const diss = calculateDissolvingPower(comp, bhpEstForChem, inp.bhct);
+  const density = diss.densityGcc;
 
   const main = calcBHP(inp, inp.pumpRate, density);
-  // Макс. расход — итеративно: при каком Q BHP = fracPressure
-  // BHP = Pуст + Hydro - Fric(Q).  Pуст_макс = inp.surfacePressure
-  // Дано фикс Pуст, ищем Q при котором BHP ≤ fracPressure
-  // Если main.bhp > frac → нужно снижать Q (увеличит fric? нет, fric растёт с Q)
-  // Снижение Q уменьшит fric → BHP вырастет ещё.  Значит лимит — Pуст, не Q.
-  // Поэтому maxRate ищем как Q, при котором Pуст = inp.surfacePressure даёт BHP = fracPressure
-  // → fric(Q_max) = inp.surfacePressure + hydro - fracPressure
   const fricBudget = inp.surfacePressure + main.hydro - fracPressure;
   let maxRate = inp.pumpRate;
   if (fricBudget > 0) {
-    // решаем fric(Q) = fricBudget итерациями
     let lo = 1, hi = 5000;
     for (let i = 0; i < 40; i++) {
       const mid = (lo + hi) / 2;
@@ -156,13 +154,17 @@ export function calculateAcidStim(inp: AcidStimInputs): AcidStimResult {
     }
     maxRate = +lo.toFixed(0);
   } else {
-    maxRate = 0; // даже при 0 расхода BHP > frac (хвостовое давление)
+    maxRate = 0;
   }
 
-  // Химия
-  const beta = sys[inp.formation];
+  // Химия — чистая стехиометрия
+  const beta = inp.formation === "carbonate" ? diss.dissolvingPowerCalcite
+             : inp.formation === "dolomite"  ? diss.dissolvingPowerDolomite
+             : diss.dissolvingPowerQuartz;
   const dissolved = beta * acidVolumeUsed;
-  const co2 = sys.co2PerM3 * acidVolumeUsed * (inp.formation === "sandstone" ? 0.2 : 1);
+  // CO₂ в забое (м³ при пластовых P,T)
+  const co2 = diss.co2GeneratedM3PerM3 * acidVolumeUsed * (inp.formation === "sandstone" && comp.hclPct === 0 ? 0 : 1);
+
 
   // Расписание
   const stages: AcidStage[] = [];
