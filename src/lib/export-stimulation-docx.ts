@@ -151,7 +151,8 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
   children.push(kv([
     ["Категория", METHOD_CATEGORY_LABEL[method.category]],
     ["Совместимость (score)", ranked ? `${ranked.score} / 100` : "—"],
-    ["Основной реагент", `${method.mainReagent.name} (${method.mainReagent.concentration}%)`],
+    ["Основной реагент (фактический)", acidLabel ?? `${method.mainReagent.name} (${method.mainReagent.concentration}%)`],
+    ["Шаблон метода", `${method.mainReagent.name}`],
     ["Объём реагента", `${fmt(acidVolM3, 1)} м³`],
     ["Расход", `${method.recommendedRate[0]}–${method.recommendedRate[1]} л/мин`],
     ["Выдержка", `${method.soakTimeMin[0]}–${method.soakTimeMin[1]} мин`],
@@ -160,6 +161,22 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
     ["Длительность эффекта", `${method.effectDurationMonths[0]}–${method.effectDurationMonths[1]} мес`],
     ["Успешность", `${method.successRate}%`],
   ]));
+
+  // 3a. Полный фактический состав кислоты
+  if (composition) {
+    children.push(heading("3a. Фактический состав кислотного раствора"));
+    children.push(kv([
+      ["HCl, %", fmt(composition.hclPct, 1)],
+      ["HF, %", fmt(composition.hfPct, 1)],
+      ["Ингибитор коррозии, %", fmt(composition.corrosionInhibitorPct, 2)],
+      ["Стабилизатор Fe, %", fmt(composition.ironControlPct, 2)],
+      ["ПАВ, %", fmt(composition.surfactantPct, 2)],
+      ["Взаимный растворитель, %", fmt(composition.mutualSolventPct, 2)],
+      ["Замедлитель (гель), %", fmt(composition.retarderPct, 2)],
+      ["Плотность раствора, г/см³", fmt(acidDensityGcc, 3)],
+      ["Эффективная сила HCl, %", fmt(effectiveAcidStrength, 1)],
+    ]));
+  }
 
 
   // 4. Additives
