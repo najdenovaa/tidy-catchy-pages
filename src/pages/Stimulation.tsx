@@ -581,7 +581,18 @@ export default function Stimulation() {
               <Stat label="Успешность" value={`${selected.successRate}%`} />
             </div>
 
+            {(selected.category === "acid" || selected.category === "foam" || selected.category === "combo") && (
+              <AcidCompositionEditor
+                value={composition}
+                onChange={setComposition}
+                rockType={rockType}
+                bhPressureMPa={reservoir.reservoirPressureMPa}
+                bhTemperatureC={reservoir.temperatureC}
+              />
+            )}
+
             {kinetics && (
+
               <Card className="p-4 space-y-4">
                 <h3 className="font-semibold">Кинетика и проникновение</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
