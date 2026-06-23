@@ -87,10 +87,22 @@ export interface StimulationExportBundle {
   stages: AcidTreatmentStages | null;
   forecast: ForecastPoint[] | null;
   wellName?: string;
+  composition?: AcidComposition;
+  acidLabel?: string;
+  acidDensityGcc?: number;
+  effectiveAcidStrength?: number;
+  stoichiometry?: AcidStoichiometry | null;
+  mineralDissolution?: MineralDissolution | null;
+  sensitivity?: SensitivityPoint[];
+  pFracMPa?: number;
 }
 
 export async function exportStimulationDocx(b: StimulationExportBundle): Promise<void> {
-  const { reservoir, method, ranked, acidVolM3, damage, kinetics, stages, forecast, wellName } = b;
+  const {
+    reservoir, method, ranked, acidVolM3, damage, kinetics, stages, forecast, wellName,
+    composition, acidLabel, acidDensityGcc, effectiveAcidStrength,
+    stoichiometry, mineralDissolution, sensitivity, pFracMPa,
+  } = b;
 
   const children: (Paragraph | Table)[] = [];
 
