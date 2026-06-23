@@ -402,18 +402,57 @@ export function calculateCentralization(
 
 // ─── Auto-placement: solve for centralizersPerJoint given target standoff ───
 
+export type PlacementZone =
+  | "wellhead"   // приустьевая (всегда крепим)
+  | "pump"       // зона ГНО (всегда крепим)
+  | "vertical"   // прямой вертикальный участок (только "для вида")
+  | "build"      // набор кривизны / высокий DLS
+  | "tangent"    // стабильный наклонный участок
+  | "horizontal";// горизонтальный участок (>70°)
+
+export const placementZoneLabels: Record<PlacementZone, string> = {
+  wellhead: "Устьевая зона",
+  pump: "Зона ГНО",
+  vertical: "Вертикаль (стабиль.)",
+  build: "Набор / угол (DLS)",
+  tangent: "Тангенциальный (стабиль.)",
+  horizontal: "Горизонталь",
+};
+
 export interface AutoPlacementInterval {
   fromMD: number;
   toMD: number;
   avgZenith: number;
+  maxDLS: number;             // максимальный DLS в интервале, °/30м
+  zone: PlacementZone;
   centralizersPerJoint: number;
   standoffAchieved: number;
   totalCentralizers: number;
 }
 
+export interface AutoPlacementOptions {
+  pumpZoneTop?: number;       // верх зоны ГНО, MD
+  pumpZoneBottom?: number;    // низ зоны ГНО, MD
+  wellheadDepth?: number;     // глубина устьевой зоны (по умолч. 50 м)
+  dlsThresholdDegPer30m?: number; // порог "набора" (по умолч. 1.5°/30м)
+  verticalSparseJoints?: number;  // 1 центратор на N трубок в вертикали (по умолч. 15)
+}
+
 /**
- * Given a target standoff %, calculate required centralizersPerJoint
- * for each segment of the well, respecting trajectory.
+ * Профильно-ориентированная авто-расстановка центраторов.
+ *
+ * Алгоритм:
+ *   1. Скан трактории по сегментам (длина = jointLength).
+ *   2. Для каждого сегмента считаем avgZenith, maxZenith, локальный 3D-DLS
+ *      и классифицируем зону: устье / ГНО / набор (DLS > порога) / тангенс
+ *      / горизонталь / вертикаль.
+ *   3. Для каждой зоны решаем CPJ:
+ *        - vertical (низкий зенит + низкий DLS): редкая расстановка
+ *          (~1 центратор на verticalSparseJoints трубок) — «для вида».
+ *        - wellhead / pump: бин-поиск, но НЕ ниже 1 центратора/трубу.
+ *        - build (высокий DLS): бин-поиск + минимум 1, +20% запас.
+ *        - tangent / horizontal: обычный бин-поиск по целевому Standoff.
+ *   4. Сливаем соседние сегменты с одинаковыми CPJ и зоной.
  */
 export function autoPlaceCentralizers(
   wellData: WellData,
@@ -421,6 +460,7 @@ export function autoPlaceCentralizers(
   jointLength: number,
   targetStandoff: number,
   mudDensity: number,
+  options: AutoPlacementOptions = {},
 ): AutoPlacementInterval[] {
   const wpm = casingWeightPerMeter(wellData.casingOD, wellData.casingWall);
   const bf = buoyancyFactor(mudDensity);
@@ -434,10 +474,51 @@ export function autoPlaceCentralizers(
   const F_max_N = spec.restoringForce * 1000;
   const k_spring = F_max_N / rc_m;
 
-  // ─── Step 1: Sample zenith every jointLength along the well ───
-  const segmentSize = Math.max(jointLength, 10); // one segment per joint
-  const rawSegments: { fromMD: number; toMD: number; maxZenith: number; avgZenith: number }[] = [];
+  const wellheadDepth = options.wellheadDepth ?? 50;
+  const pumpTop = options.pumpZoneTop ?? 0;
+  const pumpBot = options.pumpZoneBottom ?? 0;
+  const pumpZoneActive = pumpBot > pumpTop && pumpBot > 0;
+  const dlsThresh = options.dlsThresholdDegPer30m ?? 1.5;
+  const sparseN = Math.max(2, Math.round(options.verticalSparseJoints ?? 15));
+  const sparseCPJ = Math.round((1 / sparseN) * 100) / 100; // напр. 0.07 = 1 на 15
 
+  const segmentSize = Math.max(jointLength, 10);
+
+  // Локальный 3D-DLS между двумя точками траектории на интервале segmentSize
+  function localDLS(md1: number, md2: number): number {
+    const p1 = interpolateTrajectory(wellData.trajectory, md1);
+    const p2 = interpolateTrajectory(wellData.trajectory, md2);
+    // azimuth requires raw trajectory; interpolate manually for azimuth
+    const azi = (md: number): number => {
+      const t = wellData.trajectory;
+      if (!t || t.length === 0) return 0;
+      if (md <= t[0].md) return t[0].azimuth;
+      if (md >= t[t.length - 1].md) return t[t.length - 1].azimuth;
+      for (let i = 0; i < t.length - 1; i++) {
+        if (md >= t[i].md && md <= t[i + 1].md) {
+          const f = (md - t[i].md) / (t[i + 1].md - t[i].md);
+          return t[i].azimuth + f * (t[i + 1].azimuth - t[i].azimuth);
+        }
+      }
+      return 0;
+    };
+    const i1 = p1.zenith * Math.PI / 180;
+    const i2 = p2.zenith * Math.PI / 180;
+    const a1 = azi(md1) * Math.PI / 180;
+    const a2 = azi(md2) * Math.PI / 180;
+    let cosA = Math.cos(i2 - i1) - Math.sin(i1) * Math.sin(i2) * (1 - Math.cos(a2 - a1));
+    cosA = Math.max(-1, Math.min(1, cosA));
+    const dMD = Math.max(1, md2 - md1);
+    return (Math.acos(cosA) * 180 / Math.PI) * (30 / dMD);
+  }
+
+  // ─── Step 1: разбиение по сегментам и сбор статистики ───
+  interface RawSeg {
+    fromMD: number; toMD: number;
+    maxZenith: number; avgZenith: number;
+    dls: number;
+  }
+  const rawSegments: RawSeg[] = [];
   for (let md = 0; md < wellData.casingDepthMD; md += segmentSize) {
     const endMD = Math.min(md + segmentSize, wellData.casingDepthMD);
     let maxZ = 0, sumZ = 0, cnt = 0;
@@ -447,43 +528,39 @@ export function autoPlaceCentralizers(
       sumZ += zenith;
       cnt++;
     }
-    rawSegments.push({ fromMD: md, toMD: endMD, maxZenith: maxZ, avgZenith: sumZ / cnt });
+    const dls = localDLS(md, endMD);
+    rawSegments.push({ fromMD: md, toMD: endMD, maxZenith: maxZ, avgZenith: sumZ / Math.max(1, cnt), dls });
   }
 
-  // ─── Step 2: Classify each segment and calculate CPJ independently ───
-  // Zone types based on zenith: vertical (<3°), low-angle (3-15°), 
-  // medium (15-45°), high (45-70°), horizontal (>70°)
-  function getZoneKey(zenith: number): string {
-    if (zenith < 3) return "vertical";
-    if (zenith < 15) return "low";
-    if (zenith < 45) return "medium";
-    if (zenith < 70) return "high";
-    return "horizontal";
+  // ─── Step 2: классификация и CPJ для каждого сегмента ───
+  function classify(seg: RawSeg): PlacementZone {
+    const mid = (seg.fromMD + seg.toMD) / 2;
+    if (mid <= wellheadDepth) return "wellhead";
+    if (pumpZoneActive && mid >= pumpTop && mid <= pumpBot) return "pump";
+    if (seg.maxZenith >= 70) return "horizontal";
+    if (seg.dls >= dlsThresh) return "build";
+    if (seg.maxZenith >= 3) return "tangent";
+    return "vertical";
   }
 
-  function solveCPJ(zenith: number): { cpj: number; standoff: number } {
+  function physicsCPJ(zenith: number, boostFactor: number = 1): { cpj: number; standoff: number } {
     if (zenith < 0.1) {
-      // Truly vertical — no lateral force, minimal centralizers
-      return { cpj: 0.1, standoff: 99.7 };
+      return { cpj: sparseCPJ, standoff: 99.7 };
     }
-
     const lateralF = lateralForcePerMeter(wpm, bf, zenith);
 
-    // For very small zenith angles, check if 0 centralizers already meet target
+    // Если зенит < 3° и даже без центраторов цель достигается — отдаём редкую расстановку
     if (zenith < 3) {
       const L_free = jointLength;
       const sag_free = (5 * lateralF * Math.pow(L_free, 4)) / (384 * EI);
       const ecc_free = Math.min(1, sag_free / rc_m);
       if (ecc_free <= targetEcc) {
-        // Even without centralizers, standoff is achieved
         const so = Math.round((1 - Math.max(0.02, ecc_free)) * 1000) / 10;
-        return { cpj: 0.1, standoff: so }; // minimal centralizers
+        return { cpj: sparseCPJ, standoff: so };
       }
     }
 
-    // Binary search for centralizersPerJoint
-    let lo = 0.1, hi = 5.0, bestCPJ = 5.0;
-
+    let lo = 0.05, hi = 5.0, bestCPJ = 5.0;
     for (let iter = 0; iter < 60; iter++) {
       const mid = (lo + hi) / 2;
       const L = jointLength / mid;
@@ -491,63 +568,71 @@ export function autoPlaceCentralizers(
       const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
       const sag = sag_free / (1 + springFactor);
       const ecc = Math.max(0.03, Math.min(1, sag / rc_m));
-
-      if (ecc <= targetEcc) {
-        bestCPJ = mid;
-        hi = mid;
-      } else {
-        lo = mid;
-      }
+      if (ecc <= targetEcc) { bestCPJ = mid; hi = mid; } else { lo = mid; }
     }
-
-    // Round UP to nearest 0.1 to guarantee target is met
-    bestCPJ = Math.ceil(bestCPJ * 10) / 10;
+    bestCPJ = Math.ceil(bestCPJ * boostFactor * 10) / 10;
     bestCPJ = Math.max(0.1, bestCPJ);
 
-    // Recalculate achieved standoff with rounded-up CPJ
     const L = jointLength / bestCPJ;
     const sag_free = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
     const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
     const sag = sag_free / (1 + springFactor);
     const ecc = Math.max(0.03, Math.min(1, sag / rc_m));
-    // Показываем реальный достигнутый standoff (без подгонки под целевой)
-    const achieved = Math.round((1 - ecc) * 1000) / 10;
-
-    return { cpj: bestCPJ, standoff: achieved };
+    return { cpj: bestCPJ, standoff: Math.round((1 - ecc) * 1000) / 10 };
   }
 
-  // Calculate CPJ for each raw segment individually
+  function solveForZone(seg: RawSeg, zone: PlacementZone): { cpj: number; standoff: number } {
+    switch (zone) {
+      case "vertical": {
+        // «Для вида» — редкая расстановка
+        const so = physicsCPJ(seg.maxZenith).standoff;
+        return { cpj: sparseCPJ, standoff: Math.max(so, 95) };
+      }
+      case "wellhead":
+      case "pump": {
+        // Всегда крепим: минимум 1 центратор / трубу
+        const r = physicsCPJ(seg.maxZenith);
+        return { cpj: Math.max(1.0, r.cpj), standoff: physicsCPJ(seg.maxZenith).standoff };
+      }
+      case "build": {
+        // Высокий DLS: 20% запас + минимум 1 / трубу
+        const r = physicsCPJ(seg.maxZenith, 1.2);
+        return { cpj: Math.max(1.0, r.cpj), standoff: r.standoff };
+      }
+      case "horizontal":
+      case "tangent":
+      default:
+        return physicsCPJ(seg.maxZenith);
+    }
+  }
+
   const computed = rawSegments.map(seg => {
-    // Use max zenith in segment for conservative calculation
-    const { cpj, standoff } = solveCPJ(seg.maxZenith);
-    return { ...seg, cpj, standoff, zone: getZoneKey(seg.maxZenith) };
+    const zone = classify(seg);
+    const { cpj, standoff } = solveForZone(seg, zone);
+    return { ...seg, zone, cpj, standoff };
   });
 
-  // ─── Step 3: Merge ONLY adjacent segments with same CPJ and same zone ───
+  // ─── Step 3: merge соседних сегментов с одинаковым (zone, cpj) ───
   const merged: AutoPlacementInterval[] = [];
-
   for (const seg of computed) {
-    if (merged.length > 0) {
-      const last = merged[merged.length - 1];
-      const lastZone = getZoneKey(last.avgZenith);
-      // Only merge if same CPJ value AND same zone type
-      if (last.centralizersPerJoint === seg.cpj && lastZone === seg.zone) {
-        const oldLen = last.toMD - last.fromMD;
-        const newLen = seg.toMD - seg.fromMD;
-        last.toMD = seg.toMD;
-        // Weighted average for zenith
-        last.avgZenith = Math.round(((last.avgZenith * oldLen + seg.avgZenith * newLen) / (oldLen + newLen)) * 10) / 10;
-        last.standoffAchieved = Math.min(last.standoffAchieved, seg.standoff);
-        last.totalCentralizers = Math.ceil((last.toMD - last.fromMD) / jointLength * last.centralizersPerJoint);
-        continue;
-      }
+    const last = merged[merged.length - 1];
+    if (last && last.zone === seg.zone && last.centralizersPerJoint === seg.cpj) {
+      const oldLen = last.toMD - last.fromMD;
+      const newLen = seg.toMD - seg.fromMD;
+      last.toMD = seg.toMD;
+      last.avgZenith = Math.round(((last.avgZenith * oldLen + seg.avgZenith * newLen) / (oldLen + newLen)) * 10) / 10;
+      last.maxDLS = Math.max(last.maxDLS, Math.round(seg.dls * 10) / 10);
+      last.standoffAchieved = Math.min(last.standoffAchieved, seg.standoff);
+      last.totalCentralizers = Math.ceil((last.toMD - last.fromMD) / jointLength * last.centralizersPerJoint);
+      continue;
     }
-
     const intervalLength = seg.toMD - seg.fromMD;
     merged.push({
       fromMD: seg.fromMD,
       toMD: seg.toMD,
       avgZenith: Math.round(seg.avgZenith * 10) / 10,
+      maxDLS: Math.round(seg.dls * 10) / 10,
+      zone: seg.zone,
       centralizersPerJoint: seg.cpj,
       standoffAchieved: seg.standoff,
       totalCentralizers: Math.ceil(intervalLength / jointLength * seg.cpj),
