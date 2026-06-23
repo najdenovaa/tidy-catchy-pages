@@ -40,6 +40,10 @@ export default function SolventCalcPanel({ payZoneM, porosity, reservoirTempC, d
   }), [solvent, damageType, payZoneM, porosity, penetrationR, satPct,
        reservoirTempC, surfaceT, tubingDepth, rate, tubingOD]);
 
+  useEffect(() => {
+    onResult?.({ ...res, penetrationRadiusM: penetrationR });
+  }, [res, penetrationR, onResult]);
+
   return (
     <Card className="p-4 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
