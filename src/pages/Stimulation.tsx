@@ -595,6 +595,7 @@ export default function Stimulation() {
                         penetrationRadiusM={kinetics.penetrationRadius}
                         wellboreRadiusM={0.108}
                         damkohler={damkohler}
+                        reagentColor={selected.category === "foam" ? "#4fc3f7" : "#ff6b35"}
                       />
                       <Wormhole3D
                         wormholeLengthM={kinetics.wormholeLength}
@@ -602,6 +603,8 @@ export default function Stimulation() {
                         wellboreRadiusM={0.108}
                         damkohler={damkohler}
                         reservoirHeightM={reservoir.payZoneM ?? 10}
+                        reagentCategory={REAGENT_COLOR_MAP[selected.category] ?? "acid"}
+                        perfDensity={perfDensity}
                       />
                     </>
                   );
