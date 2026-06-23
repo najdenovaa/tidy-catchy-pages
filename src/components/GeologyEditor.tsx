@@ -203,6 +203,9 @@ export default function GeologyEditor(props: Props) {
                 <div className="text-[11px] text-muted-foreground leading-snug">
                   Усреднённая модель: сумма кварц + шпат + кальцит + доломит + глины = 100%. Монтмориллонит входит в состав глин.
                   Несмектитовые глины распределяются условно: каолинит/иллит/хлорит = 0.4/0.4/0.2.
+                  {averaged.montmorillonite > averaged.clay && (
+                    <span className="text-destructive block mt-1">⚠ Монтмориллонит не может превышать суммарные глины.</span>
+                  )}
                 </div>
               </>
             )}
