@@ -226,13 +226,29 @@ export default function AdminPanel() {
   };
 
   // Stats
-  const cementingVisits = visitLogs.filter(v => v.page_url?.includes("/cementing") || v.module === "cementing");
-  const cementingCalcs = calcLogs.filter(l => l.module === "cementing");
-  const cementPlugVisits = visitLogs.filter(v => v.page_url?.includes("/cement-plug") || v.module === "cement-plug");
-  const cementPlugCalcs = calcLogs.filter(l => l.module === "cement-plug");
-  const ctVisits = visitLogs.filter(v => v.page_url?.includes("/coiled-tubing") || v.module === "coiled-tubing");
-  const ctCalcs = calcLogs.filter(l => l.module === "coiled-tubing");
-  const homeVisits = visitLogs.filter(v => v.page_url === "/" || v.page_url === "" || v.module === "home" || v.page_url?.endsWith("/"));
+  // Подсчёт визитов и расчётов по модулю (наиболее специфичные URL — первыми)
+  const visitsByPath = (predicate: (url: string) => boolean, moduleId?: string) =>
+    visitLogs.filter(v => (v.page_url && predicate(v.page_url)) || (moduleId && v.module === moduleId));
+  const calcsByModule = (...ids: string[]) => calcLogs.filter(l => ids.includes(l.module));
+
+  const cementingHubVisits = visitsByPath(u => /\/cementing\/?$/.test(u), "cementing");
+  const programVisits = visitsByPath(u => u.includes("/cementing/program"), "cementing-program");
+  const programCalcs = calcsByModule("cementing", "cementing-program");
+  const analysisVisits = visitsByPath(u => u.includes("/cementing/analysis"), "cementing-analysis");
+  const wocVisits = visitsByPath(u => u.includes("/cementing/woc"), "cementing-woc");
+  const cementPlugVisits = visitsByPath(u => u.includes("/cement-plug") || u.includes("/cementing/plugs"), "cement-plug");
+  const cementPlugCalcs = calcsByModule("cement-plug", "cementing-plugs");
+  const ctVisits = visitsByPath(u => u.includes("/coiled-tubing"), "coiled-tubing");
+  const ctCalcs = calcsByModule("coiled-tubing");
+  const stimulationVisits = visitsByPath(u => u.includes("/stimulation"), "stimulation");
+  const stimulationCalcs = calcsByModule("stimulation");
+  const foamVisits = visitsByPath(u => u.includes("/well-treatment/foam-opz"), "foam-opz");
+  const foamCalcs = calcsByModule("foam-opz");
+  const drillingFluidsVisits = visitsByPath(u => u.includes("/drilling-fluids"), "drilling-fluids");
+  const fracturingVisits = visitsByPath(u => u.includes("/fracturing"), "fracturing");
+  const wellDesignVisits = visitsByPath(u => u.includes("/well-design"), "well-design");
+  const dashboardVisits = visitsByPath(u => u.includes("/dashboard"));
+  const homeVisits = visitLogs.filter(v => v.page_url === "/" || v.page_url === "" || v.module === "home" || (v.page_url && /^\/?$/.test(v.page_url)));
 
   // User activity: count visits & calcs per user email (by IP matching is not reliable, so we count saved_calculations)
   const getUserActivity = (userId: string) => {
