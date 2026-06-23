@@ -144,8 +144,12 @@ export default function WOCAnimation({
     }[] = [];
     // Авто-нормализация плотности: если пришло в г/см³ (<100) — переведём в кг/м³.
     const rhoKgM3 = slurryDensity < 100 ? slurryDensity * 1000 : slurryDensity;
-    const pHydro = (rhoKgM3 * 9.81 * tvd) / 1e6; // МПа
-    const pGeo = pHydro * 0.55; // упрощённая оценка остаточного на породу
+    const pHydro = (rhoKgM3 * 9.81 * tvd) / 1e6; // МПа — полная гидростатика жидкого раствора
+    // После схватывания вес камня держится стенками колонны/пласта через сдвиг
+    // (эффект Янссена / модель Sabins-Tinsley, SPE). На забой передаётся только давление
+    // поровой воды цемента ≈ ρ_воды·g·h. Это и есть «остаточное» забойное давление,
+    // ниже которого открывается окно gas-migration.
+    const pGeo = (1000 * 9.81 * tvd) / 1e6; // МПа — поровая вода цемента
     for (let i = 0; i <= N; i++) {
       const th = (i / N) * totalHours;
       const s = strengthModel(th, bhct, cementClass);
@@ -216,7 +220,7 @@ export default function WOCAnimation({
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
           <KPI label="UCS" value={`${cur.ucs.toFixed(2)} МПа`} hint="прочность на сжатие" tone={cur.ucs >= 3.5 ? "ok" : "warn"} />
           <KPI label="SGS" value={`${cur.sgs.toFixed(0)} lbf/100ft²`} hint="статический гель" tone={cur.sgs >= 500 ? "ok" : cur.sgs >= 100 ? "warn" : "muted"} />
-          <KPI label="P столба" value={`${cur.pCol.toFixed(1)} МПа`} hint={`Pгидро=${cur.pHydro.toFixed(1)} · Pгео=${cur.pGeo.toFixed(1)}`} tone={trCurrent.mode === "transition" ? "danger" : "ok"} />
+          <KPI label="P столба" value={`${cur.pCol.toFixed(1)} МПа`} hint={`Pгидро=${cur.pHydro.toFixed(1)} · Pпор.вода=${cur.pGeo.toFixed(1)}`} tone={trCurrent.mode === "transition" ? "danger" : "ok"} />
           <KPI label="T забоя" value={`${cur.tempC.toFixed(1)} °C`} hint={`BHCT=${bhct} · BHST=${bhst}`} tone="ok" />
           <KPI label="Усадка" value={`${cur.shrink.toFixed(2)} %`} hint="химическая контракция" tone={cur.shrink > 4 ? "warn" : "muted"} />
         </div>
@@ -252,7 +256,7 @@ export default function WOCAnimation({
                   <ReferenceArea x1={transitionWindow.start} x2={transitionWindow.end} fill="#ef4444" fillOpacity={0.15} label={{ value: "Окно gas-migration", fontSize: 10, fill: "#ef4444", position: "insideTop" }} />
                 )}
                 <ReferenceLine y={series[0].pHydro} stroke="#3b82f6" strokeDasharray="3 3" label={{ value: `Pгидро ${series[0].pHydro.toFixed(1)}`, fontSize: 10, fill: "#3b82f6" }} />
-                <ReferenceLine y={series[0].pGeo} stroke="#a78bfa" strokeDasharray="3 3" label={{ value: `Pгео ${series[0].pGeo.toFixed(1)}`, fontSize: 10, fill: "#a78bfa" }} />
+                <ReferenceLine y={series[0].pGeo} stroke="#a78bfa" strokeDasharray="3 3" label={{ value: `Pпор.вода ${series[0].pGeo.toFixed(1)}`, fontSize: 10, fill: "#a78bfa" }} />
                 <Line type="monotone" dataKey="pCol" stroke="#ef4444" strokeWidth={2.5} dot={false} name="P столба" />
                 <ReferenceLine x={t} stroke="hsl(var(--foreground))" strokeWidth={1} />
               </ComposedChart>
