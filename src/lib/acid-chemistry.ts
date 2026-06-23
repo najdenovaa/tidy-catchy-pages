@@ -213,3 +213,12 @@ export const ACID_PRESETS: { id: string; label: string; desc: string; comp: Part
   { id: "mud-10-2", label: "Mud Acid 10/2", desc: "Каолинитовый песчаник",
     comp: { hclPct: 10, hfPct: 2 } },
 ];
+
+// Человекочитаемая метка из живого состава (используется в карточках/отчёте/плане)
+export function formatAcidLabel(comp: AcidComposition): string {
+  const parts: string[] = [];
+  if (comp.hclPct > 0) parts.push(`HCl ${(+comp.hclPct.toFixed(1))}%`);
+  if (comp.hfPct > 0) parts.push(`HF ${(+comp.hfPct.toFixed(1))}%`);
+  if (parts.length === 0) return "—";
+  return parts.join(" + ");
+}
