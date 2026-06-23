@@ -379,7 +379,10 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   }, [wellData, intervals, mudDensity, turbPoints, onResultsChange, onIntervalsChange]);
 
   const handleCalculateAuto = useCallback(() => {
-    const placement = autoPlaceCentralizers(wellData, autoSpec, autoJointLength, targetStandoff, mudDensity);
+    const placement = autoPlaceCentralizers(wellData, autoSpec, autoJointLength, targetStandoff, mudDensity, {
+      pumpZoneTop: wellData.pumpZoneTop,
+      pumpZoneBottom: wellData.pumpZoneBottom,
+    });
     setAutoResults(placement);
 
     const autoIntervals: CentralizerInterval[] = placement.map(p => ({
