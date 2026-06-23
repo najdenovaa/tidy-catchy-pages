@@ -126,9 +126,15 @@ export default function GeologyEditor(props: Props) {
           </ToggleGroup>
         </div>
         <div className="flex items-center gap-2 text-xs">
-          <Badge variant={Math.abs((isDetailed ? total : totalAvg + averaged.montmorillonite) - 100) < 1 ? "secondary" : "destructive"}>
-            Σ минералов: {(isDetailed ? total : totalAvg + averaged.montmorillonite).toFixed(1)}%
-          </Badge>
+          {isDetailed ? (
+            <Badge variant={Math.abs(total - 100) < 1 ? "secondary" : "destructive"}>
+              Σ минералов: {total.toFixed(1)}%
+            </Badge>
+          ) : (
+            <Badge variant={Math.abs(totalAvg - 100) < 5 ? "secondary" : "destructive"}>
+              Σ минералов: {totalAvg.toFixed(1)}%
+            </Badge>
+          )}
           <Badge variant="outline">Глины: {tClay.toFixed(1)}%</Badge>
           <Badge variant="outline">Карбонаты: {tCarb.toFixed(1)}%</Badge>
         </div>
