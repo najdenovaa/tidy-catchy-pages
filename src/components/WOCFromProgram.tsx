@@ -36,7 +36,10 @@ export default function WOCFromProgram({ wellData, slurries }: Props) {
     [overrideBhst, wellData.bottomTempStatic, bhct],
   );
   const tvd = wellData.wellDepthTVD || wellData.wellDepthMD || 0;
-  const slurryDensity = slurry ? slurry.density : 1900;
+  // SlurryInput.density хранится в г/см³ (например 1.9) — переводим в кг/м³ для гидростатики.
+  // На случай если уже передано в кг/м³ (>100) — оставляем как есть.
+  const rawDensity = slurry ? slurry.density : 1.9;
+  const slurryDensity = rawDensity < 100 ? rawDensity * 1000 : rawDensity;
 
   return (
     <div className="space-y-3">
