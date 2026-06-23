@@ -11,6 +11,8 @@ interface Props {
   volumes: VolumeResults | null;
   centralizationResults: CentralizationResult[] | null;
   thickeningTimeMin?: number;
+  /** Компактный вертикальный режим — для встраивания справа от навигации */
+  compact?: boolean;
 }
 
 interface Indicator {
