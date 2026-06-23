@@ -38,35 +38,62 @@ interface UserCredit {
 
 const moduleLabel = (m: string) => {
   if (m === "cementing") return "Цементирование";
-  if (m === "cement-plug") return "Цем. мосты";
+  if (m === "cementing-program") return "Программа цем.";
+  if (m === "cementing-analysis") return "Анализ цем.";
+  if (m === "cementing-woc") return "ОЗЦ-симулятор";
+  if (m === "cement-plug" || m === "cementing-plugs") return "Цем. мосты";
   if (m === "coiled-tubing") return "ГНКТ";
+  if (m === "stimulation") return "Интенсификация";
+  if (m === "foam-opz") return "Пенная ОПЗ";
+  if (m === "drilling-fluids") return "Буровые растворы";
+  if (m === "fracturing") return "ГРП";
+  if (m === "well-design") return "Конструкция скв.";
   if (m === "home") return "Главная";
   return m;
 };
 
 const moduleBadgeVariant = (m: string): "default" | "secondary" | "outline" | "destructive" => {
-  if (m === "cementing") return "default";
-  if (m === "cement-plug") return "secondary";
+  if (m.startsWith("cementing") || m === "cement-plug") return "default";
   if (m === "coiled-tubing") return "outline";
+  if (m === "stimulation" || m === "foam-opz") return "secondary";
   return "secondary";
 };
 
 const moduleRoute = (m: string) => {
   if (m === "cementing") return "/cementing";
+  if (m === "cementing-program") return "/cementing/program";
+  if (m === "cementing-analysis") return "/cementing/analysis";
+  if (m === "cementing-woc") return "/cementing/woc";
+  if (m === "cementing-plugs") return "/cementing/plugs";
   if (m === "cement-plug") return "/cement-plug";
   if (m === "coiled-tubing") return "/coiled-tubing";
+  if (m === "stimulation") return "/stimulation";
+  if (m === "foam-opz") return "/well-treatment/foam-opz";
+  if (m === "drilling-fluids") return "/drilling-fluids";
+  if (m === "fracturing") return "/fracturing";
+  if (m === "well-design") return "/well-design";
   return "/";
 };
 
 const parsePageDestination = (url: string | null, module: string): string => {
   if (!url) return moduleLabel(module);
   if (url === "/" || url === "") return "🏠 Главная страница";
-  if (url.includes("/cementing")) return "📐 Цементирование";
+  if (url.includes("/cementing/program")) return "📋 Программа цементирования";
+  if (url.includes("/cementing/analysis")) return "🔬 Анализ цементирования";
+  if (url.includes("/cementing/woc")) return "⏱️ ОЗЦ-симулятор";
+  if (url.includes("/cementing/plugs")) return "🧱 Цем. мосты";
   if (url.includes("/cement-plug")) return "🧱 Цем. мосты";
+  if (url.includes("/cementing")) return "📐 Цементирование (хаб)";
   if (url.includes("/coiled-tubing")) return "🔧 ГНКТ";
+  if (url.includes("/well-treatment/foam-opz")) return "🫧 Пенная ОПЗ";
+  if (url.includes("/stimulation")) return "💉 Интенсификация";
+  if (url.includes("/drilling-fluids")) return "🛢️ Буровые растворы";
+  if (url.includes("/fracturing")) return "💥 ГРП";
+  if (url.includes("/well-design")) return "🏗️ Конструкция скв.";
   if (url.includes("/dashboard")) return "📂 Личный кабинет";
   if (url.includes("/auth")) return "🔑 Авторизация";
   if (url.includes("/admin")) return "⚙️ Админ-панель";
+  if (url.includes("/terms")) return "📄 Условия";
   return url;
 };
 
@@ -199,13 +226,29 @@ export default function AdminPanel() {
   };
 
   // Stats
-  const cementingVisits = visitLogs.filter(v => v.page_url?.includes("/cementing") || v.module === "cementing");
-  const cementingCalcs = calcLogs.filter(l => l.module === "cementing");
-  const cementPlugVisits = visitLogs.filter(v => v.page_url?.includes("/cement-plug") || v.module === "cement-plug");
-  const cementPlugCalcs = calcLogs.filter(l => l.module === "cement-plug");
-  const ctVisits = visitLogs.filter(v => v.page_url?.includes("/coiled-tubing") || v.module === "coiled-tubing");
-  const ctCalcs = calcLogs.filter(l => l.module === "coiled-tubing");
-  const homeVisits = visitLogs.filter(v => v.page_url === "/" || v.page_url === "" || v.module === "home" || v.page_url?.endsWith("/"));
+  // Подсчёт визитов и расчётов по модулю (наиболее специфичные URL — первыми)
+  const visitsByPath = (predicate: (url: string) => boolean, moduleId?: string) =>
+    visitLogs.filter(v => (v.page_url && predicate(v.page_url)) || (moduleId && v.module === moduleId));
+  const calcsByModule = (...ids: string[]) => calcLogs.filter(l => ids.includes(l.module));
+
+  const cementingHubVisits = visitsByPath(u => /\/cementing\/?$/.test(u), "cementing");
+  const programVisits = visitsByPath(u => u.includes("/cementing/program"), "cementing-program");
+  const programCalcs = calcsByModule("cementing", "cementing-program");
+  const analysisVisits = visitsByPath(u => u.includes("/cementing/analysis"), "cementing-analysis");
+  const wocVisits = visitsByPath(u => u.includes("/cementing/woc"), "cementing-woc");
+  const cementPlugVisits = visitsByPath(u => u.includes("/cement-plug") || u.includes("/cementing/plugs"), "cement-plug");
+  const cementPlugCalcs = calcsByModule("cement-plug", "cementing-plugs");
+  const ctVisits = visitsByPath(u => u.includes("/coiled-tubing"), "coiled-tubing");
+  const ctCalcs = calcsByModule("coiled-tubing");
+  const stimulationVisits = visitsByPath(u => u.includes("/stimulation"), "stimulation");
+  const stimulationCalcs = calcsByModule("stimulation");
+  const foamVisits = visitsByPath(u => u.includes("/well-treatment/foam-opz"), "foam-opz");
+  const foamCalcs = calcsByModule("foam-opz");
+  const drillingFluidsVisits = visitsByPath(u => u.includes("/drilling-fluids"), "drilling-fluids");
+  const fracturingVisits = visitsByPath(u => u.includes("/fracturing"), "fracturing");
+  const wellDesignVisits = visitsByPath(u => u.includes("/well-design"), "well-design");
+  const dashboardVisits = visitsByPath(u => u.includes("/dashboard"));
+  const homeVisits = visitLogs.filter(v => v.page_url === "/" || v.page_url === "" || v.module === "home" || (v.page_url && /^\/?$/.test(v.page_url)));
 
   // User activity: count visits & calcs per user email (by IP matching is not reliable, so we count saved_calculations)
   const getUserActivity = (userId: string) => {
@@ -228,21 +271,45 @@ export default function AdminPanel() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {/* Stats cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        {/* Общая статистика */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">📊 Всего расчётов</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{calcLogs.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">👁️ Всего посещений</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{visitLogs.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">👤 Пользователей</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{profiles.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🌐 Уникальных IP</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{new Set([...calcLogs, ...visitLogs].map(l => l.ip_address).filter(Boolean)).size}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🏠 Главная</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{homeVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔬 Анализы (всего)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{analysisLogs.length}</p></CardContent></Card>
+        </div>
 
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">📐 Цементаж (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementingVisits.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">📐 Цементаж (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementingCalcs.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🧱 Мосты (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementPlugVisits.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🧱 Мосты (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementPlugCalcs.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔧 ГНКТ (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{ctVisits.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔧 ГНКТ (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{ctCalcs.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔬 Анализы</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{analysisLogs.length}</p></CardContent></Card>
+        {/* Цементирование (группа) */}
+        <div className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">📐 Цементирование</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">Хаб (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{cementingHubVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">📋 Программа (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{programVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">📋 Программа (расчёты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{programCalcs.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🔬 Анализ (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{analysisVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">⏱️ ОЗЦ (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{wocVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🧱 Мосты (визиты/расч.)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{cementPlugVisits.length} / {cementPlugCalcs.length}</p></CardContent></Card>
+        </div>
+
+        {/* ГНКТ и Интенсификация */}
+        <div className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">🔧 ГНКТ и интенсификация</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🔧 ГНКТ (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{ctVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🔧 ГНКТ (расчёты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{ctCalcs.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">💉 Интенсификация (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{stimulationVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">💉 Интенсификация (расч.)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{stimulationCalcs.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🫧 Пенная ОПЗ (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{foamVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🫧 Пенная ОПЗ (расч.)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{foamCalcs.length}</p></CardContent></Card>
+        </div>
+
+        {/* Прочие страницы */}
+        <div className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">🌐 Прочие страницы</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🏠 Главная</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{homeVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">📂 Личный кабинет</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{dashboardVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🛢️ Бур. растворы</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{drillingFluidsVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">💥 ГРП</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{fracturingVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🏗️ Конструкция скв.</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{wellDesignVisits.length}</p></CardContent></Card>
         </div>
 
         {/* Удалённый мониторинг */}
