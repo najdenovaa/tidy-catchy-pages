@@ -920,6 +920,15 @@ export default function CementPlug() {
               defaultUcsMPa={20}
             />
 
+            {/* Часть 7: оптимизатор конструкции моста */}
+            <PlugOptimizerCard
+              defaultBHCT={60}
+              defaultBoreMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
+              defaultMaxLengthM={Math.max(100, plug.bottomMD - plug.topMD + 50)}
+            />
+
+
+
 
 
 
