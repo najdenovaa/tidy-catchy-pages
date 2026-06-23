@@ -11,6 +11,8 @@ interface Props {
   volumes: VolumeResults | null;
   centralizationResults: CentralizationResult[] | null;
   thickeningTimeMin?: number;
+  /** Компактный вертикальный режим — для встраивания справа от навигации */
+  compact?: boolean;
 }
 
 interface Indicator {
@@ -28,7 +30,7 @@ const STATUS_STYLES: Record<Status, { bg: string; border: string; text: string; 
   muted: { bg: "bg-muted", border: "border-border", text: "text-muted-foreground", icon: Info },
 };
 
-export default function SafetyTrafficLight({ pressureResult, volumes, centralizationResults, thickeningTimeMin }: Props) {
+export default function SafetyTrafficLight({ pressureResult, volumes, centralizationResults, thickeningTimeMin, compact = false }: Props) {
   const indicators: Indicator[] = useMemo(() => {
     const out: Indicator[] = [];
 
@@ -113,6 +115,32 @@ export default function SafetyTrafficLight({ pressureResult, volumes, centraliza
       : "Нет данных — нажмите «РАСЧЁТ»";
 
   const OverallIcon = STATUS_STYLES[overall].icon;
+
+  if (compact) {
+    return (
+      <div className={cn("rounded-lg border p-1.5 flex flex-col gap-1 w-full sm:w-[260px] shrink-0", STATUS_STYLES[overall].bg, STATUS_STYLES[overall].border)}>
+        <div className={cn("flex items-center gap-1 text-[10px] font-medium px-0.5", STATUS_STYLES[overall].text)}>
+          <OverallIcon className="h-3 w-3 shrink-0" />
+          <span className="uppercase tracking-wide truncate">Светофор</span>
+        </div>
+        <div className="flex flex-col gap-1">
+          {indicators.map((ind, i) => {
+            const s = STATUS_STYLES[ind.status];
+            const Icon = s.icon;
+            return (
+              <div key={i} className={cn("rounded-md border bg-card px-1.5 py-1 flex items-center gap-1.5", s.border)}>
+                <Icon className={cn("h-3 w-3 shrink-0", s.text)} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[9px] text-muted-foreground leading-tight truncate">{ind.label}</div>
+                  <div className="text-[10px] font-mono font-bold leading-tight truncate">{ind.value}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-2 sm:px-4 pt-2">
