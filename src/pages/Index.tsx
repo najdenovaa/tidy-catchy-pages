@@ -558,8 +558,8 @@ export default function Index() {
               pressureResult={pressureResult}
               volumes={volumes}
               centralizationResults={centralizationResults}
-              compact
             />
+
           }
         />
 
