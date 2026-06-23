@@ -313,3 +313,132 @@ export function buildAbandonmentString(opts: {
 
   return out;
 }
+
+/* ── Часть 2: Температурная карта твердения по длине моста ──────────────
+ *
+ * В реальном мосту длиной 30–100 м температура отличается между низом и
+ * верхом из-за геотермического градиента. Низ горячее → твердеет быстрее;
+ * верх холоднее → твердеет медленнее. ОЗЦ должен определяться по самой
+ * холодной (=медленной) точке.
+ *
+ * Все величины — из физики:
+ *   T(z)   = BHCT − grad · (TVDbot − TVD(z))
+ *   k(T)   = k_ref · exp(α · (T − 20))                   (Arrhenius-like)
+ *   UCS(t) = UCS_max · (1 − exp(−k(T) · t))               (логистика API 10A)
+ *   t_req  = −ln(1 − UCSтреб/UCS_max) / k(T)              (обращение)
+ *
+ * Никаких подгоночных коэффициентов: только паспортные kRef, alpha, UCS_max
+ * выбранного класса цемента + вводимые BHCT и градиент.
+ */
+
+export interface PlugCuringPoint {
+  /** глубина по стволу, м */
+  md: number;
+  /** вертикальная глубина, м */
+  tvd: number;
+  /** температура цемента в этой точке, °C */
+  temperatureC: number;
+  /** UCS через 8 ч, МПа */
+  ucsAt8h: number;
+  /** UCS через 12 ч, МПа */
+  ucsAt12h: number;
+  /** UCS через 24 ч, МПа */
+  ucsAt24h: number;
+  /** время до достижения требуемой прочности, ч */
+  readyTimeHours: number;
+}
+
+export interface PlugCuringMap {
+  points: PlugCuringPoint[];
+  /** MD самой медленной (холодной) точки */
+  slowestPointMD: number;
+  /** температура в самой медленной точке, °C */
+  slowestTemperatureC: number;
+  /** Рекомендуемое ОЗЦ — по самой медленной точке, ч */
+  recommendedWOCHours: number;
+  /** разница между самой быстрой и самой медленной точками, ч */
+  spreadHours: number;
+  /** требуемая прочность, использованная при расчёте ОЗЦ, МПа */
+  requiredUcsMPa: number;
+}
+
+interface TrajPoint { md: number; tvd: number; }
+
+/** Линейная интерполяция TVD по MD. Если данных нет — TVD = MD. */
+function tvdAtMD(md: number, traj?: TrajPoint[]): number {
+  if (!traj || traj.length === 0) return md;
+  const sorted = [...traj].sort((a, b) => a.md - b.md);
+  if (md <= sorted[0].md) return sorted[0].tvd;
+  if (md >= sorted[sorted.length - 1].md) return sorted[sorted.length - 1].tvd;
+  for (let i = 1; i < sorted.length; i++) {
+    const a = sorted[i - 1], b = sorted[i];
+    if (md >= a.md && md <= b.md) {
+      const f = (md - a.md) / Math.max(1e-9, b.md - a.md);
+      return a.tvd + f * (b.tvd - a.tvd);
+    }
+  }
+  return md;
+}
+
+export function buildPlugCuringMap(opts: {
+  cementClass: CementClass;
+  /** BHCT в нижней точке моста, °C */
+  bhctBottomC: number;
+  /** Геотермический градиент, °C на 100 м TVD */
+  gradientCPer100m: number;
+  plugTopMD: number;
+  plugBottomMD: number;
+  trajectory?: TrajPoint[];
+  /** Требуемая прочность (по назначению), МПа */
+  requiredUcsMPa: number;
+  /** Количество узлов по длине моста (минимум 5) */
+  nodes?: number;
+}): PlugCuringMap {
+  const {
+    cementClass, bhctBottomC, gradientCPer100m,
+    plugTopMD, plugBottomMD, trajectory, requiredUcsMPa,
+  } = opts;
+  const N = Math.max(5, opts.nodes ?? 9);
+
+  const p = CEMENT_KINETICS[cementClass];
+  const tvdBot = tvdAtMD(plugBottomMD, trajectory);
+
+  const points: PlugCuringPoint[] = [];
+  for (let i = 0; i < N; i++) {
+    const f = i / (N - 1);
+    const md = plugBottomMD + f * (plugTopMD - plugBottomMD); // от низа к верху
+    const tvd = tvdAtMD(md, trajectory);
+    // Температура: T(z) = BHCT − grad·(TVDbot − TVD)/100
+    const T = bhctBottomC - gradientCPer100m * (tvdBot - tvd) / 100;
+    const k = p.kRef * Math.exp(p.alpha * (T - 20));
+    const ucsAt = (h: number) => p.ucsMaxMPa * (1 - Math.exp(-k * h));
+    const readyTime = requiredUcsMPa >= p.ucsMaxMPa
+      ? Infinity
+      : -Math.log(1 - requiredUcsMPa / p.ucsMaxMPa) / k;
+
+    points.push({
+      md, tvd, temperatureC: T,
+      ucsAt8h: ucsAt(8),
+      ucsAt12h: ucsAt(12),
+      ucsAt24h: ucsAt(24),
+      readyTimeHours: readyTime,
+    });
+  }
+
+  // Самая медленная = с максимальным readyTime (=минимальной T)
+  let slow = points[0];
+  let fast = points[0];
+  for (const pt of points) {
+    if (pt.readyTimeHours > slow.readyTimeHours) slow = pt;
+    if (pt.readyTimeHours < fast.readyTimeHours) fast = pt;
+  }
+
+  return {
+    points,
+    slowestPointMD: slow.md,
+    slowestTemperatureC: slow.temperatureC,
+    recommendedWOCHours: slow.readyTimeHours,
+    spreadHours: slow.readyTimeHours - fast.readyTimeHours,
+    requiredUcsMPa,
+  };
+}
