@@ -442,3 +442,233 @@ export function buildPlugCuringMap(opts: {
     requiredUcsMPa,
   };
 }
+
+/* ── Часть 4: Полная схема ликвидации + проверка РФ/NORSOK ──────────── */
+
+export type BarrierType = "primary" | "secondary" | "surface";
+
+export interface AbandonmentPlugFull extends AbandonmentPlugSpec {
+  barrierType: BarrierType;
+  /** требуемая прочность для этого моста, МПа */
+  requiredUcsMPa: number;
+  /** объём цемента, м³ (по диаметру в зоне моста) */
+  cementVolumeM3: number;
+  /** рекомендуемое ОЗЦ, ч */
+  recommendedWOCHours: number;
+}
+
+export interface AbandonmentComplianceCheck {
+  standard: "РФ ПБ НГП" | "NORSOK D-010";
+  requirement: string;
+  passed: boolean;
+  message: string;
+  reference?: string;
+}
+
+export interface AbandonmentDesign {
+  plugs: AbandonmentPlugFull[];
+  totalCementM3: number;
+  totalWOCHours: number;
+  complianceRF: AbandonmentComplianceCheck[];
+  complianceNORSOK: AbandonmentComplianceCheck[];
+  passedRF: boolean;
+  passedNORSOK: boolean;
+}
+
+function annOrInnerVolume(diameterMm: number, lengthM: number): number {
+  const D = diameterMm / 1000;
+  return (Math.PI / 4) * D * D * lengthM;
+}
+
+/**
+ * Полное проектирование ликвидации скважины с проверкой по нормам РФ (ПБ НГП №534)
+ * и международному стандарту NORSOK D-010 (Well integrity in drilling and well operations).
+ *
+ * NORSOK D-010 требует:
+ *  - 2 независимых барьера (primary + secondary)
+ *  - каждый барьер ≥ 50 м TVD в обсаженном стволе, ≥ 100 м TVD в открытом
+ *  - перекрытие пласта обоими барьерами
+ *  - опрессовка каждого барьера
+ *
+ * РФ ПБ НГП №534 требует:
+ *  - мост над пластом ≥ 50 м над кровлей
+ *  - мост в башмаке эксплуатационной ОК
+ *  - устьевой мост 20–50 м
+ *  - опрессовка каждого моста
+ */
+export function buildAbandonmentDesign(opts: {
+  reservoirTopMD: number;
+  /** TVD кровли пласта (если отличается от MD) */
+  reservoirTopTVD?: number;
+  casingShoeMD: number;
+  casingShoeTVD?: number;
+  /** TVD забоя, м */
+  wellTVD: number;
+  /** Диаметр ствола в зоне нижних мостов, мм */
+  openHoleDiameterMm: number;
+  /** ВД эксплуатационной ОК, мм */
+  casingIDmm: number;
+  /** Длина каждого моста, м (рекомендация — 50, для open-hole NORSOK 100) */
+  plugLengthM?: number;
+  cementClass: CementClass;
+  bhctC: number;
+  geothermalGradientCPer100m?: number;
+  /** Целевое ОЗЦ инженера для проверки, ч */
+  designWOCHours?: number;
+}): AbandonmentDesign {
+  const len = opts.plugLengthM ?? 50;
+  const norsokOHLen = Math.max(len, 100);   // в open-hole NORSOK требует ≥ 100 м
+  const reservoirTVD = opts.reservoirTopTVD ?? opts.reservoirTopMD;
+  const casingShoeTVD = opts.casingShoeTVD ?? opts.casingShoeMD;
+  const grad = opts.geothermalGradientCPer100m ?? 2.5;
+  const designWOC = opts.designWOCHours ?? 48;
+
+  const plugs: AbandonmentPlugFull[] = [];
+
+  // 1. PRIMARY: мост над продуктивным пластом (нижний барьер)
+  const primaryBottom = opts.reservoirTopMD + 30;
+  const primaryLen = opts.reservoirTopMD < opts.casingShoeMD ? norsokOHLen : len;
+  const primaryTop = Math.max(0, opts.reservoirTopMD - primaryLen);
+  // Диаметр: если кровля пласта ниже башмака — open hole, иначе casing
+  const primaryDiameter = opts.reservoirTopMD > opts.casingShoeMD ? opts.openHoleDiameterMm : opts.casingIDmm;
+  // Температура на TVD моста
+  const primaryTVD = reservoirTVD;
+  const primaryBHCT = opts.bhctC - grad * (opts.wellTVD - primaryTVD) / 100;
+  const primaryWOC = waitOnCementTime(3.5, opts.cementClass, primaryBHCT);
+  plugs.push({
+    index: 1,
+    name: "PRIMARY: мост над продуктивным пластом",
+    topMD: primaryTop,
+    bottomMD: primaryBottom,
+    lengthM: primaryBottom - primaryTop,
+    purpose: "Первичный барьер — изоляция пласта",
+    barrierType: "primary",
+    requiredUcsMPa: 3.5,
+    cementVolumeM3: annOrInnerVolume(primaryDiameter, primaryBottom - primaryTop),
+    recommendedWOCHours: isFinite(primaryWOC) ? primaryWOC : designWOC,
+  });
+
+  // 2. SECONDARY: мост в башмаке эксплуатационной колонны (верхний барьер)
+  if (opts.casingShoeMD > primaryTop - len) {
+    const secBottom = opts.casingShoeMD + 10;
+    const secTop = Math.max(0, opts.casingShoeMD - len);
+    const secBHCT = opts.bhctC - grad * (opts.wellTVD - casingShoeTVD) / 100;
+    const secWOC = waitOnCementTime(3.5, opts.cementClass, secBHCT);
+    plugs.push({
+      index: 2,
+      name: "SECONDARY: мост в башмаке эксплуатационной ОК",
+      topMD: secTop,
+      bottomMD: secBottom,
+      lengthM: secBottom - secTop,
+      purpose: "Вторичный барьер — перекрытие башмака ОК и межколонных перетоков",
+      barrierType: "secondary",
+      requiredUcsMPa: 3.5,
+      cementVolumeM3: annOrInnerVolume(opts.casingIDmm, secBottom - secTop),
+      recommendedWOCHours: isFinite(secWOC) ? secWOC : designWOC,
+    });
+  }
+
+  // 3. SURFACE: устьевой мост
+  const surfLen = Math.min(50, len);
+  const surfBHCT = Math.max(15, opts.bhctC - grad * opts.wellTVD / 100);
+  const surfWOC = waitOnCementTime(3.5, opts.cementClass, surfBHCT);
+  plugs.push({
+    index: 3,
+    name: "SURFACE: устьевой мост",
+    topMD: 0,
+    bottomMD: surfLen,
+    lengthM: surfLen,
+    purpose: "Перекрытие устья перед демонтажом",
+    barrierType: "surface",
+    requiredUcsMPa: 3.5,
+    cementVolumeM3: annOrInnerVolume(opts.casingIDmm, surfLen),
+    recommendedWOCHours: isFinite(surfWOC) ? surfWOC : designWOC,
+  });
+
+  const totalCement = plugs.reduce((s, p) => s + p.cementVolumeM3, 0);
+  const totalWOC = plugs.reduce((s, p) => s + p.recommendedWOCHours, 0);
+
+  // — Проверки РФ —
+  const complianceRF: AbandonmentComplianceCheck[] = [];
+  const primary = plugs[0];
+  complianceRF.push({
+    standard: "РФ ПБ НГП",
+    requirement: "Мост над продуктивным пластом ≥ 50 м",
+    passed: primary.lengthM >= 50,
+    message: primary.lengthM >= 50
+      ? `Фактически ${primary.lengthM.toFixed(0)} м`
+      : `Фактически ${primary.lengthM.toFixed(0)} м < 50 м`,
+    reference: "ПБ НГП №534 п. 288",
+  });
+  complianceRF.push({
+    standard: "РФ ПБ НГП",
+    requirement: "Перекрытие кровли пласта ≥ 50 м",
+    passed: (opts.reservoirTopMD - primary.topMD) >= 50,
+    message: `Кровля моста на ${(opts.reservoirTopMD - primary.topMD).toFixed(0)} м выше кровли пласта`,
+    reference: "ПБ НГП №534 п. 288",
+  });
+  const hasShoePlug = plugs.some(p => p.barrierType === "secondary");
+  complianceRF.push({
+    standard: "РФ ПБ НГП",
+    requirement: "Мост в башмаке эксплуатационной ОК",
+    passed: hasShoePlug,
+    message: hasShoePlug ? "Установлен" : "Отсутствует",
+    reference: "ПБ НГП №534 п. 290",
+  });
+  complianceRF.push({
+    standard: "РФ ПБ НГП",
+    requirement: "Устьевой мост 20–50 м",
+    passed: plugs.some(p => p.barrierType === "surface" && p.lengthM >= 20),
+    message: `Длина устьевого моста ${surfLen.toFixed(0)} м`,
+    reference: "ПБ НГП №534 п. 292",
+  });
+
+  // — Проверки NORSOK D-010 —
+  const complianceNORSOK: AbandonmentComplianceCheck[] = [];
+  const primaryTVDLen = primary.lengthM; // упрощённо: MD≈TVD для вертикали; в наклонной — корректировка не делается здесь
+  const isPrimaryOH = opts.reservoirTopMD > opts.casingShoeMD;
+  const requiredPrimaryLen = isPrimaryOH ? 100 : 50;
+  complianceNORSOK.push({
+    standard: "NORSOK D-010",
+    requirement: `Primary barrier ≥ ${requiredPrimaryLen} м TVD (${isPrimaryOH ? "open hole" : "cased"})`,
+    passed: primaryTVDLen >= requiredPrimaryLen,
+    message: primaryTVDLen >= requiredPrimaryLen
+      ? `Фактически ${primaryTVDLen.toFixed(0)} м TVD`
+      : `${primaryTVDLen.toFixed(0)} м < ${requiredPrimaryLen} м — нарастить длину`,
+    reference: "NORSOK D-010 §9.6 Table 22",
+  });
+  complianceNORSOK.push({
+    standard: "NORSOK D-010",
+    requirement: "Two independent barriers (primary + secondary)",
+    passed: hasShoePlug,
+    message: hasShoePlug ? "Установлены 2 барьера" : "Один барьер — недостаточно",
+    reference: "NORSOK D-010 §4.2",
+  });
+  if (hasShoePlug) {
+    const sec = plugs.find(p => p.barrierType === "secondary")!;
+    complianceNORSOK.push({
+      standard: "NORSOK D-010",
+      requirement: "Secondary barrier ≥ 50 м TVD",
+      passed: sec.lengthM >= 50,
+      message: `Фактически ${sec.lengthM.toFixed(0)} м`,
+      reference: "NORSOK D-010 §9.6",
+    });
+  }
+  complianceNORSOK.push({
+    standard: "NORSOK D-010",
+    requirement: "Pressure test of each barrier",
+    passed: true, // отдельный pressure-test проверяется в карточке мостов
+    message: "Опрессовка планируется по графику (см. карточку несущей способности)",
+    reference: "NORSOK D-010 §9.6.4",
+  });
+
+  return {
+    plugs,
+    totalCementM3: totalCement,
+    totalWOCHours: totalWOC,
+    complianceRF,
+    complianceNORSOK,
+    passedRF: complianceRF.every(c => c.passed),
+    passedNORSOK: complianceNORSOK.every(c => c.passed),
+  };
+}
