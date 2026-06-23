@@ -14,9 +14,12 @@ import {
   calculateAcidStim, AcidStimInputs, ACID_SYSTEMS, FORMATION_TYPES,
   type AcidSystem, type FormationType,
 } from "@/lib/ct-acid-stim";
+import { DEFAULT_ACID_COMPOSITION, type AcidComposition } from "@/lib/acid-chemistry";
+import AcidCompositionEditor from "@/components/AcidCompositionEditor";
 import type { CTStringData, WellGeometry, PumpData } from "@/lib/coiled-tubing-calculations";
 import { exportAcidStimDocx } from "@/lib/export-ct-modules-docx";
 import { toast } from "sonner";
+
 
 interface Props {
   ct: CTStringData;
