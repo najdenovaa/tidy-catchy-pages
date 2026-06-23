@@ -271,21 +271,45 @@ export default function AdminPanel() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {/* Stats cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        {/* Общая статистика */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">📊 Всего расчётов</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{calcLogs.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">👁️ Всего посещений</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{visitLogs.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">👤 Пользователей</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{profiles.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🌐 Уникальных IP</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{new Set([...calcLogs, ...visitLogs].map(l => l.ip_address).filter(Boolean)).size}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🏠 Главная</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{homeVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔬 Анализы (всего)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{analysisLogs.length}</p></CardContent></Card>
+        </div>
 
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">📐 Цементаж (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementingVisits.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">📐 Цементаж (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementingCalcs.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🧱 Мосты (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementPlugVisits.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🧱 Мосты (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{cementPlugCalcs.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔧 ГНКТ (визиты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{ctVisits.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔧 ГНКТ (расчёты)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{ctCalcs.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔬 Анализы</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{analysisLogs.length}</p></CardContent></Card>
+        {/* Цементирование (группа) */}
+        <div className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">📐 Цементирование</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">Хаб (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{cementingHubVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">📋 Программа (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{programVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">📋 Программа (расчёты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{programCalcs.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🔬 Анализ (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{analysisVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">⏱️ ОЗЦ (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{wocVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🧱 Мосты (визиты/расч.)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{cementPlugVisits.length} / {cementPlugCalcs.length}</p></CardContent></Card>
+        </div>
+
+        {/* ГНКТ и Интенсификация */}
+        <div className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">🔧 ГНКТ и интенсификация</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🔧 ГНКТ (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{ctVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🔧 ГНКТ (расчёты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{ctCalcs.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">💉 Интенсификация (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{stimulationVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">💉 Интенсификация (расч.)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{stimulationCalcs.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🫧 Пенная ОПЗ (визиты)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{foamVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🫧 Пенная ОПЗ (расч.)</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{foamCalcs.length}</p></CardContent></Card>
+        </div>
+
+        {/* Прочие страницы */}
+        <div className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">🌐 Прочие страницы</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🏠 Главная</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{homeVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">📂 Личный кабинет</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{dashboardVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🛢️ Бур. растворы</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{drillingFluidsVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">💥 ГРП</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{fracturingVisits.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-2 px-3"><CardTitle className="text-xs text-muted-foreground">🏗️ Конструкция скв.</CardTitle></CardHeader><CardContent className="px-3 pb-2"><p className="text-xl font-bold">{wellDesignVisits.length}</p></CardContent></Card>
         </div>
 
         {/* Удалённый мониторинг */}
