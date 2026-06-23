@@ -598,21 +598,21 @@ export default function CoiledTubing() {
               <CollapsibleContent>
                 <CardContent className="pt-0 space-y-3">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <Field label="Глубина MD" value={well.md} onChange={v => { setWell(w => ({ ...w, md: num(v) })); markDirty(); }} unit="м" />
-                    <Field label="Глубина TVD" value={well.tvd} onChange={v => { setWell(w => ({ ...w, tvd: num(v) })); markDirty(); }} unit="м" />
-                    <Field label="Вн. ∅ колонны" value={well.casingID} onChange={v => { setWell(w => ({ ...w, casingID: num(v) })); markDirty(); }} unit="мм" />
-                    <Field label="НКТ ID (0=нет)" value={well.tubingID} onChange={v => { setWell(w => ({ ...w, tubingID: num(v) })); markDirty(); }} unit="мм" />
-                    <Field label="Устьевое давление" value={well.wellheadPressure} onChange={v => { setWell(w => ({ ...w, wellheadPressure: num(v) })); markDirty(); }} unit="МПа" />
-                    <Field label="Коэфф. трения" value={friction} onChange={v => { setFriction(num(v)); markDirty(); }} unit="" />
+                    <Field label="Глубина MD" value={well.md} onChange={v => { setWell(w => ({ ...w, md: num(v) })); markDirty(); }} unit="м" hint="Measured Depth — длина ствола по стволу скважины (по бурению)" />
+                    <Field label="Глубина TVD" value={well.tvd} onChange={v => { setWell(w => ({ ...w, tvd: num(v) })); markDirty(); }} unit="м" hint="True Vertical Depth — истинная вертикальная глубина. Используется для расчёта гидростатики" />
+                    <Field label="Вн. ∅ колонны" value={well.casingID} onChange={v => { setWell(w => ({ ...w, casingID: num(v) })); markDirty(); }} unit="мм" hint="Внутренний диаметр последней эксплуатационной колонны на забое" />
+                    <Field label="НКТ ID (0=нет)" value={well.tubingID} onChange={v => { setWell(w => ({ ...w, tubingID: num(v) })); markDirty(); }} unit="мм" hint="Внутренний диаметр НКТ. Введите 0, если спуск без НКТ (через колонну)" />
+                    <Field label="Устьевое давление" value={well.wellheadPressure} onChange={v => { setWell(w => ({ ...w, wellheadPressure: num(v) })); markDirty(); }} unit="МПа" hint="Давление на устье (СУСГ/буферное) в момент работ" />
+                    <Field label="Коэфф. трения" value={friction} onChange={v => { setFriction(num(v)); markDirty(); }} unit="" hint="Коэф. трения металл-металл по Johancsik. Сух: 0.30–0.35; в РЖ: 0.20–0.25; смазка: 0.15" />
                   </div>
 
                   <Separator />
                   <p className="text-xs font-medium text-muted-foreground">🌡 Температуры и ГРП</p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <Field label="BHST (стат.)" value={well.bhst} onChange={v => { setWell(w => ({ ...w, bhst: num(v) })); markDirty(); }} unit="°C" />
-                    <Field label="BHCT (цирк.)" value={well.bhct} onChange={v => { setWell(w => ({ ...w, bhct: num(v) })); markDirty(); }} unit="°C" />
-                    <Field label="T° на устье" value={well.whTemp} onChange={v => { setWell(w => ({ ...w, whTemp: num(v) })); markDirty(); }} unit="°C" />
-                    <Field label="Градиент ГРП" value={well.fracGradient} onChange={v => { setWell(w => ({ ...w, fracGradient: num(v) })); markDirty(); }} unit="МПа/м" />
+                    <Field label="BHST (стат.)" value={well.bhst} onChange={v => { setWell(w => ({ ...w, bhst: num(v) })); markDirty(); }} unit="°C" hint="Bottom Hole Static Temperature — статическая температура на забое (геотермический градиент)" />
+                    <Field label="BHCT (цирк.)" value={well.bhct} onChange={v => { setWell(w => ({ ...w, bhct: num(v) })); markDirty(); }} unit="°C" hint="Bottom Hole Circulating Temperature — температура на забое при циркуляции (обычно ниже BHST)" />
+                    <Field label="T° на устье" value={well.whTemp} onChange={v => { setWell(w => ({ ...w, whTemp: num(v) })); markDirty(); }} unit="°C" hint="Температура флюида на устье — для расчёта термического профиля по стволу" />
+                    <Field label="Градиент ГРП" value={well.fracGradient} onChange={v => { setWell(w => ({ ...w, fracGradient: num(v) })); markDirty(); }} unit="МПа/м" hint="Градиент давления разрыва пласта. Типично 0.016–0.022 МПа/м. Ограничивает рабочее давление" />
                   </div>
                   {well.fracGradient > 0 && well.tvd > 0 && (
                     <p className="text-[10px] text-muted-foreground">
