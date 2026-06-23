@@ -558,9 +558,16 @@ export default function Stimulation() {
               <Stat label="Объём реагента" value={`${acidVol.toFixed(1)} м³`} sub={`${selected.volumePerMeterPay} м³/м × ${reservoir.payZoneM} м × ${selected.numberOfCycles} цикл.`} />
               <Stat label="Расход" value={`${selected.recommendedRate[0]}–${selected.recommendedRate[1]} л/мин`} />
               <Stat label="Выдержка" value={`${selected.soakTimeMin[0]}–${selected.soakTimeMin[1]} мин`} />
-              <Stat label="Ожидаемое ΔS" value={`-${selected.skinReductionRange[0]}…-${selected.skinReductionRange[1]}`} sub={`Эффект ${selected.effectDurationMonths[0]}–${selected.effectDurationMonths[1]} мес`} />
+              <Stat
+                label="Расчётное ΔS (из физики)"
+                value={selected.category === "nitrogen"
+                  ? "—"
+                  : `−${skinReductionCalc.toFixed(2)}`}
+                sub={selected.category === "nitrogen"
+                  ? "N₂: эффект через ΔP, не через скин"
+                  : `табличный диапазон: −${selected.skinReductionRange[0]}…−${selected.skinReductionRange[1]}`}
+              />
               <Stat label="Успешность" value={`${selected.successRate}%`} />
-
             </div>
 
             {kinetics && (
