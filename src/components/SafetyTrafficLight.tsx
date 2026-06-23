@@ -30,7 +30,7 @@ const STATUS_STYLES: Record<Status, { bg: string; border: string; text: string; 
   muted: { bg: "bg-muted", border: "border-border", text: "text-muted-foreground", icon: Info },
 };
 
-export default function SafetyTrafficLight({ pressureResult, volumes, centralizationResults, thickeningTimeMin }: Props) {
+export default function SafetyTrafficLight({ pressureResult, volumes, centralizationResults, thickeningTimeMin, compact = false }: Props) {
   const indicators: Indicator[] = useMemo(() => {
     const out: Indicator[] = [];
 
