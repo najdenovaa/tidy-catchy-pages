@@ -84,6 +84,7 @@ export default function Stimulation() {
 
   // Геология: детальная минералогия + флюид + глубина + геомеханика
   const [detailedMin, setDetailedMin] = useState<DetailedMineralogy>(DEFAULT_MINERALOGY_CARBONATE);
+  const [geologyMode, setGeologyMode] = useState<"detailed" | "averaged">("detailed");
   const [fluidProps, setFluidProps] = useState<FluidProperties>(DEFAULT_FLUID);
   const [depthProfile, setDepthProfile] = useState<DepthProfile>(DEFAULT_DEPTH);
   const [stressState, setStressState] = useState<StressState>(DEFAULT_STRESS);
