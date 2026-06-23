@@ -28,6 +28,7 @@ import * as XLSX from "xlsx";
 import TermsFooter from "@/components/TermsFooter";
 import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
 import CementPlugTypesCard from "@/components/CementPlugTypesCard";
+import PlugCuringMapCard from "@/components/PlugCuringMapCard";
 import { SharedWellCard } from "@/components/SharedWellCard";
 
 const SESSION_KEY = "cement_plug_session_v2";
@@ -858,6 +859,13 @@ export default function CementPlug() {
               plugLengthMD={Math.max(0, plug.bottomMD - plug.topMD)}
               plugTopMD={plug.topMD}
               casingShoeMD={well.casingShoe ?? plug.bottomMD + 50}
+            />
+
+            {/* Часть 2: температурная карта твердения по длине моста */}
+            <PlugCuringMapCard
+              plugTopMD={plug.topMD}
+              plugBottomMD={plug.bottomMD}
+              trajectory={trajPoints}
             />
 
 
