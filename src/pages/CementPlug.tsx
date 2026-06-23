@@ -585,8 +585,34 @@ export default function CementPlug() {
   }, []);
 
   /* ── Collapsible state ── */
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: false, plug: false, fluids: false, process: false, pipeSec: false, complications: false });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: false, plug: false, fluids: false, process: false, pipeSec: false, complications: false, advanced: false });
   const toggle = (k: string) => setOpenSections(s => ({ ...s, [k]: !s[k] }));
+
+  /* ── Advanced (per-card) collapsible state ── */
+  const [advOpen, setAdvOpen] = useState<Record<string, boolean>>({
+    types: false, curing: false, load: false, abandon: false, sed: false, cyclic: false, opt: false,
+  });
+  const toggleAdv = (k: string) => setAdvOpen(s => ({ ...s, [k]: !s[k] }));
+  const setAllAdv = (v: boolean) => setAdvOpen({
+    types: v, curing: v, load: v, abandon: v, sed: v, cyclic: v, opt: v,
+  });
+  const allAdvOpen = Object.values(advOpen).every(Boolean);
+
+  const AdvancedItem = ({ title, open, onToggle, children }: { id: string; title: string; open: boolean; onToggle: () => void; children: React.ReactNode }) => (
+    <Collapsible open={open} onOpenChange={onToggle}>
+      <div className="rounded border border-border/60">
+        <CollapsibleTrigger className="w-full">
+          <div className="flex items-center justify-between px-3 py-2 hover:bg-muted/40 transition-colors">
+            <span className="text-xs font-medium text-left">{title}</span>
+            <ChevronDown className={`w-4 h-4 transition-transform shrink-0 ${open ? "rotate-180" : ""}`} />
+          </div>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="p-2 border-t border-border/60">{children}</div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">
@@ -859,73 +885,107 @@ export default function CementPlug() {
               </Card>
             </Collapsible>
 
-            {/* Plug type, WOC, RF compliance */}
-            <CementPlugTypesCard
-              plugLengthMD={Math.max(0, plug.bottomMD - plug.topMD)}
-              plugTopMD={plug.topMD}
-              casingShoeMD={well.casingShoe ?? plug.bottomMD + 50}
-            />
+            {/* Дополнительные расчёты — свёрнуты по умолчанию */}
+            <Collapsible open={openSections.advanced} onOpenChange={() => toggle("advanced")}>
+              <Card>
+                <CollapsibleTrigger className="w-full">
+                  <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
+                    <CardTitle className="text-sm">🧰 Дополнительные расчёты по мосту</CardTitle>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${openSections.advanced ? "rotate-180" : ""}`} />
+                  </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] text-muted-foreground">
+                        Раскройте нужный модуль. Все блоки независимы и используют текущие параметры моста.
+                      </p>
+                      <Button variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => setAllAdv(!allAdvOpen)}>
+                        {allAdvOpen ? "Свернуть все" : "Раскрыть все"}
+                      </Button>
+                    </div>
 
-            {/* Часть 2: температурная карта твердения по длине моста */}
-            <PlugCuringMapCard
-              plugTopMD={plug.topMD}
-              plugBottomMD={plug.bottomMD}
-              trajectory={trajPoints}
-            />
 
-            {/* Часть 3: несущая способность — разбуривание и опрессовка */}
-            <PlugLoadCapacityCard
-              plugLengthM={Math.max(0, plug.bottomMD - plug.topMD)}
-              boreDiameterMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
-              defaultWOCHours={wocTimeHours}
-              isOpenHole={placementMode === "openhole"}
-            />
+                    <AdvancedItem id="adv-types" title="Типы мостов · ОЗЦ · РФ-нормы" open={advOpen.types} onToggle={() => toggleAdv("types")}>
+                      <CementPlugTypesCard
+                        plugLengthMD={Math.max(0, plug.bottomMD - plug.topMD)}
+                        plugTopMD={plug.topMD}
+                        casingShoeMD={well.casingShoe ?? plug.bottomMD + 50}
+                      />
+                    </AdvancedItem>
 
-            {/* Часть 4: проектирование ликвидации скважины + нормы РФ/NORSOK */}
-            <AbandonmentDesignCard
-              defaultReservoirTopMD={plug.bottomMD}
-              defaultCasingShoeMD={well.casingShoe || plug.bottomMD - 100}
-              defaultWellTVD={well.wellDepthMD}
-              defaultOpenHoleDiameterMm={well.holeDiameter}
-              defaultCasingIDmm={well.casingID}
-            />
+                    <AdvancedItem id="adv-curing" title="Температурная карта твердения" open={advOpen.curing} onToggle={() => toggleAdv("curing")}>
+                      <PlugCuringMapCard
+                        plugTopMD={plug.topMD}
+                        plugBottomMD={plug.bottomMD}
+                        trajectory={trajPoints}
+                      />
+                    </AdvancedItem>
 
-            {/* Часть 1: оседание/сегрегация — Stokes + Boycott + гель-арест */}
-            <PlugSedimentationCard
-              plugLengthM={Math.max(0, plug.bottomMD - plug.topMD)}
-              boreDiameterMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
-              slurryDensityGcm3={cement.density}
-              zenithDeg={(() => {
-                const top = plug.topMD;
-                const bot = plug.bottomMD;
-                const pts = trajPoints.filter(t => t.md >= top && t.md <= bot);
-                if (pts.length === 0) {
-                  const nearest = trajPoints.reduce((a, b) =>
-                    Math.abs(b.md - top) < Math.abs(a.md - top) ? b : a,
-                    trajPoints[0] || { md: 0, zenith: 0, azimuth: 0, tvd: 0 });
-                  return nearest?.zenith ?? 0;
-                }
-                return pts.reduce((s, p) => s + p.zenith, 0) / pts.length;
-              })()}
-              gel10secPa={cement.gel10sec || 0}
-              gel10minPa={cement.gel10min || 0}
-              wocHours={wocTimeHours}
-            />
+                    <AdvancedItem id="adv-load" title="Несущая способность — разбуривание/опрессовка" open={advOpen.load} onToggle={() => toggleAdv("load")}>
+                      <PlugLoadCapacityCard
+                        plugLengthM={Math.max(0, plug.bottomMD - plug.topMD)}
+                        boreDiameterMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
+                        defaultWOCHours={wocTimeHours}
+                        isOpenHole={placementMode === "openhole"}
+                      />
+                    </AdvancedItem>
 
-            {/* Часть 5: целостность при циклических нагрузках */}
-            <PlugCyclicIntegrityCard
-              plugLengthM={Math.max(0, plug.bottomMD - plug.topMD)}
-              boreDiameterMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
-              innerPipeODmm={0}
-              defaultUcsMPa={20}
-            />
+                    <AdvancedItem id="adv-abandon" title="Проект ликвидации (РФ / NORSOK D-010)" open={advOpen.abandon} onToggle={() => toggleAdv("abandon")}>
+                      <AbandonmentDesignCard
+                        defaultReservoirTopMD={plug.bottomMD}
+                        defaultCasingShoeMD={well.casingShoe || plug.bottomMD - 100}
+                        defaultWellTVD={well.wellDepthMD}
+                        defaultOpenHoleDiameterMm={well.holeDiameter}
+                        defaultCasingIDmm={well.casingID}
+                      />
+                    </AdvancedItem>
 
-            {/* Часть 7: оптимизатор конструкции моста */}
-            <PlugOptimizerCard
-              defaultBHCT={60}
-              defaultBoreMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
-              defaultMaxLengthM={Math.max(100, plug.bottomMD - plug.topMD + 50)}
-            />
+                    <AdvancedItem id="adv-sed" title="Оседание / сегрегация (Stokes + Boycott)" open={advOpen.sed} onToggle={() => toggleAdv("sed")}>
+                      <PlugSedimentationCard
+                        plugLengthM={Math.max(0, plug.bottomMD - plug.topMD)}
+                        boreDiameterMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
+                        slurryDensityGcm3={cement.density}
+                        zenithDeg={(() => {
+                          const top = plug.topMD;
+                          const bot = plug.bottomMD;
+                          const pts = trajPoints.filter(t => t.md >= top && t.md <= bot);
+                          if (pts.length === 0) {
+                            const nearest = trajPoints.reduce((a, b) =>
+                              Math.abs(b.md - top) < Math.abs(a.md - top) ? b : a,
+                              trajPoints[0] || { md: 0, zenith: 0, azimuth: 0, tvd: 0 });
+                            return nearest?.zenith ?? 0;
+                          }
+                          return pts.reduce((s, p) => s + p.zenith, 0) / pts.length;
+                        })()}
+                        gel10secPa={cement.gel10sec || 0}
+                        gel10minPa={cement.gel10min || 0}
+                        wocHours={wocTimeHours}
+                      />
+                    </AdvancedItem>
+
+                    <AdvancedItem id="adv-cyclic" title="Циклическая целостность" open={advOpen.cyclic} onToggle={() => toggleAdv("cyclic")}>
+                      <PlugCyclicIntegrityCard
+                        plugLengthM={Math.max(0, plug.bottomMD - plug.topMD)}
+                        boreDiameterMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
+                        innerPipeODmm={0}
+                        defaultUcsMPa={20}
+                      />
+                    </AdvancedItem>
+
+                    <AdvancedItem id="adv-opt" title="Оптимизатор конструкции моста" open={advOpen.opt} onToggle={() => toggleAdv("opt")}>
+                      <PlugOptimizerCard
+                        defaultBHCT={60}
+                        defaultBoreMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
+                        defaultMaxLengthM={Math.max(100, plug.bottomMD - plug.topMD + 50)}
+                      />
+                    </AdvancedItem>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+
+
 
 
 
