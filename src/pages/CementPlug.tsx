@@ -32,6 +32,7 @@ import PlugCuringMapCard from "@/components/PlugCuringMapCard";
 import PlugLoadCapacityCard from "@/components/PlugLoadCapacityCard";
 import AbandonmentDesignCard from "@/components/AbandonmentDesignCard";
 import PlugSedimentationCard from "@/components/PlugSedimentationCard";
+import PlugCyclicIntegrityCard from "@/components/PlugCyclicIntegrityCard";
 import { SharedWellCard } from "@/components/SharedWellCard";
 
 const SESSION_KEY = "cement_plug_session_v2";
