@@ -23,6 +23,12 @@ import {
   type DamageAssessment, type ReservoirSnapshot, type Mineralogy, type DrillingHistory,
   type ProductionPoint,
 } from "@/lib/foam-treatment-diagnostics";
+import {
+  DEFAULT_MINERALOGY_CARBONATE, DEFAULT_MINERALOGY_SANDSTONE, DEFAULT_FLUID, DEFAULT_DEPTH, DEFAULT_STRESS,
+  toLegacyMineralogy, stoichiometricDemandByMineralogy, fracturePressureMPa,
+  type DetailedMineralogy, type FluidProperties, type DepthProfile, type StressState,
+} from "@/lib/geology-model";
+import GeologyEditor from "@/components/GeologyEditor";
 import { exportStimulationDocx } from "@/lib/export-stimulation-docx";
 import {
   calculateGasIPR, diagnoseGasDamage, WELL_FLUID_LABEL,
