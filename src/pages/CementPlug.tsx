@@ -30,6 +30,7 @@ import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCa
 import CementPlugTypesCard from "@/components/CementPlugTypesCard";
 import PlugCuringMapCard from "@/components/PlugCuringMapCard";
 import PlugLoadCapacityCard from "@/components/PlugLoadCapacityCard";
+import AbandonmentDesignCard from "@/components/AbandonmentDesignCard";
 import { SharedWellCard } from "@/components/SharedWellCard";
 
 const SESSION_KEY = "cement_plug_session_v2";
@@ -875,6 +876,15 @@ export default function CementPlug() {
               boreDiameterMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
               defaultWOCHours={wocTimeHours}
               isOpenHole={placementMode === "openhole"}
+            />
+
+            {/* Часть 4: проектирование ликвидации скважины + нормы РФ/NORSOK */}
+            <AbandonmentDesignCard
+              defaultReservoirTopMD={plug.bottomMD}
+              defaultCasingShoeMD={well.casingShoe || plug.bottomMD - 100}
+              defaultWellTVD={well.wellDepthMD}
+              defaultOpenHoleDiameterMm={well.holeDiameter}
+              defaultCasingIDmm={well.casingID}
             />
 
 
