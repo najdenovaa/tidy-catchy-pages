@@ -152,6 +152,17 @@ export default function CTAcidStimTab({ ct, well, pump, operationType }: Props) 
         </CardContent>
       </Card>
 
+      {/* Универсальный редактор состава */}
+      <AcidCompositionEditor
+        value={composition}
+        onChange={setComposition}
+        rockType={formation}
+        bhPressureMPa={Math.max(reservoirP, well.tvd * 0.0108)}
+        bhTemperatureC={well.bhct}
+      />
+
+
+
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPI label="Объём кислоты" value={r.acidVolumeUsed} unit="м³" />
