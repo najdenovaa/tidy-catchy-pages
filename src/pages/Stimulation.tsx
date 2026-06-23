@@ -13,7 +13,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
 import { buildAcidStages, computeAcidKinetics, optimalAcidRate, computeAcidStoichiometry } from "@/lib/stimulation-acid";
-import { DEFAULT_ACID_COMPOSITION, calculateDissolvingPower, type AcidComposition } from "@/lib/acid-chemistry";
+import { DEFAULT_ACID_COMPOSITION, calculateDissolvingPower, formatAcidLabel, acidPenetration, type AcidComposition } from "@/lib/acid-chemistry";
 import AcidCompositionEditor from "@/components/AcidCompositionEditor";
 import WormholeVisualization from "@/components/WormholeVisualization";
 
