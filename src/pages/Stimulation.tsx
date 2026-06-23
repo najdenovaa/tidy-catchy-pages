@@ -524,6 +524,8 @@ export default function Stimulation() {
               currentReservoirTempC={reservoir.temperatureC}
               onApplyPressure={(p) => setReservoir((r) => ({ ...r, reservoirPressureMPa: p }))}
               onApplyTemperature={(t) => setReservoir((r) => ({ ...r, temperatureC: t }))}
+              mode={geologyMode}
+              onModeChange={setGeologyMode}
             />
 
             <Card className="p-4 space-y-4">
