@@ -432,7 +432,7 @@ export default function Stimulation() {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="space-y-1 col-span-2 sm:col-span-1">
-                  <Label>Флюид</Label>
+                  <Label title="Тип флюида определяет модель IPR и набор повреждений ПЗП">Флюид</Label>
                   <Select value={fluidType} onValueChange={(v) => setFluidType(v as WellFluidType)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -441,18 +441,19 @@ export default function Stimulation() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-[10px] text-muted-foreground leading-tight">Нефть/газ/конденсат/нагнетательная — определяет модель притока</p>
                 </div>
                 {isGas && (
                   <>
-                    <Field label="γ газа (возд.=1)" value={gasGravity} onChange={setGasGravity} step={0.01} />
-                    <Field label="Z-фактор (0=авто Papay)" value={zFactorManual} onChange={setZFactorManual} step={0.01} />
-                    <Field label="P забоя текущая, МПа" value={bhpCurrentMPa} onChange={setBhpCurrentMPa} step={0.5} />
+                    <Field label="γ газа (возд.=1)" value={gasGravity} onChange={setGasGravity} step={0.01} hint="Относительная плотность газа по воздуху. Сухой газ 0.55–0.70, жирный/конденсатный 0.70–0.95" />
+                    <Field label="Z-фактор (0=авто Papay)" value={zFactorManual} onChange={setZFactorManual} step={0.01} hint="Коэф. сверхсжимаемости газа. 0 = автоматический расчёт по корреляции Papay (рекомендуется)" />
+                    <Field label="P забоя текущая, МПа" value={bhpCurrentMPa} onChange={setBhpCurrentMPa} step={0.5} hint="Текущее давление на забое (Pwf) — замер ТМС или расчёт по устью. Нужно для диагностики конденсатной пробки" />
                   </>
                 )}
                 {fluidType === "gas_condensate" && (
                   <>
-                    <Field label="P росы, МПа" value={dewPointMPa} onChange={setDewPointMPa} step={0.5} />
-                    <Field label="КГФ, см³/м³" value={condGasRatio} onChange={setCondGasRatio} step={10} />
+                    <Field label="P росы, МПа" value={dewPointMPa} onChange={setDewPointMPa} step={0.5} hint="Давление начала конденсации (Pdew). При Pwf<Pdew образуется конденсатная пробка в ПЗП" />
+                    <Field label="КГФ, см³/м³" value={condGasRatio} onChange={setCondGasRatio} step={10} hint="Конденсатогазовый фактор — объём стабильного конденсата на 1 м³ газа (н.у.)" />
                   </>
                 )}
               </div>
@@ -464,9 +465,10 @@ export default function Stimulation() {
                 <div className="space-y-1">
                   <Label>Имя скважины</Label>
                   <Input value={wellName} onChange={(e) => setWellName(e.target.value)} />
+                  <p className="text-[10px] text-muted-foreground leading-tight">Идентификатор для отчёта</p>
                 </div>
                 <div className="space-y-1">
-                  <Label>Тип коллектора</Label>
+                  <Label title="Литология — определяет выбор кислотной системы и кинетику реакции">Тип коллектора</Label>
                   <Select value={reservoir.collectorType} onValueChange={(v) => setReservoir({ ...reservoir, collectorType: v as CollectorType })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -475,23 +477,24 @@ export default function Stimulation() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-[10px] text-muted-foreground leading-tight">Карбонат → HCl-системы; терриген → HCl+HF (глинокислота)</p>
                 </div>
-                <Field label="T пласта, °C" value={reservoir.temperatureC} onChange={(v) => setReservoir({ ...reservoir, temperatureC: v })} />
-                <Field label="k, мД" value={reservoir.permeability_mD} onChange={(v) => setReservoir({ ...reservoir, permeability_mD: v })} step={0.1} />
-                <Field label="Пористость, д.ед." value={reservoir.porosity} onChange={(v) => setReservoir({ ...reservoir, porosity: v })} step={0.01} />
-                <Field label="h эфф, м" value={reservoir.payZoneM} onChange={(v) => setReservoir({ ...reservoir, payZoneM: v })} step={0.5} />
-                <Field label="P пл, МПа" value={reservoir.reservoirPressureMPa} onChange={(v) => setReservoir({ ...reservoir, reservoirPressureMPa: v })} step={0.5} />
-                <Field label="Текущий скин" value={skinCurrent} onChange={setSkinCurrent} step={0.5} />
+                <Field label="T пласта, °C" value={reservoir.temperatureC} onChange={(v) => setReservoir({ ...reservoir, temperatureC: v })} hint="Пластовая температура (BHST). Влияет на вязкость флюидов и выбор ингибиторов коррозии кислоты" />
+                <Field label="k, мД" value={reservoir.permeability_mD} onChange={(v) => setReservoir({ ...reservoir, permeability_mD: v })} step={0.1} hint="Абсолютная проницаемость. <1 мД — низкопроницаемый, 1–100 — средний, >100 — высокопроницаемый" />
+                <Field label="Пористость, д.ед." value={reservoir.porosity} onChange={(v) => setReservoir({ ...reservoir, porosity: v })} step={0.01} hint="Открытая пористость в долях единицы (например, 0.15 = 15%)" />
+                <Field label="h эфф, м" value={reservoir.payZoneM} onChange={(v) => setReservoir({ ...reservoir, payZoneM: v })} step={0.5} hint="Эффективная нефте/газонасыщенная толщина пласта (net pay)" />
+                <Field label="P пл, МПа" value={reservoir.reservoirPressureMPa} onChange={(v) => setReservoir({ ...reservoir, reservoirPressureMPa: v })} step={0.5} hint="Текущее пластовое давление (Pr) на середине перфорации" />
+                <Field label="Текущий скин" value={skinCurrent} onChange={setSkinCurrent} step={0.5} hint="Скин-фактор по ГДИС. >0 — загрязнение ПЗП; <0 — стимулированная скважина; цель после ОПЗ: −2…−4" />
               </div>
             </Card>
 
             <Card className="p-4 space-y-4">
               <h2 className="font-semibold">История добычи</h2>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Field label={`Q начальный, ${rateUnit}`} value={qInitial} onChange={setQInitial} />
-                <Field label={`Q текущий, ${rateUnit}`} value={qCurrent} onChange={setQCurrent} />
-                <Field label={isGas ? "Влагосодержание, %" : "Обводнённость, %"} value={waterCut} onChange={setWaterCut} />
-                <Field label="Период истории, мес" value={monthsHistory} onChange={setMonthsHistory} />
+                <Field label={`Q начальный, ${rateUnit}`} value={qInitial} onChange={setQInitial} hint="Стартовый дебит после ввода или предыдущего ГТМ — база оценки потери продуктивности" />
+                <Field label={`Q текущий, ${rateUnit}`} value={qCurrent} onChange={setQCurrent} hint="Дебит на момент анализа. Сравнение с Q нач. показывает степень деградации ПЗП" />
+                <Field label={isGas ? "Влагосодержание, %" : "Обводнённость, %"} value={waterCut} onChange={setWaterCut} hint={isGas ? "Содержание воды в продукции газовой скважины — индикатор жидкостной нагрузки и блокады" : "Доля воды в добываемой жидкости (% объёмных)"} />
+                <Field label="Период истории, мес" value={monthsHistory} onChange={setMonthsHistory} hint="За какой период произошло падение Q нач. → Q текущ. Нужно для оценки темпа деградации" />
               </div>
             </Card>
 
