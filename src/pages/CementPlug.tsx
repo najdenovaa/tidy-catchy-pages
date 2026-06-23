@@ -888,6 +888,28 @@ export default function CementPlug() {
               defaultCasingIDmm={well.casingID}
             />
 
+            {/* Часть 1: оседание/сегрегация — Stokes + Boycott + гель-арест */}
+            <PlugSedimentationCard
+              plugLengthM={Math.max(0, plug.bottomMD - plug.topMD)}
+              boreDiameterMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
+              slurryDensityGcm3={cement.density}
+              zenithDeg={(() => {
+                const top = plug.topMD;
+                const bot = plug.bottomMD;
+                const pts = trajPoints.filter(t => t.md >= top && t.md <= bot);
+                if (pts.length === 0) {
+                  const nearest = trajPoints.reduce((a, b) =>
+                    Math.abs(b.md - top) < Math.abs(a.md - top) ? b : a,
+                    trajPoints[0] || { md: 0, zenith: 0, azimuth: 0, tvd: 0 });
+                  return nearest?.zenith ?? 0;
+                }
+                return pts.reduce((s, p) => s + p.zenith, 0) / pts.length;
+              })()}
+              gel10secPa={cement.gel10sec || 0}
+              gel10minPa={cement.gel10min || 0}
+              wocHours={wocTimeHours}
+            />
+
 
 
             {/* Fluids */}
