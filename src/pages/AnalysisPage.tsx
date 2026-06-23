@@ -11,7 +11,7 @@ const defaultWellData: WellData = {
   wellDepthMD: 0, wellDepthTVD: 0, casingDepthMD: 0, holeDiameter: 0,
   casingOD: 0, casingWall: 0, prevCasingDepth: 0, prevCasingID: 0,
   prevCasingOD: 0, ckodDepth: 0, cementRiseHeight: 0, cavernCoeff: 1.1,
-  bottomTempStatic: 0, bottomTempCirc: 0, trajectory: [],
+  bottomTempStatic: 0, bottomTempCirc: 0, pumpZoneTop: 0, pumpZoneBottom: 0, trajectory: [],
 };
 
 const defaultDrillingFluid: DrillingFluid = {
