@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Flame } from "lucide-react";
 import {
-  calculateSolventTreatment, SOLVENT_LABEL, type SolventType,
+  calculateSolventTreatment, SOLVENT_LABEL, type SolventType, type SolventResult,
 } from "@/lib/stimulation-special";
 
 interface Props {
@@ -14,9 +14,10 @@ interface Props {
   porosity: number;
   reservoirTempC: number;
   defaultDamage: "asphaltene" | "paraffin";
+  onResult?: (r: SolventResult & { penetrationRadiusM: number }) => void;
 }
 
-export default function SolventCalcPanel({ payZoneM, porosity, reservoirTempC, defaultDamage }: Props) {
+export default function SolventCalcPanel({ payZoneM, porosity, reservoirTempC, defaultDamage, onResult }: Props) {
   const [solvent, setSolvent] = useState<SolventType>(defaultDamage === "asphaltene" ? "toluene" : "neftras");
   const [damageType, setDamageType] = useState<"asphaltene" | "paraffin">(defaultDamage);
   const [penetrationR, setPenetrationR] = useState(1.5);
