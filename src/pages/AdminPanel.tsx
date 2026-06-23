@@ -38,35 +38,62 @@ interface UserCredit {
 
 const moduleLabel = (m: string) => {
   if (m === "cementing") return "Цементирование";
-  if (m === "cement-plug") return "Цем. мосты";
+  if (m === "cementing-program") return "Программа цем.";
+  if (m === "cementing-analysis") return "Анализ цем.";
+  if (m === "cementing-woc") return "ОЗЦ-симулятор";
+  if (m === "cement-plug" || m === "cementing-plugs") return "Цем. мосты";
   if (m === "coiled-tubing") return "ГНКТ";
+  if (m === "stimulation") return "Интенсификация";
+  if (m === "foam-opz") return "Пенная ОПЗ";
+  if (m === "drilling-fluids") return "Буровые растворы";
+  if (m === "fracturing") return "ГРП";
+  if (m === "well-design") return "Конструкция скв.";
   if (m === "home") return "Главная";
   return m;
 };
 
 const moduleBadgeVariant = (m: string): "default" | "secondary" | "outline" | "destructive" => {
-  if (m === "cementing") return "default";
-  if (m === "cement-plug") return "secondary";
+  if (m.startsWith("cementing") || m === "cement-plug") return "default";
   if (m === "coiled-tubing") return "outline";
+  if (m === "stimulation" || m === "foam-opz") return "secondary";
   return "secondary";
 };
 
 const moduleRoute = (m: string) => {
   if (m === "cementing") return "/cementing";
+  if (m === "cementing-program") return "/cementing/program";
+  if (m === "cementing-analysis") return "/cementing/analysis";
+  if (m === "cementing-woc") return "/cementing/woc";
+  if (m === "cementing-plugs") return "/cementing/plugs";
   if (m === "cement-plug") return "/cement-plug";
   if (m === "coiled-tubing") return "/coiled-tubing";
+  if (m === "stimulation") return "/stimulation";
+  if (m === "foam-opz") return "/well-treatment/foam-opz";
+  if (m === "drilling-fluids") return "/drilling-fluids";
+  if (m === "fracturing") return "/fracturing";
+  if (m === "well-design") return "/well-design";
   return "/";
 };
 
 const parsePageDestination = (url: string | null, module: string): string => {
   if (!url) return moduleLabel(module);
   if (url === "/" || url === "") return "🏠 Главная страница";
-  if (url.includes("/cementing")) return "📐 Цементирование";
+  if (url.includes("/cementing/program")) return "📋 Программа цементирования";
+  if (url.includes("/cementing/analysis")) return "🔬 Анализ цементирования";
+  if (url.includes("/cementing/woc")) return "⏱️ ОЗЦ-симулятор";
+  if (url.includes("/cementing/plugs")) return "🧱 Цем. мосты";
   if (url.includes("/cement-plug")) return "🧱 Цем. мосты";
+  if (url.includes("/cementing")) return "📐 Цементирование (хаб)";
   if (url.includes("/coiled-tubing")) return "🔧 ГНКТ";
+  if (url.includes("/well-treatment/foam-opz")) return "🫧 Пенная ОПЗ";
+  if (url.includes("/stimulation")) return "💉 Интенсификация";
+  if (url.includes("/drilling-fluids")) return "🛢️ Буровые растворы";
+  if (url.includes("/fracturing")) return "💥 ГРП";
+  if (url.includes("/well-design")) return "🏗️ Конструкция скв.";
   if (url.includes("/dashboard")) return "📂 Личный кабинет";
   if (url.includes("/auth")) return "🔑 Авторизация";
   if (url.includes("/admin")) return "⚙️ Админ-панель";
+  if (url.includes("/terms")) return "📄 Условия";
   return url;
 };
 
