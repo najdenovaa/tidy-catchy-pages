@@ -33,6 +33,9 @@ interface Props {
   onApplyTemperature: (t: number) => void;
   // Опционально: давление обработки, чтобы сравнить с Pfrac
   treatmentPressureMPa?: number;
+  // Режим редактора минералогии
+  mode?: "detailed" | "averaged";
+  onModeChange?: (mode: "detailed" | "averaged") => void;
 }
 
 function Num({
