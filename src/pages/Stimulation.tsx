@@ -668,6 +668,7 @@ export default function Stimulation() {
                 porosity={reservoir.porosity}
                 reservoirTempC={reservoir.temperatureC}
                 defaultDamage={selected.type === "solvent_paraffin" ? "paraffin" : "asphaltene"}
+                onResult={setSolventResult}
               />
             )}
 
@@ -677,6 +678,7 @@ export default function Stimulation() {
                 reservoirTempC={reservoir.temperatureC}
                 operationType={selected.type === "n2_foam_lift" ? "n2_foam_lift" : "n2_lift"}
                 defaultFoamQuality={selected.targetFoamQuality}
+                onResult={setNitrogenResult}
               />
             )}
           </TabsContent>
