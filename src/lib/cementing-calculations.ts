@@ -101,6 +101,8 @@ export interface WellData {
   cavernCoeff: number; // дефолт, если нет интервалов
   bottomTempStatic: number; // BHST °C
   bottomTempCirc: number; // BHCT °C
+  pumpZoneTop: number;     // Зона ГНО — верх (MD), м. 0 = не задана
+  pumpZoneBottom: number;  // Зона ГНО — низ (MD), м. 0 = не задана
   trajectory: TrajectoryPoint[];
   casingSections?: CasingSection[];
   cavernIntervals?: CavernInterval[];
