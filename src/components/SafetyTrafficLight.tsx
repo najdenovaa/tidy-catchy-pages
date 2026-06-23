@@ -143,29 +143,26 @@ export default function SafetyTrafficLight({ pressureResult, volumes, centraliza
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-2 sm:px-4 pt-2">
-      <div className={cn("rounded-xl border p-2.5 flex flex-col gap-2", STATUS_STYLES[overall].bg, STATUS_STYLES[overall].border)}>
-        <div className={cn("flex items-center gap-2 text-xs font-medium", STATUS_STYLES[overall].text)}>
-          <OverallIcon className="h-4 w-4" />
-          <span className="uppercase tracking-wide">Светофор безопасности:</span>
-          <span className="normal-case font-normal">{overallLabel}</span>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {indicators.map((ind, i) => {
-            const s = STATUS_STYLES[ind.status];
-            const Icon = s.icon;
-            return (
-              <div key={i} className={cn("rounded-lg border bg-card px-2.5 py-1.5 flex items-start gap-2", s.border)}>
-                <Icon className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", s.text)} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[10px] text-muted-foreground leading-tight">{ind.label}</div>
-                  <div className="text-xs font-mono font-bold leading-tight truncate">{ind.value}</div>
-                  {ind.hint && <div className={cn("text-[9px] mt-0.5", s.text)}>{ind.hint}</div>}
-                </div>
+    <div className={cn("rounded-xl border p-2 flex flex-wrap items-center gap-2", STATUS_STYLES[overall].bg, STATUS_STYLES[overall].border)}>
+      <div className={cn("flex items-center gap-1.5 text-[11px] font-medium shrink-0", STATUS_STYLES[overall].text)}>
+        <OverallIcon className="h-3.5 w-3.5" />
+        <span className="uppercase tracking-wide">Светофор:</span>
+        <span className="normal-case font-normal hidden md:inline">{overallLabel}</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5 flex-1 min-w-0 justify-end">
+        {indicators.map((ind, i) => {
+          const s = STATUS_STYLES[ind.status];
+          const Icon = s.icon;
+          return (
+            <div key={i} className={cn("rounded-md border bg-card px-2 py-1 flex items-center gap-1.5", s.border)}>
+              <Icon className={cn("h-3 w-3 shrink-0", s.text)} />
+              <div className="min-w-0">
+                <div className="text-[9px] text-muted-foreground leading-tight">{ind.label}</div>
+                <div className="text-[10px] font-mono font-bold leading-tight">{ind.value}</div>
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
