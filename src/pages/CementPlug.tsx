@@ -29,6 +29,7 @@ import TermsFooter from "@/components/TermsFooter";
 import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
 import CementPlugTypesCard from "@/components/CementPlugTypesCard";
 import PlugCuringMapCard from "@/components/PlugCuringMapCard";
+import PlugLoadCapacityCard from "@/components/PlugLoadCapacityCard";
 import { SharedWellCard } from "@/components/SharedWellCard";
 
 const SESSION_KEY = "cement_plug_session_v2";
@@ -866,6 +867,14 @@ export default function CementPlug() {
               plugTopMD={plug.topMD}
               plugBottomMD={plug.bottomMD}
               trajectory={trajPoints}
+            />
+
+            {/* Часть 3: несущая способность — разбуривание и опрессовка */}
+            <PlugLoadCapacityCard
+              plugLengthM={Math.max(0, plug.bottomMD - plug.topMD)}
+              boreDiameterMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
+              defaultWOCHours={wocTimeHours}
+              isOpenHole={placementMode === "openhole"}
             />
 
 
