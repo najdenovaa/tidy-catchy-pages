@@ -13,18 +13,22 @@
 //   - Объём CO₂ выделившегося газа (нм³)
 // ============================================================
 
+import {
+  AcidComposition, DEFAULT_ACID_COMPOSITION, calculateDissolvingPower,
+} from "./acid-chemistry";
+
 export type AcidSystem = "HCl-15" | "HCl-28" | "MudAcid-12-3" | "HCl-7.5";
 export type FormationType = "carbonate" | "sandstone" | "dolomite";
 
 const G = 9.81;
 
-// Реактивная (растворяющая) способность HCl/HF
-// β [кг CaCO₃ растворённого / м³ кислоты]
-const DISSOLVING_POWER: Record<AcidSystem, { carbonate: number; sandstone: number; dolomite: number; density: number; co2PerM3: number }> = {
-  "HCl-15":      { carbonate: 219, sandstone: 0,   dolomite: 200, density: 1.075, co2PerM3: 48.9 },
-  "HCl-28":      { carbonate: 440, sandstone: 0,   dolomite: 400, density: 1.142, co2PerM3: 98.0 },
-  "HCl-7.5":     { carbonate: 107, sandstone: 0,   dolomite: 98,  density: 1.037, co2PerM3: 24.0 },
-  "MudAcid-12-3":{ carbonate: 170, sandstone: 35,  dolomite: 150, density: 1.090, co2PerM3: 38.0 },
+// Пресеты соответствуют выбору в Select (для обратной совместимости).
+// Растворяющая способность ВСЕГДА вычисляется через acid-chemistry, а не из таблицы.
+const SYSTEM_TO_COMP: Record<AcidSystem, AcidComposition> = {
+  "HCl-7.5":      { ...DEFAULT_ACID_COMPOSITION, hclPct: 7.5, hfPct: 0 },
+  "HCl-15":       { ...DEFAULT_ACID_COMPOSITION, hclPct: 15,  hfPct: 0 },
+  "HCl-28":       { ...DEFAULT_ACID_COMPOSITION, hclPct: 28,  hfPct: 0 },
+  "MudAcid-12-3": { ...DEFAULT_ACID_COMPOSITION, hclPct: 12,  hfPct: 3 },
 };
 
 // Рекомендуемый удельный объём кислоты, м³/м перфорации
@@ -33,6 +37,7 @@ const ACID_VOLUME_PER_M: Record<FormationType, { min: number; typical: number; m
   sandstone:  { min: 0.3,  typical: 0.75, max: 1.5 },
   dolomite:   { min: 0.7,  typical: 1.2,  max: 2.5 },
 };
+
 
 export interface AcidStimInputs {
   tvd: number;             // м
