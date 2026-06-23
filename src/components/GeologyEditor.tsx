@@ -73,9 +73,18 @@ export default function GeologyEditor(props: Props) {
     mineralogy, setMineralogy, fluid, setFluid, depth, setDepth, stress, setStress,
     currentReservoirPressureMPa, currentReservoirTempC,
     onApplyPressure, onApplyTemperature, treatmentPressureMPa,
+    mode = "detailed", onModeChange,
   } = props;
 
+  const averaged = useMemo(() => toAveragedMineralogy(mineralogy), [mineralogy]);
+
+  const setAveraged = (patch: Partial<AveragedMineralogy>) => {
+    const next: AveragedMineralogy = { ...averaged, ...patch };
+    setMineralogy(fromAveragedMineralogy(next));
+  };
+
   const total = useMemo(() => totalMineralPct(mineralogy), [mineralogy]);
+  const totalAvg = useMemo(() => totalAveragedPct(averaged), [averaged]);
   const tClay = useMemo(() => totalClay(mineralogy), [mineralogy]);
   const tCarb = useMemo(() => totalCarbonate(mineralogy), [mineralogy]);
 
@@ -95,13 +104,30 @@ export default function GeologyEditor(props: Props) {
 
   const pFracExceeded = treatmentPressureMPa !== undefined && treatmentPressureMPa >= pFrac;
 
+  const isDetailed = mode === "detailed";
+
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h2 className="font-semibold">Геология и пласт</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="font-semibold">Геология и пласт</h2>
+          <ToggleGroup
+            type="single"
+            value={mode}
+            onValueChange={(v) => v && onModeChange?.(v as "detailed" | "averaged")}
+            className="h-7"
+          >
+            <ToggleGroupItem value="detailed" className="text-xs px-2 h-7" title="12 минералов, глины по типам">
+              Реальный состав
+            </ToggleGroupItem>
+            <ToggleGroupItem value="averaged" className="text-xs px-2 h-7" title="Упрощённая 6-компонентная модель">
+              Усреднённый
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
         <div className="flex items-center gap-2 text-xs">
-          <Badge variant={Math.abs(total - 100) < 1 ? "secondary" : "destructive"}>
-            Σ минералов: {total.toFixed(1)}%
+          <Badge variant={Math.abs((isDetailed ? total : totalAvg + averaged.montmorillonite) - 100) < 1 ? "secondary" : "destructive"}>
+            Σ минералов: {(isDetailed ? total : totalAvg + averaged.montmorillonite).toFixed(1)}%
           </Badge>
           <Badge variant="outline">Глины: {tClay.toFixed(1)}%</Badge>
           <Badge variant="outline">Карбонаты: {tCarb.toFixed(1)}%</Badge>
