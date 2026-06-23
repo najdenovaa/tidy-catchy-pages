@@ -519,19 +519,21 @@ export default function CoiledTubing() {
                         <SelectContent>{CT_PRESETS.map(p => <SelectItem key={p.label} value={p.label}>{p.label}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
-                    <Field label="Нар. Ø" value={ct.od} onChange={v => { setCT(p => ({ ...p, od: num(v) })); markDirty(); }} unit="мм" />
-                    <Field label="Стенка" value={ct.wall} onChange={v => { setCT(p => ({ ...p, wall: num(v) })); markDirty(); }} unit="мм" />
+                    <Field label="Нар. Ø" value={ct.od} onChange={v => { setCT(p => ({ ...p, od: num(v) })); markDirty(); }} unit="мм" hint="Наружный диаметр гибкой трубы. Типовые: 25.4, 31.75, 38.1, 44.45, 50.8, 60.3 мм" />
+                    <Field label="Стенка" value={ct.wall} onChange={v => { setCT(p => ({ ...p, wall: num(v) })); markDirty(); }} unit="мм" hint="Толщина стенки. Чем толще, тем выше прочность и вес погонного метра" />
                     <div className="space-y-1">
-                      <Label className="text-xs">Марка стали</Label>
+                      <Label className="text-xs" title="Класс прочности по API 5ST: число = предел текучести в ksi">Марка стали</Label>
                       <Select value={ct.grade} onValueChange={v => { setCT(p => ({ ...p, grade: v })); markDirty(); }}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {["CT-70", "CT-80", "CT-90", "CT-110"].map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                      <p className="text-[10px] text-muted-foreground leading-tight">API 5ST. CT-80 — стандарт; CT-110 — для глубоких/H2S</p>
                     </div>
-                    <Field label="Длина на барабане" value={ct.length} onChange={v => { setCT(p => ({ ...p, length: num(v) })); markDirty(); }} unit="м" />
-                    <Field label="Овальность" value={ct.ovality} onChange={v => { setCT(p => ({ ...p, ovality: num(v) })); markDirty(); }} unit="%" />
+                    <Field label="Длина на барабане" value={ct.length} onChange={v => { setCT(p => ({ ...p, length: num(v) })); markDirty(); }} unit="м" hint="Полная намотанная длина трубы на катушке инжектора" />
+                    <Field label="Овальность" value={ct.ovality} onChange={v => { setCT(p => ({ ...p, ovality: num(v) })); markDirty(); }} unit="%" hint="(Dmax−Dmin)/Dном × 100. Новая 0.5–1%, отбраковка >5%" />
+
                   </div>
                   <p className="text-[10px] text-muted-foreground">Вн.Ø: {(ct.od - 2 * ct.wall).toFixed(1)} мм · Вес: {linWeight.toFixed(3)} кг/м</p>
 
