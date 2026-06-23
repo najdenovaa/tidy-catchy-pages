@@ -16,7 +16,7 @@ import { buildAcidStages, computeAcidKinetics, optimalAcidRate, computeAcidStoic
 import WormholeVisualization from "@/components/WormholeVisualization";
 import Wormhole3D from "@/components/Wormhole3D";
 import {
-  diagnoseDamage, fitArpsDecline, forecastPostTreatment,
+  diagnoseDamage, decomposeSkin, fitArpsDecline, forecastPostTreatment,
   type DamageAssessment, type ReservoirSnapshot, type Mineralogy, type DrillingHistory,
   type ProductionPoint,
 } from "@/lib/foam-treatment-diagnostics";
@@ -28,6 +28,11 @@ import {
 import { SharedWellCard } from "@/components/SharedWellCard";
 import SolventCalcPanel from "@/components/SolventCalcPanel";
 import NitrogenCalcPanel from "@/components/NitrogenCalcPanel";
+import type { SolventResult, NitrogenResult } from "@/lib/stimulation-special";
+
+const REAGENT_COLOR_MAP: Record<string, "acid" | "foam" | "solvent" | "nitrogen" | "combo"> = {
+  acid: "acid", foam: "foam", solvent: "solvent", nitrogen: "nitrogen", combo: "combo",
+};
 
 const TABS = [
   { id: "diag", label: "Диагностика", icon: FlaskConical },
@@ -223,13 +228,68 @@ export default function Stimulation() {
     });
   }, [selected, reservoir, acidVol]);
 
-  // Forecast (технический прогноз, без денег)
+  // Live results from sub-panels (solvent/nitrogen)
+  const [solventResult, setSolventResult] = useState<(SolventResult & { penetrationRadiusM: number }) | null>(null);
+  const [nitrogenResult, setNitrogenResult] = useState<(NitrogenResult & { targetBhpMPa: number }) | null>(null);
+
+  // Декомпозиция скина: чтобы знать радиус повреждённой зоны и компоненту S_damage
+  const skinDecomp = useMemo(
+    () => decomposeSkin(skinCurrent, reservoirSnap, 0, perfDensity),
+    [skinCurrent, reservoirSnap, perfDensity]
+  );
+
+  // ФАКТИЧЕСКОЕ снижение скина — выводится из физики расчёта, а не из таблицы
+  const skinReductionCalc = useMemo(() => {
+    const rDamage = skinDecomp.damagedZoneRadius;
+    const sDamage = skinDecomp.skinDamage;
+    const rw = reservoirSnap.rw;
+
+    // Кислота / комбо — Hawkins + бонус от wormhole (карбонат)
+    if ((selected.category === "acid" || selected.category === "combo") && kinetics) {
+      const rTreated = kinetics.penetrationRadius;
+      const baseDS = rTreated >= rDamage ? sDamage : sDamage * (rTreated / rDamage);
+      const sWormhole = kinetics.wormholeLength > 0
+        ? Math.log(1 + kinetics.wormholeLength / rw) * 0.5
+        : 0;
+      return baseDS + sWormhole;
+    }
+    // Пенокислотная обработка — kinetics есть, но эффективный радиус меньше (пена тормозит реакцию)
+    if (selected.category === "foam" && kinetics) {
+      const rTreated = kinetics.penetrationRadius * 0.75;
+      return rTreated >= rDamage ? sDamage : sDamage * (rTreated / rDamage);
+    }
+    // Растворитель — радиус очистки из solventResult
+    if (selected.category === "solvent" && solventResult) {
+      const rClean = solventResult.penetrationRadiusM;
+      return rClean >= rDamage ? sDamage : sDamage * (rClean / rDamage);
+    }
+    // Азот — скин не снимается, действует через депрессию (ниже)
+    return 0;
+  }, [selected, kinetics, solventResult, skinDecomp, reservoirSnap]);
+
+  // Forecast: для большинства методов — снятие скина; для азота — изменение Pwf
   const arps = useMemo(() => fitArpsDecline(history), [history]);
   const forecast = useMemo(() => {
-    const dS = (selected.skinReductionRange[0] + selected.skinReductionRange[1]) / 2;
-    const skinNew = Math.max(-2, skinCurrent - dS);
+    if (selected.category === "nitrogen" && nitrogenResult) {
+      // Прирост дебита пропорционален росту депрессии (Pr - Pwf)
+      const Pr = reservoir.reservoirPressureMPa;
+      const dpOld = Math.max(0.5, Pr - bhpCurrentMPa);
+      const dpNew = Math.max(0.5, Pr - nitrogenResult.targetBhpMPa);
+      const liftRatio = dpNew / dpOld;
+      // используем тот же контейнер ForecastPoint, считаем вручную
+      const out = forecastPostTreatment(arps, reservoirSnap, skinCurrent, skinCurrent, 36, 0.035);
+      let cum = 0;
+      return out.map((p) => {
+        const qT = p.qBaseline * liftRatio;
+        const eff = 1 + (liftRatio - 1) * Math.exp(-0.035 * p.month);
+        const qTreated = p.qBaseline * eff;
+        cum += Math.max(0, qTreated - p.qBaseline) * 30;
+        return { ...p, qTreated, deltaQ: qTreated - p.qBaseline, cumulativeDeltaM3: cum };
+      });
+    }
+    const skinNew = Math.max(-3, skinCurrent - skinReductionCalc);
     return forecastPostTreatment(arps, reservoirSnap, skinCurrent, skinNew, 36, 0.025);
-  }, [arps, reservoirSnap, skinCurrent, selected]);
+  }, [arps, reservoirSnap, skinCurrent, selected, skinReductionCalc, nitrogenResult, reservoir, bhpCurrentMPa]);
 
   const chartData = useMemo(() => forecast.map((p) => ({
     month: p.month,
@@ -498,9 +558,16 @@ export default function Stimulation() {
               <Stat label="Объём реагента" value={`${acidVol.toFixed(1)} м³`} sub={`${selected.volumePerMeterPay} м³/м × ${reservoir.payZoneM} м × ${selected.numberOfCycles} цикл.`} />
               <Stat label="Расход" value={`${selected.recommendedRate[0]}–${selected.recommendedRate[1]} л/мин`} />
               <Stat label="Выдержка" value={`${selected.soakTimeMin[0]}–${selected.soakTimeMin[1]} мин`} />
-              <Stat label="Ожидаемое ΔS" value={`-${selected.skinReductionRange[0]}…-${selected.skinReductionRange[1]}`} sub={`Эффект ${selected.effectDurationMonths[0]}–${selected.effectDurationMonths[1]} мес`} />
+              <Stat
+                label="Расчётное ΔS (из физики)"
+                value={selected.category === "nitrogen"
+                  ? "—"
+                  : `−${skinReductionCalc.toFixed(2)}`}
+                sub={selected.category === "nitrogen"
+                  ? "N₂: эффект через ΔP, не через скин"
+                  : `табличный диапазон: −${selected.skinReductionRange[0]}…−${selected.skinReductionRange[1]}`}
+              />
               <Stat label="Успешность" value={`${selected.successRate}%`} />
-
             </div>
 
             {kinetics && (
@@ -528,6 +595,7 @@ export default function Stimulation() {
                         penetrationRadiusM={kinetics.penetrationRadius}
                         wellboreRadiusM={0.108}
                         damkohler={damkohler}
+                        reagentColor={selected.category === "foam" ? "#4fc3f7" : "#ff6b35"}
                       />
                       <Wormhole3D
                         wormholeLengthM={kinetics.wormholeLength}
@@ -535,6 +603,8 @@ export default function Stimulation() {
                         wellboreRadiusM={0.108}
                         damkohler={damkohler}
                         reservoirHeightM={reservoir.payZoneM ?? 10}
+                        reagentCategory={REAGENT_COLOR_MAP[selected.category] ?? "acid"}
+                        perfDensity={perfDensity}
                       />
                     </>
                   );
@@ -598,6 +668,7 @@ export default function Stimulation() {
                 porosity={reservoir.porosity}
                 reservoirTempC={reservoir.temperatureC}
                 defaultDamage={selected.type === "solvent_paraffin" ? "paraffin" : "asphaltene"}
+                onResult={setSolventResult}
               />
             )}
 
@@ -607,6 +678,7 @@ export default function Stimulation() {
                 reservoirTempC={reservoir.temperatureC}
                 operationType={selected.type === "n2_foam_lift" ? "n2_foam_lift" : "n2_lift"}
                 defaultFoamQuality={selected.targetFoamQuality}
+                onResult={setNitrogenResult}
               />
             )}
           </TabsContent>

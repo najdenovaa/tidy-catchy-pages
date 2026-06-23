@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Wind } from "lucide-react";
 import {
-  calculateNitrogenOperation,
+  calculateNitrogenOperation, type NitrogenResult,
 } from "@/lib/stimulation-special";
 
 interface Props {
@@ -13,10 +13,11 @@ interface Props {
   reservoirTempC: number;
   operationType: "n2_lift" | "n2_foam_lift" | "n2_cleanup";
   defaultFoamQuality?: number;
+  onResult?: (r: NitrogenResult & { targetBhpMPa: number }) => void;
 }
 
 export default function NitrogenCalcPanel({
-  reservoirPressureMPa, reservoirTempC, operationType, defaultFoamQuality,
+  reservoirPressureMPa, reservoirTempC, operationType, defaultFoamQuality, onResult,
 }: Props) {
   const [wellDepth, setWellDepth] = useState(2500);
   const [tubingID, setTubingID] = useState(62);
@@ -39,6 +40,10 @@ export default function NitrogenCalcPanel({
     pumpRateM3PerMin: pumpRate,
   }), [operationType, wellDepth, tubingID, fluidDensity, reservoirPressureMPa,
        reservoirTempC, surfaceT, targetBhp, foamQ, pumpRate]);
+
+  useEffect(() => {
+    onResult?.({ ...res, targetBhpMPa: targetBhp });
+  }, [res, targetBhp, onResult]);
 
   return (
     <Card className="p-4 space-y-4">
