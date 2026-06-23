@@ -474,15 +474,11 @@ export function autoPlaceCentralizers(
   const F_max_N = spec.restoringForce * 1000;
   const k_spring = F_max_N / rc_m;
 
-  // ─── Геометрический потолок standoff по высоте планки ───
-  // Когда центратор плотно сидит в кольцевом зазоре, минимальная достижимая
-  // эксцентричность ограничена геометрией: колонна смещается вниз ровно до
-  // тех пор, пока планка не упрётся в стенку. ecc_min_geom = max(0, 1 − h/rc).
-  // Для пружинных под нагрузкой планка частично сжимается (коэф. 0.85).
-  const bladeRatio = Math.max(0, Math.min(1, spec.bladeHeight / Math.max(0.01, rc_mm)));
-  const bladeCompress = spec.type === "spring" ? 0.85 : 1.0;
-  const eccFloorGeom = Math.max(0, 1 - bladeRatio * bladeCompress);
-  const maxAchievableStandoff = Math.round((1 - eccFloorGeom) * 1000) / 10;
+  // Геометрический потолок по высоте планки отключён — алгоритм опирается
+  // только на структурный прогиб и пружинную жёсткость.
+  const eccFloorGeom = 0;
+  const maxAchievableStandoff = 100;
+
 
   // Максимум центраторов на трубу — допускаем 3-4-5+ если нужно для цели.
   const MAX_CPJ = 8.0;
