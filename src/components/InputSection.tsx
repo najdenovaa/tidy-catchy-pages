@@ -46,6 +46,8 @@ const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "cavernCoeff", label: "Коэффициент кавернозности", unit: "" },
   { key: "bottomTempStatic", label: "BHST (статическая t°)", unit: "°C" },
   { key: "bottomTempCirc", label: "BHCT (циркуляционная t°)", unit: "°C" },
+  { key: "pumpZoneTop", label: "Зона ГНО — верх (MD)", unit: "м" },
+  { key: "pumpZoneBottom", label: "Зона ГНО — низ (MD)", unit: "м" },
 ];
 
 function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: boolean; onClick: () => void }) {
