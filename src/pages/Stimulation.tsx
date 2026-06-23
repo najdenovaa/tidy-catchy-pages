@@ -82,13 +82,24 @@ export default function Stimulation() {
   const [monthsHistory, setMonthsHistory] = useState(18);
   const [skinCurrent, setSkinCurrent] = useState(8);
 
-  // Mineralogy / drilling
-  const [clayPct, setClayPct] = useState(6);
-  const [montPct, setMontPct] = useState(2);
+  // Геология: детальная минералогия + флюид + глубина + геомеханика
+  const [detailedMin, setDetailedMin] = useState<DetailedMineralogy>(DEFAULT_MINERALOGY_CARBONATE);
+  const [fluidProps, setFluidProps] = useState<FluidProperties>(DEFAULT_FLUID);
+  const [depthProfile, setDepthProfile] = useState<DepthProfile>(DEFAULT_DEPTH);
+  const [stressState, setStressState] = useState<StressState>(DEFAULT_STRESS);
+
+  // Заканчивание / буровая история
   const [perfDensity, setPerfDensity] = useState(20);
   const [mudType, setMudType] = useState<"wbm" | "obm" | "sbm">("wbm");
   const [overbalanceMPa, setOverbalanceMPa] = useState(3);
   const [soakDays, setSoakDays] = useState(7);
+
+  // Авто-подмена дефолтов минералогии при смене типа коллектора
+  useEffect(() => {
+    if (reservoir.collectorType === "sandstone") setDetailedMin(DEFAULT_MINERALOGY_SANDSTONE);
+    else setDetailedMin(DEFAULT_MINERALOGY_CARBONATE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservoir.collectorType]);
 
   const [selectedMethodId, setSelectedMethodId] = useState<string>("hcl-matrix");
   const [searchParams] = useSearchParams();
