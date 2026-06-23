@@ -768,6 +768,32 @@ export default function Stimulation() {
               </Card>
             )}
 
+            {sensitivityData.length > 0 && (
+              <Card className="p-4">
+                <h3 className="font-semibold mb-2">Чувствительность к концентрации HCl</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Текущий состав: <b>{acidLabel}</b>. Сплошная вертикаль — выбранное значение.
+                </p>
+                <div style={{ width: "100%", height: 260 }}>
+                  <ResponsiveContainer>
+                    <LineChart data={sensitivityData} margin={{ top: 5, right: 25, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="hcl" stroke="hsl(var(--muted-foreground))" label={{ value: "HCl, %", position: "insideBottom", offset: -2, fontSize: 11 }} />
+                      <YAxis yAxisId="L" stroke="hsl(var(--primary))" label={{ value: "r проникн., м", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                      <YAxis yAxisId="R" orientation="right" stroke="hsl(var(--muted-foreground))" label={{ value: "порода, кг", angle: 90, position: "insideRight", fontSize: 11 }} />
+                      <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+                      <Legend />
+                      <Line yAxisId="L" type="monotone" dataKey="rPen" stroke="hsl(var(--primary))" name="Радиус, м" dot={false} strokeWidth={2} />
+                      <Line yAxisId="R" type="monotone" dataKey="rockKg" stroke="#ff6b35" name="Растворено, кг" dot={false} />
+                      <Line yAxisId="R" type="monotone" dataKey="co2" stroke="#10b981" name="CO₂ ст, м³" dot={false} strokeDasharray="4 4" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+            )}
+
+
+
             <Card className="p-4">
               <h3 className="font-semibold mb-3">Рецептура и добавки</h3>
               <div className="space-y-2 text-sm">
