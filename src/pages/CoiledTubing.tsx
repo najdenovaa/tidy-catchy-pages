@@ -126,10 +126,11 @@ async function captureChart(ref: React.RefObject<HTMLDivElement | null>): Promis
   } catch { return undefined; }
 }
 
-const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
+const Field = ({ label, value, onChange, unit, hint }: { label: string; value: number; onChange: (v: string) => void; unit?: string; hint?: string }) => (
   <div className="space-y-1">
-    <Label className="text-xs">{label}{unit ? ` (${unit})` : ""}</Label>
+    <Label className="text-xs" title={hint}>{label}{unit ? ` (${unit})` : ""}</Label>
     <BlurInput type="number" step="any" value={value || ""} onValueCommit={onChange} className="h-8 text-xs" />
+    {hint && <p className="text-[10px] text-muted-foreground leading-tight">{hint}</p>}
   </div>
 );
 
@@ -518,19 +519,21 @@ export default function CoiledTubing() {
                         <SelectContent>{CT_PRESETS.map(p => <SelectItem key={p.label} value={p.label}>{p.label}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
-                    <Field label="Нар. Ø" value={ct.od} onChange={v => { setCT(p => ({ ...p, od: num(v) })); markDirty(); }} unit="мм" />
-                    <Field label="Стенка" value={ct.wall} onChange={v => { setCT(p => ({ ...p, wall: num(v) })); markDirty(); }} unit="мм" />
+                    <Field label="Нар. Ø" value={ct.od} onChange={v => { setCT(p => ({ ...p, od: num(v) })); markDirty(); }} unit="мм" hint="Наружный диаметр гибкой трубы. Типовые: 25.4, 31.75, 38.1, 44.45, 50.8, 60.3 мм" />
+                    <Field label="Стенка" value={ct.wall} onChange={v => { setCT(p => ({ ...p, wall: num(v) })); markDirty(); }} unit="мм" hint="Толщина стенки. Чем толще, тем выше прочность и вес погонного метра" />
                     <div className="space-y-1">
-                      <Label className="text-xs">Марка стали</Label>
+                      <Label className="text-xs" title="Класс прочности по API 5ST: число = предел текучести в ksi">Марка стали</Label>
                       <Select value={ct.grade} onValueChange={v => { setCT(p => ({ ...p, grade: v })); markDirty(); }}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {["CT-70", "CT-80", "CT-90", "CT-110"].map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                      <p className="text-[10px] text-muted-foreground leading-tight">API 5ST. CT-80 — стандарт; CT-110 — для глубоких/H2S</p>
                     </div>
-                    <Field label="Длина на барабане" value={ct.length} onChange={v => { setCT(p => ({ ...p, length: num(v) })); markDirty(); }} unit="м" />
-                    <Field label="Овальность" value={ct.ovality} onChange={v => { setCT(p => ({ ...p, ovality: num(v) })); markDirty(); }} unit="%" />
+                    <Field label="Длина на барабане" value={ct.length} onChange={v => { setCT(p => ({ ...p, length: num(v) })); markDirty(); }} unit="м" hint="Полная намотанная длина трубы на катушке инжектора" />
+                    <Field label="Овальность" value={ct.ovality} onChange={v => { setCT(p => ({ ...p, ovality: num(v) })); markDirty(); }} unit="%" hint="(Dmax−Dmin)/Dном × 100. Новая 0.5–1%, отбраковка >5%" />
+
                   </div>
                   <p className="text-[10px] text-muted-foreground">Вн.Ø: {(ct.od - 2 * ct.wall).toFixed(1)} мм · Вес: {linWeight.toFixed(3)} кг/м</p>
 
@@ -595,21 +598,21 @@ export default function CoiledTubing() {
               <CollapsibleContent>
                 <CardContent className="pt-0 space-y-3">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <Field label="Глубина MD" value={well.md} onChange={v => { setWell(w => ({ ...w, md: num(v) })); markDirty(); }} unit="м" />
-                    <Field label="Глубина TVD" value={well.tvd} onChange={v => { setWell(w => ({ ...w, tvd: num(v) })); markDirty(); }} unit="м" />
-                    <Field label="Вн. ∅ колонны" value={well.casingID} onChange={v => { setWell(w => ({ ...w, casingID: num(v) })); markDirty(); }} unit="мм" />
-                    <Field label="НКТ ID (0=нет)" value={well.tubingID} onChange={v => { setWell(w => ({ ...w, tubingID: num(v) })); markDirty(); }} unit="мм" />
-                    <Field label="Устьевое давление" value={well.wellheadPressure} onChange={v => { setWell(w => ({ ...w, wellheadPressure: num(v) })); markDirty(); }} unit="МПа" />
-                    <Field label="Коэфф. трения" value={friction} onChange={v => { setFriction(num(v)); markDirty(); }} unit="" />
+                    <Field label="Глубина MD" value={well.md} onChange={v => { setWell(w => ({ ...w, md: num(v) })); markDirty(); }} unit="м" hint="Measured Depth — длина ствола по стволу скважины (по бурению)" />
+                    <Field label="Глубина TVD" value={well.tvd} onChange={v => { setWell(w => ({ ...w, tvd: num(v) })); markDirty(); }} unit="м" hint="True Vertical Depth — истинная вертикальная глубина. Используется для расчёта гидростатики" />
+                    <Field label="Вн. ∅ колонны" value={well.casingID} onChange={v => { setWell(w => ({ ...w, casingID: num(v) })); markDirty(); }} unit="мм" hint="Внутренний диаметр последней эксплуатационной колонны на забое" />
+                    <Field label="НКТ ID (0=нет)" value={well.tubingID} onChange={v => { setWell(w => ({ ...w, tubingID: num(v) })); markDirty(); }} unit="мм" hint="Внутренний диаметр НКТ. Введите 0, если спуск без НКТ (через колонну)" />
+                    <Field label="Устьевое давление" value={well.wellheadPressure} onChange={v => { setWell(w => ({ ...w, wellheadPressure: num(v) })); markDirty(); }} unit="МПа" hint="Давление на устье (СУСГ/буферное) в момент работ" />
+                    <Field label="Коэфф. трения" value={friction} onChange={v => { setFriction(num(v)); markDirty(); }} unit="" hint="Коэф. трения металл-металл по Johancsik. Сух: 0.30–0.35; в РЖ: 0.20–0.25; смазка: 0.15" />
                   </div>
 
                   <Separator />
                   <p className="text-xs font-medium text-muted-foreground">🌡 Температуры и ГРП</p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <Field label="BHST (стат.)" value={well.bhst} onChange={v => { setWell(w => ({ ...w, bhst: num(v) })); markDirty(); }} unit="°C" />
-                    <Field label="BHCT (цирк.)" value={well.bhct} onChange={v => { setWell(w => ({ ...w, bhct: num(v) })); markDirty(); }} unit="°C" />
-                    <Field label="T° на устье" value={well.whTemp} onChange={v => { setWell(w => ({ ...w, whTemp: num(v) })); markDirty(); }} unit="°C" />
-                    <Field label="Градиент ГРП" value={well.fracGradient} onChange={v => { setWell(w => ({ ...w, fracGradient: num(v) })); markDirty(); }} unit="МПа/м" />
+                    <Field label="BHST (стат.)" value={well.bhst} onChange={v => { setWell(w => ({ ...w, bhst: num(v) })); markDirty(); }} unit="°C" hint="Bottom Hole Static Temperature — статическая температура на забое (геотермический градиент)" />
+                    <Field label="BHCT (цирк.)" value={well.bhct} onChange={v => { setWell(w => ({ ...w, bhct: num(v) })); markDirty(); }} unit="°C" hint="Bottom Hole Circulating Temperature — температура на забое при циркуляции (обычно ниже BHST)" />
+                    <Field label="T° на устье" value={well.whTemp} onChange={v => { setWell(w => ({ ...w, whTemp: num(v) })); markDirty(); }} unit="°C" hint="Температура флюида на устье — для расчёта термического профиля по стволу" />
+                    <Field label="Градиент ГРП" value={well.fracGradient} onChange={v => { setWell(w => ({ ...w, fracGradient: num(v) })); markDirty(); }} unit="МПа/м" hint="Градиент давления разрыва пласта. Типично 0.016–0.022 МПа/м. Ограничивает рабочее давление" />
                   </div>
                   {well.fracGradient > 0 && well.tvd > 0 && (
                     <p className="text-[10px] text-muted-foreground">
@@ -683,11 +686,11 @@ export default function CoiledTubing() {
                     </Select>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <Field label="Плотность" value={fluid.density} onChange={v => { setFluid(f => ({ ...f, density: num(v) })); markDirty(); }} unit="г/см³" />
-                    <Field label="PV (пласт. вязк.)" value={fluid.pv} onChange={v => { setFluid(f => ({ ...f, pv: num(v) })); markDirty(); }} unit="сП" />
-                    <Field label="YP (ДНС)" value={fluid.yp} onChange={v => { setFluid(f => ({ ...f, yp: num(v) })); markDirty(); }} unit="Па" />
-                    <Field label="n (индекс потока)" value={fluid.nIndex} onChange={v => { setFluid(f => ({ ...f, nIndex: num(v) })); markDirty(); }} unit="" />
-                    <Field label="K (конс. индекс)" value={fluid.kIndex} onChange={v => { setFluid(f => ({ ...f, kIndex: num(v) })); markDirty(); }} unit="Па·сⁿ" />
+                    <Field label="Плотность" value={fluid.density} onChange={v => { setFluid(f => ({ ...f, density: num(v) })); markDirty(); }} unit="г/см³" hint="Плотность рабочей жидкости. Вода = 1.00; солевые растворы 1.05–1.40; нефть 0.80–0.92" />
+                    <Field label="PV (пласт. вязк.)" value={fluid.pv} onChange={v => { setFluid(f => ({ ...f, pv: num(v) })); markDirty(); }} unit="сП" hint="Plastic Viscosity — пластическая вязкость по Бингаму (наклон τ−γ при высоких γ)" />
+                    <Field label="YP (ДНС)" value={fluid.yp} onChange={v => { setFluid(f => ({ ...f, yp: num(v) })); markDirty(); }} unit="Па" hint="Yield Point (динамическое напряжение сдвига) — отсечка τ при γ=0 по Бингаму" />
+                    <Field label="n (индекс потока)" value={fluid.nIndex} onChange={v => { setFluid(f => ({ ...f, nIndex: num(v) })); markDirty(); }} unit="" hint="Показатель степени по степенной модели. n=1 ньютоновская; <1 псевдопластичная (большинство буровых)" />
+                    <Field label="K (конс. индекс)" value={fluid.kIndex} onChange={v => { setFluid(f => ({ ...f, kIndex: num(v) })); markDirty(); }} unit="Па·сⁿ" hint="Коэффициент консистенции степенной модели (K в τ = K·γⁿ)" />
                   </div>
                 </CardContent>
               </CollapsibleContent>
@@ -709,12 +712,12 @@ export default function CoiledTubing() {
               <CollapsibleContent>
                 <CardContent className="pt-0 space-y-3">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <Field label="Расход" value={pump.flowRate} onChange={v => { setPump(p => ({ ...p, flowRate: num(v) })); markDirty(); }} unit="л/с" />
-                    <Field label="Вес КНБК" value={tools.bhaWeight} onChange={v => { setTools(t => ({ ...t, bhaWeight: num(v) })); markDirty(); }} unit="кг" />
-                    <Field label="Длина КНБК" value={tools.bhaLength} onChange={v => { setTools(t => ({ ...t, bhaLength: num(v) })); markDirty(); }} unit="м" />
-                    <Field label="Ø КНБК" value={tools.bhaOD} onChange={v => { setTools(t => ({ ...t, bhaOD: num(v) })); markDirty(); }} unit="мм" />
-                    <Field label="Ø насадки" value={tools.nozzleDiam} onChange={v => { setTools(t => ({ ...t, nozzleDiam: num(v) })); markDirty(); }} unit="мм" />
-                    <Field label="Кол-во насадок" value={tools.nozzleCount} onChange={v => { setTools(t => ({ ...t, nozzleCount: num(v) })); markDirty(); }} unit="шт" />
+                    <Field label="Расход" value={pump.flowRate} onChange={v => { setPump(p => ({ ...p, flowRate: num(v) })); markDirty(); }} unit="л/с" hint="Производительность насоса по жидкости. Типично для ГНКТ: 1–6 л/с" />
+                    <Field label="Вес КНБК" value={tools.bhaWeight} onChange={v => { setTools(t => ({ ...t, bhaWeight: num(v) })); markDirty(); }} unit="кг" hint="Сухой вес компоновки низа (BHA): забойный двигатель, долото, переводники" />
+                    <Field label="Длина КНБК" value={tools.bhaLength} onChange={v => { setTools(t => ({ ...t, bhaLength: num(v) })); markDirty(); }} unit="м" hint="Суммарная длина компоновки низа. Влияет на проходимость в искривлённых участках" />
+                    <Field label="Ø КНБК" value={tools.bhaOD} onChange={v => { setTools(t => ({ ...t, bhaOD: num(v) })); markDirty(); }} unit="мм" hint="Максимальный наружный диаметр инструмента — определяет зазор и пассируемость" />
+                    <Field label="Ø насадки" value={tools.nozzleDiam} onChange={v => { setTools(t => ({ ...t, nozzleDiam: num(v) })); markDirty(); }} unit="мм" hint="Диаметр одного сопла промывочной насадки/долота" />
+                    <Field label="Кол-во насадок" value={tools.nozzleCount} onChange={v => { setTools(t => ({ ...t, nozzleCount: num(v) })); markDirty(); }} unit="шт" hint="Число рабочих сопел. Вместе с Ø определяет перепад на насадках" />
                   </div>
                 </CardContent>
               </CollapsibleContent>
