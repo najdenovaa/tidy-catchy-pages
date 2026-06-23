@@ -16,6 +16,7 @@ import {
   calcTurbulenceMultiplier,
   centralizerPresets,
   centralizerTypeLabels,
+  placementZoneLabels,
   type CentralizerInterval,
   type CentralizerType,
   type CentralizerSpec,
@@ -378,7 +379,10 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   }, [wellData, intervals, mudDensity, turbPoints, onResultsChange, onIntervalsChange]);
 
   const handleCalculateAuto = useCallback(() => {
-    const placement = autoPlaceCentralizers(wellData, autoSpec, autoJointLength, targetStandoff, mudDensity);
+    const placement = autoPlaceCentralizers(wellData, autoSpec, autoJointLength, targetStandoff, mudDensity, {
+      pumpZoneTop: wellData.pumpZoneTop,
+      pumpZoneBottom: wellData.pumpZoneBottom,
+    });
     setAutoResults(placement);
 
     const autoIntervals: CentralizerInterval[] = placement.map(p => ({
@@ -795,7 +799,9 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-[10px] px-2">Интервал, м</TableHead>
+                    <TableHead className="text-[10px] px-2">Зона</TableHead>
                     <TableHead className="text-[10px] px-2">Ср. зенит, °</TableHead>
+                    <TableHead className="text-[10px] px-2">DLS, °/30м</TableHead>
                     <TableHead className="text-[10px] px-2">Центр./трубу</TableHead>
                     <TableHead className="text-[10px] px-2">Шаг, м</TableHead>
                     <TableHead className="text-[10px] px-2">Standoff, %</TableHead>
@@ -806,9 +812,11 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                   {autoResults.map((r, i) => (
                     <TableRow key={i}>
                       <TableCell className="text-xs px-2 py-1.5">{r.fromMD} — {r.toMD}</TableCell>
+                      <TableCell className="text-xs px-2 py-1.5">{placementZoneLabels[r.zone]}</TableCell>
                       <TableCell className="text-xs px-2 py-1.5">{r.avgZenith}°</TableCell>
+                      <TableCell className="text-xs px-2 py-1.5">{r.maxDLS}</TableCell>
                       <TableCell className="text-xs px-2 py-1.5 font-medium">{r.centralizersPerJoint}</TableCell>
-                      <TableCell className="text-xs px-2 py-1.5">{(autoJointLength / r.centralizersPerJoint).toFixed(1)}</TableCell>
+                      <TableCell className="text-xs px-2 py-1.5">{(autoJointLength / Math.max(0.01, r.centralizersPerJoint)).toFixed(1)}</TableCell>
                       <TableCell className={`text-xs px-2 py-1.5 font-medium ${standoffColor(r.standoffAchieved)}`}>{r.standoffAchieved}%</TableCell>
                       <TableCell className="text-xs px-2 py-1.5 font-medium">{r.totalCentralizers}</TableCell>
                     </TableRow>

@@ -187,6 +187,8 @@ export default function WellDataExtractionDialog({ open, onClose, extractedData,
       cavernCoeff: wellValues.cavernCoeff || 1.1,
       bottomTempStatic: wellValues.bottomTempStatic || 0,
       bottomTempCirc: wellValues.bottomTempCirc || 0,
+      pumpZoneTop: 0,
+      pumpZoneBottom: 0,
       trajectory: (extractedData.trajectory || []).map(t => ({
         md: t.md, zenith: t.angle, azimuth: t.azimuth, tvd: t.tvd,
       })),
