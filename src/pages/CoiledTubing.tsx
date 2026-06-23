@@ -126,10 +126,11 @@ async function captureChart(ref: React.RefObject<HTMLDivElement | null>): Promis
   } catch { return undefined; }
 }
 
-const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
+const Field = ({ label, value, onChange, unit, hint }: { label: string; value: number; onChange: (v: string) => void; unit?: string; hint?: string }) => (
   <div className="space-y-1">
-    <Label className="text-xs">{label}{unit ? ` (${unit})` : ""}</Label>
+    <Label className="text-xs" title={hint}>{label}{unit ? ` (${unit})` : ""}</Label>
     <BlurInput type="number" step="any" value={value || ""} onValueCommit={onChange} className="h-8 text-xs" />
+    {hint && <p className="text-[10px] text-muted-foreground leading-tight">{hint}</p>}
   </div>
 );
 
