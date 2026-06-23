@@ -965,11 +965,12 @@ export default function Stimulation() {
   );
 }
 
-function Field({ label, value, onChange, step = 1 }: { label: string; value: number; onChange: (v: number) => void; step?: number }) {
+function Field({ label, value, onChange, step = 1, hint }: { label: string; value: number; onChange: (v: number) => void; step?: number; hint?: string }) {
   return (
     <div className="space-y-1">
-      <Label>{label}</Label>
+      <Label title={hint}>{label}</Label>
       <Input type="number" step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      {hint && <p className="text-[10px] text-muted-foreground leading-tight">{hint}</p>}
     </div>
   );
 }
