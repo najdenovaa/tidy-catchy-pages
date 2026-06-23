@@ -256,7 +256,7 @@ export default function WOCAnimation({
                   <ReferenceArea x1={transitionWindow.start} x2={transitionWindow.end} fill="#ef4444" fillOpacity={0.15} label={{ value: "Окно gas-migration", fontSize: 10, fill: "#ef4444", position: "insideTop" }} />
                 )}
                 <ReferenceLine y={series[0].pHydro} stroke="#3b82f6" strokeDasharray="3 3" label={{ value: `Pгидро ${series[0].pHydro.toFixed(1)}`, fontSize: 10, fill: "#3b82f6" }} />
-                <ReferenceLine y={series[0].pGeo} stroke="#a78bfa" strokeDasharray="3 3" label={{ value: `Pгео ${series[0].pGeo.toFixed(1)}`, fontSize: 10, fill: "#a78bfa" }} />
+                <ReferenceLine y={series[0].pGeo} stroke="#a78bfa" strokeDasharray="3 3" label={{ value: `Pпор.вода ${series[0].pGeo.toFixed(1)}`, fontSize: 10, fill: "#a78bfa" }} />
                 <Line type="monotone" dataKey="pCol" stroke="#ef4444" strokeWidth={2.5} dot={false} name="P столба" />
                 <ReferenceLine x={t} stroke="hsl(var(--foreground))" strokeWidth={1} />
               </ComposedChart>
