@@ -16,7 +16,7 @@ import { buildAcidStages, computeAcidKinetics, optimalAcidRate, computeAcidStoic
 import WormholeVisualization from "@/components/WormholeVisualization";
 import Wormhole3D from "@/components/Wormhole3D";
 import {
-  diagnoseDamage, fitArpsDecline, forecastPostTreatment,
+  diagnoseDamage, decomposeSkin, fitArpsDecline, forecastPostTreatment,
   type DamageAssessment, type ReservoirSnapshot, type Mineralogy, type DrillingHistory,
   type ProductionPoint,
 } from "@/lib/foam-treatment-diagnostics";
