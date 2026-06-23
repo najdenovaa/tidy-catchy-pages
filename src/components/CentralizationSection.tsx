@@ -16,6 +16,7 @@ import {
   calcTurbulenceMultiplier,
   centralizerPresets,
   centralizerTypeLabels,
+  placementZoneLabels,
   type CentralizerInterval,
   type CentralizerType,
   type CentralizerSpec,
