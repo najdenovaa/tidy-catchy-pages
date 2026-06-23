@@ -707,6 +707,29 @@ export default function Stimulation() {
                     ))}
                   </div>
                 )}
+
+                {/* Реальная растворяющая способность по минералогии */}
+                <div className="pt-2 border-t border-border/40 space-y-1.5">
+                  <div className="text-xs font-medium">По реальному минеральному составу:</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                    <KV k="HCl растворит карбонатов" v={`${mineralDissolution.carbonateKgPerM3.toFixed(0)} кг/м³`} />
+                    <KV k="HF растворит силикатов" v={`${mineralDissolution.silicateKgPerM3.toFixed(1)} кг/м³`} />
+                    <KV k="Эфф. ρ породы" v={`${mineralDissolution.effectiveRockDensity_kgm3.toFixed(0)} кг/м³`} />
+                  </div>
+                  {mineralDissolution.warnings.map((w, i) => (
+                    <div key={i} className="text-xs text-amber-700 dark:text-amber-300">{w}</div>
+                  ))}
+                </div>
+
+                {/* Давление гидроразрыва (Eaton) */}
+                <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2 flex-wrap">
+                  <div className="text-xs text-muted-foreground">
+                    🪨 Pfrac (Eaton) ≈ <b>{pFracMPa.toFixed(1)} МПа</b>
+                  </div>
+                  <Badge variant={pFracMPa - reservoir.reservoirPressureMPa < 5 ? "destructive" : "outline"} className="text-[10px]">
+                    запас ΔP = {(pFracMPa - reservoir.reservoirPressureMPa).toFixed(1)} МПа
+                  </Badge>
+                </div>
               </Card>
             )}
 
