@@ -196,6 +196,8 @@ export function normalizeWellData(value: unknown): WellData {
     cavernCoeff: toNumber(source.cavernCoeff, defaultWellData.cavernCoeff),
     bottomTempStatic: toNumber(source.bottomTempStatic, defaultWellData.bottomTempStatic),
     bottomTempCirc: toNumber(source.bottomTempCirc, defaultWellData.bottomTempCirc),
+    pumpZoneTop: toNumber(source.pumpZoneTop, defaultWellData.pumpZoneTop),
+    pumpZoneBottom: toNumber(source.pumpZoneBottom, defaultWellData.pumpZoneBottom),
     trajectory: trajectory.length > 0 ? trajectory : defaultWellData.trajectory,
     casingSections: casingSections && casingSections.length > 0 ? casingSections : undefined,
     cavernIntervals: cavernIntervals && cavernIntervals.length > 0 ? cavernIntervals : undefined,
