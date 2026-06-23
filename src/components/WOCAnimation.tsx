@@ -144,8 +144,12 @@ export default function WOCAnimation({
     }[] = [];
     // Авто-нормализация плотности: если пришло в г/см³ (<100) — переведём в кг/м³.
     const rhoKgM3 = slurryDensity < 100 ? slurryDensity * 1000 : slurryDensity;
-    const pHydro = (rhoKgM3 * 9.81 * tvd) / 1e6; // МПа
-    const pGeo = pHydro * 0.55; // упрощённая оценка остаточного на породу
+    const pHydro = (rhoKgM3 * 9.81 * tvd) / 1e6; // МПа — полная гидростатика жидкого раствора
+    // После схватывания вес камня держится стенками колонны/пласта через сдвиг
+    // (эффект Янссена / модель Sabins-Tinsley, SPE). На забой передаётся только давление
+    // поровой воды цемента ≈ ρ_воды·g·h. Это и есть «остаточное» забойное давление,
+    // ниже которого открывается окно gas-migration.
+    const pGeo = (1000 * 9.81 * tvd) / 1e6; // МПа — поровая вода цемента
     for (let i = 0; i <= N; i++) {
       const th = (i / N) * totalHours;
       const s = strengthModel(th, bhct, cementClass);
