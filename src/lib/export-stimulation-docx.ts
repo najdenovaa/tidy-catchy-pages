@@ -225,6 +225,57 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
     ]));
   }
 
+  // 6a. Стехиометрия растворения
+  if (stoichiometry) {
+    children.push(heading("6a. Стехиометрия растворения породы"));
+    const stoichRows: Array<[string, string]> = [
+      ["HCl в реагенте, кг", fmt(stoichiometry.hclMassKg, 0)],
+      ["Растворено породы, кг", fmt(stoichiometry.rockDissolvedKg, 0)],
+      ["Растворено породы, м³", fmt(stoichiometry.rockDissolvedM3, 2)],
+      ["CaCl₂ в растворе, кг", fmt(stoichiometry.caCl2MassKg, 0)],
+    ];
+    if (stoichiometry.hfMassKg > 0) stoichRows.splice(1, 0, ["HF в реагенте, кг", fmt(stoichiometry.hfMassKg, 0)]);
+    if (stoichiometry.co2VolumeStdM3 > 0) {
+      stoichRows.push(["CO₂ при н.у., м³ст", fmt(stoichiometry.co2VolumeStdM3, 1)]);
+      stoichRows.push(["CO₂ в забое, м³", fmt(stoichiometry.co2VolumeBhM3, 2)]);
+    }
+    if (stoichiometry.caF2RiskKg != null) stoichRows.push(["⚠ CaF₂ риск, кг", fmt(stoichiometry.caF2RiskKg, 0)]);
+    children.push(kv(stoichRows));
+    stoichiometry.notes.forEach((n) => children.push(textP(`• ${n}`, n.startsWith("ВНИМАНИЕ") ? { color: "C0392B", bold: true } : undefined)));
+  }
+
+  // 6b. Растворение по реальной минералогии
+  if (mineralDissolution) {
+    children.push(heading("6b. По реальному минеральному составу"));
+    children.push(kv([
+      ["HCl растворит карбонатов, кг/м³", fmt(mineralDissolution.carbonateKgPerM3, 0)],
+      ["HF растворит силикатов, кг/м³", fmt(mineralDissolution.silicateKgPerM3, 1)],
+      ["Эфф. плотность породы, кг/м³", fmt(mineralDissolution.effectiveRockDensity_kgm3, 0)],
+      ...(pFracMPa != null ? [["P гидроразрыва (Eaton), МПа", fmt(pFracMPa, 1)] as [string, string]] : []),
+    ]));
+    mineralDissolution.warnings.forEach((w) => children.push(textP(`⚠ ${w}`, { color: "B8860B" })));
+  }
+
+  // 6c. Чувствительность к HCl%
+  if (sensitivity && sensitivity.length > 0) {
+    children.push(heading("6c. Чувствительность к концентрации HCl"));
+    children.push(textP("Радиус проникновения, растворённая масса и CO₂ как функция HCl% при том же объёме реагента."));
+    const sample = sensitivity.filter((_, i) => i % 5 === 0);
+    children.push(new Table({
+      width: { size: 9360, type: WidthType.DXA },
+      columnWidths: [2340, 2340, 2340, 2340],
+      rows: [
+        new TableRow({ children: [hCell("HCl, %"), hCell("r проникн., м"), hCell("Растворено, кг"), hCell("CO₂ ст, м³")] }),
+        ...sample.map((p) => new TableRow({ children: [
+          c(String(p.hcl), { align: AlignmentType.CENTER }),
+          c(fmt(p.rPen, 2), { align: AlignmentType.CENTER }),
+          c(fmt(p.rockKg, 0), { align: AlignmentType.CENTER }),
+          c(fmt(p.co2, 1), { align: AlignmentType.CENTER }),
+        ]})),
+      ],
+    }));
+  }
+
   // 7. Operation steps
   children.push(heading("7. Последовательность операций"));
   const steps = [
