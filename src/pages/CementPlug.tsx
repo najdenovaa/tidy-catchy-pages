@@ -911,6 +911,16 @@ export default function CementPlug() {
               wocHours={wocTimeHours}
             />
 
+            {/* Часть 5: целостность при циклических нагрузках */}
+            <PlugCyclicIntegrityCard
+              plugLengthM={Math.max(0, plug.bottomMD - plug.topMD)}
+              boreDiameterMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
+              innerPipeODmm={0}
+              defaultUcsMPa={20}
+            />
+
+
+
 
 
             {/* Fluids */}
