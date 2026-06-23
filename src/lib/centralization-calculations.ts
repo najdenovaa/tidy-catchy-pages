@@ -474,21 +474,33 @@ export function autoPlaceCentralizers(
   const F_max_N = spec.restoringForce * 1000;
   const k_spring = F_max_N / rc_m;
 
+  // ─── Геометрический потолок standoff по высоте планки ───
+  // Когда центратор плотно сидит в кольцевом зазоре, минимальная достижимая
+  // эксцентричность ограничена геометрией: колонна смещается вниз ровно до
+  // тех пор, пока планка не упрётся в стенку. ecc_min_geom = max(0, 1 − h/rc).
+  // Для пружинных под нагрузкой планка частично сжимается (коэф. 0.85).
+  const bladeRatio = Math.max(0, Math.min(1, spec.bladeHeight / Math.max(0.01, rc_mm)));
+  const bladeCompress = spec.type === "spring" ? 0.85 : 1.0;
+  const eccFloorGeom = Math.max(0, 1 - bladeRatio * bladeCompress);
+  const maxAchievableStandoff = Math.round((1 - eccFloorGeom) * 1000) / 10;
+
+  // Максимум центраторов на трубу — допускаем 3-4-5+ если нужно для цели.
+  const MAX_CPJ = 8.0;
+
   const wellheadDepth = options.wellheadDepth ?? 50;
   const pumpTop = options.pumpZoneTop ?? 0;
   const pumpBot = options.pumpZoneBottom ?? 0;
   const pumpZoneActive = pumpBot > pumpTop && pumpBot > 0;
   const dlsThresh = options.dlsThresholdDegPer30m ?? 1.5;
   const sparseN = Math.max(2, Math.round(options.verticalSparseJoints ?? 15));
-  const sparseCPJ = Math.round((1 / sparseN) * 100) / 100; // напр. 0.07 = 1 на 15
+  const sparseCPJ = Math.round((1 / sparseN) * 100) / 100;
 
   const segmentSize = Math.max(jointLength, 10);
 
-  // Локальный 3D-DLS между двумя точками траектории на интервале segmentSize
+  // Локальный 3D-DLS
   function localDLS(md1: number, md2: number): number {
     const p1 = interpolateTrajectory(wellData.trajectory, md1);
     const p2 = interpolateTrajectory(wellData.trajectory, md2);
-    // azimuth requires raw trajectory; interpolate manually for azimuth
     const azi = (md: number): number => {
       const t = wellData.trajectory;
       if (!t || t.length === 0) return 0;
@@ -512,7 +524,6 @@ export function autoPlaceCentralizers(
     return (Math.acos(cosA) * 180 / Math.PI) * (30 / dMD);
   }
 
-  // ─── Step 1: разбиение по сегментам и сбор статистики ───
   interface RawSeg {
     fromMD: number; toMD: number;
     maxZenith: number; avgZenith: number;
@@ -532,7 +543,6 @@ export function autoPlaceCentralizers(
     rawSegments.push({ fromMD: md, toMD: endMD, maxZenith: maxZ, avgZenith: sumZ / Math.max(1, cnt), dls });
   }
 
-  // ─── Step 2: классификация и CPJ для каждого сегмента ───
   function classify(seg: RawSeg): PlacementZone {
     const mid = (seg.fromMD + seg.toMD) / 2;
     if (mid <= wellheadDepth) return "wellhead";
@@ -543,61 +553,89 @@ export function autoPlaceCentralizers(
     return "vertical";
   }
 
-  function physicsCPJ(zenith: number, boostFactor: number = 1): { cpj: number; standoff: number } {
-    if (zenith < 0.1) {
-      return { cpj: sparseCPJ, standoff: 99.7 };
-    }
+  // Эксцентричность для заданного CPJ с учётом изгиба, пружинной жёсткости
+  // и геометрического потолка по высоте планки.
+  function eccForCPJ(zenith: number, cpj: number): number {
+    if (cpj <= 0) return 1;
+    const L = jointLength / cpj;
     const lateralF = lateralForcePerMeter(wpm, bf, zenith);
-
-    // Если зенит < 3° и даже без центраторов цель достигается — отдаём редкую расстановку
-    if (zenith < 3) {
-      const L_free = jointLength;
-      const sag_free = (5 * lateralF * Math.pow(L_free, 4)) / (384 * EI);
-      const ecc_free = Math.min(1, sag_free / rc_m);
-      if (ecc_free <= targetEcc) {
-        const so = Math.round((1 - Math.max(0.02, ecc_free)) * 1000) / 10;
-        return { cpj: sparseCPJ, standoff: so };
-      }
-    }
-
-    let lo = 0.05, hi = 5.0, bestCPJ = 5.0;
-    for (let iter = 0; iter < 60; iter++) {
-      const mid = (lo + hi) / 2;
-      const L = jointLength / mid;
-      const sag_free = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
-      const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
-      const sag = sag_free / (1 + springFactor);
-      const ecc = Math.max(0.03, Math.min(1, sag / rc_m));
-      if (ecc <= targetEcc) { bestCPJ = mid; hi = mid; } else { lo = mid; }
-    }
-    bestCPJ = Math.ceil(bestCPJ * boostFactor * 10) / 10;
-    bestCPJ = Math.max(0.1, bestCPJ);
-
-    const L = jointLength / bestCPJ;
     const sag_free = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
     const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
     const sag = sag_free / (1 + springFactor);
-    const ecc = Math.max(0.03, Math.min(1, sag / rc_m));
-    return { cpj: bestCPJ, standoff: Math.round((1 - ecc) * 1000) / 10 };
+    const eccStructural = Math.min(1, sag / rc_m);
+    return Math.max(eccFloorGeom, eccStructural, 0.02);
+  }
+
+  // Подбор минимального CPJ, дающего ecc ≤ targetEcc/boost.
+  // Если даже MAX_CPJ не хватает — возвращает MAX_CPJ и blocked=true.
+  function physicsCPJ(
+    zenith: number,
+    boostFactor: number = 1,
+    minCPJ: number = 0,
+  ): { cpj: number; standoff: number; blocked: boolean } {
+    const targetEffEcc = Math.max(0, targetEcc / boostFactor);
+    const blockedByBlade = eccFloorGeom > targetEcc + 1e-4;
+
+    if (zenith < 0.1) {
+      const ecc = Math.max(eccFloorGeom, 0.02);
+      return {
+        cpj: Math.max(sparseCPJ, minCPJ),
+        standoff: Math.round((1 - ecc) * 1000) / 10,
+        blocked: false,
+      };
+    }
+
+    // Низкий зенит и без центраторов цель уже достигается — редкая расстановка
+    if (zenith < 3 && minCPJ === 0) {
+      const ecc_free = eccForCPJ(zenith, 1 / jointLength);
+      if (ecc_free <= targetEffEcc) {
+        return {
+          cpj: sparseCPJ,
+          standoff: Math.round((1 - Math.max(0.02, ecc_free)) * 1000) / 10,
+          blocked: false,
+        };
+      }
+    }
+
+    let lo = 0.05, hi = MAX_CPJ, bestCPJ = MAX_CPJ;
+    for (let iter = 0; iter < 60; iter++) {
+      const mid = (lo + hi) / 2;
+      const ecc = eccForCPJ(zenith, mid);
+      if (ecc <= targetEffEcc) { bestCPJ = mid; hi = mid; } else { lo = mid; }
+    }
+    bestCPJ = Math.max(minCPJ, Math.ceil(bestCPJ * 10) / 10);
+    bestCPJ = Math.min(MAX_CPJ, bestCPJ);
+
+    // Если не дотягиваем до цели — добиваем CPJ шагом 0.1 до MAX_CPJ.
+    let ecc = eccForCPJ(zenith, bestCPJ);
+    while (ecc > targetEcc && bestCPJ < MAX_CPJ) {
+      bestCPJ = Math.round((bestCPJ + 0.1) * 10) / 10;
+      ecc = eccForCPJ(zenith, bestCPJ);
+    }
+
+    const standoff = Math.round((1 - ecc) * 1000) / 10;
+    return { cpj: bestCPJ, standoff, blocked: blockedByBlade && standoff < targetStandoff - 0.5 };
   }
 
   function solveForZone(seg: RawSeg, zone: PlacementZone): { cpj: number; standoff: number } {
     switch (zone) {
       case "vertical": {
-        // «Для вида» — редкая расстановка
-        const so = physicsCPJ(seg.maxZenith).standoff;
-        return { cpj: sparseCPJ, standoff: Math.max(so, 95) };
-      }
-      case "wellhead":
-      case "pump": {
-        // Всегда крепим: минимум 1 центратор / трубу
         const r = physicsCPJ(seg.maxZenith);
-        return { cpj: Math.max(1.0, r.cpj), standoff: physicsCPJ(seg.maxZenith).standoff };
+        return { cpj: sparseCPJ, standoff: Math.max(r.standoff, 95) };
+      }
+      case "wellhead": {
+        const r = physicsCPJ(seg.maxZenith, 1.0, 1.0);
+        return { cpj: r.cpj, standoff: r.standoff };
+      }
+      case "pump": {
+        // Зона ГНО — критичная: +15% запас и минимум 1/трубу
+        const r = physicsCPJ(seg.maxZenith, 1.15, 1.0);
+        return { cpj: r.cpj, standoff: r.standoff };
       }
       case "build": {
-        // Высокий DLS: 20% запас + минимум 1 / трубу
-        const r = physicsCPJ(seg.maxZenith, 1.2);
-        return { cpj: Math.max(1.0, r.cpj), standoff: r.standoff };
+        // Набор / угол: +20% запас, минимум 1/трубу
+        const r = physicsCPJ(seg.maxZenith, 1.2, 1.0);
+        return { cpj: r.cpj, standoff: r.standoff };
       }
       case "horizontal":
       case "tangent":
@@ -612,7 +650,6 @@ export function autoPlaceCentralizers(
     return { ...seg, zone, cpj, standoff };
   });
 
-  // ─── Step 3: merge соседних сегментов с одинаковым (zone, cpj) ───
   const merged: AutoPlacementInterval[] = [];
   for (const seg of computed) {
     const last = merged[merged.length - 1];
