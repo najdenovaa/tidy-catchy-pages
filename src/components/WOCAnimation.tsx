@@ -220,7 +220,7 @@ export default function WOCAnimation({
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
           <KPI label="UCS" value={`${cur.ucs.toFixed(2)} МПа`} hint="прочность на сжатие" tone={cur.ucs >= 3.5 ? "ok" : "warn"} />
           <KPI label="SGS" value={`${cur.sgs.toFixed(0)} lbf/100ft²`} hint="статический гель" tone={cur.sgs >= 500 ? "ok" : cur.sgs >= 100 ? "warn" : "muted"} />
-          <KPI label="P столба" value={`${cur.pCol.toFixed(1)} МПа`} hint={`Pгидро=${cur.pHydro.toFixed(1)} · Pгео=${cur.pGeo.toFixed(1)}`} tone={trCurrent.mode === "transition" ? "danger" : "ok"} />
+          <KPI label="P столба" value={`${cur.pCol.toFixed(1)} МПа`} hint={`Pгидро=${cur.pHydro.toFixed(1)} · Pпор.вода=${cur.pGeo.toFixed(1)}`} tone={trCurrent.mode === "transition" ? "danger" : "ok"} />
           <KPI label="T забоя" value={`${cur.tempC.toFixed(1)} °C`} hint={`BHCT=${bhct} · BHST=${bhst}`} tone="ok" />
           <KPI label="Усадка" value={`${cur.shrink.toFixed(2)} %`} hint="химическая контракция" tone={cur.shrink > 4 ? "warn" : "muted"} />
         </div>
