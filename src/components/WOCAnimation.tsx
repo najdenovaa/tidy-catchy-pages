@@ -26,26 +26,44 @@ interface Props {
 /* ────── Физика-модели (инженерные апроксимации) ────── */
 
 /**
- * UCS(t) и SGS(t) для цементного раствора класса G/H по упрощённой кинетике гидратации.
- * Pkin = 1 - exp(-k·t), где k зависит от BHCT (правило Аррениуса).
+ * UCS(t), SGS(t) для тампонажного цемента классов G/H.
+ * Модель прочности — CEB-FIP MC90 (модифицированная под нефтяной цемент):
+ *   UCS(t_eq) = UCS_28d · exp( s · (1 − √(t_ref / t_eq)) ),  t_ref = 28 сут = 672 ч
+ *   s = 0.25 (Class G, нормальная кинетика), 0.30 (Class H, чуть быстрее)
+ * Поправка по температуре — эквивалентный возраст (правило Аррениуса):
+ *   t_eq = t · exp( Ea/R · (1/Tref − 1/T) ),  Tref = 50 °C
+ * SGS набирается быстрее UCS — выходит на плато ~24–36 ч и потом ползёт логарифмически.
  */
 function strengthModel(t_h: number, bhct: number, cls: "G" | "H") {
-  const Ea = 38_000; // Дж/моль
+  const Ea = 38_000; // Дж/моль (энергия активации гидратации C3S)
   const R = 8.314;
   const Tref = 273.15 + 50;
-  const T = 273.15 + bhct;
-  const k0 = cls === "H" ? 0.18 : 0.14; // 1/ч при Tref
-  const k = k0 * Math.exp((Ea / R) * (1 / Tref - 1 / T));
-  const x = 1 - Math.exp(-k * t_h); // степень гидратации
-  const UCS_max = cls === "H" ? 28 : 22; // МПа (28 сут предел)
-  const SGS_max = 800; // фунт/100фт² (~ Pa), типичный предел статического геля
-  return {
-    ucs_mpa: UCS_max * Math.pow(x, 1.4),         // МПа
-    sgs_lbf100: SGS_max * Math.pow(x, 0.85),     // lbf/100ft²
-    hydration: x,
-    k,
-  };
+  const T = 273.15 + Math.max(5, bhct);
+  const matFactor = Math.exp((Ea / R) * (1 / Tref - 1 / T));
+  const t_eq = Math.max(0.05, t_h * matFactor); // ч, эквивалентный возраст
+
+  // CEB-FIP MC90 для UCS
+  const t_ref = 672; // 28 сут в часах
+  const s = cls === "H" ? 0.30 : 0.25;
+  const UCS_28 = cls === "H" ? 32 : 28; // МПа (28 сут предел, типично для нефт. цемента)
+  const ageFactor = Math.exp(s * (1 - Math.sqrt(t_ref / t_eq)));
+  const ucs_mpa = Math.max(0, UCS_28 * ageFactor);
+
+  // SGS: быстрый старт (handling 500 lbf/100ft² за 8–12 ч), потом медленный рост log-типа
+  // t50 — время достижения 50% от плато
+  const t50 = cls === "H" ? 5 : 7; // ч (в скорректированном возрасте)
+  const SGS_plateau = 800; // lbf/100ft² — практический предел измерения
+  const sgs_fast = SGS_plateau * (t_eq / (t_eq + t50));
+  // долгий рост: дополнительные ~10% за неделю-месяц
+  const sgs_slow = 80 * Math.log10(1 + t_eq / 24);
+  const sgs_lbf100 = sgs_fast + sgs_slow;
+
+  // степень гидратации — для информационных целей
+  const hydration = Math.min(1, ageFactor);
+
+  return { ucs_mpa, sgs_lbf100, hydration, k: matFactor, t_eq };
 }
+
 
 /**
  * Гидростатика → геостатика.
