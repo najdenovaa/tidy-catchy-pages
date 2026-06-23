@@ -766,8 +766,16 @@ export default function Stimulation() {
             <Card className="p-4">
               <h3 className="font-semibold mb-3">Рецептура и добавки</h3>
               <div className="space-y-2 text-sm">
-                <div className="font-medium">Основа: {selected.mainReagent.name} ({selected.mainReagent.concentration}%, ρ={selected.mainReagent.density} г/см³)</div>
-                {selected.additives.length === 0 && <div className="text-muted-foreground text-xs">Добавки не требуются</div>}
+                <div className="font-medium">
+                  Основа: <span className="text-primary">{acidLabel}</span>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    (ρ = {dissLive.densityGcc.toFixed(3)} г/см³, активная HCl = {dissLive.effectiveAcidStrength.toFixed(1)}%)
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Шаблон метода: {selected.mainReagent.name} — фактический состав задаётся слайдерами выше.
+                </div>
+                {selected.additives.length === 0 && <div className="text-muted-foreground text-xs">Доп. добавки шаблона не требуются</div>}
                 {selected.additives.map((a, i) => (
                   <div key={i} className="flex items-center justify-between border-b border-border/40 pb-1">
                     <span>{a.required ? "● " : "○ "}{a.name} <span className="text-xs text-muted-foreground">— {a.purpose}</span></span>
