@@ -33,7 +33,7 @@ function NumField({ label, unit, value, onChange, step = "0.01" }: {
     <div className="space-y-1">
       <Label className="text-xs">{label}{unit ? ` (${unit})` : ""}</Label>
       <BlurInput type="number" step={step} value={String(value)}
-        onCommit={(v) => onChange(num(v))} className="h-8 text-sm" />
+        onValueCommit={(v) => onChange(num(v))} className="h-8 text-sm" />
     </div>
   );
 }
