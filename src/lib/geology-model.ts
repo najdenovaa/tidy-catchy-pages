@@ -242,8 +242,52 @@ export function stoichiometricDemandByMineralogy(
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Обратная совместимость со старым Mineralogy из foam-treatment-diagnostics
+// Обратная совместимость: усреднённая (упрощённая) минералогия
 // ────────────────────────────────────────────────────────────────────
+
+/** Упрощённая минералогия: 6 полей вместо 12. */
+export interface AveragedMineralogy {
+  quartz: number;
+  feldspar: number;
+  calcite: number;       // включает мел
+  dolomite: number;
+  clay: number;          // сумма всех глин
+  montmorillonite: number; // = смектит, абсолютные %
+}
+
+export function toAveragedMineralogy(m: DetailedMineralogy): AveragedMineralogy {
+  return {
+    quartz: m.quartz,
+    feldspar: m.feldspar,
+    calcite: +(m.calcite + m.chalk).toFixed(2),
+    dolomite: m.dolomite,
+    clay: +totalClay(m).toFixed(2),
+    montmorillonite: m.smectite,
+  };
+}
+
+/** Распределяем несмектитовые глины типично: каолинит/иллит/хлорит = 0.4/0.4/0.2. */
+export function fromAveragedMineralogy(a: AveragedMineralogy): DetailedMineralogy {
+  const nonSmectiteClay = Math.max(0, a.clay - a.montmorillonite);
+  return {
+    quartz: a.quartz,
+    feldspar: a.feldspar,
+    calcite: a.calcite,
+    dolomite: a.dolomite,
+    chalk: 0,
+    siderite: 0,
+    anhydrite: 0,
+    pyrite: 0,
+    smectite: a.montmorillonite,
+    kaolinite: +(nonSmectiteClay * 0.4).toFixed(2),
+    illite: +(nonSmectiteClay * 0.4).toFixed(2),
+    chlorite: +(nonSmectiteClay * 0.2).toFixed(2),
+  };
+}
+
+export function totalAveragedPct(a: AveragedMineralogy): number {
+  return a.quartz + a.feldspar + a.calcite + a.dolomite + a.clay;
+}
 
 export function toLegacyMineralogy(m: DetailedMineralogy) {
   return {

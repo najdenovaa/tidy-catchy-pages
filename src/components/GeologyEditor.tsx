@@ -13,7 +13,9 @@ import {
   suggestedReservoirPressureMPa, suggestedReservoirTempC,
   overburdenPressureMPa, fracturePressureMPa,
   DEFAULT_MINERALOGY_SANDSTONE, DEFAULT_MINERALOGY_CARBONATE, DEFAULT_MINERALOGY_DOLOMITE,
+  AveragedMineralogy, toAveragedMineralogy, fromAveragedMineralogy, totalAveragedPct,
 } from "@/lib/geology-model";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 interface Props {
   mineralogy: DetailedMineralogy;
@@ -31,6 +33,9 @@ interface Props {
   onApplyTemperature: (t: number) => void;
   // Опционально: давление обработки, чтобы сравнить с Pfrac
   treatmentPressureMPa?: number;
+  // Режим редактора минералогии
+  mode?: "detailed" | "averaged";
+  onModeChange?: (mode: "detailed" | "averaged") => void;
 }
 
 function Num({
@@ -68,9 +73,18 @@ export default function GeologyEditor(props: Props) {
     mineralogy, setMineralogy, fluid, setFluid, depth, setDepth, stress, setStress,
     currentReservoirPressureMPa, currentReservoirTempC,
     onApplyPressure, onApplyTemperature, treatmentPressureMPa,
+    mode = "detailed", onModeChange,
   } = props;
 
+  const averaged = useMemo(() => toAveragedMineralogy(mineralogy), [mineralogy]);
+
+  const setAveraged = (patch: Partial<AveragedMineralogy>) => {
+    const next: AveragedMineralogy = { ...averaged, ...patch };
+    setMineralogy(fromAveragedMineralogy(next));
+  };
+
   const total = useMemo(() => totalMineralPct(mineralogy), [mineralogy]);
+  const totalAvg = useMemo(() => totalAveragedPct(averaged), [averaged]);
   const tClay = useMemo(() => totalClay(mineralogy), [mineralogy]);
   const tCarb = useMemo(() => totalCarbonate(mineralogy), [mineralogy]);
 
@@ -90,14 +104,37 @@ export default function GeologyEditor(props: Props) {
 
   const pFracExceeded = treatmentPressureMPa !== undefined && treatmentPressureMPa >= pFrac;
 
+  const isDetailed = mode === "detailed";
+
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h2 className="font-semibold">Геология и пласт</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="font-semibold">Геология и пласт</h2>
+          <ToggleGroup
+            type="single"
+            value={mode}
+            onValueChange={(v) => v && onModeChange?.(v as "detailed" | "averaged")}
+            className="h-7"
+          >
+            <ToggleGroupItem value="detailed" className="text-xs px-2 h-7" title="12 минералов, глины по типам">
+              Реальный состав
+            </ToggleGroupItem>
+            <ToggleGroupItem value="averaged" className="text-xs px-2 h-7" title="Упрощённая 6-компонентная модель">
+              Усреднённый
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
         <div className="flex items-center gap-2 text-xs">
-          <Badge variant={Math.abs(total - 100) < 1 ? "secondary" : "destructive"}>
-            Σ минералов: {total.toFixed(1)}%
-          </Badge>
+          {isDetailed ? (
+            <Badge variant={Math.abs(total - 100) < 1 ? "secondary" : "destructive"}>
+              Σ минералов: {total.toFixed(1)}%
+            </Badge>
+          ) : (
+            <Badge variant={Math.abs(totalAvg - 100) < 5 ? "secondary" : "destructive"}>
+              Σ минералов: {totalAvg.toFixed(1)}%
+            </Badge>
+          )}
           <Badge variant="outline">Глины: {tClay.toFixed(1)}%</Badge>
           <Badge variant="outline">Карбонаты: {tCarb.toFixed(1)}%</Badge>
         </div>
@@ -108,35 +145,70 @@ export default function GeologyEditor(props: Props) {
         <AccordionItem value="min">
           <AccordionTrigger className="text-sm">⛏️ Минеральный состав</AccordionTrigger>
           <AccordionContent className="space-y-3 pt-2">
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_SANDSTONE)}>Песчаник</Button>
-              <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_CARBONATE)}>Известняк</Button>
-              <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_DOLOMITE)}>Доломит</Button>
-              <Button size="sm" variant="secondary" onClick={() => setMineralogy(normalizeMineralogy(mineralogy))}>
-                ⇄ Нормализовать к 100%
-              </Button>
-            </div>
+            {isDetailed ? (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_SANDSTONE)}>Песчаник</Button>
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_CARBONATE)}>Известняк</Button>
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_DOLOMITE)}>Доломит</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setMineralogy(normalizeMineralogy(mineralogy))}>
+                    ⇄ Нормализовать к 100%
+                  </Button>
+                </div>
 
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">Силикаты и карбонаты, %</div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {(["quartz", "feldspar", "calcite", "dolomite", "chalk", "siderite", "anhydrite", "pyrite"] as const).map((k) => (
-                  <Num key={k} label={MIN_LABELS[k]} value={mineralogy[k]} step={0.5} onChange={(v) => setMin(k, v)} />
-                ))}
-              </div>
-            </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Силикаты и карбонаты, %</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {(["quartz", "feldspar", "calcite", "dolomite", "chalk", "siderite", "anhydrite", "pyrite"] as const).map((k) => (
+                      <Num key={k} label={MIN_LABELS[k]} value={mineralogy[k]} step={0.5} onChange={(v) => setMin(k, v)} />
+                    ))}
+                  </div>
+                </div>
 
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">Глины по типам, %</div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {(["kaolinite", "illite", "chlorite", "smectite"] as const).map((k) => (
-                  <Num key={k} label={MIN_LABELS[k]} value={mineralogy[k]} step={0.5} onChange={(v) => setMin(k, v)} />
-                ))}
-              </div>
-              <div className="text-[11px] text-muted-foreground mt-2 leading-snug">
-                <b>Смектит</b> — основной набухающий. <b>Иллит</b> — миграция фибрилл при HF. <b>Хлорит</b> + HF → риск осадка Fe(OH)₃. <b>Каолинит</b> — миграция частиц.
-              </div>
-            </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Глины по типам, %</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {(["kaolinite", "illite", "chlorite", "smectite"] as const).map((k) => (
+                      <Num key={k} label={MIN_LABELS[k]} value={mineralogy[k]} step={0.5} onChange={(v) => setMin(k, v)} />
+                    ))}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    <b>Смектит</b> — основной набухающий. <b>Иллит</b> — миграция фибрилл при HF. <b>Хлорит</b> + HF → риск осадка Fe(OH)₃. <b>Каолинит</b> — миграция частиц.
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(fromAveragedMineralogy({ quartz: 65, feldspar: 8, calcite: 3, dolomite: 0, clay: 24, montmorillonite: 6 }))}>
+                    Песчаник
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(fromAveragedMineralogy({ quartz: 3, feldspar: 0, calcite: 90, dolomite: 0, clay: 4, montmorillonite: 1 }))}>
+                    Известняк
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(fromAveragedMineralogy({ quartz: 2, feldspar: 0, calcite: 10, dolomite: 80, clay: 4, montmorillonite: 1 }))}>
+                    Доломит
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <Num label="Кварц" suffix="%" value={averaged.quartz} step={0.5} onChange={(v) => setAveraged({ quartz: v })} />
+                  <Num label="Полевой шпат" suffix="%" value={averaged.feldspar} step={0.5} onChange={(v) => setAveraged({ feldspar: v })} />
+                  <Num label="Кальцит + мел" suffix="%" value={averaged.calcite} step={0.5} onChange={(v) => setAveraged({ calcite: v })} />
+                  <Num label="Доломит" suffix="%" value={averaged.dolomite} step={0.5} onChange={(v) => setAveraged({ dolomite: v })} />
+                  <Num label="Глины суммарно" suffix="%" value={averaged.clay} step={0.5} onChange={(v) => setAveraged({ clay: v })} />
+                  <Num label="Монтмориллонит" suffix="%" value={averaged.montmorillonite} step={0.5}
+                    onChange={(v) => setAveraged({ montmorillonite: Math.min(v, averaged.clay) })} />
+                </div>
+                <div className="text-[11px] text-muted-foreground leading-snug">
+                  Усреднённая модель: сумма кварц + шпат + кальцит + доломит + глины = 100%. Монтмориллонит входит в состав глин.
+                  Несмектитовые глины распределяются условно: каолинит/иллит/хлорит = 0.4/0.4/0.2.
+                  {averaged.montmorillonite > averaged.clay && (
+                    <span className="text-destructive block mt-1">⚠ Монтмориллонит не может превышать суммарные глины.</span>
+                  )}
+                </div>
+              </>
+            )}
           </AccordionContent>
         </AccordionItem>
 
