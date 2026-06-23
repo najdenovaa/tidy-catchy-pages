@@ -56,7 +56,10 @@ export interface AcidStimInputs {
   preflushVolume: number;  // м³ HCl 7.5% предпоток (для песчаника)
   overflushVolume: number; // м³ продавки
   surfacePressure: number; // MPa — макс. рабочее давление насоса (для проверки)
+  /** Опциональный пользовательский состав. Если не задан — берётся пресет по acidSystem. */
+  composition?: AcidComposition;
 }
+
 
 export interface AcidStage {
   name: string;
