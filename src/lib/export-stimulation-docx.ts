@@ -10,8 +10,17 @@ import { saveAs } from "file-saver";
 import type { StimulationMethod } from "./stimulation-methods";
 import { METHOD_CATEGORY_LABEL, COLLECTOR_LABEL } from "./stimulation-methods";
 import type { ReservoirData, RankedMethod } from "./stimulation-ranking";
-import type { AcidReactionKinetics, AcidTreatmentStages } from "./stimulation-acid";
+import type { AcidReactionKinetics, AcidTreatmentStages, AcidStoichiometry } from "./stimulation-acid";
+import type { AcidComposition } from "./acid-chemistry";
 import type { DamageAssessment, ForecastPoint } from "./foam-treatment-diagnostics";
+
+interface MineralDissolution {
+  carbonateKgPerM3: number;
+  silicateKgPerM3: number;
+  effectiveRockDensity_kgm3: number;
+  warnings: string[];
+}
+interface SensitivityPoint { hcl: number; rPen: number; rockKg: number; co2: number }
 
 
 const fmt = (v: number | null | undefined, d = 2) =>
