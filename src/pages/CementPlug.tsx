@@ -585,8 +585,34 @@ export default function CementPlug() {
   }, []);
 
   /* ── Collapsible state ── */
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: false, plug: false, fluids: false, process: false, pipeSec: false, complications: false });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ well: false, plug: false, fluids: false, process: false, pipeSec: false, complications: false, advanced: false });
   const toggle = (k: string) => setOpenSections(s => ({ ...s, [k]: !s[k] }));
+
+  /* ── Advanced (per-card) collapsible state ── */
+  const [advOpen, setAdvOpen] = useState<Record<string, boolean>>({
+    types: false, curing: false, load: false, abandon: false, sed: false, cyclic: false, opt: false,
+  });
+  const toggleAdv = (k: string) => setAdvOpen(s => ({ ...s, [k]: !s[k] }));
+  const setAllAdv = (v: boolean) => setAdvOpen({
+    types: v, curing: v, load: v, abandon: v, sed: v, cyclic: v, opt: v,
+  });
+  const allAdvOpen = Object.values(advOpen).every(Boolean);
+
+  const AdvancedItem = ({ title, open, onToggle, children }: { id: string; title: string; open: boolean; onToggle: () => void; children: React.ReactNode }) => (
+    <Collapsible open={open} onOpenChange={onToggle}>
+      <div className="rounded border border-border/60">
+        <CollapsibleTrigger className="w-full">
+          <div className="flex items-center justify-between px-3 py-2 hover:bg-muted/40 transition-colors">
+            <span className="text-xs font-medium text-left">{title}</span>
+            <ChevronDown className={`w-4 h-4 transition-transform shrink-0 ${open ? "rotate-180" : ""}`} />
+          </div>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="p-2 border-t border-border/60">{children}</div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">
