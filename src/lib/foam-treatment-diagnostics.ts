@@ -52,8 +52,17 @@ export interface Mineralogy {
   calcite: number;
   dolomite: number;
   clay: number;
-  /** % монтмориллонита от общего объёма */
+  /** % монтмориллонита (= smectite) от общего объёма */
   montmorillonite: number;
+  // ── расширенные поля (опционально, используются если заданы) ──
+  kaolinite?: number;
+  illite?: number;
+  chlorite?: number;
+  smectite?: number;
+  chalk?: number;
+  siderite?: number;
+  anhydrite?: number;
+  pyrite?: number;
 }
 
 export interface DrillingHistory {
