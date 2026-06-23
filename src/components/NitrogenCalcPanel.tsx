@@ -41,6 +41,10 @@ export default function NitrogenCalcPanel({
   }), [operationType, wellDepth, tubingID, fluidDensity, reservoirPressureMPa,
        reservoirTempC, surfaceT, targetBhp, foamQ, pumpRate]);
 
+  useEffect(() => {
+    onResult?.({ ...res, targetBhpMPa: targetBhp });
+  }, [res, targetBhp, onResult]);
+
   return (
     <Card className="p-4 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
