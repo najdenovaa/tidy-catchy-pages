@@ -124,7 +124,9 @@ export default function WOCAnimation({
       shrink: number;
       mode: string;
     }[] = [];
-    const pHydro = (slurryDensity * 9.81 * tvd) / 1e6; // МПа
+    // Авто-нормализация плотности: если пришло в г/см³ (<100) — переведём в кг/м³.
+    const rhoKgM3 = slurryDensity < 100 ? slurryDensity * 1000 : slurryDensity;
+    const pHydro = (rhoKgM3 * 9.81 * tvd) / 1e6; // МПа
     const pGeo = pHydro * 0.55; // упрощённая оценка остаточного на породу
     for (let i = 0; i <= N; i++) {
       const th = (i / N) * totalHours;
