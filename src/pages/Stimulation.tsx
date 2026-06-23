@@ -504,11 +504,24 @@ export default function Stimulation() {
               </Card>
             )}
 
+            <GeologyEditor
+              mineralogy={detailedMin}
+              setMineralogy={setDetailedMin}
+              fluid={fluidProps}
+              setFluid={setFluidProps}
+              depth={depthProfile}
+              setDepth={setDepthProfile}
+              stress={stressState}
+              setStress={setStressState}
+              currentReservoirPressureMPa={reservoir.reservoirPressureMPa}
+              currentReservoirTempC={reservoir.temperatureC}
+              onApplyPressure={(p) => setReservoir((r) => ({ ...r, reservoirPressureMPa: p }))}
+              onApplyTemperature={(t) => setReservoir((r) => ({ ...r, temperatureC: t }))}
+            />
+
             <Card className="p-4 space-y-4">
-              <h2 className="font-semibold">Минералогия и заканчивание</h2>
+              <h2 className="font-semibold">Заканчивание и буровая история</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <Field label="Глинистость, %" value={clayPct} onChange={setClayPct} step={0.5} />
-                <Field label="Монтмориллонит, %" value={montPct} onChange={setMontPct} step={0.5} />
                 <Field label="Плотность перф., отв/м" value={perfDensity} onChange={setPerfDensity} />
                 <div className="space-y-1">
                   <Label>Тип бурового раствора</Label>
