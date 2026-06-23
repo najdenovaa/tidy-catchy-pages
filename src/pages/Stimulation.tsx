@@ -28,6 +28,11 @@ import {
 import { SharedWellCard } from "@/components/SharedWellCard";
 import SolventCalcPanel from "@/components/SolventCalcPanel";
 import NitrogenCalcPanel from "@/components/NitrogenCalcPanel";
+import type { SolventResult, NitrogenResult } from "@/lib/stimulation-special";
+
+const REAGENT_COLOR_MAP: Record<string, "acid" | "foam" | "solvent" | "nitrogen" | "combo"> = {
+  acid: "acid", foam: "foam", solvent: "solvent", nitrogen: "nitrogen", combo: "combo",
+};
 
 const TABS = [
   { id: "diag", label: "Диагностика", icon: FlaskConical },
