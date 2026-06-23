@@ -139,35 +139,67 @@ export default function GeologyEditor(props: Props) {
         <AccordionItem value="min">
           <AccordionTrigger className="text-sm">⛏️ Минеральный состав</AccordionTrigger>
           <AccordionContent className="space-y-3 pt-2">
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_SANDSTONE)}>Песчаник</Button>
-              <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_CARBONATE)}>Известняк</Button>
-              <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_DOLOMITE)}>Доломит</Button>
-              <Button size="sm" variant="secondary" onClick={() => setMineralogy(normalizeMineralogy(mineralogy))}>
-                ⇄ Нормализовать к 100%
-              </Button>
-            </div>
+            {isDetailed ? (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_SANDSTONE)}>Песчаник</Button>
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_CARBONATE)}>Известняк</Button>
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(DEFAULT_MINERALOGY_DOLOMITE)}>Доломит</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setMineralogy(normalizeMineralogy(mineralogy))}>
+                    ⇄ Нормализовать к 100%
+                  </Button>
+                </div>
 
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">Силикаты и карбонаты, %</div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {(["quartz", "feldspar", "calcite", "dolomite", "chalk", "siderite", "anhydrite", "pyrite"] as const).map((k) => (
-                  <Num key={k} label={MIN_LABELS[k]} value={mineralogy[k]} step={0.5} onChange={(v) => setMin(k, v)} />
-                ))}
-              </div>
-            </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Силикаты и карбонаты, %</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {(["quartz", "feldspar", "calcite", "dolomite", "chalk", "siderite", "anhydrite", "pyrite"] as const).map((k) => (
+                      <Num key={k} label={MIN_LABELS[k]} value={mineralogy[k]} step={0.5} onChange={(v) => setMin(k, v)} />
+                    ))}
+                  </div>
+                </div>
 
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">Глины по типам, %</div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {(["kaolinite", "illite", "chlorite", "smectite"] as const).map((k) => (
-                  <Num key={k} label={MIN_LABELS[k]} value={mineralogy[k]} step={0.5} onChange={(v) => setMin(k, v)} />
-                ))}
-              </div>
-              <div className="text-[11px] text-muted-foreground mt-2 leading-snug">
-                <b>Смектит</b> — основной набухающий. <b>Иллит</b> — миграция фибрилл при HF. <b>Хлорит</b> + HF → риск осадка Fe(OH)₃. <b>Каолинит</b> — миграция частиц.
-              </div>
-            </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Глины по типам, %</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {(["kaolinite", "illite", "chlorite", "smectite"] as const).map((k) => (
+                      <Num key={k} label={MIN_LABELS[k]} value={mineralogy[k]} step={0.5} onChange={(v) => setMin(k, v)} />
+                    ))}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                    <b>Смектит</b> — основной набухающий. <b>Иллит</b> — миграция фибрилл при HF. <b>Хлорит</b> + HF → риск осадка Fe(OH)₃. <b>Каолинит</b> — миграция частиц.
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(fromAveragedMineralogy({ quartz: 65, feldspar: 8, calcite: 3, dolomite: 0, clay: 24, montmorillonite: 6 }))}>
+                    Песчаник
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(fromAveragedMineralogy({ quartz: 3, feldspar: 0, calcite: 90, dolomite: 0, clay: 4, montmorillonite: 1 }))}>
+                    Известняк
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setMineralogy(fromAveragedMineralogy({ quartz: 2, feldspar: 0, calcite: 10, dolomite: 80, clay: 4, montmorillonite: 1 }))}>
+                    Доломит
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <Num label="Кварц" suffix="%" value={averaged.quartz} step={0.5} onChange={(v) => setAveraged({ quartz: v })} />
+                  <Num label="Полевой шпат" suffix="%" value={averaged.feldspar} step={0.5} onChange={(v) => setAveraged({ feldspar: v })} />
+                  <Num label="Кальцит + мел" suffix="%" value={averaged.calcite} step={0.5} onChange={(v) => setAveraged({ calcite: v })} />
+                  <Num label="Доломит" suffix="%" value={averaged.dolomite} step={0.5} onChange={(v) => setAveraged({ dolomite: v })} />
+                  <Num label="Глины суммарно" suffix="%" value={averaged.clay} step={0.5} onChange={(v) => setAveraged({ clay: v })} />
+                  <Num label="Монтмориллонит" suffix="%" value={averaged.montmorillonite} step={0.5}
+                    onChange={(v) => setAveraged({ montmorillonite: Math.min(v, averaged.clay) })} />
+                </div>
+                <div className="text-[11px] text-muted-foreground leading-snug">
+                  Усреднённая модель: сумма кварц + шпат + кальцит + доломит + глины = 100%. Монтмориллонит входит в состав глин.
+                  Несмектитовые глины распределяются условно: каолинит/иллит/хлорит = 0.4/0.4/0.2.
+                </div>
+              </>
+            )}
           </AccordionContent>
         </AccordionItem>
 
