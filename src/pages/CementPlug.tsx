@@ -32,6 +32,7 @@ import PlugCuringMapCard from "@/components/PlugCuringMapCard";
 import PlugLoadCapacityCard from "@/components/PlugLoadCapacityCard";
 import AbandonmentDesignCard from "@/components/AbandonmentDesignCard";
 import PlugSedimentationCard from "@/components/PlugSedimentationCard";
+import PlugCyclicIntegrityCard from "@/components/PlugCyclicIntegrityCard";
 import { SharedWellCard } from "@/components/SharedWellCard";
 
 const SESSION_KEY = "cement_plug_session_v2";
@@ -909,6 +910,16 @@ export default function CementPlug() {
               gel10minPa={cement.gel10min || 0}
               wocHours={wocTimeHours}
             />
+
+            {/* Часть 5: целостность при циклических нагрузках */}
+            <PlugCyclicIntegrityCard
+              plugLengthM={Math.max(0, plug.bottomMD - plug.topMD)}
+              boreDiameterMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
+              innerPipeODmm={0}
+              defaultUcsMPa={20}
+            />
+
+
 
 
 
