@@ -259,6 +259,14 @@ export default function Stimulation() {
     });
   }, [selected, reservoir, acidVol, composition, rockType]);
 
+  // Реальная растворяющая способность с учётом полного минерального состава
+  const mineralDissolution = useMemo(() => {
+    if (!stoichiometry) return null;
+    const betaCalcite = stoichiometry.dissolvingPower ?? 219; // кг/м³ — для эталонного calcite
+    const betaQuartz = composition.hfPct > 0 ? (stoichiometry.dissolvingPowerSilicates ?? 25) : 0;
+    return stoichiometricDemandByMineralogy(detailedMin, betaCalcite, betaQuartz);
+  }, [stoichiometry, detailedMin, composition.hfPct]);
+
 
   // Live results from sub-panels (solvent/nitrogen)
   const [solventResult, setSolventResult] = useState<(SolventResult & { penetrationRadiusM: number }) | null>(null);
