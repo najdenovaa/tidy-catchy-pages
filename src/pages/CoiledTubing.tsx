@@ -686,11 +686,11 @@ export default function CoiledTubing() {
                     </Select>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <Field label="Плотность" value={fluid.density} onChange={v => { setFluid(f => ({ ...f, density: num(v) })); markDirty(); }} unit="г/см³" />
-                    <Field label="PV (пласт. вязк.)" value={fluid.pv} onChange={v => { setFluid(f => ({ ...f, pv: num(v) })); markDirty(); }} unit="сП" />
-                    <Field label="YP (ДНС)" value={fluid.yp} onChange={v => { setFluid(f => ({ ...f, yp: num(v) })); markDirty(); }} unit="Па" />
-                    <Field label="n (индекс потока)" value={fluid.nIndex} onChange={v => { setFluid(f => ({ ...f, nIndex: num(v) })); markDirty(); }} unit="" />
-                    <Field label="K (конс. индекс)" value={fluid.kIndex} onChange={v => { setFluid(f => ({ ...f, kIndex: num(v) })); markDirty(); }} unit="Па·сⁿ" />
+                    <Field label="Плотность" value={fluid.density} onChange={v => { setFluid(f => ({ ...f, density: num(v) })); markDirty(); }} unit="г/см³" hint="Плотность рабочей жидкости. Вода = 1.00; солевые растворы 1.05–1.40; нефть 0.80–0.92" />
+                    <Field label="PV (пласт. вязк.)" value={fluid.pv} onChange={v => { setFluid(f => ({ ...f, pv: num(v) })); markDirty(); }} unit="сП" hint="Plastic Viscosity — пластическая вязкость по Бингаму (наклон τ−γ при высоких γ)" />
+                    <Field label="YP (ДНС)" value={fluid.yp} onChange={v => { setFluid(f => ({ ...f, yp: num(v) })); markDirty(); }} unit="Па" hint="Yield Point (динамическое напряжение сдвига) — отсечка τ при γ=0 по Бингаму" />
+                    <Field label="n (индекс потока)" value={fluid.nIndex} onChange={v => { setFluid(f => ({ ...f, nIndex: num(v) })); markDirty(); }} unit="" hint="Показатель степени по степенной модели. n=1 ньютоновская; <1 псевдопластичная (большинство буровых)" />
+                    <Field label="K (конс. индекс)" value={fluid.kIndex} onChange={v => { setFluid(f => ({ ...f, kIndex: num(v) })); markDirty(); }} unit="Па·сⁿ" hint="Коэффициент консистенции степенной модели (K в τ = K·γⁿ)" />
                   </div>
                 </CardContent>
               </CollapsibleContent>
@@ -712,12 +712,12 @@ export default function CoiledTubing() {
               <CollapsibleContent>
                 <CardContent className="pt-0 space-y-3">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <Field label="Расход" value={pump.flowRate} onChange={v => { setPump(p => ({ ...p, flowRate: num(v) })); markDirty(); }} unit="л/с" />
-                    <Field label="Вес КНБК" value={tools.bhaWeight} onChange={v => { setTools(t => ({ ...t, bhaWeight: num(v) })); markDirty(); }} unit="кг" />
-                    <Field label="Длина КНБК" value={tools.bhaLength} onChange={v => { setTools(t => ({ ...t, bhaLength: num(v) })); markDirty(); }} unit="м" />
-                    <Field label="Ø КНБК" value={tools.bhaOD} onChange={v => { setTools(t => ({ ...t, bhaOD: num(v) })); markDirty(); }} unit="мм" />
-                    <Field label="Ø насадки" value={tools.nozzleDiam} onChange={v => { setTools(t => ({ ...t, nozzleDiam: num(v) })); markDirty(); }} unit="мм" />
-                    <Field label="Кол-во насадок" value={tools.nozzleCount} onChange={v => { setTools(t => ({ ...t, nozzleCount: num(v) })); markDirty(); }} unit="шт" />
+                    <Field label="Расход" value={pump.flowRate} onChange={v => { setPump(p => ({ ...p, flowRate: num(v) })); markDirty(); }} unit="л/с" hint="Производительность насоса по жидкости. Типично для ГНКТ: 1–6 л/с" />
+                    <Field label="Вес КНБК" value={tools.bhaWeight} onChange={v => { setTools(t => ({ ...t, bhaWeight: num(v) })); markDirty(); }} unit="кг" hint="Сухой вес компоновки низа (BHA): забойный двигатель, долото, переводники" />
+                    <Field label="Длина КНБК" value={tools.bhaLength} onChange={v => { setTools(t => ({ ...t, bhaLength: num(v) })); markDirty(); }} unit="м" hint="Суммарная длина компоновки низа. Влияет на проходимость в искривлённых участках" />
+                    <Field label="Ø КНБК" value={tools.bhaOD} onChange={v => { setTools(t => ({ ...t, bhaOD: num(v) })); markDirty(); }} unit="мм" hint="Максимальный наружный диаметр инструмента — определяет зазор и пассируемость" />
+                    <Field label="Ø насадки" value={tools.nozzleDiam} onChange={v => { setTools(t => ({ ...t, nozzleDiam: num(v) })); markDirty(); }} unit="мм" hint="Диаметр одного сопла промывочной насадки/долота" />
+                    <Field label="Кол-во насадок" value={tools.nozzleCount} onChange={v => { setTools(t => ({ ...t, nozzleCount: num(v) })); markDirty(); }} unit="шт" hint="Число рабочих сопел. Вместе с Ø определяет перепад на насадках" />
                   </div>
                 </CardContent>
               </CollapsibleContent>
