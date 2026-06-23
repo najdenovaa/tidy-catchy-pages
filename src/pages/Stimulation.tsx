@@ -134,18 +134,22 @@ export default function Stimulation() {
     Pb: reservoir.reservoirPressureMPa * 0.7,
     k_mD: reservoir.permeability_mD,
     h: reservoir.payZoneM,
-    mu_cP: 1.2,
-    Bo: 1.15,
+    mu_cP: fluidProps.oilViscosity_cP,
+    Bo: fluidProps.Bo,
     re: 250,
     rw: 0.108,
     skin: skinCurrent,
     tempC: reservoir.temperatureC,
-  }), [reservoir, skinCurrent]);
+  }), [reservoir, skinCurrent, fluidProps.oilViscosity_cP, fluidProps.Bo]);
 
-  const mineralogy: Mineralogy = useMemo(() => ({
-    quartz: 60, feldspar: 10, calcite: reservoir.collectorType === "carbonate" ? 80 : 5,
-    dolomite: 0, clay: clayPct, montmorillonite: montPct,
-  }), [clayPct, montPct, reservoir.collectorType]);
+  // Совместимое представление минералогии для diagnoseDamage
+  const mineralogy: Mineralogy = useMemo(() => toLegacyMineralogy(detailedMin), [detailedMin]);
+
+  // Давление гидроразрыва (упрощённая Eaton) — для сравнения с давлением обработки
+  const pFracMPa = useMemo(
+    () => fracturePressureMPa(depthProfile, reservoir.reservoirPressureMPa, stressState),
+    [depthProfile, reservoir.reservoirPressureMPa, stressState]
+  );
 
   const drilling: DrillingHistory = useMemo(() => ({
     mudType, mudWeight: 1.18, overbalanceMPa, soakTimeDays: soakDays,
