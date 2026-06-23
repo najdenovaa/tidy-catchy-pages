@@ -549,24 +549,25 @@ export default function Index() {
         </div>
       </header>
 
-      <SafetyTrafficLight
-        pressureResult={pressureResult}
-        volumes={volumes}
-        centralizationResults={centralizationResults}
-      />
-
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabbedNavigation activeTab={activeTab} onTabChange={setActiveTab} />
+        <TabbedNavigation
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          rightSlot={
+            <SafetyTrafficLight
+              pressureResult={pressureResult}
+              volumes={volumes}
+              centralizationResults={centralizationResults}
+              compact
+            />
+          }
+        />
 
 
         <main className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
 
-          <ScenarioCompare
-            wellData={wellData}
-            pressureResult={pressureResult}
-            volumes={volumes}
-            centralizationResults={centralizationResults}
-          />
+
+
 
 
           {fromAnalysis && (
