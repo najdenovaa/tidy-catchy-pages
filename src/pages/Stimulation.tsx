@@ -234,23 +234,31 @@ export default function Stimulation() {
     });
   }, [selected, reservoir, acidVol, composition]);
 
+  // Live-метка состава и плотности (для всех текстов и стехиометрии)
+  const acidLabel = useMemo(() => formatAcidLabel(composition), [composition]);
+  const dissLive = useMemo(
+    () => calculateDissolvingPower(composition, reservoir.reservoirPressureMPa, reservoir.temperatureC),
+    [composition, reservoir.reservoirPressureMPa, reservoir.temperatureC]
+  );
+
   const stages = useMemo(() => {
     if (selected.category !== "acid" && selected.category !== "combo") return null;
     return buildAcidStages({
       collectorType: reservoir.collectorType === "sandstone" ? "sandstone" : "carbonate",
       payZoneM: reservoir.payZoneM,
-      mainAcidName: selected.mainReagent.name,
+      mainAcidName: acidLabel,
       mainAcidVolPerM: selected.volumePerMeterPay,
       tubingVolumeM3: 4.0,
+      hasHF: composition.hfPct > 0,
     });
-  }, [selected, reservoir]);
+  }, [selected, reservoir, acidLabel, composition.hfPct]);
 
-  // Стехиометрия растворения породы (CaCO₃ / CaMg(CO₃)₂ / SiO₂) — из пользовательского состава
+  // Стехиометрия растворения породы — плотность раствора из ЖИВОГО состава
   const stoichiometry = useMemo(() => {
     if (selected.category !== "acid" && selected.category !== "combo") return null;
     return computeAcidStoichiometry({
       acidVolumeM3: acidVol,
-      acidDensityKgM3: selected.mainReagent.density * 1000,
+      acidDensityKgM3: dissLive.densityGcc * 1000,
       hclConcentrationPct: composition.hclPct,
       hfConcentrationPct: composition.hfPct,
       rock: rockType,
@@ -258,13 +266,32 @@ export default function Stimulation() {
       bhPressureMPa: reservoir.reservoirPressureMPa,
       bhTemperatureC: reservoir.temperatureC,
     });
-  }, [selected, reservoir, acidVol, composition, rockType]);
+  }, [selected, reservoir, acidVol, composition, rockType, dissLive.densityGcc]);
 
   // Реальная растворяющая способность с учётом полного минерального состава
-  const mineralDissolution = useMemo(() => {
-    const diss = calculateDissolvingPower(composition, reservoir.reservoirPressureMPa, reservoir.temperatureC);
-    return stoichiometricDemandByMineralogy(detailedMin, diss.dissolvingPowerCalcite, diss.dissolvingPowerQuartz);
-  }, [composition, detailedMin, reservoir.reservoirPressureMPa, reservoir.temperatureC]);
+  const mineralDissolution = useMemo(
+    () => stoichiometricDemandByMineralogy(detailedMin, dissLive.dissolvingPowerCalcite, dissLive.dissolvingPowerQuartz),
+    [detailedMin, dissLive.dissolvingPowerCalcite, dissLive.dissolvingPowerQuartz]
+  );
+
+  // Чувствительность: радиус проникновения и масса растворённой породы от HCl%
+  const sensitivityData = useMemo(() => {
+    if (selected.category !== "acid" && selected.category !== "combo" && selected.category !== "foam") return [];
+    const rockKind: "carbonate" | "sandstone" | "dolomite" = rockType;
+    const pumpLpm = (selected.recommendedRate[0] + selected.recommendedRate[1]) / 2;
+    const pts: { hcl: number; rPen: number; rockKg: number; co2: number }[] = [];
+    for (let h = 5; h <= 30; h += 1) {
+      const comp = { ...composition, hclPct: h };
+      const d = calculateDissolvingPower(comp, reservoir.reservoirPressureMPa, reservoir.temperatureC);
+      const p = acidPenetration(comp, d, acidVol, reservoir.payZoneM, reservoir.porosity, 0.108, rockKind, reservoir.temperatureC, pumpLpm);
+      const rockKg = (rockKind === "carbonate" ? d.dissolvingPowerCalcite
+        : rockKind === "dolomite" ? d.dissolvingPowerDolomite
+        : d.dissolvingPowerQuartz) * acidVol;
+      pts.push({ hcl: h, rPen: +(p.penetrationRadiusM - 0.108).toFixed(3), rockKg: +rockKg.toFixed(0), co2: +(d.co2GeneratedStdM3PerM3 * acidVol).toFixed(1) });
+    }
+    return pts;
+  }, [selected.category, composition, reservoir, acidVol, rockType, selected.recommendedRate]);
+
 
 
   // Live results from sub-panels (solvent/nitrogen)
