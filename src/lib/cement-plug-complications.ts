@@ -1252,6 +1252,7 @@ export interface FullComplicationAnalysis {
   transitionWindow: TransitionWindow | null;
   kickInvasionM: number;
   kickLift: KickLiftResult | null;
+  kick: KickResult | null;
 }
 
 
@@ -1276,6 +1277,7 @@ export function analyzePlugComplicationFull(
 
   let kickInv = 0;
   let kickLift: KickLiftResult | null = null;
+  let kick: KickResult | null = null;
   if (kickFormationPressureMPa > 0) {
     const hydro = cement.densityGcm3 * 1000 * 9.81 * (plugBottomMD) / 1e6;
     const gel = cement.gel10minPa > 0 ? cement.gel10minPa : cement.ypPa * 3;
@@ -1286,11 +1288,17 @@ export function analyzePlugComplicationFull(
       cement, wellFluid, viscousPad, padHeightM,
       annAreaM2, boreDiamM, trajectory, frictionCoeff, totalOpTimeMin,
     );
+    kick = calculateKick(
+      plugTopMD, plugBottomMD, plugBottomTVD,
+      kickFormationPressureMPa, plugBottomMD,
+      cement, wellFluid, viscousPad, padHeightM,
+      trajectory, annAreaM2, boreDiamM, totalOpTimeMin, formationFluidType,
+    );
   }
 
   if (!lossZone || lossZone.initialLossRateM3h <= 0) {
     return { scenario: kickInv > 0 || kickLift ? 'kick' : 'none', settlement: null,
-      volumeEffect: null, multiPlug: null, transitionWindow: tw, kickInvasionM: kickInv, kickLift };
+      volumeEffect: null, multiPlug: null, transitionWindow: tw, kickInvasionM: kickInv, kickLift, kick };
   }
 
   if (lossZone.topMD > plugBottomMD) {
@@ -1311,7 +1319,7 @@ export function analyzePlugComplicationFull(
         cement, wellFluid.densityGcm3, bhTempC,
       );
     }
-    return { scenario: 'zone_below', settlement, volumeEffect, multiPlug, transitionWindow: tw, kickInvasionM: kickInv, kickLift };
+    return { scenario: 'zone_below', settlement, volumeEffect, multiPlug, transitionWindow: tw, kickInvasionM: kickInv, kickLift, kick };
   }
 
   const inside = lossZone.topMD + lossZone.thicknessM / 2 >= plugTopMD
@@ -1319,7 +1327,129 @@ export function analyzePlugComplicationFull(
   return {
     scenario: inside ? 'zone_inside' : 'zone_above',
     settlement: null, volumeEffect: null, multiPlug: null,
-    transitionWindow: tw, kickInvasionM: kickInv, kickLift,
+    transitionWindow: tw, kickInvasionM: kickInv, kickLift, kick,
   };
 }
+
+// ───── БЛОК 11: ПРОЯВЛЕНИЕ — ВНЕДРЕНИЕ ФЛЮИДА В МОСТ СНИЗУ ─────
+export interface KickResult {
+  breakthrough: boolean;
+  invasionDepthM: number;
+  excessPressureMPa: number;
+  finalCementHeightM: number;
+  contaminatedZoneM: number;
+  gasMigrationTimeMin: number;
+  pressureBalance: {
+    formationMPa: number;
+    cementHydrostaticMPa: number;
+    gelResistanceMPa: number;
+    padResistanceMPa: number;
+    netMPa: number;
+  };
+  arrestMechanism: 'hydrostatic_hold' | 'gel_arrest' | 'pad_arrest' | 'full_breakthrough' | 'gelation_time';
+  isolationSecure: boolean;
+  formationFluidType: KickFluidType;
+  warnings: string[];
+}
+
+export function calculateKick(
+  plugTopMD: number, plugBottomMD: number,
+  plugBottomTVD: number,
+  formationPressureMPa: number,
+  zoneMD: number,
+  cement: FullRheologyFluid, wellFluid: FullRheologyFluid, viscousPad: FullRheologyFluid | null,
+  padHeightM: number,
+  trajectory: ProfilePoint[],
+  annAreaM2: number, boreDiamM: number,
+  totalOpTimeMin: number,
+  formationFluidType: KickFluidType,
+): KickResult {
+  const G = 9.81;
+  const plugLen = Math.max(1, plugBottomMD - plugTopMD);
+  const wallPerim = Math.PI * boreDiamM;
+  const warnings: string[] = [];
+  void trajectory; void zoneMD;
+
+  // Гидростатика моста на уровне подошвы (TVD)
+  const cementHydro = cement.densityGcm3 * 1000 * G * plugBottomTVD / 1e6;
+  const excess = formationPressureMPa - cementHydro;
+
+  // Сопротивление геля цемента на полную длину моста (в эквиваленте МПа)
+  const bc = consistencyAtTime(totalOpTimeMin, cement.thickeningTime30Bc, cement.thickeningTime50Bc);
+  const gel = gelFromConsistency(Math.max(bc, 5), cement.gel10minPa > 0 ? cement.gel10minPa : 15);
+  const gelResistMPa = (gel * wallPerim * plugLen) / (annAreaM2 * 1e6);
+
+  // Сопротивление вязкой пачки (первый барьер снизу)
+  let padResistMPa = 0;
+  if (viscousPad && padHeightM > 0) {
+    const padGel = viscousPad.gel10minPa > 0 ? viscousPad.gel10minPa : viscousPad.ypPa * 3;
+    padResistMPa = (padGel * wallPerim * padHeightM) / (annAreaM2 * 1e6);
+  }
+
+  const totalResist = gelResistMPa + padResistMPa;
+  const net = excess - totalResist;
+  const breakthrough = net > 0;
+
+  // Глубина внедрения
+  const gelResistPerM = gel * wallPerim / (annAreaM2 * 1e6);
+  let invasionDepth = 0;
+  if (breakthrough && gelResistPerM > 0) {
+    const padInvasion = padHeightM > 0 ? Math.min(padHeightM, net / (gelResistPerM * 0.5)) : 0;
+    const remainingExcess = Math.max(0, net - padResistMPa);
+    const cementInvasion = Math.min(plugLen, remainingExcess / gelResistPerM);
+    invasionDepth = padInvasion + cementInvasion;
+  }
+
+  // Время миграции газа
+  let gasMigrationTime = Infinity;
+  if (formationFluidType === 'gas' && breakthrough) {
+    const migrationVelocity = Math.max(0.001, net / (gel / 100 + 1));
+    gasMigrationTime = invasionDepth / migrationVelocity;
+  }
+
+  const finalCementHeight = Math.max(0, plugLen - Math.max(0, invasionDepth - padHeightM));
+  const contaminatedZone = Math.min(plugLen, Math.max(0, invasionDepth - padHeightM));
+
+  let arrest: KickResult['arrestMechanism'];
+  if (!breakthrough && cementHydro >= formationPressureMPa) arrest = 'hydrostatic_hold';
+  else if (!breakthrough) arrest = padResistMPa > gelResistMPa ? 'pad_arrest' : 'gel_arrest';
+  else if (invasionDepth >= plugLen) arrest = 'full_breakthrough';
+  else arrest = 'gel_arrest';
+
+  if (!breakthrough) {
+    warnings.push(`✓ Мост держит проявление: гидростатика ${cementHydro.toFixed(1)} МПа + сопротивление ${totalResist.toFixed(1)} МПа > пластового ${formationPressureMPa.toFixed(1)} МПа.`);
+  } else if (invasionDepth >= plugLen) {
+    warnings.push(`🔴 ПОЛНЫЙ ПРОРЫВ: флюид прошёл мост насквозь (избыток ${excess.toFixed(1)} МПа). Изоляция НЕ обеспечена. Увеличить плотность цемента или длину моста.`);
+  } else {
+    warnings.push(`🟡 Частичное внедрение ${formationFluidType === 'gas' ? 'газа' : 'флюида'} на ${invasionDepth.toFixed(0)} м снизу. Чистого цемента: ${finalCementHeight.toFixed(0)} м.`);
+  }
+  if (formationFluidType === 'gas' && breakthrough && gasMigrationTime < totalOpTimeMin) {
+    warnings.push(`⚠ Газ мигрирует через мост за ~${gasMigrationTime.toFixed(0)} мин (до загустевания). Риск МКД. Применить газоблокирующий цемент или короткое переходное время.`);
+  }
+  if (breakthrough) {
+    const reqDensity = formationPressureMPa * 1e6 / (G * plugBottomTVD) / 1000 * 1.05;
+    warnings.push(`Рекомендуемая плотность цемента для удержания: ≥ ${reqDensity.toFixed(2)} г/см³ (текущая ${cement.densityGcm3.toFixed(2)}).`);
+  }
+
+  return {
+    breakthrough,
+    invasionDepthM: invasionDepth,
+    excessPressureMPa: excess,
+    finalCementHeightM: finalCementHeight,
+    contaminatedZoneM: contaminatedZone,
+    gasMigrationTimeMin: isFinite(gasMigrationTime) ? gasMigrationTime : 0,
+    pressureBalance: {
+      formationMPa: formationPressureMPa,
+      cementHydrostaticMPa: cementHydro,
+      gelResistanceMPa: gelResistMPa,
+      padResistanceMPa: padResistMPa,
+      netMPa: net,
+    },
+    arrestMechanism: arrest,
+    isolationSecure: !breakthrough || invasionDepth < plugLen * 0.5,
+    formationFluidType,
+    warnings,
+  };
+}
+
 

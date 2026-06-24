@@ -612,12 +612,56 @@ export default function ComplicationsSection({
               </div>
             )}
 
-            {/* Прорыв пластового флюида */}
-            {fullAnalysis.kickInvasionM > 0 && (
-              <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-[10px]">
-                <p className="font-semibold text-destructive">⚠ Внедрение пластового флюида в гель цемента: {fullAnalysis.kickInvasionM.toFixed(1)} м</p>
+            {/* Прорыв пластового флюида через мост (внедрение снизу) */}
+            {fullAnalysis.kick && (
+              <div className={`rounded-lg border p-3 text-[10px] space-y-1.5 ${
+                fullAnalysis.kick.arrestMechanism === 'full_breakthrough' ? 'border-destructive/60 bg-destructive/10'
+                  : fullAnalysis.kick.breakthrough ? 'border-amber-500/50 bg-amber-500/5'
+                  : 'border-green-500/40 bg-green-500/5'
+              }`}>
+                <p className="font-semibold">
+                  {fullAnalysis.kick.breakthrough ? '⚠ Внедрение пластового флюида в мост снизу' : '✓ Мост держит проявление'}
+                  {' '}
+                  <span className="text-muted-foreground font-normal">
+                    ({({gas:'газ',oil:'нефть',water:'вода'} as const)[fullAnalysis.kick.formationFluidType]})
+                  </span>
+                </p>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                  <span className="text-muted-foreground">Pпл:</span>
+                  <span>{fullAnalysis.kick.pressureBalance.formationMPa.toFixed(1)} МПа</span>
+                  <span className="text-muted-foreground">Pгидро цемента:</span>
+                  <span>{fullAnalysis.kick.pressureBalance.cementHydrostaticMPa.toFixed(1)} МПа</span>
+                  <span className="text-muted-foreground">Сопрот. геля:</span>
+                  <span>{fullAnalysis.kick.pressureBalance.gelResistanceMPa.toFixed(2)} МПа</span>
+                  <span className="text-muted-foreground">Сопрот. пачки:</span>
+                  <span>{fullAnalysis.kick.pressureBalance.padResistanceMPa.toFixed(2)} МПа</span>
+                  <span className="text-muted-foreground">Избыток (net):</span>
+                  <span className={fullAnalysis.kick.pressureBalance.netMPa > 0 ? 'text-destructive font-bold' : 'text-green-500 font-semibold'}>
+                    {fullAnalysis.kick.pressureBalance.netMPa.toFixed(2)} МПа
+                  </span>
+                  {fullAnalysis.kick.breakthrough && (
+                    <>
+                      <span className="text-muted-foreground">Глубина внедрения:</span>
+                      <span className="font-semibold">{fullAnalysis.kick.invasionDepthM.toFixed(1)} м</span>
+                      <span className="text-muted-foreground">Чистый цемент:</span>
+                      <span className="font-semibold">{fullAnalysis.kick.finalCementHeightM.toFixed(1)} м</span>
+                      <span className="text-muted-foreground">Загрязнено:</span>
+                      <span className="text-amber-500">{fullAnalysis.kick.contaminatedZoneM.toFixed(1)} м</span>
+                      {fullAnalysis.kick.formationFluidType === 'gas' && fullAnalysis.kick.gasMigrationTimeMin > 0 && (
+                        <>
+                          <span className="text-muted-foreground">Миграция газа:</span>
+                          <span className="text-destructive">~{fullAnalysis.kick.gasMigrationTimeMin.toFixed(0)} мин</span>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+                {fullAnalysis.kick.warnings.map((w, i) => (
+                  <p key={i} className="text-[10px] text-muted-foreground border-t border-border/40 pt-1">{w}</p>
+                ))}
               </div>
             )}
+
           </CardContent>
         </Card>
       )}
