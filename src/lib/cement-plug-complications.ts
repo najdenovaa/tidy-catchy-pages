@@ -665,3 +665,493 @@ export function calculateComplications(
     riskLevel,
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// MASTER-PROMPT: ПОЛНАЯ ФИЗИКА ОСЛОЖНЕНИЙ ЦЕМЕНТНОГО МОСТА
+// (Динамическое проседание по принципу U-tube + серия мостов через ОЗЦ)
+// ═══════════════════════════════════════════════════════════════════════
+
+// ───── БЛОК 1: РАСШИРЕННЫЕ ТИПЫ ─────
+export type LossZoneType = 'pore' | 'fracture' | 'vug_cavern' | 'fault';
+
+export interface LossZoneFull {
+  topMD: number;
+  thicknessM: number;
+  zoneType: LossZoneType;
+  porosity: number;                 // 0..1
+  initialLossRateM3h: number;
+  drainageRadiusM: number;          // 5..50 м
+}
+
+export interface FullRheologyFluid {
+  densityGcm3: number;
+  pvMPas: number;                   // PV, сПз
+  ypPa: number;                     // YP, Па
+  gel10sPa: number;                 // СНС 10 с
+  gel10minPa: number;               // СНС 10 мин
+  thickeningTime30Bc: number;       // мин (только цемент)
+  thickeningTime50Bc: number;       // мин (только цемент)
+}
+
+export interface ProfilePoint { md: number; zenithDeg: number; tvd: number; }
+
+// ───── БЛОК 2: КОНСИСТЕНЦИЯ Bc(t) И ЭВОЛЮЦИЯ РЕОЛОГИИ ─────
+export function consistencyAtTime(t: number, t30Bc: number, t50Bc: number): number {
+  if (t30Bc <= 0 || t50Bc <= 0 || t50Bc <= t30Bc) return 5;
+  if (t <= 0) return 5;
+  if (t <= t30Bc) return 5 + 25 * (t / t30Bc);
+  if (t <= t50Bc) return 30 + 20 * ((t - t30Bc) / (t50Bc - t30Bc));
+  const t100 = (t50Bc - t30Bc) * 1.5;
+  return Math.min(100, 50 + 50 * (1 - Math.exp(-3 * (t - t50Bc) / t100)));
+}
+
+export function gelFromConsistency(bc: number, baseGel: number): number {
+  return baseGel * Math.pow(Math.max(bc, 5) / 30, 2.5);
+}
+export function ypFromConsistency(bc: number, baseYP: number): number {
+  return baseYP * Math.pow(Math.max(bc, 5) / 30, 1.8);
+}
+export function pvFromConsistency(bc: number, basePV: number): number {
+  return basePV * Math.pow(Math.max(bc, 5) / 30, 1.2);
+}
+
+export interface TransitionWindow {
+  startTimeMin: number;
+  endTimeMin: number;
+  durationMin: number;
+  gasMigrationRisk: 'low' | 'medium' | 'high';
+}
+export function transitionWindow(t30: number, t50: number, hasGasZone: boolean): TransitionWindow {
+  const t100 = t50 + (t50 - t30) * 1.5;
+  const durationMin = Math.max(0, t100 - t30);
+  const risk: TransitionWindow['gasMigrationRisk'] = !hasGasZone
+    ? 'low' : durationMin < 30 ? 'low' : durationMin < 60 ? 'medium' : 'high';
+  return { startTimeMin: t30, endTimeMin: t100, durationMin, gasMigrationRisk: risk };
+}
+
+// ───── БЛОК 3: ЁМКОСТЬ ЗОНЫ ПОГЛОЩЕНИЯ ─────
+export function lossZoneCapacity(zone: LossZoneFull, boreDiamM: number): number {
+  const rWell = boreDiamM / 2;
+  const effPorosity =
+    zone.zoneType === 'vug_cavern' ? zone.porosity * 1.5 :
+    zone.zoneType === 'fracture' ? 0.02 :
+    zone.zoneType === 'fault' ? 0.05 :
+    zone.porosity;
+  const rD = Math.max(zone.drainageRadiusM, rWell + 0.1);
+  return Math.PI * (rD * rD - rWell * rWell) * Math.max(0.1, zone.thicknessM) * effPorosity;
+}
+export function lossSelfArrests(zone: LossZoneFull): boolean {
+  return zone.zoneType === 'pore' || zone.zoneType === 'vug_cavern';
+}
+
+// ───── БЛОК 4: ПРОФИЛЬ СКВАЖИНЫ ВДОЛЬ МОСТА ─────
+function interpolateZenith(md: number, traj: ProfilePoint[]): number {
+  if (!traj.length) return 0;
+  if (md <= traj[0].md) return traj[0].zenithDeg;
+  if (md >= traj[traj.length - 1].md) return traj[traj.length - 1].zenithDeg;
+  for (let i = 1; i < traj.length; i++) {
+    if (md <= traj[i].md) {
+      const a = traj[i - 1], b = traj[i];
+      const f = (md - a.md) / Math.max(1e-6, b.md - a.md);
+      return a.zenithDeg + (b.zenithDeg - a.zenithDeg) * f;
+    }
+  }
+  return traj[traj.length - 1].zenithDeg;
+}
+
+export interface PlugProfileSegment {
+  topMD: number; bottomMD: number; zenith: number;
+  drive: number; normal: number; friction: number;
+}
+export interface PlugProfileResult {
+  segments: PlugProfileSegment[];
+  totalDrive: number;     // Н
+  totalFriction: number;  // Н (механическое + реологическое)
+  totalNormal: number;    // Н
+  avgZenith: number;
+}
+
+export function analyzePlugProfile(
+  plugTopMD: number, plugBottomMD: number,
+  trajectory: ProfilePoint[], cement: FullRheologyFluid,
+  annAreaM2: number, boreDiamM: number,
+  wellFluidDensity: number, frictionCoeff: number,
+): PlugProfileResult {
+  const step = 5;
+  let totalDrive = 0, totalFriction = 0, totalNormal = 0, zenSum = 0, nSeg = 0;
+  const segments: PlugProfileSegment[] = [];
+  for (let md = plugTopMD; md < plugBottomMD; md += step) {
+    const segLen = Math.min(step, plugBottomMD - md);
+    const zenith = interpolateZenith(md + segLen / 2, trajectory);
+    const zr = zenith * Math.PI / 180;
+    const segWeight = (cement.densityGcm3 - wellFluidDensity) * 1000 * 9.81 * segLen * annAreaM2;
+    const drive = segWeight * Math.cos(zr);
+    const normal = segWeight * Math.sin(zr);
+    const mechFriction = frictionCoeff * Math.abs(normal);
+    const rheoFriction = Math.max(0, cement.ypPa) * Math.PI * boreDiamM * segLen;
+    const friction = mechFriction + rheoFriction;
+    segments.push({ topMD: md, bottomMD: md + segLen, zenith, drive, normal, friction });
+    totalDrive += drive; totalFriction += friction; totalNormal += Math.abs(normal);
+    zenSum += zenith; nSeg++;
+  }
+  return { segments, totalDrive, totalFriction, totalNormal, avgZenith: nSeg ? zenSum / nSeg : 0 };
+}
+
+// ───── БЛОК 5: ДИНАМИЧЕСКОЕ ПРОСЕДАНИЕ (U-tube) ─────
+export type ArrestMechanism =
+  | 'gelation' | 'friction' | 'reached_zone' | 'fluid_limited' | 'stable' | 'self_arrest_capacity';
+
+export interface SettlementResult {
+  willSettle: boolean;
+  settlementM: number;
+  settleVelocityMs: number;
+  finalHeadMD: number;
+  finalBottomMD: number;
+  reachesLossZone: boolean;
+  arrestMechanism: ArrestMechanism;
+  consistencyAtArrest: number;
+  forceBalance: { driveKN: number; gelKN: number; frictionKN: number; padKN: number; wellFluidKN: number; netKN: number };
+  zoneCapacityM3: number;
+  zoneCanSelfArrest: boolean;
+  warnings: string[];
+}
+
+export function calculatePlugSettlement(
+  plugTopMD: number, plugBottomMD: number,
+  lossZone: LossZoneFull,
+  cement: FullRheologyFluid, wellFluid: FullRheologyFluid, viscousPad: FullRheologyFluid | null,
+  padHeightM: number,
+  trajectory: ProfilePoint[],
+  annAreaM2: number, boreDiamM: number,
+  frictionCoeff: number,
+  totalOpTimeMin: number,
+  lcmReductionFactor: number,
+): SettlementResult {
+  const plugLen = plugBottomMD - plugTopMD;
+  const wallPerim = Math.PI * boreDiamM;
+  const clearance = Math.max(boreDiamM / 2, 0.01);
+  const warnings: string[] = [];
+
+  // Зона выше/внутри моста — отдельная ветка (объёмные потери, см. calculateComplications)
+  if (lossZone.topMD <= plugBottomMD) {
+    return {
+      willSettle: false, settlementM: 0, settleVelocityMs: 0,
+      finalHeadMD: plugTopMD, finalBottomMD: plugBottomMD,
+      reachesLossZone: false, arrestMechanism: 'stable', consistencyAtArrest: 5,
+      forceBalance: { driveKN: 0, gelKN: 0, frictionKN: 0, padKN: 0, wellFluidKN: 0, netKN: 0 },
+      zoneCapacityM3: lossZoneCapacity(lossZone, boreDiamM),
+      zoneCanSelfArrest: lossSelfArrests(lossZone),
+      warnings: ['Зона осложнения внутри/выше моста — анализ идёт через ветку объёмных потерь.'],
+    };
+  }
+
+  const gapToZone = lossZone.topMD - plugBottomMD;
+  const effLossRateM3s = (lossZone.initialLossRateM3h * Math.max(0.05, lcmReductionFactor)) / 3600;
+
+  const profile = analyzePlugProfile(
+    plugTopMD, plugBottomMD, trajectory, cement,
+    annAreaM2, boreDiamM, wellFluid.densityGcm3, frictionCoeff,
+  );
+
+  // Поддержка снизу столбом скважинной жидкости (по СНС)
+  const wfGel = wellFluid.gel10minPa > 0 ? wellFluid.gel10minPa : Math.max(1, wellFluid.ypPa * 2);
+  const wellFluidSupport = wfGel * wallPerim * gapToZone;
+
+  // Сопротивление вязкой пачки снизу
+  let padResist = 0;
+  if (viscousPad && padHeightM > 0) {
+    const padYP = viscousPad.ypPa > 0 ? viscousPad.ypPa : 10;
+    const padGel = viscousPad.gel10minPa > 0 ? viscousPad.gel10minPa : padYP * 3;
+    padResist = (padYP + padGel) * wallPerim * padHeightM;
+  }
+
+  // Ёмкость зоны / самоизоляция
+  const capacity = lossZoneCapacity(lossZone, boreDiamM);
+  const canSelfArrest = lossSelfArrests(lossZone);
+
+  // Пошаговая интеграция
+  const dt = 1;
+  let cumSettle = 0;
+  let cumLossM3 = 0;
+  let lastBc = 5, lastV = 0;
+  let arrest: ArrestMechanism = 'fluid_limited';
+
+  for (let t = 0; t < Math.max(totalOpTimeMin, 1); t += dt) {
+    const bc = consistencyAtTime(t, cement.thickeningTime30Bc, cement.thickeningTime50Bc);
+    lastBc = bc;
+    if (bc >= 70) { arrest = 'gelation'; break; }
+
+    const baseGel = cement.gel10minPa > 0 ? cement.gel10minPa : 15;
+    const baseYP = cement.ypPa > 0 ? cement.ypPa : 8;
+    const basePV = (cement.pvMPas > 0 ? cement.pvMPas : 50) / 1000;
+
+    const gel = gelFromConsistency(bc, baseGel);
+    const yp = ypFromConsistency(bc, baseYP);
+    const pv = Math.max(1e-4, pvFromConsistency(bc, basePV));
+
+    const drive = profile.totalDrive;
+    const gelHold = gel * wallPerim * plugLen;
+    const ypHold = yp * wallPerim * plugLen;
+    const totalResist = gelHold + ypHold + profile.totalFriction + padResist + wellFluidSupport;
+
+    if (totalResist >= drive) {
+      arrest = gelHold >= drive * 0.5 ? 'gelation' : 'friction';
+      break;
+    }
+
+    const net = drive - gelHold - ypHold - profile.totalFriction - padResist - wellFluidSupport;
+    const vEq = (net / (wallPerim * plugLen) - yp) * clearance / pv;
+    const vFluid = effLossRateM3s / Math.max(annAreaM2, 1e-6);
+    const v = Math.min(Math.max(0, vEq), vFluid);
+    lastV = v;
+    if (vEq > vFluid) arrest = 'fluid_limited';
+
+    const dSettle = v * dt * 60;
+    cumSettle += dSettle;
+    cumLossM3 += dSettle * annAreaM2;
+
+    if (canSelfArrest && cumLossM3 >= capacity) {
+      arrest = 'self_arrest_capacity';
+      break;
+    }
+    if (cumSettle >= gapToZone) {
+      cumSettle = gapToZone;
+      arrest = 'reached_zone';
+      break;
+    }
+  }
+
+  const reachesLossZone = cumSettle >= gapToZone - 0.5;
+
+  if (reachesLossZone)
+    warnings.push(`🔴 КАТАСТРОФА: мост проседает до зоны поглощения (${lossZone.topMD.toFixed(0)} м). Установка в проектном интервале НЕВОЗМОЖНА.`);
+  else if (cumSettle > 5)
+    warnings.push(`🟡 Мост проседает на ${cumSettle.toFixed(0)} м. Реальная голова: ${(plugTopMD + cumSettle).toFixed(0)} м (план ${plugTopMD.toFixed(0)} м).`);
+  if (cumSettle > plugLen * 0.5 && !reachesLossZone)
+    warnings.push(`⚠ Проседание > 50% длины — установка неконтролируема.`);
+  if (arrest === 'self_arrest_capacity')
+    warnings.push(`✓ Зона ${lossZone.zoneType} насытилась (ёмкость ≈${capacity.toFixed(1)} м³) — поглощение самоизолировалось.`);
+  if (lcmReductionFactor < 1 && !reachesLossZone && cumSettle < 5)
+    warnings.push(`✓ Кольматант снизил поглощение до контролируемого — проседание ${cumSettle.toFixed(1)} м.`);
+
+  const drive = profile.totalDrive;
+  const gelHoldFinal = gelFromConsistency(lastBc, cement.gel10minPa > 0 ? cement.gel10minPa : 15) * wallPerim * plugLen;
+
+  return {
+    willSettle: cumSettle > 0.5,
+    settlementM: cumSettle,
+    settleVelocityMs: lastV,
+    finalHeadMD: plugTopMD + cumSettle,
+    finalBottomMD: plugBottomMD + cumSettle,
+    reachesLossZone,
+    arrestMechanism: arrest,
+    consistencyAtArrest: lastBc,
+    forceBalance: {
+      driveKN: drive / 1000,
+      gelKN: gelHoldFinal / 1000,
+      frictionKN: profile.totalFriction / 1000,
+      padKN: padResist / 1000,
+      wellFluidKN: wellFluidSupport / 1000,
+      netKN: (drive - gelHoldFinal - profile.totalFriction - padResist - wellFluidSupport) / 1000,
+    },
+    zoneCapacityM3: capacity,
+    zoneCanSelfArrest: canSelfArrest,
+    warnings,
+  };
+}
+
+// ───── БЛОК 6: ПАРАДОКС ОБЪЁМА ─────
+export interface VolumeEffectRow {
+  plugLengthM: number;
+  cementVolumeM3: number;
+  hydrostaticMPa: number;
+  settlementM: number;
+  finalHeadMD: number;
+  isStable: boolean;
+}
+export interface VolumeEffectResult {
+  tested: VolumeEffectRow[];
+  increasingVolumeHelps: boolean;
+  recommendation: string;
+}
+export function analyzeVolumeEffect(
+  baseBottomMD: number,
+  lossZone: LossZoneFull, cement: FullRheologyFluid, wellFluid: FullRheologyFluid,
+  trajectory: ProfilePoint[], annAreaM2: number, boreDiamM: number,
+  frictionCoeff: number, totalOpTimeMin: number,
+): VolumeEffectResult {
+  const lengths = [50, 100, 150, 200, 300];
+  const tested = lengths.map(L => {
+    const top = baseBottomMD - L;
+    const s = calculatePlugSettlement(
+      top, baseBottomMD, lossZone, cement, wellFluid, null, 0,
+      trajectory, annAreaM2, boreDiamM, frictionCoeff, totalOpTimeMin, 1,
+    );
+    const hydrostatic = cement.densityGcm3 * 1000 * 9.81 * L / 1e6;
+    return {
+      plugLengthM: L, cementVolumeM3: L * annAreaM2, hydrostaticMPa: hydrostatic,
+      settlementM: s.settlementM, finalHeadMD: s.finalHeadMD, isStable: !s.reachesLossZone,
+    };
+  });
+  const helps = tested[tested.length - 1].settlementM < tested[0].settlementM;
+  return {
+    tested,
+    increasingVolumeHelps: helps,
+    recommendation: helps
+      ? 'Увеличение объёма снижает проседание — допустимо нарастить колонну.'
+      : '⚠ Увеличение объёма УСУГУБЛЯЕТ проседание (мост тяжелее, выше гидростатика). Решение — серия мостов через ОЗЦ.',
+  };
+}
+
+// ───── БЛОК 7: СЕРИЯ МОСТОВ + ОЗЦ ─────
+export function compressiveStrength(hours: number, bhTempC: number, ucsMax = 24, kRef = 0.045, alpha = 0.03): number {
+  const k = kRef * Math.exp(alpha * (bhTempC - 20));
+  return ucsMax * (1 - Math.exp(-k * Math.max(hours, 0)));
+}
+export function waitOnCementTime(targetUCS: number, bhTempC: number, ucsMax = 24, kRef = 0.045, alpha = 0.03): number {
+  const k = kRef * Math.exp(alpha * (bhTempC - 20));
+  const ratio = Math.min(0.99, Math.max(0.01, targetUCS / ucsMax));
+  return -Math.log(1 - ratio) / Math.max(k, 1e-6);
+}
+
+export interface PlugDesign {
+  sequence: number;
+  purpose: 'support' | 'main';
+  topMD: number;
+  bottomMD: number;
+  cementVolumeM3: number;
+  wocHours: number;
+  requiredUCSMPa: number;
+  landsOn: 'bridge' | 'previous_plug';
+}
+export interface MultiPlugProgram {
+  required: boolean;
+  plugs: PlugDesign[];
+  totalWOCHours: number;
+  totalCementM3: number;
+  supportAdequate: boolean;
+  safetyFactor: number;
+  rationale: string;
+}
+
+export function designMultiPlugProgram(
+  targetHeadMD: number, lossZone: LossZoneFull, settlement: SettlementResult,
+  annAreaM2: number, boreDiamM: number, cement: FullRheologyFluid,
+  wellFluidDensity: number, bhTempC: number,
+): MultiPlugProgram {
+  if (!settlement.willSettle || settlement.settlementM < 5) {
+    return { required: false, plugs: [], totalWOCHours: 0, totalCementM3: 0,
+      supportAdequate: true, safetyFactor: 0,
+      rationale: 'Одиночный мост удержится в проектном интервале.' };
+  }
+  const REQUIRED_UCS = 3.5; // МПа (API Spec 10A для опоры)
+  const wocHours = waitOnCementTime(REQUIRED_UCS, bhTempC);
+
+  const supportBot = lossZone.topMD;
+  const supportTop = Math.max(lossZone.topMD - 30, targetHeadMD + 10);
+  const supportVol = Math.max(0, supportBot - supportTop) * annAreaM2;
+
+  const mainTop = targetHeadMD;
+  const mainBot = supportTop;
+  const mainLen = Math.max(0, mainBot - mainTop);
+  const mainVol = mainLen * annAreaM2;
+  const mainWeightKN = (cement.densityGcm3 - wellFluidDensity) * 1000 * 9.81 * mainLen * annAreaM2 / 1000;
+
+  const supportCapacityKN = REQUIRED_UCS * 1000 * (Math.PI / 4 * boreDiamM * boreDiamM);
+  const safetyFactor = mainWeightKN > 0 ? supportCapacityKN / mainWeightKN : 999;
+
+  return {
+    required: true,
+    plugs: [
+      { sequence: 1, purpose: 'support', topMD: supportTop, bottomMD: supportBot,
+        cementVolumeM3: supportVol, wocHours, requiredUCSMPa: REQUIRED_UCS, landsOn: 'bridge' },
+      { sequence: 2, purpose: 'main', topMD: mainTop, bottomMD: mainBot,
+        cementVolumeM3: mainVol, wocHours, requiredUCSMPa: REQUIRED_UCS, landsOn: 'previous_plug' },
+    ],
+    totalWOCHours: wocHours * 2,
+    totalCementM3: supportVol + mainVol,
+    supportAdequate: safetyFactor > 1.5,
+    safetyFactor,
+    rationale: `Поглощение ${lossZone.initialLossRateM3h} м³/ч на ${lossZone.topMD.toFixed(0)} м вызывает проседание одиночного моста на ${settlement.settlementM.toFixed(0)} м. Решение: опорный мост ${supportTop.toFixed(0)}–${supportBot.toFixed(0)} м + ОЗЦ ${wocHours.toFixed(0)} ч (UCS ${REQUIRED_UCS} МПа), затем основной мост ${mainTop.toFixed(0)}–${mainBot.toFixed(0)} м на твёрдую опору. Несущая опоры ${supportCapacityKN.toFixed(0)} кН ${safetyFactor >= 1.5 ? '>' : '<'} веса основного ${mainWeightKN.toFixed(0)} кН (запас ${safetyFactor.toFixed(1)}×).`,
+  };
+}
+
+// ───── БЛОК 8: ПРОРЫВ ГАЗА — БАЛАНС ДАВЛЕНИЙ ─────
+export function kickInvasion(
+  formationPressureMPa: number, cementHydrostaticMPa: number,
+  cementGelPa: number, boreDiamM: number, plugLenM: number,
+): number {
+  const excess = formationPressureMPa - cementHydrostaticMPa;
+  if (excess <= 0) return 0;
+  const gelResistPerM = cementGelPa * Math.PI * boreDiamM / 1e6;
+  return gelResistPerM > 0 ? Math.min(excess / gelResistPerM, plugLenM) : plugLenM;
+}
+
+// ───── БЛОК 10: ORCHESTRATOR ─────
+export interface FullComplicationAnalysis {
+  scenario: 'zone_below' | 'zone_inside' | 'zone_above' | 'kick' | 'none';
+  settlement: SettlementResult | null;
+  volumeEffect: VolumeEffectResult | null;
+  multiPlug: MultiPlugProgram | null;
+  transitionWindow: TransitionWindow | null;
+  kickInvasionM: number;
+}
+
+export function analyzePlugComplicationFull(
+  plugTopMD: number, plugBottomMD: number,
+  lossZone: LossZoneFull | null,
+  cement: FullRheologyFluid, wellFluid: FullRheologyFluid,
+  viscousPad: FullRheologyFluid | null, padHeightM: number,
+  trajectory: ProfilePoint[],
+  annAreaM2: number, boreDiamM: number,
+  frictionCoeff: number,
+  totalOpTimeMin: number,
+  lcmReductionFactor: number,
+  bhTempC: number,
+  kickFormationPressureMPa: number,
+  hasGasZone: boolean,
+): FullComplicationAnalysis {
+  const tw = (cement.thickeningTime30Bc > 0 && cement.thickeningTime50Bc > 0)
+    ? transitionWindow(cement.thickeningTime30Bc, cement.thickeningTime50Bc, hasGasZone) : null;
+
+  let kickInv = 0;
+  if (kickFormationPressureMPa > 0) {
+    const hydro = cement.densityGcm3 * 1000 * 9.81 * (plugBottomMD) / 1e6;
+    const gel = cement.gel10minPa > 0 ? cement.gel10minPa : cement.ypPa * 3;
+    kickInv = kickInvasion(kickFormationPressureMPa, hydro, gel, boreDiamM, plugBottomMD - plugTopMD);
+  }
+
+  if (!lossZone || lossZone.initialLossRateM3h <= 0) {
+    return { scenario: kickInv > 0 ? 'kick' : 'none', settlement: null,
+      volumeEffect: null, multiPlug: null, transitionWindow: tw, kickInvasionM: kickInv };
+  }
+
+  if (lossZone.topMD > plugBottomMD) {
+    const settlement = calculatePlugSettlement(
+      plugTopMD, plugBottomMD, lossZone, cement, wellFluid, viscousPad,
+      padHeightM, trajectory, annAreaM2, boreDiamM, frictionCoeff,
+      totalOpTimeMin, lcmReductionFactor,
+    );
+    let volumeEffect: VolumeEffectResult | null = null;
+    let multiPlug: MultiPlugProgram | null = null;
+    if (settlement.willSettle) {
+      volumeEffect = analyzeVolumeEffect(
+        plugBottomMD, lossZone, cement, wellFluid, trajectory,
+        annAreaM2, boreDiamM, frictionCoeff, totalOpTimeMin,
+      );
+      multiPlug = designMultiPlugProgram(
+        plugTopMD, lossZone, settlement, annAreaM2, boreDiamM,
+        cement, wellFluid.densityGcm3, bhTempC,
+      );
+    }
+    return { scenario: 'zone_below', settlement, volumeEffect, multiPlug, transitionWindow: tw, kickInvasionM: kickInv };
+  }
+
+  const inside = lossZone.topMD + lossZone.thicknessM / 2 >= plugTopMD
+              && lossZone.topMD - lossZone.thicknessM / 2 <= plugBottomMD;
+  return {
+    scenario: inside ? 'zone_inside' : 'zone_above',
+    settlement: null, volumeEffect: null, multiPlug: null,
+    transitionWindow: tw, kickInvasionM: kickInv,
+  };
+}
