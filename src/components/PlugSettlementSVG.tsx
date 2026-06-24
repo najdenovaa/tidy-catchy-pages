@@ -31,7 +31,7 @@ export function PlugSettlementSVG({
   const padFullyConsumed = hasPad && remainingPadHeight < 0.05;
   // Глубинный диапазон
   const topMd = Math.max(0, Math.min(plannedTopMD, result.finalHeadMD) - 100);
-  const botMd = Math.max(plannedBottomMD, result.finalBottomMD, lossZone.topMD + lossZone.thicknessM) + 60;
+  const botMd = Math.max(plannedBottomMD, result.finalBottomMD, plannedPadBottomMD, realPadBottomMD, lossZone.topMD + lossZone.thicknessM) + 60;
   const padX = 90;
   const trackX = width / 2;
   const halfW = 32;
