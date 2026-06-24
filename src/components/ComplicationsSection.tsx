@@ -11,13 +11,19 @@ import { Button } from "@/components/ui/button";
 import {
   calculateComplications,
   classifyLossIntensity,
+  analyzePlugComplicationFull,
   type ComplicationInputs,
   type ComplicationCalcParams,
   type ComplicationResult,
   type ComplicationType,
   type LossBehavior,
+  type LossZoneType,
+  type LossZoneFull,
+  type FullRheologyFluid,
+  type ProfilePoint,
 } from "@/lib/cement-plug-complications";
 import type { PlugResults } from "@/lib/cement-plug-calculations";
+import { PlugSettlementSVG } from "@/components/PlugSettlementSVG";
 
 function num(v: string): number {
   const n = parseFloat(v);
