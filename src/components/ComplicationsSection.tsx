@@ -210,26 +210,30 @@ export default function ComplicationsSection({
     const plugLen = plugBottomMD - plugTopMD;
     const padH = hasViscousPad && spacerVolumeBelow > 0 ? spacerVolumeBelow / annA : 0;
 
-    // В U-tube длина моста СОХРАНЯЕТСЯ — он целиком оседает на settlementM.
-    // Объём, вытесненный из-под подошвы = settlementM × annArea.
-    const displacedVolM3 = s.settlementM * annA;
-    const padVolM3 = padH * annA;
-    const padLostM3 = Math.min(displacedVolM3, padVolM3);
-    const padRemainHeightM = Math.max(0, padH - s.settlementM);
-    // Если мост уперся в зону и продолжает выдавливаться — цемент пошёл в пласт.
-    // В нашей модели интегратор останавливается на gap, поэтому cement-loss = 0 при штатной остановке.
-    // При reachesLossZone оставшийся объём после пачки/жидкости можно квалифицировать как загрязнение низа.
-    const cementLostM3 = s.reachesLossZone
-      ? Math.max(0, displacedVolM3 - padVolM3 - (s.finalBottomMD > 0 ? 0 : 0))
-      : 0;
-    const lossPct = results.cementVolumeTotal > 0 ? (cementLostM3 / results.cementVolumeTotal) * 100 : 0;
+    // ✅ Берём ВСЕ значения напрямую из движка (послойный материальный баланс)
+    const fluidLostM3 = s.layerBreakdown.fluidLostM3;
+    const padLostM3 = s.layerBreakdown.padLostM3;
+    const cementLostM3 = s.layerBreakdown.cementLostM3;
+    const volumeLostM3 = s.volumeLostM3;
+
+    // Длина цемента уменьшается ТОЛЬКО при реальной потере цемента в пласт
     const realCementVolM3 = Math.max(0, results.cementVolumeTotal - cementLostM3);
+    const realPlugLengthM = realCementVolM3 / annA;
+    const lossPct = results.cementVolumeTotal > 0 ? (cementLostM3 / results.cementVolumeTotal) * 100 : 0;
+
+    // Остаток пачки (высота)
+    const padRemainHeightM = Math.max(0, padH - padLostM3 / annA);
+    const padFullyConsumed = padH > 0 && padRemainHeightM <= 0.05;
+
+    const cementLost = cementLostM3 > 0.05;
+    const verdict: 'cement_lost' | 'pad_consumed' | 'cement_protected' =
+      cementLost ? 'cement_lost' : (padFullyConsumed ? 'pad_consumed' : 'cement_protected');
 
     return {
       settlementM: s.settlementM,
       realTopMD: s.finalHeadMD,
       realBottomMD: s.finalBottomMD,
-      realPlugLengthM: plugLen,                 // длина не меняется в U-tube
+      realPlugLengthM,
       designedPlugLengthM: plugLen,
       designedPlugTopMD: plugTopMD,
       designedPlugBottomMD: plugBottomMD,
@@ -239,13 +243,16 @@ export default function ComplicationsSection({
       realPadTopMD: s.finalBottomMD,
       realPadBottomMD: s.finalBottomMD + padRemainHeightM,
       padRemainHeightM,
-      padFullyConsumed: padH > 0 && padRemainHeightM <= 0.05,
+      padFullyConsumed,
+      fluidLostM3,
       padLostM3,
       cementLostM3,
-      volumeLostM3: displacedVolM3,
+      volumeLostM3,
       lossPct,
       realCementVolumeM3: realCementVolM3,
-      reachesZone: s.reachesLossZone,
+      reachesZone: cementLost,
+      limitedBy: s.limitedBy,
+      verdict,
     };
   }, [fullAnalysis, results, hasViscousPad, spacerVolumeBelow]);
 
@@ -911,10 +918,12 @@ export default function ComplicationsSection({
                         <span>{complicationResult.fillTimeMin.toFixed(1)} мин</span>
                         <span className="text-muted-foreground">Уход в пласт всего:</span>
                         <span className="text-amber-400 font-semibold">{volLostDisp.toFixed(3)} м³</span>
-                        <span className="text-muted-foreground">  • цемент:</span>
-                        <span>{cementLostDisp.toFixed(3)} м³</span>
+                        <span className="text-muted-foreground">  • скважинная жидкость:</span>
+                        <span className="text-cyan-400">{(unified?.fluidLostM3 ?? 0).toFixed(3)} м³</span>
                         <span className="text-muted-foreground">  • нижняя пачка:</span>
                         <span className="text-blue-400">{padLostDisp.toFixed(3)} м³{padFullyGone ? ' (ушла полностью)' : ''}</span>
+                        <span className="text-muted-foreground">  • цемент:</span>
+                        <span className={cementLostDisp > 0.05 ? 'text-destructive font-bold' : ''}>{cementLostDisp.toFixed(3)} м³</span>
                         {settlementDisp > 0 && (
                           <>
                             <span className="text-muted-foreground">Осадка моста вниз:</span>
@@ -976,7 +985,11 @@ export default function ComplicationsSection({
                               style={{ width: `${visualRealPct}%` }}
                             />
                             <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-foreground">
-                              Реальный: {realLenDisp.toFixed(0)} м{shrinkPct > 0.5 ? ` (−${shrinkPct.toFixed(0)}%)` : ' (длина сохранена, мост просел целиком)'}
+                              Реальный: {realLenDisp.toFixed(0)} м{shrinkPct > 0.5 ? ` (−${shrinkPct.toFixed(0)}%)` : (
+                                unified?.verdict === 'cement_lost' ? ` 🔴 цемент ушёл в пласт (${cementLostDisp.toFixed(2)} м³) — изоляция нарушена`
+                                : unified?.verdict === 'pad_consumed' ? ' 🟡 пачка израсходована полностью — цемент на грани'
+                                : ' 🟢 цемент защищён — ушли жидкость/пачка'
+                              )}
                             </span>
                           </div>
                         </div>
