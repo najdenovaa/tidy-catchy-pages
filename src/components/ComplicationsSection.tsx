@@ -191,6 +191,59 @@ export default function ComplicationsSection({
       wellFluid.density, wellFluid.pv, wellFluid.yp, wellFluid.gel10min,
       viscousPad.density, viscousPad.pv, viscousPad.yp, viscousPad.gel10min]);
 
+  // ═══ ЕДИНАЯ ГЕОМЕТРИЯ: блок «Поглощение» переиспользует результаты U-tube ═══
+  // Чтобы интервалы / осадка / потери / длина моста в таблице совпадали с SVG и блоком U-tube.
+  const unified = useMemo(() => {
+    if (!fullAnalysis?.settlement || !results) return null;
+    const s = fullAnalysis.settlement;
+    const annA = results.annArea;
+    if (annA <= 0) return null;
+    const plugTopMD = results.plugTopMD ?? results.plugTopTVD;
+    const plugBottomMD = results.plugBottomMD ?? results.plugBottomTVD;
+    const plugLen = plugBottomMD - plugTopMD;
+    const padH = hasViscousPad && spacerVolumeBelow > 0 ? spacerVolumeBelow / annA : 0;
+
+    // В U-tube длина моста СОХРАНЯЕТСЯ — он целиком оседает на settlementM.
+    // Объём, вытесненный из-под подошвы = settlementM × annArea.
+    const displacedVolM3 = s.settlementM * annA;
+    const padVolM3 = padH * annA;
+    const padLostM3 = Math.min(displacedVolM3, padVolM3);
+    const padRemainHeightM = Math.max(0, padH - s.settlementM);
+    // Если мост уперся в зону и продолжает выдавливаться — цемент пошёл в пласт.
+    // В нашей модели интегратор останавливается на gap, поэтому cement-loss = 0 при штатной остановке.
+    // При reachesLossZone оставшийся объём после пачки/жидкости можно квалифицировать как загрязнение низа.
+    const cementLostM3 = s.reachesLossZone
+      ? Math.max(0, displacedVolM3 - padVolM3 - (s.finalBottomMD > 0 ? 0 : 0))
+      : 0;
+    const lossPct = results.cementVolumeTotal > 0 ? (cementLostM3 / results.cementVolumeTotal) * 100 : 0;
+    const realCementVolM3 = Math.max(0, results.cementVolumeTotal - cementLostM3);
+
+    return {
+      settlementM: s.settlementM,
+      realTopMD: s.finalHeadMD,
+      realBottomMD: s.finalBottomMD,
+      realPlugLengthM: plugLen,                 // длина не меняется в U-tube
+      designedPlugLengthM: plugLen,
+      designedPlugTopMD: plugTopMD,
+      designedPlugBottomMD: plugBottomMD,
+      padHeightMD: padH,
+      designedPadTopMD: plugBottomMD,
+      designedPadBottomMD: plugBottomMD + padH,
+      realPadTopMD: s.finalBottomMD,
+      realPadBottomMD: s.finalBottomMD + padRemainHeightM,
+      padRemainHeightM,
+      padFullyConsumed: padH > 0 && padRemainHeightM <= 0.05,
+      padLostM3,
+      cementLostM3,
+      volumeLostM3: displacedVolM3,
+      lossPct,
+      realCementVolumeM3: realCementVolM3,
+      reachesZone: s.reachesLossZone,
+    };
+  }, [fullAnalysis, results, hasViscousPad, spacerVolumeBelow]);
+
+
+
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">
       <Label className="text-xs">{label}{unit ? ` (${unit})` : ""}</Label>
@@ -646,92 +699,120 @@ export default function ComplicationsSection({
               <div className="rounded-lg border border-border p-3 space-y-2">
                 <p className="text-[10px] font-semibold text-muted-foreground flex items-center gap-1">
                   <TrendingDown className="w-3.5 h-3.5" /> Поглощение: уход пачки / цемента
+                  {unified && <Badge variant="outline" className="text-[9px] ml-1">синхронизировано с U-tube</Badge>}
                 </p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
-                  <span className="text-muted-foreground">Время заполнения затрубья:</span>
-                  <span>{complicationResult.fillTimeMin.toFixed(1)} мин</span>
-                  <span className="text-muted-foreground">Уход в пласт всего:</span>
-                  <span className="text-amber-400 font-semibold">{complicationResult.volumeLostM3.toFixed(3)} м³</span>
-                  <span className="text-muted-foreground">  • цемент:</span>
-                  <span>{complicationResult.cementLostM3.toFixed(3)} м³</span>
-                  <span className="text-muted-foreground">  • нижняя пачка:</span>
-                  <span className="text-blue-400">{complicationResult.padLostM3.toFixed(3)} м³</span>
-                  {complicationResult.settlementM > 0 && (
+                {(() => {
+                  const settlementDisp = unified?.settlementM ?? complicationResult.settlementM;
+                  const padLostDisp = unified?.padLostM3 ?? complicationResult.padLostM3;
+                  const cementLostDisp = unified?.cementLostM3 ?? complicationResult.cementLostM3;
+                  const volLostDisp = unified?.volumeLostM3 ?? complicationResult.volumeLostM3;
+                  const realCementVolDisp = unified?.realCementVolumeM3 ?? complicationResult.realCementVolumeM3;
+                  const realTopDisp = unified?.realTopMD ?? complicationResult.realPlugTopMD;
+                  const realBotDisp = unified?.realBottomMD ?? complicationResult.realPlugBottomMD;
+                  const realLenDisp = unified?.realPlugLengthM ?? complicationResult.realPlugLengthM;
+                  const designedLenDisp = unified?.designedPlugLengthM ?? complicationResult.designedPlugLengthM;
+                  const designedTopDisp = unified?.designedPlugTopMD ?? complicationResult.designedPlugTopMD;
+                  const designedBotDisp = unified?.designedPlugBottomMD ?? complicationResult.designedPlugBottomMD;
+                  const padH = unified?.padHeightMD ?? complicationResult.padHeightMD;
+                  const dPadTop = unified?.designedPadTopMD ?? complicationResult.designedPadTopMD;
+                  const dPadBot = unified?.designedPadBottomMD ?? complicationResult.designedPadBottomMD;
+                  const rPadTop = unified?.realPadTopMD ?? complicationResult.realPadTopMD;
+                  const rPadBot = unified?.realPadBottomMD ?? complicationResult.realPadBottomMD;
+                  const padFullyGone = unified ? unified.padFullyConsumed : false;
+                  const lossPctDisp = unified?.lossPct ?? complicationResult.lossPercentage;
+                  const visualRealPct = designedLenDisp > 0
+                    ? Math.max(5, Math.min(100, (realLenDisp / designedLenDisp) * 100))
+                    : 100;
+                  const shrinkPct = Math.max(0, 100 - visualRealPct);
+                  return (
                     <>
-                      <span className="text-muted-foreground">Осадка цемента вниз:</span>
-                      <span className="text-amber-400 font-semibold">{complicationResult.settlementM.toFixed(1)} м</span>
-                    </>
-                  )}
-                  <span className="text-muted-foreground">Реальный объём цемента:</span>
-                  <span>{complicationResult.realCementVolumeM3.toFixed(3)} м³</span>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
+                        <span className="text-muted-foreground">Время заполнения затрубья:</span>
+                        <span>{complicationResult.fillTimeMin.toFixed(1)} мин</span>
+                        <span className="text-muted-foreground">Уход в пласт всего:</span>
+                        <span className="text-amber-400 font-semibold">{volLostDisp.toFixed(3)} м³</span>
+                        <span className="text-muted-foreground">  • цемент:</span>
+                        <span>{cementLostDisp.toFixed(3)} м³</span>
+                        <span className="text-muted-foreground">  • нижняя пачка:</span>
+                        <span className="text-blue-400">{padLostDisp.toFixed(3)} м³{padFullyGone ? ' (ушла полностью)' : ''}</span>
+                        {settlementDisp > 0 && (
+                          <>
+                            <span className="text-muted-foreground">Осадка моста вниз:</span>
+                            <span className="text-amber-400 font-semibold">{settlementDisp.toFixed(1)} м</span>
+                          </>
+                        )}
+                        <span className="text-muted-foreground">Реальный объём цемента:</span>
+                        <span>{realCementVolDisp.toFixed(3)} м³</span>
 
-                  <Separator className="col-span-2 my-1" />
+                        <Separator className="col-span-2 my-1" />
 
-                  <span className="text-muted-foreground font-semibold">Проектный интервал моста:</span>
-                  <span>{complicationResult.designedPlugTopMD.toFixed(1)} — {complicationResult.designedPlugBottomMD.toFixed(1)} м ({complicationResult.designedPlugLengthM.toFixed(1)} м)</span>
-                  {complicationResult.hasViscousPadBelow && complicationResult.padHeightMD > 0 && (
-                    <>
-                      <span className="text-muted-foreground">  • вязкая пачка ниже моста:</span>
-                      <span className="text-blue-400">{complicationResult.designedPadTopMD.toFixed(1)} — {complicationResult.designedPadBottomMD.toFixed(1)} м ({complicationResult.padHeightMD.toFixed(1)} м)</span>
-                    </>
-                  )}
-                  <span className="text-muted-foreground font-semibold">Реальный интервал цемента:</span>
-                  <span className={`font-bold ${complicationResult.lossPercentage > 30 ? 'text-destructive' : complicationResult.lossPercentage > 15 ? 'text-amber-400' : 'text-green-500'}`}>
-                    {complicationResult.realPlugTopMD.toFixed(1)} — {complicationResult.realPlugBottomMD.toFixed(1)} м ({complicationResult.realPlugLengthM.toFixed(1)} м)
-                  </span>
-                  {complicationResult.hasViscousPadBelow && (
-                    <>
-                      <span className="text-muted-foreground">  • цемент после осадки:</span>
-                      <span>{complicationResult.realPlugTopMD.toFixed(1)} — {complicationResult.realCementBottomMD.toFixed(1)} м</span>
-                      <span className="text-muted-foreground">  • пачка (реальная):</span>
-                      <span className="text-blue-400">{complicationResult.realPadTopMD.toFixed(1)} — {complicationResult.realPadBottomMD.toFixed(1)} м</span>
-                    </>
-                  )}
-                  <span className="text-muted-foreground">Потеряно:</span>
-                  <span className={`font-semibold ${complicationResult.lossPercentage > 30 ? 'text-destructive' : 'text-amber-400'}`}>
-                    {complicationResult.lossPercentage.toFixed(1)}%
-                  </span>
+                        <span className="text-muted-foreground font-semibold">Проектный интервал моста:</span>
+                        <span>{designedTopDisp.toFixed(1)} — {designedBotDisp.toFixed(1)} м ({designedLenDisp.toFixed(1)} м)</span>
+                        {complicationResult.hasViscousPadBelow && padH > 0 && (
+                          <>
+                            <span className="text-muted-foreground">  • вязкая пачка ниже моста:</span>
+                            <span className="text-blue-400">{dPadTop.toFixed(1)} — {dPadBot.toFixed(1)} м ({padH.toFixed(1)} м)</span>
+                          </>
+                        )}
+                        <span className="text-muted-foreground font-semibold">Реальный интервал цемента:</span>
+                        <span className={`font-bold ${lossPctDisp > 30 ? 'text-destructive' : lossPctDisp > 15 ? 'text-amber-400' : 'text-green-500'}`}>
+                          {realTopDisp.toFixed(1)} — {realBotDisp.toFixed(1)} м ({realLenDisp.toFixed(1)} м)
+                        </span>
+                        {complicationResult.hasViscousPadBelow && padH > 0 && (
+                          <>
+                            <span className="text-muted-foreground">  • пачка (реальная):</span>
+                            <span className="text-blue-400">
+                              {padFullyGone ? '— ушла полностью' : `${rPadTop.toFixed(1)} — ${rPadBot.toFixed(1)} м`}
+                            </span>
+                          </>
+                        )}
+                        <span className="text-muted-foreground">Потеряно цемента:</span>
+                        <span className={`font-semibold ${lossPctDisp > 30 ? 'text-destructive' : 'text-amber-400'}`}>
+                          {lossPctDisp.toFixed(1)}%
+                        </span>
+                        {unified && unified.reachesZone && (
+                          <>
+                            <span className="text-muted-foreground font-semibold text-destructive">⛔ Подошва достигла зоны:</span>
+                            <span className="text-destructive font-semibold">мост лежит на зоне поглощения</span>
+                          </>
+                        )}
+                      </div>
 
-                  {complicationResult.contaminationDepthM > 0 && (
-                    <>
-                      <span className="text-muted-foreground">Загрязнение низа цемента:</span>
-                      <span className="text-amber-400">~{complicationResult.contaminationDepthM.toFixed(1)} м</span>
-                      <span className="text-muted-foreground font-semibold">Чистый цемент (рабочий мост):</span>
-                      <span className="text-green-500 font-semibold">
-                        {complicationResult.cleanPlugTopMD.toFixed(1)} — {complicationResult.cleanPlugBottomMD.toFixed(1)} м
-                      </span>
+                      {/* Visual bar */}
+                      <div className="mt-2">
+                        <p className="text-[10px] text-muted-foreground mb-1">Проектный vs реальный мост (длина):</p>
+                        <div className="flex gap-1 items-center">
+                          <div className="flex-1 h-5 bg-muted rounded overflow-hidden relative">
+                            <div className="h-full bg-primary/60 rounded" style={{ width: '100%' }} />
+                            <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-primary-foreground">
+                              Проектный: {designedLenDisp.toFixed(0)} м
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex gap-1 items-center mt-0.5">
+                          <div className="flex-1 h-5 bg-muted rounded overflow-hidden relative">
+                            <div
+                              className={`h-full rounded ${shrinkPct > 30 ? 'bg-destructive/60' : 'bg-amber-500/60'}`}
+                              style={{ width: `${visualRealPct}%` }}
+                            />
+                            <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-foreground">
+                              Реальный: {realLenDisp.toFixed(0)} м{shrinkPct > 0.5 ? ` (−${shrinkPct.toFixed(0)}%)` : ' (длина сохранена, мост просел целиком)'}
+                            </span>
+                          </div>
+                        </div>
+                        {settlementDisp > 0.5 && (
+                          <p className="text-[9px] text-muted-foreground mt-1">
+                            Голова: план {designedTopDisp.toFixed(0)} м → факт {realTopDisp.toFixed(0)} м (−{settlementDisp.toFixed(0)} м).
+                            Подошва: план {designedBotDisp.toFixed(0)} м → факт {realBotDisp.toFixed(0)} м.
+                          </p>
+                        )}
+                      </div>
                     </>
-                  )}
-                </div>
-
-                {/* Visual bar */}
-                <div className="mt-2">
-                  <p className="text-[10px] text-muted-foreground mb-1">Проектный vs реальный мост:</p>
-                  <div className="flex gap-1 items-center">
-                    <div className="flex-1 h-5 bg-muted rounded overflow-hidden relative">
-                      <div
-                        className="h-full bg-primary/60 rounded"
-                        style={{ width: '100%' }}
-                      />
-                      <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-primary-foreground">
-                        Проектный: {complicationResult.designedPlugLengthM.toFixed(0)} м
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex gap-1 items-center mt-0.5">
-                    <div className="flex-1 h-5 bg-muted rounded overflow-hidden relative">
-                      <div
-                        className={`h-full rounded ${complicationResult.lossPercentage > 30 ? 'bg-destructive/60' : 'bg-amber-500/60'}`}
-                        style={{ width: `${Math.max(5, 100 - complicationResult.lossPercentage)}%` }}
-                      />
-                      <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-foreground">
-                        Реальный: {complicationResult.realPlugLengthM.toFixed(0)} м (−{complicationResult.lossPercentage.toFixed(0)}%)
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
             )}
+
 
             {/* Kick analysis */}
             {(type === 'kick' || type === 'both') && (
