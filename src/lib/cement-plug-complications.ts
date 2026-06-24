@@ -816,7 +816,7 @@ export function analyzePlugProfile(
 
 // ───── БЛОК 5: ДИНАМИЧЕСКОЕ ПРОСЕДАНИЕ (U-tube) ─────
 export type ArrestMechanism =
-  | 'gelation' | 'friction' | 'reached_zone' | 'fluid_limited' | 'stable' | 'self_arrest_capacity';
+  | 'gelation' | 'friction' | 'reached_zone' | 'fluid_limited' | 'stable' | 'self_arrest_capacity' | 'rheology_balance';
 
 export interface SettlementResult {
   willSettle: boolean;
