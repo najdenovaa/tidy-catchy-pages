@@ -399,7 +399,10 @@ export default function ComplicationsSection({
                   porosity: zonePorosity, initialLossRateM3h: lossRate, drainageRadiusM: drainageRadius,
                 }}
                 trajectory={trajectory.length ? trajectory : [{ md: 0, zenithDeg: 0, tvd: 0 }]}
+                padHeightM={hasViscousPad && spacerVolumeBelow > 0 && results.annArea > 0
+                  ? spacerVolumeBelow / results.annArea : 0}
               />
+
               <div className="space-y-2">
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
                   <span className="text-muted-foreground">Планируемая голова:</span>
