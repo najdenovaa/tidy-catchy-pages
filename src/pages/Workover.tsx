@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Home, ArrowLeft, Wrench, Anchor, Activity, Magnet, Search, Construction as Crane } from "lucide-react";
+import { Home, ArrowLeft, Wrench, Anchor, Activity, Magnet, Search, Construction as Crane, Droplets } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -18,10 +18,11 @@ import TermsFooter from "@/components/TermsFooter";
 import {
   STEEL_GRADES,
   pipeYieldForceKN,
-  calculatePacker, calculateDrag, calculateLubricant,
+  calculatePacker, calculatePackerRelease, calculateDrag, calculateLubricant,
   calculateFreePoint, diagnoseStuck, calculateFishing, calculateRigCapacity,
-  type WorkoverWellData, type PackerInput, type DragInput, type LubricantInput,
-  type FreePointInput, type StuckSymptoms, type FishingInput, type RigInput,
+  calculateKill, KILL_FLUIDS,
+  type WorkoverWellData, type PackerInput, type PackerReleaseInput, type DragInput, type LubricantInput,
+  type FreePointInput, type StuckSymptoms, type FishingInput, type RigInput, type KillInput,
 } from "@/lib/workover-calculations";
 
 const num = (v: string) => (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
@@ -65,6 +66,41 @@ export default function Workover() {
     rubberFrictionCoeff: 0.4, setPressureMPa: 20, differentialPressureMPa: 15,
   });
   const packerResult = useMemo(() => calculatePacker(packer), [packer]);
+
+  // ──── Packer RELEASE ────
+  const [releaseExtra, setReleaseExtra] = useState({
+    monthsInService: 12, h2sPresent: false, scaleDepositRate: 6, pipeWeightAboveKN: 180,
+  });
+  const releaseResult = useMemo(() => calculatePackerRelease({
+    packerType: packer.type,
+    holdCapacityKN: packerResult.holdCapacityKN,
+    monthsInService: releaseExtra.monthsInService,
+    h2sPresent: releaseExtra.h2sPresent,
+    scaleDepositRate: releaseExtra.scaleDepositRate,
+    pipeWeightAboveKN: releaseExtra.pipeWeightAboveKN,
+    pipeYieldMPa: well.pipeYieldMPa,
+    pipeOD_mm: well.pipeOD_mm, pipeID_mm: well.pipeID_mm,
+  } as PackerReleaseInput), [packer.type, packerResult.holdCapacityKN, releaseExtra, well.pipeYieldMPa, well.pipeOD_mm, well.pipeID_mm]);
+
+  // ──── Kill ────
+  const [kill, setKill] = useState<KillInput>({
+    method: "wait_weight",
+    formationPressureMPa: 28, reservoirDepthTVD: 2200, fracturePressureMPa: 42,
+    currentMudDensity: 1.10,
+    wellDepthMD: 2500, casingID_mm: 152, tubingOD_mm: 73, tubingID_mm: 62,
+    killFluidPV_cP: 20, killFluidYP_Pa: 6, pumpRateLs: 8, safetyMarginPct: 5,
+  });
+  const killResult = useMemo(() => calculateKill(kill), [kill]);
+  const killChart = useMemo(() => {
+    const steps = 20;
+    const out: { v: number; p: number }[] = [];
+    for (let i = 0; i <= steps; i++) {
+      const f = i / steps;
+      const p = killResult.initialCircPressureMPa + (killResult.finalCircPressureMPa - killResult.initialCircPressureMPa) * f;
+      out.push({ v: +(killResult.killVolumeM3 * f).toFixed(2), p: +p.toFixed(2) });
+    }
+    return out;
+  }, [killResult]);
 
   // ──── Drag + lubricant ────
   const [drag, setDrag] = useState<DragInput>({ operation: "pull_out", frictionCoeff: 0.30 });
@@ -192,13 +228,15 @@ export default function Workover() {
         </Card>
 
         <Tabs defaultValue="packer" className="w-full">
-          <TabsList className="grid grid-cols-2 sm:grid-cols-5 w-full h-auto">
+          <TabsList className="grid grid-cols-2 sm:grid-cols-6 w-full h-auto">
             <TabsTrigger value="packer" className="text-xs gap-1"><Anchor className="w-3.5 h-3.5" /> Пакеры</TabsTrigger>
+            <TabsTrigger value="kill" className="text-xs gap-1"><Droplets className="w-3.5 h-3.5" /> Глушение</TabsTrigger>
             <TabsTrigger value="drag" className="text-xs gap-1"><Activity className="w-3.5 h-3.5" /> Затяжки / T&D</TabsTrigger>
             <TabsTrigger value="stuck" className="text-xs gap-1"><Magnet className="w-3.5 h-3.5" /> Прихваты</TabsTrigger>
             <TabsTrigger value="fishing" className="text-xs gap-1"><Search className="w-3.5 h-3.5" /> Ловильные</TabsTrigger>
             <TabsTrigger value="rig" className="text-xs gap-1"><Crane className="w-3.5 h-3.5" /> Подъёмник</TabsTrigger>
           </TabsList>
+
 
           {/* ──────────────── PACKER ──────────────── */}
           <TabsContent value="packer" className="space-y-4">
@@ -247,7 +285,185 @@ export default function Workover() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* ─── Срыв пакера ─── */}
+            <Card className="border-amber-500/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  🔧 Срыв пакера (release) — операция извлечения
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <NumberField label="Срок эксплуатации" unit="мес"
+                    value={releaseExtra.monthsInService}
+                    onChange={(v) => setReleaseExtra((s) => ({ ...s, monthsInService: v }))}
+                    hint="растёт адгезия и отложения" />
+                  <NumberField label="Интенсивность отложений" unit="кН/мес"
+                    value={releaseExtra.scaleDepositRate}
+                    onChange={(v) => setReleaseExtra((s) => ({ ...s, scaleDepositRate: v }))}
+                    hint="соли/парафин/коррозия (3–15)" />
+                  <NumberField label="Вес колонны над пакером" unit="кН"
+                    value={releaseExtra.pipeWeightAboveKN}
+                    onChange={(v) => setReleaseExtra((s) => ({ ...s, pipeWeightAboveKN: v }))} />
+                  <label className="flex items-end gap-2 text-xs cursor-pointer pb-2">
+                    <input type="checkbox" checked={releaseExtra.h2sPresent}
+                      onChange={(e) => setReleaseExtra((s) => ({ ...s, h2sPresent: e.target.checked }))} />
+                    H₂S среда (×1.5 прихват)
+                  </label>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <Row k="Базовое удержание" v={`${releaseResult.breakdown.baseHold.toFixed(0)} кН`} />
+                  <Row k="Адгезия резины" v={`+${releaseResult.breakdown.adhesion.toFixed(0)} кН`} />
+                  <Row k="Прихват отложениями" v={`+${releaseResult.breakdown.scaleStick.toFixed(0)} кН`} />
+                  <Row k="Усилие срыва" v={<strong>{releaseResult.releaseForceKN.toFixed(0)} кН</strong>} />
+                  <Row k="Полное усилие (+ вес колонны)" v={`${releaseResult.totalPullRequiredKN.toFixed(0)} кН`}
+                    tone={releaseResult.canReleaseByTension ? "ok" : "danger"} />
+                  <Row k="Предел колонны (÷1.25)" v={`${releaseResult.pipeTensileLimitKN.toFixed(0)} кН`} />
+                  <div className="pt-1 flex flex-wrap gap-2">
+                    {releaseResult.canReleaseByTension
+                      ? <Badge className="bg-green-600">🟢 Сорвётся натяжкой</Badge>
+                      : <Badge variant="destructive">🔴 Натяжкой не сорвать</Badge>}
+                    <Badge variant="secondary">
+                      Метод: {{ tension: "Натяжка", rotation: "Вращение", pressure_release: "Сброс давления", mill_out: "Фрезерование" }[releaseResult.recommendedMechanism]}
+                    </Badge>
+                  </div>
+                  {releaseResult.warnings.map((w, i) => (
+                    <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
+
+          {/* ──────────────── KILL ──────────────── */}
+          <TabsContent value="kill" className="space-y-4">
+            <div className="grid lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Метод и параметры глушения</CardTitle></CardHeader>
+                <CardContent className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2 space-y-1">
+                    <Label className="text-xs">Метод</Label>
+                    <Select value={kill.method} onValueChange={(v) => setKill({ ...kill, method: v as KillInput["method"] })}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="driller">Метод бурильщика (2 цикла)</SelectItem>
+                        <SelectItem value="wait_weight">Метод ожидания и утяжеления (1 цикл)</SelectItem>
+                        <SelectItem value="volumetric">Объёмный (без циркуляции)</SelectItem>
+                        <SelectItem value="bullhead">Bullhead — задавка в пласт</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <NumberField label="Pпл" unit="МПа" value={kill.formationPressureMPa}
+                    onChange={(v) => setKill({ ...kill, formationPressureMPa: v })} />
+                  <NumberField label="TVD пласта" unit="м" value={kill.reservoirDepthTVD}
+                    onChange={(v) => setKill({ ...kill, reservoirDepthTVD: v })} />
+                  <NumberField label="Pгрп (предел)" unit="МПа" value={kill.fracturePressureMPa}
+                    onChange={(v) => setKill({ ...kill, fracturePressureMPa: v })} />
+                  <NumberField label="Текущая плотность" unit="г/см³" value={kill.currentMudDensity}
+                    onChange={(v) => setKill({ ...kill, currentMudDensity: v })} />
+                  <NumberField label="Запас плотности" unit="%" value={kill.safetyMarginPct}
+                    onChange={(v) => setKill({ ...kill, safetyMarginPct: v })} hint="обычно 3–5%" />
+                  <NumberField label="Глубина MD" unit="м" value={kill.wellDepthMD}
+                    onChange={(v) => setKill({ ...kill, wellDepthMD: v })} />
+                  <NumberField label="ID обсадной" unit="мм" value={kill.casingID_mm}
+                    onChange={(v) => setKill({ ...kill, casingID_mm: v })} />
+                  <NumberField label="НКТ OD" unit="мм" value={kill.tubingOD_mm}
+                    onChange={(v) => setKill({ ...kill, tubingOD_mm: v })} />
+                  <NumberField label="НКТ ID" unit="мм" value={kill.tubingID_mm}
+                    onChange={(v) => setKill({ ...kill, tubingID_mm: v })} />
+                  <NumberField label="PV жидкости" unit="сП" value={kill.killFluidPV_cP}
+                    onChange={(v) => setKill({ ...kill, killFluidPV_cP: v })} />
+                  <NumberField label="YP жидкости" unit="Па" value={kill.killFluidYP_Pa}
+                    onChange={(v) => setKill({ ...kill, killFluidYP_Pa: v })} />
+                  <NumberField label="Расход насоса" unit="л/с" value={kill.pumpRateLs}
+                    onChange={(v) => setKill({ ...kill, pumpRateLs: v })} />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Результаты глушения</CardTitle></CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <Row k="Плотность баланса" v={`${killResult.balanceDensity.toFixed(3)} г/см³`} />
+                  <Row k={`Плотность глушения (+${kill.safetyMarginPct}%)`}
+                    v={<strong>{killResult.killDensity.toFixed(3)} г/см³</strong>} />
+                  <Row k="Подбор жидкости" v={<Badge variant="secondary">{killResult.selectedFluid}</Badge>} />
+                  <Row k="Забойное (после глушения)" v={`${killResult.bottomholePressureMPa.toFixed(2)} МПа`}
+                    tone={killResult.exceedsFracture ? "danger" : "ok"} />
+                  <Row k="Pгрп" v={`${kill.fracturePressureMPa.toFixed(2)} МПа`} />
+                  <Row k="Объём глушения" v={`${killResult.killVolumeM3.toFixed(2)} м³`} />
+                  <Row k="Потери на трение (затрубье)" v={`${killResult.frictionLossMPa.toFixed(2)} МПа`} />
+                  {(kill.method === "driller" || kill.method === "wait_weight") && (
+                    <>
+                      <Row k="ICP — нач. циркуляции" v={`${killResult.initialCircPressureMPa.toFixed(2)} МПа`} />
+                      <Row k="FCP — кон. циркуляции" v={`${killResult.finalCircPressureMPa.toFixed(2)} МПа`} />
+                    </>
+                  )}
+                  {kill.method === "bullhead" && (
+                    <Row k="Устьевое давление задавки" v={`${killResult.bullheadSurfacePressureMPa.toFixed(2)} МПа`}
+                      tone={killResult.bullheadSurfacePressureMPa > kill.fracturePressureMPa * 0.7 ? "warn" : "ok"} />
+                  )}
+                  <div className="pt-1">
+                    {killResult.exceedsFracture
+                      ? <Badge variant="destructive">🔴 Превышение ГРП</Badge>
+                      : <Badge className="bg-green-600">🟢 В безопасном окне</Badge>}
+                  </div>
+                  <Alert className="py-2"><AlertDescription className="text-xs">{killResult.recommendation}</AlertDescription></Alert>
+                  {killResult.warnings.map((w, i) => (
+                    <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Давление циркуляции vs объём прокачки</CardTitle></CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={260}>
+                  <LineChart data={killChart}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="v" label={{ value: "Объём, м³", position: "insideBottom", offset: -5 }} />
+                    <YAxis label={{ value: "Давление, МПа", angle: -90, position: "insideLeft" }} />
+                    <Tooltip />
+                    <Legend />
+                    <ReferenceLine y={kill.fracturePressureMPa} stroke="#f43f5e" strokeDasharray="4 4" label="Pгрп" />
+                    <Line type="monotone" dataKey="p" name="Давление насоса" stroke="#0ea5e9" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Каталог жидкостей глушения</CardTitle></CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Жидкость</TableHead>
+                      <TableHead>Max плотность, г/см³</TableHead>
+                      <TableHead>Тип</TableHead>
+                      <TableHead>Подходит</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {KILL_FLUIDS.map((f) => (
+                      <TableRow key={f.name}>
+                        <TableCell className="text-xs">{f.name}</TableCell>
+                        <TableCell className="text-xs">{f.maxDensity.toFixed(2)}</TableCell>
+                        <TableCell className="text-xs">{f.type}</TableCell>
+                        <TableCell className="text-xs">
+                          {f.maxDensity >= killResult.killDensity
+                            ? <Badge className="bg-green-600">да</Badge>
+                            : <Badge variant="secondary">нет</Badge>}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
 
           {/* ──────────────── DRAG / LUBE ──────────────── */}
           <TabsContent value="drag" className="space-y-4">
