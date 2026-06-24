@@ -759,6 +759,23 @@ function interpolateZenith(md: number, traj: ProfilePoint[]): number {
   return traj[traj.length - 1].zenithDeg;
 }
 
+function interpolateTVD(md: number, traj: ProfilePoint[]): number {
+  if (!traj.length) return md;
+  if (md <= traj[0].md) return traj[0].tvd;
+  if (md >= traj[traj.length - 1].md) {
+    const last = traj[traj.length - 1];
+    return last.tvd + (md - last.md) * Math.cos((last.zenithDeg * Math.PI) / 180);
+  }
+  for (let i = 1; i < traj.length; i++) {
+    if (md <= traj[i].md) {
+      const a = traj[i - 1], b = traj[i];
+      const f = (md - a.md) / Math.max(1e-6, b.md - a.md);
+      return a.tvd + (b.tvd - a.tvd) * f;
+    }
+  }
+  return traj[traj.length - 1].tvd;
+}
+
 export interface PlugProfileSegment {
   topMD: number; bottomMD: number; zenith: number;
   drive: number; normal: number; friction: number;
@@ -1146,13 +1163,21 @@ export function calculateKickLift(
   const wallPerim = Math.PI * boreDiamM;
   const rhoKick = KICK_DENSITY_GCM3[formationFluidType];
 
-  // 1) Стартовый дисбаланс на подошве моста
+  // 1) Стартовый дисбаланс на подошве моста (по TVD — гидростатика зависит от вертикали, не от MD)
   const wfDensity = wellFluid.densityGcm3;
   const cDensity = cement.densityGcm3;
   const padDensity = viscousPad?.densityGcm3 ?? wfDensity;
-  // Гидростатика на подошве: столб скв.жидкости от устья до головы моста + цемент + пачка
-  const Phydro0 = (wfDensity * plugTopMD + cDensity * plugLen + padDensity * padHeightM) * 1000 * 9.81 / 1e6;
-  const drive0Pa = Math.max(0, (formationPressureMPa - Phydro0) * 1e6);
+  const plugTopTVD = interpolateTVD(plugTopMD, trajectory);
+  const plugBottomTVD_real = Number.isFinite(plugBottomTVD) && plugBottomTVD > 0
+    ? plugBottomTVD : interpolateTVD(plugBottomMD, trajectory);
+  const padBottomTVD = interpolateTVD(plugBottomMD + Math.max(0, padHeightM), trajectory);
+  const Phydro0 = (
+    wfDensity * plugTopTVD +
+    cDensity * Math.max(0, plugBottomTVD_real - plugTopTVD) +
+    padDensity * Math.max(0, padBottomTVD - plugBottomTVD_real)
+  ) * 1000 * 9.81 / 1e6;
+  const excessMPa = formationPressureMPa - Phydro0;
+  const drive0Pa = Math.max(0, excessMPa * 1e6);
   const drive0KN = drive0Pa * annAreaM2 / 1000;
 
   // 2) Сопротивление подъёму (статика геля + трение по профилю)
@@ -1181,8 +1206,8 @@ export function calculateKickLift(
       cleanCementTopMD: plugTopMD, cleanCementBottomMD: plugBottomMD,
       arrestMechanism: drive0KN <= 0 ? 'no_lift' : 'gel_yield',
       warnings: drive0KN <= 0
-        ? ['✅ Пластовое давление ниже гидростатики — подъём невозможен.']
-        : [`✅ Статический гель (${(resistKN).toFixed(0)} кН) удерживает столб от подъёма (драйв ${drive0KN.toFixed(0)} кН).`],
+        ? [`✅ Гидростатика моста ${Phydro0.toFixed(1)} МПа ≥ пластового ${formationPressureMPa.toFixed(1)} МПа (по TVD зоны) — подъём невозможен, мост держит проявление.`]
+        : [`✅ Статический гель (${(resistKN).toFixed(0)} кН) удерживает столб от подъёма (избыток ${excessMPa.toFixed(1)} МПа, драйв ${drive0KN.toFixed(0)} кН).`],
     };
   }
 
