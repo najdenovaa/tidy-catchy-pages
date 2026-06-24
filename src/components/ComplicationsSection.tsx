@@ -393,7 +393,7 @@ export default function ComplicationsSection({
                 plannedTopMD={results.plugTopMD ?? results.plugTopTVD}
                 plannedBottomMD={results.plugBottomMD ?? results.plugBottomTVD}
                 result={fullAnalysis.settlement}
-                multiPlug={fullAnalysis.multiPlug}
+                multiPlug={null}
                 lossZone={{
                   topMD: zoneDepthMD, thicknessM: zoneThickness, zoneType,
                   porosity: zonePorosity, initialLossRateM3h: lossRate, drainageRadiusM: drainageRadius,
