@@ -1278,20 +1278,29 @@ export function analyzePlugComplicationFull(
   bhTempC: number,
   kickFormationPressureMPa: number,
   hasGasZone: boolean,
+  formationFluidType: KickFluidType = 'water',
+  plugBottomTVD: number = plugBottomMD,
 ): FullComplicationAnalysis {
   const tw = (cement.thickeningTime30Bc > 0 && cement.thickeningTime50Bc > 0)
     ? transitionWindow(cement.thickeningTime30Bc, cement.thickeningTime50Bc, hasGasZone) : null;
 
   let kickInv = 0;
+  let kickLift: KickLiftResult | null = null;
   if (kickFormationPressureMPa > 0) {
     const hydro = cement.densityGcm3 * 1000 * 9.81 * (plugBottomMD) / 1e6;
     const gel = cement.gel10minPa > 0 ? cement.gel10minPa : cement.ypPa * 3;
     kickInv = kickInvasion(kickFormationPressureMPa, hydro, gel, boreDiamM, plugBottomMD - plugTopMD);
+    kickLift = calculateKickLift(
+      plugTopMD, plugBottomMD, plugBottomTVD,
+      kickFormationPressureMPa, formationFluidType,
+      cement, wellFluid, viscousPad, padHeightM,
+      annAreaM2, boreDiamM, trajectory, frictionCoeff, totalOpTimeMin,
+    );
   }
 
   if (!lossZone || lossZone.initialLossRateM3h <= 0) {
-    return { scenario: kickInv > 0 ? 'kick' : 'none', settlement: null,
-      volumeEffect: null, multiPlug: null, transitionWindow: tw, kickInvasionM: kickInv };
+    return { scenario: kickInv > 0 || kickLift ? 'kick' : 'none', settlement: null,
+      volumeEffect: null, multiPlug: null, transitionWindow: tw, kickInvasionM: kickInv, kickLift };
   }
 
   if (lossZone.topMD > plugBottomMD) {
@@ -1312,7 +1321,7 @@ export function analyzePlugComplicationFull(
         cement, wellFluid.densityGcm3, bhTempC,
       );
     }
-    return { scenario: 'zone_below', settlement, volumeEffect, multiPlug, transitionWindow: tw, kickInvasionM: kickInv };
+    return { scenario: 'zone_below', settlement, volumeEffect, multiPlug, transitionWindow: tw, kickInvasionM: kickInv, kickLift };
   }
 
   const inside = lossZone.topMD + lossZone.thicknessM / 2 >= plugTopMD
@@ -1320,6 +1329,7 @@ export function analyzePlugComplicationFull(
   return {
     scenario: inside ? 'zone_inside' : 'zone_above',
     settlement: null, volumeEffect: null, multiPlug: null,
-    transitionWindow: tw, kickInvasionM: kickInv,
+    transitionWindow: tw, kickInvasionM: kickInv, kickLift,
   };
 }
+
