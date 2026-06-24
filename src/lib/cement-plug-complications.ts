@@ -846,6 +846,7 @@ export function calculatePlugSettlement(
   frictionCoeff: number,
   totalOpTimeMin: number,
   lcmReductionFactor: number,
+  userBcAtStop: number = 0,
 ): SettlementResult {
   const plugLen = plugBottomMD - plugTopMD;
   const wallPerim = Math.PI * boreDiamM;
