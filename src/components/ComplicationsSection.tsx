@@ -918,10 +918,12 @@ export default function ComplicationsSection({
                         <span>{complicationResult.fillTimeMin.toFixed(1)} мин</span>
                         <span className="text-muted-foreground">Уход в пласт всего:</span>
                         <span className="text-amber-400 font-semibold">{volLostDisp.toFixed(3)} м³</span>
-                        <span className="text-muted-foreground">  • цемент:</span>
-                        <span>{cementLostDisp.toFixed(3)} м³</span>
+                        <span className="text-muted-foreground">  • скважинная жидкость:</span>
+                        <span className="text-cyan-400">{(unified?.fluidLostM3 ?? 0).toFixed(3)} м³</span>
                         <span className="text-muted-foreground">  • нижняя пачка:</span>
                         <span className="text-blue-400">{padLostDisp.toFixed(3)} м³{padFullyGone ? ' (ушла полностью)' : ''}</span>
+                        <span className="text-muted-foreground">  • цемент:</span>
+                        <span className={cementLostDisp > 0.05 ? 'text-destructive font-bold' : ''}>{cementLostDisp.toFixed(3)} м³</span>
                         {settlementDisp > 0 && (
                           <>
                             <span className="text-muted-foreground">Осадка моста вниз:</span>
