@@ -281,12 +281,20 @@ export function calculateKill(input: KillInput): KillResult {
     (Math.PI / 4) * ((input.casingID_mm / 1000) ** 2 - (input.tubingOD_mm / 1000) ** 2) * input.wellDepthMD;
   const killVolume = tubingCapacity + annulusCapacity;
 
-  const dhAnn = Math.max(0.005, (input.casingID_mm - input.tubingOD_mm) / 1000);
-  const annArea = (Math.PI / 4) * ((input.casingID_mm / 1000) ** 2 - (input.tubingOD_mm / 1000) ** 2);
-  const vAnn = input.pumpRateLs / 1000 / Math.max(1e-6, annArea);
-  const dpdlAnn =
-    input.killFluidYP_Pa / (0.2 * dhAnn) + ((input.killFluidPV_cP / 1000) * vAnn) / (1.5 * dhAnn * dhAnn);
-  const frictionLoss = (dpdlAnn * input.wellDepthMD) / 1e6;
+  // Потери на трение: по секциям профиля, либо одно-секционный fallback
+  let frictionLoss: number;
+  if (input.sections && input.sections.length > 0) {
+    frictionLoss = calculateKillFriction(
+      input.sections, input.pumpRateLs, input.killFluidPV_cP, input.killFluidYP_Pa,
+    );
+  } else {
+    const dhAnn = Math.max(0.005, (input.casingID_mm - input.tubingOD_mm) / 1000);
+    const annArea = (Math.PI / 4) * ((input.casingID_mm / 1000) ** 2 - (input.tubingOD_mm / 1000) ** 2);
+    const vAnn = input.pumpRateLs / 1000 / Math.max(1e-6, annArea);
+    const dpdlAnn =
+      input.killFluidYP_Pa / (0.2 * dhAnn) + ((input.killFluidPV_cP / 1000) * vAnn) / (1.5 * dhAnn * dhAnn);
+    frictionLoss = (dpdlAnn * input.wellDepthMD) / 1e6;
+  }
 
   const pumpPressure = frictionLoss;
   const ICP = pumpPressure + ((killDensity - input.currentMudDensity) * 1000 * G * tvd) / 1e6;
