@@ -58,6 +58,36 @@ function interpolateZenithDeg(md: number, traj: TrajectoryPoint[]): number {
   return traj[traj.length - 1].zenith;
 }
 
+function interpolateAzimuthDeg(md: number, traj: TrajectoryPoint[]): number {
+  if (!traj.length) return 0;
+  if (md <= traj[0].md) return traj[0].azimuth ?? 0;
+  for (let i = 1; i < traj.length; i++) {
+    if (md <= traj[i].md) {
+      const a = traj[i - 1], b = traj[i];
+      const t = (md - a.md) / Math.max(1e-6, b.md - a.md);
+      // Кратчайшая интерполяция по азимуту (учёт перехода 359→0)
+      const a0 = a.azimuth ?? 0;
+      const b0 = b.azimuth ?? 0;
+      let d = b0 - a0;
+      if (d > 180) d -= 360;
+      if (d < -180) d += 360;
+      return a0 + t * d;
+    }
+  }
+  return traj[traj.length - 1].azimuth ?? 0;
+}
+
+function averageZenithDeg(traj: TrajectoryPoint[], upToMD: number): number {
+  if (!traj.length || upToMD <= 0) return 0;
+  const step = 25;
+  let sum = 0, n = 0;
+  for (let md = 0; md <= upToMD; md += step) {
+    sum += interpolateZenithDeg(md, traj);
+    n++;
+  }
+  return n ? sum / n : 0;
+}
+
 // ────────── BLOCK 1: packers ──────────
 
 export type PackerType = "mechanical" | "hydraulic" | "hydrostatic" | "permanent" | "retrievable";
