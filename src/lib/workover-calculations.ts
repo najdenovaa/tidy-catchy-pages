@@ -114,6 +114,198 @@ export function calculatePacker(input: PackerInput): PackerResult {
   };
 }
 
+// ────────── BLOCK 1b: packer RELEASE (full operation) ──────────
+
+export type ReleaseMechanism = "tension" | "rotation" | "pressure_release" | "mill_out";
+
+export interface PackerReleaseInput {
+  packerType: PackerType;
+  holdCapacityKN: number;
+  monthsInService: number;
+  h2sPresent: boolean;
+  scaleDepositRate: number;     // kN/month (3–15)
+  pipeWeightAboveKN: number;
+  pipeYieldMPa: number;
+  pipeOD_mm: number;
+  pipeID_mm: number;
+}
+
+export interface PackerReleaseResult {
+  releaseForceKN: number;
+  breakdown: { baseHold: number; adhesion: number; scaleStick: number };
+  totalPullRequiredKN: number;
+  pipeTensileLimitKN: number;
+  canReleaseByTension: boolean;
+  recommendedMechanism: ReleaseMechanism;
+  warnings: string[];
+}
+
+export function calculatePackerRelease(input: PackerReleaseInput): PackerReleaseResult {
+  const adhesion = input.holdCapacityKN * (0.15 + 0.01 * Math.min(input.monthsInService, 24));
+  const scaleStick = input.scaleDepositRate * input.monthsInService * (input.h2sPresent ? 1.5 : 1.0);
+  const releaseForce = input.holdCapacityKN + adhesion + scaleStick;
+  const totalPull = releaseForce + input.pipeWeightAboveKN;
+  const A = (Math.PI / 4) * ((input.pipeOD_mm / 1000) ** 2 - (input.pipeID_mm / 1000) ** 2);
+  const tensileLimit = (input.pipeYieldMPa * 1e6 * A) / 1000 / 1.25;
+  const canRelease = totalPull < tensileLimit;
+
+  let mechanism: ReleaseMechanism;
+  const warnings: string[] = [];
+  if (input.packerType === "permanent") {
+    mechanism = "mill_out";
+    warnings.push("Постоянный пакер — срыв невозможен. Только разбуривание/фрезерование.");
+  } else if (!canRelease) {
+    mechanism = input.packerType === "mechanical" ? "rotation" : "mill_out";
+    warnings.push(
+      `🔴 Усилие срыва ${totalPull.toFixed(0)} кН > предела колонны ${tensileLimit.toFixed(0)} кН. Натяжкой НЕ сорвать — труба порвётся. Применить ${mechanism === "rotation" ? "срыв вращением" : "фрезерование"}.`,
+    );
+  } else if (input.packerType === "mechanical") {
+    mechanism = "rotation";
+  } else if (input.packerType === "hydraulic" || input.packerType === "hydrostatic") {
+    mechanism = "pressure_release";
+    warnings.push("Гидравлический пакер: сначала сбросить давление, затем натяжка.");
+  } else {
+    mechanism = "tension";
+  }
+  if (input.monthsInService > 24)
+    warnings.push(
+      `⚠ Срок эксплуатации ${input.monthsInService} мес — пакер сильно прикипел (адгезия +${((adhesion / input.holdCapacityKN) * 100).toFixed(0)}%, отложения ${scaleStick.toFixed(0)} кН).`,
+    );
+  if (input.h2sPresent)
+    warnings.push("⚠ H₂S среда — продукты коррозии увеличивают прихват плашек в 1.5×.");
+
+  return {
+    releaseForceKN: releaseForce,
+    breakdown: { baseHold: input.holdCapacityKN, adhesion, scaleStick },
+    totalPullRequiredKN: totalPull,
+    pipeTensileLimitKN: tensileLimit,
+    canReleaseByTension: canRelease,
+    recommendedMechanism: mechanism,
+    warnings,
+  };
+}
+
+// ────────── BLOCK 1c: WELL KILL ──────────
+
+export type KillMethod = "driller" | "wait_weight" | "volumetric" | "bullhead";
+
+export const KILL_FLUIDS = [
+  { name: "Техническая вода", maxDensity: 1.0, type: "water" },
+  { name: "Раствор NaCl", maxDensity: 1.2, type: "brine" },
+  { name: "Раствор CaCl₂", maxDensity: 1.4, type: "brine" },
+  { name: "Раствор CaBr₂", maxDensity: 1.7, type: "brine" },
+  { name: "Раствор ZnBr₂/CaBr₂", maxDensity: 2.3, type: "brine" },
+  { name: "Глинистый р-р с баритом", maxDensity: 2.5, type: "weighted_mud" },
+] as const;
+
+export interface KillInput {
+  method: KillMethod;
+  formationPressureMPa: number;
+  reservoirDepthTVD: number;
+  fracturePressureMPa: number;
+  currentMudDensity: number;
+  wellDepthMD: number;
+  casingID_mm: number;
+  tubingOD_mm: number;
+  tubingID_mm: number;
+  killFluidPV_cP: number;
+  killFluidYP_Pa: number;
+  pumpRateLs: number;
+  safetyMarginPct: number;
+}
+
+export interface KillResult {
+  killDensity: number;
+  balanceDensity: number;
+  bottomholePressureMPa: number;
+  killVolumeM3: number;
+  initialCircPressureMPa: number;
+  finalCircPressureMPa: number;
+  bullheadSurfacePressureMPa: number;
+  exceedsFracture: boolean;
+  frictionLossMPa: number;
+  selectedFluid: string;
+  warnings: string[];
+  recommendation: string;
+}
+
+export function calculateKill(input: KillInput): KillResult {
+  const G = 9.81;
+  const tvd = Math.max(1, input.reservoirDepthTVD);
+
+  const balanceDensity = (input.formationPressureMPa * 1e6) / (G * tvd) / 1000;
+  const killDensity = balanceDensity * (1 + input.safetyMarginPct / 100);
+  const bhp = (killDensity * 1000 * G * tvd) / 1e6;
+  const exceedsFracture = bhp > input.fracturePressureMPa;
+
+  const tubingCapacity = (Math.PI / 4) * (input.tubingID_mm / 1000) ** 2 * input.wellDepthMD;
+  const annulusCapacity =
+    (Math.PI / 4) * ((input.casingID_mm / 1000) ** 2 - (input.tubingOD_mm / 1000) ** 2) * input.wellDepthMD;
+  const killVolume = tubingCapacity + annulusCapacity;
+
+  const dhAnn = Math.max(0.005, (input.casingID_mm - input.tubingOD_mm) / 1000);
+  const annArea = (Math.PI / 4) * ((input.casingID_mm / 1000) ** 2 - (input.tubingOD_mm / 1000) ** 2);
+  const vAnn = input.pumpRateLs / 1000 / Math.max(1e-6, annArea);
+  const dpdlAnn =
+    input.killFluidYP_Pa / (0.2 * dhAnn) + ((input.killFluidPV_cP / 1000) * vAnn) / (1.5 * dhAnn * dhAnn);
+  const frictionLoss = (dpdlAnn * input.wellDepthMD) / 1e6;
+
+  const pumpPressure = frictionLoss;
+  const ICP = pumpPressure + ((killDensity - input.currentMudDensity) * 1000 * G * tvd) / 1e6;
+  const FCP = pumpPressure * (killDensity / Math.max(0.01, input.currentMudDensity));
+
+  const killHydro = (killDensity * 1000 * G * tvd) / 1e6;
+  const bullheadSurface = Math.max(0, input.formationPressureMPa - killHydro + frictionLoss);
+
+  const fluid = KILL_FLUIDS.find((f) => f.maxDensity >= killDensity) ?? KILL_FLUIDS[KILL_FLUIDS.length - 1];
+
+  const warnings: string[] = [];
+  if (exceedsFracture)
+    warnings.push(
+      `🔴 Забойное давление глушения ${bhp.toFixed(1)} МПа > ГРП ${input.fracturePressureMPa.toFixed(1)} МПа. Риск поглощения! Снизить плотность или применить поэтапное глушение.`,
+    );
+  if (input.method === "bullhead" && bullheadSurface * 1.5 > input.fracturePressureMPa - killHydro)
+    warnings.push("⚠ Bullheading: давление задавки близко к ГРП. Контролировать устьевое давление.");
+  if (killDensity > 2.3)
+    warnings.push(
+      `⚠ Требуется плотность ${killDensity.toFixed(2)} г/см³ — нужны утяжелители (барит/гематит) или соли (CaCl₂, CaBr₂, ZnBr₂).`,
+    );
+
+  let recommendation = "";
+  switch (input.method) {
+    case "driller":
+      recommendation =
+        "Метод бурильщика: 1-я циркуляция вымывает приток текущей жидкостью, 2-я — закачка утяжелённой. Проще, но дольше (2 цикла).";
+      break;
+    case "wait_weight":
+      recommendation =
+        "Метод ожидания: сразу закачка утяжелённой жидкости за 1 циркуляцию. Быстрее, ниже давления, но требует точного расчёта.";
+      break;
+    case "volumetric":
+      recommendation =
+        "Объёмный метод: без циркуляции (нет доступа к забою). Стравливание газа порциями с поддержанием давления.";
+      break;
+    case "bullhead":
+      recommendation = `Прямая задавка в пласт: устьевое давление ${bullheadSurface.toFixed(1)} МПа. Применять, когда циркуляция невозможна. ОБЯЗАТЕЛЬНО проверить ГРП.`;
+      break;
+  }
+
+  return {
+    killDensity,
+    balanceDensity,
+    bottomholePressureMPa: bhp,
+    killVolumeM3: killVolume,
+    initialCircPressureMPa: ICP,
+    finalCircPressureMPa: FCP,
+    bullheadSurfacePressureMPa: bullheadSurface,
+    exceedsFracture,
+    frictionLossMPa: frictionLoss,
+    selectedFluid: fluid.name,
+    warnings,
+    recommendation,
+  };
+}
+
 // ────────── BLOCK 2: drag + lubricants ──────────
 
 export type DragOperation = "pull_out" | "run_in" | "rotate" | "work_pipe";
