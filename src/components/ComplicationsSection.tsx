@@ -996,7 +996,9 @@ export default function ComplicationsSection({
                               style={{ width: `${visualRealPct}%` }}
                             />
                             <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-foreground">
-                              Реальный: {realLenDisp.toFixed(0)} м{shrinkPct > 0.5 ? ` (−${shrinkPct.toFixed(0)}%)` : ''}
+                              Реальный: {realLenDisp >= designedLenDisp - 0.5
+                                ? `${realLenDisp.toFixed(0)} м (длина сохранена, мост сместился на ${settlementDisp.toFixed(0)} м)`
+                                : `${realLenDisp.toFixed(0)} м (−${(designedLenDisp - realLenDisp).toFixed(0)} м, ушёл цемент)`}
                             </span>
                           </div>
                         </div>
