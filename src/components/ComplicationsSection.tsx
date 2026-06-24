@@ -132,6 +132,65 @@ export default function ComplicationsSection({
       viscousPad.density, viscousPad.pv, viscousPad.yp, viscousPad.gel10min,
       hasViscousPad, spacerVolumeBelow, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
 
+  // ═══ MASTER-PROMPT: полная физика проседания (U-tube) ═══
+  const fullAnalysis = useMemo(() => {
+    if (!results || (type !== 'loss' && type !== 'both')) return null;
+    if (lossRate <= 0 || zoneDepthMD <= 0) return null;
+
+    const plugTopMD = results.plugTopMD ?? results.plugTopTVD;
+    const plugBottomMD = results.plugBottomMD ?? results.plugBottomTVD;
+    const boreDiamM = (results.boreDiamUsed ?? 0) / 1000;
+    if (boreDiamM <= 0) return null;
+
+    const t50 = thickeningTimeMin > 0 ? thickeningTimeMin : 120;
+    const t30 = thick30Bc > 0 ? thick30Bc : t50 * 0.6;
+
+    const toFull = (f: FluidData, isCement = false): FullRheologyFluid => ({
+      densityGcm3: f.density,
+      pvMPas: f.pv,
+      ypPa: f.yp,
+      gel10sPa: 0,
+      gel10minPa: f.gel10min > 0 ? f.gel10min : f.yp * 3,
+      thickeningTime30Bc: isCement ? t30 : 0,
+      thickeningTime50Bc: isCement ? t50 : 0,
+    });
+
+    const zone: LossZoneFull = {
+      topMD: zoneDepthMD,
+      thicknessM: Math.max(0.5, zoneThickness),
+      zoneType,
+      porosity: zonePorosity,
+      initialLossRateM3h: lossRate,
+      drainageRadiusM: drainageRadius,
+    };
+
+    const traj: ProfilePoint[] = trajectory.length > 0
+      ? trajectory
+      : [{ md: 0, zenithDeg: 0, tvd: 0 }, { md: plugBottomMD + 200, zenithDeg: 0, tvd: plugBottomMD + 200 }];
+
+    const padHeight = hasViscousPad && spacerVolumeBelow > 0 && results.annArea > 0
+      ? spacerVolumeBelow / results.annArea : 0;
+
+    return analyzePlugComplicationFull(
+      plugTopMD, plugBottomMD, zone,
+      toFull(cement, true), toFull(wellFluid),
+      hasViscousPad ? toFull(viscousPad) : null, padHeight,
+      traj,
+      results.annArea, boreDiamM,
+      frictionCoeff,
+      results.totalOperationTimeMin || 60,
+      lcmFactor,
+      bhTempInput,
+      type === 'both' ? formationPressure : 0,
+      fluidType === 'gas',
+    );
+  }, [results, type, lossRate, zoneDepthMD, zoneThickness, zoneType, zonePorosity, drainageRadius,
+      thick30Bc, thickeningTimeMin, frictionCoeff, lcmFactor, bhTempInput, formationPressure, fluidType,
+      trajectory, hasViscousPad, spacerVolumeBelow,
+      cement.density, cement.pv, cement.yp, cement.gel10min,
+      wellFluid.density, wellFluid.pv, wellFluid.yp, wellFluid.gel10min,
+      viscousPad.density, viscousPad.pv, viscousPad.yp, viscousPad.gel10min]);
+
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">
       <Label className="text-xs">{label}{unit ? ` (${unit})` : ""}</Label>
