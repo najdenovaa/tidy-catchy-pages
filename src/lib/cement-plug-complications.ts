@@ -1349,6 +1349,7 @@ export function analyzePlugComplicationFull(
   hasGasZone: boolean,
   formationFluidType: KickFluidType = 'water',
   plugBottomTVD: number = plugBottomMD,
+  userBcAtStop: number = 0,
 ): FullComplicationAnalysis {
   const tw = (cement.thickeningTime30Bc > 0 && cement.thickeningTime50Bc > 0)
     ? transitionWindow(cement.thickeningTime30Bc, cement.thickeningTime50Bc, hasGasZone) : null;
