@@ -267,6 +267,26 @@ export interface KillResult {
   recommendation: string;
 }
 
+/** Сектциональный расчёт потерь трения в затрубье (Бингам по секциям). */
+export function calculateKillFriction(
+  sections: KillSection[],
+  pumpRateLs: number,
+  killFluidPV_cP: number,
+  killFluidYP_Pa: number,
+): number {
+  let totalLoss = 0; // МПа
+  for (const sec of sections) {
+    const dhAnn = Math.max(0.005, (sec.casingID_mm - sec.tubingOD_mm) / 1000);
+    const annArea =
+      (Math.PI / 4) * ((sec.casingID_mm / 1000) ** 2 - (sec.tubingOD_mm / 1000) ** 2);
+    const v = pumpRateLs / 1000 / Math.max(1e-6, annArea);
+    const dpdl =
+      killFluidYP_Pa / (0.2 * dhAnn) + ((killFluidPV_cP / 1000) * v) / (1.5 * dhAnn * dhAnn);
+    totalLoss += (dpdl * sec.lengthM) / 1e6;
+  }
+  return totalLoss;
+}
+
 export function calculateKill(input: KillInput): KillResult {
   const G = 9.81;
   const tvd = Math.max(1, input.reservoirDepthTVD);
