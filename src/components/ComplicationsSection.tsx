@@ -393,7 +393,7 @@ export default function ComplicationsSection({
                 plannedTopMD={results.plugTopMD ?? results.plugTopTVD}
                 plannedBottomMD={results.plugBottomMD ?? results.plugBottomTVD}
                 result={fullAnalysis.settlement}
-                multiPlug={fullAnalysis.multiPlug}
+                multiPlug={null}
                 lossZone={{
                   topMD: zoneDepthMD, thicknessM: zoneThickness, zoneType,
                   porosity: zonePorosity, initialLossRateM3h: lossRate, drainageRadiusM: drainageRadius,
@@ -488,7 +488,8 @@ export default function ComplicationsSection({
             {/* Серия мостов */}
             {fullAnalysis.multiPlug && fullAnalysis.multiPlug.required && (
               <div className={`rounded-lg border p-3 space-y-2 ${fullAnalysis.multiPlug.supportAdequate ? 'border-green-500/40 bg-green-500/5' : 'border-amber-500/40 bg-amber-500/5'}`}>
-                <p className="text-xs font-semibold text-foreground">✅ Решение: серия мостов через ОЗЦ</p>
+                <p className="text-xs font-semibold text-foreground">💡 Возможное решение (рекомендация): серия мостов через ОЗЦ</p>
+                <p className="text-[10px] text-muted-foreground">Альтернативы: увеличить опорный объём, добавить/усилить вязкую пачку, применить LCM. Ниже — один из вариантов компоновки.</p>
                 <div className="overflow-x-auto">
                   <table className="text-[10px] w-full">
                     <thead>
