@@ -985,7 +985,11 @@ export default function ComplicationsSection({
                               style={{ width: `${visualRealPct}%` }}
                             />
                             <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-foreground">
-                              Реальный: {realLenDisp.toFixed(0)} м{shrinkPct > 0.5 ? ` (−${shrinkPct.toFixed(0)}%)` : ' (длина сохранена, мост просел целиком)'}
+                              Реальный: {realLenDisp.toFixed(0)} м{shrinkPct > 0.5 ? ` (−${shrinkPct.toFixed(0)}%)` : (
+                                unified?.verdict === 'cement_lost' ? ` 🔴 цемент ушёл в пласт (${cementLostDisp.toFixed(2)} м³) — изоляция нарушена`
+                                : unified?.verdict === 'pad_consumed' ? ' 🟡 пачка израсходована полностью — цемент на грани'
+                                : ' 🟢 цемент защищён — ушли жидкость/пачка'
+                              )}
                             </span>
                           </div>
                         </div>
