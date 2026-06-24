@@ -400,6 +400,7 @@ export default function ComplicationsSection({
                   <Field label="t₃₀ (30 Bc)" value={thick30Bc} onChange={v => setThick30Bc(num(v))} unit="мин (≈0.6·t₅₀)" />
                   <Field label="Трение цем.–порода" value={frictionCoeff} onChange={v => setFrictionCoeff(num(v))} unit="0.2–0.4" />
                   <Field label="T забоя" value={bhTempInput} onChange={v => setBhTempInput(num(v))} unit="°C" />
+                  <Field label="Вс на остановке" value={userBcAtStop} onChange={v => setUserBcAtStop(num(v))} unit="0=авто" />
                 </div>
               </>
             )}
