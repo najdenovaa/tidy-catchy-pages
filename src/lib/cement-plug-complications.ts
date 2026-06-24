@@ -918,23 +918,40 @@ export function calculatePlugSettlement(
   const volByCapacity = canSelfArrest ? capacity : Infinity;
   const volByGeometry = gapToZone * annAreaM2;
 
-  const volLostM3 = Math.min(volByTime, volByCapacity, volByGeometry);
+  const volLostLimitM3 = Math.min(volByTime, volByCapacity, volByGeometry);
 
   let limitedBy: 'capacity' | 'gelation' | 'geometry';
-  if (volLostM3 === volByCapacity) limitedBy = 'capacity';
-  else if (volLostM3 === volByTime) limitedBy = 'gelation';
+  if (volLostLimitM3 === volByCapacity) limitedBy = 'capacity';
+  else if (volLostLimitM3 === volByTime) limitedBy = 'gelation';
   else limitedBy = 'geometry';
 
-  // ── ШАГ 4: ПОСЛОЙНЫЙ уход: жидкость → пачка → цемент ──
+  // ── ШАГ 4: ПОСЛОЙНЫЙ объёмный предел: жидкость → пачка → цемент ──
   const fluidGapM = Math.max(0, gapToZone - padHeightM);
   const fluidVolM3 = fluidGapM * annAreaM2;
 
-  let rem = volLostM3;
+  // ── ШАГ 5: ОСАДКА = объёмный предел × коэффициент подвижности ──
+  // Объёмный предел задаёт максимум ухода, а подвижность плавно зависит от
+  // плотности цемента, реологии, зенита и длины моста. Это убирает «ступеньку»:
+  // при изменении ρ/YP/СНС/L меняется не только факт движения, но и величина осадки.
+  const settleVolLimit = Math.min(volLostLimitM3 / Math.max(annAreaM2, 1e-6), gapToZone);
+  const bcMid = consistencyAtTime(timeToGelStopMin / 2, cement.thickeningTime30Bc, cement.thickeningTime50Bc);
+  const gelMid = gelFromConsistency(Math.max(bcMid, 5), cement.gel10minPa > 0 ? cement.gel10minPa : 15);
+  const ypMid = ypFromConsistency(Math.max(bcMid, 5), cement.ypPa > 0 ? cement.ypPa : 8);
+  const avgZenRad = (profile.avgZenith ?? 0) * Math.PI / 180;
+  const driveP = (cement.densityGcm3 - wellFluid.densityGcm3) * 1000 * G * plugLen * Math.cos(avgZenRad);
+  const wallFricP = (gelMid + ypMid) * wallPerim * plugLen / Math.max(annAreaM2, 1e-6);
+  const endResistP = 2 * gelMid * 1000;
+  const resistP = wallFricP + endResistP;
+  const mobility = Math.max(0, Math.min(1, (driveP - resistP) / Math.max(driveP, 1)));
+
+  const cumSettle = settleVolLimit * mobility;
+  const actualVolLost = cumSettle * annAreaM2;
+
+  let rem = actualVolLost;
   const fluidLost = Math.min(rem, fluidVolM3); rem -= fluidLost;
   const padLost = Math.min(rem, padVolumeM3); rem -= padLost;
   const cementLost = Math.max(0, rem);
 
-  const cumSettle = Math.min(volLostM3 / Math.max(annAreaM2, 1e-6), gapToZone);
   const cementReachedZone = cementLost > 0.05;
 
   let arrest: ArrestMechanism;
@@ -944,14 +961,15 @@ export function calculatePlugSettlement(
   else arrest = 'fluid_limited';
 
   if (cementReachedZone) {
-    warnings.push(`🔴 КАТАСТРОФА: цемент достиг зоны (ушло ${cementLost.toFixed(1)} м³ цемента в пласт). Изоляция НЕ обеспечена. Мост осел на ${cumSettle.toFixed(0)} м.`);
+    warnings.push(`🔴 КАТАСТРОФА: цемент достиг зоны (ушло ${cementLost.toFixed(1)} м³ цемента в пласт). Изоляция НЕ обеспечена. Мост осел на ${cumSettle.toFixed(1)} м.`);
   } else if (padLost > 0.05) {
-    warnings.push(`🟡 Мост осел на ${cumSettle.toFixed(0)} м. В пласт ушло: ${fluidLost.toFixed(1)} м³ жидкости + ${padLost.toFixed(1)} м³ пачки. ${padLost >= padVolumeM3 - 0.05 ? 'Пачка израсходована ПОЛНОСТЬЮ — следующей уйдёт цемент!' : 'Цемент ЦЕЛ — пачка приняла удар.'}`);
+    warnings.push(`🟡 Мост осел на ${cumSettle.toFixed(1)} м. В пласт ушло: ${fluidLost.toFixed(2)} м³ жидкости + ${padLost.toFixed(2)} м³ пачки. ${padLost >= padVolumeM3 - 0.05 ? 'Пачка израсходована ПОЛНОСТЬЮ — следующей уйдёт цемент!' : 'Цемент ЦЕЛ — пачка приняла удар.'}`);
   } else if (cumSettle > 1) {
-    warnings.push(`🟢 Мост осел на ${cumSettle.toFixed(0)} м, ушла только скважинная жидкость (${fluidLost.toFixed(1)} м³). Цемент и пачка целы.`);
+    warnings.push(`🟢 Мост осел на ${cumSettle.toFixed(1)} м, ушла только скважинная жидкость (${fluidLost.toFixed(2)} м³). Цемент и пачка целы.`);
   } else {
     warnings.push(`✓ Проседание незначительное (${cumSettle.toFixed(1)} м).`);
   }
+  warnings.push(`Подвижность U-tube ${Math.round(mobility * 100)}%: drive ${driveP.toFixed(0)} Па vs сопротивление ${resistP.toFixed(0)} Па.`);
   if (limitedBy === 'capacity')
     warnings.push(`Зона "${lossZone.zoneType}" насытилась (ёмкость ${capacity.toFixed(1)} м³) — поглощение остановилось само.`);
   if (limitedBy === 'gelation')
@@ -959,7 +977,7 @@ export function calculatePlugSettlement(
   if (padVolumeM3 > 0 && padLost >= padVolumeM3 - 0.05 && !cementReachedZone)
     warnings.push(`⚠ Пачка (${padVolumeM3.toFixed(1)} м³) на грани полного расхода. Увеличить объём пачки ИЛИ применить кольматант.`);
   if (cementReachedZone)
-    warnings.push(`РЕШЕНИЕ: 1) кольматант/squeeze в зону ДО моста; 2) серия мостов через ОЗЦ; 3) больше пачки под мостом (нужно ≥ ${(volLostM3 - fluidVolM3).toFixed(1)} м³).`);
+    warnings.push(`РЕШЕНИЕ: 1) кольматант/squeeze в зону ДО моста; 2) серия мостов через ОЗЦ; 3) больше пачки под мостом (нужно ≥ ${(actualVolLost - fluidVolM3).toFixed(1)} м³).`);
 
   return {
     willSettle: cumSettle > 0.5,
@@ -977,7 +995,7 @@ export function calculatePlugSettlement(
     zoneCapacityM3: capacity,
     zoneCanSelfArrest: canSelfArrest,
     layerBreakdown: { fluidLostM3: fluidLost, padLostM3: padLost, cementLostM3: cementLost },
-    volumeLostM3: volLostM3,
+    volumeLostM3: actualVolLost,
     limitedBy,
     warnings,
   };
