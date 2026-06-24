@@ -816,7 +816,7 @@ export function analyzePlugProfile(
 
 // ───── БЛОК 5: ДИНАМИЧЕСКОЕ ПРОСЕДАНИЕ (U-tube) ─────
 export type ArrestMechanism =
-  | 'gelation' | 'friction' | 'reached_zone' | 'fluid_limited' | 'stable' | 'self_arrest_capacity';
+  | 'gelation' | 'friction' | 'reached_zone' | 'fluid_limited' | 'stable' | 'self_arrest_capacity' | 'rheology_balance';
 
 export interface SettlementResult {
   willSettle: boolean;
@@ -910,49 +910,34 @@ export function calculatePlugSettlement(
     }
   }
 
-  // ── ШАГ 3: ТРИ ограничителя объёма ──
+  // ── ШАГ 3: Ограничители ПОЛНОГО объёма ухода (БЕЗ геометрии!) ──
+  // Геометрия (gap) ограничивает только ОСАДКУ моста, но НЕ общий объём ухода.
+  // После того как мост сел на зону, поглощение продолжается и уходит сам цемент.
   const capacity = lossZoneCapacity(lossZone, boreDiamM);
   const canSelfArrest = lossSelfArrests(lossZone);
   const effLossRateM3h = lossZone.initialLossRateM3h * Math.max(0.02, lcmReductionFactor);
 
   const volByTime = effLossRateM3h * (timeToGelStopMin / 60);
   const volByCapacity = canSelfArrest ? capacity : Infinity;
-  const volByGeometry = gapToZone * annAreaM2;
-
-  const volLostLimitM3 = Math.min(volByTime, volByCapacity, volByGeometry);
+  const volAvailableM3 = Math.min(volByTime, volByCapacity);
 
   let limitedBy: 'capacity' | 'gelation' | 'geometry';
-  if (volLostLimitM3 === volByCapacity) limitedBy = 'capacity';
-  else if (volLostLimitM3 === volByTime) limitedBy = 'gelation';
-  else limitedBy = 'geometry';
+  limitedBy = volAvailableM3 === volByCapacity ? 'capacity' : 'gelation';
 
-  // ── ШАГ 4: ПОСЛОЙНЫЙ объёмный предел: жидкость → пачка → цемент ──
+  // ── ШАГ 4: подвижность (FIX5) ──
   const fluidGapM = Math.max(0, gapToZone - padHeightM);
   const fluidVolM3 = fluidGapM * annAreaM2;
-
-  // ── ШАГ 5: ОСАДКА = объёмный предел × коэффициент подвижности (FIX 5) ──
-  // Подвижность безразмерна (drive−resist)/drive: плавная чувствительность ко ВСЕМ параметрам
-  // (плотность цемента и пачки, реология цемента/пачки, зенит, Вс на остановке).
-  const settleVolLimit = Math.min(volLostLimitM3 / Math.max(annAreaM2, 1e-6), gapToZone);
-
-  // Консистенция на момент остановки: ручной ввод или из кривой загустевания
   const bcAtStop = userBcAtStop > 0
     ? userBcAtStop
     : consistencyAtTime(timeToGelStopMin / 2, cement.thickeningTime30Bc, cement.thickeningTime50Bc);
   const gelMid = gelFromConsistency(Math.max(bcAtStop, 5), cement.gel10minPa > 0 ? cement.gel10minPa : 15);
   const ypMid = ypFromConsistency(Math.max(bcAtStop, 5), cement.ypPa > 0 ? cement.ypPa : 8);
-
-  // Противовес: средняя плотность столба ПОД мостом (пачка + скважинная жидкость)
   const padDensity = viscousPad ? viscousPad.densityGcm3 : wellFluid.densityGcm3;
-  const fluidGapBelowM = Math.max(0, gapToZone - padHeightM);
-  const belowAvgDensity = (padHeightM + fluidGapBelowM) > 0
-    ? (padDensity * padHeightM + wellFluid.densityGcm3 * fluidGapBelowM) / (padHeightM + fluidGapBelowM)
+  const belowAvgDensity = (padHeightM + fluidGapM) > 0
+    ? (padDensity * padHeightM + wellFluid.densityGcm3 * fluidGapM) / (padHeightM + fluidGapM)
     : wellFluid.densityGcm3;
-
   const avgZenRad = (profile.avgZenith ?? 0) * Math.PI / 180;
   const driveP = (cement.densityGcm3 - belowAvgDensity) * 1000 * G * plugLen * Math.cos(avgZenRad);
-
-  // Сопротивление: трение цемента + реология пачки (минимум 0.5 м чтобы учитывалась всегда)
   const wallFricP = (gelMid + ypMid) * wallPerim * plugLen / Math.max(annAreaM2, 1e-6);
   let padResistP = 0;
   if (viscousPad && padVolumeM3 > 0) {
@@ -961,23 +946,27 @@ export function calculatePlugSettlement(
     padResistP = (padYP + padGel) * wallPerim * Math.max(padHeightM, 0.5) / Math.max(annAreaM2, 1e-6);
   }
   const resistP = wallFricP + padResistP;
-
   const mobility = driveP <= 0 ? 0 : Math.max(0, Math.min(1, (driveP - resistP) / driveP));
-  const cumSettle = settleVolLimit * mobility;
-  const actualVolLost = cumSettle * annAreaM2;
 
-  let rem = actualVolLost;
+  // ── ШАГ 5: ПОСЛОЙНЫЙ уход (жидкость → пачка → ЦЕМЕНТ) ──
+  const volLostM3 = volAvailableM3 * mobility;
+  let rem = volLostM3;
   const fluidLost = Math.min(rem, fluidVolM3); rem -= fluidLost;
   const padLost = Math.min(rem, padVolumeM3); rem -= padLost;
-  const cementLost = Math.max(0, rem);
+  const cementAvailableM3 = plugLen * annAreaM2;
+  const cementLost = Math.min(Math.max(0, rem), cementAvailableM3);
 
+  // ── ОСАДКА: ограничена геометрией (мост садится максимум до зоны) ──
+  const settleFromBelow = Math.min((fluidLost + padLost) / Math.max(annAreaM2, 1e-6), gapToZone);
   const cementReachedZone = cementLost > 0.05;
+  const cumSettle = cementReachedZone ? gapToZone : settleFromBelow;
+  const actualVolLost = fluidLost + padLost + cementLost;
 
   let arrest: ArrestMechanism;
   if (cementReachedZone) arrest = 'reached_zone';
   else if (limitedBy === 'capacity') arrest = 'self_arrest_capacity';
-  else if (limitedBy === 'gelation') arrest = 'gelation';
-  else arrest = 'fluid_limited';
+  else if (mobility < 0.98) arrest = 'rheology_balance';
+  else arrest = 'gelation';
 
   if (cementReachedZone) {
     warnings.push(`🔴 КАТАСТРОФА: цемент достиг зоны (ушло ${cementLost.toFixed(1)} м³ цемента в пласт). Изоляция НЕ обеспечена. Мост осел на ${cumSettle.toFixed(1)} м.`);
