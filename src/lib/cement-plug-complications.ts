@@ -813,6 +813,9 @@ export interface SettlementResult {
   forceBalance: { driveKN: number; gelKN: number; frictionKN: number; padKN: number; wellFluidKN: number; netKN: number };
   zoneCapacityM3: number;
   zoneCanSelfArrest: boolean;
+  layerBreakdown: { fluidLostM3: number; padLostM3: number; cementLostM3: number };
+  volumeLostM3: number;
+  limitedBy: 'capacity' | 'gelation' | 'geometry';
   warnings: string[];
 }
 
