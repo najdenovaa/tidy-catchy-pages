@@ -579,12 +579,15 @@ export interface FishingInput {
   overpullKN: number;
   jarType?: "mechanical" | "hydraulic";
   jarStretchM?: number;
+  hammerMassKg?: number;     // масса ударной массы ясса (по умолчанию 500 кг)
+  impactTimeMs?: number;     // длительность удара (по умолчанию 5 мс)
 }
 
 export interface FishingResult {
   requiredHookLoadKN: number;
   jarImpactKN: number;
   jarEnergyJ: number;
+  jarVelocityMs: number;
   maxSafeHookLoadKN: number;
   canEngage: boolean;
   recommendation: string;
@@ -593,21 +596,35 @@ export interface FishingResult {
 export function calculateFishing(input: FishingInput, well: WorkoverWellData): FishingResult {
   let jarImpact = 0;
   let jarEnergy = 0;
-  if (input.jarType && input.jarStretchM) {
-    jarEnergy = 0.5 * input.overpullKN * 1000 * input.jarStretchM;
-    jarImpact = input.overpullKN * 2;
+  let jarVelocity = 0;
+
+  if (input.jarType && input.jarStretchM && input.jarStretchM > 0) {
+    const hammerMass = input.hammerMassKg ?? 500;
+    const impactTime = (input.impactTimeMs ?? 5) / 1000; // c
+    // Жёсткость свободной колонны k = E·A/L
+    const A = pipeCrossArea_m2(well.pipeOD_mm, well.pipeID_mm);
+    const L = Math.max(1, input.fishTopMD);
+    const k = (well.pipeYoungModulusGPa * 1e9 * A) / L; // Н/м
+    // Накопленная упругая энергия в колонне: E = ½·k·x²
+    jarEnergy = 0.5 * k * input.jarStretchM * input.jarStretchM; // Дж
+    // Скорость молота в момент удара: v = √(2E/m)
+    jarVelocity = Math.sqrt((2 * jarEnergy) / hammerMass); // м/с
+    // Пиковая ударная сила: F = m·v/Δt
+    jarImpact = (hammerMass * jarVelocity) / Math.max(1e-6, impactTime) / 1000; // кН
   }
+
   const maxSafe = pipeYieldForceKN(well);
   const required = input.fishWeightKN + input.overpullKN;
   return {
     requiredHookLoadKN: required,
     jarImpactKN: jarImpact,
     jarEnergyJ: jarEnergy,
+    jarVelocityMs: jarVelocity,
     maxSafeHookLoadKN: maxSafe,
     canEngage: required < maxSafe,
     recommendation:
       jarImpact > 0
-        ? `Ясс даёт ударную нагрузку ~${jarImpact.toFixed(0)} кН. Для прихваченной рыбы — серия ударов.`
+        ? `Ясс: энергия ${(jarEnergy / 1000).toFixed(0)} кДж, скорость удара ${jarVelocity.toFixed(1)} м/с, пиковая сила ${jarImpact.toFixed(0)} кН. Серия ударов для прихваченной рыбы.`
         : "Захват рыбы натяжением. При неудаче — применить ясс.",
   };
 }
