@@ -218,10 +218,13 @@ export default function ComplicationsSection({
     const cementLostM3 = s.layerBreakdown.cementLostM3;
     const volumeLostM3 = s.volumeLostM3;
 
-    // Длина цемента уменьшается ТОЛЬКО при реальной потере цемента в пласт
-    const realCementVolM3 = Math.max(0, results.cementVolumeTotal - cementLostM3);
-    const realPlugLengthM = realCementVolM3 / annA;
-    const lossPct = results.cementVolumeTotal > 0 ? (cementLostM3 / results.cementVolumeTotal) * 100 : 0;
+    // Длина моста: в U-tube сохраняется (мост оседает целиком).
+    // Уменьшается ТОЛЬКО на реально ушедшую в пласт высоту цемента.
+    const designedLen = plugLen;
+    const cementLostHeightM = cementLostM3 / Math.max(annA, 1e-6);
+    const realPlugLengthM = Math.max(0, designedLen - cementLostHeightM);
+    const realCementVolM3 = realPlugLengthM * annA;
+    const lossPct = designedLen > 0 ? (cementLostHeightM / designedLen) * 100 : 0;
 
     // Остаток пачки (высота)
     const padRemainHeightM = Math.max(0, padH - padLostM3 / annA);
