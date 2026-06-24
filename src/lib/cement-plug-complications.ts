@@ -977,7 +977,7 @@ export function calculatePlugSettlement(
   if (padVolumeM3 > 0 && padLost >= padVolumeM3 - 0.05 && !cementReachedZone)
     warnings.push(`⚠ Пачка (${padVolumeM3.toFixed(1)} м³) на грани полного расхода. Увеличить объём пачки ИЛИ применить кольматант.`);
   if (cementReachedZone)
-    warnings.push(`РЕШЕНИЕ: 1) кольматант/squeeze в зону ДО моста; 2) серия мостов через ОЗЦ; 3) больше пачки под мостом (нужно ≥ ${(actualVolLost - fluidVolM3).toFixed(1)} м³).`);
+    warnings.push(`РЕШЕНИЕ: 1) кольматант/squeeze в зону ДО моста; 2) серия мостов через ОЗЦ; 3) больше пачки под мостом (нужно ≥ ${Math.max(0, actualVolLost - fluidVolM3).toFixed(1)} м³).`);
 
   return {
     willSettle: cumSettle > 0.5,
