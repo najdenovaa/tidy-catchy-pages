@@ -504,6 +504,32 @@ export default function ComplicationsSection({
                     {fullAnalysis.settlement.forceBalance.netKN.toFixed(1)}
                   </span>
                 </div>
+                <div className="rounded-md border border-border/60 bg-muted/30 p-2 space-y-1">
+                  <p className="text-[10px] font-semibold">📦 Что ушло в пласт (послойный баланс)</p>
+                  <div className="grid grid-cols-3 gap-2 text-[10px]">
+                    <div>
+                      <div className="text-muted-foreground">💧 Жидкость</div>
+                      <div className="font-semibold text-sky-500">{fullAnalysis.settlement.layerBreakdown.fluidLostM3.toFixed(2)} м³</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">🟦 Пачка</div>
+                      <div className={`font-semibold ${fullAnalysis.settlement.layerBreakdown.padLostM3 > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                        {fullAnalysis.settlement.layerBreakdown.padLostM3.toFixed(2)} м³
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">🧱 Цемент</div>
+                      <div className={`font-bold ${fullAnalysis.settlement.layerBreakdown.cementLostM3 > 0 ? 'text-destructive' : 'text-green-500'}`}>
+                        {fullAnalysis.settlement.layerBreakdown.cementLostM3.toFixed(2)} м³
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Всего ушло {fullAnalysis.settlement.volumeLostM3.toFixed(2)} м³ · ограничено: {
+                      { capacity: 'ёмкостью зоны', gelation: 'гелированием цемента', geometry: 'геометрией (gap)' }[fullAnalysis.settlement.limitedBy]
+                    }
+                  </p>
+                </div>
                 {fullAnalysis.settlement.warnings.map((w, i) => (
                   <p key={i} className="text-[10px]">{w}</p>
                 ))}
