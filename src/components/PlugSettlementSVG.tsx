@@ -7,17 +7,31 @@ interface Props {
   multiPlug?: MultiPlugProgram | null;
   lossZone: LossZoneFull;
   trajectory: ProfilePoint[];
+  /** Высота нижней вязкой пачки в стволе, м (если ставилась) */
+  padHeightM?: number;
   width?: number;
   height?: number;
 }
 
 export function PlugSettlementSVG({
   plannedTopMD, plannedBottomMD, result, multiPlug, lossZone, trajectory,
-  width = 320, height = 440,
+  padHeightM = 0,
+  width = 360, height = 460,
 }: Props) {
+  // Геометрия пачки: пачка стоит ПОД подошвой моста
+  const hasPad = padHeightM > 0.05;
+  const plannedPadTopMD = plannedBottomMD;
+  const plannedPadBottomMD = plannedBottomMD + padHeightM;
+  // Факт: пачка опускается вместе с цементом, часть её уходит в зону поглощения
+  const settle = Math.max(0, result.settlementM);
+  const realPadTopMD = result.finalBottomMD;
+  // Сколько пачки осталось: пачка вытесняется в зону по мере проседания цемента
+  const remainingPadHeight = Math.max(0, padHeightM - settle);
+  const realPadBottomMD = Math.min(realPadTopMD + remainingPadHeight, lossZone.topMD);
+  const padFullyConsumed = hasPad && remainingPadHeight < 0.05;
   // Глубинный диапазон
   const topMd = Math.max(0, Math.min(plannedTopMD, result.finalHeadMD) - 100);
-  const botMd = Math.max(plannedBottomMD, result.finalBottomMD, lossZone.topMD + lossZone.thicknessM) + 60;
+  const botMd = Math.max(plannedBottomMD, result.finalBottomMD, plannedPadBottomMD, realPadBottomMD, lossZone.topMD + lossZone.thicknessM) + 60;
   const padX = 90;
   const trackX = width / 2;
   const halfW = 32;
@@ -128,6 +142,47 @@ export function PlugSettlementSVG({
         ))
       ) : (
         <>
+          {/* Планируемая вязкая пачка (пунктир, голубой) */}
+          {hasPad && (
+            <>
+              <rect
+                x={xAt(plannedPadTopMD) - halfW} y={y(plannedPadTopMD)}
+                width={halfW * 2} height={Math.max(2, y(plannedPadBottomMD) - y(plannedPadTopMD))}
+                fill="none" stroke="hsl(199 89% 48%)" strokeWidth={1.2} strokeDasharray="3 2"
+              />
+              <text x={xAt(plannedPadTopMD) - halfW - 6} y={y(plannedPadBottomMD) + 9} textAnchor="end"
+                fontSize="8" className="fill-sky-500">
+                План пачка ↓ {plannedPadBottomMD.toFixed(0)}
+              </text>
+            </>
+          )}
+
+          {/* Реальная вязкая пачка (заливка) */}
+          {hasPad && !padFullyConsumed && (
+            <>
+              <rect
+                x={xAt(realPadTopMD) - halfW} y={y(realPadTopMD)}
+                width={halfW * 2} height={Math.max(2, y(realPadBottomMD) - y(realPadTopMD))}
+                fill="hsl(199 89% 48% / 0.55)" stroke="hsl(199 89% 40%)" strokeWidth={1}
+              />
+              <text x={xAt(realPadTopMD) + halfW + 8} y={y((realPadTopMD + realPadBottomMD) / 2)}
+                fontSize="9" className="fill-sky-600 font-semibold">
+                💧 Пачка (факт)
+              </text>
+              <text x={xAt(realPadTopMD) + halfW + 8} y={y((realPadTopMD + realPadBottomMD) / 2) + 11}
+                fontSize="8" className="fill-muted-foreground">
+                {realPadTopMD.toFixed(0)}–{realPadBottomMD.toFixed(0)} м (h={remainingPadHeight.toFixed(1)} м)
+              </text>
+            </>
+          )}
+          {hasPad && padFullyConsumed && (
+            <text x={xAt(realPadTopMD) + halfW + 8} y={y(realPadTopMD) + 4}
+              fontSize="9" className="fill-destructive font-semibold">
+              💧 Пачка ушла полностью
+            </text>
+          )}
+
+          {/* Реальный мост (заливка) */}
           <rect
             x={xAt(result.finalHeadMD) - halfW} y={y(result.finalHeadMD)}
             width={halfW * 2} height={y(result.finalBottomMD) - y(result.finalHeadMD)}
@@ -137,7 +192,17 @@ export function PlugSettlementSVG({
           />
           <text x={xAt(result.finalHeadMD) - halfW - 6} y={y(result.finalHeadMD) - 2} textAnchor="end"
             fontSize="9" className={result.reachesLossZone ? "fill-destructive font-semibold" : "fill-amber-500 font-semibold"}>
-            Факт {result.finalHeadMD.toFixed(0)} м
+            Факт голова {result.finalHeadMD.toFixed(0)} м
+          </text>
+          <text x={xAt(result.finalBottomMD) - halfW - 6} y={y(result.finalBottomMD) + 9} textAnchor="end"
+            fontSize="9" className={result.reachesLossZone ? "fill-destructive font-semibold" : "fill-amber-500"}>
+            Факт подошва {result.finalBottomMD.toFixed(0)} м
+          </text>
+
+          {/* Подпись плановой подошвы */}
+          <text x={xAt(plannedBottomMD) - halfW - 6} y={y(plannedBottomMD) + 9} textAnchor="end"
+            fontSize="8" className="fill-green-500">
+            План подошва {plannedBottomMD.toFixed(0)} м
           </text>
         </>
       )}
