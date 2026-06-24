@@ -21,9 +21,12 @@ import {
   calculatePacker, calculatePackerRelease, calculateDrag, calculateLubricant,
   calculateFreePoint, diagnoseStuck, calculateFishing, calculateRigCapacity,
   calculateKill, KILL_FLUIDS,
+  KILL_SALTS, calculateBrineRecipe, autoSelectSalt, planMultiIntervalKill,
   type WorkoverWellData, type PackerInput, type PackerReleaseInput, type DragInput, type LubricantInput,
   type FreePointInput, type StuckSymptoms, type FishingInput, type RigInput, type KillInput,
+  type KillSalt, type KillInterval,
 } from "@/lib/workover-calculations";
+import { Trash2, Plus } from "lucide-react";
 
 const num = (v: string) => (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
 
@@ -101,6 +104,32 @@ export default function Workover() {
     }
     return out;
   }, [killResult]);
+
+  // ──── Рецептура жидкости глушения ────
+  const [brineSaltId, setBrineSaltId] = useState<string>("auto");
+  const [brineTargetDensity, setBrineTargetDensity] = useState<number>(0); // 0 = из killResult
+  const [brineVolumeM3, setBrineVolumeM3] = useState<number>(0);            // 0 = из killResult
+  const [brineMixing, setBrineMixing] = useState<"low" | "medium" | "high">("medium");
+  const [brineTempC, setBrineTempC] = useState<number>(20);
+  const effectiveBrineDensity = brineTargetDensity > 0 ? brineTargetDensity : killResult.killDensity;
+  const effectiveBrineVolume = brineVolumeM3 > 0 ? brineVolumeM3 : killResult.killVolumeM3;
+  const selectedSalt: KillSalt | null = brineSaltId === "auto"
+    ? autoSelectSalt(effectiveBrineDensity)
+    : KILL_SALTS.find((s) => s.id === brineSaltId) || null;
+  const brineRecipe = useMemo(() => {
+    if (!selectedSalt) return null;
+    return calculateBrineRecipe(selectedSalt, effectiveBrineDensity, Math.max(0.1, effectiveBrineVolume), brineMixing, brineTempC);
+  }, [selectedSalt, effectiveBrineDensity, effectiveBrineVolume, brineMixing, brineTempC]);
+
+  // ──── Многоинтервальное глушение ────
+  const [killIntervals, setKillIntervals] = useState<KillInterval[]>([
+    { topMD: 2800, bottomMD: 2850, topTVD: 2500, bottomTVD: 2540, formationPressureMPa: 32, intervalType: "kick_zone", requiredKillDensity: 0 },
+    { topMD: 3000, bottomMD: 3100, topTVD: 2680, bottomTVD: 2760, formationPressureMPa: 38, intervalType: "kill_zone", requiredKillDensity: 0 },
+  ]);
+  const multiIntervalPlan = useMemo(() => {
+    if (!selectedSalt || killIntervals.length === 0) return null;
+    return planMultiIntervalKill(killIntervals, selectedSalt, Math.max(0.1, effectiveBrineVolume), brineMixing, kill.safetyMarginPct, brineTempC);
+  }, [killIntervals, selectedSalt, effectiveBrineVolume, brineMixing, kill.safetyMarginPct, brineTempC]);
 
   // ──── Drag + lubricant ────
   const [drag, setDrag] = useState<DragInput>({ operation: "pull_out", frictionCoeff: 0.30 });
@@ -460,6 +489,174 @@ export default function Workover() {
                     ))}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+
+            {/* ─── Приготовление жидкости глушения ─── */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Droplets className="w-4 h-4" /> Приготовление жидкости глушения (рецептура)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Добавка</Label>
+                    <Select value={brineSaltId} onValueChange={setBrineSaltId}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">🎯 Авто-подбор по плотности</SelectItem>
+                        {KILL_SALTS.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <NumberField label="Целевая плотность" unit="г/см³" value={brineTargetDensity}
+                    onChange={setBrineTargetDensity} hint={`0 = из расчёта (${killResult.killDensity.toFixed(3)})`} step="0.01" />
+                  <NumberField label="Объём раствора" unit="м³" value={brineVolumeM3}
+                    onChange={setBrineVolumeM3} hint={`0 = из расчёта (${killResult.killVolumeM3.toFixed(1)})`} />
+                  <div className="space-y-1">
+                    <Label className="text-xs">Перемешивание</Label>
+                    <Select value={brineMixing} onValueChange={(v) => setBrineMixing(v as "low" | "medium" | "high")}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="low">Низкое (×1.5)</SelectItem>
+                        <SelectItem value="medium">Среднее (×1.0)</SelectItem>
+                        <SelectItem value="high">Высокое (×0.6)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <NumberField label="T воды" unit="°C" value={brineTempC} onChange={setBrineTempC}
+                    hint="<10°C → ×1.4 времени" />
+                </div>
+
+                {!selectedSalt && (
+                  <Alert><AlertDescription className="text-xs">
+                    🔴 Плотность {effectiveBrineDensity.toFixed(2)} г/см³ выше 1.40 — солями не достичь. Нужен утяжелитель (барит, гематит) или бромидные рассолы.
+                  </AlertDescription></Alert>
+                )}
+
+                {brineRecipe && (
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                      <div className="text-xs font-semibold text-muted-foreground">РЕЦЕПТУРА</div>
+                      <Row k="Плотность" v={<strong>{brineRecipe.targetDensity.toFixed(3)} г/см³</strong>} />
+                      <Row k="Добавка" v={<Badge variant="secondary">{brineRecipe.salt.name} ({brineRecipe.salt.purity}%)</Badge>} />
+                      <Row k="Объём раствора" v={`${effectiveBrineVolume.toFixed(2)} м³`} />
+                      <div className="border-t pt-2 mt-2 space-y-1">
+                        <Row k={`${brineRecipe.salt.formula} (товарный)`}
+                          v={<strong>{brineRecipe.productMassKg.toFixed(0)} кг</strong>} />
+                        <Row k={`${brineRecipe.salt.formula} (чистой соли)`}
+                          v={`${brineRecipe.pureSaltKg.toFixed(0)} кг`} />
+                        <Row k="Вода" v={<strong>{brineRecipe.waterVolumeL.toFixed(0)} л</strong>} />
+                        <Row k="Концентрация" v={`${brineRecipe.wtPctClean.toFixed(1)}% масс.`} />
+                      </div>
+                      <div className="border-t pt-2 mt-2">
+                        <Row k="⏱ Время растворения"
+                          v={<strong>~{brineRecipe.dissolveTimeMin.toFixed(0)} мин</strong>} />
+                      </div>
+                      {brineRecipe.feasible
+                        ? <Badge className="bg-green-600">🟢 Плотность достижима</Badge>
+                        : <Badge variant="destructive">🔴 Недостижимо данной солью</Badge>}
+                    </div>
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold text-muted-foreground">ПРЕДУПРЕЖДЕНИЯ</div>
+                      {brineRecipe.warnings.length === 0
+                        ? <Alert className="py-2"><AlertDescription className="text-xs">Нет критичных замечаний.</AlertDescription></Alert>
+                        : brineRecipe.warnings.map((w, i) => (
+                            <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
+                          ))}
+                      <div className="rounded border p-2 text-xs space-y-1">
+                        <div className="font-semibold">Достижимые плотности солями:</div>
+                        {KILL_SALTS.filter((s) => s.id !== "water").map((s) => (
+                          <div key={s.id} className="flex justify-between">
+                            <span className="text-muted-foreground">{s.formula} ({s.purity}%)</span>
+                            <span className={effectiveBrineDensity <= s.maxDensity ? "text-green-600" : "text-muted-foreground"}>
+                              до {s.maxDensity.toFixed(2)} г/см³ {effectiveBrineDensity <= s.maxDensity ? "✓" : ""}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ─── Интервалы глушения ─── */}
+            <Card>
+              <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                <CardTitle className="text-sm">Интервалы глушения / проявления</CardTitle>
+                <Button size="sm" variant="outline" className="h-7 text-xs"
+                  onClick={() => setKillIntervals([...killIntervals, {
+                    topMD: 0, bottomMD: 0, topTVD: 0, bottomTVD: 0,
+                    formationPressureMPa: 0, intervalType: "kill_zone", requiredKillDensity: 0,
+                  }])}>
+                  <Plus className="w-3 h-3 mr-1" />Интервал
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">MD верх</TableHead>
+                      <TableHead className="text-xs">MD низ</TableHead>
+                      <TableHead className="text-xs">TVD низ</TableHead>
+                      <TableHead className="text-xs">Pпл, МПа</TableHead>
+                      <TableHead className="text-xs">Тип</TableHead>
+                      <TableHead className="text-xs">Треб. ρ</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {killIntervals.map((iv, idx) => (
+                      <TableRow key={idx} className={multiIntervalPlan?.governingInterval === idx ? "bg-amber-500/10" : ""}>
+                        <TableCell><Input type="number" value={iv.topMD} className="h-7 text-xs w-20"
+                          onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, topMD: num(e.target.value) }; setKillIntervals(a); }} /></TableCell>
+                        <TableCell><Input type="number" value={iv.bottomMD} className="h-7 text-xs w-20"
+                          onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, bottomMD: num(e.target.value) }; setKillIntervals(a); }} /></TableCell>
+                        <TableCell><Input type="number" value={iv.bottomTVD} className="h-7 text-xs w-20"
+                          onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, bottomTVD: num(e.target.value), topTVD: iv.topTVD || num(e.target.value) - (iv.bottomMD - iv.topMD) }; setKillIntervals(a); }} /></TableCell>
+                        <TableCell><Input type="number" value={iv.formationPressureMPa} className="h-7 text-xs w-20"
+                          onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, formationPressureMPa: num(e.target.value) }; setKillIntervals(a); }} /></TableCell>
+                        <TableCell>
+                          <Select value={iv.intervalType} onValueChange={(v) => { const a = [...killIntervals]; a[idx] = { ...iv, intervalType: v as KillInterval["intervalType"] }; setKillIntervals(a); }}>
+                            <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="kill_zone">Глушение</SelectItem>
+                              <SelectItem value="kick_zone">Проявление</SelectItem>
+                              <SelectItem value="transit">Транзит</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {multiIntervalPlan
+                            ? <strong>{multiIntervalPlan.intervals[idx]?.requiredKillDensity.toFixed(3)}</strong>
+                            : "—"}
+                          {multiIntervalPlan?.governingInterval === idx && <Badge className="ml-1 bg-amber-600 text-[10px]">определяющий</Badge>}
+                        </TableCell>
+                        <TableCell>
+                          <Button size="icon" variant="ghost" className="h-7 w-7"
+                            onClick={() => setKillIntervals(killIntervals.filter((_, i) => i !== idx))}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+
+                {multiIntervalPlan && (
+                  <div className="space-y-2">
+                    <Row k="Определяющая плотность"
+                      v={<strong>{multiIntervalPlan.governingDensity.toFixed(3)} г/см³</strong>} />
+                    {multiIntervalPlan.warnings.map((w, i) => (
+                      <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

@@ -594,3 +594,166 @@ export function calculateRigCapacity(input: RigInput): RigResult {
     warnings,
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// РЕЦЕПТУРНЫЙ ДВИЖОК ЖИДКОСТИ ГЛУШЕНИЯ (соли → плотность)
+// ═══════════════════════════════════════════════════════════════════
+
+export type SaltForm = "powder" | "granule" | "dry";
+
+export interface KillSalt {
+  id: string;
+  name: string;
+  formula: string;
+  purity: number;              // % чистоты товарного продукта
+  form: SaltForm;
+  densityCoeff_k: number;      // ρ = 1.0 + k × wt%(чистой соли)
+  maxDensity: number;
+  maxWtPctClean: number;
+  solubility_g_per_L: number;
+  dissolveBaseMin: number;     // мин на 10% концентрации
+}
+
+export const KILL_SALTS: KillSalt[] = [
+  { id: "nacl",  name: "Галит (NaCl сухой)",                       formula: "NaCl",  purity: 98,  form: "dry",
+    densityCoeff_k: 0.00758, maxDensity: 1.20, maxWtPctClean: 26.4, solubility_g_per_L: 359, dissolveBaseMin: 15 },
+  { id: "cacl2", name: "Кальций хлористый техн. гранулированный",  formula: "CaCl₂", purity: 94,  form: "granule",
+    densityCoeff_k: 0.01000, maxDensity: 1.40, maxWtPctClean: 40,   solubility_g_per_L: 745, dissolveBaseMin: 25 },
+  { id: "kcl94", name: "Калий хлористый 94% порошок",              formula: "KCl",   purity: 94,  form: "powder",
+    densityCoeff_k: 0.00667, maxDensity: 1.16, maxWtPctClean: 24,   solubility_g_per_L: 340, dissolveBaseMin: 10 },
+  { id: "kcl94g",name: "Калий хлористый 94% гранулы",              formula: "KCl",   purity: 94,  form: "granule",
+    densityCoeff_k: 0.00667, maxDensity: 1.16, maxWtPctClean: 24,   solubility_g_per_L: 340, dissolveBaseMin: 22 },
+  { id: "kcl60", name: "Калий хлористый 60% порошок",              formula: "KCl",   purity: 60,  form: "powder",
+    densityCoeff_k: 0.00667, maxDensity: 1.16, maxWtPctClean: 24,   solubility_g_per_L: 340, dissolveBaseMin: 10 },
+  { id: "kcl60g",name: "Калий хлористый 60% гранулы",              formula: "KCl",   purity: 60,  form: "granule",
+    densityCoeff_k: 0.00667, maxDensity: 1.16, maxWtPctClean: 24,   solubility_g_per_L: 340, dissolveBaseMin: 22 },
+  { id: "water", name: "Вода техническая",                         formula: "H₂O",   purity: 100, form: "dry",
+    densityCoeff_k: 0,       maxDensity: 1.00, maxWtPctClean: 0,    solubility_g_per_L: 0,   dissolveBaseMin: 0 },
+];
+
+export interface BrineRecipe {
+  feasible: boolean;
+  targetDensity: number;
+  salt: KillSalt;
+  wtPctClean: number;
+  productMassKg: number;
+  pureSaltKg: number;
+  waterVolumeL: number;
+  waterMassKg: number;
+  dissolveTimeMin: number;
+  maxAchievableDensity: number;
+  warnings: string[];
+}
+
+export function calculateBrineRecipe(
+  salt: KillSalt,
+  targetDensity: number,
+  volumeM3: number,
+  mixingIntensity: "low" | "medium" | "high" = "medium",
+  temperatureC: number = 20,
+): BrineRecipe {
+  const warnings: string[] = [];
+
+  if (targetDensity > salt.maxDensity) {
+    return {
+      feasible: false, targetDensity, salt,
+      wtPctClean: 0, productMassKg: 0, pureSaltKg: 0, waterVolumeL: 0, waterMassKg: 0,
+      dissolveTimeMin: 0, maxAchievableDensity: salt.maxDensity,
+      warnings: [`🔴 ${salt.name} даёт максимум ${salt.maxDensity} г/см³. Для ${targetDensity.toFixed(2)} г/см³ нужна другая соль (CaCl₂ до 1.40) или утяжелитель.`],
+    };
+  }
+  if (targetDensity < 1.0) warnings.push("Плотность < 1.0 — достаточно чистой воды без соли.");
+
+  const wtPctClean = salt.densityCoeff_k > 0 ? Math.max(0, (targetDensity - 1.0) / salt.densityCoeff_k) : 0;
+  const totalMassKg = targetDensity * 1000 * volumeM3;
+  const pureSaltKg = (wtPctClean / 100) * totalMassKg;
+  const productMassKg = salt.purity > 0 ? pureSaltKg / (salt.purity / 100) : 0;
+  const waterMassKg = totalMassKg - productMassKg;
+  const waterVolumeL = waterMassKg / 1.0;
+
+  const concFactor = Math.max(0.1, wtPctClean / 10);
+  const mixFactor = mixingIntensity === "high" ? 0.6 : mixingIntensity === "low" ? 1.5 : 1.0;
+  const tempFactor = temperatureC < 10 ? 1.4 : temperatureC > 30 ? 0.8 : 1.0;
+  const dissolveTime = salt.dissolveBaseMin * concFactor * mixFactor * tempFactor;
+
+  if (wtPctClean > salt.maxWtPctClean * 0.9)
+    warnings.push(`⚠ Концентрация ${wtPctClean.toFixed(1)}% близка к насыщению (${salt.maxWtPctClean}%) — риск кристаллизации при охлаждении. Контролировать температуру.`);
+  if (salt.purity > 0 && salt.purity < 90)
+    warnings.push(`Продукт ${salt.purity}% чистоты — требуется ${productMassKg.toFixed(0)} кг товарного (примеси не дают плотности).`);
+  if (temperatureC < 10)
+    warnings.push(`⚠ Холодная вода (${temperatureC}°C) — растворение в 1.4× дольше. Подогреть для ускорения.`);
+  if (salt.form === "granule")
+    warnings.push("Гранулы растворяются медленнее порошка — учесть в графике подготовки.");
+
+  return {
+    feasible: true, targetDensity, salt, wtPctClean,
+    productMassKg, pureSaltKg, waterVolumeL, waterMassKg,
+    dissolveTimeMin: dissolveTime, maxAchievableDensity: salt.maxDensity, warnings,
+  };
+}
+
+export function autoSelectSalt(targetDensity: number): KillSalt | null {
+  if (targetDensity <= 1.00) return KILL_SALTS.find((s) => s.id === "water")!;
+  if (targetDensity <= 1.16) return KILL_SALTS.find((s) => s.id === "kcl94")!;
+  if (targetDensity <= 1.20) return KILL_SALTS.find((s) => s.id === "nacl")!;
+  if (targetDensity <= 1.40) return KILL_SALTS.find((s) => s.id === "cacl2")!;
+  return null;
+}
+
+// ─── Многоинтервальное глушение ─────────────────────────────────────
+export interface KillInterval {
+  topMD: number;
+  bottomMD: number;
+  topTVD: number;
+  bottomTVD: number;
+  formationPressureMPa: number;
+  intervalType: "kill_zone" | "kick_zone" | "transit";
+  requiredKillDensity: number;
+}
+
+export interface MultiIntervalKill {
+  intervals: KillInterval[];
+  governingDensity: number;
+  governingInterval: number;
+  recipe: BrineRecipe;
+  totalVolumeM3: number;
+  warnings: string[];
+}
+
+export function planMultiIntervalKill(
+  intervals: KillInterval[],
+  salt: KillSalt,
+  wellVolumeM3: number,
+  mixingIntensity: "low" | "medium" | "high",
+  safetyMarginPct: number,
+  temperatureC: number = 20,
+): MultiIntervalKill {
+  const G = 9.81;
+  const withDensity: KillInterval[] = intervals.map((iv) => {
+    const tvd = Math.max(1, iv.bottomTVD);
+    const bal = (iv.formationPressureMPa * 1e6) / (G * tvd) / 1000;
+    return { ...iv, requiredKillDensity: bal * (1 + safetyMarginPct / 100) };
+  });
+
+  let governing = 0;
+  for (let i = 1; i < withDensity.length; i++)
+    if (withDensity[i].requiredKillDensity > withDensity[governing].requiredKillDensity) governing = i;
+
+  const governingDensity = withDensity.length ? withDensity[governing].requiredKillDensity : 1.0;
+  const recipe = calculateBrineRecipe(salt, governingDensity, wellVolumeM3, mixingIntensity, temperatureC);
+
+  const warnings: string[] = [];
+  withDensity.forEach((iv, i) => {
+    if (i === governing) return;
+    const bhp = (governingDensity * 1000 * G * iv.bottomTVD) / 1e6;
+    const excess = bhp - iv.formationPressureMPa;
+    warnings.push(`Интервал ${iv.topMD.toFixed(0)}–${iv.bottomMD.toFixed(0)} м: ${bhp.toFixed(1)} МПа vs Pпл ${iv.formationPressureMPa.toFixed(1)} (избыток +${excess.toFixed(1)} МПа).`);
+  });
+  if (!recipe.feasible)
+    warnings.push(`🔴 Определяющая плотность ${governingDensity.toFixed(2)} недостижима солью ${salt.name}.`);
+
+  return {
+    intervals: withDensity, governingDensity, governingInterval: governing,
+    recipe, totalVolumeM3: wellVolumeM3, warnings,
+  };
+}
