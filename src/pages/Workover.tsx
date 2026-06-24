@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Home, ArrowLeft, Wrench, Anchor, Activity, Magnet, Search, Construction as Crane } from "lucide-react";
+import { Home, ArrowLeft, Wrench, Anchor, Activity, Magnet, Search, Construction as Crane, Droplets } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -18,10 +18,11 @@ import TermsFooter from "@/components/TermsFooter";
 import {
   STEEL_GRADES,
   pipeYieldForceKN,
-  calculatePacker, calculateDrag, calculateLubricant,
+  calculatePacker, calculatePackerRelease, calculateDrag, calculateLubricant,
   calculateFreePoint, diagnoseStuck, calculateFishing, calculateRigCapacity,
-  type WorkoverWellData, type PackerInput, type DragInput, type LubricantInput,
-  type FreePointInput, type StuckSymptoms, type FishingInput, type RigInput,
+  calculateKill, KILL_FLUIDS,
+  type WorkoverWellData, type PackerInput, type PackerReleaseInput, type DragInput, type LubricantInput,
+  type FreePointInput, type StuckSymptoms, type FishingInput, type RigInput, type KillInput,
 } from "@/lib/workover-calculations";
 
 const num = (v: string) => (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
