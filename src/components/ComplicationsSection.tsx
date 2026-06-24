@@ -65,6 +65,14 @@ export default function ComplicationsSection({
   const [formationPressure, setFormationPressure] = useState(0);
   const [fluidType, setFluidType] = useState<'gas' | 'oil' | 'water'>('water');
   const [lossBehavior, setLossBehavior] = useState<LossBehavior>('stable');
+  // Master-prompt: расширенные параметры физики проседания
+  const [zoneType, setZoneType] = useState<LossZoneType>('fracture');
+  const [zonePorosity, setZonePorosity] = useState(0.15);
+  const [drainageRadius, setDrainageRadius] = useState(15);
+  const [thick30Bc, setThick30Bc] = useState(0);
+  const [frictionCoeff, setFrictionCoeff] = useState(0.3);
+  const [lcmFactor, setLcmFactor] = useState(1);
+  const [bhTempInput, setBhTempInput] = useState(bhTempC);
 
   const toFluidProps = (f: FluidData) => ({
     densityGcm3: f.density,
