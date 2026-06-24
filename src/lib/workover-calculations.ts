@@ -228,6 +228,12 @@ export const KILL_FLUIDS = [
   { name: "Глинистый р-р с баритом", maxDensity: 2.5, type: "weighted_mud" },
 ] as const;
 
+export interface KillSection {
+  lengthM: number;
+  casingID_mm: number;
+  tubingOD_mm: number;
+}
+
 export interface KillInput {
   method: KillMethod;
   formationPressureMPa: number;
@@ -242,6 +248,8 @@ export interface KillInput {
   killFluidYP_Pa: number;
   pumpRateLs: number;
   safetyMarginPct: number;
+  /** Опциональный профиль секций для расчёта потерь по интервалам разного диаметра */
+  sections?: KillSection[];
 }
 
 export interface KillResult {
