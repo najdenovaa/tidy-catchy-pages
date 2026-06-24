@@ -58,6 +58,36 @@ function interpolateZenithDeg(md: number, traj: TrajectoryPoint[]): number {
   return traj[traj.length - 1].zenith;
 }
 
+function interpolateAzimuthDeg(md: number, traj: TrajectoryPoint[]): number {
+  if (!traj.length) return 0;
+  if (md <= traj[0].md) return traj[0].azimuth ?? 0;
+  for (let i = 1; i < traj.length; i++) {
+    if (md <= traj[i].md) {
+      const a = traj[i - 1], b = traj[i];
+      const t = (md - a.md) / Math.max(1e-6, b.md - a.md);
+      // Кратчайшая интерполяция по азимуту (учёт перехода 359→0)
+      const a0 = a.azimuth ?? 0;
+      const b0 = b.azimuth ?? 0;
+      let d = b0 - a0;
+      if (d > 180) d -= 360;
+      if (d < -180) d += 360;
+      return a0 + t * d;
+    }
+  }
+  return traj[traj.length - 1].azimuth ?? 0;
+}
+
+function averageZenithDeg(traj: TrajectoryPoint[], upToMD: number): number {
+  if (!traj.length || upToMD <= 0) return 0;
+  const step = 25;
+  let sum = 0, n = 0;
+  for (let md = 0; md <= upToMD; md += step) {
+    sum += interpolateZenithDeg(md, traj);
+    n++;
+  }
+  return n ? sum / n : 0;
+}
+
 // ────────── BLOCK 1: packers ──────────
 
 export type PackerType = "mechanical" | "hydraulic" | "hydrostatic" | "permanent" | "retrievable";
@@ -198,6 +228,12 @@ export const KILL_FLUIDS = [
   { name: "Глинистый р-р с баритом", maxDensity: 2.5, type: "weighted_mud" },
 ] as const;
 
+export interface KillSection {
+  lengthM: number;
+  casingID_mm: number;
+  tubingOD_mm: number;
+}
+
 export interface KillInput {
   method: KillMethod;
   formationPressureMPa: number;
@@ -212,6 +248,8 @@ export interface KillInput {
   killFluidYP_Pa: number;
   pumpRateLs: number;
   safetyMarginPct: number;
+  /** Опциональный профиль секций для расчёта потерь по интервалам разного диаметра */
+  sections?: KillSection[];
 }
 
 export interface KillResult {
@@ -229,6 +267,26 @@ export interface KillResult {
   recommendation: string;
 }
 
+/** Сектциональный расчёт потерь трения в затрубье (Бингам по секциям). */
+export function calculateKillFriction(
+  sections: KillSection[],
+  pumpRateLs: number,
+  killFluidPV_cP: number,
+  killFluidYP_Pa: number,
+): number {
+  let totalLoss = 0; // МПа
+  for (const sec of sections) {
+    const dhAnn = Math.max(0.005, (sec.casingID_mm - sec.tubingOD_mm) / 1000);
+    const annArea =
+      (Math.PI / 4) * ((sec.casingID_mm / 1000) ** 2 - (sec.tubingOD_mm / 1000) ** 2);
+    const v = pumpRateLs / 1000 / Math.max(1e-6, annArea);
+    const dpdl =
+      killFluidYP_Pa / (0.2 * dhAnn) + ((killFluidPV_cP / 1000) * v) / (1.5 * dhAnn * dhAnn);
+    totalLoss += (dpdl * sec.lengthM) / 1e6;
+  }
+  return totalLoss;
+}
+
 export function calculateKill(input: KillInput): KillResult {
   const G = 9.81;
   const tvd = Math.max(1, input.reservoirDepthTVD);
@@ -243,12 +301,20 @@ export function calculateKill(input: KillInput): KillResult {
     (Math.PI / 4) * ((input.casingID_mm / 1000) ** 2 - (input.tubingOD_mm / 1000) ** 2) * input.wellDepthMD;
   const killVolume = tubingCapacity + annulusCapacity;
 
-  const dhAnn = Math.max(0.005, (input.casingID_mm - input.tubingOD_mm) / 1000);
-  const annArea = (Math.PI / 4) * ((input.casingID_mm / 1000) ** 2 - (input.tubingOD_mm / 1000) ** 2);
-  const vAnn = input.pumpRateLs / 1000 / Math.max(1e-6, annArea);
-  const dpdlAnn =
-    input.killFluidYP_Pa / (0.2 * dhAnn) + ((input.killFluidPV_cP / 1000) * vAnn) / (1.5 * dhAnn * dhAnn);
-  const frictionLoss = (dpdlAnn * input.wellDepthMD) / 1e6;
+  // Потери на трение: по секциям профиля, либо одно-секционный fallback
+  let frictionLoss: number;
+  if (input.sections && input.sections.length > 0) {
+    frictionLoss = calculateKillFriction(
+      input.sections, input.pumpRateLs, input.killFluidPV_cP, input.killFluidYP_Pa,
+    );
+  } else {
+    const dhAnn = Math.max(0.005, (input.casingID_mm - input.tubingOD_mm) / 1000);
+    const annArea = (Math.PI / 4) * ((input.casingID_mm / 1000) ** 2 - (input.tubingOD_mm / 1000) ** 2);
+    const vAnn = input.pumpRateLs / 1000 / Math.max(1e-6, annArea);
+    const dpdlAnn =
+      input.killFluidYP_Pa / (0.2 * dhAnn) + ((input.killFluidPV_cP / 1000) * vAnn) / (1.5 * dhAnn * dhAnn);
+    frictionLoss = (dpdlAnn * input.wellDepthMD) / 1e6;
+  }
 
   const pumpPressure = frictionLoss;
   const ICP = pumpPressure + ((killDensity - input.currentMudDensity) * 1000 * G * tvd) / 1e6;
@@ -329,6 +395,8 @@ export interface DragPoint {
   hookLoadKN: number;
   dragKN: number;
   zenithDeg: number;
+  doglegDegPer10m: number;
+  normalForceN: number;
 }
 
 export interface DragResult {
@@ -349,18 +417,37 @@ export function calculateDrag(input: DragInput, well: WorkoverWellData): DragRes
 
   for (let md = well.wellDepthMD; md > 0; md -= step) {
     const zenDeg = interpolateZenithDeg(md, well.trajectory);
+    const zenDegPrev = interpolateZenithDeg(Math.max(0, md - step), well.trajectory);
+    const aziDeg = interpolateAzimuthDeg(md, well.trajectory);
+    const aziDegPrev = interpolateAzimuthDeg(Math.max(0, md - step), well.trajectory);
     const zen = (zenDeg * Math.PI) / 180;
+    const zenPrev = (zenDegPrev * Math.PI) / 180;
+    const dAzi = ((aziDeg - aziDegPrev) * Math.PI) / 180;
+
+    // Полный 3D dogleg (минимальная кривизна): cosβ = cos(I2−I1) − sin I1·sin I2·(1−cos ΔA)
+    const cosBeta = Math.cos(zen - zenPrev) - Math.sin(zen) * Math.sin(zenPrev) * (1 - Math.cos(dAzi));
+    const dogleg = Math.acos(Math.max(-1, Math.min(1, cosBeta))); // рад/шаг
+
     const wSeg = well.pipeWeight_kgm * step * 9.81 * bf;
+    const wNormal = wSeg * Math.sin(zen);                  // прижатие от веса
+    const tNormal = Math.abs(tension) * dogleg;            // прижатие от натяжения в перегибе (T·dα)
+    const normalForce = Math.sqrt(wNormal * wNormal + tNormal * tNormal);
+    const drag = mu * normalForce;
     const axial = wSeg * Math.cos(zen);
-    const normal = wSeg * Math.sin(zen);
-    const drag = mu * Math.abs(normal);
 
     freeWeight += axial;
     if (input.operation === "pull_out") tension += axial + drag;
     else if (input.operation === "run_in") tension += axial - drag;
     else tension += axial;
 
-    points.push({ md, hookLoadKN: tension / 1000, dragKN: drag / 1000, zenithDeg: zenDeg });
+    points.push({
+      md,
+      hookLoadKN: tension / 1000,
+      dragKN: drag / 1000,
+      zenithDeg: zenDeg,
+      doglegDegPer10m: (dogleg * 180) / Math.PI,
+      normalForceN: normalForce,
+    });
   }
   points.reverse();
   return {
@@ -417,14 +504,28 @@ export interface FreePointInput {
 export function calculateFreePoint(input: FreePointInput, well: WorkoverWellData): {
   freePointMD: number;
   freePipeLength: number;
+  idealFreePointMD: number;
+  frictionCorrectionPct: number;
+  avgZenithDeg: number;
 } {
   const A = pipeCrossArea_m2(well.pipeOD_mm, well.pipeID_mm);
   const E = well.pipeYoungModulusGPa * 1e9;
   const dF = input.pulledForceKN * 1000;
-  if (dF <= 0) return { freePointMD: 0, freePipeLength: 0 };
-  const freePoint = (E * A * input.measuredStretchM) / dF;
-  const clamped = Math.min(Math.max(0, freePoint), well.wellDepthMD);
-  return { freePointMD: clamped, freePipeLength: clamped };
+  if (dF <= 0) return { freePointMD: 0, freePipeLength: 0, idealFreePointMD: 0, frictionCorrectionPct: 0, avgZenithDeg: 0 };
+  const ideal = (E * A * input.measuredStretchM) / dF;
+  // Поправка трения: в искривлённой скважине часть растяжения «съедается»
+  // трением свободной части → реальная точка прихвата глубже расчётной.
+  const avgZen = averageZenithDeg(well.trajectory, Math.min(ideal, well.wellDepthMD));
+  const frictionFactor = 1 + 0.15 * Math.sin((avgZen * Math.PI) / 180); // до +15% в горизонтали
+  const corrected = ideal * frictionFactor;
+  const clamped = Math.min(Math.max(0, corrected), well.wellDepthMD);
+  return {
+    freePointMD: clamped,
+    freePipeLength: clamped,
+    idealFreePointMD: Math.min(Math.max(0, ideal), well.wellDepthMD),
+    frictionCorrectionPct: (frictionFactor - 1) * 100,
+    avgZenithDeg: avgZen,
+  };
 }
 
 export type StuckType = "differential" | "mechanical" | "keyseat" | "cuttings" | "cement";
@@ -514,12 +615,15 @@ export interface FishingInput {
   overpullKN: number;
   jarType?: "mechanical" | "hydraulic";
   jarStretchM?: number;
+  hammerMassKg?: number;     // масса ударной массы ясса (по умолчанию 500 кг)
+  impactTimeMs?: number;     // длительность удара (по умолчанию 5 мс)
 }
 
 export interface FishingResult {
   requiredHookLoadKN: number;
   jarImpactKN: number;
   jarEnergyJ: number;
+  jarVelocityMs: number;
   maxSafeHookLoadKN: number;
   canEngage: boolean;
   recommendation: string;
@@ -528,21 +632,35 @@ export interface FishingResult {
 export function calculateFishing(input: FishingInput, well: WorkoverWellData): FishingResult {
   let jarImpact = 0;
   let jarEnergy = 0;
-  if (input.jarType && input.jarStretchM) {
-    jarEnergy = 0.5 * input.overpullKN * 1000 * input.jarStretchM;
-    jarImpact = input.overpullKN * 2;
+  let jarVelocity = 0;
+
+  if (input.jarType && input.jarStretchM && input.jarStretchM > 0) {
+    const hammerMass = input.hammerMassKg ?? 500;
+    const impactTime = (input.impactTimeMs ?? 5) / 1000; // c
+    // Жёсткость свободной колонны k = E·A/L
+    const A = pipeCrossArea_m2(well.pipeOD_mm, well.pipeID_mm);
+    const L = Math.max(1, input.fishTopMD);
+    const k = (well.pipeYoungModulusGPa * 1e9 * A) / L; // Н/м
+    // Накопленная упругая энергия в колонне: E = ½·k·x²
+    jarEnergy = 0.5 * k * input.jarStretchM * input.jarStretchM; // Дж
+    // Скорость молота в момент удара: v = √(2E/m)
+    jarVelocity = Math.sqrt((2 * jarEnergy) / hammerMass); // м/с
+    // Пиковая ударная сила: F = m·v/Δt
+    jarImpact = (hammerMass * jarVelocity) / Math.max(1e-6, impactTime) / 1000; // кН
   }
+
   const maxSafe = pipeYieldForceKN(well);
   const required = input.fishWeightKN + input.overpullKN;
   return {
     requiredHookLoadKN: required,
     jarImpactKN: jarImpact,
     jarEnergyJ: jarEnergy,
+    jarVelocityMs: jarVelocity,
     maxSafeHookLoadKN: maxSafe,
     canEngage: required < maxSafe,
     recommendation:
       jarImpact > 0
-        ? `Ясс даёт ударную нагрузку ~${jarImpact.toFixed(0)} кН. Для прихваченной рыбы — серия ударов.`
+        ? `Ясс: энергия ${(jarEnergy / 1000).toFixed(0)} кДж, скорость удара ${jarVelocity.toFixed(1)} м/с, пиковая сила ${jarImpact.toFixed(0)} кН. Серия ударов для прихваченной рыбы.`
         : "Захват рыбы натяжением. При неудаче — применить ясс.",
   };
 }

@@ -160,7 +160,8 @@ export default function Workover() {
 
   // ──── Fishing ────
   const [fish, setFish] = useState<FishingInput>({
-    fishTopMD: 1600, fishWeightKN: 120, overpullKN: 150, jarType: "hydraulic", jarStretchM: 1.2,
+    fishTopMD: 1600, fishWeightKN: 120, overpullKN: 150, jarType: "hydraulic",
+    jarStretchM: 1.2, hammerMassKg: 500, impactTimeMs: 5,
   });
   const fishResult = useMemo(() => calculateFishing(fish, well), [fish, well]);
 
@@ -756,7 +757,10 @@ export default function Workover() {
                   <NumberField label="Измеренное удлинение ΔL" unit="м" value={fp.measuredStretchM} onChange={(v) => setFp({ ...fp, measuredStretchM: v })} />
                   <div className="border-t pt-3 text-sm space-y-1">
                     <Row k="Закон Гука: L = E·A·ΔL/ΔF" v="" />
-                    <Row k="Точка прихвата" v={<strong>{fpResult.freePointMD.toFixed(0)} м</strong>} />
+                    <Row k="Идеальная точка прихвата" v={`${fpResult.idealFreePointMD.toFixed(0)} м`} />
+                    <Row k="Средний зенит свободной части" v={`${fpResult.avgZenithDeg.toFixed(1)}°`} />
+                    <Row k="Поправка на трение в искривлении" v={`+${fpResult.frictionCorrectionPct.toFixed(1)}%`} />
+                    <Row k="Точка прихвата (с поправкой)" v={<strong>{fpResult.freePointMD.toFixed(0)} м</strong>} />
                     <Row k="Длина свободной колонны" v={`${fpResult.freePipeLength.toFixed(0)} м`} />
                   </div>
                 </CardContent>
@@ -813,7 +817,9 @@ export default function Workover() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <NumberField label="Растяжение перед ударом" unit="м" value={fish.jarStretchM ?? 0} onChange={(v) => setFish({ ...fish, jarStretchM: v })} />
+                  <NumberField label="Растяжение перед ударом" unit="м" value={fish.jarStretchM ?? 0} onChange={(v) => setFish({ ...fish, jarStretchM: v })} hint="накопленный стретч колонны" />
+                  <NumberField label="Масса молота (hammer)" unit="кг" value={fish.hammerMassKg ?? 500} onChange={(v) => setFish({ ...fish, hammerMassKg: v })} hint="обычно 300–800" />
+                  <NumberField label="Длительность удара Δt" unit="мс" value={fish.impactTimeMs ?? 5} onChange={(v) => setFish({ ...fish, impactTimeMs: v })} hint="обычно 3–10 мс" />
                 </CardContent>
               </Card>
 
@@ -821,8 +827,9 @@ export default function Workover() {
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Результаты</CardTitle></CardHeader>
                 <CardContent className="space-y-2 text-sm">
                   <Row k="Требуемая нагрузка на крюке" v={`${fishResult.requiredHookLoadKN.toFixed(0)} кН`} />
-                  <Row k="Пиковая ударная сила ясса (2× overpull)" v={`${fishResult.jarImpactKN.toFixed(0)} кН`} />
-                  <Row k="Энергия удара (½·F·ΔL)" v={`${(fishResult.jarEnergyJ / 1000).toFixed(1)} кДж`} />
+                  <Row k="Энергия упругой деформации (½·k·x²)" v={`${(fishResult.jarEnergyJ / 1000).toFixed(1)} кДж`} />
+                  <Row k="Скорость удара молота (√(2E/m))" v={`${fishResult.jarVelocityMs.toFixed(1)} м/с`} />
+                  <Row k="Пиковая ударная сила (m·v/Δt)" v={<strong>{fishResult.jarImpactKN.toFixed(0)} кН</strong>} />
                   <Row k="Max безопасная (предел трубы)" v={`${fishResult.maxSafeHookLoadKN.toFixed(0)} кН`} />
                   <Row k="Лимит подъёмника" v={`${rigResult.allowableLoadKN.toFixed(0)} кН`} />
                   <div className="pt-1">
