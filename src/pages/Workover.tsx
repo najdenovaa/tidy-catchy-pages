@@ -160,7 +160,8 @@ export default function Workover() {
 
   // ──── Fishing ────
   const [fish, setFish] = useState<FishingInput>({
-    fishTopMD: 1600, fishWeightKN: 120, overpullKN: 150, jarType: "hydraulic", jarStretchM: 1.2,
+    fishTopMD: 1600, fishWeightKN: 120, overpullKN: 150, jarType: "hydraulic",
+    jarStretchM: 1.2, hammerMassKg: 500, impactTimeMs: 5,
   });
   const fishResult = useMemo(() => calculateFishing(fish, well), [fish, well]);
 
