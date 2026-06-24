@@ -1206,8 +1206,8 @@ export function calculateKickLift(
       cleanCementTopMD: plugTopMD, cleanCementBottomMD: plugBottomMD,
       arrestMechanism: drive0KN <= 0 ? 'no_lift' : 'gel_yield',
       warnings: drive0KN <= 0
-        ? ['✅ Пластовое давление ниже гидростатики — подъём невозможен.']
-        : [`✅ Статический гель (${(resistKN).toFixed(0)} кН) удерживает столб от подъёма (драйв ${drive0KN.toFixed(0)} кН).`],
+        ? [`✅ Гидростатика моста ${Phydro0.toFixed(1)} МПа ≥ пластового ${formationPressureMPa.toFixed(1)} МПа (по TVD зоны) — подъём невозможен, мост держит проявление.`]
+        : [`✅ Статический гель (${(resistKN).toFixed(0)} кН) удерживает столб от подъёма (избыток ${excessMPa.toFixed(1)} МПа, драйв ${drive0KN.toFixed(0)} кН).`],
     };
   }
 
