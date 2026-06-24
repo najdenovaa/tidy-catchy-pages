@@ -31,10 +31,20 @@ export function PlugSettlementSVG({
   const plannedPadTopMD = plannedBottomMD;
   const plannedPadBottomMD = plannedBottomMD + padHeightM;
   const settle = Math.max(0, result.settlementM);
+  const inferredAnnArea = settle > 1e-6 && result.volumeLostM3 > 0
+    ? result.volumeLostM3 / settle
+    : 0;
+  const padLostHeight = inferredAnnArea > 0
+    ? result.layerBreakdown.padLostM3 / inferredAnnArea
+    : Math.min(padHeightM, settle);
+  const cementLostHeight = inferredAnnArea > 0
+    ? result.layerBreakdown.cementLostM3 / inferredAnnArea
+    : 0;
   const realPadTopMD = result.finalBottomMD;
-  const remainingPadHeight = Math.max(0, padHeightM - settle);
+  const remainingPadHeight = Math.max(0, padHeightM - padLostHeight);
   const realPadBottomMD = Math.min(realPadTopMD + remainingPadHeight, lossZone.topMD);
   const padFullyConsumed = hasPad && remainingPadHeight < 0.05;
+  const cementLostToZone = cementLostHeight > 0.05;
 
   const topMd = Math.max(0, Math.min(plannedTopMD, result.finalHeadMD) - 100);
   const botMd = Math.max(plannedBottomMD, result.finalBottomMD, plannedPadBottomMD, realPadBottomMD, lossZone.topMD + lossZone.thicknessM) + 60;
@@ -149,7 +159,7 @@ export function PlugSettlementSVG({
     labels.push({
       side: "left",
       anchorY: y(result.finalHeadMD) - 2,
-      lines: [`Факт голова ${result.finalHeadMD.toFixed(0)} м`],
+      lines: [`Факт голова ${result.finalHeadMD.toFixed(1)} м`],
       className: result.reachesLossZone ? "fill-destructive" : "fill-amber-500",
       weight: "semibold",
     });
@@ -157,7 +167,7 @@ export function PlugSettlementSVG({
     labels.push({
       side: "left",
       anchorY: y(result.finalBottomMD) + 9,
-      lines: [`Факт подошва ${result.finalBottomMD.toFixed(0)} м`],
+      lines: [`Факт подошва ${result.finalBottomMD.toFixed(1)} м`],
       className: result.reachesLossZone ? "fill-destructive" : "fill-amber-500",
     });
     // План подошва
@@ -175,7 +185,7 @@ export function PlugSettlementSVG({
     labels.push({
       side: "right",
       anchorY: (y(plannedTopMD) + y(result.finalHeadMD)) / 2,
-      lines: [`−${result.settlementM.toFixed(0)} м`],
+      lines: [`−${result.settlementM.toFixed(1)} м`],
       className: "fill-destructive",
       weight: "semibold",
     });
@@ -286,6 +296,13 @@ export function PlugSettlementSVG({
             stroke={result.reachesLossZone ? "hsl(var(--destructive))" : "hsl(38 92% 40%)"}
             strokeWidth={1.2}
           />
+          {cementLostToZone && (
+            <rect
+              x={xAt(result.finalBottomMD) - halfW} y={y(result.finalBottomMD)}
+              width={halfW * 2} height={Math.max(2, y(result.finalBottomMD + cementLostHeight) - y(result.finalBottomMD))}
+              fill="hsl(var(--destructive) / 0.85)" stroke="hsl(var(--destructive))" strokeWidth={1}
+            />
+          )}
         </>
       )}
 

@@ -450,7 +450,7 @@ export default function ComplicationsSection({
               Динамическое проседание моста (U-tube)
               <Badge variant={fullAnalysis.settlement.reachesLossZone ? 'destructive' : 'secondary'} className="text-[10px]">
                 {fullAnalysis.settlement.reachesLossZone ? 'Катастрофа' :
-                 fullAnalysis.settlement.willSettle ? `−${fullAnalysis.settlement.settlementM.toFixed(0)} м` : 'Стабилен'}
+                 fullAnalysis.settlement.willSettle ? `−${fullAnalysis.settlement.settlementM.toFixed(1)} м` : 'Стабилен'}
               </Badge>
             </CardTitle>
           </CardHeader>
@@ -476,7 +476,7 @@ export default function ComplicationsSection({
                   <span className="font-semibold">{(results.plugTopMD ?? results.plugTopTVD).toFixed(0)} м</span>
                   <span className="text-muted-foreground">🔴 Реальная голова:</span>
                   <span className={`font-bold ${fullAnalysis.settlement.reachesLossZone ? 'text-destructive' : 'text-amber-500'}`}>
-                    {fullAnalysis.settlement.finalHeadMD.toFixed(0)} м (−{fullAnalysis.settlement.settlementM.toFixed(0)} м)
+                    {fullAnalysis.settlement.finalHeadMD.toFixed(1)} м (−{fullAnalysis.settlement.settlementM.toFixed(1)} м)
                   </span>
                   <span className="text-muted-foreground">Консистенция на остановке:</span>
                   <span>{fullAnalysis.settlement.consistencyAtArrest.toFixed(0)} Bc</span>
@@ -999,8 +999,8 @@ export default function ComplicationsSection({
                         </p>
                         {settlementDisp > 0.5 && (
                           <p className="text-[9px] text-muted-foreground mt-1">
-                            Голова: план {designedTopDisp.toFixed(0)} м → факт {realTopDisp.toFixed(0)} м (−{settlementDisp.toFixed(0)} м).
-                            Подошва: план {designedBotDisp.toFixed(0)} м → факт {realBotDisp.toFixed(0)} м.
+                            Голова: план {designedTopDisp.toFixed(0)} м → факт {realTopDisp.toFixed(1)} м (−{settlementDisp.toFixed(1)} м).
+                            Подошва: план {designedBotDisp.toFixed(0)} м → факт {realBotDisp.toFixed(1)} м.
                           </p>
                         )}
                       </div>
