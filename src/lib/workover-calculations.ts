@@ -359,6 +359,8 @@ export interface DragPoint {
   hookLoadKN: number;
   dragKN: number;
   zenithDeg: number;
+  doglegDegPer10m: number;
+  normalForceN: number;
 }
 
 export interface DragResult {
@@ -379,18 +381,37 @@ export function calculateDrag(input: DragInput, well: WorkoverWellData): DragRes
 
   for (let md = well.wellDepthMD; md > 0; md -= step) {
     const zenDeg = interpolateZenithDeg(md, well.trajectory);
+    const zenDegPrev = interpolateZenithDeg(Math.max(0, md - step), well.trajectory);
+    const aziDeg = interpolateAzimuthDeg(md, well.trajectory);
+    const aziDegPrev = interpolateAzimuthDeg(Math.max(0, md - step), well.trajectory);
     const zen = (zenDeg * Math.PI) / 180;
+    const zenPrev = (zenDegPrev * Math.PI) / 180;
+    const dAzi = ((aziDeg - aziDegPrev) * Math.PI) / 180;
+
+    // Полный 3D dogleg (минимальная кривизна): cosβ = cos(I2−I1) − sin I1·sin I2·(1−cos ΔA)
+    const cosBeta = Math.cos(zen - zenPrev) - Math.sin(zen) * Math.sin(zenPrev) * (1 - Math.cos(dAzi));
+    const dogleg = Math.acos(Math.max(-1, Math.min(1, cosBeta))); // рад/шаг
+
     const wSeg = well.pipeWeight_kgm * step * 9.81 * bf;
+    const wNormal = wSeg * Math.sin(zen);                  // прижатие от веса
+    const tNormal = Math.abs(tension) * dogleg;            // прижатие от натяжения в перегибе (T·dα)
+    const normalForce = Math.sqrt(wNormal * wNormal + tNormal * tNormal);
+    const drag = mu * normalForce;
     const axial = wSeg * Math.cos(zen);
-    const normal = wSeg * Math.sin(zen);
-    const drag = mu * Math.abs(normal);
 
     freeWeight += axial;
     if (input.operation === "pull_out") tension += axial + drag;
     else if (input.operation === "run_in") tension += axial - drag;
     else tension += axial;
 
-    points.push({ md, hookLoadKN: tension / 1000, dragKN: drag / 1000, zenithDeg: zenDeg });
+    points.push({
+      md,
+      hookLoadKN: tension / 1000,
+      dragKN: drag / 1000,
+      zenithDeg: zenDeg,
+      doglegDegPer10m: (dogleg * 180) / Math.PI,
+      normalForceN: normalForce,
+    });
   }
   points.reverse();
   return {
