@@ -250,7 +250,7 @@ export default function ComplicationsSection({
       volumeLostM3,
       lossPct,
       realCementVolumeM3: realCementVolM3,
-      reachesZone: cementLost,
+      reachesZone: s.reachesLossZone,
       limitedBy: s.limitedBy,
       verdict,
     };
@@ -450,7 +450,7 @@ export default function ComplicationsSection({
               Динамическое проседание моста (U-tube)
               <Badge variant={fullAnalysis.settlement.reachesLossZone ? 'destructive' : 'secondary'} className="text-[10px]">
                 {fullAnalysis.settlement.reachesLossZone ? 'Катастрофа' :
-                 fullAnalysis.settlement.willSettle ? `−${fullAnalysis.settlement.settlementM.toFixed(0)} м` : 'Стабилен'}
+                 fullAnalysis.settlement.willSettle ? `−${fullAnalysis.settlement.settlementM.toFixed(1)} м` : 'Стабилен'}
               </Badge>
             </CardTitle>
           </CardHeader>
@@ -476,7 +476,7 @@ export default function ComplicationsSection({
                   <span className="font-semibold">{(results.plugTopMD ?? results.plugTopTVD).toFixed(0)} м</span>
                   <span className="text-muted-foreground">🔴 Реальная голова:</span>
                   <span className={`font-bold ${fullAnalysis.settlement.reachesLossZone ? 'text-destructive' : 'text-amber-500'}`}>
-                    {fullAnalysis.settlement.finalHeadMD.toFixed(0)} м (−{fullAnalysis.settlement.settlementM.toFixed(0)} м)
+                    {fullAnalysis.settlement.finalHeadMD.toFixed(1)} м (−{fullAnalysis.settlement.settlementM.toFixed(1)} м)
                   </span>
                   <span className="text-muted-foreground">Консистенция на остановке:</span>
                   <span>{fullAnalysis.settlement.consistencyAtArrest.toFixed(0)} Bc</span>
@@ -907,6 +907,11 @@ export default function ComplicationsSection({
                   const rPadBot = unified?.realPadBottomMD ?? complicationResult.realPadBottomMD;
                   const padFullyGone = unified ? unified.padFullyConsumed : false;
                   const lossPctDisp = unified?.lossPct ?? complicationResult.lossPercentage;
+                  const verdictText = unified?.verdict === 'cement_lost'
+                    ? `🔴 цемент ушёл в пласт (${cementLostDisp.toFixed(2)} м³) — изоляция нарушена`
+                    : unified?.verdict === 'pad_consumed'
+                      ? '🟡 пачка израсходована полностью — цемент на грани'
+                      : '🟢 цемент защищён — ушли жидкость/пачка';
                   const visualRealPct = designedLenDisp > 0
                     ? Math.max(5, Math.min(100, (realLenDisp / designedLenDisp) * 100))
                     : 100;
@@ -985,18 +990,17 @@ export default function ComplicationsSection({
                               style={{ width: `${visualRealPct}%` }}
                             />
                             <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-foreground">
-                              Реальный: {realLenDisp.toFixed(0)} м{shrinkPct > 0.5 ? ` (−${shrinkPct.toFixed(0)}%)` : (
-                                unified?.verdict === 'cement_lost' ? ` 🔴 цемент ушёл в пласт (${cementLostDisp.toFixed(2)} м³) — изоляция нарушена`
-                                : unified?.verdict === 'pad_consumed' ? ' 🟡 пачка израсходована полностью — цемент на грани'
-                                : ' 🟢 цемент защищён — ушли жидкость/пачка'
-                              )}
+                              Реальный: {realLenDisp.toFixed(0)} м{shrinkPct > 0.5 ? ` (−${shrinkPct.toFixed(0)}%)` : ''}
                             </span>
                           </div>
                         </div>
+                        <p className={`text-[10px] mt-1 font-semibold ${unified?.verdict === 'cement_lost' ? 'text-destructive' : unified?.verdict === 'pad_consumed' ? 'text-amber-400' : 'text-green-500'}`}>
+                          {verdictText}
+                        </p>
                         {settlementDisp > 0.5 && (
                           <p className="text-[9px] text-muted-foreground mt-1">
-                            Голова: план {designedTopDisp.toFixed(0)} м → факт {realTopDisp.toFixed(0)} м (−{settlementDisp.toFixed(0)} м).
-                            Подошва: план {designedBotDisp.toFixed(0)} м → факт {realBotDisp.toFixed(0)} м.
+                            Голова: план {designedTopDisp.toFixed(0)} м → факт {realTopDisp.toFixed(1)} м (−{settlementDisp.toFixed(1)} м).
+                            Подошва: план {designedBotDisp.toFixed(0)} м → факт {realBotDisp.toFixed(1)} м.
                           </p>
                         )}
                       </div>
