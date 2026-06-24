@@ -191,6 +191,59 @@ export default function ComplicationsSection({
       wellFluid.density, wellFluid.pv, wellFluid.yp, wellFluid.gel10min,
       viscousPad.density, viscousPad.pv, viscousPad.yp, viscousPad.gel10min]);
 
+  // ═══ ЕДИНАЯ ГЕОМЕТРИЯ: блок «Поглощение» переиспользует результаты U-tube ═══
+  // Чтобы интервалы / осадка / потери / длина моста в таблице совпадали с SVG и блоком U-tube.
+  const unified = useMemo(() => {
+    if (!fullAnalysis?.settlement || !results) return null;
+    const s = fullAnalysis.settlement;
+    const annA = results.annArea;
+    if (annA <= 0) return null;
+    const plugTopMD = results.plugTopMD ?? results.plugTopTVD;
+    const plugBottomMD = results.plugBottomMD ?? results.plugBottomTVD;
+    const plugLen = plugBottomMD - plugTopMD;
+    const padH = hasViscousPad && spacerVolumeBelow > 0 ? spacerVolumeBelow / annA : 0;
+
+    // В U-tube длина моста СОХРАНЯЕТСЯ — он целиком оседает на settlementM.
+    // Объём, вытесненный из-под подошвы = settlementM × annArea.
+    const displacedVolM3 = s.settlementM * annA;
+    const padVolM3 = padH * annA;
+    const padLostM3 = Math.min(displacedVolM3, padVolM3);
+    const padRemainHeightM = Math.max(0, padH - s.settlementM);
+    // Если мост уперся в зону и продолжает выдавливаться — цемент пошёл в пласт.
+    // В нашей модели интегратор останавливается на gap, поэтому cement-loss = 0 при штатной остановке.
+    // При reachesLossZone оставшийся объём после пачки/жидкости можно квалифицировать как загрязнение низа.
+    const cementLostM3 = s.reachesLossZone
+      ? Math.max(0, displacedVolM3 - padVolM3 - (s.finalBottomMD > 0 ? 0 : 0))
+      : 0;
+    const lossPct = results.cementVolumeTotal > 0 ? (cementLostM3 / results.cementVolumeTotal) * 100 : 0;
+    const realCementVolM3 = Math.max(0, results.cementVolumeTotal - cementLostM3);
+
+    return {
+      settlementM: s.settlementM,
+      realTopMD: s.finalHeadMD,
+      realBottomMD: s.finalBottomMD,
+      realPlugLengthM: plugLen,                 // длина не меняется в U-tube
+      designedPlugLengthM: plugLen,
+      designedPlugTopMD: plugTopMD,
+      designedPlugBottomMD: plugBottomMD,
+      padHeightMD: padH,
+      designedPadTopMD: plugBottomMD,
+      designedPadBottomMD: plugBottomMD + padH,
+      realPadTopMD: s.finalBottomMD,
+      realPadBottomMD: s.finalBottomMD + padRemainHeightM,
+      padRemainHeightM,
+      padFullyConsumed: padH > 0 && padRemainHeightM <= 0.05,
+      padLostM3,
+      cementLostM3,
+      volumeLostM3: displacedVolM3,
+      lossPct,
+      realCementVolumeM3: realCementVolM3,
+      reachesZone: s.reachesLossZone,
+    };
+  }, [fullAnalysis, results, hasViscousPad, spacerVolumeBelow]);
+
+
+
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">
       <Label className="text-xs">{label}{unit ? ` (${unit})` : ""}</Label>
