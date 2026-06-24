@@ -1320,7 +1320,7 @@ export function analyzePlugComplicationFull(
   if (lossZone.topMD > plugBottomMD) {
     const settlement = calculatePlugSettlement(
       plugTopMD, plugBottomMD, lossZone, cement, wellFluid, viscousPad,
-      padHeightM, trajectory, annAreaM2, boreDiamM, frictionCoeff,
+      padHeightM * annAreaM2, trajectory, annAreaM2, boreDiamM, frictionCoeff,
       totalOpTimeMin, lcmReductionFactor,
     );
     let volumeEffect: VolumeEffectResult | null = null;
