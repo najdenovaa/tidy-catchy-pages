@@ -142,6 +142,47 @@ export function PlugSettlementSVG({
         ))
       ) : (
         <>
+          {/* Планируемая вязкая пачка (пунктир, голубой) */}
+          {hasPad && (
+            <>
+              <rect
+                x={xAt(plannedPadTopMD) - halfW} y={y(plannedPadTopMD)}
+                width={halfW * 2} height={Math.max(2, y(plannedPadBottomMD) - y(plannedPadTopMD))}
+                fill="none" stroke="hsl(199 89% 48%)" strokeWidth={1.2} strokeDasharray="3 2"
+              />
+              <text x={xAt(plannedPadTopMD) - halfW - 6} y={y(plannedPadBottomMD) + 9} textAnchor="end"
+                fontSize="8" className="fill-sky-500">
+                План пачка ↓ {plannedPadBottomMD.toFixed(0)}
+              </text>
+            </>
+          )}
+
+          {/* Реальная вязкая пачка (заливка) */}
+          {hasPad && !padFullyConsumed && (
+            <>
+              <rect
+                x={xAt(realPadTopMD) - halfW} y={y(realPadTopMD)}
+                width={halfW * 2} height={Math.max(2, y(realPadBottomMD) - y(realPadTopMD))}
+                fill="hsl(199 89% 48% / 0.55)" stroke="hsl(199 89% 40%)" strokeWidth={1}
+              />
+              <text x={xAt(realPadTopMD) + halfW + 8} y={y((realPadTopMD + realPadBottomMD) / 2)}
+                fontSize="9" className="fill-sky-600 font-semibold">
+                💧 Пачка (факт)
+              </text>
+              <text x={xAt(realPadTopMD) + halfW + 8} y={y((realPadTopMD + realPadBottomMD) / 2) + 11}
+                fontSize="8" className="fill-muted-foreground">
+                {realPadTopMD.toFixed(0)}–{realPadBottomMD.toFixed(0)} м (h={remainingPadHeight.toFixed(1)} м)
+              </text>
+            </>
+          )}
+          {hasPad && padFullyConsumed && (
+            <text x={xAt(realPadTopMD) + halfW + 8} y={y(realPadTopMD) + 4}
+              fontSize="9" className="fill-destructive font-semibold">
+              💧 Пачка ушла полностью
+            </text>
+          )}
+
+          {/* Реальный мост (заливка) */}
           <rect
             x={xAt(result.finalHeadMD) - halfW} y={y(result.finalHeadMD)}
             width={halfW * 2} height={y(result.finalBottomMD) - y(result.finalHeadMD)}
@@ -151,7 +192,17 @@ export function PlugSettlementSVG({
           />
           <text x={xAt(result.finalHeadMD) - halfW - 6} y={y(result.finalHeadMD) - 2} textAnchor="end"
             fontSize="9" className={result.reachesLossZone ? "fill-destructive font-semibold" : "fill-amber-500 font-semibold"}>
-            Факт {result.finalHeadMD.toFixed(0)} м
+            Факт голова {result.finalHeadMD.toFixed(0)} м
+          </text>
+          <text x={xAt(result.finalBottomMD) - halfW - 6} y={y(result.finalBottomMD) + 9} textAnchor="end"
+            fontSize="9" className={result.reachesLossZone ? "fill-destructive font-semibold" : "fill-amber-500"}>
+            Факт подошва {result.finalBottomMD.toFixed(0)} м
+          </text>
+
+          {/* Подпись плановой подошвы */}
+          <text x={xAt(plannedBottomMD) - halfW - 6} y={y(plannedBottomMD) + 9} textAnchor="end"
+            fontSize="8" className="fill-green-500">
+            План подошва {plannedBottomMD.toFixed(0)} м
           </text>
         </>
       )}
