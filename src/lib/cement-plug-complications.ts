@@ -1252,6 +1252,7 @@ export interface FullComplicationAnalysis {
   transitionWindow: TransitionWindow | null;
   kickInvasionM: number;
   kickLift: KickLiftResult | null;
+  kick: KickResult | null;
 }
 
 
