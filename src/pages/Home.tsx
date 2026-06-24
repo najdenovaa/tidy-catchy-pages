@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler } from "lucide-react";
+import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
@@ -13,6 +13,7 @@ const modules = [
   { title: "Интенсификация добычи (ОПЗ)", description: "Кислотные, пенные, азотные и комбинированные обработки: подбор метода, расчёт, план, прогноз", icon: FlaskConical, to: "/stimulation", available: true },
   { title: "ГРП", description: "Проектирование и расчёт гидроразрыва пласта", icon: Zap, to: "/fracturing", available: false },
   { title: "Проектирование скважины", description: "Проектирование конструкции и траектории скважины", icon: Ruler, to: "/well-design", available: false },
+  { title: "КРС — Капитальный ремонт скважин", description: "Пакеры, затяжки, прихваты, ловильные работы, нагрузки на подъёмник", icon: Wrench, to: "/workover", available: true },
 ];
 
 export default function Home() {
