@@ -73,6 +73,7 @@ export default function ComplicationsSection({
   const [frictionCoeff, setFrictionCoeff] = useState(0.3);
   const [lcmFactor, setLcmFactor] = useState(1);
   const [bhTempInput, setBhTempInput] = useState(bhTempC);
+  const [userBcAtStop, setUserBcAtStop] = useState(0); // 0 = авто из кривой загустевания
 
   const toFluidProps = (f: FluidData) => ({
     densityGcm3: f.density,
@@ -187,11 +188,12 @@ export default function ComplicationsSection({
       fluidType === 'gas',
       fluidType,
       results.plugBottomTVD,
+      userBcAtStop,
     );
 
   }, [results, type, lossRate, zoneDepthMD, zoneThickness, zoneType, zonePorosity, drainageRadius,
       thick30Bc, thickeningTimeMin, frictionCoeff, lcmFactor, bhTempInput, formationPressure, fluidType,
-      trajectory, hasViscousPad, spacerVolumeBelow,
+      trajectory, hasViscousPad, spacerVolumeBelow, userBcAtStop,
       cement.density, cement.pv, cement.yp, cement.gel10min,
       wellFluid.density, wellFluid.pv, wellFluid.yp, wellFluid.gel10min,
       viscousPad.density, viscousPad.pv, viscousPad.yp, viscousPad.gel10min]);
@@ -398,6 +400,7 @@ export default function ComplicationsSection({
                   <Field label="t₃₀ (30 Bc)" value={thick30Bc} onChange={v => setThick30Bc(num(v))} unit="мин (≈0.6·t₅₀)" />
                   <Field label="Трение цем.–порода" value={frictionCoeff} onChange={v => setFrictionCoeff(num(v))} unit="0.2–0.4" />
                   <Field label="T забоя" value={bhTempInput} onChange={v => setBhTempInput(num(v))} unit="°C" />
+                  <Field label="Вс на остановке" value={userBcAtStop} onChange={v => setUserBcAtStop(num(v))} unit="0=авто" />
                 </div>
               </>
             )}

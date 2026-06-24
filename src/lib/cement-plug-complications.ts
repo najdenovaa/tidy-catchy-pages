@@ -846,6 +846,7 @@ export function calculatePlugSettlement(
   frictionCoeff: number,
   totalOpTimeMin: number,
   lcmReductionFactor: number,
+  userBcAtStop: number = 0,
 ): SettlementResult {
   const plugLen = plugBottomMD - plugTopMD;
   const wallPerim = Math.PI * boreDiamM;
@@ -929,21 +930,39 @@ export function calculatePlugSettlement(
   const fluidGapM = Math.max(0, gapToZone - padHeightM);
   const fluidVolM3 = fluidGapM * annAreaM2;
 
-  // ── ШАГ 5: ОСАДКА = объёмный предел × коэффициент подвижности ──
-  // Объёмный предел задаёт максимум ухода, а подвижность плавно зависит от
-  // плотности цемента, реологии, зенита и длины моста. Это убирает «ступеньку»:
-  // при изменении ρ/YP/СНС/L меняется не только факт движения, но и величина осадки.
+  // ── ШАГ 5: ОСАДКА = объёмный предел × коэффициент подвижности (FIX 5) ──
+  // Подвижность безразмерна (drive−resist)/drive: плавная чувствительность ко ВСЕМ параметрам
+  // (плотность цемента и пачки, реология цемента/пачки, зенит, Вс на остановке).
   const settleVolLimit = Math.min(volLostLimitM3 / Math.max(annAreaM2, 1e-6), gapToZone);
-  const bcMid = consistencyAtTime(timeToGelStopMin / 2, cement.thickeningTime30Bc, cement.thickeningTime50Bc);
-  const gelMid = gelFromConsistency(Math.max(bcMid, 5), cement.gel10minPa > 0 ? cement.gel10minPa : 15);
-  const ypMid = ypFromConsistency(Math.max(bcMid, 5), cement.ypPa > 0 ? cement.ypPa : 8);
-  const avgZenRad = (profile.avgZenith ?? 0) * Math.PI / 180;
-  const driveP = (cement.densityGcm3 - wellFluid.densityGcm3) * 1000 * G * plugLen * Math.cos(avgZenRad);
-  const wallFricP = (gelMid + ypMid) * wallPerim * plugLen / Math.max(annAreaM2, 1e-6);
-  const endResistP = 2 * gelMid * 1000;
-  const resistP = wallFricP + endResistP;
-  const mobility = Math.max(0, Math.min(1, (driveP - resistP) / Math.max(driveP, 1)));
 
+  // Консистенция на момент остановки: ручной ввод или из кривой загустевания
+  const bcAtStop = userBcAtStop > 0
+    ? userBcAtStop
+    : consistencyAtTime(timeToGelStopMin / 2, cement.thickeningTime30Bc, cement.thickeningTime50Bc);
+  const gelMid = gelFromConsistency(Math.max(bcAtStop, 5), cement.gel10minPa > 0 ? cement.gel10minPa : 15);
+  const ypMid = ypFromConsistency(Math.max(bcAtStop, 5), cement.ypPa > 0 ? cement.ypPa : 8);
+
+  // Противовес: средняя плотность столба ПОД мостом (пачка + скважинная жидкость)
+  const padDensity = viscousPad ? viscousPad.densityGcm3 : wellFluid.densityGcm3;
+  const fluidGapBelowM = Math.max(0, gapToZone - padHeightM);
+  const belowAvgDensity = (padHeightM + fluidGapBelowM) > 0
+    ? (padDensity * padHeightM + wellFluid.densityGcm3 * fluidGapBelowM) / (padHeightM + fluidGapBelowM)
+    : wellFluid.densityGcm3;
+
+  const avgZenRad = (profile.avgZenith ?? 0) * Math.PI / 180;
+  const driveP = (cement.densityGcm3 - belowAvgDensity) * 1000 * G * plugLen * Math.cos(avgZenRad);
+
+  // Сопротивление: трение цемента + реология пачки (минимум 0.5 м чтобы учитывалась всегда)
+  const wallFricP = (gelMid + ypMid) * wallPerim * plugLen / Math.max(annAreaM2, 1e-6);
+  let padResistP = 0;
+  if (viscousPad && padVolumeM3 > 0) {
+    const padYP = viscousPad.ypPa > 0 ? viscousPad.ypPa : 10;
+    const padGel = viscousPad.gel10minPa > 0 ? viscousPad.gel10minPa : padYP * 3;
+    padResistP = (padYP + padGel) * wallPerim * Math.max(padHeightM, 0.5) / Math.max(annAreaM2, 1e-6);
+  }
+  const resistP = wallFricP + padResistP;
+
+  const mobility = driveP <= 0 ? 0 : Math.max(0, Math.min(1, (driveP - resistP) / driveP));
   const cumSettle = settleVolLimit * mobility;
   const actualVolLost = cumSettle * annAreaM2;
 
@@ -987,7 +1006,7 @@ export function calculatePlugSettlement(
     finalBottomMD: plugBottomMD + cumSettle,
     reachesLossZone: cementReachedZone,
     arrestMechanism: arrest,
-    consistencyAtArrest: consistencyAtTime(timeToGelStopMin, cement.thickeningTime30Bc, cement.thickeningTime50Bc),
+    consistencyAtArrest: bcAtStop,
     forceBalance: {
       driveKN: drive / 1000, gelKN: gelHold0 / 1000, frictionKN: profile.totalFriction / 1000,
       padKN: padResist / 1000, wellFluidKN: wellFluidSupport / 1000, netKN: (drive - totalResist0) / 1000,
@@ -1330,6 +1349,7 @@ export function analyzePlugComplicationFull(
   hasGasZone: boolean,
   formationFluidType: KickFluidType = 'water',
   plugBottomTVD: number = plugBottomMD,
+  userBcAtStop: number = 0,
 ): FullComplicationAnalysis {
   const tw = (cement.thickeningTime30Bc > 0 && cement.thickeningTime50Bc > 0)
     ? transitionWindow(cement.thickeningTime30Bc, cement.thickeningTime50Bc, hasGasZone) : null;
@@ -1364,7 +1384,7 @@ export function analyzePlugComplicationFull(
     const settlement = calculatePlugSettlement(
       plugTopMD, plugBottomMD, lossZone, cement, wellFluid, viscousPad,
       padHeightM * annAreaM2, trajectory, annAreaM2, boreDiamM, frictionCoeff,
-      totalOpTimeMin, lcmReductionFactor,
+      totalOpTimeMin, lcmReductionFactor, userBcAtStop,
     );
     let volumeEffect: VolumeEffectResult | null = null;
     let multiPlug: MultiPlugProgram | null = null;
