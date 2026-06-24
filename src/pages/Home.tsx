@@ -52,16 +52,16 @@ export default function Home() {
       <div className="relative z-10 min-h-screen flex flex-col">
         <header className="border-b border-border bg-card">
           <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-            <Link to="/" className="flex flex-col items-start gap-1">
+            <Link to="/" className="flex flex-col items-start gap-0.5">
               <div className="flex items-center gap-3">
                 <img src={deallsoftLogo} alt="DeAllsoft" className="h-14 sm:h-24 object-cover object-center" />
                 <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase">
                   Инженерные расчёты
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <img src={geoladLogo.url} alt="Геолад" className="h-14 sm:h-24 object-cover object-center" />
-                <span className="text-[10px] sm:text-xs text-muted-foreground italic">при поддержке</span>
+              <div className="flex flex-col items-start leading-none">
+                <span className="text-[10px] sm:text-xs text-muted-foreground italic mb-0.5 ml-1">при поддержке</span>
+                <img src={geoladLogo.url} alt="Геолад" className="h-12 sm:h-20 object-cover object-center" />
               </div>
             </Link>
             <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
