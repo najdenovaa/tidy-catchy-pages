@@ -134,8 +134,10 @@ export default function ComplicationsSection({
 
   // ═══ MASTER-PROMPT: полная физика проседания (U-tube) ═══
   const fullAnalysis = useMemo(() => {
-    if (!results || (type !== 'loss' && type !== 'both')) return null;
-    if (lossRate <= 0 || zoneDepthMD <= 0) return null;
+    if (!results) return null;
+    const hasLoss = (type === 'loss' || type === 'both') && lossRate > 0 && zoneDepthMD > 0;
+    const hasKick = (type === 'kick' || type === 'both') && formationPressure > 0;
+    if (!hasLoss && !hasKick) return null;
 
     const plugTopMD = results.plugTopMD ?? results.plugTopTVD;
     const plugBottomMD = results.plugBottomMD ?? results.plugBottomTVD;
@@ -155,14 +157,14 @@ export default function ComplicationsSection({
       thickeningTime50Bc: isCement ? t50 : 0,
     });
 
-    const zone: LossZoneFull = {
+    const zone: LossZoneFull | null = hasLoss ? {
       topMD: zoneDepthMD,
       thicknessM: Math.max(0.5, zoneThickness),
       zoneType,
       porosity: zonePorosity,
       initialLossRateM3h: lossRate,
       drainageRadiusM: drainageRadius,
-    };
+    } : null;
 
     const traj: ProfilePoint[] = trajectory.length > 0
       ? trajectory
@@ -181,15 +183,20 @@ export default function ComplicationsSection({
       results.totalOperationTimeMin || 60,
       lcmFactor,
       bhTempInput,
-      type === 'both' ? formationPressure : 0,
+      hasKick ? formationPressure : 0,
       fluidType === 'gas',
+      fluidType,
+      results.plugBottomTVD,
     );
+
   }, [results, type, lossRate, zoneDepthMD, zoneThickness, zoneType, zonePorosity, drainageRadius,
       thick30Bc, thickeningTimeMin, frictionCoeff, lcmFactor, bhTempInput, formationPressure, fluidType,
       trajectory, hasViscousPad, spacerVolumeBelow,
       cement.density, cement.pv, cement.yp, cement.gel10min,
       wellFluid.density, wellFluid.pv, wellFluid.yp, wellFluid.gel10min,
       viscousPad.density, viscousPad.pv, viscousPad.yp, viscousPad.gel10min]);
+
+
 
   // ═══ ЕДИНАЯ ГЕОМЕТРИЯ: блок «Поглощение» переиспользует результаты U-tube ═══
   // Чтобы интервалы / осадка / потери / длина моста в таблице совпадали с SVG и блоком U-tube.
@@ -614,6 +621,109 @@ export default function ComplicationsSection({
           </CardContent>
         </Card>
       )}
+
+      {/* ═══ ПОДЪЁМ МОСТА ПРИ ПРОЯВЛЕНИИ + ЗОНЫ СМЕШЕНИЯ ═══ */}
+      {fullAnalysis?.kickLift && results && (
+        <Card className={`border-2 ${
+          fullAnalysis.kickLift.arrestMechanism === 'reached_surface' ? 'border-destructive/70'
+            : fullAnalysis.kickLift.willLift && fullAnalysis.kickLift.contaminationPct > 30 ? 'border-destructive/60'
+            : fullAnalysis.kickLift.willLift ? 'border-amber-500/50'
+            : 'border-green-500/40'
+        }`}>
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Droplets className="w-4 h-4 text-destructive" />
+              Подъём моста при проявлении (обратный U-tube) + зоны смешения
+              <Badge variant={fullAnalysis.kickLift.willLift ? 'destructive' : 'secondary'} className="text-[10px]">
+                {fullAnalysis.kickLift.arrestMechanism === 'reached_surface' ? 'Выброс' :
+                 fullAnalysis.kickLift.willLift ? `↑ ${fullAnalysis.kickLift.liftHeightM.toFixed(0)} м` : 'Удержан'}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-3">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
+              <span className="text-muted-foreground font-semibold">Баланс сил (кН):</span><span></span>
+              <span className="text-muted-foreground">драйв ↑ (Pпл − Pгидро)·A:</span>
+              <span className={fullAnalysis.kickLift.netDriveKN > fullAnalysis.kickLift.resistTotalKN ? 'text-destructive font-semibold' : ''}>
+                {fullAnalysis.kickLift.netDriveKN.toFixed(1)}
+              </span>
+              <span className="text-muted-foreground">гель цемента:</span>
+              <span>{fullAnalysis.kickLift.resistBreakdown.gelCementKN.toFixed(1)}</span>
+              <span className="text-muted-foreground">гель пачки:</span>
+              <span>{fullAnalysis.kickLift.resistBreakdown.gelPadKN.toFixed(1)}</span>
+              <span className="text-muted-foreground">трение по профилю:</span>
+              <span>{fullAnalysis.kickLift.resistBreakdown.frictionKN.toFixed(1)}</span>
+              <span className="text-muted-foreground font-semibold">сопротивление всего:</span>
+              <span className="font-bold">{fullAnalysis.kickLift.resistTotalKN.toFixed(1)}</span>
+              <Separator className="col-span-2 my-1" />
+              <span className="text-muted-foreground">Тип флюида / ρ:</span>
+              <span>{({gas:'газ',oil:'нефть',water:'вода'} as const)[fullAnalysis.kickLift.formationFluidType]} ({fullAnalysis.kickLift.formationFluidDensityGcm3.toFixed(2)} г/см³)</span>
+              <span className="text-muted-foreground font-semibold">Высота подъёма Δh:</span>
+              <span className={`font-bold ${fullAnalysis.kickLift.liftHeightM > 50 ? 'text-destructive' : fullAnalysis.kickLift.liftHeightM > 10 ? 'text-amber-500' : 'text-foreground'}`}>
+                {fullAnalysis.kickLift.liftHeightM.toFixed(1)} м
+              </span>
+              <span className="text-muted-foreground">Голова моста (план → факт):</span>
+              <span>{(results.plugTopMD ?? results.plugTopTVD).toFixed(0)} → {fullAnalysis.kickLift.finalPlugTopMD.toFixed(0)} м</span>
+              <span className="text-muted-foreground">Подошва моста (план → факт):</span>
+              <span>{(results.plugBottomMD ?? results.plugBottomTVD).toFixed(0)} → {fullAnalysis.kickLift.finalPlugBottomMD.toFixed(0)} м</span>
+              <span className="text-muted-foreground">Механизм остановки:</span>
+              <span className="font-semibold">{({
+                no_lift: 'нет подъёма',
+                pressure_balance: 'равновесие давлений',
+                gel_yield: 'удержан гелем',
+                reached_surface: '⛔ достиг устья',
+              } as const)[fullAnalysis.kickLift.arrestMechanism]}</span>
+            </div>
+
+            {fullAnalysis.kickLift.willLift && (
+              <div className="rounded-lg border border-border p-3 space-y-1.5">
+                <p className="text-[10px] font-semibold text-muted-foreground">
+                  🌀 Зоны смешения (Brice–Holmes / Lockyear–Hibbert: L = K·√(D·v·t))
+                </p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
+                  <span className="text-muted-foreground">Пачка ↔ пластовый флюид (снизу):</span>
+                  <span className="text-blue-400">{fullAnalysis.kickLift.mixingPadKickM.toFixed(1)} м</span>
+                  <span className="text-muted-foreground">Цемент ↔ пачка (подошва моста):</span>
+                  <span className="text-amber-400">{fullAnalysis.kickLift.mixingCementPadM.toFixed(1)} м</span>
+                  <span className="text-muted-foreground">Цемент ↔ скв. жидкость (кровля):</span>
+                  <span className="text-amber-400">{fullAnalysis.kickLift.mixingCementWellM.toFixed(1)} м</span>
+                  <Separator className="col-span-2 my-1" />
+                  <span className="text-muted-foreground">Контаминация цемента:</span>
+                  <span className={fullAnalysis.kickLift.contaminationPct > 30 ? 'text-destructive font-bold' : 'text-amber-400 font-semibold'}>
+                    {fullAnalysis.kickLift.contaminatedCementLengthM.toFixed(1)} м ({fullAnalysis.kickLift.contaminationPct.toFixed(0)}%)
+                  </span>
+                  <span className="text-muted-foreground font-semibold">Снижение UCS:</span>
+                  <span className={fullAnalysis.kickLift.ucsLossPct > 50 ? 'text-destructive font-bold' : 'text-amber-400 font-semibold'}>
+                    −{fullAnalysis.kickLift.ucsLossPct.toFixed(0)}%
+                  </span>
+                  <span className="text-muted-foreground font-semibold">Чистый цемент (рабочий мост):</span>
+                  <span className={fullAnalysis.kickLift.cleanCementBottomMD <= fullAnalysis.kickLift.cleanCementTopMD ? 'text-destructive font-bold' : 'text-green-500 font-semibold'}>
+                    {fullAnalysis.kickLift.cleanCementBottomMD <= fullAnalysis.kickLift.cleanCementTopMD
+                      ? '— уничтожен смешением'
+                      : `${fullAnalysis.kickLift.cleanCementTopMD.toFixed(0)} — ${fullAnalysis.kickLift.cleanCementBottomMD.toFixed(0)} м`}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {fullAnalysis.kickLift.warnings.map((w, i) => (
+              <p key={i} className="text-[10px]">{w}</p>
+            ))}
+
+            {fullAnalysis.kickLift.willLift && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-[10px] space-y-1">
+                <p className="font-semibold text-primary">💡 Рекомендации против подъёма:</p>
+                <p>• Утяжелить цемент до ≥{((formationPressure * 1e6) / (1000 * 9.81 * (results.plugBottomTVD || 1)) / 1000).toFixed(2)} г/см³ (баланс с Pпл).</p>
+                <p>• Увеличить длину моста — больше геля держит при подъёме (статика растёт линейно с L).</p>
+                <p>• Поднять СНС цемента (загуститель/CMC) — главный фактор сопротивления.</p>
+                <p>• Использовать тяжёлую вязко-кольматирующую пачку под мостом (ρ ≥ цемента, СНС ≥ 50 Па).</p>
+                <p>• При невозможности — установить мост в 2 ступени с ОЗЦ опорного слоя до UCS ≥ 3.5 МПа.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
 
       {/* Results */}
       {complicationResult && (
