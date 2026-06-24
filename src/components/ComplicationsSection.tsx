@@ -307,7 +307,35 @@ export default function ComplicationsSection({
               <Field label="Глубина зоны" value={zoneDepthTVD} onChange={v => setZoneDepthTVD(num(v))} unit="м TVD" />
               <Field label="Мощность пласта" value={zoneThickness} onChange={v => setZoneThickness(num(v))} unit="м" />
             </div>
+            {(type === 'loss' || type === 'both') && (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Тип зоны</Label>
+                    <select
+                      value={zoneType}
+                      onChange={e => setZoneType(e.target.value as LossZoneType)}
+                      className="h-8 text-xs w-full rounded border border-border bg-background px-2"
+                    >
+                      <option value="pore">Поровая</option>
+                      <option value="fracture">Трещинная</option>
+                      <option value="vug_cavern">Каверна/каверно-трещинная</option>
+                      <option value="fault">Разлом</option>
+                    </select>
+                  </div>
+                  <Field label="Пористость" value={zonePorosity} onChange={v => setZonePorosity(num(v))} unit="0–1" />
+                  <Field label="Радиус дренир." value={drainageRadius} onChange={v => setDrainageRadius(num(v))} unit="м" />
+                  <Field label="LCM-фактор" value={lcmFactor} onChange={v => setLcmFactor(num(v))} unit="0–1" />
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <Field label="t₃₀ (30 Bc)" value={thick30Bc} onChange={v => setThick30Bc(num(v))} unit="мин (≈0.6·t₅₀)" />
+                  <Field label="Трение цем.–порода" value={frictionCoeff} onChange={v => setFrictionCoeff(num(v))} unit="0.2–0.4" />
+                  <Field label="T забоя" value={bhTempInput} onChange={v => setBhTempInput(num(v))} unit="°C" />
+                </div>
+              </>
+            )}
           </div>
+
 
           {(type === 'kick' || type === 'both') && (
             <div className="space-y-2">
