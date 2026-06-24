@@ -67,6 +67,41 @@ export default function Workover() {
   });
   const packerResult = useMemo(() => calculatePacker(packer), [packer]);
 
+  // ──── Packer RELEASE ────
+  const [releaseExtra, setReleaseExtra] = useState({
+    monthsInService: 12, h2sPresent: false, scaleDepositRate: 6, pipeWeightAboveKN: 180,
+  });
+  const releaseResult = useMemo(() => calculatePackerRelease({
+    packerType: packer.type,
+    holdCapacityKN: packerResult.holdCapacityKN,
+    monthsInService: releaseExtra.monthsInService,
+    h2sPresent: releaseExtra.h2sPresent,
+    scaleDepositRate: releaseExtra.scaleDepositRate,
+    pipeWeightAboveKN: releaseExtra.pipeWeightAboveKN,
+    pipeYieldMPa: well.pipeYieldMPa,
+    pipeOD_mm: well.pipeOD_mm, pipeID_mm: well.pipeID_mm,
+  } as PackerReleaseInput), [packer.type, packerResult.holdCapacityKN, releaseExtra, well.pipeYieldMPa, well.pipeOD_mm, well.pipeID_mm]);
+
+  // ──── Kill ────
+  const [kill, setKill] = useState<KillInput>({
+    method: "wait_weight",
+    formationPressureMPa: 28, reservoirDepthTVD: 2200, fracturePressureMPa: 42,
+    currentMudDensity: 1.10,
+    wellDepthMD: 2500, casingID_mm: 152, tubingOD_mm: 73, tubingID_mm: 62,
+    killFluidPV_cP: 20, killFluidYP_Pa: 6, pumpRateLs: 8, safetyMarginPct: 5,
+  });
+  const killResult = useMemo(() => calculateKill(kill), [kill]);
+  const killChart = useMemo(() => {
+    const steps = 20;
+    const out: { v: number; p: number }[] = [];
+    for (let i = 0; i <= steps; i++) {
+      const f = i / steps;
+      const p = killResult.initialCircPressureMPa + (killResult.finalCircPressureMPa - killResult.initialCircPressureMPa) * f;
+      out.push({ v: +(killResult.killVolumeM3 * f).toFixed(2), p: +p.toFixed(2) });
+    }
+    return out;
+  }, [killResult]);
+
   // ──── Drag + lubricant ────
   const [drag, setDrag] = useState<DragInput>({ operation: "pull_out", frictionCoeff: 0.30 });
   const [lube, setLube] = useState<LubricantInput>({
