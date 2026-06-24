@@ -1087,6 +1087,172 @@ export function kickInvasion(
   return gelResistPerM > 0 ? Math.min(excess / gelResistPerM, plugLenM) : plugLenM;
 }
 
+// ───── БЛОК 9: ПОДЪЁМ МОСТА ПРИ ПРОЯВЛЕНИИ (обратный U-tube) + ЗОНЫ СМЕШЕНИЯ ─────
+// Когда Pпл > Pгидро на подошве, пластовый флюид «толкает» весь столб вверх:
+// сначала поднимается нижняя вязкая пачка, затем цементный мост, выше — скв. жидкость.
+// Сопротивление подъёму: статическая прочность геля цемента/пачки на стенке + трение по
+// профилю. По мере подъёма Δh внизу освобождается канал, заполняемый ЛЁГКИМ пластовым
+// флюидом (ρ_kick), что снижает гидростатику и поддерживает движение до равновесия:
+//   (Pпл − Pгидро_новая) · A = Resist
+// Длина зоны смешения по интерфейсам — корреляция Brice–Holmes / Lockyear–Hibbert:
+//   L_mix ≈ K · √(D · v · t) ;  K=1.5 ламинар, K=3 турбулент.
+// Загрязнение низа цемента линейно с длиной смешения пачка↔цемент; снижение UCS:
+//   ΔUCS% ≈ min(90, 5 · contamination%)  (эмпирика API/SPE по образцам).
+export type KickFluidType = 'gas' | 'oil' | 'water';
+const KICK_DENSITY_GCM3: Record<KickFluidType, number> = { gas: 0.20, oil: 0.75, water: 1.05 };
+
+export interface KickLiftResult {
+  willLift: boolean;
+  formationFluidType: KickFluidType;
+  formationFluidDensityGcm3: number;
+  netDriveKN: number;          // Pпл − Pгидро на подошве (стартовый дисбаланс) × A
+  resistTotalKN: number;       // суммарное сопротивление подъёму
+  resistBreakdown: { gelCementKN: number; gelPadKN: number; frictionKN: number };
+  liftHeightM: number;         // Δh подъёма всей пачки+моста
+  finalPlugTopMD: number;
+  finalPlugBottomMD: number;
+  finalPadTopMD: number;
+  finalPadBottomMD: number;
+  // Зоны смешения
+  mixingPadKickM: number;      // пачка ↔ пласт. флюид (снизу)
+  mixingCementPadM: number;    // цемент ↔ пачка (на подошве моста)
+  mixingCementWellM: number;   // цемент ↔ скв. жидкость (на кровле моста)
+  contaminatedCementLengthM: number;
+  contaminationPct: number;    // от длины моста
+  ucsLossPct: number;
+  cleanCementTopMD: number;
+  cleanCementBottomMD: number;
+  arrestMechanism: 'no_lift' | 'pressure_balance' | 'gel_yield' | 'reached_surface';
+  warnings: string[];
+}
+
+export function calculateKickLift(
+  plugTopMD: number, plugBottomMD: number, plugBottomTVD: number,
+  formationPressureMPa: number, formationFluidType: KickFluidType,
+  cement: FullRheologyFluid, wellFluid: FullRheologyFluid,
+  viscousPad: FullRheologyFluid | null, padHeightM: number,
+  annAreaM2: number, boreDiamM: number,
+  trajectory: ProfilePoint[], frictionCoeff: number,
+  totalOpTimeMin: number,
+): KickLiftResult {
+  const warnings: string[] = [];
+  const plugLen = Math.max(1, plugBottomMD - plugTopMD);
+  const wallPerim = Math.PI * boreDiamM;
+  const rhoKick = KICK_DENSITY_GCM3[formationFluidType];
+
+  // 1) Стартовый дисбаланс на подошве моста
+  const wfDensity = wellFluid.densityGcm3;
+  const cDensity = cement.densityGcm3;
+  const padDensity = viscousPad?.densityGcm3 ?? wfDensity;
+  // Гидростатика на подошве: столб скв.жидкости от устья до головы моста + цемент + пачка
+  const Phydro0 = (wfDensity * plugTopMD + cDensity * plugLen + padDensity * padHeightM) * 1000 * 9.81 / 1e6;
+  const drive0Pa = Math.max(0, (formationPressureMPa - Phydro0) * 1e6);
+  const drive0KN = drive0Pa * annAreaM2 / 1000;
+
+  // 2) Сопротивление подъёму (статика геля + трение по профилю)
+  const cementGel = cement.gel10minPa > 0 ? cement.gel10minPa : cement.ypPa * 3;
+  const padGel = viscousPad ? (viscousPad.gel10minPa > 0 ? viscousPad.gel10minPa : viscousPad.ypPa * 3) : 0;
+  const gelCementF = cementGel * wallPerim * plugLen;          // Н
+  const gelPadF = padGel * wallPerim * Math.max(0, padHeightM); // Н
+  const profile = analyzePlugProfile(
+    plugTopMD, plugBottomMD, trajectory, cement,
+    annAreaM2, boreDiamM, wfDensity, frictionCoeff,
+  );
+  const frictionF = profile.totalFriction; // Н (зависит от DLS/трения по стволу)
+  const resistTotalF = gelCementF + gelPadF + frictionF;
+  const resistKN = resistTotalF / 1000;
+
+  // 3) Подъём произойдёт только если стартовый дисбаланс > статика
+  if (drive0KN <= resistKN || drive0KN <= 0) {
+    return {
+      willLift: false, formationFluidType, formationFluidDensityGcm3: rhoKick,
+      netDriveKN: drive0KN, resistTotalKN: resistKN,
+      resistBreakdown: { gelCementKN: gelCementF / 1000, gelPadKN: gelPadF / 1000, frictionKN: frictionF / 1000 },
+      liftHeightM: 0, finalPlugTopMD: plugTopMD, finalPlugBottomMD: plugBottomMD,
+      finalPadTopMD: plugBottomMD, finalPadBottomMD: plugBottomMD + padHeightM,
+      mixingPadKickM: 0, mixingCementPadM: 0, mixingCementWellM: 0,
+      contaminatedCementLengthM: 0, contaminationPct: 0, ucsLossPct: 0,
+      cleanCementTopMD: plugTopMD, cleanCementBottomMD: plugBottomMD,
+      arrestMechanism: drive0KN <= 0 ? 'no_lift' : 'gel_yield',
+      warnings: drive0KN <= 0
+        ? ['✅ Пластовое давление ниже гидростатики — подъём невозможен.']
+        : [`✅ Статический гель (${(resistKN).toFixed(0)} кН) удерживает столб от подъёма (драйв ${drive0KN.toFixed(0)} кН).`],
+    };
+  }
+
+  // 4) Равновесная высота подъёма: после Δh внизу столб lift-флюида толкает вверх.
+  // Δ(гидростатики) = (ρ_cement_effective − ρ_kick) · g · Δh, где ρ_cement_effective =
+  // средняя плотность поднимающегося столба (пачка+цемент) с учётом размеров.
+  const liftCol = (cDensity * plugLen + padDensity * Math.max(0, padHeightM)) /
+    Math.max(0.01, plugLen + Math.max(0, padHeightM));
+  const ΔρKgM3 = Math.max(50, (liftCol - rhoKick) * 1000); // кг/м³
+  // (Drive0 − Resist) = Δρ·g·A·Δh  ⇒  Δh = (Drive0 − Resist) / (Δρ·g·A)
+  const liftEq = (drive0Pa * annAreaM2 - resistTotalF) / (ΔρKgM3 * 9.81 * annAreaM2);
+  // Геометрический предел: до устья (≈ plugTopMD = глубина головы) минус 5 м запас
+  const liftMax = Math.max(0, plugTopMD - 5);
+  const liftH = Math.min(liftEq, liftMax);
+  let arrest: KickLiftResult['arrestMechanism'] = 'pressure_balance';
+  if (liftEq > liftMax) arrest = 'reached_surface';
+
+  // 5) Зоны смешения (Brice–Holmes / Lockyear–Hibbert)
+  // Скорость подъёма усреднённая: v = Δh / время загустевания (или операции, что короче).
+  const tArrestMin = Math.max(1, Math.min(totalOpTimeMin, cement.thickeningTime30Bc > 0 ? cement.thickeningTime30Bc : totalOpTimeMin));
+  const vAvgMs = (liftH / 60) / Math.max(1, tArrestMin); // м/с (грубо)
+  const tSec = tArrestMin * 60;
+  // Режим: оценим Re по средним свойствам цемента: Re = ρvD/μ, μ≈PV в Па·с (PV в мПа·с / 1000)
+  const μ = Math.max(1e-4, (cement.pvMPas > 0 ? cement.pvMPas : 50) / 1000);
+  const Re = (cDensity * 1000) * Math.max(vAvgMs, 1e-4) * boreDiamM / μ;
+  const Kmix = Re > 2100 ? 3.0 : 1.5;
+  const lMix = (intf: 'cementPad' | 'padKick' | 'cementWell') => {
+    if (liftH < 0.1) return 0;
+    const base = Kmix * Math.sqrt(boreDiamM * Math.max(vAvgMs, 1e-4) * tSec);
+    // Сильнее всего смешивается интерфейс с большим контрастом плотности
+    const k = intf === 'padKick' ? 1.0
+             : intf === 'cementPad' ? (viscousPad ? 0.6 : 0.0)
+             : 0.4;
+    return Math.min(base * k, plugLen * 0.6);
+  };
+  const mixPadKick = lMix('padKick');
+  const mixCementPad = lMix('cementPad');
+  const mixCementWell = lMix('cementWell');
+
+  const contaminatedLen = mixCementPad + mixCementWell;
+  const contaminationPct = (contaminatedLen / plugLen) * 100;
+  const ucsLossPct = Math.min(90, 5 * contaminationPct);
+
+  const finalPlugTop = plugTopMD - liftH;
+  const finalPlugBot = plugBottomMD - liftH;
+  const finalPadTop = finalPlugBot;
+  const finalPadBot = finalPadTop + padHeightM;
+  // Чистый цемент = поднятый интервал за вычетом смешений с обеих сторон
+  const cleanTop = finalPlugTop + mixCementWell;
+  const cleanBot = finalPlugBot - mixCementPad;
+
+  if (arrest === 'reached_surface')
+    warnings.push(`⛔ КАТАСТРОФА: мост поднят до устья (Δh=${liftH.toFixed(0)} м) — изоляция полностью нарушена, флюид на поверхности.`);
+  else
+    warnings.push(`⚠ Мост поднят на ${liftH.toFixed(0)} м: голова ${plugTopMD.toFixed(0)}→${finalPlugTop.toFixed(0)} м, подошва ${plugBottomMD.toFixed(0)}→${finalPlugBot.toFixed(0)} м.`);
+  if (contaminationPct > 30)
+    warnings.push(`⛔ Зоны смешения дают контаминацию ${contaminationPct.toFixed(0)}% длины моста (UCS↓${ucsLossPct.toFixed(0)}%). Мост непригоден.`);
+  else if (contaminationPct > 10)
+    warnings.push(`⚠ Контаминация ${contaminationPct.toFixed(0)}% длины (UCS↓${ucsLossPct.toFixed(0)}%). Рабочая зона: ${cleanTop.toFixed(0)}–${cleanBot.toFixed(0)} м.`);
+  if (finalPlugTop < 30)
+    warnings.push(`⚠ Голова поднята почти до устья — реальная угроза выброса.`);
+
+  return {
+    willLift: true, formationFluidType, formationFluidDensityGcm3: rhoKick,
+    netDriveKN: drive0KN, resistTotalKN: resistKN,
+    resistBreakdown: { gelCementKN: gelCementF / 1000, gelPadKN: gelPadF / 1000, frictionKN: frictionF / 1000 },
+    liftHeightM: liftH,
+    finalPlugTopMD: finalPlugTop, finalPlugBottomMD: finalPlugBot,
+    finalPadTopMD: finalPadTop, finalPadBottomMD: finalPadBot,
+    mixingPadKickM: mixPadKick, mixingCementPadM: mixCementPad, mixingCementWellM: mixCementWell,
+    contaminatedCementLengthM: contaminatedLen, contaminationPct, ucsLossPct,
+    cleanCementTopMD: cleanTop, cleanCementBottomMD: cleanBot,
+    arrestMechanism: arrest, warnings,
+  };
+}
+
 // ───── БЛОК 10: ORCHESTRATOR ─────
 export interface FullComplicationAnalysis {
   scenario: 'zone_below' | 'zone_inside' | 'zone_above' | 'kick' | 'none';
@@ -1095,7 +1261,9 @@ export interface FullComplicationAnalysis {
   multiPlug: MultiPlugProgram | null;
   transitionWindow: TransitionWindow | null;
   kickInvasionM: number;
+  kickLift: KickLiftResult | null;
 }
+
 
 export function analyzePlugComplicationFull(
   plugTopMD: number, plugBottomMD: number,
