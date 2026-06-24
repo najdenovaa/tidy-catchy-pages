@@ -1006,7 +1006,7 @@ export function calculatePlugSettlement(
     finalBottomMD: plugBottomMD + cumSettle,
     reachesLossZone: cementReachedZone,
     arrestMechanism: arrest,
-    consistencyAtArrest: consistencyAtTime(timeToGelStopMin, cement.thickeningTime30Bc, cement.thickeningTime50Bc),
+    consistencyAtArrest: bcAtStop,
     forceBalance: {
       driveKN: drive / 1000, gelKN: gelHold0 / 1000, frictionKN: profile.totalFriction / 1000,
       padKN: padResist / 1000, wellFluidKN: wellFluidSupport / 1000, netKN: (drive - totalResist0) / 1000,
