@@ -1163,13 +1163,21 @@ export function calculateKickLift(
   const wallPerim = Math.PI * boreDiamM;
   const rhoKick = KICK_DENSITY_GCM3[formationFluidType];
 
-  // 1) Стартовый дисбаланс на подошве моста
+  // 1) Стартовый дисбаланс на подошве моста (по TVD — гидростатика зависит от вертикали, не от MD)
   const wfDensity = wellFluid.densityGcm3;
   const cDensity = cement.densityGcm3;
   const padDensity = viscousPad?.densityGcm3 ?? wfDensity;
-  // Гидростатика на подошве: столб скв.жидкости от устья до головы моста + цемент + пачка
-  const Phydro0 = (wfDensity * plugTopMD + cDensity * plugLen + padDensity * padHeightM) * 1000 * 9.81 / 1e6;
-  const drive0Pa = Math.max(0, (formationPressureMPa - Phydro0) * 1e6);
+  const plugTopTVD = interpolateTVD(plugTopMD, trajectory);
+  const plugBottomTVD_real = Number.isFinite(plugBottomTVD) && plugBottomTVD > 0
+    ? plugBottomTVD : interpolateTVD(plugBottomMD, trajectory);
+  const padBottomTVD = interpolateTVD(plugBottomMD + Math.max(0, padHeightM), trajectory);
+  const Phydro0 = (
+    wfDensity * plugTopTVD +
+    cDensity * Math.max(0, plugBottomTVD_real - plugTopTVD) +
+    padDensity * Math.max(0, padBottomTVD - plugBottomTVD_real)
+  ) * 1000 * 9.81 / 1e6;
+  const excessMPa = formationPressureMPa - Phydro0;
+  const drive0Pa = Math.max(0, excessMPa * 1e6);
   const drive0KN = drive0Pa * annAreaM2 / 1000;
 
   // 2) Сопротивление подъёму (статика геля + трение по профилю)
