@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Home, ArrowLeft, Wrench, Anchor, Activity, Magnet, Search, Crane } from "lucide-react";
+import { Home, ArrowLeft, Wrench, Anchor, Activity, Magnet, Search, Construction as Crane } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
