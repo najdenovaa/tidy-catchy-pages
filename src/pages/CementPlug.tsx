@@ -1199,6 +1199,8 @@ export default function CementPlug() {
                       thickeningTimeMin={thickeningTime}
                       settingTimeStartMin={settingTimeStartMin}
                       settingTimeEndMin={settingTimeEndMin}
+                      trajectory={trajPoints.map(p => ({ md: p.md, zenithDeg: p.zenith, tvd: p.tvd }))}
+                      bhTempC={60}
                     />
                   </CardContent>
                 </CollapsibleContent>
