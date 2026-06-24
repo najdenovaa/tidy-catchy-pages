@@ -48,11 +48,14 @@ interface Props {
   thickeningTimeMin: number;
   settingTimeStartMin: number;
   settingTimeEndMin: number;
+  trajectory?: ProfilePoint[];
+  bhTempC?: number;
 }
 
 export default function ComplicationsSection({
   results, cement, spacer, wellFluid, viscousPad, hasViscousPad,
   spacerVolumeBelow, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin,
+  trajectory = [], bhTempC = 60,
 }: Props) {
   const [type, setType] = useState<ComplicationType>('loss');
   const [lossRate, setLossRate] = useState(10);
