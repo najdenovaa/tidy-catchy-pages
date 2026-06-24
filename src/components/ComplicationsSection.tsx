@@ -11,13 +11,19 @@ import { Button } from "@/components/ui/button";
 import {
   calculateComplications,
   classifyLossIntensity,
+  analyzePlugComplicationFull,
   type ComplicationInputs,
   type ComplicationCalcParams,
   type ComplicationResult,
   type ComplicationType,
   type LossBehavior,
+  type LossZoneType,
+  type LossZoneFull,
+  type FullRheologyFluid,
+  type ProfilePoint,
 } from "@/lib/cement-plug-complications";
 import type { PlugResults } from "@/lib/cement-plug-calculations";
+import { PlugSettlementSVG } from "@/components/PlugSettlementSVG";
 
 function num(v: string): number {
   const n = parseFloat(v);
@@ -42,11 +48,14 @@ interface Props {
   thickeningTimeMin: number;
   settingTimeStartMin: number;
   settingTimeEndMin: number;
+  trajectory?: ProfilePoint[];
+  bhTempC?: number;
 }
 
 export default function ComplicationsSection({
   results, cement, spacer, wellFluid, viscousPad, hasViscousPad,
   spacerVolumeBelow, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin,
+  trajectory = [], bhTempC = 60,
 }: Props) {
   const [type, setType] = useState<ComplicationType>('loss');
   const [lossRate, setLossRate] = useState(10);
@@ -56,6 +65,14 @@ export default function ComplicationsSection({
   const [formationPressure, setFormationPressure] = useState(0);
   const [fluidType, setFluidType] = useState<'gas' | 'oil' | 'water'>('water');
   const [lossBehavior, setLossBehavior] = useState<LossBehavior>('stable');
+  // Master-prompt: расширенные параметры физики проседания
+  const [zoneType, setZoneType] = useState<LossZoneType>('fracture');
+  const [zonePorosity, setZonePorosity] = useState(0.15);
+  const [drainageRadius, setDrainageRadius] = useState(15);
+  const [thick30Bc, setThick30Bc] = useState(0);
+  const [frictionCoeff, setFrictionCoeff] = useState(0.3);
+  const [lcmFactor, setLcmFactor] = useState(1);
+  const [bhTempInput, setBhTempInput] = useState(bhTempC);
 
   const toFluidProps = (f: FluidData) => ({
     densityGcm3: f.density,
@@ -114,6 +131,65 @@ export default function ComplicationsSection({
       wellFluid.density, wellFluid.pv, wellFluid.yp, wellFluid.gel10min,
       viscousPad.density, viscousPad.pv, viscousPad.yp, viscousPad.gel10min,
       hasViscousPad, spacerVolumeBelow, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin]);
+
+  // ═══ MASTER-PROMPT: полная физика проседания (U-tube) ═══
+  const fullAnalysis = useMemo(() => {
+    if (!results || (type !== 'loss' && type !== 'both')) return null;
+    if (lossRate <= 0 || zoneDepthMD <= 0) return null;
+
+    const plugTopMD = results.plugTopMD ?? results.plugTopTVD;
+    const plugBottomMD = results.plugBottomMD ?? results.plugBottomTVD;
+    const boreDiamM = (results.boreDiamUsed ?? 0) / 1000;
+    if (boreDiamM <= 0) return null;
+
+    const t50 = thickeningTimeMin > 0 ? thickeningTimeMin : 120;
+    const t30 = thick30Bc > 0 ? thick30Bc : t50 * 0.6;
+
+    const toFull = (f: FluidData, isCement = false): FullRheologyFluid => ({
+      densityGcm3: f.density,
+      pvMPas: f.pv,
+      ypPa: f.yp,
+      gel10sPa: 0,
+      gel10minPa: f.gel10min > 0 ? f.gel10min : f.yp * 3,
+      thickeningTime30Bc: isCement ? t30 : 0,
+      thickeningTime50Bc: isCement ? t50 : 0,
+    });
+
+    const zone: LossZoneFull = {
+      topMD: zoneDepthMD,
+      thicknessM: Math.max(0.5, zoneThickness),
+      zoneType,
+      porosity: zonePorosity,
+      initialLossRateM3h: lossRate,
+      drainageRadiusM: drainageRadius,
+    };
+
+    const traj: ProfilePoint[] = trajectory.length > 0
+      ? trajectory
+      : [{ md: 0, zenithDeg: 0, tvd: 0 }, { md: plugBottomMD + 200, zenithDeg: 0, tvd: plugBottomMD + 200 }];
+
+    const padHeight = hasViscousPad && spacerVolumeBelow > 0 && results.annArea > 0
+      ? spacerVolumeBelow / results.annArea : 0;
+
+    return analyzePlugComplicationFull(
+      plugTopMD, plugBottomMD, zone,
+      toFull(cement, true), toFull(wellFluid),
+      hasViscousPad ? toFull(viscousPad) : null, padHeight,
+      traj,
+      results.annArea, boreDiamM,
+      frictionCoeff,
+      results.totalOperationTimeMin || 60,
+      lcmFactor,
+      bhTempInput,
+      type === 'both' ? formationPressure : 0,
+      fluidType === 'gas',
+    );
+  }, [results, type, lossRate, zoneDepthMD, zoneThickness, zoneType, zonePorosity, drainageRadius,
+      thick30Bc, thickeningTimeMin, frictionCoeff, lcmFactor, bhTempInput, formationPressure, fluidType,
+      trajectory, hasViscousPad, spacerVolumeBelow,
+      cement.density, cement.pv, cement.yp, cement.gel10min,
+      wellFluid.density, wellFluid.pv, wellFluid.yp, wellFluid.gel10min,
+      viscousPad.density, viscousPad.pv, viscousPad.yp, viscousPad.gel10min]);
 
   const Field = ({ label, value, onChange, unit }: { label: string; value: number; onChange: (v: string) => void; unit?: string }) => (
     <div className="space-y-1">
@@ -231,7 +307,35 @@ export default function ComplicationsSection({
               <Field label="Глубина зоны" value={zoneDepthTVD} onChange={v => setZoneDepthTVD(num(v))} unit="м TVD" />
               <Field label="Мощность пласта" value={zoneThickness} onChange={v => setZoneThickness(num(v))} unit="м" />
             </div>
+            {(type === 'loss' || type === 'both') && (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Тип зоны</Label>
+                    <select
+                      value={zoneType}
+                      onChange={e => setZoneType(e.target.value as LossZoneType)}
+                      className="h-8 text-xs w-full rounded border border-border bg-background px-2"
+                    >
+                      <option value="pore">Поровая</option>
+                      <option value="fracture">Трещинная</option>
+                      <option value="vug_cavern">Каверна/каверно-трещинная</option>
+                      <option value="fault">Разлом</option>
+                    </select>
+                  </div>
+                  <Field label="Пористость" value={zonePorosity} onChange={v => setZonePorosity(num(v))} unit="0–1" />
+                  <Field label="Радиус дренир." value={drainageRadius} onChange={v => setDrainageRadius(num(v))} unit="м" />
+                  <Field label="LCM-фактор" value={lcmFactor} onChange={v => setLcmFactor(num(v))} unit="0–1" />
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <Field label="t₃₀ (30 Bc)" value={thick30Bc} onChange={v => setThick30Bc(num(v))} unit="мин (≈0.6·t₅₀)" />
+                  <Field label="Трение цем.–порода" value={frictionCoeff} onChange={v => setFrictionCoeff(num(v))} unit="0.2–0.4" />
+                  <Field label="T забоя" value={bhTempInput} onChange={v => setBhTempInput(num(v))} unit="°C" />
+                </div>
+              </>
+            )}
           </div>
+
 
           {(type === 'kick' || type === 'both') && (
             <div className="space-y-2">
@@ -265,6 +369,194 @@ export default function ComplicationsSection({
           )}
         </CardContent>
       </Card>
+
+      {/* ═══ MASTER-PROMPT: динамическое проседание (U-tube) ═══ */}
+      {fullAnalysis && fullAnalysis.scenario === 'zone_below' && fullAnalysis.settlement && results && (
+        <Card className={`border-2 ${
+          fullAnalysis.settlement.reachesLossZone ? 'border-destructive/60'
+            : fullAnalysis.settlement.settlementM > 5 ? 'border-amber-500/50'
+            : 'border-green-500/40'
+        }`}>
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <TrendingDown className="w-4 h-4 text-destructive" />
+              Динамическое проседание моста (U-tube)
+              <Badge variant={fullAnalysis.settlement.reachesLossZone ? 'destructive' : 'secondary'} className="text-[10px]">
+                {fullAnalysis.settlement.reachesLossZone ? 'Катастрофа' :
+                 fullAnalysis.settlement.willSettle ? `−${fullAnalysis.settlement.settlementM.toFixed(0)} м` : 'Стабилен'}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-3">
+            <div className="grid grid-cols-1 lg:grid-cols-[auto,1fr] gap-3">
+              <PlugSettlementSVG
+                plannedTopMD={results.plugTopMD ?? results.plugTopTVD}
+                plannedBottomMD={results.plugBottomMD ?? results.plugBottomTVD}
+                result={fullAnalysis.settlement}
+                multiPlug={fullAnalysis.multiPlug}
+                lossZone={{
+                  topMD: zoneDepthMD, thicknessM: zoneThickness, zoneType,
+                  porosity: zonePorosity, initialLossRateM3h: lossRate, drainageRadiusM: drainageRadius,
+                }}
+                trajectory={trajectory.length ? trajectory : [{ md: 0, zenithDeg: 0, tvd: 0 }]}
+              />
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+                  <span className="text-muted-foreground">Планируемая голова:</span>
+                  <span className="font-semibold">{(results.plugTopMD ?? results.plugTopTVD).toFixed(0)} м</span>
+                  <span className="text-muted-foreground">🔴 Реальная голова:</span>
+                  <span className={`font-bold ${fullAnalysis.settlement.reachesLossZone ? 'text-destructive' : 'text-amber-500'}`}>
+                    {fullAnalysis.settlement.finalHeadMD.toFixed(0)} м (−{fullAnalysis.settlement.settlementM.toFixed(0)} м)
+                  </span>
+                  <span className="text-muted-foreground">Консистенция на остановке:</span>
+                  <span>{fullAnalysis.settlement.consistencyAtArrest.toFixed(0)} Bc</span>
+                  <span className="text-muted-foreground">Механизм остановки:</span>
+                  <span className="font-semibold">{
+                    {
+                      gelation: 'гелеобразование',
+                      friction: 'трение',
+                      reached_zone: 'достигнута зона',
+                      fluid_limited: 'ограничено уходом',
+                      stable: 'стабилен',
+                      self_arrest_capacity: 'насыщение зоны',
+                    }[fullAnalysis.settlement.arrestMechanism]
+                  }</span>
+                  <span className="text-muted-foreground">Ёмкость зоны:</span>
+                  <span>{fullAnalysis.settlement.zoneCapacityM3.toFixed(1)} м³ {fullAnalysis.settlement.zoneCanSelfArrest ? '(может самоизолироваться)' : '(не самоизолируется)'}</span>
+                  <Separator className="col-span-2 my-1" />
+                  <span className="text-muted-foreground font-semibold">Баланс сил (кН):</span>
+                  <span></span>
+                  <span className="text-muted-foreground">вес ↓ (drive):</span>
+                  <span>{fullAnalysis.settlement.forceBalance.driveKN.toFixed(1)}</span>
+                  <span className="text-muted-foreground">гель цемента:</span>
+                  <span>{fullAnalysis.settlement.forceBalance.gelKN.toFixed(1)}</span>
+                  <span className="text-muted-foreground">трение по профилю:</span>
+                  <span>{fullAnalysis.settlement.forceBalance.frictionKN.toFixed(1)}</span>
+                  <span className="text-muted-foreground">вязкая пачка:</span>
+                  <span>{fullAnalysis.settlement.forceBalance.padKN.toFixed(1)}</span>
+                  <span className="text-muted-foreground">столб скв. жидкости:</span>
+                  <span>{fullAnalysis.settlement.forceBalance.wellFluidKN.toFixed(1)}</span>
+                  <span className="text-muted-foreground font-semibold">нетто:</span>
+                  <span className={`font-bold ${fullAnalysis.settlement.forceBalance.netKN > 0 ? 'text-destructive' : 'text-green-500'}`}>
+                    {fullAnalysis.settlement.forceBalance.netKN.toFixed(1)}
+                  </span>
+                </div>
+                {fullAnalysis.settlement.warnings.map((w, i) => (
+                  <p key={i} className="text-[10px]">{w}</p>
+                ))}
+              </div>
+            </div>
+
+            {/* Парадокс объёма */}
+            {fullAnalysis.volumeEffect && (
+              <div className="rounded-lg border border-border p-3 space-y-2">
+                <p className="text-[10px] font-semibold text-muted-foreground">📊 Парадокс объёма (длина моста vs проседание)</p>
+                <div className="overflow-x-auto">
+                  <table className="text-[10px] w-full">
+                    <thead>
+                      <tr className="text-muted-foreground">
+                        <th className="text-left">Длина, м</th>
+                        <th className="text-right">Объём, м³</th>
+                        <th className="text-right">P гидро, МПа</th>
+                        <th className="text-right">Проседание, м</th>
+                        <th className="text-right">Голова, м</th>
+                        <th className="text-center">Стабилен</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fullAnalysis.volumeEffect.tested.map((r, i) => (
+                        <tr key={i} className="border-t border-border/50">
+                          <td>{r.plugLengthM}</td>
+                          <td className="text-right">{r.cementVolumeM3.toFixed(2)}</td>
+                          <td className="text-right">{r.hydrostaticMPa.toFixed(2)}</td>
+                          <td className={`text-right ${r.settlementM > 50 ? 'text-destructive' : r.settlementM > 5 ? 'text-amber-500' : 'text-green-500'}`}>
+                            {r.settlementM.toFixed(1)}
+                          </td>
+                          <td className="text-right">{r.finalHeadMD.toFixed(0)}</td>
+                          <td className="text-center">{r.isStable ? '✓' : '✗'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className={`text-[10px] ${fullAnalysis.volumeEffect.increasingVolumeHelps ? 'text-green-500' : 'text-amber-500 font-semibold'}`}>
+                  {fullAnalysis.volumeEffect.recommendation}
+                </p>
+              </div>
+            )}
+
+            {/* Серия мостов */}
+            {fullAnalysis.multiPlug && fullAnalysis.multiPlug.required && (
+              <div className={`rounded-lg border p-3 space-y-2 ${fullAnalysis.multiPlug.supportAdequate ? 'border-green-500/40 bg-green-500/5' : 'border-amber-500/40 bg-amber-500/5'}`}>
+                <p className="text-xs font-semibold text-foreground">✅ Решение: серия мостов через ОЗЦ</p>
+                <div className="overflow-x-auto">
+                  <table className="text-[10px] w-full">
+                    <thead>
+                      <tr className="text-muted-foreground">
+                        <th className="text-left">№</th>
+                        <th className="text-left">Назначение</th>
+                        <th className="text-right">Интервал MD, м</th>
+                        <th className="text-right">Объём, м³</th>
+                        <th className="text-right">ОЗЦ, ч</th>
+                        <th className="text-right">UCS, МПа</th>
+                        <th className="text-left">Опора</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fullAnalysis.multiPlug.plugs.map(p => (
+                        <tr key={p.sequence} className="border-t border-border/50">
+                          <td>{p.sequence}</td>
+                          <td>{p.purpose === 'support' ? '🪨 опорный' : '🧱 основной'}</td>
+                          <td className="text-right">{p.topMD.toFixed(0)} – {p.bottomMD.toFixed(0)}</td>
+                          <td className="text-right">{p.cementVolumeM3.toFixed(2)}</td>
+                          <td className="text-right">{p.wocHours.toFixed(0)}</td>
+                          <td className="text-right">{p.requiredUCSMPa.toFixed(1)}</td>
+                          <td>{p.landsOn === 'bridge' ? 'перемычка' : 'предыдущий мост'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+                  <span className="text-muted-foreground">Итого цемента:</span>
+                  <span className="font-semibold">{fullAnalysis.multiPlug.totalCementM3.toFixed(2)} м³</span>
+                  <span className="text-muted-foreground">Итого ОЗЦ:</span>
+                  <span className="font-semibold">{fullAnalysis.multiPlug.totalWOCHours.toFixed(0)} ч</span>
+                  <span className="text-muted-foreground">Запас несущей опоры:</span>
+                  <span className={`font-bold ${fullAnalysis.multiPlug.supportAdequate ? 'text-green-500' : 'text-amber-500'}`}>
+                    {fullAnalysis.multiPlug.safetyFactor.toFixed(1)}× {fullAnalysis.multiPlug.supportAdequate ? '✓' : '⚠'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-foreground/80">{fullAnalysis.multiPlug.rationale}</p>
+              </div>
+            )}
+
+            {/* Переходное окно */}
+            {fullAnalysis.transitionWindow && fullAnalysis.transitionWindow.durationMin > 0 && (
+              <div className={`rounded-lg border p-3 text-[10px] ${
+                fullAnalysis.transitionWindow.gasMigrationRisk === 'high' ? 'border-destructive/40 bg-destructive/5' :
+                fullAnalysis.transitionWindow.gasMigrationRisk === 'medium' ? 'border-amber-500/40 bg-amber-500/5' :
+                'border-border'
+              }`}>
+                <p className="font-semibold mb-1">⏳ Переходное окно (30→100 Bc): {fullAnalysis.transitionWindow.durationMin.toFixed(0)} мин</p>
+                <p className="text-muted-foreground">
+                  {fullAnalysis.transitionWindow.startTimeMin.toFixed(0)} → {fullAnalysis.transitionWindow.endTimeMin.toFixed(0)} мин от замеса.
+                  Риск миграции газа: <span className="font-semibold">{
+                    {low:'низкий', medium:'средний', high:'высокий'}[fullAnalysis.transitionWindow.gasMigrationRisk]
+                  }</span>.
+                </p>
+              </div>
+            )}
+
+            {/* Прорыв пластового флюида */}
+            {fullAnalysis.kickInvasionM > 0 && (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-[10px]">
+                <p className="font-semibold text-destructive">⚠ Внедрение пластового флюида в гель цемента: {fullAnalysis.kickInvasionM.toFixed(1)} м</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Results */}
       {complicationResult && (
