@@ -21,9 +21,12 @@ import {
   calculatePacker, calculatePackerRelease, calculateDrag, calculateLubricant,
   calculateFreePoint, diagnoseStuck, calculateFishing, calculateRigCapacity,
   calculateKill, KILL_FLUIDS,
+  KILL_SALTS, calculateBrineRecipe, autoSelectSalt, planMultiIntervalKill,
   type WorkoverWellData, type PackerInput, type PackerReleaseInput, type DragInput, type LubricantInput,
   type FreePointInput, type StuckSymptoms, type FishingInput, type RigInput, type KillInput,
+  type KillSalt, type KillInterval,
 } from "@/lib/workover-calculations";
+import { Trash2, Plus } from "lucide-react";
 
 const num = (v: string) => (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
 
