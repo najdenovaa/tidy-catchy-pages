@@ -105,6 +105,32 @@ export default function Workover() {
     return out;
   }, [killResult]);
 
+  // ──── Рецептура жидкости глушения ────
+  const [brineSaltId, setBrineSaltId] = useState<string>("auto");
+  const [brineTargetDensity, setBrineTargetDensity] = useState<number>(0); // 0 = из killResult
+  const [brineVolumeM3, setBrineVolumeM3] = useState<number>(0);            // 0 = из killResult
+  const [brineMixing, setBrineMixing] = useState<"low" | "medium" | "high">("medium");
+  const [brineTempC, setBrineTempC] = useState<number>(20);
+  const effectiveBrineDensity = brineTargetDensity > 0 ? brineTargetDensity : killResult.killDensity;
+  const effectiveBrineVolume = brineVolumeM3 > 0 ? brineVolumeM3 : killResult.killVolumeM3;
+  const selectedSalt: KillSalt | null = brineSaltId === "auto"
+    ? autoSelectSalt(effectiveBrineDensity)
+    : KILL_SALTS.find((s) => s.id === brineSaltId) || null;
+  const brineRecipe = useMemo(() => {
+    if (!selectedSalt) return null;
+    return calculateBrineRecipe(selectedSalt, effectiveBrineDensity, Math.max(0.1, effectiveBrineVolume), brineMixing, brineTempC);
+  }, [selectedSalt, effectiveBrineDensity, effectiveBrineVolume, brineMixing, brineTempC]);
+
+  // ──── Многоинтервальное глушение ────
+  const [killIntervals, setKillIntervals] = useState<KillInterval[]>([
+    { topMD: 2800, bottomMD: 2850, topTVD: 2500, bottomTVD: 2540, formationPressureMPa: 32, intervalType: "kick_zone", requiredKillDensity: 0 },
+    { topMD: 3000, bottomMD: 3100, topTVD: 2680, bottomTVD: 2760, formationPressureMPa: 38, intervalType: "kill_zone", requiredKillDensity: 0 },
+  ]);
+  const multiIntervalPlan = useMemo(() => {
+    if (!selectedSalt || killIntervals.length === 0) return null;
+    return planMultiIntervalKill(killIntervals, selectedSalt, Math.max(0.1, effectiveBrineVolume), brineMixing, kill.safetyMarginPct, brineTempC);
+  }, [killIntervals, selectedSalt, effectiveBrineVolume, brineMixing, kill.safetyMarginPct, brineTempC]);
+
   // ──── Drag + lubricant ────
   const [drag, setDrag] = useState<DragInput>({ operation: "pull_out", frictionCoeff: 0.30 });
   const [lube, setLube] = useState<LubricantInput>({
