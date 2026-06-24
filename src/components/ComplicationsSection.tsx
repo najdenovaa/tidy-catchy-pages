@@ -134,8 +134,10 @@ export default function ComplicationsSection({
 
   // ═══ MASTER-PROMPT: полная физика проседания (U-tube) ═══
   const fullAnalysis = useMemo(() => {
-    if (!results || (type !== 'loss' && type !== 'both')) return null;
-    if (lossRate <= 0 || zoneDepthMD <= 0) return null;
+    if (!results) return null;
+    const hasLoss = (type === 'loss' || type === 'both') && lossRate > 0 && zoneDepthMD > 0;
+    const hasKick = (type === 'kick' || type === 'both') && formationPressure > 0;
+    if (!hasLoss && !hasKick) return null;
 
     const plugTopMD = results.plugTopMD ?? results.plugTopTVD;
     const plugBottomMD = results.plugBottomMD ?? results.plugBottomTVD;
@@ -155,14 +157,14 @@ export default function ComplicationsSection({
       thickeningTime50Bc: isCement ? t50 : 0,
     });
 
-    const zone: LossZoneFull = {
+    const zone: LossZoneFull | null = hasLoss ? {
       topMD: zoneDepthMD,
       thicknessM: Math.max(0.5, zoneThickness),
       zoneType,
       porosity: zonePorosity,
       initialLossRateM3h: lossRate,
       drainageRadiusM: drainageRadius,
-    };
+    } : null;
 
     const traj: ProfilePoint[] = trajectory.length > 0
       ? trajectory
@@ -181,7 +183,7 @@ export default function ComplicationsSection({
       results.totalOperationTimeMin || 60,
       lcmFactor,
       bhTempInput,
-      type === 'both' || type === 'kick' ? formationPressure : 0,
+      hasKick ? formationPressure : 0,
       fluidType === 'gas',
       fluidType,
       results.plugBottomTVD,
@@ -193,6 +195,8 @@ export default function ComplicationsSection({
       cement.density, cement.pv, cement.yp, cement.gel10min,
       wellFluid.density, wellFluid.pv, wellFluid.yp, wellFluid.gel10min,
       viscousPad.density, viscousPad.pv, viscousPad.yp, viscousPad.gel10min]);
+
+
 
   // ═══ ЕДИНАЯ ГЕОМЕТРИЯ: блок «Поглощение» переиспользует результаты U-tube ═══
   // Чтобы интервалы / осадка / потери / длина моста в таблице совпадали с SVG и блоком U-tube.
