@@ -1384,7 +1384,7 @@ export function analyzePlugComplicationFull(
     const settlement = calculatePlugSettlement(
       plugTopMD, plugBottomMD, lossZone, cement, wellFluid, viscousPad,
       padHeightM * annAreaM2, trajectory, annAreaM2, boreDiamM, frictionCoeff,
-      totalOpTimeMin, lcmReductionFactor,
+      totalOpTimeMin, lcmReductionFactor, userBcAtStop,
     );
     let volumeEffect: VolumeEffectResult | null = null;
     let multiPlug: MultiPlugProgram | null = null;
