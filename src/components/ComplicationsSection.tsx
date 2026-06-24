@@ -188,11 +188,12 @@ export default function ComplicationsSection({
       fluidType === 'gas',
       fluidType,
       results.plugBottomTVD,
+      userBcAtStop,
     );
 
   }, [results, type, lossRate, zoneDepthMD, zoneThickness, zoneType, zonePorosity, drainageRadius,
       thick30Bc, thickeningTimeMin, frictionCoeff, lcmFactor, bhTempInput, formationPressure, fluidType,
-      trajectory, hasViscousPad, spacerVolumeBelow,
+      trajectory, hasViscousPad, spacerVolumeBelow, userBcAtStop,
       cement.density, cement.pv, cement.yp, cement.gel10min,
       wellFluid.density, wellFluid.pv, wellFluid.yp, wellFluid.gel10min,
       viscousPad.density, viscousPad.pv, viscousPad.yp, viscousPad.gel10min]);
