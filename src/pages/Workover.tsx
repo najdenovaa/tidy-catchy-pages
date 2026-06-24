@@ -228,13 +228,15 @@ export default function Workover() {
         </Card>
 
         <Tabs defaultValue="packer" className="w-full">
-          <TabsList className="grid grid-cols-2 sm:grid-cols-5 w-full h-auto">
+          <TabsList className="grid grid-cols-2 sm:grid-cols-6 w-full h-auto">
             <TabsTrigger value="packer" className="text-xs gap-1"><Anchor className="w-3.5 h-3.5" /> Пакеры</TabsTrigger>
+            <TabsTrigger value="kill" className="text-xs gap-1"><Droplets className="w-3.5 h-3.5" /> Глушение</TabsTrigger>
             <TabsTrigger value="drag" className="text-xs gap-1"><Activity className="w-3.5 h-3.5" /> Затяжки / T&D</TabsTrigger>
             <TabsTrigger value="stuck" className="text-xs gap-1"><Magnet className="w-3.5 h-3.5" /> Прихваты</TabsTrigger>
             <TabsTrigger value="fishing" className="text-xs gap-1"><Search className="w-3.5 h-3.5" /> Ловильные</TabsTrigger>
             <TabsTrigger value="rig" className="text-xs gap-1"><Crane className="w-3.5 h-3.5" /> Подъёмник</TabsTrigger>
           </TabsList>
+
 
           {/* ──────────────── PACKER ──────────────── */}
           <TabsContent value="packer" className="space-y-4">
