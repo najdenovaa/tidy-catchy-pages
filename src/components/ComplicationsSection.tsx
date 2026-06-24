@@ -73,6 +73,7 @@ export default function ComplicationsSection({
   const [frictionCoeff, setFrictionCoeff] = useState(0.3);
   const [lcmFactor, setLcmFactor] = useState(1);
   const [bhTempInput, setBhTempInput] = useState(bhTempC);
+  const [userBcAtStop, setUserBcAtStop] = useState(0); // 0 = авто из кривой загустевания
 
   const toFluidProps = (f: FluidData) => ({
     densityGcm3: f.density,
