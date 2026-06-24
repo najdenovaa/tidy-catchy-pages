@@ -468,14 +468,28 @@ export interface FreePointInput {
 export function calculateFreePoint(input: FreePointInput, well: WorkoverWellData): {
   freePointMD: number;
   freePipeLength: number;
+  idealFreePointMD: number;
+  frictionCorrectionPct: number;
+  avgZenithDeg: number;
 } {
   const A = pipeCrossArea_m2(well.pipeOD_mm, well.pipeID_mm);
   const E = well.pipeYoungModulusGPa * 1e9;
   const dF = input.pulledForceKN * 1000;
-  if (dF <= 0) return { freePointMD: 0, freePipeLength: 0 };
-  const freePoint = (E * A * input.measuredStretchM) / dF;
-  const clamped = Math.min(Math.max(0, freePoint), well.wellDepthMD);
-  return { freePointMD: clamped, freePipeLength: clamped };
+  if (dF <= 0) return { freePointMD: 0, freePipeLength: 0, idealFreePointMD: 0, frictionCorrectionPct: 0, avgZenithDeg: 0 };
+  const ideal = (E * A * input.measuredStretchM) / dF;
+  // Поправка трения: в искривлённой скважине часть растяжения «съедается»
+  // трением свободной части → реальная точка прихвата глубже расчётной.
+  const avgZen = averageZenithDeg(well.trajectory, Math.min(ideal, well.wellDepthMD));
+  const frictionFactor = 1 + 0.15 * Math.sin((avgZen * Math.PI) / 180); // до +15% в горизонтали
+  const corrected = ideal * frictionFactor;
+  const clamped = Math.min(Math.max(0, corrected), well.wellDepthMD);
+  return {
+    freePointMD: clamped,
+    freePipeLength: clamped,
+    idealFreePointMD: Math.min(Math.max(0, ideal), well.wellDepthMD),
+    frictionCorrectionPct: (frictionFactor - 1) * 100,
+    avgZenithDeg: avgZen,
+  };
 }
 
 export type StuckType = "differential" | "mechanical" | "keyseat" | "cuttings" | "cement";
