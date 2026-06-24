@@ -759,6 +759,23 @@ function interpolateZenith(md: number, traj: ProfilePoint[]): number {
   return traj[traj.length - 1].zenithDeg;
 }
 
+function interpolateTVD(md: number, traj: ProfilePoint[]): number {
+  if (!traj.length) return md;
+  if (md <= traj[0].md) return traj[0].tvd;
+  if (md >= traj[traj.length - 1].md) {
+    const last = traj[traj.length - 1];
+    return last.tvd + (md - last.md) * Math.cos((last.zenithDeg * Math.PI) / 180);
+  }
+  for (let i = 1; i < traj.length; i++) {
+    if (md <= traj[i].md) {
+      const a = traj[i - 1], b = traj[i];
+      const f = (md - a.md) / Math.max(1e-6, b.md - a.md);
+      return a.tvd + (b.tvd - a.tvd) * f;
+    }
+  }
+  return traj[traj.length - 1].tvd;
+}
+
 export interface PlugProfileSegment {
   topMD: number; bottomMD: number; zenith: number;
   drive: number; normal: number; friction: number;
