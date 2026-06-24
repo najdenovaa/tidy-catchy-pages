@@ -7,14 +7,28 @@ interface Props {
   multiPlug?: MultiPlugProgram | null;
   lossZone: LossZoneFull;
   trajectory: ProfilePoint[];
+  /** Высота нижней вязкой пачки в стволе, м (если ставилась) */
+  padHeightM?: number;
   width?: number;
   height?: number;
 }
 
 export function PlugSettlementSVG({
   plannedTopMD, plannedBottomMD, result, multiPlug, lossZone, trajectory,
-  width = 320, height = 440,
+  padHeightM = 0,
+  width = 360, height = 460,
 }: Props) {
+  // Геометрия пачки: пачка стоит ПОД подошвой моста
+  const hasPad = padHeightM > 0.05;
+  const plannedPadTopMD = plannedBottomMD;
+  const plannedPadBottomMD = plannedBottomMD + padHeightM;
+  // Факт: пачка опускается вместе с цементом, часть её уходит в зону поглощения
+  const settle = Math.max(0, result.settlementM);
+  const realPadTopMD = result.finalBottomMD;
+  // Сколько пачки осталось: пачка вытесняется в зону по мере проседания цемента
+  const remainingPadHeight = Math.max(0, padHeightM - settle);
+  const realPadBottomMD = Math.min(realPadTopMD + remainingPadHeight, lossZone.topMD);
+  const padFullyConsumed = hasPad && remainingPadHeight < 0.05;
   // Глубинный диапазон
   const topMd = Math.max(0, Math.min(plannedTopMD, result.finalHeadMD) - 100);
   const botMd = Math.max(plannedBottomMD, result.finalBottomMD, lossZone.topMD + lossZone.thicknessM) + 60;
