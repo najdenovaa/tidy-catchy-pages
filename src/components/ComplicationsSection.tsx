@@ -181,9 +181,12 @@ export default function ComplicationsSection({
       results.totalOperationTimeMin || 60,
       lcmFactor,
       bhTempInput,
-      type === 'both' ? formationPressure : 0,
+      type === 'both' || type === 'kick' ? formationPressure : 0,
       fluidType === 'gas',
+      fluidType,
+      results.plugBottomTVD,
     );
+
   }, [results, type, lossRate, zoneDepthMD, zoneThickness, zoneType, zonePorosity, drainageRadius,
       thick30Bc, thickeningTimeMin, frictionCoeff, lcmFactor, bhTempInput, formationPressure, fluidType,
       trajectory, hasViscousPad, spacerVolumeBelow,
