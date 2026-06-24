@@ -823,7 +823,7 @@ export function calculatePlugSettlement(
   plugTopMD: number, plugBottomMD: number,
   lossZone: LossZoneFull,
   cement: FullRheologyFluid, wellFluid: FullRheologyFluid, viscousPad: FullRheologyFluid | null,
-  padHeightM: number,
+  padVolumeM3: number,
   trajectory: ProfilePoint[],
   annAreaM2: number, boreDiamM: number,
   frictionCoeff: number,
@@ -833,8 +833,9 @@ export function calculatePlugSettlement(
   const plugLen = plugBottomMD - plugTopMD;
   const wallPerim = Math.PI * boreDiamM;
   const warnings: string[] = [];
+  const emptyLayer = { fluidLostM3: 0, padLostM3: 0, cementLostM3: 0 };
 
-  // Зона выше/внутри моста — отдельная ветка (объёмные потери)
+  // Зона выше/внутри моста — отдельная ветка
   if (lossZone.topMD <= plugBottomMD) {
     return {
       willSettle: false, settlementM: 0, settleVelocityMs: 0,
@@ -843,24 +844,25 @@ export function calculatePlugSettlement(
       forceBalance: { driveKN: 0, gelKN: 0, frictionKN: 0, padKN: 0, wellFluidKN: 0, netKN: 0 },
       zoneCapacityM3: lossZoneCapacity(lossZone, boreDiamM),
       zoneCanSelfArrest: lossSelfArrests(lossZone),
+      layerBreakdown: emptyLayer, volumeLostM3: 0, limitedBy: 'geometry',
       warnings: ['Зона осложнения внутри/выше моста — ветка объёмных потерь.'],
     };
   }
 
   const gapToZone = lossZone.topMD - plugBottomMD;
 
-  // ── ШАГ 1: Баланс сил — ДВИНЕТСЯ ли мост вообще ──
+  // ── ШАГ 1: БАЛАНС СИЛ ──
   const profile = analyzePlugProfile(plugTopMD, plugBottomMD, trajectory, cement, annAreaM2, boreDiamM, wellFluid.densityGcm3, frictionCoeff);
   const drive = profile.totalDrive;
 
-  const bc0 = consistencyAtTime(0, cement.thickeningTime30Bc, cement.thickeningTime50Bc);
   const baseGel = cement.gel10minPa > 0 ? cement.gel10minPa : 15;
-  const gel0 = gelFromConsistency(Math.max(bc0, 5), baseGel);
+  const gel0 = gelFromConsistency(5, baseGel);
   const gelHold0 = gel0 * wallPerim * plugLen;
   const wfGel = wellFluid.gel10minPa > 0 ? wellFluid.gel10minPa : Math.max(1, wellFluid.ypPa * 2);
   const wellFluidSupport = wfGel * wallPerim * gapToZone;
+  const padHeightM = padVolumeM3 / Math.max(annAreaM2, 1e-6);
   let padResist = 0;
-  if (viscousPad && padHeightM > 0) {
+  if (viscousPad && padVolumeM3 > 0) {
     const padYP = viscousPad.ypPa > 0 ? viscousPad.ypPa : 10;
     const padGel = viscousPad.gel10minPa > 0 ? viscousPad.gel10minPa : padYP * 3;
     padResist = (padYP + padGel) * wallPerim * padHeightM;
@@ -868,23 +870,21 @@ export function calculatePlugSettlement(
   const totalResist0 = gelHold0 + profile.totalFriction + padResist + wellFluidSupport;
 
   if (totalResist0 >= drive) {
-    warnings.push('✓ Удерживающие силы (гель + трение + пачка) превышают вес — мост стабилен, не проседает.');
+    warnings.push(`✓ Удерживающие силы (${(totalResist0/1000).toFixed(0)} кН: гель+трение+пачка+жидкость) ≥ вес ${(drive/1000).toFixed(0)} кН — мост стабилен.`);
     return {
       willSettle: false, settlementM: 0, settleVelocityMs: 0,
       finalHeadMD: plugTopMD, finalBottomMD: plugBottomMD,
-      reachesLossZone: false, arrestMechanism: 'stable', consistencyAtArrest: bc0,
+      reachesLossZone: false, arrestMechanism: 'stable', consistencyAtArrest: 5,
       forceBalance: { driveKN: drive/1000, gelKN: gelHold0/1000, frictionKN: profile.totalFriction/1000,
         padKN: padResist/1000, wellFluidKN: wellFluidSupport/1000, netKN: (drive-totalResist0)/1000 },
       zoneCapacityM3: lossZoneCapacity(lossZone, boreDiamM),
       zoneCanSelfArrest: lossSelfArrests(lossZone),
+      layerBreakdown: emptyLayer, volumeLostM3: 0, limitedBy: 'geometry',
       warnings,
     };
   }
 
-  // ── ШАГ 2: Объём ухода в пласт до остановки ──
-  const capacity = lossZoneCapacity(lossZone, boreDiamM);
-  const canSelfArrest = lossSelfArrests(lossZone);
-
+  // ── ШАГ 2: Время до гель-стопа (70 Вс) ──
   let timeToGelStopMin = totalOpTimeMin;
   for (let t = 0; t <= totalOpTimeMin; t += 1) {
     if (consistencyAtTime(t, cement.thickeningTime30Bc, cement.thickeningTime50Bc) >= 70) {
@@ -892,63 +892,76 @@ export function calculatePlugSettlement(
     }
   }
 
-  let padBlockFactor = 1.0;
-  if (viscousPad && padHeightM > 0) {
-    const padYP = viscousPad.ypPa > 0 ? viscousPad.ypPa : 10;
-    padBlockFactor = Math.max(0.2, 1 - Math.min(0.6, padHeightM / 50) - Math.min(0.2, padYP / 100));
-  }
-  const effLossRateM3h = lossZone.initialLossRateM3h * Math.max(0.05, lcmReductionFactor) * padBlockFactor;
+  // ── ШАГ 3: ТРИ ограничителя объёма ──
+  const capacity = lossZoneCapacity(lossZone, boreDiamM);
+  const canSelfArrest = lossSelfArrests(lossZone);
+  const effLossRateM3h = lossZone.initialLossRateM3h * Math.max(0.02, lcmReductionFactor);
 
   const volByTime = effLossRateM3h * (timeToGelStopMin / 60);
   const volByCapacity = canSelfArrest ? capacity : Infinity;
-  const volLostM3 = Math.min(volByTime, volByCapacity);
+  const volByGeometry = gapToZone * annAreaM2;
 
-  // ── ШАГ 3: Оседание = объём / площадь ──
-  const settleByVolume = volLostM3 / Math.max(annAreaM2, 1e-6);
-  const cumSettle = Math.min(settleByVolume, gapToZone);
-  const reachesLossZone = cumSettle >= gapToZone - 0.5;
+  const volLostM3 = Math.min(volByTime, volByCapacity, volByGeometry);
 
-  const settleVelocity = timeToGelStopMin > 0 ? cumSettle / (timeToGelStopMin * 60) : 0;
+  let limitedBy: 'capacity' | 'gelation' | 'geometry';
+  if (volLostM3 === volByCapacity) limitedBy = 'capacity';
+  else if (volLostM3 === volByTime) limitedBy = 'gelation';
+  else limitedBy = 'geometry';
+
+  // ── ШАГ 4: ПОСЛОЙНЫЙ уход: жидкость → пачка → цемент ──
+  const fluidGapM = Math.max(0, gapToZone - padHeightM);
+  const fluidVolM3 = fluidGapM * annAreaM2;
+
+  let rem = volLostM3;
+  const fluidLost = Math.min(rem, fluidVolM3); rem -= fluidLost;
+  const padLost = Math.min(rem, padVolumeM3); rem -= padLost;
+  const cementLost = Math.max(0, rem);
+
+  const cumSettle = Math.min(volLostM3 / Math.max(annAreaM2, 1e-6), gapToZone);
+  const cementReachedZone = cementLost > 0.05;
 
   let arrest: ArrestMechanism;
-  if (reachesLossZone) arrest = 'reached_zone';
-  else if (volByCapacity < volByTime) arrest = 'self_arrest_capacity';
-  else arrest = 'gelation';
+  if (cementReachedZone) arrest = 'reached_zone';
+  else if (limitedBy === 'capacity') arrest = 'self_arrest_capacity';
+  else if (limitedBy === 'gelation') arrest = 'gelation';
+  else arrest = 'fluid_limited';
 
-  if (reachesLossZone)
-    warnings.push(`🔴 КАТАСТРОФА: мост проседает на ${cumSettle.toFixed(0)} м до зоны поглощения (${lossZone.topMD.toFixed(0)} м). Установка в проектном интервале НЕВОЗМОЖНА.`);
-  else if (cumSettle > 5)
-    warnings.push(`🟡 Мост проседает на ${cumSettle.toFixed(0)} м (ушло ${volLostM3.toFixed(1)} м³ в пласт). Реальная голова: ${(plugTopMD + cumSettle).toFixed(0)} м (план ${plugTopMD.toFixed(0)} м).`);
-  else
-    warnings.push(`✓ Проседание незначительное (${cumSettle.toFixed(1)} м) — установка контролируема.`);
-  if (arrest === 'self_arrest_capacity')
-    warnings.push(`✓ Зона "${lossZone.zoneType}" насытилась (ёмкость ≈${capacity.toFixed(1)} м³) — поглощение самоизолировалось, оседание остановилось.`);
-  if (arrest === 'gelation' && !reachesLossZone)
-    warnings.push(`✓ Цемент загустел (70 Вс за ${timeToGelStopMin.toFixed(0)} мин) — оседание остановлено структурированием.`);
-  if (viscousPad && padHeightM > 0 && padBlockFactor < 0.8)
-    warnings.push(`Вязкая пачка (${padHeightM.toFixed(0)} м) снизила приёмистость зоны на ${((1-padBlockFactor)*100).toFixed(0)}% — оседание уменьшилось.`);
-  if (cumSettle > plugLen * 0.5 && !reachesLossZone)
-    warnings.push(`⚠ Проседание > 50% длины моста — установка неконтролируема, рассмотреть серию мостов.`);
+  if (cementReachedZone) {
+    warnings.push(`🔴 КАТАСТРОФА: цемент достиг зоны (ушло ${cementLost.toFixed(1)} м³ цемента в пласт). Изоляция НЕ обеспечена. Мост осел на ${cumSettle.toFixed(0)} м.`);
+  } else if (padLost > 0.05) {
+    warnings.push(`🟡 Мост осел на ${cumSettle.toFixed(0)} м. В пласт ушло: ${fluidLost.toFixed(1)} м³ жидкости + ${padLost.toFixed(1)} м³ пачки. ${padLost >= padVolumeM3 - 0.05 ? 'Пачка израсходована ПОЛНОСТЬЮ — следующей уйдёт цемент!' : 'Цемент ЦЕЛ — пачка приняла удар.'}`);
+  } else if (cumSettle > 1) {
+    warnings.push(`🟢 Мост осел на ${cumSettle.toFixed(0)} м, ушла только скважинная жидкость (${fluidLost.toFixed(1)} м³). Цемент и пачка целы.`);
+  } else {
+    warnings.push(`✓ Проседание незначительное (${cumSettle.toFixed(1)} м).`);
+  }
+  if (limitedBy === 'capacity')
+    warnings.push(`Зона "${lossZone.zoneType}" насытилась (ёмкость ${capacity.toFixed(1)} м³) — поглощение остановилось само.`);
+  if (limitedBy === 'gelation')
+    warnings.push(`Цемент загустел (70 Вс за ${timeToGelStopMin.toFixed(0)} мин) — уход прекратился. Быстрее загустевание → меньше осадка.`);
+  if (padVolumeM3 > 0 && padLost >= padVolumeM3 - 0.05 && !cementReachedZone)
+    warnings.push(`⚠ Пачка (${padVolumeM3.toFixed(1)} м³) на грани полного расхода. Увеличить объём пачки ИЛИ применить кольматант.`);
+  if (cementReachedZone)
+    warnings.push(`РЕШЕНИЕ: 1) кольматант/squeeze в зону ДО моста; 2) серия мостов через ОЗЦ; 3) больше пачки под мостом (нужно ≥ ${(volLostM3 - fluidVolM3).toFixed(1)} м³).`);
 
   return {
     willSettle: cumSettle > 0.5,
     settlementM: cumSettle,
-    settleVelocityMs: settleVelocity,
+    settleVelocityMs: timeToGelStopMin > 0 ? cumSettle / (timeToGelStopMin * 60) : 0,
     finalHeadMD: plugTopMD + cumSettle,
     finalBottomMD: plugBottomMD + cumSettle,
-    reachesLossZone,
+    reachesLossZone: cementReachedZone,
     arrestMechanism: arrest,
     consistencyAtArrest: consistencyAtTime(timeToGelStopMin, cement.thickeningTime30Bc, cement.thickeningTime50Bc),
     forceBalance: {
-      driveKN: drive / 1000,
-      gelKN: gelHold0 / 1000,
-      frictionKN: profile.totalFriction / 1000,
-      padKN: padResist / 1000,
-      wellFluidKN: wellFluidSupport / 1000,
-      netKN: (drive - totalResist0) / 1000,
+      driveKN: drive / 1000, gelKN: gelHold0 / 1000, frictionKN: profile.totalFriction / 1000,
+      padKN: padResist / 1000, wellFluidKN: wellFluidSupport / 1000, netKN: (drive - totalResist0) / 1000,
     },
     zoneCapacityM3: capacity,
     zoneCanSelfArrest: canSelfArrest,
+    layerBreakdown: { fluidLostM3: fluidLost, padLostM3: padLost, cementLostM3: cementLost },
+    volumeLostM3: volLostM3,
+    limitedBy,
     warnings,
   };
 }
