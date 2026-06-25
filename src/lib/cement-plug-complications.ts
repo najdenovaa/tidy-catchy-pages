@@ -930,7 +930,10 @@ export function calculatePlugSettlement(
   const effLossRateM3h = lossZone.initialLossRateM3h * lcm;
 
   const volByTime = effLossRateM3h * (timeToGelStopMin / 60);
-  const volByCapacity = canSelfArrest ? capacity : Infinity;
+  // Ёмкость дренируемого объёма ограничивает потери ВСЕГДА (даже для трещин/разломов):
+  // π(r²−r²скв)·h·φ_eff. Для не-самозалечиваемых зон поглощение всё равно не может
+  // превысить геометрический объём пор/трещин в радиусе дренирования.
+  const volByCapacity = capacity;
   const volAvailableM3 = Math.min(volByTime, volByCapacity);
 
   let limitedBy: 'capacity' | 'gelation' | 'geometry';
