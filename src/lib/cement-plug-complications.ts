@@ -730,17 +730,23 @@ export function transitionWindow(t30: number, t50: number, hasGasZone: boolean):
 }
 
 // ───── БЛОК 3: ЁМКОСТЬ ЗОНЫ ПОГЛОЩЕНИЯ ─────
+// FIX: пористость пользователя ВЛИЯЕТ во всех типах зон.
+// Типовой множитель отражает физику: трещина — мало порового объёма, но раскрытие,
+// каверна/разлом — больше эффективной ёмкости. Базой всегда служит введённая пористость.
 export function lossZoneCapacity(zone: LossZoneFull, boreDiamM: number): number {
   const rWell = boreDiamM / 2;
-  const effPorosity =
-    zone.zoneType === 'vug_cavern' ? zone.porosity * 1.5 :
-    zone.zoneType === 'fracture' ? 0.02 :
-    zone.zoneType === 'fault' ? 0.05 :
-    zone.porosity;
+  const typeMul =
+    zone.zoneType === 'vug_cavern' ? 1.5 :
+    zone.zoneType === 'fault'      ? 0.9 :
+    zone.zoneType === 'fracture'   ? 0.35 :
+    1.0; // pore
+  const effPorosity = Math.max(0.005, zone.porosity) * typeMul;
   const rD = Math.max(zone.drainageRadiusM, rWell + 0.1);
   return Math.PI * (rD * rD - rWell * rWell) * Math.max(0.1, zone.thicknessM) * effPorosity;
 }
 export function lossSelfArrests(zone: LossZoneFull): boolean {
+  // Поровая и каверно-трещинная самоизолируются за счёт конечной ёмкости/кольматации;
+  // трещина и разлом — нет (бесконечный сток).
   return zone.zoneType === 'pore' || zone.zoneType === 'vug_cavern';
 }
 
