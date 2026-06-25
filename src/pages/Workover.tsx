@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Home, ArrowLeft, Wrench, Anchor, Activity, Magnet, Search, Construction as Crane, Droplets } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { BlurInput } from "@/components/BlurInput";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,18 @@ import {
 import { Trash2, Plus } from "lucide-react";
 
 const num = (v: string) => (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
+
+const NumberField = memo(function NumberField({ label, value, onChange, unit, hint, step = "any" }: {
+  label: string; value: number; onChange: (v: number) => void; unit?: string; hint?: string; step?: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">{label}{unit && <span className="text-muted-foreground/70"> ({unit})</span>}</Label>
+      <BlurInput type="number" step={step} value={value} onValueCommit={(v) => onChange(num(v))} className="h-9" />
+      {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
+    </div>
+  );
+});
 
 const DEFAULT_WELL: WorkoverWellData = {
   wellDepthMD: 2500,
@@ -176,16 +189,7 @@ export default function Workover() {
     }));
   }, [dragNoLube, dragLube]);
 
-  // ──── Layout helpers ────
-  const NumberField = ({ label, value, onChange, unit, hint, step = "any" }: {
-    label: string; value: number; onChange: (v: number) => void; unit?: string; hint?: string; step?: string;
-  }) => (
-    <div className="space-y-1">
-      <Label className="text-xs">{label}{unit && <span className="text-muted-foreground/70"> ({unit})</span>}</Label>
-      <Input type="number" step={step} value={value} onChange={(e) => onChange(num(e.target.value))} className="h-9" />
-      {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
-    </div>
-  );
+  // NumberField is defined at module scope (below) to avoid remount-on-render (focus loss).
 
   // ────────── render ──────────
   return (
