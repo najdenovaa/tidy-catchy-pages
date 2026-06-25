@@ -176,16 +176,7 @@ export default function Workover() {
     }));
   }, [dragNoLube, dragLube]);
 
-  // ──── Layout helpers ────
-  const NumberField = ({ label, value, onChange, unit, hint, step = "any" }: {
-    label: string; value: number; onChange: (v: number) => void; unit?: string; hint?: string; step?: string;
-  }) => (
-    <div className="space-y-1">
-      <Label className="text-xs">{label}{unit && <span className="text-muted-foreground/70"> ({unit})</span>}</Label>
-      <Input type="number" step={step} value={value} onChange={(e) => onChange(num(e.target.value))} className="h-9" />
-      {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
-    </div>
-  );
+  // NumberField is defined at module scope (below) to avoid remount-on-render (focus loss).
 
   // ────────── render ──────────
   return (
