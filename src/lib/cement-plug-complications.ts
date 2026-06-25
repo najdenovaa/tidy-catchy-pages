@@ -909,20 +909,25 @@ export function calculatePlugSettlement(
     };
   }
 
-  // ── ШАГ 2: Время до гель-стопа (70 Вс) ──
+  // ── ШАГ 2: Время до гель-стопа (70 Вс) с поправкой Аррениуса по T забоя ──
+  // Высокая температура ускоряет гелирование → меньше осадка (по правилу удвоения скорости
+  // реакции на каждые ~10 °C). t30/t50 масштабируются как t' = t × 2^((20−T)/10), референс T=20 °C.
+  const tempAccel = Math.pow(2, (bhTempC - 20) / 10); // T=60 → ×16 быстрее; T=20 → ×1
+  const t30Eff = cement.thickeningTime30Bc > 0 ? cement.thickeningTime30Bc / tempAccel : 0;
+  const t50Eff = cement.thickeningTime50Bc > 0 ? cement.thickeningTime50Bc / tempAccel : 0;
   let timeToGelStopMin = totalOpTimeMin;
   for (let t = 0; t <= totalOpTimeMin; t += 1) {
-    if (consistencyAtTime(t, cement.thickeningTime30Bc, cement.thickeningTime50Bc) >= 70) {
+    if (consistencyAtTime(t, t30Eff, t50Eff) >= 70) {
       timeToGelStopMin = t; break;
     }
   }
 
-  // ── ШАГ 3: Ограничители ПОЛНОГО объёма ухода (БЕЗ геометрии!) ──
-  // Геометрия (gap) ограничивает только ОСАДКУ моста, но НЕ общий объём ухода.
-  // После того как мост сел на зону, поглощение продолжается и уходит сам цемент.
+  // ── ШАГ 3: Ограничители ПОЛНОГО объёма ухода ──
   const capacity = lossZoneCapacity(lossZone, boreDiamM);
   const canSelfArrest = lossSelfArrests(lossZone);
-  const effLossRateM3h = lossZone.initialLossRateM3h * Math.max(0.02, lcmReductionFactor);
+  // LCM-фактор клампим в [0.02..1]; влияние сильное и непрерывное.
+  const lcm = Math.max(0.02, Math.min(1, lcmReductionFactor));
+  const effLossRateM3h = lossZone.initialLossRateM3h * lcm;
 
   const volByTime = effLossRateM3h * (timeToGelStopMin / 60);
   const volByCapacity = canSelfArrest ? capacity : Infinity;
@@ -931,12 +936,12 @@ export function calculatePlugSettlement(
   let limitedBy: 'capacity' | 'gelation' | 'geometry';
   limitedBy = volAvailableM3 === volByCapacity ? 'capacity' : 'gelation';
 
-  // ── ШАГ 4: подвижность (FIX5) ──
+  // ── ШАГ 4: подвижность ──
   const fluidGapM = Math.max(0, gapToZone - padHeightM);
   const fluidVolM3 = fluidGapM * annAreaM2;
   const bcAtStop = userBcAtStop > 0
     ? userBcAtStop
-    : consistencyAtTime(timeToGelStopMin / 2, cement.thickeningTime30Bc, cement.thickeningTime50Bc);
+    : consistencyAtTime(timeToGelStopMin / 2, t30Eff, t50Eff);
   const gelMid = gelFromConsistency(Math.max(bcAtStop, 5), cement.gel10minPa > 0 ? cement.gel10minPa : 15);
   const ypMid = ypFromConsistency(Math.max(bcAtStop, 5), cement.ypPa > 0 ? cement.ypPa : 8);
   const padDensity = viscousPad ? viscousPad.densityGcm3 : wellFluid.densityGcm3;
@@ -945,7 +950,10 @@ export function calculatePlugSettlement(
     : wellFluid.densityGcm3;
   const avgZenRad = (profile.avgZenith ?? 0) * Math.PI / 180;
   const driveP = (cement.densityGcm3 - belowAvgDensity) * 1000 * G * plugLen * Math.cos(avgZenRad);
-  const wallFricP = (gelMid + ypMid) * wallPerim * plugLen / Math.max(annAreaM2, 1e-6);
+  // Стеновое трение: реологическое (YP+gel) + механическое (μ×нормаль/площадь)
+  const wallFricRheo = (gelMid + ypMid) * wallPerim * plugLen / Math.max(annAreaM2, 1e-6);
+  const wallFricMech = Math.max(0, frictionCoeff) * (profile.totalNormal / Math.max(annAreaM2, 1e-6));
+  const wallFricP = wallFricRheo + wallFricMech;
   let padResistP = 0;
   if (viscousPad && padVolumeM3 > 0) {
     const padYP = viscousPad.ypPa > 0 ? viscousPad.ypPa : 10;
@@ -963,10 +971,13 @@ export function calculatePlugSettlement(
   const cementAvailableM3 = plugLen * annAreaM2;
   const cementLost = Math.min(Math.max(0, rem), cementAvailableM3);
 
-  // ── ОСАДКА: ограничена геометрией (мост садится максимум до зоны) ──
+  // ── ОСАДКА: материальный баланс. Всё, что ушло в пласт = снижение головы моста.
+  //    Из жидкости/пачки осадка ≤ gapToZone (мост садится на зону), а уход цемента
+  //    ДОБАВЛЯЕТ осадку за счёт укорочения колонны сверху (плавно, без скачка к gap).
   const settleFromBelow = Math.min((fluidLost + padLost) / Math.max(annAreaM2, 1e-6), gapToZone);
+  const cementShrinkM = cementLost / Math.max(annAreaM2, 1e-6);
   const cementReachedZone = cementLost > 0.05;
-  const cumSettle = cementReachedZone ? gapToZone : settleFromBelow;
+  const cumSettle = Math.min(settleFromBelow + cementShrinkM, gapToZone + plugLen);
   const actualVolLost = fluidLost + padLost + cementLost;
 
   let arrest: ArrestMechanism;
