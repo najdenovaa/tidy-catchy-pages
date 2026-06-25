@@ -30,6 +30,18 @@ import { Trash2, Plus } from "lucide-react";
 
 const num = (v: string) => (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
 
+const NumberField = memo(function NumberField({ label, value, onChange, unit, hint, step = "any" }: {
+  label: string; value: number; onChange: (v: number) => void; unit?: string; hint?: string; step?: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">{label}{unit && <span className="text-muted-foreground/70"> ({unit})</span>}</Label>
+      <BlurInput type="number" step={step} value={value} onValueCommit={(v) => onChange(num(v))} className="h-9" />
+      {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
+    </div>
+  );
+});
+
 const DEFAULT_WELL: WorkoverWellData = {
   wellDepthMD: 2500,
   trajectory: [
