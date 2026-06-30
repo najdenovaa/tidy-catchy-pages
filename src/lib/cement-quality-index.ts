@@ -237,8 +237,11 @@ export function calculateCementQuality(input: CQIInput): {
       reynolds,
       contactTimeMin: contactMin,
       hasTurbulizer: s.hasTurbulizer,
+      densityHierarchyOK,
+      rheologyHierarchyOK,
+      bufYpVsMud,
     });
-    const disp = calcDisplacementEfficiency(s.standoff, reynolds, ypRatio, s.hasTurbulizer);
+    const disp = calcDisplacementEfficiency(s.standoff, reynolds, ypRatio, s.hasTurbulizer, bufYpVsMud, densityHierarchyOK, rheologyHierarchyOK);
     const regime: 'laminar' | 'transitional' | 'turbulent' =
       reynolds > 3000 ? 'turbulent' : reynolds > 2100 ? 'transitional' : 'laminar';
     return {
