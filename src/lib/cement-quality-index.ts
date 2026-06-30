@@ -123,12 +123,17 @@ function calcCQI(args: {
 // Простая оценка displacement efficiency (для отображения)
 function calcDisplacementEfficiency(
   standoff: number, reynolds: number, ypRatio: number, hasTurbulizer: boolean,
+  bufYpVsMud: number = 1, densityHierarchyOK: boolean = true, rheologyHierarchyOK: boolean = true,
 ): number {
   let eff = 50 + (standoff - 50) * 0.6;
   if (reynolds > 3000) eff += 15;
   else if (reynolds > 2100) eff += 8;
   eff += Math.min(10, ypRatio * 5 - 5);
+  // Буфер с YP > YP_бр улучшает срыв глинистой корки
+  eff += Math.min(8, Math.max(-5, (bufYpVsMud - 1) * 6));
   if (hasTurbulizer) eff += 5;
+  if (!densityHierarchyOK) eff *= 0.9;
+  if (!rheologyHierarchyOK) eff *= 0.92;
   return Math.max(0, Math.min(100, eff));
 }
 
