@@ -947,7 +947,7 @@ export async function exportToDocx(
   ];
 
   const inputContent = buildInputPage(wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
-  const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult);
+  const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult, buffers);
   const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolumeWithCompression, displacementFluids, wellData.casingDepthMD);
   const materialsContent = buildMaterialsPage(materials);
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
