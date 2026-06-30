@@ -85,25 +85,33 @@ function calcCQI(args: {
   reynolds: number;
   contactTimeMin: number;
   hasTurbulizer: boolean;
+  densityHierarchyOK: boolean;
+  rheologyHierarchyOK: boolean;
+  bufYpVsMud: number;   // YP_buf / YP_mud — должно быть > 1
 }): number {
   const { standoff, densityRatio, ypRatio, isOpenHole, cavernCoeff,
-    annularVelocity, reynolds, contactTimeMin, hasTurbulizer } = args;
+    annularVelocity, reynolds, contactTimeMin, hasTurbulizer,
+    densityHierarchyOK, rheologyHierarchyOK, bufYpVsMud } = args;
 
   let score = 0;
   // 1. Standoff (30%)
   score += 30 * Math.min(1, Math.max(0, standoff / 80));
-  // 2. Density hierarchy (20%)
+  // 2. Density hierarchy ρ_cem > ρ_buf > ρ_mud (20%)
   score += 20 * Math.min(1, Math.max(0, (densityRatio - 0.9) / 0.5));
-  // 3. Rheology (15%)
-  score += 15 * Math.min(1, Math.max(0, ypRatio / 2));
+  // 3. Rheology cement vs mud (10%)
+  score += 10 * Math.min(1, Math.max(0, ypRatio / 2));
   // 4. Flow regime (20%)
   if (reynolds > 3000) score += 20;
   else if (reynolds > 2100) score += 15;
   else score += 20 * Math.min(1, annularVelocity / 0.5);
   // 5. Contact time (10%)
   score += 10 * Math.min(1, contactTimeMin / 10);
-  // 6. Reserve (5%) — placeholder for future
-  score += 5;
+  // 6. Buffer/spacer rheology vs mud (10%) — API RP 65: YP_буф > YP_бр для эфф. вытеснения
+  score += 10 * Math.min(1, Math.max(0, (bufYpVsMud - 1) / 1.5));
+
+  // Жёсткие штрафы за нарушение иерархии
+  if (!densityHierarchyOK) score *= 0.85;
+  if (!rheologyHierarchyOK) score *= 0.88;
 
   if (isOpenHole) score *= 0.93;
   if (cavernCoeff > 1.3) score *= Math.max(0.5, 1 - (cavernCoeff - 1.3) * 0.5);
