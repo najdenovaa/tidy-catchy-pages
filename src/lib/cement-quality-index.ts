@@ -39,6 +39,10 @@ export interface CQISummary {
   avgContact: number;
   avgFlowRegime: 'laminar' | 'transitional' | 'turbulent';
   densityHierarchyOK: boolean;
+  rheologyHierarchyOK: boolean;   // YP_mud < YP_buf < YP_cem (API RP 65)
+  bufDensity: number;             // kg/m³ (volume-weighted)
+  bufYP: number;                  // lbf/100ft²
+  bufPV: number;                  // cp
   criticalZones: { fromMD: number; toMD: number; cqi: number; reason: string }[];
 }
 
