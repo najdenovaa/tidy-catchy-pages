@@ -1902,28 +1902,41 @@ export function calculatePressureProfile(
   // СТОП — пробка садится в ЦКОД на ходу, давление скачком от динамического
   const stopTime = cumTime;
 
-  // Скачок давления при посадке пробки = дифференциальное гидростатическое давление + срез ЦКОД
+  // Срез ЦКОД / bump-инкремент (для подтверждения посадки пробки)
   const ckodShear = wellData.ckodShearPressureMPa ?? 1.5;
+
+  // Дифференциальная U-tube гидростатика (затрубье тяжелее трубы ⇒ давит на пробку обратно)
   const staticPipeHydroAtStop = calcPipeHydrostatic();
   const staticAnnHydroAtStop = calcAnnularHydrostatic();
-  const stopIncrease = Math.abs(staticAnnHydroAtStop - staticPipeHydroAtStop) + ckodShear;
+  const uTubeDiffMPa = Math.abs(staticAnnHydroAtStop - staticPipeHydroAtStop);
 
-  // Берём последнее динамическое давление (с трением, насос работал)
+  // Последнее динамическое давление на насосе (учитывает трение трубы/затрубья,
+  // реологию буферов/цемента/продавки, расход, плотности — то есть ВСЕ вводимые параметры)
   const lastPoint = points[points.length - 1];
   const lastSurfP = lastPoint ? lastPoint.surfacePressure : 0;
   const lastRate = lastPoint ? lastPoint.pumpRateLps : 0;
 
-  // Забойное = только гидростатика затрубья (насос отсечён пробкой, трения нет)
-  const staticAnnHydro = calcAnnularHydrostatic();
+  // Скачок давления СТОП = динамическое давление продавки (трение + U-tube)
+  // + срез ЦКОД (bump-инкремент для подтверждения посадки).
+  // Используем max(lastSurfP, uTubeDiff) на случай если последняя точка не отражала U-tube.
+  const stopSpikeMPa = Math.max(lastSurfP, uTubeDiffMPa) + ckodShear;
+
+  // Давление удержания после остановки насоса = только дифференциал U-tube + срез ЦКОД
+  const stopHoldMPa = uTubeDiffMPa + ckodShear;
+
+  // Забойное при стопе = только гидростатика затрубья + bump-инкремент передаётся через жидкость
+  const staticAnnHydro = staticAnnHydroAtStop;
+  const bottomHoleAtStop = staticAnnHydro; // на забое — только столб затрубья
 
   const finalAnnP = calcAnnularProfile();
   const ecdStopBottom = bottomTVD > 0 ? staticAnnHydro / (0.00981 * bottomTVD) : 0;
   const hydroShoeStop = prevShoe > 0 ? calcAnnularHydrostaticAtDepth(prevShoe) : 0;
   const ecdStopShoe = prevShoeTVD > 0 ? hydroShoeStop / (0.00981 * prevShoeTVD) : 0;
+
   // Скачок давления от посадки пробки (от динамического давления на насосе)
   points.push({
     stage: "СТОП (пробка в ЦКОД)", time: cumTime + 0.5,
-    surfacePressure: stopIncrease, bottomholePressure: staticAnnHydro,
+    surfacePressure: stopSpikeMPa, bottomholePressure: bottomHoleAtStop,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: lastRate,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
     annMudHeightM: finalAnnP.mudH, annBufferHeightM: finalAnnP.bufferH, annCementHeightM: finalAnnP.cementH, annDisplHeightM: finalAnnP.displH,
@@ -1933,10 +1946,10 @@ export function calculatePressureProfile(
     fracGradEcdGcm3, porePressureEcdGcm3,
   });
 
-  // Удержание давления СТОП
+  // Удержание давления СТОП (насос остановлен — трение уходит, остаётся U-tube + bump)
   points.push({
     stage: "СТОП (удержание)", time: cumTime + 5,
-    surfacePressure: stopIncrease, bottomholePressure: staticAnnHydro,
+    surfacePressure: stopHoldMPa, bottomholePressure: bottomHoleAtStop,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
     annMudHeightM: finalAnnP.mudH, annBufferHeightM: finalAnnP.bufferH, annCementHeightM: finalAnnP.cementH, annDisplHeightM: finalAnnP.displH,
@@ -1945,6 +1958,7 @@ export function calculatePressureProfile(
     ecdAtBottomGcm3: ecdStopBottom, ecdStaticAtBottomGcm3: ecdStopBottom, ecdAtPrevShoeGcm3: ecdStopShoe,
     fracGradEcdGcm3, porePressureEcdGcm3,
   });
+
 
   const cementToStop = stopTime - cementStartTime;
   // Минимальное требуемое время загустевания цемента (ПБНГП п.405): рабочее время / 0.75
