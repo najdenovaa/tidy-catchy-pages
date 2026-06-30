@@ -163,8 +163,20 @@ export function calculateCementQuality(input: CQIInput): {
   const cemYP = repCem?.rheology?.yp || 30;
   const cemPV = repCem?.rheology?.pv || 50;
 
-  const bufDensity = buffers[0]?.density || 1200;
+  // Volume-weighted buffer rheology (несколько пачек)
+  const bufTotalVol = buffers.reduce((s, b) => s + (b.volume || 0), 0);
+  const bufDensity = bufTotalVol > 0
+    ? buffers.reduce((s, b) => s + (b.volume || 0) * (b.density || 0), 0) / bufTotalVol
+    : (buffers[0]?.density || 1200);
+  const bufYP = bufTotalVol > 0
+    ? buffers.reduce((s, b) => s + (b.volume || 0) * (b.rheology?.yp ?? 25), 0) / bufTotalVol
+    : (buffers[0]?.rheology?.yp ?? 25);
+  const bufPV = bufTotalVol > 0
+    ? buffers.reduce((s, b) => s + (b.volume || 0) * (b.rheology?.pv ?? 25), 0) / bufTotalVol
+    : (buffers[0]?.rheology?.pv ?? 25);
   const densityHierarchyOK = cemDensity > bufDensity && bufDensity > mudDensity;
+  const rheologyHierarchyOK = cemYP > bufYP && bufYP > mudYP;
+  const bufYpVsMud = bufYP / Math.max(1, mudYP);
 
   const densityRatio = cemDensity / mudDensity;
   const ypRatio = cemYP / Math.max(1, mudYP);
