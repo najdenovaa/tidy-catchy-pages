@@ -39,6 +39,10 @@ export interface CQISummary {
   avgContact: number;
   avgFlowRegime: 'laminar' | 'transitional' | 'turbulent';
   densityHierarchyOK: boolean;
+  rheologyHierarchyOK: boolean;   // YP_mud < YP_buf < YP_cem (API RP 65)
+  bufDensity: number;             // kg/m³ (volume-weighted)
+  bufYP: number;                  // lbf/100ft²
+  bufPV: number;                  // cp
   criticalZones: { fromMD: number; toMD: number; cqi: number; reason: string }[];
 }
 
@@ -81,25 +85,33 @@ function calcCQI(args: {
   reynolds: number;
   contactTimeMin: number;
   hasTurbulizer: boolean;
+  densityHierarchyOK: boolean;
+  rheologyHierarchyOK: boolean;
+  bufYpVsMud: number;   // YP_buf / YP_mud — должно быть > 1
 }): number {
   const { standoff, densityRatio, ypRatio, isOpenHole, cavernCoeff,
-    annularVelocity, reynolds, contactTimeMin, hasTurbulizer } = args;
+    annularVelocity, reynolds, contactTimeMin, hasTurbulizer,
+    densityHierarchyOK, rheologyHierarchyOK, bufYpVsMud } = args;
 
   let score = 0;
   // 1. Standoff (30%)
   score += 30 * Math.min(1, Math.max(0, standoff / 80));
-  // 2. Density hierarchy (20%)
+  // 2. Density hierarchy ρ_cem > ρ_buf > ρ_mud (20%)
   score += 20 * Math.min(1, Math.max(0, (densityRatio - 0.9) / 0.5));
-  // 3. Rheology (15%)
-  score += 15 * Math.min(1, Math.max(0, ypRatio / 2));
+  // 3. Rheology cement vs mud (10%)
+  score += 10 * Math.min(1, Math.max(0, ypRatio / 2));
   // 4. Flow regime (20%)
   if (reynolds > 3000) score += 20;
   else if (reynolds > 2100) score += 15;
   else score += 20 * Math.min(1, annularVelocity / 0.5);
   // 5. Contact time (10%)
   score += 10 * Math.min(1, contactTimeMin / 10);
-  // 6. Reserve (5%) — placeholder for future
-  score += 5;
+  // 6. Buffer/spacer rheology vs mud (10%) — API RP 65: YP_буф > YP_бр для эфф. вытеснения
+  score += 10 * Math.min(1, Math.max(0, (bufYpVsMud - 1) / 1.5));
+
+  // Жёсткие штрафы за нарушение иерархии
+  if (!densityHierarchyOK) score *= 0.85;
+  if (!rheologyHierarchyOK) score *= 0.88;
 
   if (isOpenHole) score *= 0.93;
   if (cavernCoeff > 1.3) score *= Math.max(0.5, 1 - (cavernCoeff - 1.3) * 0.5);
@@ -111,12 +123,17 @@ function calcCQI(args: {
 // Простая оценка displacement efficiency (для отображения)
 function calcDisplacementEfficiency(
   standoff: number, reynolds: number, ypRatio: number, hasTurbulizer: boolean,
+  bufYpVsMud: number = 1, densityHierarchyOK: boolean = true, rheologyHierarchyOK: boolean = true,
 ): number {
   let eff = 50 + (standoff - 50) * 0.6;
   if (reynolds > 3000) eff += 15;
   else if (reynolds > 2100) eff += 8;
   eff += Math.min(10, ypRatio * 5 - 5);
+  // Буфер с YP > YP_бр улучшает срыв глинистой корки
+  eff += Math.min(8, Math.max(-5, (bufYpVsMud - 1) * 6));
   if (hasTurbulizer) eff += 5;
+  if (!densityHierarchyOK) eff *= 0.9;
+  if (!rheologyHierarchyOK) eff *= 0.92;
   return Math.max(0, Math.min(100, eff));
 }
 
@@ -151,8 +168,20 @@ export function calculateCementQuality(input: CQIInput): {
   const cemYP = repCem?.rheology?.yp || 30;
   const cemPV = repCem?.rheology?.pv || 50;
 
-  const bufDensity = buffers[0]?.density || 1200;
+  // Volume-weighted buffer rheology (несколько пачек)
+  const bufTotalVol = buffers.reduce((s, b) => s + (b.volume || 0), 0);
+  const bufDensity = bufTotalVol > 0
+    ? buffers.reduce((s, b) => s + (b.volume || 0) * (b.density || 0), 0) / bufTotalVol
+    : (buffers[0]?.density || 1200);
+  const bufYP = bufTotalVol > 0
+    ? buffers.reduce((s, b) => s + (b.volume || 0) * (b.rheology?.yp ?? 25), 0) / bufTotalVol
+    : (buffers[0]?.rheology?.yp ?? 25);
+  const bufPV = bufTotalVol > 0
+    ? buffers.reduce((s, b) => s + (b.volume || 0) * (b.rheology?.pv ?? 25), 0) / bufTotalVol
+    : (buffers[0]?.rheology?.pv ?? 25);
   const densityHierarchyOK = cemDensity > bufDensity && bufDensity > mudDensity;
+  const rheologyHierarchyOK = cemYP > bufYP && bufYP > mudYP;
+  const bufYpVsMud = bufYP / Math.max(1, mudYP);
 
   const densityRatio = cemDensity / mudDensity;
   const ypRatio = cemYP / Math.max(1, mudYP);
@@ -213,8 +242,11 @@ export function calculateCementQuality(input: CQIInput): {
       reynolds,
       contactTimeMin: contactMin,
       hasTurbulizer: s.hasTurbulizer,
+      densityHierarchyOK,
+      rheologyHierarchyOK,
+      bufYpVsMud,
     });
-    const disp = calcDisplacementEfficiency(s.standoff, reynolds, ypRatio, s.hasTurbulizer);
+    const disp = calcDisplacementEfficiency(s.standoff, reynolds, ypRatio, s.hasTurbulizer, bufYpVsMud, densityHierarchyOK, rheologyHierarchyOK);
     const regime: 'laminar' | 'transitional' | 'turbulent' =
       reynolds > 3000 ? 'turbulent' : reynolds > 2100 ? 'transitional' : 'laminar';
     return {
@@ -292,6 +324,10 @@ export function calculateCementQuality(input: CQIInput): {
     avgContact,
     avgFlowRegime: reynolds > 3000 ? 'turbulent' : reynolds > 2100 ? 'transitional' : 'laminar',
     densityHierarchyOK,
+    rheologyHierarchyOK,
+    bufDensity,
+    bufYP,
+    bufPV,
     criticalZones,
   };
 
@@ -309,7 +345,12 @@ export function calculateCementQuality(input: CQIInput): {
     recs.push('Увеличить расход закачки или установить турбулизаторы — текущий режим ламинарный');
   }
   if (!densityHierarchyOK) {
-    recs.push(`Нарушена плотностная иерархия: ρ_цем=${(cemDensity/1000).toFixed(2)}, ρ_буф=${(bufDensity/1000).toFixed(2)}, ρ_бр=${(mudDensity/1000).toFixed(2)} г/см³`);
+    recs.push(`Нарушена плотностная иерархия: ρ_цем=${(cemDensity/1000).toFixed(2)}, ρ_буф=${(bufDensity/1000).toFixed(2)}, ρ_бр=${(mudDensity/1000).toFixed(2)} г/см³ (API: ρ_цем > ρ_буф > ρ_бр)`);
+  }
+  if (!rheologyHierarchyOK) {
+    recs.push(`Нарушена реологическая иерархия (API RP 65): YP_цем=${cemYP.toFixed(0)}, YP_буф=${bufYP.toFixed(0)}, YP_бр=${mudYP.toFixed(0)} lbf/100ft² — буфер должен иметь YP больше бурраствора, но меньше цемента`);
+  } else if (bufYpVsMud < 1.2) {
+    recs.push(`Буфер слабо отличается по YP от бурраствора (${bufYpVsMud.toFixed(2)}×) — увеличить YP буфера для эффективного срыва глинистой корки`);
   }
   if (avgContact < 7) {
     recs.push(`Среднее время контакта буфера ${avgContact.toFixed(1)} мин — увеличить объём буфера (рекомендация API: ≥10 мин)`);
