@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { calculateHydraulics, calculateSafeTime, calculateBHCT, interpolateTVD, getEffectiveTrajectory, getFlowRateLps } from "@/lib/cementing-calculations";
-import type { WellData, SlurryInput, VolumeResults, DisplacementFluid, DrillingFluid, PressurePoint } from "@/lib/cementing-calculations";
+import type { WellData, SlurryInput, VolumeResults, DisplacementFluid, DrillingFluid, PressurePoint, BufferFluid } from "@/lib/cementing-calculations";
 
 interface Props {
   wellData: WellData;
@@ -11,6 +11,7 @@ interface Props {
   volumes: VolumeResults;
   displacementFluids?: DisplacementFluid[];
   drillingFluid?: DrillingFluid;
+  buffers?: BufferFluid[];
   dynamicMaxBHP?: number;
   dynamicFracP?: number;
   dynamicStopP?: number;
@@ -20,13 +21,14 @@ interface Props {
 
 const fmt = (v: number, dec: number = 2) => v.toFixed(dec);
 
-export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes, displacementFluids, drillingFluid, dynamicMaxBHP, dynamicFracP, dynamicStopP, dynamicPreStopP, pressureData }: Props) {
+export default function HydraulicsSection({ wellData, slurries, fractureGradient, displacementDensity, workTimeWithCement, volumes, displacementFluids, drillingFluid, buffers, dynamicMaxBHP, dynamicFracP, dynamicStopP, dynamicPreStopP, pressureData }: Props) {
   const dispFluid = displacementFluids?.[0];
   const pumpRate = dispFluid ? getFlowRateLps(dispFluid.flowRateSteps) : 0;
   const results = calculateHydraulics(
     wellData, slurries, displacementDensity / 1000, fractureGradient,
     drillingFluid?.rheology, dispFluid?.rheology, pumpRate,
-    drillingFluid ? drillingFluid.density / 1000 : undefined
+    drillingFluid ? drillingFluid.density / 1000 : undefined,
+    buffers
   );
   const traj = getEffectiveTrajectory(wellData);
   const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);

@@ -273,11 +273,12 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
   return result;
 }
 
-function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volumes: VolumeResults, displacementFluids: DisplacementFluid[], drillingFluid: DrillingFluid, fractureGradient: number, workTimeWithCement: number, pressureResult?: PressureProfileResult): Paragraph[] {
+function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volumes: VolumeResults, displacementFluids: DisplacementFluid[], drillingFluid: DrillingFluid, fractureGradient: number, workTimeWithCement: number, pressureResult?: PressureProfileResult, buffers?: BufferFluid[]): Paragraph[] {
   const dispFluid = displacementFluids[0];
   const pumpRate = dispFluid ? getFlowRateLps(dispFluid.flowRateSteps) : 0;
   const results = calculateHydraulics(wellData, slurries, (dispFluid?.density ?? 1000) / 1000, fractureGradient, drillingFluid.rheology, dispFluid?.rheology, pumpRate,
-    drillingFluid ? drillingFluid.density / 1000 : undefined
+    drillingFluid ? drillingFluid.density / 1000 : undefined,
+    buffers
   );
   const traj = getEffectiveTrajectory(wellData);
   const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);
@@ -946,7 +947,7 @@ export async function exportToDocx(
   ];
 
   const inputContent = buildInputPage(wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
-  const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult);
+  const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult, buffers);
   const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolumeWithCompression, displacementFluids, wellData.casingDepthMD);
   const materialsContent = buildMaterialsPage(materials);
   const pressureProfileContent = buildPressureProfilePage(pressureResult);

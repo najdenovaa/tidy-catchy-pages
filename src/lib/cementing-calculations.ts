@@ -757,7 +757,8 @@ export function calculateHydraulics(
   drillingFluidRheology?: Rheology,
   displacementRheology?: Rheology,
   pumpRateLps?: number,
-  drillingFluidDensityGcm3?: number // г/см³ бурового раствора
+  drillingFluidDensityGcm3?: number, // г/см³ бурового раствора
+  buffers?: BufferFluid[]
 ): HydraulicResults {
   const traj = getEffectiveTrajectory(data);
   const bottomTVD = interpolateTVD(data.casingDepthMD, traj);
@@ -768,21 +769,43 @@ export function calculateHydraulics(
   const pipePressure = hydrostaticPressure(displacementDensity, tvdCkod)
     + hydrostaticPressure(lastSlurryDensity, Math.max(0, bottomTVD - tvdCkod));
 
-  // Затрубное — цемент + бур. раствор (по вертикали)
+  // Затрубное — цемент (снизу) + буферы (выше цемента) + бур. раствор (по вертикали)
   let annulusPressure = 0;
   let cementTVDtotal = 0;
+  let cementTopMD = data.casingDepthMD;
   slurries.forEach((s, i) => {
     const hMD = getSlurryHeight(slurries, i, data.casingDepthMD);
     if (hMD > 0) {
-      // Пересчитываем высоту столба по вертикали
       const lastIdx = slurries.length - 1;
       const bottomMD = i === lastIdx ? data.casingDepthMD : slurries[i + 1].topDepthMD;
       const hTVD = tvdInterval(s.topDepthMD, bottomMD, traj);
       annulusPressure += hydrostaticPressure(s.density, hTVD);
       cementTVDtotal += hTVD;
+      if (s.topDepthMD < cementTopMD) cementTopMD = s.topDepthMD;
     }
   });
-  const mudHeightTVD = Math.max(0, bottomTVD - cementTVDtotal);
+
+  // Буферы (volume-weighted): размещаем выше цемента, MD-границу ищем бинарным поиском
+  let bufferTVDtotal = 0;
+  if (buffers && buffers.length > 0 && cementTopMD > 0) {
+    const totalBufVol = buffers.reduce((s, b) => s + (b.volume || 0), 0);
+    const totalBufMass = buffers.reduce((s, b) => s + (b.volume || 0) * (b.density || 0), 0);
+    const bufDensityGcm3 = totalBufVol > 0 ? (totalBufMass / totalBufVol) / 1000 : 0;
+    if (totalBufVol > 0 && bufDensityGcm3 > 0) {
+      // Найдём MD буфера наверху так, чтобы annularVolumeForInterval(topMD, cementTopMD) == totalBufVol
+      let lo = 0, hi = cementTopMD;
+      for (let it = 0; it < 40; it++) {
+        const mid = (lo + hi) / 2;
+        const v = annularVolumeForInterval(mid, cementTopMD, data.holeDiameter, data.casingOD, data.prevCasingID, data.prevCasingDepth, data.cavernCoeff, data.cavernIntervals);
+        if (v < totalBufVol) hi = mid; else lo = mid;
+      }
+      const bufTopMD = (lo + hi) / 2;
+      bufferTVDtotal = tvdInterval(bufTopMD, cementTopMD, traj);
+      annulusPressure += hydrostaticPressure(bufDensityGcm3, bufferTVDtotal);
+    }
+  }
+
+  const mudHeightTVD = Math.max(0, bottomTVD - cementTVDtotal - bufferTVDtotal);
   const mudDensity = drillingFluidDensityGcm3 && drillingFluidDensityGcm3 > 0 ? drillingFluidDensityGcm3 : 1.1;
   annulusPressure += hydrostaticPressure(mudDensity, mudHeightTVD);
 
