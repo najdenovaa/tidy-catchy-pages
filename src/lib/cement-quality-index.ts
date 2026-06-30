@@ -345,7 +345,12 @@ export function calculateCementQuality(input: CQIInput): {
     recs.push('Увеличить расход закачки или установить турбулизаторы — текущий режим ламинарный');
   }
   if (!densityHierarchyOK) {
-    recs.push(`Нарушена плотностная иерархия: ρ_цем=${(cemDensity/1000).toFixed(2)}, ρ_буф=${(bufDensity/1000).toFixed(2)}, ρ_бр=${(mudDensity/1000).toFixed(2)} г/см³`);
+    recs.push(`Нарушена плотностная иерархия: ρ_цем=${(cemDensity/1000).toFixed(2)}, ρ_буф=${(bufDensity/1000).toFixed(2)}, ρ_бр=${(mudDensity/1000).toFixed(2)} г/см³ (API: ρ_цем > ρ_буф > ρ_бр)`);
+  }
+  if (!rheologyHierarchyOK) {
+    recs.push(`Нарушена реологическая иерархия (API RP 65): YP_цем=${cemYP.toFixed(0)}, YP_буф=${bufYP.toFixed(0)}, YP_бр=${mudYP.toFixed(0)} lbf/100ft² — буфер должен иметь YP больше бурраствора, но меньше цемента`);
+  } else if (bufYpVsMud < 1.2) {
+    recs.push(`Буфер слабо отличается по YP от бурраствора (${bufYpVsMud.toFixed(2)}×) — увеличить YP буфера для эффективного срыва глинистой корки`);
   }
   if (avgContact < 7) {
     recs.push(`Среднее время контакта буфера ${avgContact.toFixed(1)} мин — увеличить объём буфера (рекомендация API: ≥10 мин)`);
