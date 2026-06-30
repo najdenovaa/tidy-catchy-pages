@@ -324,6 +324,10 @@ export function calculateCementQuality(input: CQIInput): {
     avgContact,
     avgFlowRegime: reynolds > 3000 ? 'turbulent' : reynolds > 2100 ? 'transitional' : 'laminar',
     densityHierarchyOK,
+    rheologyHierarchyOK,
+    bufDensity,
+    bufYP,
+    bufPV,
     criticalZones,
   };
 
