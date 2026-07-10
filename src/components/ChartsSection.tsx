@@ -203,7 +203,10 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
             </ResponsiveContainer>
           </ScrollableChart>
           {(() => {
-            const maxEcd = Math.max(...pressureData.map(p => p.ecdAtBottomGcm3 || 0));
+            const maxBottom = Math.max(...pressureData.map(p => p.ecdAtBottomGcm3 || 0));
+            const maxShoe = Math.max(...pressureData.map(p => p.ecdAtPrevShoeGcm3 || 0));
+            const maxEcd = Math.max(maxBottom, maxShoe);
+            const maxLocation = maxShoe > maxBottom ? "на башмаке пред. ОК" : "на забое";
             const fracEcd = pressureData[0]?.fracGradEcdGcm3 || 0;
             const minVelocity = pressureData.filter(p => p.pumpRateLps > 0).length > 0
               ? Math.min(...pressureData.filter(p => p.pumpRateLps > 0).map(p => p.annularVelocityMps || 0))
@@ -215,8 +218,8 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 {fracEcd > 0 && (
                   <div className={`p-3 rounded-lg text-sm font-medium ${safeEcd ? "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200"}`}>
                     {safeEcd
-                      ? `✓ Макс. ЭЦП на забое (${maxEcd.toFixed(3)} г/см³) < Градиент ГРП (${fracEcd.toFixed(3)} г/см³)`
-                      : `⚠ Макс. ЭЦП на забое (${maxEcd.toFixed(3)} г/см³) ≥ Градиент ГРП (${fracEcd.toFixed(3)} г/см³) — РИСК ГИДРОРАЗРЫВА!`}
+                      ? `✓ Макс. ЭЦП ${maxLocation} (${maxEcd.toFixed(3)} г/см³) < Градиент ГРП (${fracEcd.toFixed(3)} г/см³)`
+                      : `⚠ Макс. ЭЦП ${maxLocation} (${maxEcd.toFixed(3)} г/см³) ≥ Градиент ГРП (${fracEcd.toFixed(3)} г/см³) — РИСК ГИДРОРАЗРЫВА!`}
                   </div>
                 )}
                 {lowVelocity && (
