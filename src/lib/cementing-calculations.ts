@@ -1492,11 +1492,27 @@ export function calculatePressureProfile(
       pumpedExited -= take;
     }
     const effectiveBottomMD = Math.min(targetMD, wellData.casingDepthMD);
+    // Работаем с копией объёмов батчей, чтобы не мутировать общий массив
+    const batchVols = exitBatches.map(b => b.volumeM3);
+
+    // Если целевая глубина <= башмак пред. ОК, то нижняя секция (открытый ствол
+    // от prevShoe до casingDepthMD) физически ниже точки расчёта — её объёмы
+    // «резервируем» и не включаем в гидростатику на башмаке.
+    if (targetMD <= prevShoe + 0.001 && lowerLen > 0 && lowerVPMhydro > 0) {
+      let lowerCapacity = lowerLen * lowerVPMhydro;
+      for (let i = exitBatches.length - 1; i >= 0 && lowerCapacity > 0; i--) {
+        if (batchVols[i] <= 0) continue;
+        const take = Math.min(batchVols[i], lowerCapacity);
+        batchVols[i] -= take;
+        lowerCapacity -= take;
+      }
+    }
+
     let currentBottomMD = effectiveBottomMD;
     for (let i = exitBatches.length - 1; i >= 0; i--) {
       const batch = exitBatches[i];
-      if (batch.volumeM3 <= 0 || currentBottomMD <= 0) continue;
-      let volRemaining = batch.volumeM3;
+      let volRemaining = batchVols[i];
+      if (volRemaining <= 0 || currentBottomMD <= 0) continue;
       if (currentBottomMD > prevShoe && volRemaining > 0) {
         const availableLen = currentBottomMD - Math.max(prevShoe, 0);
         const fillVol = Math.min(volRemaining, availableLen * lowerVPMhydro);
