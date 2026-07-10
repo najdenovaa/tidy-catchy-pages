@@ -64,7 +64,7 @@ export default function Home() {
                 <span className="text-[10px] sm:text-xs text-muted-foreground italic mb-0.5 ml-1">при поддержке</span>
                 <div className="flex items-center gap-3">
                   <img src={geoladLogo.url} alt="Геолад" className="h-12 sm:h-20 w-auto object-contain" />
-                  <img src={nefteservisLogo.url} alt="Нефтесервис" className="h-12 sm:h-20 w-auto object-contain" />
+                  <img src={nefteservisLogo.url} alt="Нефтесервис" className="h-6 sm:h-10 w-auto object-contain" />
                 </div>
               </div>
             </Link>
