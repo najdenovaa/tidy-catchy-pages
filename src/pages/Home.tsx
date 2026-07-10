@@ -52,10 +52,10 @@ export default function Home() {
       <div className="absolute inset-0 bg-background/75" />
       <div className="relative z-10 min-h-screen flex flex-col">
         <header className="border-b border-border bg-card">
-          <div className="max-w-5xl mx-auto px-4 py-2 sm:py-3 flex items-center justify-between">
-            <Link to="/" className="flex flex-col items-start gap-0">
+          <div className="max-w-5xl mx-auto px-4 py-1 sm:py-2 flex items-center justify-between">
+            <Link to="/" className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
               <div className="flex items-center gap-3">
-                <img src={deallsoftLogo} alt="DeAllsoft" className="h-14 sm:h-24 w-auto object-contain -ml-4 sm:-ml-6" />
+                <img src={deallsoftLogo} alt="DeAllsoft" className="h-20 sm:h-36 w-auto object-contain -ml-4 sm:-ml-6" />
                 <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase">
                   Инженерные расчёты
                 </p>
@@ -63,8 +63,8 @@ export default function Home() {
               <div className="flex flex-col items-start leading-none">
                 <span className="text-[10px] sm:text-xs text-muted-foreground italic mb-0.5 ml-1">при поддержке</span>
                 <div className="flex items-center gap-3">
-                  <img src={geoladLogo.url} alt="Геолад" className="h-6 sm:h-10 w-auto object-contain" />
-                  <img src={nefteservisLogo.url} alt="Нефтесервис" className="h-3 sm:h-5 w-auto object-contain" />
+                  <img src={geoladLogo.url} alt="Геолад" className="h-9 sm:h-15 w-auto object-contain" />
+                  <img src={nefteservisLogo.url} alt="Нефтесервис" className="h-4 sm:h-8 w-auto object-contain" />
                 </div>
               </div>
             </Link>
