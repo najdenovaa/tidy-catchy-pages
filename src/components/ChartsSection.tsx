@@ -161,45 +161,54 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
           </p>
           <ScrollableChart chartRef={chartRefECD} height="h-[500px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={pressureData} margin={{ top: 20, right: 80, left: 25, bottom: 30 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
-                <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" angle={-45} textAnchor="end" height={50} interval={0} />
-                <YAxis yAxisId="ecd"
-                  domain={[
-                    (dataMin: number) => Math.floor(Math.max(0.8, dataMin - 0.1) * 10) / 10,
-                    (dataMax: number) => Math.ceil((dataMax + 0.1) * 10) / 10
-                  ]}
-                  label={{ value: "ЭЦП, г/см³", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }}
-                  className="text-xs" width={60}
-                  tickFormatter={(v: number) => v.toFixed(2)} />
-                <YAxis yAxisId="velocity" orientation="right"
-                  domain={[0, (dataMax: number) => Math.ceil(dataMax * 10) / 10 + 0.1]}
-                  label={{ value: "Скорость, м/с", angle: 90, position: "insideRight", offset: 5, fontSize: 12 }}
-                  className="text-xs" width={55}
-                  tickFormatter={(v: number) => v.toFixed(2)} />
-                <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`}
-                  formatter={(value: number, name: string) => {
-                    if (name.includes("Скорость")) return [value.toFixed(3) + " м/с", name];
-                    return [value.toFixed(3) + " г/см³", name];
-                  }} />
-                <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
-                {stageBoundaries.map((b, i) => (
-                  <ReferenceLine key={`ecd-stage-${i}`} yAxisId="ecd" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5}
-                    label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600, dy: (i % 4) * 14 }} />
-                ))}
-                {(pressureData[0]?.fracGradEcdGcm3 ?? 0) > 0 && (
-                  <ReferenceLine yAxisId="ecd" y={pressureData[0].fracGradEcdGcm3!} stroke="hsl(0, 70%, 50%)" strokeDasharray="8 4" strokeWidth={2}
-                    label={{ value: `ГРП = ${pressureData[0].fracGradEcdGcm3!.toFixed(2)} г/см³`, position: "right", fontSize: 11, fill: "hsl(0, 70%, 50%)", fontWeight: 600 }} />
-                )}
-                {(pressureData[0]?.porePressureEcdGcm3 ?? 0) > 0 && (
-                  <ReferenceLine yAxisId="ecd" y={pressureData[0].porePressureEcdGcm3!} stroke="hsl(120, 50%, 45%)" strokeDasharray="6 4" strokeWidth={1.5}
-                    label={{ value: `Pпл = ${pressureData[0].porePressureEcdGcm3!.toFixed(2)} г/см³`, position: "right", fontSize: 10, fill: "hsl(120, 50%, 45%)" }} />
-                )}
-                <Line yAxisId="ecd" type="linear" dataKey="ecdAtBottomGcm3" name="ЭЦП на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2.5} dot={false} />
-                <Line yAxisId="ecd" type="linear" dataKey="ecdStaticAtBottomGcm3" name="ЭЦП статич. (забой)" stroke="hsl(200, 50%, 60%)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
-                <Line yAxisId="ecd" type="linear" dataKey="ecdAtPrevShoeGcm3" name="ЭЦП на башмаке пред. ОК" stroke="hsl(30, 70%, 50%)" strokeWidth={2} dot={false} />
-                <Line yAxisId="velocity" type="linear" dataKey="annularVelocityMps" name="Скорость в затрубье" stroke="hsl(280, 50%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
-              </LineChart>
+              {(() => {
+                const fracEcdLine = pressureData[0]?.fracGradEcdGcm3 || 0;
+                const poreEcdLine = pressureData[0]?.porePressureEcdGcm3 || 0;
+                return (
+                  <LineChart data={pressureData} margin={{ top: 20, right: 80, left: 25, bottom: 30 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
+                    <XAxis dataKey="time" type="number" domain={[0, maxTime]} ticks={timeTicks} tickFormatter={(v) => `${Math.round(v)}`} label={{ value: "Время, мин", position: "insideBottomRight", offset: -10, fontSize: 12 }} className="text-xs" angle={-45} textAnchor="end" height={50} interval={0} />
+                    <YAxis yAxisId="ecd"
+                      domain={[
+                        (dataMin: number) => Math.floor(Math.max(0.8, dataMin - 0.1) * 10) / 10,
+                        (dataMax: number) => {
+                          const refMax = Math.max(fracEcdLine, poreEcdLine);
+                          return Math.ceil(Math.max(dataMax + 0.1, refMax + 0.05) * 20) / 20;
+                        }
+                      ]}
+                      label={{ value: "ЭЦП, г/см³", angle: -90, position: "insideLeft", offset: -5, fontSize: 12 }}
+                      className="text-xs" width={60}
+                      tickFormatter={(v: number) => v.toFixed(2)} />
+                    <YAxis yAxisId="velocity" orientation="right"
+                      domain={[0, (dataMax: number) => Math.ceil(dataMax * 10) / 10 + 0.1]}
+                      label={{ value: "Скорость, м/с", angle: 90, position: "insideRight", offset: 5, fontSize: 12 }}
+                      className="text-xs" width={55}
+                      tickFormatter={(v: number) => v.toFixed(2)} />
+                    <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Время: ${Number(v).toFixed(1)} мин`}
+                      formatter={(value: number, name: string) => {
+                        if (name.includes("Скорость")) return [value.toFixed(3) + " м/с", name];
+                        return [value.toFixed(3) + " г/см³", name];
+                      }} />
+                    <Legend wrapperStyle={{ paddingTop: "10px", fontSize: "12px" }} />
+                    {stageBoundaries.map((b, i) => (
+                      <ReferenceLine key={`ecd-stage-${i}`} yAxisId="ecd" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1.5}
+                        label={{ value: b.label, position: "insideTopLeft", fontSize: 9, fill: STAGE_COLORS[i % STAGE_COLORS.length], fontWeight: 600, dy: (i % 4) * 14 }} />
+                    ))}
+                    {(pressureData[0]?.fracGradEcdGcm3 ?? 0) > 0 && (
+                      <ReferenceLine yAxisId="ecd" y={pressureData[0].fracGradEcdGcm3!} stroke="hsl(0, 70%, 50%)" strokeDasharray="8 4" strokeWidth={2}
+                        label={{ value: `ГРП = ${pressureData[0].fracGradEcdGcm3!.toFixed(2)} г/см³`, position: "right", fontSize: 11, fill: "hsl(0, 70%, 50%)", fontWeight: 600 }} />
+                    )}
+                    {(pressureData[0]?.porePressureEcdGcm3 ?? 0) > 0 && (
+                      <ReferenceLine yAxisId="ecd" y={pressureData[0].porePressureEcdGcm3!} stroke="hsl(120, 50%, 45%)" strokeDasharray="6 4" strokeWidth={1.5}
+                        label={{ value: `Pпл = ${pressureData[0].porePressureEcdGcm3!.toFixed(2)} г/см³`, position: "right", fontSize: 10, fill: "hsl(120, 50%, 45%)" }} />
+                    )}
+                    <Line yAxisId="ecd" type="linear" dataKey="ecdAtBottomGcm3" name="ЭЦП на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2.5} dot={false} />
+                    <Line yAxisId="ecd" type="linear" dataKey="ecdStaticAtBottomGcm3" name="ЭЦП статич. (забой)" stroke="hsl(200, 50%, 60%)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
+                    <Line yAxisId="ecd" type="linear" dataKey="ecdAtPrevShoeGcm3" name="ЭЦП на башмаке пред. ОК" stroke="hsl(30, 70%, 50%)" strokeWidth={2} dot={false} />
+                    <Line yAxisId="velocity" type="linear" dataKey="annularVelocityMps" name="Скорость в затрубье" stroke="hsl(280, 50%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
+                  </LineChart>
+                );
+              })()}
             </ResponsiveContainer>
           </ScrollableChart>
           {(() => {
