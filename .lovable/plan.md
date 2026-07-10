@@ -1,42 +1,45 @@
-## Проблема
 
-В графике ЭЦП оранжевая кривая «на башмаке пред. ОК» во время продавки становится выше синей «на забое». Физически неверно — башмак выше забоя.
+## Задача
+Настроить автоматический деплой фронтенда на хостинг Beget через GitHub Actions при каждом push в `main`, а также добавить `.htaccess` для корректной работы React Router (SPA fallback) на Apache-хостинге Beget.
 
-**Корень бага:** `calcAnnularHydrostaticAtDepth(targetMD)` в `src/lib/cementing-calculations.ts` (строки 1481–1529). При `targetMD == prevShoe` условие нижней секции `currentBottomMD > prevShoe` (строка 1500) не срабатывает (равенство), и весь цемент попадает в верхнюю секцию, завышая гидростатику на башмаке.
+## Файлы, которые будут созданы
 
-## Изменения
+### 1. `.github/workflows/deploy-beget.yml`
+Workflow с одним job `deploy`, триггер `push` в ветку `main` + `workflow_dispatch` (ручной запуск).
 
-### 1. `src/lib/cementing-calculations.ts` — `calcAnnularHydrostaticAtDepth`
+Шаги:
+1. `actions/checkout@v4`
+2. `actions/setup-node@v4` с `node-version: 20` и `cache: 'npm'`
+3. `npm ci`
+4. `npm run build` с env:
+   - `VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}`
+   - (по желанию можно добавить `VITE_SUPABASE_PROJECT_ID`, если пригодится — уточню ниже)
+5. `SamKirkland/FTP-Deploy-Action@v4.3.5` с параметрами:
+   - `server: ${{ secrets.FTP_SERVER }}`
+   - `username: ${{ secrets.FTP_USERNAME }}`
+   - `password: ${{ secrets.FTP_PASSWORD }}`
+   - `local-dir: ./dist/`
+   - `server-dir: deallsoft.ru/public_html/`
+   - `dangerous-clean-slate: false` (по умолчанию, явно укажем для ясности)
+   - без `exclude`-исключений сверх дефолтных → файлы на сервере, которых нет в `dist`, не трогаются
 
-Перед основным циклом заполнения добавить «резервирование» объёмов в нижней секции, когда `targetMD <= prevShoe + ε` и `lowerLen > 0`:
+### 2. `public/.htaccess`
+Точно тот контент, который вы прислали. Vite автоматически копирует всё из `public/` в `dist/` при сборке, отдельная конфигурация не нужна.
 
-- ёмкость нижней секции: `lowerCapacity = lowerLen * lowerVPMhydro`;
-- пройти `exitBatches` снизу вверх (от последнего к первому), уменьшать `batch.volumeM3` на `min(остаток, оставшаяся ёмкость нижней секции)` — эти объёмы **не** добавляются в `pressure` (они физически ниже башмака);
-- после этого текущий цикл с `currentBottomMD = targetMD` (≤ prevShoe) заполняет только верхнюю секцию, используя уменьшенные `batch.volumeM3`.
+## Секреты GitHub, которые вы должны добавить сами
+В `Settings → Secrets and variables → Actions` репозитория:
+- `VITE_SUPABASE_URL` = `https://bqidvaqvtxoptcfehooe.supabase.co`
+- `VITE_SUPABASE_PUBLISHABLE_KEY` = ваш anon-ключ (он публичный, но пусть будет в secrets)
+- `FTP_SERVER` — обычно `deallsoft.ru` или FTP-хост Beget из панели
+- `FTP_USERNAME` — FTP-логин Beget
+- `FTP_PASSWORD` — FTP-пароль
 
-Реализация: сделать локальную копию `exitBatches` (иммутабельно) и корректировать `volumeM3` копий, чтобы не влиять на другие вызовы.
+Я эти значения добавить в GitHub не могу — добавляете вы вручную.
 
-Случай `prevShoe < targetMD < casingDepthMD` остаётся без изменений — текущая логика частичного заполнения корректна.
+## Что НЕ буду делать
+- Не трогаю `dangerous-clean-slate` → останется `false`, файлы на сервере (favicon, robots.txt, загруженные вручную) сохранятся.
+- Не буду сам делать `git add/commit/push` — состояние git управляется Lovable-платформой, изменения синхронизируются в подключённый репозиторий автоматически, как только вы подтвердите план и я применю изменения.
 
-**Проверка согласованности:** объёмы, «посаженные» в нижнюю секцию, должны совпадать с тем, что делает `calcAnnularHydrostatic()` (строки 1411–…) и `calcAnnularProfile()` (1163–…). При `targetMD == casingDepthMD` (полный столб) новая логика не активируется, значение = старому расчёту. Свойство `ecdAtBottom >= ecdAtPrevShoe` должно выполняться автоматически, т.к. при `targetMD = prevShoe` в верхнюю секцию попадают только те же лёгкие флюиды сверху, что и при `targetMD = casingDepthMD` (с точностью до вытеснения).
-
-### 2. `src/components/ChartsSection.tsx` — сообщение безопасности (строки 206–219)
-
-- `maxEcd` считать по **обоим** уровням:
-  ```ts
-  const perPoint = pressureData.map(p => ({
-    bottom: p.ecdAtBottomGcm3 || 0,
-    shoe: p.ecdAtPrevShoeGcm3 || 0,
-  }));
-  const maxBottom = Math.max(...perPoint.map(x => x.bottom));
-  const maxShoe = Math.max(...perPoint.map(x => x.shoe));
-  const maxEcd = Math.max(maxBottom, maxShoe);
-  const maxLocation = maxShoe > maxBottom ? "на башмаке пред. ОК" : "на забое";
-  ```
-- В сообщении (ok/риск) заменить фиксированное «на забое» на `maxLocation`.
-
-## Не менять
-
-- `calcAnnularHydrostatic()` и `calcAnnularProfile()` — там расчёт по всему столбу, баг не проявляется.
-- Логику при `prevShoe < targetMD < casingDepthMD`.
-- Прочие компоненты (`HydraulicsSection`, `SafetyTrafficLight`) — там уже используется `ecdAtBottom` как основной критерий, менять контракт не нужно.
+## Уточняющий вопрос
+Добавить в build-шаг также `VITE_SUPABASE_PROJECT_ID` (используется в вашем `.env`)? Если этот id где-то читается в рантайме — стоит, иначе можно опустить. Скажите — или просто «применяй как есть», и я оставлю только два ключа, которые вы указали.
