@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import geoladLogo from "@/assets/geolad.jpg.asset.json";
+import nefteservisLogo from "@/assets/nefteservis-logo.png.asset.json";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
 import { supabase } from "@/integrations/supabase/client";
