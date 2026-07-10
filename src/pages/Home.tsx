@@ -55,7 +55,7 @@ export default function Home() {
           <div className="max-w-5xl mx-auto px-4 py-1 sm:py-2 flex items-center justify-between">
             <Link to="/" className="flex flex-col items-start gap-0">
               <div className="flex items-center gap-3 -mt-1 sm:-mt-1">
-                <img src={deallsoftLogo} alt="DeAllsoft" className="h-20 sm:h-28 w-auto object-contain" />
+                <img src={deallsoftLogo} alt="DeAllsoft" className="h-20 sm:h-28 w-auto object-contain -ml-2 sm:-ml-5" />
                 <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase">
                   Инженерные расчёты
                 </p>
