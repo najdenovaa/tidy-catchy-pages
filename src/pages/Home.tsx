@@ -53,18 +53,18 @@ export default function Home() {
       <div className="relative z-10 min-h-screen flex flex-col">
         <header className="border-b border-border bg-card">
           <div className="max-w-5xl mx-auto px-4 py-1 sm:py-2 flex items-center justify-between">
-            <Link to="/" className="flex flex-col sm:flex-row items-start sm:items-start gap-2 sm:gap-4">
-              <div className="flex items-center gap-3 sm:-mt-1">
-                <img src={deallsoftLogo} alt="DeAllsoft" className="h-20 sm:h-36 w-auto object-contain -ml-4 sm:-ml-6" />
+            <Link to="/" className="flex flex-col items-start gap-0">
+              <div className="flex items-center gap-3 -mt-1 sm:-mt-1">
+                <img src={deallsoftLogo} alt="DeAllsoft" className="h-20 sm:h-28 w-auto object-contain" />
                 <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase">
                   Инженерные расчёты
                 </p>
               </div>
-              <div className="flex flex-col items-start leading-none sm:mt-auto">
-                <span className="text-[10px] sm:text-xs text-muted-foreground italic mb-0.5 ml-1">при поддержке</span>
-                <div className="flex items-center gap-3">
-                  <img src={geoladLogo.url} alt="Геолад" className="h-9 sm:h-15 w-auto object-contain" />
-                  <img src={nefteservisLogo.url} alt="Нефтесервис" className="h-4 sm:h-8 w-auto object-contain" />
+              <div className="flex flex-col items-start leading-none">
+                <span className="text-[10px] sm:text-xs text-muted-foreground italic mb-0.5">при поддержке</span>
+                <div className="flex items-start gap-3">
+                  <img src={geoladLogo.url} alt="Геолад" className="h-9 sm:h-12 w-auto object-contain" />
+                  <img src={nefteservisLogo.url} alt="Нефтесервис" className="h-4 sm:h-6 w-auto object-contain" />
                 </div>
               </div>
             </Link>
