@@ -62,10 +62,10 @@ export default function Home() {
               </div>
               <div className="flex flex-col items-start leading-none">
                 <span className="text-[10px] sm:text-xs text-muted-foreground italic mb-0.5">при поддержке</span>
-                <div className="flex items-start gap-3">
-                  <img src={geoladLogo.url} alt="Геолад" className="h-9 sm:h-12 w-auto object-contain" />
-                  <img src={nefteservisLogo.url} alt="Нефтесервис" className="h-4 sm:h-6 w-auto object-contain" />
-                </div>
+              <div className="flex items-center gap-3">
+                <img src={geoladLogo.url} alt="Геолад" className="h-9 sm:h-12 w-auto object-contain" />
+                <img src={nefteservisLogo.url} alt="Нефтесервис" className="h-4 sm:h-6 w-auto object-contain" />
+              </div>
               </div>
             </Link>
             <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
