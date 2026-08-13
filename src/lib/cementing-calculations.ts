@@ -566,6 +566,95 @@ export function displacementVolume(pipeVolPerM: number, ckodDepth: number): numb
   return pipeVolPerM * ckodDepth;
 }
 
+// === Единый график продавки (несколько порций = одна продавка) ===
+export interface DisplacementScheduleItem {
+  name: string;
+  densityGcm3: number;
+  rheology: Rheology;
+  rateLps: number;
+  volumeM3: number;
+  compressionCoeff: number;
+  fluidIndex: number;
+}
+
+/**
+ * Строит единый связанный график продавки из нескольких порций.
+ * Правила:
+ *  - введённые пользователем объёмы порций сохраняются как есть (не масштабируются);
+ *  - недостающий до расчётного объёма продавки остаток отдаётся порциям/шагам без объёма
+ *    (поровну), а если таких нет — добавляется к последнему шагу последней порции;
+ *  - если введено больше расчётного объёма — лишнее срезается с конца (последние порции),
+ *    т.к. пробка садится на ЦКОД раньше.
+ */
+export function buildDisplacementSchedule(
+  displacementFluids: DisplacementFluid[],
+  totalDisplacementVolM3: number
+): DisplacementScheduleItem[] {
+  const total = Math.max(0, totalDisplacementVolM3 || 0);
+  const items: DisplacementScheduleItem[] = [];
+  const openIdx: number[] = []; // шаги без заданного объёма
+
+  (displacementFluids || []).forEach((df, fi) => {
+    const rheo = effectiveRheology(df.rheology, 'displacement');
+    const steps = Array.isArray(df.flowRateSteps) && df.flowRateSteps.length > 0
+      ? df.flowRateSteps
+      : [{ rateLps: 0, volumeM3: 0 }];
+    steps.forEach(step => {
+      const vol = Math.max(0, step.volumeM3 || 0);
+      items.push({
+        name: df.name,
+        densityGcm3: (df.density || 0) / 1000,
+        rheology: rheo,
+        rateLps: step.rateLps || 0,
+        volumeM3: vol,
+        compressionCoeff: df.compressionCoeff || 1.0,
+        fluidIndex: fi,
+      });
+      if (vol <= 0) openIdx.push(items.length - 1);
+    });
+  });
+
+  if (items.length === 0) return items;
+
+  const explicit = items.reduce((s, it) => s + it.volumeM3, 0);
+
+  if (explicit < total - 1e-9) {
+    const remainder = total - explicit;
+    if (openIdx.length > 0) {
+      const per = remainder / openIdx.length;
+      openIdx.forEach(i => { items[i].volumeM3 = per; });
+    } else {
+      items[items.length - 1].volumeM3 += remainder;
+    }
+  } else if (explicit > total + 1e-9) {
+    // срезаем с конца — пробка сядет раньше, чем всё запланированное закачано
+    let excess = explicit - total;
+    for (let i = items.length - 1; i >= 0 && excess > 1e-9; i--) {
+      const cut = Math.min(items[i].volumeM3, excess);
+      items[i].volumeM3 -= cut;
+      excess -= cut;
+    }
+  }
+
+  return items.filter(it => it.volumeM3 > 1e-9);
+}
+
+/** Средневзвешенные свойства всей продавки (для статических расчётов). */
+export function displacementCompositeProps(schedule: DisplacementScheduleItem[]): {
+  densityGcm3: number; rheology: Rheology; totalVolM3: number;
+} {
+  const totalVol = schedule.reduce((s, it) => s + it.volumeM3, 0);
+  if (totalVol <= 0) {
+    return { densityGcm3: 0, rheology: DEFAULT_RHEOLOGY.displacement, totalVolM3: 0 };
+  }
+  const dens = schedule.reduce((s, it) => s + it.densityGcm3 * it.volumeM3, 0) / totalVol;
+  const pv = schedule.reduce((s, it) => s + it.rheology.pv * it.volumeM3, 0) / totalVol;
+  const yp = schedule.reduce((s, it) => s + it.rheology.yp * it.volumeM3, 0) / totalVol;
+  return { densityGcm3: dens, rheology: { pv, yp }, totalVolM3: totalVol };
+}
+
+
+
 // === Расчёт объёмов ===
 
 export function calculateVolumes(
