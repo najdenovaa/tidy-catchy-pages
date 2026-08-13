@@ -1444,6 +1444,7 @@ export function calculatePressureProfile(
   // Продавочные жидкости — по шагам с распределением расчётного объёма продавки
   // Единая продавка: порции сохраняют свои объёмы, остаток/избыток балансируются
   const dispScheduleSim = buildDisplacementSchedule(displacementFluids, displacementVol);
+  const fallbackDispRate = dispScheduleSim.find(it => it.rateLps > 0)?.rateLps ?? 5;
   dispScheduleSim.forEach(it => {
     stages.push({
       name: it.name,
