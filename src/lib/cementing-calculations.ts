@@ -1442,34 +1442,22 @@ export function calculatePressureProfile(
   });
 
   // Продавочные жидкости — по шагам с распределением расчётного объёма продавки
-  const totalConfiguredDispVolume = displacementFluids.reduce(
-    (sum, df) => sum + df.flowRateSteps.reduce((stepSum, step) => stepSum + step.volumeM3, 0),
-    0
-  );
-  const totalDispStages = displacementFluids.reduce((sum, df) => sum + Math.max(df.flowRateSteps.length, 1), 0) || 1;
-  const configuredDispScale = totalConfiguredDispVolume > 0 ? displacementVol / totalConfiguredDispVolume : 1;
-  const fallbackDispStageVolume = totalConfiguredDispVolume > 0 ? 0 : displacementVol / totalDispStages;
-  displacementFluids.forEach(df => {
-    const cc = df.compressionCoeff || 1.0;
-    const dfRheo = effectiveRheology(df.rheology, 'displacement');
-    const totalStepVol = df.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
-    if (totalStepVol > 0) {
-      df.flowRateSteps.forEach(step => {
-        if (step.volumeM3 > 0) {
-          const vol = step.volumeM3 * configuredDispScale;
-          if (vol > 0) {
-            stages.push({ name: df.name, volume: vol, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc, fluidType: 'displacement' as AnnularFluidType });
-          }
-        }
-      });
-    } else {
-      df.flowRateSteps.forEach(step => {
-        if (fallbackDispStageVolume > 0 && step.rateLps > 0) {
-          stages.push({ name: df.name, volume: fallbackDispStageVolume, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc, fluidType: 'displacement' as AnnularFluidType });
-        }
-      });
-    }
+  // Единая продавка: порции сохраняют свои объёмы, остаток/избыток балансируются
+  const dispScheduleSim = buildDisplacementSchedule(displacementFluids, displacementVol);
+  dispScheduleSim.forEach(it => {
+    stages.push({
+      name: it.name,
+      volume: it.volumeM3,
+      densityGcm3: it.densityGcm3,
+      pv: it.rheology.pv,
+      yp: it.rheology.yp,
+      rateLps: it.rateLps,
+      isCement: false,
+      compressionCoeff: it.compressionCoeff,
+      fluidType: 'displacement' as AnnularFluidType,
+    });
   });
+
 
   let cementStartFound = false;
   let cementFreefallVol = 0; // объём, на который цемент ушёл вниз при паузе (надо догнать продавкой)
