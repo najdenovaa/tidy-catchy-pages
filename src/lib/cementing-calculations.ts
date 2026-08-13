@@ -841,13 +841,15 @@ export function hydrostaticPressure(densityGcm3: number, depthTVD: number): numb
 export function calculateHydraulics(
   data: WellData,
   slurries: SlurryInput[],
-  displacementDensity: number, // г/см³ продавочной жидкости
+  displacementDensity: number, // г/см³ продавочной жидкости (первая порция / средняя)
   fractureGradientKpaM: number,
   drillingFluidRheology?: Rheology,
   displacementRheology?: Rheology,
   pumpRateLps?: number,
   drillingFluidDensityGcm3?: number, // г/см³ бурового раствора
-  buffers?: BufferFluid[]
+  buffers?: BufferFluid[],
+  displacementFluidsAll?: DisplacementFluid[], // все порции продавки (единая продавка)
+  displacementTotalVolM3?: number // расчётный объём продавки, м³
 ): HydraulicResults {
   const traj = getEffectiveTrajectory(data);
   const bottomTVD = interpolateTVD(data.casingDepthMD, traj);
@@ -855,8 +857,27 @@ export function calculateHydraulics(
   // Трубное — продавочная жидкость от устья до ЦКОД + цемент от ЦКОД до башмака
   const lastSlurryDensity = slurries.length > 0 ? slurries[slurries.length - 1].density : displacementDensity;
   const tvdCkod = data.ckodDepth > 0 ? interpolateTVD(data.ckodDepth, traj) : bottomTVD;
-  const pipePressure = hydrostaticPressure(displacementDensity, tvdCkod)
+
+  // Многопорционная продавка: столб слоями (первая закачанная порция — внизу, у ЦКОД)
+  const dispSchedule = (displacementFluidsAll && displacementFluidsAll.length > 0)
+    ? buildDisplacementSchedule(displacementFluidsAll, displacementTotalVolM3 ?? 0)
+    : [];
+  const dispComposite = dispSchedule.length > 0 ? displacementCompositeProps(dispSchedule) : null;
+
+  let pipeDispPressure: number;
+  if (dispComposite && dispComposite.totalVolM3 > 0) {
+    // Высота каждой порции пропорциональна её объёму (труба до ЦКОД заполнена продавкой)
+    pipeDispPressure = dispSchedule.reduce(
+      (sum, it) => sum + hydrostaticPressure(it.densityGcm3, tvdCkod * (it.volumeM3 / dispComposite.totalVolM3)),
+      0
+    );
+  } else {
+    pipeDispPressure = hydrostaticPressure(displacementDensity, tvdCkod);
+  }
+
+  const pipePressure = pipeDispPressure
     + hydrostaticPressure(lastSlurryDensity, Math.max(0, bottomTVD - tvdCkod));
+
 
   // Затрубное — цемент (снизу) + буферы (выше цемента) + бур. раствор (по вертикали)
   let annulusPressure = 0;
