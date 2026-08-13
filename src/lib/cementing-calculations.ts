@@ -566,6 +566,95 @@ export function displacementVolume(pipeVolPerM: number, ckodDepth: number): numb
   return pipeVolPerM * ckodDepth;
 }
 
+// === Единый график продавки (несколько порций = одна продавка) ===
+export interface DisplacementScheduleItem {
+  name: string;
+  densityGcm3: number;
+  rheology: Rheology;
+  rateLps: number;
+  volumeM3: number;
+  compressionCoeff: number;
+  fluidIndex: number;
+}
+
+/**
+ * Строит единый связанный график продавки из нескольких порций.
+ * Правила:
+ *  - введённые пользователем объёмы порций сохраняются как есть (не масштабируются);
+ *  - недостающий до расчётного объёма продавки остаток отдаётся порциям/шагам без объёма
+ *    (поровну), а если таких нет — добавляется к последнему шагу последней порции;
+ *  - если введено больше расчётного объёма — лишнее срезается с конца (последние порции),
+ *    т.к. пробка садится на ЦКОД раньше.
+ */
+export function buildDisplacementSchedule(
+  displacementFluids: DisplacementFluid[],
+  totalDisplacementVolM3: number
+): DisplacementScheduleItem[] {
+  const total = Math.max(0, totalDisplacementVolM3 || 0);
+  const items: DisplacementScheduleItem[] = [];
+  const openIdx: number[] = []; // шаги без заданного объёма
+
+  (displacementFluids || []).forEach((df, fi) => {
+    const rheo = effectiveRheology(df.rheology, 'displacement');
+    const steps = Array.isArray(df.flowRateSteps) && df.flowRateSteps.length > 0
+      ? df.flowRateSteps
+      : [{ rateLps: 0, volumeM3: 0 }];
+    steps.forEach(step => {
+      const vol = Math.max(0, step.volumeM3 || 0);
+      items.push({
+        name: df.name,
+        densityGcm3: (df.density || 0) / 1000,
+        rheology: rheo,
+        rateLps: step.rateLps || 0,
+        volumeM3: vol,
+        compressionCoeff: df.compressionCoeff || 1.0,
+        fluidIndex: fi,
+      });
+      if (vol <= 0) openIdx.push(items.length - 1);
+    });
+  });
+
+  if (items.length === 0) return items;
+
+  const explicit = items.reduce((s, it) => s + it.volumeM3, 0);
+
+  if (explicit < total - 1e-9) {
+    const remainder = total - explicit;
+    if (openIdx.length > 0) {
+      const per = remainder / openIdx.length;
+      openIdx.forEach(i => { items[i].volumeM3 = per; });
+    } else {
+      items[items.length - 1].volumeM3 += remainder;
+    }
+  } else if (explicit > total + 1e-9) {
+    // срезаем с конца — пробка сядет раньше, чем всё запланированное закачано
+    let excess = explicit - total;
+    for (let i = items.length - 1; i >= 0 && excess > 1e-9; i--) {
+      const cut = Math.min(items[i].volumeM3, excess);
+      items[i].volumeM3 -= cut;
+      excess -= cut;
+    }
+  }
+
+  return items.filter(it => it.volumeM3 > 1e-9);
+}
+
+/** Средневзвешенные свойства всей продавки (для статических расчётов). */
+export function displacementCompositeProps(schedule: DisplacementScheduleItem[]): {
+  densityGcm3: number; rheology: Rheology; totalVolM3: number;
+} {
+  const totalVol = schedule.reduce((s, it) => s + it.volumeM3, 0);
+  if (totalVol <= 0) {
+    return { densityGcm3: 0, rheology: DEFAULT_RHEOLOGY.displacement, totalVolM3: 0 };
+  }
+  const dens = schedule.reduce((s, it) => s + it.densityGcm3 * it.volumeM3, 0) / totalVol;
+  const pv = schedule.reduce((s, it) => s + it.rheology.pv * it.volumeM3, 0) / totalVol;
+  const yp = schedule.reduce((s, it) => s + it.rheology.yp * it.volumeM3, 0) / totalVol;
+  return { densityGcm3: dens, rheology: { pv, yp }, totalVolM3: totalVol };
+}
+
+
+
 // === Расчёт объёмов ===
 
 export function calculateVolumes(
@@ -752,13 +841,15 @@ export function hydrostaticPressure(densityGcm3: number, depthTVD: number): numb
 export function calculateHydraulics(
   data: WellData,
   slurries: SlurryInput[],
-  displacementDensity: number, // г/см³ продавочной жидкости
+  displacementDensity: number, // г/см³ продавочной жидкости (первая порция / средняя)
   fractureGradientKpaM: number,
   drillingFluidRheology?: Rheology,
   displacementRheology?: Rheology,
   pumpRateLps?: number,
   drillingFluidDensityGcm3?: number, // г/см³ бурового раствора
-  buffers?: BufferFluid[]
+  buffers?: BufferFluid[],
+  displacementFluidsAll?: DisplacementFluid[], // все порции продавки (единая продавка)
+  displacementTotalVolM3?: number // расчётный объём продавки, м³
 ): HydraulicResults {
   const traj = getEffectiveTrajectory(data);
   const bottomTVD = interpolateTVD(data.casingDepthMD, traj);
@@ -766,8 +857,27 @@ export function calculateHydraulics(
   // Трубное — продавочная жидкость от устья до ЦКОД + цемент от ЦКОД до башмака
   const lastSlurryDensity = slurries.length > 0 ? slurries[slurries.length - 1].density : displacementDensity;
   const tvdCkod = data.ckodDepth > 0 ? interpolateTVD(data.ckodDepth, traj) : bottomTVD;
-  const pipePressure = hydrostaticPressure(displacementDensity, tvdCkod)
+
+  // Многопорционная продавка: столб слоями (первая закачанная порция — внизу, у ЦКОД)
+  const dispSchedule = (displacementFluidsAll && displacementFluidsAll.length > 0)
+    ? buildDisplacementSchedule(displacementFluidsAll, displacementTotalVolM3 ?? 0)
+    : [];
+  const dispComposite = dispSchedule.length > 0 ? displacementCompositeProps(dispSchedule) : null;
+
+  let pipeDispPressure: number;
+  if (dispComposite && dispComposite.totalVolM3 > 0) {
+    // Высота каждой порции пропорциональна её объёму (труба до ЦКОД заполнена продавкой)
+    pipeDispPressure = dispSchedule.reduce(
+      (sum, it) => sum + hydrostaticPressure(it.densityGcm3, tvdCkod * (it.volumeM3 / dispComposite.totalVolM3)),
+      0
+    );
+  } else {
+    pipeDispPressure = hydrostaticPressure(displacementDensity, tvdCkod);
+  }
+
+  const pipePressure = pipeDispPressure
     + hydrostaticPressure(lastSlurryDensity, Math.max(0, bottomTVD - tvdCkod));
+
 
   // Затрубное — цемент (снизу) + буферы (выше цемента) + бур. раствор (по вертикали)
   let annulusPressure = 0;
@@ -821,9 +931,17 @@ export function calculateHydraulics(
     const pipeAreaM2 = (Math.PI / 4) * (casingID / 1000) * (casingID / 1000);
     const flowRateM3min = rate * 0.06;
 
-    // Трубное — продавочная жидкость
+    // Трубное — продавочная жидкость (по всем порциям: посекционные потери)
     const dispRheo = displacementRheology ? effectiveRheology(displacementRheology, 'displacement') : DEFAULT_RHEOLOGY.displacement;
-    frictionPipe = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydPipe, dispRheo.pv, dispRheo.yp, pipeAreaM2, displacementDensity * 1000).pressureMPa;
+    if (dispComposite && dispComposite.totalVolM3 > 0) {
+      frictionPipe = dispSchedule.reduce((sum, it) => {
+        const lenShare = data.casingDepthMD * (it.volumeM3 / dispComposite.totalVolM3);
+        return sum + frictionLossWithRegime(flowRateM3min, lenShare, dHydPipe, it.rheology.pv, it.rheology.yp, pipeAreaM2, it.densityGcm3 * 1000).pressureMPa;
+      }, 0);
+    } else {
+      frictionPipe = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydPipe, dispRheo.pv, dispRheo.yp, pipeAreaM2, displacementDensity * 1000).pressureMPa;
+    }
+
 
     // Затрубное — двухсекционное (межколонное + открытый ствол)
     const mudRheoH = drillingFluidRheology ? effectiveRheology(drillingFluidRheology, 'mud') : DEFAULT_RHEOLOGY.mud;
@@ -1324,34 +1442,23 @@ export function calculatePressureProfile(
   });
 
   // Продавочные жидкости — по шагам с распределением расчётного объёма продавки
-  const totalConfiguredDispVolume = displacementFluids.reduce(
-    (sum, df) => sum + df.flowRateSteps.reduce((stepSum, step) => stepSum + step.volumeM3, 0),
-    0
-  );
-  const totalDispStages = displacementFluids.reduce((sum, df) => sum + Math.max(df.flowRateSteps.length, 1), 0) || 1;
-  const configuredDispScale = totalConfiguredDispVolume > 0 ? displacementVol / totalConfiguredDispVolume : 1;
-  const fallbackDispStageVolume = totalConfiguredDispVolume > 0 ? 0 : displacementVol / totalDispStages;
-  displacementFluids.forEach(df => {
-    const cc = df.compressionCoeff || 1.0;
-    const dfRheo = effectiveRheology(df.rheology, 'displacement');
-    const totalStepVol = df.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
-    if (totalStepVol > 0) {
-      df.flowRateSteps.forEach(step => {
-        if (step.volumeM3 > 0) {
-          const vol = step.volumeM3 * configuredDispScale;
-          if (vol > 0) {
-            stages.push({ name: df.name, volume: vol, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc, fluidType: 'displacement' as AnnularFluidType });
-          }
-        }
-      });
-    } else {
-      df.flowRateSteps.forEach(step => {
-        if (fallbackDispStageVolume > 0 && step.rateLps > 0) {
-          stages.push({ name: df.name, volume: fallbackDispStageVolume, densityGcm3: df.density / 1000, pv: dfRheo.pv, yp: dfRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: cc, fluidType: 'displacement' as AnnularFluidType });
-        }
-      });
-    }
+  // Единая продавка: порции сохраняют свои объёмы, остаток/избыток балансируются
+  const dispScheduleSim = buildDisplacementSchedule(displacementFluids, displacementVol);
+  const fallbackDispRate = dispScheduleSim.find(it => it.rateLps > 0)?.rateLps ?? 5;
+  dispScheduleSim.forEach(it => {
+    stages.push({
+      name: it.name,
+      volume: it.volumeM3,
+      densityGcm3: it.densityGcm3,
+      pv: it.rheology.pv,
+      yp: it.rheology.yp,
+      rateLps: it.rateLps > 0 ? it.rateLps : fallbackDispRate,
+      isCement: false,
+      compressionCoeff: it.compressionCoeff,
+      fluidType: 'displacement' as AnnularFluidType,
+    });
   });
+
 
   let cementStartFound = false;
   let cementFreefallVol = 0; // объём, на который цемент ушёл вниз при паузе (надо догнать продавкой)

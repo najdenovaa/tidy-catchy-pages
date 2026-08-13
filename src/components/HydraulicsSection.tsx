@@ -28,7 +28,9 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
     wellData, slurries, displacementDensity / 1000, fractureGradient,
     drillingFluid?.rheology, dispFluid?.rheology, pumpRate,
     drillingFluid ? drillingFluid.density / 1000 : undefined,
-    buffers
+    buffers,
+    displacementFluids,
+    volumes.displacementVolume
   );
   const traj = getEffectiveTrajectory(wellData);
   const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);

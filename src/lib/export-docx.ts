@@ -278,7 +278,9 @@ function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volume
   const pumpRate = dispFluid ? getFlowRateLps(dispFluid.flowRateSteps) : 0;
   const results = calculateHydraulics(wellData, slurries, (dispFluid?.density ?? 1000) / 1000, fractureGradient, drillingFluid.rheology, dispFluid?.rheology, pumpRate,
     drillingFluid ? drillingFluid.density / 1000 : undefined,
-    buffers
+    buffers,
+    displacementFluids,
+    volumes.displacementVolume
   );
   const traj = getEffectiveTrajectory(wellData);
   const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);
