@@ -931,9 +931,17 @@ export function calculateHydraulics(
     const pipeAreaM2 = (Math.PI / 4) * (casingID / 1000) * (casingID / 1000);
     const flowRateM3min = rate * 0.06;
 
-    // Трубное — продавочная жидкость
+    // Трубное — продавочная жидкость (по всем порциям: посекционные потери)
     const dispRheo = displacementRheology ? effectiveRheology(displacementRheology, 'displacement') : DEFAULT_RHEOLOGY.displacement;
-    frictionPipe = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydPipe, dispRheo.pv, dispRheo.yp, pipeAreaM2, displacementDensity * 1000).pressureMPa;
+    if (dispComposite && dispComposite.totalVolM3 > 0) {
+      frictionPipe = dispSchedule.reduce((sum, it) => {
+        const lenShare = data.casingDepthMD * (it.volumeM3 / dispComposite.totalVolM3);
+        return sum + frictionLossWithRegime(flowRateM3min, lenShare, dHydPipe, it.rheology.pv, it.rheology.yp, pipeAreaM2, it.densityGcm3 * 1000).pressureMPa;
+      }, 0);
+    } else {
+      frictionPipe = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydPipe, dispRheo.pv, dispRheo.yp, pipeAreaM2, displacementDensity * 1000).pressureMPa;
+    }
+
 
     // Затрубное — двухсекционное (межколонное + открытый ствол)
     const mudRheoH = drillingFluidRheology ? effectiveRheology(drillingFluidRheology, 'mud') : DEFAULT_RHEOLOGY.mud;
