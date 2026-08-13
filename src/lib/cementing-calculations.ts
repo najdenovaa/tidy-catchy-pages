@@ -1452,7 +1452,7 @@ export function calculatePressureProfile(
       densityGcm3: it.densityGcm3,
       pv: it.rheology.pv,
       yp: it.rheology.yp,
-      rateLps: it.rateLps,
+      rateLps: it.rateLps > 0 ? it.rateLps : fallbackDispRate,
       isCement: false,
       compressionCoeff: it.compressionCoeff,
       fluidType: 'displacement' as AnnularFluidType,
