@@ -2,8 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
-import geoladLogo from "@/assets/geolad.jpg.asset.json";
-import nefteservisLogo from "@/assets/nefteservis-logo.png.asset.json";
+import geoladLogo from "@/assets/geolad-logo.png";
+import nefteservisLogo from "@/assets/nefteservis-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
 import { supabase } from "@/integrations/supabase/client";
@@ -78,10 +78,10 @@ export default function Home() {
                 <span className="text-[10px] sm:text-xs text-muted-foreground italic mb-0.5">при поддержке</span>
                 <div className="flex items-center gap-3">
                   <a href="http://geolad.ru/" target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition-opacity">
-                    <img src={geoladLogo.url} alt="Геолад" className="h-9 sm:h-12 w-auto object-contain" />
+                    <img src={geoladLogo} alt="Геолад" className="h-7 sm:h-9 w-auto object-contain" />
                   </a>
                   <a href="https://nefteserv.ru/" target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition-opacity">
-                    <img src={nefteservisLogo.url} alt="Нефтесервис" className="h-4 sm:h-6 w-auto object-contain" />
+                    <img src={nefteservisLogo} alt="Нефтесервис" className="h-6 sm:h-7 w-auto object-contain" />
                   </a>
                 </div>
               </div>
