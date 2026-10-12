@@ -2,14 +2,20 @@
  * Workover (КРС) calculations — full physics.
  * Blocks: 0 well data, 1 packers, 2 drag & lubricants, 3 stuck pipe, 4 fishing, 5 rig capacity.
  *
- * All formulas: real physics, no fitted constants.
- *   • drag           : Johancsik soft-string  T += w·cosθ ± μ·w·sinθ
+ * Formulas:
+ *   • drag           : soft-string  T += w·cosθ ± μ·Fn  (нагрузка на крюке — на устье)
+ *   • hydraulics     : Бингам, ламинар (труба 32μv/D²+16τ/3D, зазор 48μv/Dh²+6τ/Dh)
+ *                      vs турбулентный режим (Блазиус), берётся больший градиент
  *   • diff. sticking : F = μ · ΔP · A_contact
  *   • free point     : Hooke's law  L = E·A·ΔL / ΔF
- *   • packer hold    : F = μ · P_set · π·D·L
+ *   • packer hold    : F = μ · P_set · π·D·L   (оценка; заменить паспортом пакера)
  *   • lubricant      : CoF directly from lubricity tester (OFITE/Fann)
- *   • pipe limit     : σ_yield · A / SF
+ *   • pipe limit     : min(тело, резьба) · остаточная прочность / SF
+ *   • jar            : растяжение по Гуку, скорость по волновому сопротивлению F/(A·√(Eρ))
  */
+
+const G = 9.81;
+const STEEL_DENSITY = 7850; // кг/м³
 
 import type { TrajectoryPoint } from "./cementing-calculations";
 
@@ -34,15 +40,93 @@ export interface WorkoverWellData {
   fluidDensity_gcm3: number;
   fluidPV_cP: number;
   fluidYP_Pa: number;
+  /** Тип соединения НКТ: гладкая (NU), с высаженными концами (EUE), безмуфтовая/премиум */
+  connectionType?: ConnectionType;
+  /** Остаточная прочность трубы с учётом износа/коррозии, % (новая = 100) */
+  pipeConditionPct?: number;
 }
+
+export type ConnectionType = "nu" | "eue" | "premium";
+
+/**
+ * Отношение прочности резьбового соединения к прочности тела трубы.
+ * Гладкая НКТ (API NU, ГОСТ 633 гладкая): по табличным данным API 5C2/5C3
+ * для 2-3/8", 2-7/8", 3-1/2" N80 соединение ≈ 0.69 от тела трубы.
+ * EUE и премиум — равнопрочны телу.
+ */
+export const CONNECTION_EFFICIENCY: Record<ConnectionType, number> = {
+  nu: 0.69,
+  eue: 1.0,
+  premium: 1.0,
+};
+
+export const CONNECTION_LABELS: Record<ConnectionType, string> = {
+  nu: "Гладкая (NU)",
+  eue: "Высаженные концы (EUE/В)",
+  premium: "Безмуфтовая / премиум",
+};
 
 export function pipeCrossArea_m2(od_mm: number, id_mm: number): number {
   const od = od_mm / 1000, id = id_mm / 1000;
-  return (Math.PI / 4) * (od * od - id * id);
+  return (Math.PI / 4) * Math.max(0, od * od - id * id);
 }
 
+/** Предел текучести тела трубы, кН (без запаса и износа). */
+export function pipeBodyYieldKN(well: WorkoverWellData): number {
+  return (well.pipeYieldMPa * 1e6 * pipeCrossArea_m2(well.pipeOD_mm, well.pipeID_mm)) / 1000;
+}
+
+/** Допустимая растягивающая нагрузка: min(тело, резьба) × остаточная прочность ÷ SF. */
 export function pipeYieldForceKN(well: WorkoverWellData, sf = 1.25): number {
-  return (well.pipeYieldMPa * 1e6 * pipeCrossArea_m2(well.pipeOD_mm, well.pipeID_mm)) / 1000 / sf;
+  const conn = CONNECTION_EFFICIENCY[well.connectionType ?? "nu"];
+  const cond = Math.min(100, Math.max(1, well.pipeConditionPct ?? 100)) / 100;
+  return (pipeBodyYieldKN(well) * conn * cond) / sf;
+}
+
+// ────────── Гидравлика (Бингам: ламинарный / турбулентный) ──────────
+
+export interface FlowResult {
+  gradPaM: number;
+  velocityMs: number;
+  reynolds: number;
+  turbulent: boolean;
+}
+
+function frictionGradient(
+  geometry: "pipe" | "annulus",
+  rho_kgm3: number, pv_cP: number, yp_Pa: number,
+  diam_m: number, area_m2: number, rate_m3s: number,
+): FlowResult {
+  const mu = Math.max(1e-4, pv_cP / 1000);
+  const D = Math.max(1e-4, diam_m);
+  const v = rate_m3s / Math.max(1e-8, area_m2);
+  const laminar = geometry === "pipe"
+    ? (32 * mu * v) / (D * D) + (16 * yp_Pa) / (3 * D)
+    : (48 * mu * v) / (D * D) + (6 * yp_Pa) / D;
+  const re = (rho_kgm3 * v * D) / mu;
+  const fanning = re > 2100 ? 0.0791 / Math.pow(re, 0.25) : 0;
+  const turbulentGrad = (2 * fanning * rho_kgm3 * v * v) / D;
+  const turbulent = turbulentGrad > laminar;
+  return { gradPaM: Math.max(laminar, turbulentGrad), velocityMs: v, reynolds: re, turbulent };
+}
+
+/** Потери на трение в НКТ, МПа. */
+export function tubingFrictionMPa(
+  lengthM: number, tubingID_mm: number, rho_gcm3: number, pv_cP: number, yp_Pa: number, rateLs: number,
+): FlowResult & { lossMPa: number } {
+  const D = tubingID_mm / 1000;
+  const r = frictionGradient("pipe", rho_gcm3 * 1000, pv_cP, yp_Pa, D, (Math.PI / 4) * D * D, rateLs / 1000);
+  return { ...r, lossMPa: (r.gradPaM * lengthM) / 1e6 };
+}
+
+/** Потери на трение в затрубье, МПа. */
+export function annulusFrictionMPa(
+  lengthM: number, casingID_mm: number, tubingOD_mm: number, rho_gcm3: number, pv_cP: number, yp_Pa: number, rateLs: number,
+): FlowResult & { lossMPa: number } {
+  const Dh = Math.max(0.005, (casingID_mm - tubingOD_mm) / 1000);
+  const A = (Math.PI / 4) * ((casingID_mm / 1000) ** 2 - (tubingOD_mm / 1000) ** 2);
+  const r = frictionGradient("annulus", rho_gcm3 * 1000, pv_cP, yp_Pa, Dh, A, rateLs / 1000);
+  return { ...r, lossMPa: (r.gradPaM * lengthM) / 1e6 };
 }
 
 function interpolateZenithDeg(md: number, traj: TrajectoryPoint[]): number {
@@ -158,6 +242,8 @@ export interface PackerReleaseInput {
   pipeYieldMPa: number;
   pipeOD_mm: number;
   pipeID_mm: number;
+  /** Допустимая нагрузка на колонну (с учётом резьбы, износа и запаса), кН. Если задана — используется вместо тела трубы ÷1.25. */
+  pipeTensileLimitKN?: number;
 }
 
 export interface PackerReleaseResult {
@@ -176,7 +262,7 @@ export function calculatePackerRelease(input: PackerReleaseInput): PackerRelease
   const releaseForce = input.holdCapacityKN + adhesion + scaleStick;
   const totalPull = releaseForce + input.pipeWeightAboveKN;
   const A = (Math.PI / 4) * ((input.pipeOD_mm / 1000) ** 2 - (input.pipeID_mm / 1000) ** 2);
-  const tensileLimit = (input.pipeYieldMPa * 1e6 * A) / 1000 / 1.25;
+  const tensileLimit = input.pipeTensileLimitKN ?? (input.pipeYieldMPa * 1e6 * A) / 1000 / 1.25;
   const canRelease = totalPull < tensileLimit;
 
   let mechanism: ReleaseMechanism;
@@ -248,6 +334,9 @@ export interface KillInput {
   killFluidYP_Pa: number;
   pumpRateLs: number;
   safetyMarginPct: number;
+  /** Реология жидкости, находящейся в скважине (для давления начала циркуляции). По умолчанию = жидкость глушения. */
+  currentFluidPV_cP?: number;
+  currentFluidYP_Pa?: number;
   /** Опциональный профиль секций для расчёта потерь по интервалам разного диаметра */
   sections?: KillSection[];
 }
@@ -257,71 +346,95 @@ export interface KillResult {
   balanceDensity: number;
   bottomholePressureMPa: number;
   killVolumeM3: number;
+  tubingVolumeM3: number;
+  annulusVolumeM3: number;
+  /** Избыточное давление в трубах при закрытой скважине: Pпл − ρтек·g·H */
+  sidppMPa: number;
+  /** Давление прокачки (трение НКТ + затрубье) текущей жидкостью */
+  circPressureCurrentMPa: number;
   initialCircPressureMPa: number;
   finalCircPressureMPa: number;
+  tubingFrictionMPa: number;
+  annulusFrictionMPa: number;
+  tubingTurbulent: boolean;
+  annulusTurbulent: boolean;
+  tubingVelocityMs: number;
+  annulusVelocityMs: number;
+  /** Задавка: устьевое давление в начале (скважина заполнена текущей жидкостью) */
   bullheadSurfacePressureMPa: number;
+  /** Задавка: устьевое давление в конце (НКТ заполнены жидкостью глушения) */
+  bullheadEndPressureMPa: number;
+  /** Задавка: максимально допустимое устьевое давление в начале (по ГРП) */
+  bullheadMaxSurfaceMPa: number;
   exceedsFracture: boolean;
+  /** Суммарные потери на трение при циркуляции жидкостью глушения (НКТ + затрубье) */
   frictionLossMPa: number;
   selectedFluid: string;
   warnings: string[];
   recommendation: string;
 }
 
-/** Сектциональный расчёт потерь трения в затрубье (Бингам по секциям). */
+/** Секционный расчёт потерь трения в затрубье (Бингам, ламинар/турбулент), МПа. */
 export function calculateKillFriction(
   sections: KillSection[],
   pumpRateLs: number,
   killFluidPV_cP: number,
   killFluidYP_Pa: number,
+  density_gcm3 = 1.0,
 ): number {
-  let totalLoss = 0; // МПа
+  let totalLoss = 0;
   for (const sec of sections) {
-    const dhAnn = Math.max(0.005, (sec.casingID_mm - sec.tubingOD_mm) / 1000);
-    const annArea =
-      (Math.PI / 4) * ((sec.casingID_mm / 1000) ** 2 - (sec.tubingOD_mm / 1000) ** 2);
-    const v = pumpRateLs / 1000 / Math.max(1e-6, annArea);
-    const dpdl =
-      killFluidYP_Pa / (0.2 * dhAnn) + ((killFluidPV_cP / 1000) * v) / (1.5 * dhAnn * dhAnn);
-    totalLoss += (dpdl * sec.lengthM) / 1e6;
+    totalLoss += annulusFrictionMPa(
+      sec.lengthM, sec.casingID_mm, sec.tubingOD_mm, density_gcm3, killFluidPV_cP, killFluidYP_Pa, pumpRateLs,
+    ).lossMPa;
   }
   return totalLoss;
 }
 
 export function calculateKill(input: KillInput): KillResult {
-  const G = 9.81;
   const tvd = Math.max(1, input.reservoirDepthTVD);
+  const md = Math.max(1, input.wellDepthMD);
 
   const balanceDensity = (input.formationPressureMPa * 1e6) / (G * tvd) / 1000;
   const killDensity = balanceDensity * (1 + input.safetyMarginPct / 100);
   const bhp = (killDensity * 1000 * G * tvd) / 1e6;
   const exceedsFracture = bhp > input.fracturePressureMPa;
 
-  const tubingCapacity = (Math.PI / 4) * (input.tubingID_mm / 1000) ** 2 * input.wellDepthMD;
-  const annulusCapacity =
-    (Math.PI / 4) * ((input.casingID_mm / 1000) ** 2 - (input.tubingOD_mm / 1000) ** 2) * input.wellDepthMD;
-  const killVolume = tubingCapacity + annulusCapacity;
+  const tubingVolume = (Math.PI / 4) * (input.tubingID_mm / 1000) ** 2 * md;
+  const annulusVolume =
+    (Math.PI / 4) * Math.max(0, (input.casingID_mm / 1000) ** 2 - (input.tubingOD_mm / 1000) ** 2) * md;
+  const killVolume = tubingVolume + annulusVolume;
 
-  // Потери на трение: по секциям профиля, либо одно-секционный fallback
-  let frictionLoss: number;
-  if (input.sections && input.sections.length > 0) {
-    frictionLoss = calculateKillFriction(
-      input.sections, input.pumpRateLs, input.killFluidPV_cP, input.killFluidYP_Pa,
-    );
-  } else {
-    const dhAnn = Math.max(0.005, (input.casingID_mm - input.tubingOD_mm) / 1000);
-    const annArea = (Math.PI / 4) * ((input.casingID_mm / 1000) ** 2 - (input.tubingOD_mm / 1000) ** 2);
-    const vAnn = input.pumpRateLs / 1000 / Math.max(1e-6, annArea);
-    const dpdlAnn =
-      input.killFluidYP_Pa / (0.2 * dhAnn) + ((input.killFluidPV_cP / 1000) * vAnn) / (1.5 * dhAnn * dhAnn);
-    frictionLoss = (dpdlAnn * input.wellDepthMD) / 1e6;
-  }
+  const curPV = input.currentFluidPV_cP ?? input.killFluidPV_cP;
+  const curYP = input.currentFluidYP_Pa ?? input.killFluidYP_Pa;
 
-  const pumpPressure = frictionLoss;
-  const ICP = pumpPressure + ((killDensity - input.currentMudDensity) * 1000 * G * tvd) / 1e6;
-  const FCP = pumpPressure * (killDensity / Math.max(0.01, input.currentMudDensity));
+  const annulusLoss = (rho: number, pv: number, yp: number) =>
+    input.sections && input.sections.length > 0
+      ? { lossMPa: calculateKillFriction(input.sections, input.pumpRateLs, pv, yp, rho), turbulent: false, velocityMs: 0 }
+      : annulusFrictionMPa(md, input.casingID_mm, input.tubingOD_mm, rho, pv, yp, input.pumpRateLs);
 
+  // Циркуляция жидкостью глушения
+  const tubKill = tubingFrictionMPa(md, input.tubingID_mm, killDensity, input.killFluidPV_cP, input.killFluidYP_Pa, input.pumpRateLs);
+  const annKill = annulusLoss(killDensity, input.killFluidPV_cP, input.killFluidYP_Pa);
+  // Циркуляция текущей жидкостью
+  const tubCur = tubingFrictionMPa(md, input.tubingID_mm, input.currentMudDensity, curPV, curYP, input.pumpRateLs);
+  const annCur = annulusLoss(input.currentMudDensity, curPV, curYP);
+
+  const circCurrent = tubCur.lossMPa + annCur.lossMPa;
+  const circKill = tubKill.lossMPa + annKill.lossMPa;
+
+  const hydroCur = (input.currentMudDensity * 1000 * G * tvd) / 1e6;
   const killHydro = (killDensity * 1000 * G * tvd) / 1e6;
-  const bullheadSurface = Math.max(0, input.formationPressureMPa - killHydro + frictionLoss);
+  const sidpp = Math.max(0, input.formationPressureMPa - hydroCur);
+
+  // Метод ожидания/бурильщика: ICP = Pизб.тр + Pпрокачки; FCP = Pпрокачки жидкостью глушения
+  const ICP = sidpp + circCurrent;
+  const FCP = circKill;
+
+  // Задавка в НКТ: на забое нужно ≥ Pпл, не более Pгрп
+  const bullheadStart = Math.max(0, input.formationPressureMPa - hydroCur + tubCur.lossMPa);
+  const bullheadEnd = Math.max(0, input.formationPressureMPa - killHydro + tubKill.lossMPa);
+  const bullheadMax = Math.max(0, input.fracturePressureMPa - hydroCur + tubCur.lossMPa);
 
   const fluid = KILL_FLUIDS.find((f) => f.maxDensity >= killDensity) ?? KILL_FLUIDS[KILL_FLUIDS.length - 1];
 
@@ -330,8 +443,27 @@ export function calculateKill(input: KillInput): KillResult {
     warnings.push(
       `🔴 Забойное давление глушения ${bhp.toFixed(1)} МПа > ГРП ${input.fracturePressureMPa.toFixed(1)} МПа. Риск поглощения! Снизить плотность или применить поэтапное глушение.`,
     );
-  if (input.method === "bullhead" && bullheadSurface * 1.5 > input.fracturePressureMPa - killHydro)
-    warnings.push("⚠ Bullheading: давление задавки близко к ГРП. Контролировать устьевое давление.");
+  if ((input.method === "driller" || input.method === "wait_weight")) {
+    const ecd = (killHydro + annKill.lossMPa);
+    if (!exceedsFracture && ecd > input.fracturePressureMPa)
+      warnings.push(
+        `🔴 С учётом трения в затрубье (${annKill.lossMPa.toFixed(1)} МПа) забойное ${ecd.toFixed(1)} МПа > ГРП. Снизить расход насоса.`,
+      );
+  }
+  if (input.method === "bullhead") {
+    if (bullheadStart >= bullheadMax)
+      warnings.push(
+        `🔴 Задавка невозможна без ГРП: нужно ${bullheadStart.toFixed(1)} МПа на устье, допустимо ${bullheadMax.toFixed(1)} МПа. Снизить расход или сменить метод.`,
+      );
+    else if (bullheadStart > 0.85 * bullheadMax)
+      warnings.push(
+        `⚠ Задавка: устьевое ${bullheadStart.toFixed(1)} МПа близко к пределу ${bullheadMax.toFixed(1)} МПа по ГРП. Контролировать давление.`,
+      );
+  }
+  if (tubKill.lossMPa > 0.7 * Math.max(circKill, 1e-6) && tubKill.turbulent)
+    warnings.push(
+      `Основные потери — в НКТ (${tubKill.lossMPa.toFixed(1)} МПа, турбулентный режим). Давление насоса сильно зависит от расхода: −20% расхода ≈ −30% потерь.`,
+    );
   if (killDensity > 2.3)
     warnings.push(
       `⚠ Требуется плотность ${killDensity.toFixed(2)} г/см³ — нужны утяжелители (барит/гематит) или соли (CaCl₂, CaBr₂, ZnBr₂).`,
@@ -345,14 +477,14 @@ export function calculateKill(input: KillInput): KillResult {
       break;
     case "wait_weight":
       recommendation =
-        "Метод ожидания: сразу закачка утяжелённой жидкости за 1 циркуляцию. Быстрее, ниже давления, но требует точного расчёта.";
+        "Метод ожидания: сразу закачка утяжелённой жидкости за 1 циркуляцию. Давление насоса снижается от ICP до FCP, пока жидкость глушения заполняет НКТ, затем держится на FCP.";
       break;
     case "volumetric":
       recommendation =
         "Объёмный метод: без циркуляции (нет доступа к забою). Стравливание газа порциями с поддержанием давления.";
       break;
     case "bullhead":
-      recommendation = `Прямая задавка в пласт: устьевое давление ${bullheadSurface.toFixed(1)} МПа. Применять, когда циркуляция невозможна. ОБЯЗАТЕЛЬНО проверить ГРП.`;
+      recommendation = `Прямая задавка в пласт через НКТ: устьевое давление ${bullheadStart.toFixed(1)} → ${bullheadEnd.toFixed(1)} МПа по мере заполнения НКТ, предел по ГРП ${bullheadMax.toFixed(1)} МПа. Без учёта приёмистости пласта.`;
       break;
   }
 
@@ -361,11 +493,23 @@ export function calculateKill(input: KillInput): KillResult {
     balanceDensity,
     bottomholePressureMPa: bhp,
     killVolumeM3: killVolume,
+    tubingVolumeM3: tubingVolume,
+    annulusVolumeM3: annulusVolume,
+    sidppMPa: sidpp,
+    circPressureCurrentMPa: circCurrent,
     initialCircPressureMPa: ICP,
     finalCircPressureMPa: FCP,
-    bullheadSurfacePressureMPa: bullheadSurface,
+    tubingFrictionMPa: tubKill.lossMPa,
+    annulusFrictionMPa: annKill.lossMPa,
+    tubingTurbulent: tubKill.turbulent,
+    annulusTurbulent: annKill.turbulent,
+    tubingVelocityMs: tubKill.velocityMs,
+    annulusVelocityMs: annKill.velocityMs,
+    bullheadSurfacePressureMPa: bullheadStart,
+    bullheadEndPressureMPa: bullheadEnd,
+    bullheadMaxSurfaceMPa: bullheadMax,
     exceedsFracture,
-    frictionLossMPa: frictionLoss,
+    frictionLossMPa: circKill,
     selectedFluid: fluid.name,
     warnings,
     recommendation,
@@ -388,6 +532,8 @@ export interface DragInput {
   operation: DragOperation;
   frictionCoeff: number;
   lubricant?: LubricantInput;
+  /** Нагрузка, приложенная к низу колонны (рыба, натяжка, пакер), кН. Растягивающая > 0. */
+  bottomLoadKN?: number;
 }
 
 export interface DragPoint {
@@ -411,7 +557,7 @@ export function calculateDrag(input: DragInput, well: WorkoverWellData): DragRes
   const bf = 1 - well.fluidDensity_gcm3 / 7.85;
   const mu = input.lubricant ? input.lubricant.lubricatedFrictionCoeff : input.frictionCoeff;
 
-  let tension = 0;
+  let tension = (input.bottomLoadKN ?? 0) * 1000;
   let freeWeight = 0;
   const points: DragPoint[] = [];
 
@@ -452,7 +598,8 @@ export function calculateDrag(input: DragInput, well: WorkoverWellData): DragRes
   points.reverse();
   return {
     points,
-    maxHookLoadKN: points[points.length - 1]?.hookLoadKN ?? 0,
+    // Нагрузка на крюке — натяжение у устья (первая точка после разворота: наименьшая MD)
+    maxHookLoadKN: points[0]?.hookLoadKN ?? 0,
     freeWeightKN: freeWeight / 1000,
     appliedFrictionCoeff: mu,
   };
@@ -547,6 +694,10 @@ export interface StuckDiagnosis {
   freeingForceKN: number;
   pipeYieldKN: number;
   rigAllowableKN?: number;
+  /** Нагрузка от колонны над точкой прихвата (вес + затяжки), кН */
+  stringLoadKN: number;
+  /** Требуемая нагрузка на крюке для освобождения натяжкой, кН */
+  requiredHookLoadKN: number;
   canFreeByPull: boolean;
   recommendation: string;
 }
@@ -566,6 +717,7 @@ export function diagnoseStuck(
   well: WorkoverWellData,
   symptoms: StuckSymptoms,
   rigAllowableKN?: number,
+  stringLoadKN = 0,
 ): StuckDiagnosis {
   let type: StuckType;
   if (symptoms.canRotate && !symptoms.canMoveUp && !symptoms.canMoveDown) type = "differential";
@@ -585,7 +737,8 @@ export function diagnoseStuck(
 
   const pipeYield = pipeYieldForceKN(well);
   const limit = rigAllowableKN ? Math.min(pipeYield, rigAllowableKN) : pipeYield;
-  const canFree = freeingForce > 0 && freeingForce < limit;
+  const requiredHook = stringLoadKN + freeingForce;
+  const canFree = freeingForce > 0 && requiredHook < limit;
 
   const recommendation =
     type === "differential"
@@ -602,6 +755,8 @@ export function diagnoseStuck(
     freeingForceKN: freeingForce,
     pipeYieldKN: pipeYield,
     rigAllowableKN,
+    stringLoadKN,
+    requiredHookLoadKN: requiredHook,
     canFreeByPull: canFree,
     recommendation,
   };
@@ -614,54 +769,98 @@ export interface FishingInput {
   fishWeightKN: number;
   overpullKN: number;
   jarType?: "mechanical" | "hydraulic";
-  jarStretchM?: number;
-  hammerMassKg?: number;     // масса ударной массы ясса (по умолчанию 500 кг)
-  impactTimeMs?: number;     // длительность удара (по умолчанию 5 мс)
+  /** УБТ / утяжелённые трубы над яссом (ударная масса). 0 — ясс в компоновке НКТ без УБТ. */
+  collarLengthM?: number;
+  collarOD_mm?: number;
+  collarID_mm?: number;
+  /** Коэффициент трения для расчёта затяжек ловильной колонны (по умолчанию 0.3) */
+  frictionCoeff?: number;
 }
 
 export interface FishingResult {
+  /** Нагрузка на крюке при натяжке (вес колонны + затяжки + УБТ + рыба + натяжка), кН */
   requiredHookLoadKN: number;
-  jarImpactKN: number;
+  /** Нагрузка на крюке без натяжки (взвешенная колонна с рыбой), кН */
+  stringLoadKN: number;
+  /** Растяжение колонны при натяжке, м (по Гуку) */
+  jarStretchM: number;
+  /** Упругая энергия, запасённая в колонне при взводе: ½·F·x, Дж */
   jarEnergyJ: number;
+  /** Скорость ударной части в момент срабатывания: F / (A·√(E·ρ)), м/с */
   jarVelocityMs: number;
+  /** Оценка ударной силы, диапазон, кН */
+  jarImpactLowKN: number;
+  jarImpactHighKN: number;
+  /** Допустимая нагрузка на колонну (резьба, износ, запас), кН */
   maxSafeHookLoadKN: number;
   canEngage: boolean;
   recommendation: string;
+  warnings: string[];
 }
 
 export function calculateFishing(input: FishingInput, well: WorkoverWellData): FishingResult {
-  let jarImpact = 0;
-  let jarEnergy = 0;
-  let jarVelocity = 0;
+  const E = well.pipeYoungModulusGPa * 1e9;
+  const L = Math.max(1, Math.min(input.fishTopMD, well.wellDepthMD));
+  const Ap = pipeCrossArea_m2(well.pipeOD_mm, well.pipeID_mm);
+  const bf = 1 - well.fluidDensity_gcm3 / 7.85;
 
-  if (input.jarType && input.jarStretchM && input.jarStretchM > 0) {
-    const hammerMass = input.hammerMassKg ?? 500;
-    const impactTime = (input.impactTimeMs ?? 5) / 1000; // c
-    // Жёсткость свободной колонны k = E·A/L
-    const A = pipeCrossArea_m2(well.pipeOD_mm, well.pipeID_mm);
-    const L = Math.max(1, input.fishTopMD);
-    const k = (well.pipeYoungModulusGPa * 1e9 * A) / L; // Н/м
-    // Накопленная упругая энергия в колонне: E = ½·k·x²
-    jarEnergy = 0.5 * k * input.jarStretchM * input.jarStretchM; // Дж
-    // Скорость молота в момент удара: v = √(2E/m)
-    jarVelocity = Math.sqrt((2 * jarEnergy) / hammerMass); // м/с
-    // Пиковая ударная сила: F = m·v/Δt
-    jarImpact = (hammerMass * jarVelocity) / Math.max(1e-6, impactTime) / 1000; // кН
-  }
+  const collarLen = Math.max(0, input.collarLengthM ?? 0);
+  const Ac = collarLen > 0 ? pipeCrossArea_m2(input.collarOD_mm ?? 0, input.collarID_mm ?? 0) : 0;
+  const collarWeightKN = (Ac * STEEL_DENSITY * collarLen * G * bf) / 1000;
+
+  // Затяжки колонны до головы рыбы: внизу висит рыба + УБТ + натяжка
+  const pipeLen = Math.max(1, L - collarLen);
+  const segWell = { ...well, wellDepthMD: pipeLen };
+  const mu = input.frictionCoeff ?? 0.3;
+  const withPull = calculateDrag(
+    { operation: "pull_out", frictionCoeff: mu, bottomLoadKN: input.fishWeightKN + collarWeightKN + input.overpullKN },
+    segWell,
+  );
+  const noPull = calculateDrag(
+    { operation: "pull_out", frictionCoeff: mu, bottomLoadKN: input.fishWeightKN + collarWeightKN },
+    segWell,
+  );
+  const required = withPull.maxHookLoadKN;
+
+  // Ясс: растяжение и энергия взвода, скорость по волновому сопротивлению трубы над яссом
+  const F = Math.max(0, input.overpullKN) * 1000;
+  const stretch = (F * pipeLen) / Math.max(1e-6, E * Ap);
+  const energy = 0.5 * F * stretch;
+  const hammerArea = Ac > 0 ? Ac : Ap;
+  const impedance = hammerArea * Math.sqrt(E * STEEL_DENSITY); // Н·с/м
+  const velocity = F / Math.max(1e-6, impedance);
+  // Ударная сила: оценка через коэффициент усиления к натяжке.
+  // НКТ без УБТ ≈ 1.0–1.5; с УБТ над яссом ≈ 1.5–3 (рекомендации производителей яссов).
+  const [kLow, kHigh] = collarLen > 0 ? [1.5, 3] : [1.0, 1.5];
+  const jarOn = !!input.jarType && F > 0;
 
   const maxSafe = pipeYieldForceKN(well);
-  const required = input.fishWeightKN + input.overpullKN;
+  const canEngage = required < maxSafe;
+
+  const warnings: string[] = [];
+  if (!canEngage)
+    warnings.push(
+      `🔴 Нагрузка на крюке ${required.toFixed(0)} кН > допустимой для колонны ${maxSafe.toFixed(0)} кН. Уменьшить натяжку или сменить колонну.`,
+    );
+  if (well.connectionType === "nu" || well.connectionType === undefined)
+    warnings.push("Гладкие НКТ: предел ограничен резьбой (≈69% тела трубы). Для ловильных работ предпочтительны НКТ с высаженными концами или бурильные трубы.");
+  if (jarOn && collarLen === 0)
+    warnings.push("Нет УБТ над яссом — удар слабый (≈ натяжке). Для эффективной работы ясса установить УБТ/утяжелённые трубы над яссом.");
+
   return {
     requiredHookLoadKN: required,
-    jarImpactKN: jarImpact,
-    jarEnergyJ: jarEnergy,
-    jarVelocityMs: jarVelocity,
+    stringLoadKN: noPull.maxHookLoadKN,
+    jarStretchM: jarOn ? stretch : 0,
+    jarEnergyJ: jarOn ? energy : 0,
+    jarVelocityMs: jarOn ? velocity : 0,
+    jarImpactLowKN: jarOn ? input.overpullKN * kLow : 0,
+    jarImpactHighKN: jarOn ? input.overpullKN * kHigh : 0,
     maxSafeHookLoadKN: maxSafe,
-    canEngage: required < maxSafe,
-    recommendation:
-      jarImpact > 0
-        ? `Ясс: энергия ${(jarEnergy / 1000).toFixed(0)} кДж, скорость удара ${jarVelocity.toFixed(1)} м/с, пиковая сила ${jarImpact.toFixed(0)} кН. Серия ударов для прихваченной рыбы.`
-        : "Захват рыбы натяжением. При неудаче — применить ясс.",
+    canEngage,
+    recommendation: jarOn
+      ? `Ясс: натяжка ${input.overpullKN.toFixed(0)} кН растягивает колонну на ${stretch.toFixed(2)} м, скорость ударной части ≈ ${velocity.toFixed(1)} м/с, удар ≈ ${(input.overpullKN * kLow).toFixed(0)}–${(input.overpullKN * kHigh).toFixed(0)} кН. Оценка; точные значения — по программе производителя ясса.`
+      : "Захват рыбы натяжением. При неудаче — применить ясс.",
+    warnings,
   };
 }
 
@@ -825,6 +1024,8 @@ export interface KillInterval {
   topTVD: number;
   bottomTVD: number;
   formationPressureMPa: number;
+  /** Давление гидроразрыва (поглощения) интервала, МПа. 0/не задано — не проверяется. */
+  fracturePressureMPa?: number;
   intervalType: "kill_zone" | "kick_zone" | "transit";
   requiredKillDensity: number;
 }
@@ -846,7 +1047,6 @@ export function planMultiIntervalKill(
   safetyMarginPct: number,
   temperatureC: number = 20,
 ): MultiIntervalKill {
-  const G = 9.81;
   const withDensity: KillInterval[] = intervals.map((iv) => {
     const tvd = Math.max(1, iv.bottomTVD);
     const bal = (iv.formationPressureMPa * 1e6) / (G * tvd) / 1000;
@@ -862,10 +1062,18 @@ export function planMultiIntervalKill(
 
   const warnings: string[] = [];
   withDensity.forEach((iv, i) => {
-    if (i === governing) return;
     const bhp = (governingDensity * 1000 * G * iv.bottomTVD) / 1e6;
     const excess = bhp - iv.formationPressureMPa;
-    warnings.push(`Интервал ${iv.topMD.toFixed(0)}–${iv.bottomMD.toFixed(0)} м: ${bhp.toFixed(1)} МПа vs Pпл ${iv.formationPressureMPa.toFixed(1)} (избыток +${excess.toFixed(1)} МПа).`);
+    const name = `Интервал ${iv.topMD.toFixed(0)}–${iv.bottomMD.toFixed(0)} м`;
+    if (iv.fracturePressureMPa && iv.fracturePressureMPa > 0 && bhp > iv.fracturePressureMPa) {
+      warnings.push(`🔴 ${name}: давление ${bhp.toFixed(1)} МПа > Pгрп ${iv.fracturePressureMPa.toFixed(1)} МПа — поглощение. Нужна блокирующая пачка или поинтервальное глушение.`);
+      return;
+    }
+    if (i === governing) return;
+    const fracNote = iv.fracturePressureMPa && iv.fracturePressureMPa > 0
+      ? `, запас до ГРП ${(iv.fracturePressureMPa - bhp).toFixed(1)} МПа`
+      : ", Pгрп не задано — поглощение не проверено";
+    warnings.push(`${name}: ${bhp.toFixed(1)} МПа vs Pпл ${iv.formationPressureMPa.toFixed(1)} (избыток +${excess.toFixed(1)} МПа${fracNote}).`);
   });
   if (!recipe.feasible)
     warnings.push(`🔴 Определяющая плотность ${governingDensity.toFixed(2)} недостижима солью ${salt.name}.`);

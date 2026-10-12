@@ -17,8 +17,8 @@ import {
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import TermsFooter from "@/components/TermsFooter";
 import {
-  STEEL_GRADES,
-  pipeYieldForceKN,
+  STEEL_GRADES, CONNECTION_LABELS, type ConnectionType,
+  pipeYieldForceKN, pipeBodyYieldKN,
   calculatePacker, calculatePackerRelease, calculateDrag, calculateLubricant,
   calculateFreePoint, diagnoseStuck, calculateFishing, calculateRigCapacity,
   calculateKill, KILL_FLUIDS,
@@ -62,6 +62,8 @@ const DEFAULT_WELL: WorkoverWellData = {
   fluidDensity_gcm3: 1.10,
   fluidPV_cP: 15,
   fluidYP_Pa: 5,
+  connectionType: "nu",
+  pipeConditionPct: 100,
 };
 
 export default function Workover() {
@@ -69,12 +71,34 @@ export default function Workover() {
   const updateWell = <K extends keyof WorkoverWellData>(k: K, v: WorkoverWellData[K]) =>
     setWell((w) => ({ ...w, [k]: v }));
 
+  const pipeYield = useMemo(() => pipeYieldForceKN(well), [well]);
+  const pipeBody = useMemo(() => pipeBodyYieldKN(well), [well]);
+
+  // ──── Drag + lubricant ────
+  const [drag, setDrag] = useState<DragInput>({ operation: "pull_out", frictionCoeff: 0.30 });
+  const [lube, setLube] = useState<LubricantInput>({
+    name: "DeAll Slip-X", concentration: 2, baseFrictionCoeff: 0.34,
+    lubricatedFrictionCoeff: 0.12, penetrationIndex: 7,
+  });
+  const [useLube, setUseLube] = useState(false);
+  const dragNoLube = useMemo(() => calculateDrag({ ...drag, lubricant: undefined }, well), [drag, well]);
+  const dragLube = useMemo(() => calculateDrag({ ...drag, lubricant: lube }, well), [drag, well, lube]);
+  const activeDrag = useLube ? dragLube : dragNoLube;
+  /** Нагрузка на крюке при подъёме колонны длиной depth (вес + затяжки), кН */
+  const pullOutLoadTo = (depth: number) =>
+    calculateDrag({ operation: "pull_out", frictionCoeff: drag.frictionCoeff }, { ...well, wellDepthMD: Math.max(10, Math.min(depth, well.wellDepthMD)) }).maxHookLoadKN;
+  const pullOutFull = useMemo(() => pullOutLoadTo(well.wellDepthMD), [well, drag.frictionCoeff]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ──── Rig (used by summary) ────
   const [rig, setRig] = useState<RigInput>({
-    rigCapacityKN: 1000, derrickCapacityKN: 1250, safetyFactor: 1.5, currentHookLoadKN: 450,
+    rigCapacityKN: 1000, derrickCapacityKN: 1250, safetyFactor: 1.5, currentHookLoadKN: 0,
   });
-  const rigResult = useMemo(() => calculateRigCapacity(rig), [rig]);
-  const pipeYield = useMemo(() => pipeYieldForceKN(well), [well]);
+  const rigHookAuto = rig.currentHookLoadKN <= 0;
+  const rigEffective = useMemo<RigInput>(
+    () => ({ ...rig, currentHookLoadKN: rigHookAuto ? pullOutFull : rig.currentHookLoadKN }),
+    [rig, rigHookAuto, pullOutFull],
+  );
+  const rigResult = useMemo(() => calculateRigCapacity(rigEffective), [rigEffective]);
 
   // ──── Packer ────
   const [packer, setPacker] = useState<PackerInput>({
@@ -85,18 +109,21 @@ export default function Workover() {
 
   // ──── Packer RELEASE ────
   const [releaseExtra, setReleaseExtra] = useState({
-    monthsInService: 12, h2sPresent: false, scaleDepositRate: 6, pipeWeightAboveKN: 180,
+    monthsInService: 12, h2sPresent: false, scaleDepositRate: 6, pipeWeightAboveKN: 0,
   });
+  const weightAbovePackerAuto = useMemo(() => pullOutLoadTo(packer.setDepthMD), [well, drag.frictionCoeff, packer.setDepthMD]); // eslint-disable-line react-hooks/exhaustive-deps
+  const weightAbovePacker = releaseExtra.pipeWeightAboveKN > 0 ? releaseExtra.pipeWeightAboveKN : weightAbovePackerAuto;
   const releaseResult = useMemo(() => calculatePackerRelease({
     packerType: packer.type,
     holdCapacityKN: packerResult.holdCapacityKN,
     monthsInService: releaseExtra.monthsInService,
     h2sPresent: releaseExtra.h2sPresent,
     scaleDepositRate: releaseExtra.scaleDepositRate,
-    pipeWeightAboveKN: releaseExtra.pipeWeightAboveKN,
+    pipeWeightAboveKN: weightAbovePacker,
     pipeYieldMPa: well.pipeYieldMPa,
     pipeOD_mm: well.pipeOD_mm, pipeID_mm: well.pipeID_mm,
-  } as PackerReleaseInput), [packer.type, packerResult.holdCapacityKN, releaseExtra, well.pipeYieldMPa, well.pipeOD_mm, well.pipeID_mm]);
+    pipeTensileLimitKN: pipeYield,
+  } as PackerReleaseInput), [packer.type, packerResult.holdCapacityKN, releaseExtra, weightAbovePacker, well.pipeYieldMPa, well.pipeOD_mm, well.pipeID_mm, pipeYield]);
 
   // ──── Kill ────
   const [kill, setKill] = useState<KillInput>({
@@ -106,17 +133,32 @@ export default function Workover() {
     wellDepthMD: 2500, casingID_mm: 152, tubingOD_mm: 73, tubingID_mm: 62,
     killFluidPV_cP: 20, killFluidYP_Pa: 6, pumpRateLs: 8, safetyMarginPct: 5,
   });
-  const killResult = useMemo(() => calculateKill(kill), [kill]);
+  // Геометрия и текущая жидкость — из общих данных скважины
+  const killInput = useMemo<KillInput>(() => ({
+    ...kill,
+    wellDepthMD: well.wellDepthMD, casingID_mm: well.casingID_mm,
+    tubingOD_mm: well.pipeOD_mm, tubingID_mm: well.pipeID_mm,
+    currentMudDensity: well.fluidDensity_gcm3,
+    currentFluidPV_cP: well.fluidPV_cP, currentFluidYP_Pa: well.fluidYP_Pa,
+  }), [kill, well]);
+  const killResult = useMemo(() => calculateKill(killInput), [killInput]);
   const killChart = useMemo(() => {
-    const steps = 20;
+    // Ожидание/бурильщик: ICP → FCP, пока жидкость глушения заполняет НКТ, далее FCP.
+    // Задавка: начальное → конечное устьевое давление по объёму НКТ.
+    const isBull = kill.method === "bullhead";
+    const p0 = isBull ? killResult.bullheadSurfacePressureMPa : killResult.initialCircPressureMPa;
+    const p1 = isBull ? killResult.bullheadEndPressureMPa : killResult.finalCircPressureMPa;
+    const vt = killResult.tubingVolumeM3;
+    const vTotal = isBull ? vt : killResult.killVolumeM3;
+    const steps = 30;
     const out: { v: number; p: number }[] = [];
     for (let i = 0; i <= steps; i++) {
-      const f = i / steps;
-      const p = killResult.initialCircPressureMPa + (killResult.finalCircPressureMPa - killResult.initialCircPressureMPa) * f;
-      out.push({ v: +(killResult.killVolumeM3 * f).toFixed(2), p: +p.toFixed(2) });
+      const v = (vTotal * i) / steps;
+      const f = Math.min(1, v / Math.max(1e-6, vt));
+      out.push({ v: +v.toFixed(2), p: +(p0 + (p1 - p0) * f).toFixed(2) });
     }
     return out;
-  }, [killResult]);
+  }, [killResult, kill.method]);
 
   // ──── Рецептура жидкости глушения ────
   const [brineSaltId, setBrineSaltId] = useState<string>("auto");
@@ -136,28 +178,13 @@ export default function Workover() {
 
   // ──── Многоинтервальное глушение ────
   const [killIntervals, setKillIntervals] = useState<KillInterval[]>([
-    { topMD: 2800, bottomMD: 2850, topTVD: 2500, bottomTVD: 2540, formationPressureMPa: 32, intervalType: "kick_zone", requiredKillDensity: 0 },
-    { topMD: 3000, bottomMD: 3100, topTVD: 2680, bottomTVD: 2760, formationPressureMPa: 38, intervalType: "kill_zone", requiredKillDensity: 0 },
+    { topMD: 1900, bottomMD: 1950, topTVD: 1750, bottomTVD: 1790, formationPressureMPa: 19, fracturePressureMPa: 30, intervalType: "kick_zone", requiredKillDensity: 0 },
+    { topMD: 2300, bottomMD: 2400, topTVD: 2050, bottomTVD: 2125, formationPressureMPa: 24, fracturePressureMPa: 36, intervalType: "kill_zone", requiredKillDensity: 0 },
   ]);
   const multiIntervalPlan = useMemo(() => {
     if (!selectedSalt || killIntervals.length === 0) return null;
     return planMultiIntervalKill(killIntervals, selectedSalt, Math.max(0.1, effectiveBrineVolume), brineMixing, kill.safetyMarginPct, brineTempC);
   }, [killIntervals, selectedSalt, effectiveBrineVolume, brineMixing, kill.safetyMarginPct, brineTempC]);
-
-  // ──── Drag + lubricant ────
-  const [drag, setDrag] = useState<DragInput>({ operation: "pull_out", frictionCoeff: 0.30 });
-  const [lube, setLube] = useState<LubricantInput>({
-    name: "DeAll Slip-X", concentration: 2, baseFrictionCoeff: 0.34,
-    lubricatedFrictionCoeff: 0.12, penetrationIndex: 7,
-  });
-  const [useLube, setUseLube] = useState(false);
-  const dragNoLube = useMemo(() => calculateDrag({ ...drag, lubricant: undefined }, well), [drag, well]);
-  const dragLube = useMemo(() => calculateDrag({ ...drag, lubricant: lube }, well), [drag, well, lube]);
-  const lubeResult = useMemo(
-    () => calculateLubricant(lube, dragNoLube.maxHookLoadKN, dragLube.maxHookLoadKN, 30, 15, well.fluidPV_cP),
-    [lube, dragNoLube, dragLube, well.fluidPV_cP],
-  );
-  const activeDrag = useLube ? dragLube : dragNoLube;
 
   // ──── Stuck pipe ────
   const [fp, setFp] = useState<FreePointInput>({ pulledForceKN: 196, measuredStretchM: 1.5 });
@@ -166,17 +193,26 @@ export default function Workover() {
     canRotate: true, canMoveDown: false, canMoveUp: false,
     stuckDepthMD: 1800, occurredDuringCirculation: true, deltaP_MPa: 8, contactLenM: 30, mudcakeFriction: 0.25,
   });
+  const stuckStringLoad = useMemo(() => pullOutLoadTo(symptoms.stuckDepthMD), [well, drag.frictionCoeff, symptoms.stuckDepthMD]); // eslint-disable-line react-hooks/exhaustive-deps
   const stuckDiag = useMemo(
-    () => diagnoseStuck(well, symptoms, rigResult.allowableLoadKN),
-    [well, symptoms, rigResult.allowableLoadKN],
+    () => diagnoseStuck(well, symptoms, rigResult.allowableLoadKN, stuckStringLoad),
+    [well, symptoms, rigResult.allowableLoadKN, stuckStringLoad],
+  );
+  const lubeResult = useMemo(
+    () => calculateLubricant(lube, dragNoLube.maxHookLoadKN, dragLube.maxHookLoadKN,
+      symptoms.contactLenM, symptoms.deltaP_MPa, well.fluidPV_cP),
+    [lube, dragNoLube, dragLube, symptoms.contactLenM, symptoms.deltaP_MPa, well.fluidPV_cP],
   );
 
   // ──── Fishing ────
   const [fish, setFish] = useState<FishingInput>({
     fishTopMD: 1600, fishWeightKN: 120, overpullKN: 150, jarType: "hydraulic",
-    jarStretchM: 1.2, hammerMassKg: 500, impactTimeMs: 5,
+    collarLengthM: 0, collarOD_mm: 95, collarID_mm: 38,
   });
-  const fishResult = useMemo(() => calculateFishing(fish, well), [fish, well]);
+  const fishResult = useMemo(
+    () => calculateFishing({ ...fish, frictionCoeff: drag.frictionCoeff }, well),
+    [fish, well, drag.frictionCoeff],
+  );
 
   // ──── Drag chart ────
   const dragChart = useMemo(() => {
@@ -238,6 +274,19 @@ export default function Workover() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Соединение НКТ</Label>
+              <Select value={well.connectionType ?? "nu"} onValueChange={(v) => updateWell("connectionType", v as ConnectionType)}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(CONNECTION_LABELS) as ConnectionType[]).map((c) => (
+                    <SelectItem key={c} value={c}>{CONNECTION_LABELS[c]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <NumberField label="Остаточная прочность" unit="%" value={well.pipeConditionPct ?? 100}
+              onChange={(v) => updateWell("pipeConditionPct", v)} hint="новая 100; б/у 70–85" />
             <NumberField label="Плотность жидкости" unit="г/см³" value={well.fluidDensity_gcm3} onChange={(v) => updateWell("fluidDensity_gcm3", v)} />
             <NumberField label="PV жидкости" unit="сП" value={well.fluidPV_cP} onChange={(v) => updateWell("fluidPV_cP", v)} />
             <NumberField label="YP жидкости" unit="Па" value={well.fluidYP_Pa} onChange={(v) => updateWell("fluidYP_Pa", v)} />
@@ -253,10 +302,10 @@ export default function Workover() {
           <CardContent className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
             <Stat label="Грузоподъёмность" v={`${rig.rigCapacityKN} кН`} />
             <Stat label={`Допустимая (÷${rig.safetyFactor})`} v={`${rigResult.allowableLoadKN.toFixed(0)} кН`} />
-            <Stat label="Текущая на крюке" v={`${rig.currentHookLoadKN} кН (${rigResult.utilizationPct.toFixed(0)}%)`}
+            <Stat label={rigHookAuto ? "На крюке при подъёме (расчёт)" : "Текущая на крюке"} v={`${rigEffective.currentHookLoadKN.toFixed(0)} кН (${rigResult.utilizationPct.toFixed(0)}%)`}
               tone={rigResult.status === "overload" ? "danger" : rigResult.status === "caution" ? "warn" : "ok"} />
             <Stat label="Запас на натяжку" v={`${rigResult.maxOverpullKN.toFixed(0)} кН`} />
-            <Stat label={`Предел трубы ${well.pipeGrade}`} v={`${pipeYield.toFixed(0)} кН`} />
+            <Stat label={`Допустимо на НКТ ${well.pipeGrade}`} v={`${pipeYield.toFixed(0)} кН`} />
             <Stat label="Свободный вес колонны" v={`${dragNoLube.freeWeightKN.toFixed(0)} кН`} />
           </CardContent>
         </Card>
@@ -339,7 +388,8 @@ export default function Workover() {
                     hint="соли/парафин/коррозия (3–15)" />
                   <NumberField label="Вес колонны над пакером" unit="кН"
                     value={releaseExtra.pipeWeightAboveKN}
-                    onChange={(v) => setReleaseExtra((s) => ({ ...s, pipeWeightAboveKN: v }))} />
+                    onChange={(v) => setReleaseExtra((s) => ({ ...s, pipeWeightAboveKN: v }))}
+                    hint={`0 = расчёт с затяжками (${weightAbovePackerAuto.toFixed(0)} кН)`} />
                   <label className="flex items-end gap-2 text-xs cursor-pointer pb-2">
                     <input type="checkbox" checked={releaseExtra.h2sPresent}
                       onChange={(e) => setReleaseExtra((s) => ({ ...s, h2sPresent: e.target.checked }))} />
@@ -353,7 +403,9 @@ export default function Workover() {
                   <Row k="Усилие срыва" v={<strong>{releaseResult.releaseForceKN.toFixed(0)} кН</strong>} />
                   <Row k="Полное усилие (+ вес колонны)" v={`${releaseResult.totalPullRequiredKN.toFixed(0)} кН`}
                     tone={releaseResult.canReleaseByTension ? "ok" : "danger"} />
-                  <Row k="Предел колонны (÷1.25)" v={`${releaseResult.pipeTensileLimitKN.toFixed(0)} кН`} />
+                  <Row k="Допустимо на колонну (резьба, износ, ÷1.25)" v={`${releaseResult.pipeTensileLimitKN.toFixed(0)} кН`} />
+                  <Row k="Лимит подъёмника" v={`${rigResult.allowableLoadKN.toFixed(0)} кН`}
+                    tone={releaseResult.totalPullRequiredKN > rigResult.allowableLoadKN ? "danger" : undefined} />
                   <div className="pt-1 flex flex-wrap gap-2">
                     {releaseResult.canReleaseByTension
                       ? <Badge className="bg-green-600">🟢 Сорвётся натяжкой</Badge>
@@ -394,24 +446,18 @@ export default function Workover() {
                     onChange={(v) => setKill({ ...kill, reservoirDepthTVD: v })} />
                   <NumberField label="Pгрп (предел)" unit="МПа" value={kill.fracturePressureMPa}
                     onChange={(v) => setKill({ ...kill, fracturePressureMPa: v })} />
-                  <NumberField label="Текущая плотность" unit="г/см³" value={kill.currentMudDensity}
-                    onChange={(v) => setKill({ ...kill, currentMudDensity: v })} />
                   <NumberField label="Запас плотности" unit="%" value={kill.safetyMarginPct}
                     onChange={(v) => setKill({ ...kill, safetyMarginPct: v })} hint="обычно 3–5%" />
-                  <NumberField label="Глубина MD" unit="м" value={kill.wellDepthMD}
-                    onChange={(v) => setKill({ ...kill, wellDepthMD: v })} />
-                  <NumberField label="ID обсадной" unit="мм" value={kill.casingID_mm}
-                    onChange={(v) => setKill({ ...kill, casingID_mm: v })} />
-                  <NumberField label="НКТ OD" unit="мм" value={kill.tubingOD_mm}
-                    onChange={(v) => setKill({ ...kill, tubingOD_mm: v })} />
-                  <NumberField label="НКТ ID" unit="мм" value={kill.tubingID_mm}
-                    onChange={(v) => setKill({ ...kill, tubingID_mm: v })} />
-                  <NumberField label="PV жидкости" unit="сП" value={kill.killFluidPV_cP}
-                    onChange={(v) => setKill({ ...kill, killFluidPV_cP: v })} />
-                  <NumberField label="YP жидкости" unit="Па" value={kill.killFluidYP_Pa}
+                  <NumberField label="PV жидкости глушения" unit="сП" value={kill.killFluidPV_cP}
+                    onChange={(v) => setKill({ ...kill, killFluidPV_cP: v })} hint="рассол 1–3, полимерная 10–30" />
+                  <NumberField label="YP жидкости глушения" unit="Па" value={kill.killFluidYP_Pa}
                     onChange={(v) => setKill({ ...kill, killFluidYP_Pa: v })} />
                   <NumberField label="Расход насоса" unit="л/с" value={kill.pumpRateLs}
                     onChange={(v) => setKill({ ...kill, pumpRateLs: v })} />
+                  <p className="col-span-2 text-[10px] text-muted-foreground">
+                    Глубина ({well.wellDepthMD} м), обсадная ({well.casingID_mm} мм), НКТ ({well.pipeOD_mm}×{well.pipeID_mm} мм)
+                    и текущая жидкость ({well.fluidDensity_gcm3} г/см³) берутся из общих данных скважины. Расчёт — для НКТ, спущенных до забоя.
+                  </p>
                 </CardContent>
               </Card>
 
@@ -425,20 +471,30 @@ export default function Workover() {
                   <Row k="Забойное (после глушения)" v={`${killResult.bottomholePressureMPa.toFixed(2)} МПа`}
                     tone={killResult.exceedsFracture ? "danger" : "ok"} />
                   <Row k="Pгрп" v={`${kill.fracturePressureMPa.toFixed(2)} МПа`} />
-                  <Row k="Объём глушения" v={`${killResult.killVolumeM3.toFixed(2)} м³`} />
-                  <Row k="Потери на трение (затрубье)" v={`${killResult.frictionLossMPa.toFixed(2)} МПа`} />
+                  <Row k="Объём скважины (НКТ + затрубье)"
+                    v={`${killResult.killVolumeM3.toFixed(2)} м³ (${killResult.tubingVolumeM3.toFixed(1)} + ${killResult.annulusVolumeM3.toFixed(1)})`} />
+                  <Row k={`Трение в НКТ (${killResult.tubingTurbulent ? "турб." : "лам."}, ${killResult.tubingVelocityMs.toFixed(1)} м/с)`}
+                    v={`${killResult.tubingFrictionMPa.toFixed(2)} МПа`} />
+                  <Row k={`Трение в затрубье (${killResult.annulusTurbulent ? "турб." : "лам."}, ${killResult.annulusVelocityMs.toFixed(2)} м/с)`}
+                    v={`${killResult.annulusFrictionMPa.toFixed(2)} МПа`} />
                   {(kill.method === "driller" || kill.method === "wait_weight") && (
                     <>
-                      <Row k="ICP — нач. циркуляции" v={`${killResult.initialCircPressureMPa.toFixed(2)} МПа`} />
-                      <Row k="FCP — кон. циркуляции" v={`${killResult.finalCircPressureMPa.toFixed(2)} МПа`} />
+                      <Row k="Избыточное в трубах (Pпл − ρтек·g·H)" v={`${killResult.sidppMPa.toFixed(2)} МПа`} />
+                      <Row k="ICP — начало циркуляции" v={<strong>{killResult.initialCircPressureMPa.toFixed(2)} МПа</strong>} />
+                      <Row k="FCP — конец циркуляции" v={<strong>{killResult.finalCircPressureMPa.toFixed(2)} МПа</strong>} />
                     </>
                   )}
                   {kill.method === "bullhead" && (
-                    <Row k="Устьевое давление задавки" v={`${killResult.bullheadSurfacePressureMPa.toFixed(2)} МПа`}
-                      tone={killResult.bullheadSurfacePressureMPa > kill.fracturePressureMPa * 0.7 ? "warn" : "ok"} />
+                    <>
+                      <Row k="Устьевое задавки — начало" v={<strong>{killResult.bullheadSurfacePressureMPa.toFixed(2)} МПа</strong>}
+                        tone={killResult.bullheadSurfacePressureMPa >= killResult.bullheadMaxSurfaceMPa ? "danger"
+                          : killResult.bullheadSurfacePressureMPa > 0.85 * killResult.bullheadMaxSurfaceMPa ? "warn" : "ok"} />
+                      <Row k="Устьевое задавки — конец" v={`${killResult.bullheadEndPressureMPa.toFixed(2)} МПа`} />
+                      <Row k="Предел на устье по ГРП" v={`${killResult.bullheadMaxSurfaceMPa.toFixed(2)} МПа`} />
+                    </>
                   )}
                   <div className="pt-1">
-                    {killResult.exceedsFracture
+                    {killResult.exceedsFracture || killResult.warnings.some((w) => w.startsWith("🔴"))
                       ? <Badge variant="destructive">🔴 Превышение ГРП</Badge>
                       : <Badge className="bg-green-600">🟢 В безопасном окне</Badge>}
                   </div>
@@ -456,12 +512,14 @@ export default function Workover() {
                 <ResponsiveContainer width="100%" height={260}>
                   <LineChart data={killChart}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="v" label={{ value: "Объём, м³", position: "insideBottom", offset: -5 }} />
+                    <XAxis dataKey="v" type="number" domain={[0, "dataMax"]} tickFormatter={(x: number) => x.toFixed(0)} label={{ value: "Объём, м³", position: "insideBottom", offset: -5 }} />
                     <YAxis label={{ value: "Давление, МПа", angle: -90, position: "insideLeft" }} />
                     <Tooltip />
                     <Legend />
-                    <ReferenceLine y={kill.fracturePressureMPa} stroke="#f43f5e" strokeDasharray="4 4" label="Pгрп" />
-                    <Line type="monotone" dataKey="p" name="Давление насоса" stroke="#0ea5e9" dot={false} />
+                    {kill.method === "bullhead" && (
+                      <ReferenceLine y={killResult.bullheadMaxSurfaceMPa} stroke="#f59e0b" strokeDasharray="4 4" label="Предел на устье" />
+                    )}
+                    <Line type="linear" dataKey="p" name="Давление на устье (насос)" stroke="#0ea5e9" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -597,7 +655,7 @@ export default function Workover() {
                 <Button size="sm" variant="outline" className="h-7 text-xs"
                   onClick={() => setKillIntervals([...killIntervals, {
                     topMD: 0, bottomMD: 0, topTVD: 0, bottomTVD: 0,
-                    formationPressureMPa: 0, intervalType: "kill_zone", requiredKillDensity: 0,
+                    formationPressureMPa: 0, fracturePressureMPa: 0, intervalType: "kill_zone", requiredKillDensity: 0,
                   }])}>
                   <Plus className="w-3 h-3 mr-1" />Интервал
                 </Button>
@@ -610,6 +668,7 @@ export default function Workover() {
                       <TableHead className="text-xs">MD низ</TableHead>
                       <TableHead className="text-xs">TVD низ</TableHead>
                       <TableHead className="text-xs">Pпл, МПа</TableHead>
+                      <TableHead className="text-xs">Pгрп, МПа</TableHead>
                       <TableHead className="text-xs">Тип</TableHead>
                       <TableHead className="text-xs">Треб. ρ</TableHead>
                       <TableHead></TableHead>
@@ -626,6 +685,8 @@ export default function Workover() {
                           onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, bottomTVD: num(e.target.value), topTVD: iv.topTVD || num(e.target.value) - (iv.bottomMD - iv.topMD) }; setKillIntervals(a); }} /></TableCell>
                         <TableCell><Input type="number" value={iv.formationPressureMPa} className="h-7 text-xs w-20"
                           onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, formationPressureMPa: num(e.target.value) }; setKillIntervals(a); }} /></TableCell>
+                        <TableCell><Input type="number" value={iv.fracturePressureMPa ?? 0} className="h-7 text-xs w-20"
+                          onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, fracturePressureMPa: num(e.target.value) }; setKillIntervals(a); }} /></TableCell>
                         <TableCell>
                           <Select value={iv.intervalType} onValueChange={(v) => { const a = [...killIntervals]; a[idx] = { ...iv, intervalType: v as KillInterval["intervalType"] }; setKillIntervals(a); }}>
                             <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
@@ -710,8 +771,8 @@ export default function Workover() {
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Результаты T&D</CardTitle></CardHeader>
                 <CardContent className="space-y-2 text-sm">
                   <Row k="Свободный вес колонны" v={`${dragNoLube.freeWeightKN.toFixed(0)} кН`} />
-                  <Row k="Max нагрузка на крюке (без смазки)" v={`${dragNoLube.maxHookLoadKN.toFixed(0)} кН`} />
-                  <Row k="Max нагрузка (со смазкой)" v={`${dragLube.maxHookLoadKN.toFixed(0)} кН`} />
+                  <Row k="Нагрузка на крюке (без смазки)" v={`${dragNoLube.maxHookLoadKN.toFixed(0)} кН`} />
+                  <Row k="Нагрузка на крюке (со смазкой)" v={`${dragLube.maxHookLoadKN.toFixed(0)} кН`} />
                   <Row k="Применённый μ" v={`${activeDrag.appliedFrictionCoeff.toFixed(2)}`} />
                   {useLube && (
                     <>
@@ -726,13 +787,13 @@ export default function Workover() {
                     </>
                   )}
                   <Row k="Лимит подъёмника" v={`${rigResult.allowableLoadKN.toFixed(0)} кН`} />
-                  <Row k="Предел трубы" v={`${pipeYield.toFixed(0)} кН`} />
+                  <Row k="Допустимо на НКТ (резьба, износ, ÷1.25)" v={`${pipeYield.toFixed(0)} кН`} />
                 </CardContent>
               </Card>
             </div>
 
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Затяжка vs глубина</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Натяжение колонны по глубине</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={dragChart}>
@@ -742,7 +803,7 @@ export default function Workover() {
                     <Tooltip />
                     <Legend />
                     <ReferenceLine y={rigResult.allowableLoadKN} stroke="#f43f5e" strokeDasharray="4 4" label="Лимит подъёмника" />
-                    <ReferenceLine y={pipeYield} stroke="#a855f7" strokeDasharray="4 4" label="Предел трубы" />
+                    <ReferenceLine y={pipeYield} stroke="#a855f7" strokeDasharray="4 4" label="Допустимо на НКТ" />
                     <Line type="monotone" dataKey="base" name="Без смазки" stroke="#0ea5e9" dot={false} />
                     <Line type="monotone" dataKey="lube" name="Со смазкой" stroke="#10b981" dot={false} />
                   </LineChart>
@@ -790,7 +851,9 @@ export default function Workover() {
                   <div className="border-t pt-3 text-sm space-y-1">
                     <Row k="Тип прихвата" v={<Badge>{labelStuck(stuckDiag.type)}</Badge>} />
                     <Row k="Усилие освобождения (μ·ΔP·A)" v={`${stuckDiag.freeingForceKN.toFixed(0)} кН`} />
-                    <Row k="Предел трубы" v={`${stuckDiag.pipeYieldKN.toFixed(0)} кН`} />
+                    <Row k="Вес колонны до прихвата (с затяжками)" v={`${stuckDiag.stringLoadKN.toFixed(0)} кН`} />
+                    <Row k="Требуемая нагрузка на крюке" v={<strong>{stuckDiag.requiredHookLoadKN.toFixed(0)} кН</strong>} />
+                    <Row k="Допустимо на НКТ" v={`${stuckDiag.pipeYieldKN.toFixed(0)} кН`} />
                     <Row k="Лимит подъёмника" v={`${rigResult.allowableLoadKN.toFixed(0)} кН`} />
                     <Row k="Освободится натяжением" v={stuckDiag.canFreeByPull
                       ? <Badge className="bg-green-600">ДА</Badge>
@@ -821,20 +884,23 @@ export default function Workover() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <NumberField label="Растяжение перед ударом" unit="м" value={fish.jarStretchM ?? 0} onChange={(v) => setFish({ ...fish, jarStretchM: v })} hint="накопленный стретч колонны" />
-                  <NumberField label="Масса молота (hammer)" unit="кг" value={fish.hammerMassKg ?? 500} onChange={(v) => setFish({ ...fish, hammerMassKg: v })} hint="обычно 300–800" />
-                  <NumberField label="Длительность удара Δt" unit="мс" value={fish.impactTimeMs ?? 5} onChange={(v) => setFish({ ...fish, impactTimeMs: v })} hint="обычно 3–10 мс" />
+                  <NumberField label="УБТ над яссом, длина" unit="м" value={fish.collarLengthM ?? 0} onChange={(v) => setFish({ ...fish, collarLengthM: v })} hint="0 — без УБТ" />
+                  <NumberField label="УБТ OD" unit="мм" value={fish.collarOD_mm ?? 0} onChange={(v) => setFish({ ...fish, collarOD_mm: v })} />
+                  <NumberField label="УБТ ID" unit="мм" value={fish.collarID_mm ?? 0} onChange={(v) => setFish({ ...fish, collarID_mm: v })} />
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Результаты</CardTitle></CardHeader>
                 <CardContent className="space-y-2 text-sm">
-                  <Row k="Требуемая нагрузка на крюке" v={`${fishResult.requiredHookLoadKN.toFixed(0)} кН`} />
-                  <Row k="Энергия упругой деформации (½·k·x²)" v={`${(fishResult.jarEnergyJ / 1000).toFixed(1)} кДж`} />
-                  <Row k="Скорость удара молота (√(2E/m))" v={`${fishResult.jarVelocityMs.toFixed(1)} м/с`} />
-                  <Row k="Пиковая ударная сила (m·v/Δt)" v={<strong>{fishResult.jarImpactKN.toFixed(0)} кН</strong>} />
-                  <Row k="Max безопасная (предел трубы)" v={`${fishResult.maxSafeHookLoadKN.toFixed(0)} кН`} />
+                  <Row k="Вес колонны с рыбой (с затяжками)" v={`${fishResult.stringLoadKN.toFixed(0)} кН`} />
+                  <Row k="Нагрузка на крюке при натяжке" v={<strong>{fishResult.requiredHookLoadKN.toFixed(0)} кН</strong>}
+                    tone={fishResult.requiredHookLoadKN > Math.min(fishResult.maxSafeHookLoadKN, rigResult.allowableLoadKN) ? "danger" : "ok"} />
+                  <Row k="Растяжение колонны при натяжке (Гук)" v={`${fishResult.jarStretchM.toFixed(2)} м`} />
+                  <Row k="Энергия взвода (½·F·x)" v={`${(fishResult.jarEnergyJ / 1000).toFixed(1)} кДж`} />
+                  <Row k="Скорость ударной части (F / A√(Eρ))" v={`${fishResult.jarVelocityMs.toFixed(1)} м/с`} />
+                  <Row k="Ударная сила (оценка)" v={<strong>{fishResult.jarImpactLowKN.toFixed(0)}–{fishResult.jarImpactHighKN.toFixed(0)} кН</strong>} />
+                  <Row k="Допустимо на НКТ (резьба, износ, ÷1.25)" v={`${fishResult.maxSafeHookLoadKN.toFixed(0)} кН`} />
                   <Row k="Лимит подъёмника" v={`${rigResult.allowableLoadKN.toFixed(0)} кН`} />
                   <div className="pt-1">
                     {fishResult.canEngage && fishResult.requiredHookLoadKN < rigResult.allowableLoadKN
@@ -842,6 +908,9 @@ export default function Workover() {
                       : <Badge variant="destructive">🔴 Превышение пределов</Badge>}
                   </div>
                   <Alert><AlertDescription className="text-xs">{fishResult.recommendation}</AlertDescription></Alert>
+                  {fishResult.warnings.map((w, i) => (
+                    <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
+                  ))}
                 </CardContent>
               </Card>
             </div>
@@ -856,7 +925,8 @@ export default function Workover() {
                   <NumberField label="Грузоподъёмность лебёдки" unit="кН" value={rig.rigCapacityKN} onChange={(v) => setRig({ ...rig, rigCapacityKN: v })} />
                   <NumberField label="Грузоподъёмность мачты" unit="кН" value={rig.derrickCapacityKN} onChange={(v) => setRig({ ...rig, derrickCapacityKN: v })} />
                   <NumberField label="Коэфф. запаса" value={rig.safetyFactor} onChange={(v) => setRig({ ...rig, safetyFactor: v })} hint="обычно 1.5–2.0" />
-                  <NumberField label="Текущая нагрузка на крюке" unit="кН" value={rig.currentHookLoadKN} onChange={(v) => setRig({ ...rig, currentHookLoadKN: v })} />
+                  <NumberField label="Текущая нагрузка на крюке" unit="кН" value={rig.currentHookLoadKN} onChange={(v) => setRig({ ...rig, currentHookLoadKN: v })}
+                    hint={`0 = подъём колонны по расчёту (${pullOutFull.toFixed(0)} кН)`} />
                 </CardContent>
               </Card>
 
@@ -872,9 +942,10 @@ export default function Workover() {
                     <BarChart
                       layout="vertical"
                       data={[
-                        { name: "Тек. нагрузка", v: rig.currentHookLoadKN, fill: "#0ea5e9" },
+                        { name: "Тек. нагрузка", v: rigEffective.currentHookLoadKN, fill: "#0ea5e9" },
                         { name: "Допустимая", v: rigResult.allowableLoadKN, fill: "#10b981" },
-                        { name: "Предел трубы", v: pipeYield, fill: "#a855f7" },
+                        { name: "Допустимо на НКТ", v: pipeYield, fill: "#a855f7" },
+                        { name: "Тело трубы", v: pipeBody, fill: "#c084fc" },
                         { name: "Лебёдка", v: rig.rigCapacityKN, fill: "#f59e0b" },
                         { name: "Мачта", v: rig.derrickCapacityKN, fill: "#f43f5e" },
                       ]}
@@ -902,14 +973,15 @@ export default function Workover() {
                       <TableHead>Операция</TableHead>
                       <TableHead>Требуемая нагрузка</TableHead>
                       <TableHead>Лимит подъёмника</TableHead>
-                      <TableHead>Предел трубы</TableHead>
+                      <TableHead>Допустимо на НКТ</TableHead>
                       <TableHead>Статус</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    <ScenarioRow label="Подъём колонны (без смазки)" need={dragNoLube.maxHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
-                    <ScenarioRow label="Подъём со смазкой" need={dragLube.maxHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
-                    <ScenarioRow label="Освобождение прихвата" need={stuckDiag.freeingForceKN + dragNoLube.freeWeightKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
+                    <ScenarioRow label="Подъём колонны (без смазки)" need={pullOutFull} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
+                    <ScenarioRow label="Подъём со смазкой" need={calculateDrag({ operation: "pull_out", frictionCoeff: drag.frictionCoeff, lubricant: lube }, well).maxHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
+                    <ScenarioRow label="Срыв пакера" need={releaseResult.totalPullRequiredKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
+                    <ScenarioRow label="Освобождение прихвата" need={stuckDiag.requiredHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
                     <ScenarioRow label="Ловильная операция" need={fishResult.requiredHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
                   </TableBody>
                 </Table>
@@ -961,7 +1033,7 @@ function ScenarioRow({ label, need, allow, pipe }: { label: string; need: number
       <TableCell className="text-xs">
         {ok
           ? <Badge className="bg-green-600">OK</Badge>
-          : <Badge variant="destructive">{overPipe ? "ПРЕДЕЛ ТРУБЫ" : overRig ? "ПЕРЕГРУЗ" : "—"}</Badge>}
+          : <Badge variant="destructive">{overPipe ? "ПРЕДЕЛ НКТ" : overRig ? "ПЕРЕГРУЗ" : "—"}</Badge>}
       </TableCell>
     </TableRow>
   );
