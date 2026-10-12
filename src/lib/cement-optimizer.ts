@@ -12,7 +12,10 @@ import {
   type PressureProfileResult, type VolumeResults,
 } from "./cementing-calculations";
 import { buildLabProgram } from "./cement-program";
-import type { CentralizationResult } from "./centralization-calculations";
+import {
+  autoPlaceCentralizers, calculateCentralization, centralizerPresets,
+  type CentralizationResult, type CentralizerInterval, type CentralizerSpec, type CentralizerType,
+} from "./centralization-calculations";
 
 export interface OptimizerSettings {
   minRateLps: number;
@@ -28,10 +31,15 @@ export interface OptimizerSettings {
   optimizeBuffer: boolean;
   /** Вращение колонны при цементировании, об/мин (влияет на MREI) */
   rotationRpm: number;
+  /** Подбирать центрирование (целевой отступ → расстановка центраторов) */
+  optimizeCentralizers: boolean;
+  centralizerType: CentralizerType;
+  jointLengthM: number;
 }
 
 export const DEFAULT_OPTIMIZER_SETTINGS: OptimizerSettings = {
   minRateLps: 6, maxRateLps: 30, maxCementRateLps: 20, rateStepLps: 4, pumpPressureLimitMPa: 25, marginReqMPa: 0.5, optimizeBuffer: true, rotationRpm: 0,
+  optimizeCentralizers: true, centralizerType: "rigid", jointLengthM: 12,
 };
 
 export interface ProgramInput {
@@ -44,6 +52,8 @@ export interface ProgramInput {
   flushTimeMin: number;
   flushVolumeM3: number;
   centralization?: CentralizationResult[];
+  /** Текущая расстановка центраторов (для сравнения числа) */
+  centralizerIntervals?: CentralizerInterval[];
 }
 
 export interface ProgramVariant {
@@ -79,6 +89,20 @@ export interface VariantEval {
   recommendations: string[];
   /** Не считался: заведомо хуже соседнего варианта по давлению */
   pruned?: boolean;
+  /** Центрирование, при котором получен результат (если подбиралось) */
+  centralization?: CentralizerPlan;
+}
+
+export interface CentralizerPlan {
+  /** Целевой отступ, % (null — как задано в программе) */
+  targetPct: number | null;
+  label: string;
+  totalCount: number;
+  countInCement: number;
+  minStandoffPct: number;
+  avgStandoffPct: number;
+  intervals: CentralizerInterval[];
+  profile: CentralizationResult[];
 }
 
 export interface OptimizerResult {
@@ -91,6 +115,8 @@ export interface OptimizerResult {
   bufferOptions: { volumeM3: number | null; density: number | null; label: string }[];
   /** Если ни один вариант не проходит — главная причина */
   blocker?: string;
+  /** Подбор центрирования для лучшего варианта: все рассмотренные расстановки */
+  centralizerStudy?: { base: string; options: VariantEval[]; recommendedIdx: number };
 }
 
 // ─────────────────────────── Применение варианта ───────────────────────────
@@ -360,34 +386,146 @@ export async function runOptimizer(
   p: ProgramInput, settings: OptimizerSettings, onProgress?: (done: number, total: number) => void,
 ): Promise<OptimizerResult> {
   const rates = optimizerRates(settings);
+  const rates1 = rates.filter((q) => q <= settings.maxCementRateLps + 1e-9);
   const bOpts = bufferOptions(p, settings);
   const centr = cementIntervalCentralization(p);
-  const cur = currentVariant(p);
-  const current = evaluateProgram(p, cur, settings, undefined, centr);
+  const current = evaluateProgram(p, currentVariant(p), settings, undefined, centr);
 
-  const total = bOpts.length * rates.filter((q) => q <= settings.maxCementRateLps + 1e-9).length * rates.length;
-  const evaluations: VariantEval[] = [];
-  let i = 0;
-  const rates1 = rates.filter((q) => q <= settings.maxCementRateLps + 1e-9);
-  for (const bo of bOpts) for (const q1 of rates1) {
-    // Давление растёт с расходом продавки: если при q2 превышен предел ГРП/устья, при больших q2 — тоже
-    let frictionFail: VariantEval | null = null;
-    for (const q2 of rates) {
-      const v: ProgramVariant = { q1, q2, bufferVolumeM3: bo.volumeM3, bufferDensity: bo.density };
-      if (frictionFail) {
-        evaluations.push({ ...frictionFail, variant: v, pruned: true, mrei: NaN });
-      } else {
-        const ev = evaluateProgram(p, v, settings, undefined, centr);
-        evaluations.push(ev);
-        if (ev.violations.includes("ГРП/поглощение") || ev.violations.includes("давление на устье")) {
-          frictionFail = { ...ev, violations: ev.violations.filter((x) => x === "ГРП/поглощение" || x === "давление на устье"), feasible: false };
+  const plans = settings.optimizeCentralizers ? centralizerPlans(p, settings) : [];
+  const stage1Total = bOpts.length * rates1.length * rates.length;
+  let total = stage1Total + plans.length * Math.min(2, bOpts.length) * rates1.length * rates.length;
+  let done = 0, computed = 0;
+  const tick = async (didCompute: boolean) => {
+    done++;
+    onProgress?.(Math.min(done, total), total);
+    if (didCompute && ++computed % 6 === 0) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  /** Перебор расходов для набора буферов при заданной программе (центрировании). */
+  const grid = async (pp: ProgramInput, bos: OptimizerResult["bufferOptions"], plan?: CentralizerPlan): Promise<VariantEval[]> => {
+    const c = cementIntervalCentralization(pp);
+    const out: VariantEval[] = [];
+    for (const bo of bos) for (const q1 of rates1) {
+      // Давление растёт с расходом продавки: если при q2 превышен предел ГРП/устья, при больших q2 — тоже
+      let frictionFail: VariantEval | null = null;
+      for (const q2 of rates) {
+        const v: ProgramVariant = { q1, q2, bufferVolumeM3: bo.volumeM3, bufferDensity: bo.density };
+        if (frictionFail) {
+          out.push({ ...frictionFail, variant: v, pruned: true, mrei: NaN, centralization: plan });
+          await tick(false);
+        } else {
+          const ev = { ...evaluateProgram(pp, v, settings, undefined, c), centralization: plan };
+          out.push(ev);
+          if (ev.violations.includes("ГРП/поглощение") || ev.violations.includes("давление на устье")) {
+            frictionFail = { ...ev, violations: ev.violations.filter((x) => x === "ГРП/поглощение" || x === "давление на устье"), feasible: false };
+          }
+          await tick(true);
         }
-        if (++i % 6 === 0) await new Promise((r) => setTimeout(r, 0));
       }
-      onProgress?.(evaluations.length, total);
     }
+    return out;
+  };
+
+  // Этап 1: расходы и буфер при текущем (или принятом) центрировании
+  const stage1 = await grid(p, bOpts);
+  if (!plans.length) {
+    return { current, evaluations: stage1, rates, rates1, bufferOptions: bOpts, best: pickVariants(stage1, settings), blocker: findBlocker(stage1) };
   }
-  return { current, evaluations, rates, rates1: rates.filter((q) => q <= settings.maxCementRateLps + 1e-9), bufferOptions: bOpts, best: pickVariants(evaluations, settings), blocker: findBlocker(evaluations) };
+
+  // Этап 2: для каждой расстановки центраторов — повторный перебор расходов с лучшими буферами этапа 1
+  const pre = pickVariants(stage1, settings);
+  const keyOf = (v: ProgramVariant) => `${v.bufferVolumeM3}|${v.bufferDensity}`;
+  const keepKeys = [...new Set((pre.length ? pre : [{ ev: current }]).map((b) => keyOf(b.ev.variant)))].slice(0, 2);
+  const keptBuf = bOpts.filter((bo) => keepKeys.includes(`${bo.volumeM3}|${bo.density}`));
+  const bos = keptBuf.length ? keptBuf : [bOpts[0]];
+  total = stage1Total + plans.length * bos.length * rates1.length * rates.length;
+  const stage2: VariantEval[] = [];
+  for (const plan of plans) {
+    const pp: ProgramInput = { ...p, wellData: { ...p.wellData, standoffProfile: plan.profile.map((r) => ({ md: r.md, standoffPct: r.standoff })) }, centralization: plan.profile };
+    stage2.push(...await grid(pp, bos, plan));
+  }
+  const best = pickVariants(stage2, settings);
+  let centralizerStudy: OptimizerResult["centralizerStudy"];
+  let mapEvals = stage2;
+  if (best.length) {
+    const b0 = best[0].ev;
+    const options = plans.map((plan) => stage2.find((e) => e.centralization === plan && sameRates(e, b0))!).filter(Boolean);
+    centralizerStudy = { base: best[0].label, options, recommendedIdx: options.findIndex((o) => o.centralization === b0.centralization) };
+    mapEvals = stage2.filter((e) => e.centralization === b0.centralization);
+  }
+  onProgress?.(total, total);
+  return { current, evaluations: mapEvals, rates, rates1, bufferOptions: bos, best, blocker: findBlocker(stage2), centralizerStudy };
+}
+
+const CENTRALIZER_TARGETS = [55, 67, 75, 85];
+/** Допустимые плотности установки: центраторов на одну трубу */
+const CPJ_STEPS = [0.1, 0.2, 0.25, 0.34, 0.5, 1, 1.5, 2, 3];
+
+/**
+ * Расстановка под целевой отступ в интервале цементирования.
+ * Подбор идёт по той же модели прогиба, что и расчёт центрирования (с учётом натяжения колонны и
+ * пространственной кривизны): для каждого участка в 2 трубы — минимальная плотность установки, при которой
+ * отступ на всём участке не ниже цели. Выше интервала цементирования — авторасстановка (для спуска).
+ */
+export function placeForStandoff(
+  w: WellData, spec: CentralizerSpec, jointLength: number, target: number, mudDensity: number, toc: number,
+): CentralizerInterval[] {
+  const above = toc > 1
+    ? autoPlaceCentralizers({ ...w, casingDepthMD: w.casingDepthMD }, spec, jointLength, Math.min(target, 67), mudDensity, { pumpZoneTop: w.pumpZoneTop, pumpZoneBottom: w.pumpZoneBottom })
+      .filter((pl) => pl.fromMD < toc)
+      .map((pl) => ({ fromMD: pl.fromMD, toMD: Math.min(pl.toMD, toc - 0.001), cpj: pl.centralizersPerJoint }))
+    : [];
+  const seg = jointLength * 2;
+  const below: { fromMD: number; toMD: number; cpj: number }[] = [];
+  for (let a = Math.max(0, toc); a < w.casingDepthMD - 1e-6; a += seg) {
+    const b = Math.min(w.casingDepthMD, a + seg);
+    let chosen = CPJ_STEPS[CPJ_STEPS.length - 1];
+    for (const cpj of CPJ_STEPS) {
+      const prof = calculateCentralization(w, [{ id: "t", fromMD: a, toMD: b, centralizersPerJoint: cpj, jointLength, spec }], mudDensity)
+        .filter((r) => r.md >= a && r.md <= b);
+      if (prof.length && Math.min(...prof.map((r) => r.standoff)) >= target) { chosen = cpj; break; }
+    }
+    below.push({ fromMD: a, toMD: b, cpj: chosen });
+  }
+  const all = [...above, ...below];
+  const merged: { fromMD: number; toMD: number; cpj: number }[] = [];
+  for (const x of all) {
+    const last = merged[merged.length - 1];
+    if (last && last.cpj === x.cpj && Math.abs(last.toMD - x.fromMD) < 0.01) last.toMD = x.toMD; else merged.push({ ...x });
+  }
+  return merged.map((m, k) => ({ id: `opt-${target}-${k}`, fromMD: m.fromMD, toMD: m.toMD, centralizersPerJoint: m.cpj, jointLength, spec: { ...spec } }));
+}
+
+/** Расстановки центраторов под целевые отступы (авторасстановка по профилю ствола). */
+export function centralizerPlans(p: ProgramInput, settings: OptimizerSettings): CentralizerPlan[] {
+  const w = p.wellData;
+  const toc = Math.min(...p.slurries.map((s) => s.topDepthMD), w.casingDepthMD);
+  const preset = centralizerPresets[settings.centralizerType];
+  const spec: CentralizerSpec = { type: settings.centralizerType, bladesCount: preset.bladesCount ?? 6, bladeHeight: preset.bladeHeight ?? 25, restoringForce: preset.restoringForce ?? 10, maxAxialLoad: preset.maxAxialLoad ?? 200 };
+  const mud = p.drillingFluid.density;
+  const summarize = (targetPct: number | null, label: string, intervals: CentralizerInterval[], profile: CentralizationResult[]): CentralizerPlan => {
+    const inside = profile.filter((r) => r.md >= toc && r.md <= w.casingDepthMD);
+    const cnt = (from: number, to: number) => intervals.reduce((t, iv) => {
+      const a = Math.max(iv.fromMD, from), b = Math.min(iv.toMD, to);
+      return t + (b > a ? ((b - a) / Math.max(1, iv.jointLength)) * iv.centralizersPerJoint : 0);
+    }, 0);
+    return {
+      targetPct, label, intervals, profile,
+      totalCount: Math.round(cnt(0, w.casingDepthMD)), countInCement: Math.round(cnt(toc, w.casingDepthMD)),
+      minStandoffPct: inside.length ? Math.min(...inside.map((r) => r.standoff)) : 0,
+      avgStandoffPct: inside.length ? inside.reduce((t, r) => t + r.standoff, 0) / inside.length : 0,
+    };
+  };
+  const plans: CentralizerPlan[] = [];
+  if (p.centralization && p.centralization.length) {
+    plans.push(summarize(null, "как в программе", p.centralizerIntervals ?? [], p.centralization));
+  }
+  for (const target of CENTRALIZER_TARGETS) {
+    const intervals = placeForStandoff(w, spec, settings.jointLengthM, target, mud, toc);
+    const profile = calculateCentralization(w, intervals, mud);
+    plans.push(summarize(target, `цель ${target}%`, intervals, profile));
+  }
+  return plans;
 }
 
 function findBlocker(evs: VariantEval[]): string | undefined {
@@ -410,19 +548,28 @@ export function pickVariants(evs: VariantEval[], settings: OptimizerSettings): O
   if (feas.length === 0) return [];
   const q = (x: number) => Math.round(x * 2) / 2; // качество с точностью 0.5%
   const byQuality = [...feas].sort((a, b) => q(b.mrei) - q(a.mrei) || a.channelLengthM - b.channelLengthM || b.minMarginMPa - a.minMarginMPa || a.jobTimeMin - b.jobTimeMin);
-  const top = byQuality[0];
-  const out: OptimizerResult["best"] = [{ label: "Максимум качества", hint: "Наибольший индекс вытеснения при соблюдении всех ограничений", ev: top }];
+  // При подборе центрирования: среди вариантов с качеством ≥ 98% от лучшего и отступом ≥ 67% (API RP 10D-2) —
+  // наименьшее число центраторов
+  const bestQ = byQuality[0].mrei;
+  const cnt = (e: VariantEval) => e.centralization?.countInCement ?? 0;
+  let pool = byQuality.filter((e) => e.mrei >= bestQ * 0.98);
+  const api = pool.filter((e) => !e.centralization || e.centralization.minStandoffPct >= 66.5);
+  if (api.length) pool = api;
+  const top = [...pool].sort((a, b) => cnt(a) - cnt(b) || b.mrei - a.mrei || a.channelLengthM - b.channelLengthM || b.minMarginMPa - a.minMarginMPa)[0];
+  const out: OptimizerResult["best"] = [{ label: "Максимум качества", hint: "Наибольший индекс вытеснения (±2%) при соблюдении всех ограничений; при равном качестве — меньше центраторов", ev: top }];
 
   const balMargin = Math.max(1.5, settings.marginReqMPa);
-  const bal = byQuality.find((e) => e.minMarginMPa >= balMargin && e.thickeningReserveMin >= 30 && e.mrei >= top.mrei * 0.9);
+  const bal = byQuality.find((e) => e.minMarginMPa >= balMargin && e.thickeningReserveMin >= 30 && e.mrei >= bestQ * 0.9);
   if (bal && !sameVariant(bal, top)) out.push({ label: "Сбалансированный", hint: `Запас по пластам ≥ ${balMargin} МПа и по загустеванию ≥ 30 мин, качество не ниже 90% от максимума`, ev: bal });
 
   const r1 = (x: number) => Math.round(x * 10) / 10;
-  const safe = [...feas].filter((e) => e.mrei >= top.mrei * 0.85)
+  const safe = [...feas].filter((e) => e.mrei >= bestQ * 0.85)
     .sort((a, b) => r1(b.minMarginMPa) - r1(a.minMarginMPa) || Math.min(b.thickeningReserveMin, 600) - Math.min(a.thickeningReserveMin, 600) || b.mrei - a.mrei)[0];
   if (safe && !out.some((o) => sameVariant(o.ev, safe))) out.push({ label: "Минимум риска", hint: "Наибольший запас до ГРП/поглощения при качестве не ниже 85% от максимума", ev: safe });
   return out;
 }
 
-const sameVariant = (a: VariantEval, b: VariantEval) =>
+const sameRates = (a: VariantEval, b: VariantEval) =>
   a.variant.q1 === b.variant.q1 && a.variant.q2 === b.variant.q2 && a.variant.bufferVolumeM3 === b.variant.bufferVolumeM3 && a.variant.bufferDensity === b.variant.bufferDensity;
+const sameVariant = (a: VariantEval, b: VariantEval) =>
+  a.centralization === b.centralization && a.variant.q1 === b.variant.q1 && a.variant.q2 === b.variant.q2 && a.variant.bufferVolumeM3 === b.variant.bufferVolumeM3 && a.variant.bufferDensity === b.variant.bufferDensity;

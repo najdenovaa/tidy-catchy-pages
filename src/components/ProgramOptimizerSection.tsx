@@ -8,12 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
   runOptimizer, DEFAULT_OPTIMIZER_SETTINGS, type OptimizerResult, type OptimizerSettings, type ProgramInput,
-  type ProgramVariant, type VariantEval, type Violation,
+  type ProgramVariant, type VariantEval, type Violation, type CentralizerPlan,
 } from "@/lib/cement-optimizer";
+import { centralizerTypeLabels, type CentralizerType } from "@/lib/centralization-calculations";
 
 interface Props {
   input: ProgramInput;
-  onApply: (v: ProgramVariant) => void;
+  onApply: (v: ProgramVariant, centralization?: CentralizerPlan) => void;
 }
 
 const VIOL_CODE: Record<Violation, { code: string; label: string }> = {
@@ -100,6 +101,21 @@ export default function ProgramOptimizerSection({ input, onApply }: Props) {
             Подбирать буфер
           </label>
         </div>
+        <div className="flex flex-wrap items-end gap-3 text-xs">
+          <label className="flex items-center gap-2 pb-2">
+            <input type="checkbox" checked={settings.optimizeCentralizers} onChange={(e) => setSettings({ ...settings, optimizeCentralizers: e.target.checked })} />
+            Подбирать центрирование
+          </label>
+          <label className="space-y-1">
+            <div className="text-muted-foreground">Тип центраторов</div>
+            <select value={settings.centralizerType} disabled={!settings.optimizeCentralizers}
+              onChange={(e) => setSettings({ ...settings, centralizerType: e.target.value as CentralizerType })}
+              className="h-8 rounded border border-border bg-background px-2 text-sm">
+              {(["rigid", "spring"] as CentralizerType[]).map((t) => <option key={t} value={t}>{centralizerTypeLabels[t]}</option>)}
+            </select>
+          </label>
+          <div className="w-32">{num("jointLengthM", "Длина трубы, м")}</div>
+        </div>
         {running && <Progress value={progress} className="h-2" />}
       </Card>
 
@@ -132,6 +148,7 @@ export default function ProgramOptimizerSection({ input, onApply }: Props) {
                     ["Расход буфера и цемента", (e: VariantEval) => `${f(e.variant.q1, 0)} л/с`],
                     ["Расход продавки", (e: VariantEval) => `${f(e.variant.q2, 0)} л/с`],
                     ["Разделительный буфер", (e: VariantEval) => bufText(e, baseBuf)],
+                    ["Центрирование", (e: VariantEval) => e.centralization ? `${e.centralization.label}: ${e.centralization.countInCement} шт. в интервале цементирования, мин. отступ ${f(e.centralization.minStandoffPct, 0)}%` : (input.centralization?.length ? "как в программе" : "не рассчитано (принят отступ 67%)")],
                     ["Индекс вытеснения", (e: VariantEval) => `${f(e.mrei, 0)}%`],
                     ["Застойный раствор на узкой стороне", (e: VariantEval) => `${f(e.channelLengthM, 0)} м`],
                     ["Мин. запас до ГРП/поглощения", (e: VariantEval) => `${f(e.minMarginMPa, 2)} МПа · ${e.minMarginAt}`],
@@ -162,7 +179,7 @@ export default function ProgramOptimizerSection({ input, onApply }: Props) {
                     {cols.map((c, i) => (
                       <td key={c.label} className="p-1.5">
                         {i > 0 && (
-                          <Button size="sm" variant={applied === c.label ? "secondary" : "default"} onClick={() => { onApply(c.ev.variant); setApplied(c.label); }}>
+                          <Button size="sm" variant={applied === c.label ? "secondary" : "default"} onClick={() => { onApply(c.ev.variant, c.ev.centralization); setApplied(c.label); }}>
                             {applied === c.label ? "Применено ✓" : "Применить"}
                           </Button>
                         )}
@@ -179,6 +196,8 @@ export default function ProgramOptimizerSection({ input, onApply }: Props) {
               </ul>
             ) : null}
           </Card>
+
+          {result.centralizerStudy && <CentralizerStudyCard study={result.centralizerStudy} />}
 
           <RateMap result={result} bufIdx={bufIdx} setBufIdx={setBufIdx} />
         </>
@@ -259,6 +278,53 @@ function RateMap({ result, bufIdx, setBufIdx }: { result: OptimizerResult; bufId
         <span><Badge variant="outline" className="text-[10px] px-1 py-0">П</Badge> проявление</span>
         <span>сплошная рамка — предложенные варианты, пунктир — текущая программа</span>
       </div>
+    </Card>
+  );
+}
+
+function CentralizerStudyCard({ study }: { study: NonNullable<OptimizerResult["centralizerStudy"]> }) {
+  return (
+    <Card className="p-4 space-y-2">
+      <h3 className="font-semibold">Подбор центрирования — вариант «{study.base}»</h3>
+      <p className="text-xs text-muted-foreground max-w-3xl">
+        Для каждого целевого отступа центраторы расставлены по той же модели прогиба колонны, что и в расчёте центрирования
+        (вес в растворе, натяжение, пространственная кривизна): на каждом участке в 2 трубы — минимум центраторов, при котором
+        отступ не ниже цели. Затем вся закачка пересчитывается: лучшее центрирование улучшает вытеснение, но повышает трение в затрубье.
+        Рекомендуется наименьшее число центраторов при отступе не ниже 67% (API RP 10D-2) без потери качества.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="p-1.5 text-left">Расстановка</th>
+              <th className="p-1.5 text-right">Центраторов всего / в интервале цем.</th>
+              <th className="p-1.5 text-right">Отступ мин. / средн., %</th>
+              <th className="p-1.5 text-right">Индекс вытеснения</th>
+              <th className="p-1.5 text-right">Застойный раствор, м</th>
+              <th className="p-1.5 text-right">Мин. запас до ГРП, МПа</th>
+              <th className="p-1.5 text-left">Ограничения</th>
+            </tr>
+          </thead>
+          <tbody>
+            {study.options.map((o, i) => {
+              const c = o.centralization!;
+              const rec = i === study.recommendedIdx;
+              return (
+                <tr key={c.label} className={`border-t border-border/40 ${rec ? "bg-primary/10 font-medium" : ""}`}>
+                  <td className="p-1.5">{rec ? "★ " : ""}{c.label}{rec ? " — рекомендуется" : ""}</td>
+                  <td className="p-1.5 text-right">{c.totalCount || "—"} / {c.countInCement || "—"}</td>
+                  <td className="p-1.5 text-right">{f(c.minStandoffPct, 0)} / {f(c.avgStandoffPct, 0)}</td>
+                  <td className="p-1.5 text-right">{f(o.mrei, 0)}%</td>
+                  <td className="p-1.5 text-right">{f(o.channelLengthM, 0)}</td>
+                  <td className="p-1.5 text-right">{f(o.minMarginMPa, 2)}</td>
+                  <td className="p-1.5">{o.violations.length ? <span className="text-red-600">{o.violations.map((v) => VIOL_CODE[v].label).join("; ")}</span> : <span className="text-green-600">нет</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-[11px] text-muted-foreground">Кнопка «Применить» у варианта записывает и расходы с буфером, и рекомендованную расстановку центраторов (вкладка «Центрация»).</div>
     </Card>
   );
 }

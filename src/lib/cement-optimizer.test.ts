@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { runOptimizer, applyVariant, evaluateProgram, bufferOptions, DEFAULT_OPTIMIZER_SETTINGS, type ProgramInput } from "./cement-optimizer";
+import { runOptimizer, applyVariant, evaluateProgram, bufferOptions, centralizerPlans, placeForStandoff, DEFAULT_OPTIMIZER_SETTINGS, type ProgramInput } from "./cement-optimizer";
+import { calculateCentralization, centralizerPresets } from "./centralization-calculations";
 import type { WellData } from "./cementing-calculations";
 import { normalizeSlurryInput, normalizeBufferFluid, normalizeDisplacementFluid } from "./cementing-normalizers";
 
@@ -80,5 +81,28 @@ describe("Автоподбор программы", () => {
     const slow = r.evaluations.find((e) => e.variant.q1 === 6 && e.variant.q2 === 6)!;
     expect(slow.violations).toContain("загустевание");
     if (r.best.length) expect(r.best[0].ev.thickeningReserveMin).toBeGreaterThanOrEqual(0);
+  });
+
+  it("расстановка под целевой отступ выдерживает цель по модели центрирования", () => {
+    const spec = { type: "rigid" as const, bladesCount: 6, bladeHeight: 25, restoringForce: centralizerPresets.rigid.restoringForce!, maxAxialLoad: 300 };
+    for (const target of [55, 75]) {
+      const ivs = placeForStandoff(well, spec, 12, target, 1180, 1000);
+      const prof = calculateCentralization(well, ivs, 1180).filter((r) => r.md >= 1000);
+      expect(Math.min(...prof.map((r) => r.standoff))).toBeGreaterThanOrEqual(target);
+    }
+    const plans = centralizerPlans(input(), DEFAULT_OPTIMIZER_SETTINGS);
+    const counts = plans.map((p) => p.countInCement);
+    expect(counts).toEqual([...counts].sort((a, b) => a - b)); // выше цель — больше центраторов
+  });
+
+  it("автоподбор рекомендует центрирование не ниже 67% и учитывает рост трения", { timeout: 60000 }, async () => {
+    const r = await runOptimizer(input(), { ...DEFAULT_OPTIMIZER_SETTINGS, rateStepLps: 6 });
+    const st = r.centralizerStudy!;
+    expect(st.options.length).toBe(4);
+    const rec = st.options[st.recommendedIdx];
+    expect(rec.centralization!.minStandoffPct).toBeGreaterThanOrEqual(66.5);
+    expect(r.best[0].ev.centralization).toBeTruthy();
+    // лучшее центрирование → больше трение → меньше запас
+    expect(st.options[3].minMarginMPa).toBeLessThanOrEqual(st.options[0].minMarginMPa + 1e-9);
   });
 });

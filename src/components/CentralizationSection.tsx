@@ -41,6 +41,8 @@ interface Props {
   frictionOpenhole?: number;
   onResultsChange?: (results: CentralizationResult[] | null) => void;
   onIntervalsChange?: (intervals: CentralizerInterval[]) => void;
+  /** Расстановка извне (из автоподбора): при смене nonce записывается в интервалы и пересчитывается */
+  externalIntervals?: { nonce: number; intervals: CentralizerInterval[] } | null;
 }
 
 type CalcMode = "manual" | "auto";
@@ -267,7 +269,7 @@ function standoffBg(standoff: number): string {
 }
 
 // ─── Main component ─────────────────────────────────────────────
-export default function CentralizationSection({ wellData, mudDensity, fluidPV = 25, fluidYP = 25, flowRateLps = 10, pipeWeightKgPerM, frictionCased = 0.25, frictionOpenhole = 0.35, onResultsChange, onIntervalsChange }: Props) {
+export default function CentralizationSection({ wellData, mudDensity, fluidPV = 25, fluidYP = 25, flowRateLps = 10, pipeWeightKgPerM, frictionCased = 0.25, frictionOpenhole = 0.35, onResultsChange, onIntervalsChange, externalIntervals }: Props) {
   const [mode, setMode] = useState<CalcMode>("manual");
   const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => [newInterval(wellData.casingDepthMD)]);
   const [results, setResults] = useState<CentralizationResult[] | null>(null);
@@ -377,6 +379,18 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
       setSelectedMD(worst.md);
     }
   }, [wellData, intervals, mudDensity, turbPoints, onResultsChange, onIntervalsChange]);
+
+  // Применение расстановки из автоподбора программы. Состояние обновляется прямо при рендере
+  // (синхронно с нажатием «Применить»), а не в эффекте: так обновление не может «зависнуть» в очереди.
+  const [appliedNonce, setAppliedNonce] = useState<number | null>(null);
+  if (externalIntervals && appliedNonce !== externalIntervals.nonce) {
+    const ivs = externalIntervals.intervals.map((iv) => ({ ...iv }));
+    setAppliedNonce(externalIntervals.nonce);
+    setMode("manual");
+    setIntervals(ivs);
+    setAutoResults(null);
+    setResults(calculateCentralization(wellData, ivs, mudDensity, undefined, turbPoints.length > 0 ? turbPoints : undefined));
+  }
 
   const handleCalculateAuto = useCallback(() => {
     const placement = autoPlaceCentralizers(wellData, autoSpec, autoJointLength, targetStandoff, mudDensity, {

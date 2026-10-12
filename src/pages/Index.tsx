@@ -30,7 +30,7 @@ import CementLabSection from "@/components/CementLabSection";
 import ProgramOptimizerSection from "@/components/ProgramOptimizerSection";
 import NormsRiskSection from "@/components/NormsRiskSection";
 import LogisticsSection from "@/components/LogisticsSection";
-import { applyVariant, type ProgramVariant } from "@/lib/cement-optimizer";
+import { applyVariant, type ProgramVariant, type CentralizerPlan } from "@/lib/cement-optimizer";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
@@ -213,7 +213,13 @@ export default function Index() {
     loadSavedCalculation();
   }, [calcId]);
 
-  const applyOptimizerVariant = useCallback((v: ProgramVariant) => {
+  const [externalCentralizers, setExternalCentralizers] = useState<{ nonce: number; intervals: import("@/lib/centralization-calculations").CentralizerInterval[] } | null>(null);
+  const applyOptimizerVariant = useCallback((v: ProgramVariant, plan?: CentralizerPlan) => {
+    if (plan && plan.intervals.length) {
+      setExternalCentralizers({ nonce: Date.now(), intervals: plan.intervals });
+      setCentralizationResults(plan.profile);
+      setCentralizerIntervals(plan.intervals);
+    }
     const r = applyVariant(buffers, slurries, displacementFluids, v);
     setBuffers(r.buffers);
     setSlurries(r.slurries);
@@ -731,6 +737,7 @@ export default function Index() {
                     flushTimeMin: calcSnapshot.flushTimeMin,
                     flushVolumeM3: calcSnapshot.flushVolumeM3,
                     centralization: centralizationResults ?? undefined,
+                    centralizerIntervals,
                   }}
                   onApply={applyOptimizerVariant}
                 />
@@ -916,6 +923,7 @@ export default function Index() {
                   flowRateLps={slurries[0]?.flowRateSteps?.[0]?.rateLps || 10}
                   onResultsChange={setCentralizationResults}
                   onIntervalsChange={setCentralizerIntervals}
+                  externalIntervals={externalCentralizers}
                 />
               </div>
             </TabsContent>
