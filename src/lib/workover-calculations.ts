@@ -1284,6 +1284,8 @@ export interface BrineRecipe {
   waterMassKg: number;
   dissolveTimeMin: number;
   maxAchievableDensity: number;
+  /** Температура начала кристаллизации, °C (null — нет данных) */
+  crystallizationC: number | null;
   warnings: string[];
 }
 
@@ -1300,13 +1302,14 @@ export function calculateBrineRecipe(
     return {
       feasible: false, targetDensity, salt,
       wtPctClean: 0, productMassKg: 0, pureSaltKg: 0, waterVolumeL: 0, waterMassKg: 0,
-      dissolveTimeMin: 0, maxAchievableDensity: salt.maxDensity,
+      dissolveTimeMin: 0, maxAchievableDensity: salt.maxDensity, crystallizationC: null,
       warnings: [`🔴 ${salt.name} даёт максимум ${salt.maxDensity} г/см³. Для ${targetDensity.toFixed(2)} г/см³ нужна другая соль (CaCl₂ до 1.40) или утяжелитель.`],
     };
   }
   if (targetDensity < 1.0) warnings.push("Плотность < 1.0 — достаточно чистой воды без соли.");
 
-  const wtPctClean = salt.densityCoeff_k > 0 ? Math.max(0, (targetDensity - 1.0) / salt.densityCoeff_k) : 0;
+  const { wtPct: wtPctClean, tabulated } = brineWtPct(salt, targetDensity);
+  const crystallizationC = brineCrystallizationC(salt, wtPctClean);
   const totalMassKg = targetDensity * 1000 * volumeM3;
   const pureSaltKg = (wtPctClean / 100) * totalMassKg;
   const productMassKg = salt.purity > 0 ? pureSaltKg / (salt.purity / 100) : 0;
@@ -1321,7 +1324,11 @@ export function calculateBrineRecipe(
   if (wtPctClean > salt.maxWtPctClean * 0.9)
     warnings.push(`⚠ Концентрация ${wtPctClean.toFixed(1)}% близка к насыщению (${salt.maxWtPctClean}%) — риск кристаллизации при охлаждении. Контролировать температуру.`);
   if (salt.purity > 0 && salt.purity < 90)
-    warnings.push(`Продукт ${salt.purity}% чистоты — требуется ${productMassKg.toFixed(0)} кг товарного (примеси не дают плотности).`);
+    warnings.push(`Продукт ${salt.purity}% чистоты — расчёт на ${productMassKg.toFixed(0)} кг товарного. Примеси (в основном NaCl) тоже утяжеляют раствор: фактическая плотность будет выше — довести по ареометру.`);
+  if (crystallizationC !== null && crystallizationC > -10)
+    warnings.push(`❄ Температура начала кристаллизации ≈ ${crystallizationC.toFixed(0)} °C — при морозе ниже этой температуры соль выпадет. Хранить/закачивать с подогревом или выбрать другую концентрацию.`);
+  if (!tabulated && salt.densityCoeff_k > 0)
+    warnings.push("Плотность рассчитана по линейной зависимости (справочной таблицы для этой соли нет) — точность ±0.01 г/см³, проверить ареометром.");
   if (temperatureC < 10)
     warnings.push(`⚠ Холодная вода (${temperatureC}°C) — растворение в 1.4× дольше. Подогреть для ускорения.`);
   if (salt.form === "granule")
@@ -1330,7 +1337,7 @@ export function calculateBrineRecipe(
   return {
     feasible: true, targetDensity, salt, wtPctClean,
     productMassKg, pureSaltKg, waterVolumeL, waterMassKg,
-    dissolveTimeMin: dissolveTime, maxAchievableDensity: salt.maxDensity, warnings,
+    dissolveTimeMin: dissolveTime, maxAchievableDensity: salt.maxDensity, crystallizationC, warnings,
   };
 }
 
@@ -1408,4 +1415,70 @@ export function planMultiIntervalKill(
     intervals: withDensity, governingDensity, governingInterval: governing,
     recipe, totalVolumeM3: wellVolumeM3, warnings,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 6. Рассолы: справочные таблицы
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Плотность (отн. плотность при 15.6 °C) и температура начала кристаллизации.
+ * CaCl₂: OxyChem / Engineering ToolBox; NaCl: таблица рассолов (60 °F) и свойства водных растворов NaCl.
+ */
+export const BRINE_TABLES: Record<string, { density: [number, number][]; freezing: [number, number][]; eutecticPct: number; source: string }> = {
+  CaCl: {
+    density: [[0, 1.0], [10, 1.090], [16, 1.149], [20, 1.189], [24, 1.228], [28, 1.275], [30, 1.298], [32, 1.322], [40, 1.416]],
+    freezing: [[0, 0], [10, -6.7], [16, -13.3], [20, -20.0], [24, -28.9], [28, -43.3], [30, -47.0], [32, -8.3], [40, 16.0]],
+    eutecticPct: 29.9,
+    source: "OxyChem, Engineering ToolBox",
+  },
+  NaCl: {
+    density: [[0, 1.0], [5, 1.037], [10, 1.073], [15, 1.112], [20, 1.151], [23, 1.176], [26, 1.201]],
+    freezing: [[0, 0], [5, -3.05], [10, -6.56], [14, -9.94], [16, -11.89], [18, -14.04], [20, -16.46], [23.3, -21.1]],
+    eutecticPct: 23.3,
+    source: "таблица рассолов при 60 °F; свойства водных растворов NaCl",
+  },
+};
+
+function interp(table: [number, number][], x: number): number {
+  if (x <= table[0][0]) return table[0][1];
+  for (let i = 1; i < table.length; i++) {
+    if (x <= table[i][0]) {
+      const [x0, y0] = table[i - 1], [x1, y1] = table[i];
+      return y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
+    }
+  }
+  return table[table.length - 1][1];
+}
+
+function inverseInterp(table: [number, number][], y: number): number {
+  for (let i = 1; i < table.length; i++) {
+    if (y <= table[i][1]) {
+      const [x0, y0] = table[i - 1], [x1, y1] = table[i];
+      return x0 + ((y - y0) / (y1 - y0)) * (x1 - x0);
+    }
+  }
+  return table[table.length - 1][0];
+}
+
+export function brineTableKey(salt: KillSalt): "CaCl" | "NaCl" | null {
+  if (salt.formula.startsWith("CaCl")) return "CaCl";
+  if (salt.formula === "NaCl") return "NaCl";
+  return null;
+}
+
+/** Концентрация чистой соли (масс. %) для заданной плотности: по таблице, если она есть, иначе линейно. */
+export function brineWtPct(salt: KillSalt, density: number): { wtPct: number; tabulated: boolean } {
+  const key = brineTableKey(salt);
+  if (key) return { wtPct: Math.max(0, inverseInterp(BRINE_TABLES[key].density, density)), tabulated: true };
+  return { wtPct: salt.densityCoeff_k > 0 ? Math.max(0, (density - 1) / salt.densityCoeff_k) : 0, tabulated: false };
+}
+
+/** Температура начала кристаллизации, °C (null — нет справочных данных). */
+export function brineCrystallizationC(salt: KillSalt, wtPct: number): number | null {
+  const key = brineTableKey(salt);
+  if (!key) return null;
+  const t = BRINE_TABLES[key];
+  if (key === "NaCl" && wtPct > t.eutecticPct) return null; // выше эвтектики — кристаллизация соли, данных нет
+  return interp(t.freezing, wtPct);
 }

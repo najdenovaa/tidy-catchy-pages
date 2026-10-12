@@ -13,7 +13,7 @@ interface Pad { id: string; name: string; field_id: string; }
 interface Well { id: string; name: string; well_pad_id: string; }
 
 export interface SaveCalcPayload {
-  module: "cementing" | "cement-plug" | "coiled-tubing" | "cementing-analysis";
+  module: "cementing" | "cement-plug" | "coiled-tubing" | "cementing-analysis" | "workover";
   title: string;
   well_data: unknown;
   calc_params: unknown;

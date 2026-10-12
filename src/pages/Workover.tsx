@@ -1,7 +1,11 @@
-import { memo, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
+import { openWorkoverReport, type ReportSection } from "@/lib/workover-report";
 import * as XLSX from "xlsx";
 import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-calculations";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Home, ArrowLeft, Wrench, Anchor, Activity, Magnet, Search, Construction as Crane, Droplets } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -29,7 +33,11 @@ import {
   type FreePointInput, type StuckSymptoms, type FishingInput, type RigInput, type KillInput,
   type KillSalt, type KillInterval,
 } from "@/lib/workover-calculations";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Waves, Layers, Save, FileDown } from "lucide-react";
+import {
+  calculateCleanout, checkCasing, calculateSwab, calculateBlockingPill, selectFishingTools, calculateBackOff,
+  type CleanoutInput, type CasingCheckInput, type SwabInput, type BlockingPillInput, type FishingToolInput,
+} from "@/lib/workover-operations";
 
 const num = (v: string) => (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
 
@@ -256,6 +264,179 @@ export default function Workover() {
     [fish, well, drag.frictionCoeff],
   );
 
+  // ──── Ловильный инструмент и отворот ────
+  const [fishTool, setFishTool] = useState<FishingToolInput>({
+    fishOD_mm: 88.9, fishID_mm: 62, headDamaged: false, minClearance_mm: 6, externalBodyWall_mm: 10,
+  });
+  const fishTools = useMemo(() => selectFishingTools(fishTool, well), [fishTool, well]);
+  const [backOff, setBackOff] = useState({ backOffMD: 0, breakoutTorqueKNm: 2.0 });
+  const backOffDepth = backOff.backOffMD > 0 ? backOff.backOffMD : fpResult.backOffMD;
+  const backOffResult = useMemo(
+    () => calculateBackOff({ backOffMD: backOffDepth, breakoutTorqueKNm: backOff.breakoutTorqueKNm, frictionCoeff: drag.frictionCoeff }, well),
+    [backOffDepth, backOff.breakoutTorqueKNm, drag.frictionCoeff, well],
+  );
+
+  // ──── Промывка пробки ────
+  const [cleanout, setCleanout] = useState<CleanoutInput>({
+    plugTopMD: 2350, plugBottomMD: 2450, method: "direct", rateLs: 8, grainDiameter_mm: 0.25, feedRate_mh: 6, plugPorosity: 0.4,
+  });
+  const cleanoutResult = useMemo(() => calculateCleanout(cleanout, well), [cleanout, well]);
+
+  // ──── Освоение ────
+  const [swab, setSwab] = useState<SwabInput>({
+    reservoirMD: 2300, reservoirPressureMPa: 18, targetDrawdownMPa: 5, fluidDensity: 1.0,
+    packerInstalled: true, swabSubmergenceM: 200, swabEfficiency: 0.8, swabSpeedMs: 2,
+  });
+  const swabResult = useMemo(() => calculateSwab(swab, well), [swab, well]);
+
+  // ──── Колонна: опрессовка и смятие ────
+  const [casing, setCasing] = useState<CasingCheckInput & { casingGrade: string }>({
+    casingOD_mm: 168.3, casingWall_mm: 8.0, casingGrade: "Д", casingYieldMPa: STEEL_GRADES["Д"], wearPct: 10,
+    bottomMD: 2500, testPressureMPa: 15, insideDensity: 1.0, outsideDensity: 1.05, levelMD: 0, sfBurst: 1.15, sfCollapse: 1.1,
+  });
+  const casingLevel = casing.levelMD > 0 ? casing.levelMD : swabResult.requiredLevelMD;
+  const casingResult = useMemo(
+    () => checkCasing({ ...casing, levelMD: casingLevel, bottomMD: Math.min(casing.bottomMD, well.wellDepthMD) }, well),
+    [casing, casingLevel, well],
+  );
+
+  // ──── Блокирующая пачка ────
+  const [pill, setPill] = useState<BlockingPillInput>({
+    perfTopMD: 2300, perfBottomMD: 2320, porosityPct: 18, penetrationRadiusM: 0.5, coverAboveM: 30, excessPct: 15, tubingShoeMD: 2200,
+  });
+  const pillResult = useMemo(() => calculateBlockingPill(pill, well), [pill, well]);
+
+  // ──── Сохранение в кабинет / загрузка / отчёт ────
+  const [searchParams] = useSearchParams();
+  const calcId = searchParams.get("calc");
+  const selectedWellId = searchParams.get("well");
+  const [saveOpen, setSaveOpen] = useState(false);
+
+  const buildPayload = (): SaveCalcPayload => ({
+    module: "workover",
+    title: `КРС ${new Date().toLocaleDateString("ru-RU")}`,
+    well_data: well,
+    calc_params: {
+      rig, packer, releaseExtra, kill, brineSaltId, brineTargetDensity, brineVolumeM3, brineMixing, brineTempC,
+      killIntervals, drag, lube, useLube, fp, symptoms, fish, fishTool, backOff, cleanout, swab, casing, pill,
+    },
+    results: {
+      hookLoadPullOutKN: pullOutFull, pipeAllowableKN: pipeYield,
+      killDensity: killResult.killDensity, icp: killResult.initialCircPressureMPa, fcp: killResult.finalCircPressureMPa,
+      packerMovementMM: packerResult.dLTotalMM, freePointMD: fpResult.freePointMD, stuckType: stuckDiag.type,
+      cleanoutMinRateLs: cleanoutResult.minRateLs, maxTestPressureMPa: casingResult.maxTestPressureMPa,
+      maxLevelMD: casingResult.maxLevelMD, pillVolumeM3: pillResult.pillVolumeM3,
+    },
+  });
+
+  useEffect(() => {
+    if (!calcId) return;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { toast.error("Войдите в кабинет, чтобы открыть расчёт"); return; }
+      const { data, error } = await supabase.from("saved_calculations").select("*").eq("id", calcId).single();
+      if (error || !data || data.user_id !== session.user.id) { toast.error("Не удалось загрузить расчёт"); return; }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const p = (data.calc_params ?? {}) as any;
+      if (data.well_data) setWell({ ...DEFAULT_WELL, ...(data.well_data as Partial<WorkoverWellData>) });
+      if (p.rig) setRig(p.rig);
+      if (p.packer) setPacker((x) => ({ ...x, ...p.packer }));
+      if (p.releaseExtra) setReleaseExtra((x) => ({ ...x, ...p.releaseExtra }));
+      if (p.kill) setKill((x) => ({ ...x, ...p.kill }));
+      if (typeof p.brineSaltId === "string") setBrineSaltId(p.brineSaltId);
+      if (typeof p.brineTargetDensity === "number") setBrineTargetDensity(p.brineTargetDensity);
+      if (typeof p.brineVolumeM3 === "number") setBrineVolumeM3(p.brineVolumeM3);
+      if (p.brineMixing) setBrineMixing(p.brineMixing);
+      if (typeof p.brineTempC === "number") setBrineTempC(p.brineTempC);
+      if (Array.isArray(p.killIntervals)) setKillIntervals(p.killIntervals);
+      if (p.drag) setDrag(p.drag);
+      if (p.lube) setLube(p.lube);
+      if (typeof p.useLube === "boolean") setUseLube(p.useLube);
+      if (p.fp) setFp(p.fp);
+      if (p.symptoms) setSymptoms((x) => ({ ...x, ...p.symptoms }));
+      if (p.fish) setFish((x) => ({ ...x, ...p.fish }));
+      if (p.fishTool) setFishTool((x) => ({ ...x, ...p.fishTool }));
+      if (p.backOff) setBackOff((x) => ({ ...x, ...p.backOff }));
+      if (p.cleanout) setCleanout((x) => ({ ...x, ...p.cleanout }));
+      if (p.swab) setSwab((x) => ({ ...x, ...p.swab }));
+      if (p.casing) setCasing((x) => ({ ...x, ...p.casing }));
+      if (p.pill) setPill((x) => ({ ...x, ...p.pill }));
+      toast.success(`Расчёт «${data.title}» загружен`);
+    })();
+  }, [calcId]);
+
+  const f1 = (x: number, d = 1) => (Number.isFinite(x) ? x.toFixed(d) : "—");
+  const openReport = () => {
+    const sections: ReportSection[] = [
+      { title: "Скважина и колонна НКТ", rows: [
+        ["Глубина MD / TVD забоя", `${well.wellDepthMD} / ${f1(tvdAtMD(well.wellDepthMD, well.trajectory), 0)} м`],
+        ["Обсадная колонна, ID", `${well.casingID_mm} мм`],
+        ["НКТ", `${well.pipeOD_mm}×${well.pipeID_mm} мм, ${well.pipeWeight_kgm} кг/м, гр. ${well.pipeGrade}, ${CONNECTION_LABELS[well.connectionType ?? "nu"]}`],
+        ["Остаточная прочность НКТ", `${well.pipeConditionPct ?? 100} %`],
+        ["Жидкость в скважине", `${well.fluidDensity_gcm3} г/см³, PV ${well.fluidPV_cP} сП, YP ${well.fluidYP_Pa} Па`],
+        ["Траектория", well.trajectory.map((t) => `${t.md}/${t.zenith}°/${t.azimuth}°`).join("; ")],
+      ] },
+      { title: "Сводка нагрузок", rows: [
+        ["Нагрузка на крюке при подъёме", `${f1(pullOutFull, 0)} кН`],
+        ["Допустимо на НКТ (резьба, износ, ÷1.25)", `${f1(pipeYield, 0)} кН`],
+        ["Допустимая нагрузка подъёмника", `${f1(rigResult.allowableLoadKN, 0)} кН`],
+      ], warnings: rigResult.warnings },
+      { title: "Пакер (Lubinski)", rows: [
+        ["Глубина посадки MD / TVD", `${packer.setDepthMD} / ${f1(packerResult.packerTVD, 0)} м`],
+        ["Перепад на пакер в работе", `${f1(packerResult.diffPressureMPa)} МПа (паспорт ${packer.ratingDiffMPa})`],
+        ["Перемещение НКТ: поршень / раздувание / температура / изгиб", `${f1(packerResult.dLPistonMM, 0)} / ${f1(packerResult.dLBallooningMM, 0)} / ${f1(packerResult.dLTemperatureMM, 0)} / ${f1(packerResult.dLBucklingMM, 0)} мм`],
+        ["Итого перемещение", `${f1(packerResult.dLTotalMM, 0)} мм`],
+        ...(packer.connection === "anchored" ? [["Нагрузка на пакер", `${f1(packerResult.packerLoadKN, 0)} кН`] as [string, string]] : []),
+        ["Нагрузка на крюке для срыва", `${f1(releaseResult.totalPullRequiredKN, 0)} кН`],
+      ], warnings: [...packerResult.warnings, ...releaseResult.warnings] },
+      { title: "Глушение", rows: [
+        ["Pпл / TVD пласта / Pгрп", `${kill.formationPressureMPa} МПа / ${kill.reservoirDepthTVD} м / ${kill.fracturePressureMPa} МПа`],
+        ["Запас", `${killResult.marginRule}: +${f1(killResult.appliedMarginMPa, 2)} МПа`],
+        ["Плотность глушения", `${f1(killResult.killDensity, 3)} г/см³`],
+        ["Объём скважины", `${f1(killResult.killVolumeM3, 2)} м³`],
+        ["Трение НКТ / затрубье", `${f1(killResult.tubingFrictionMPa, 2)} / ${f1(killResult.annulusFrictionMPa, 2)} МПа`],
+        ["ICP / FCP", `${f1(killResult.initialCircPressureMPa, 2)} / ${f1(killResult.finalCircPressureMPa, 2)} МПа`],
+        ...(brineRecipe ? [
+          ["Рецептура", `${brineRecipe.salt.name}: ${f1(brineRecipe.productMassKg, 0)} кг товарного + ${f1(brineRecipe.waterVolumeL, 0)} л воды`] as [string, string],
+          ["Температура кристаллизации", brineRecipe.crystallizationC === null ? "нет данных" : `${f1(brineRecipe.crystallizationC, 0)} °C`] as [string, string],
+        ] : []),
+        ["Блокирующая пачка / продавка", `${f1(pillResult.pillVolumeM3, 2)} / ${f1(pillResult.displacementVolumeM3, 2)} м³`],
+      ], warnings: [...killResult.warnings, ...(brineRecipe?.warnings ?? []), ...(multiIntervalPlan?.warnings ?? [])] },
+      { title: "Затяжки и момент", rows: [
+        ["Коэффициент трения", `${drag.frictionCoeff}`],
+        ["Подъём / спуск", `${f1(activeDrag.pickUpKN, 0)} / ${f1(activeDrag.slackOffKN, 0)} кН`],
+        ["Момент на устье при вращении", `${f1(activeDrag.surfaceTorqueKNm, 2)} кН·м`],
+      ] },
+      { title: "Прихват", rows: [
+        ["Натяжка / удлинение", `${fp.pulledForceKN} кН / ${fp.measuredStretchM} м`],
+        ["Точка прихвата (по Гуку / с трением)", `${f1(fpResult.idealFreePointMD, 0)} / ${f1(fpResult.freePointMD, 0)} м`],
+        ["Глубина отворота", `≈ ${f1(fpResult.backOffMD, 0)} м`],
+        ["Вероятный вид прихвата", `${STUCK_LABELS[stuckDiag.type]} (${f1(stuckDiag.probability * 100, 0)}%)`],
+        ["Рекомендация", stuckDiag.recommendation],
+      ] },
+      { title: "Ловильные работы", rows: [
+        ["Нагрузка на крюке при натяжке", `${f1(fishResult.requiredHookLoadKN, 0)} кН`],
+        ["Ясс: растяжение / скорость / удар", `${f1(fishResult.jarStretchM, 2)} м / ${f1(fishResult.jarVelocityMs)} м/с / ${f1(fishResult.jarImpactLowKN, 0)}–${f1(fishResult.jarImpactHighKN, 0)} кН`],
+        ["Инструмент", fishTools.options.filter((o) => o.feasible).map((o) => o.tool).join(", ")],
+        ["Отворот: момент на устье / закрутка", `${f1(backOffResult.surfaceTorqueKNm, 2)} кН·м / ${f1(backOffResult.turns)} об.`],
+      ], warnings: [...fishResult.warnings, ...backOffResult.warnings] },
+      { title: "Промывка песчаной пробки", rows: [
+        ["Пробка", `${cleanout.plugTopMD}–${cleanout.plugBottomMD} м, ${cleanout.method === "direct" ? "прямая" : "обратная"} промывка`],
+        ["Скорость осаждения / восходящая", `${f1(cleanoutResult.settlingVelocityMs, 3)} / ${f1(cleanoutResult.upflowVelocityMs, 2)} м/с`],
+        ["Минимальный расход", `${f1(cleanoutResult.minRateLs)} л/с`],
+        ["Время размыва / давление на насосе", `${f1(cleanoutResult.washTimeH)} ч / ${f1(cleanoutResult.pumpPressureMPa)} МПа`],
+      ], warnings: cleanoutResult.warnings },
+      { title: "Колонна и освоение", rows: [
+        ["Колонна", `${casing.casingOD_mm}×${casing.casingWall_mm} мм, гр. ${casing.casingGrade}, износ ${casing.wearPct}%`],
+        ["Давление разрыва / смятия (API 5C3)", `${f1(casingResult.burstRatingMPa)} / ${f1(casingResult.collapseRatingMPa)} МПа`],
+        ["Допустимое давление опрессовки на устье", `${f1(casingResult.maxTestPressureMPa)} МПа`],
+        ["Допустимое снижение уровня до", `${f1(casingResult.maxLevelMD, 0)} м`],
+        ["Освоение: уровень для депрессии", `${f1(swabResult.requiredLevelMD, 0)} м, ${swabResult.runs} рейсов сваба, ${f1(swabResult.timeH)} ч`],
+      ], warnings: [...casingResult.warnings, ...swabResult.warnings] },
+    ];
+    if (!openWorkoverReport("Расчёт КРС", sections)) toast.error("Браузер заблокировал окно отчёта — разрешите всплывающие окна для сайта");
+  };
+
   // ──── Drag chart ────
   const dragChart = useMemo(() => {
     const a = dragNoLube.points;
@@ -291,6 +472,12 @@ export default function Workover() {
             </p>
           </Link>
           <div className="flex items-center gap-3">
+            <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={openReport}>
+              <FileDown className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Отчёт PDF</span>
+            </Button>
+            <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setSaveOpen(true)}>
+              <Save className="w-3.5 h-3.5" /> <span className="hidden sm:inline">В кабинет</span>
+            </Button>
             <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground text-xs">
               <ArrowLeft className="w-4 h-4" /> <span>Назад</span>
             </Link>
@@ -444,12 +631,14 @@ export default function Workover() {
         </Card>
 
         <Tabs defaultValue="packer" className="w-full">
-          <TabsList className="grid grid-cols-2 sm:grid-cols-6 w-full h-auto">
+          <TabsList className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 w-full h-auto">
             <TabsTrigger value="packer" className="text-xs gap-1"><Anchor className="w-3.5 h-3.5" /> Пакеры</TabsTrigger>
             <TabsTrigger value="kill" className="text-xs gap-1"><Droplets className="w-3.5 h-3.5" /> Глушение</TabsTrigger>
             <TabsTrigger value="drag" className="text-xs gap-1"><Activity className="w-3.5 h-3.5" /> Затяжки / T&D</TabsTrigger>
             <TabsTrigger value="stuck" className="text-xs gap-1"><Magnet className="w-3.5 h-3.5" /> Прихваты</TabsTrigger>
             <TabsTrigger value="fishing" className="text-xs gap-1"><Search className="w-3.5 h-3.5" /> Ловильные</TabsTrigger>
+            <TabsTrigger value="cleanout" className="text-xs gap-1"><Waves className="w-3.5 h-3.5" /> Промывка</TabsTrigger>
+            <TabsTrigger value="casing" className="text-xs gap-1"><Layers className="w-3.5 h-3.5" /> Колонна / освоение</TabsTrigger>
             <TabsTrigger value="rig" className="text-xs gap-1"><Crane className="w-3.5 h-3.5" /> Подъёмник</TabsTrigger>
           </TabsList>
 
@@ -815,6 +1004,9 @@ export default function Workover() {
                       <div className="border-t pt-2 mt-2">
                         <Row k="⏱ Время растворения"
                           v={<strong>~{brineRecipe.dissolveTimeMin.toFixed(0)} мин</strong>} />
+                        <Row k="❄ Температура начала кристаллизации"
+                          v={brineRecipe.crystallizationC === null ? "нет справочных данных" : `${brineRecipe.crystallizationC.toFixed(0)} °C`}
+                          tone={brineRecipe.crystallizationC !== null && brineRecipe.crystallizationC > -10 ? "warn" : undefined} />
                       </div>
                       {brineRecipe.feasible
                         ? <Badge className="bg-green-600">🟢 Плотность достижима</Badge>
@@ -841,6 +1033,31 @@ export default function Workover() {
                     </div>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* ─── Блокирующая пачка ─── */}
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Блокирующая пачка (поглощающий пласт)</CardTitle></CardHeader>
+              <CardContent className="grid lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <NumberField label="Перфорация, верх" unit="м" value={pill.perfTopMD} onChange={(v) => setPill({ ...pill, perfTopMD: v })} />
+                  <NumberField label="Перфорация, низ" unit="м" value={pill.perfBottomMD} onChange={(v) => setPill({ ...pill, perfBottomMD: v })} />
+                  <NumberField label="Перекрытие над кровлей" unit="м" value={pill.coverAboveM} onChange={(v) => setPill({ ...pill, coverAboveM: v })} />
+                  <NumberField label="Пористость" unit="%" value={pill.porosityPct} onChange={(v) => setPill({ ...pill, porosityPct: v })} />
+                  <NumberField label="Радиус проникновения" unit="м" value={pill.penetrationRadiusM} onChange={(v) => setPill({ ...pill, penetrationRadiusM: v })} hint="обычно 0.3–1.0" />
+                  <NumberField label="Запас объёма" unit="%" value={pill.excessPct} onChange={(v) => setPill({ ...pill, excessPct: v })} />
+                  <NumberField label="Башмак НКТ" unit="м" value={pill.tubingShoeMD} onChange={(v) => setPill({ ...pill, tubingShoeMD: v })} />
+                </div>
+                <div className="space-y-2 text-sm">
+                  <Row k={`Объём в стволе (${pillResult.pillTopMD.toFixed(0)}–${Math.max(pill.perfTopMD, pill.perfBottomMD).toFixed(0)} м)`} v={`${pillResult.wellboreVolumeM3.toFixed(2)} м³`} />
+                  <Row k="Поровый объём зоны проникновения" v={`${pillResult.formationVolumeM3.toFixed(2)} м³`} />
+                  <Row k={`Объём пачки (+${pill.excessPct}%)`} v={<strong>{pillResult.pillVolumeM3.toFixed(2)} м³</strong>} />
+                  <Row k="Объём продавки до кровли пачки" v={`${pillResult.displacementVolumeM3.toFixed(2)} м³`} />
+                  {pillResult.warnings.map((w, i) => (
+                    <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
+                  ))}
+                </div>
               </CardContent>
             </Card>
 
@@ -1210,6 +1427,202 @@ export default function Workover() {
                 </CardContent>
               </Card>
             </div>
+            <div className="grid lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Подбор ловильного инструмента (ориентировочно)</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumberField label="Наружный диаметр головы рыбы" unit="мм" value={fishTool.fishOD_mm} onChange={(v) => setFishTool({ ...fishTool, fishOD_mm: v })} hint="муфта НКТ 73 — 88.9 мм" />
+                    <NumberField label="Внутренний диаметр головы" unit="мм" value={fishTool.fishID_mm} onChange={(v) => setFishTool({ ...fishTool, fishID_mm: v })} hint="0 — нет канала" />
+                    <NumberField label="Мин. зазор с колонной (по диаметру)" unit="мм" value={fishTool.minClearance_mm} onChange={(v) => setFishTool({ ...fishTool, minClearance_mm: v })} />
+                    <NumberField label="Стенка корпуса наружного захвата" unit="мм" value={fishTool.externalBodyWall_mm} onChange={(v) => setFishTool({ ...fishTool, externalBodyWall_mm: v })} hint="на сторону, по каталогу" />
+                    <label className="flex items-center gap-2 text-xs cursor-pointer col-span-2">
+                      <input type="checkbox" checked={fishTool.headDamaged} onChange={(e) => setFishTool({ ...fishTool, headDamaged: e.target.checked })} />
+                      Голова рыбы повреждена / неизвестна
+                    </label>
+                  </div>
+                  <Row k={`Макс. диаметр инструмента в колонне ID ${well.casingID_mm} мм`} v={`${fishTools.maxToolOD_mm.toFixed(0)} мм`} />
+                  <div className="space-y-1.5">
+                    {fishTools.options.map((o) => (
+                      <div key={o.tool} className="flex items-start gap-2 text-xs">
+                        <Badge className={o.feasible ? "bg-green-600" : ""} variant={o.feasible ? "default" : "secondary"}>{o.feasible ? "да" : "нет"}</Badge>
+                        <div><span className="font-medium">{o.tool}.</span> <span className="text-muted-foreground">{o.note}</span></div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Размеры конкретного инструмента — по каталогу поставщика: проверить диапазон захвата и наружный диаметр.</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Отворот: момент и число оборотов</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumberField label="Глубина отворота" unit="м" value={backOff.backOffMD} onChange={(v) => setBackOff({ ...backOff, backOffMD: v })}
+                      hint={`0 = по точке прихвата (${fpResult.backOffMD.toFixed(0)} м)`} />
+                    <NumberField label="Момент отворота резьбы" unit="кН·м" value={backOff.breakoutTorqueKNm} onChange={(v) => setBackOff({ ...backOff, breakoutTorqueKNm: v })}
+                      hint="≈ момент свинчивания × 1.2–1.5" />
+                  </div>
+                  <div className="text-sm space-y-1">
+                    <Row k="Момент трения колонны в стволе" v={`${backOffResult.frictionTorqueKNm.toFixed(2)} кН·м`} />
+                    <Row k="Момент на устье" v={<strong>{backOffResult.surfaceTorqueKNm.toFixed(2)} кН·м</strong>}
+                      tone={backOffResult.ok ? "ok" : "danger"} />
+                    <Row k="Закрутка колонны до передачи момента" v={<strong>{backOffResult.turns.toFixed(1)} об.</strong>} />
+                    <Row k="Предел тела трубы на кручение" v={`${backOffResult.torsionalYieldKNm.toFixed(1)} кН·м`} />
+                  </div>
+                  {backOffResult.warnings.map((w, i) => (
+                    <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* ──────────────── CLEANOUT ──────────────── */}
+          <TabsContent value="cleanout" className="space-y-4">
+            <div className="grid lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Промывка песчаной пробки</CardTitle></CardHeader>
+                <CardContent className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1 col-span-2">
+                    <Label className="text-xs">Способ промывки</Label>
+                    <Select value={cleanout.method} onValueChange={(v) => setCleanout({ ...cleanout, method: v as CleanoutInput["method"] })}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="direct">Прямая (вниз по НКТ, вверх по затрубью)</SelectItem>
+                        <SelectItem value="reverse">Обратная (вниз по затрубью, вверх по НКТ)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <NumberField label="Кровля пробки" unit="м" value={cleanout.plugTopMD} onChange={(v) => setCleanout({ ...cleanout, plugTopMD: v })} />
+                  <NumberField label="Подошва пробки" unit="м" value={cleanout.plugBottomMD} onChange={(v) => setCleanout({ ...cleanout, plugBottomMD: v })} />
+                  <NumberField label="Расход" unit="л/с" value={cleanout.rateLs} onChange={(v) => setCleanout({ ...cleanout, rateLs: v })} />
+                  <NumberField label="Диаметр зёрен песка" unit="мм" value={cleanout.grainDiameter_mm} onChange={(v) => setCleanout({ ...cleanout, grainDiameter_mm: v })} hint="0.1–0.5" />
+                  <NumberField label="Скорость подачи (размыва)" unit="м/ч" value={cleanout.feedRate_mh} onChange={(v) => setCleanout({ ...cleanout, feedRate_mh: v })} />
+                  <NumberField label="Пористость пробки" value={cleanout.plugPorosity} onChange={(v) => setCleanout({ ...cleanout, plugPorosity: v })} hint="доля, 0.35–0.45" />
+                  <p className="col-span-2 text-[10px] text-muted-foreground">
+                    Жидкость промывки — из общих данных ({well.fluidDensity_gcm3} г/см³, PV {well.fluidPV_cP} сП).
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Результаты промывки</CardTitle></CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <Row k={`Скорость осаждения песка (${cleanoutResult.settlingRegime})`} v={`${cleanoutResult.settlingVelocityMs.toFixed(3)} м/с`} />
+                  <Row k={`Восходящая скорость (${cleanoutResult.upflowArea})`} v={<strong>{cleanoutResult.upflowVelocityMs.toFixed(2)} м/с</strong>}
+                    tone={cleanoutResult.upflowVelocityMs >= 2 * cleanoutResult.settlingVelocityMs ? "ok" : "danger"} />
+                  <Row k="Коэффициент выноса (v − vос)/v" v={`${(cleanoutResult.transportRatio * 100).toFixed(0)} %`} />
+                  <Row k="Минимальный расход (v ≥ 2·vос)" v={`${cleanoutResult.minRateLs.toFixed(1)} л/с`} />
+                  <Row k="Время подъёма песка от кровли до устья" v={Number.isFinite(cleanoutResult.liftTimeMin) ? `${cleanoutResult.liftTimeMin.toFixed(0)} мин` : "не выносится"} />
+                  <Row k="Песок в пробке" v={`${cleanoutResult.sandVolumeM3.toFixed(2)} м³ / ${(cleanoutResult.sandMassKg / 1000).toFixed(1)} т`} />
+                  <Row k="Концентрация песка в потоке" v={`${cleanoutResult.sandConcentrationPct.toFixed(1)} % об.`}
+                    tone={cleanoutResult.sandConcentrationPct > 5 ? "warn" : undefined} />
+                  <Row k="Время размыва пробки" v={`${cleanoutResult.washTimeH.toFixed(1)} ч`} />
+                  <Row k="Давление на насосе (трение)" v={`${cleanoutResult.pumpPressureMPa.toFixed(1)} МПа`} />
+                  <Row k="Доп. давление на забой от трения" v={`${cleanoutResult.bottomholeExtraMPa.toFixed(2)} МПа`} />
+                  <div className="pt-1">
+                    {cleanoutResult.ok ? <Badge className="bg-green-600">🟢 Песок выносится</Badge> : <Badge variant="destructive">🔴 Недостаточный вынос</Badge>}
+                  </div>
+                  {cleanoutResult.warnings.map((w, i) => (
+                    <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* ──────────────── CASING / SWAB ──────────────── */}
+          <TabsContent value="casing" className="space-y-4">
+            <div className="grid lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Освоение снижением уровня (свабирование)</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumberField label="Глубина пласта MD" unit="м" value={swab.reservoirMD} onChange={(v) => setSwab({ ...swab, reservoirMD: v })} />
+                    <NumberField label="Pпл" unit="МПа" value={swab.reservoirPressureMPa} onChange={(v) => setSwab({ ...swab, reservoirPressureMPa: v })} />
+                    <NumberField label="Требуемая депрессия" unit="МПа" value={swab.targetDrawdownMPa} onChange={(v) => setSwab({ ...swab, targetDrawdownMPa: v })} />
+                    <NumberField label="Плотность жидкости" unit="г/см³" value={swab.fluidDensity} onChange={(v) => setSwab({ ...swab, fluidDensity: v })} />
+                    <NumberField label="Погружение сваба" unit="м" value={swab.swabSubmergenceM} onChange={(v) => setSwab({ ...swab, swabSubmergenceM: v })} hint="100–300" />
+                    <NumberField label="Коэффициент подачи" value={swab.swabEfficiency} onChange={(v) => setSwab({ ...swab, swabEfficiency: v })} hint="0.6–0.9" />
+                    <NumberField label="Скорость сваба" unit="м/с" value={swab.swabSpeedMs} onChange={(v) => setSwab({ ...swab, swabSpeedMs: v })} />
+                    <label className="flex items-end gap-2 text-xs cursor-pointer pb-2">
+                      <input type="checkbox" checked={swab.packerInstalled} onChange={(e) => setSwab({ ...swab, packerInstalled: e.target.checked })} />
+                      Пакер установлен
+                    </label>
+                  </div>
+                  <div className="text-sm space-y-1">
+                    <Row k="Статический уровень" v={`${swabResult.staticLevelMD.toFixed(0)} м MD (TVD ${swabResult.staticLevelTVD.toFixed(0)})`} />
+                    <Row k="Уровень для заданной депрессии" v={<strong>{swabResult.requiredLevelMD.toFixed(0)} м MD</strong>} tone={swabResult.feasible ? undefined : "danger"} />
+                    <Row k="Объём отбора" v={`${swabResult.volumeToRemoveM3.toFixed(2)} м³`} />
+                    <Row k="За один рейс сваба" v={`${(swabResult.volumePerRunM3 * 1000).toFixed(0)} л`} />
+                    <Row k="Число рейсов / время" v={`${swabResult.runs} / ${swabResult.timeH.toFixed(1)} ч`} />
+                  </div>
+                  {swabResult.warnings.map((w, i) => (
+                    <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Эксплуатационная колонна: опрессовка и смятие (API 5C3)</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <NumberField label="OD колонны" unit="мм" value={casing.casingOD_mm} onChange={(v) => setCasing({ ...casing, casingOD_mm: v })} />
+                    <NumberField label="Стенка" unit="мм" value={casing.casingWall_mm} onChange={(v) => setCasing({ ...casing, casingWall_mm: v })}
+                      hint={`ID ${(casing.casingOD_mm - 2 * casing.casingWall_mm).toFixed(1)} мм`} />
+                    <div className="space-y-1">
+                      <Label className="text-xs">Группа прочности</Label>
+                      <Select value={casing.casingGrade} onValueChange={(v) => setCasing({ ...casing, casingGrade: v, casingYieldMPa: STEEL_GRADES[v] ?? casing.casingYieldMPa })}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.keys(STEEL_GRADES).map((g) => <SelectItem key={g} value={g}>{g} — {STEEL_GRADES[g]} МПа</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <NumberField label="Износ стенки" unit="%" value={casing.wearPct} onChange={(v) => setCasing({ ...casing, wearPct: v })} />
+                    <NumberField label="Низ интервала MD" unit="м" value={casing.bottomMD} onChange={(v) => setCasing({ ...casing, bottomMD: v })} hint="пакер/забой" />
+                    <NumberField label="Давление опрессовки" unit="МПа" value={casing.testPressureMPa} onChange={(v) => setCasing({ ...casing, testPressureMPa: v })} />
+                    <NumberField label="ρ внутри" unit="г/см³" value={casing.insideDensity} onChange={(v) => setCasing({ ...casing, insideDensity: v })} />
+                    <NumberField label="ρ за колонной" unit="г/см³" value={casing.outsideDensity} onChange={(v) => setCasing({ ...casing, outsideDensity: v })} hint="опорное давление" />
+                    <NumberField label="Уровень в колонне" unit="м" value={casing.levelMD} onChange={(v) => setCasing({ ...casing, levelMD: v })}
+                      hint={`0 = из освоения (${swabResult.requiredLevelMD.toFixed(0)} м)`} />
+                    <NumberField label="Запас на разрыв" value={casing.sfBurst} onChange={(v) => setCasing({ ...casing, sfBurst: v })} />
+                    <NumberField label="Запас на смятие" value={casing.sfCollapse} onChange={(v) => setCasing({ ...casing, sfCollapse: v })} />
+                  </div>
+                  <div className="text-sm space-y-1">
+                    <Row k="Давление разрыва / допустимое" v={`${casingResult.burstRatingMPa.toFixed(1)} / ${casingResult.burstAllowableMPa.toFixed(1)} МПа`} />
+                    <Row k={`Давление смятия (${casingResult.collapseRegime}, D/t ${casingResult.dt.toFixed(1)}) / допустимое`} v={`${casingResult.collapseRatingMPa.toFixed(1)} / ${casingResult.collapseAllowableMPa.toFixed(1)} МПа`} />
+                    <Row k="Макс. нагрузка при опрессовке" v={`${casingResult.maxBurstLoadMPa.toFixed(1)} МПа на ${casingResult.maxBurstAtMD.toFixed(0)} м`} tone={casingResult.burstOk ? "ok" : "danger"} />
+                    <Row k="Допустимое давление опрессовки на устье" v={<strong>{casingResult.maxTestPressureMPa.toFixed(1)} МПа</strong>} />
+                    <Row k={`Макс. нагрузка на смятие (уровень ${casingLevel.toFixed(0)} м)`} v={`${casingResult.maxCollapseLoadMPa.toFixed(1)} МПа`} tone={casingResult.collapseOk ? "ok" : "danger"} />
+                    <Row k="Допустимое снижение уровня до" v={<strong>{casingResult.maxLevelMD.toFixed(0)} м</strong>} />
+                  </div>
+                  {casingResult.warnings.map((w, i) => (
+                    <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Нагрузки на колонну по глубине</CardTitle></CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={casingResult.profile.map((p) => ({ md: Math.round(p.md), burst: +p.burstLoad.toFixed(2), collapse: +p.collapseLoad.toFixed(2) }))}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="md" label={{ value: "MD, м", position: "insideBottom", offset: -5 }} />
+                    <YAxis label={{ value: "Давление, МПа", angle: -90, position: "insideLeft" }} />
+                    <Tooltip />
+                    <Legend />
+                    <ReferenceLine y={casingResult.burstAllowableMPa} stroke="#f43f5e" strokeDasharray="4 4" label="Допустимо: разрыв" />
+                    <ReferenceLine y={casingResult.collapseAllowableMPa} stroke="#f59e0b" strokeDasharray="4 4" label="Допустимо: смятие" />
+                    <Line type="monotone" dataKey="burst" name="Опрессовка (внутр. − наруж.)" stroke="#0ea5e9" dot={false} />
+                    <Line type="monotone" dataKey="collapse" name="Снижение уровня (наруж. − внутр.)" stroke="#a855f7" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ──────────────── RIG ──────────────── */}
@@ -1290,6 +1703,14 @@ export default function Workover() {
       </main>
 
       <TermsFooter />
+      <SaveToCabinetDialog
+        open={saveOpen}
+        onOpenChange={setSaveOpen}
+        defaultTitle={`КРС ${new Date().toLocaleDateString("ru-RU")}`}
+        initialWellId={selectedWellId}
+        calcId={calcId}
+        buildPayload={buildPayload}
+      />
     </div>
   );
 }

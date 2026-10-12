@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Home, LogOut, Plus, Trash2, ChevronRight, FolderOpen, FlaskConical, Droplets, Zap, Copy, Blocks, Cable, Ruler, Cpu, Send } from "lucide-react";
+import { Home, LogOut, Plus, Trash2, ChevronRight, FolderOpen, FlaskConical, Droplets, Zap, Copy, Blocks, Cable, Ruler, Cpu, Send, Wrench } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import ChatHistory from "@/components/ChatHistory";
 import { useToast } from "@/hooks/use-toast";
@@ -166,6 +166,7 @@ export default function Dashboard() {
     if (m === "coiled-tubing") return <Cable className="w-4 h-4 text-purple-500" />;
     if (m === "cementing-analysis") return <Cpu className="w-4 h-4 text-cyan-500" />;
     if (m === "drilling-fluids") return <Droplets className="w-4 h-4 text-blue-500" />;
+    if (m === "workover") return <Wrench className="w-4 h-4 text-amber-600" />;
     return <Zap className="w-4 h-4 text-yellow-500" />;
   };
 
@@ -175,6 +176,7 @@ export default function Dashboard() {
     if (m === "coiled-tubing") return "ГНКТ";
     if (m === "cementing-analysis") return "Анализ цементирования";
     if (m === "drilling-fluids") return "Буровые растворы";
+    if (m === "workover") return "КРС";
     return "ГРП";
   };
 
@@ -182,6 +184,7 @@ export default function Dashboard() {
     const base = c.module === "cement-plug" ? "/cementing/plugs"
       : c.module === "coiled-tubing" ? "/coiled-tubing"
       : c.module === "cementing-analysis" ? "/cementing/analysis"
+      : c.module === "workover" ? "/workover"
       : "/cementing/program";
     return `${base}?from=dashboard&well=${c.well_id}&calc=${c.id}`;
   };
@@ -333,14 +336,15 @@ export default function Dashboard() {
               <p className="text-xs text-muted-foreground">Выберите скважину выше, чтобы увидеть её расчёты</p>
             ) : (
               <Tabs defaultValue="all" className="w-full">
-                <TabsList className="grid grid-cols-5 w-full max-w-2xl">
+                <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full max-w-3xl h-auto">
                   <TabsTrigger value="all" className="text-xs">Все ({calcs.length})</TabsTrigger>
                   <TabsTrigger value="cementing" className="text-xs"><FlaskConical className="w-3 h-3 mr-1" /> Цем. ({calcs.filter(c => c.module === "cementing").length})</TabsTrigger>
                   <TabsTrigger value="cement-plug" className="text-xs"><Blocks className="w-3 h-3 mr-1" /> Мосты ({calcs.filter(c => c.module === "cement-plug").length})</TabsTrigger>
                   <TabsTrigger value="coiled-tubing" className="text-xs"><Cable className="w-3 h-3 mr-1" /> ГНКТ ({calcs.filter(c => c.module === "coiled-tubing").length})</TabsTrigger>
                   <TabsTrigger value="cementing-analysis" className="text-xs"><Cpu className="w-3 h-3 mr-1" /> Анализ ({calcs.filter(c => c.module === "cementing-analysis").length})</TabsTrigger>
+                  <TabsTrigger value="workover" className="text-xs"><Wrench className="w-3 h-3 mr-1" /> КРС ({calcs.filter(c => c.module === "workover").length})</TabsTrigger>
                 </TabsList>
-                {(["all", "cementing", "cement-plug", "coiled-tubing", "cementing-analysis"] as const).map(tab => {
+                {(["all", "cementing", "cement-plug", "coiled-tubing", "cementing-analysis", "workover"] as const).map(tab => {
                   const list = tab === "all" ? calcs : calcs.filter(c => c.module === tab);
                   return (
                     <TabsContent key={tab} value={tab} className="mt-3">
