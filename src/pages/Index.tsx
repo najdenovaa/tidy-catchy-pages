@@ -222,6 +222,13 @@ export default function Index() {
     }));
   }, [buffers, slurries, displacementFluids, wellData, drillingFluid, fractureGradient, flushTimeMin, flushVolumeM3]);
 
+  const applyProtocolSlurries = useCallback((next: SlurryInput[]) => {
+    setSlurries(next);
+    setCalcSnapshot(normalizeCementingSnapshot({
+      wellData, drillingFluid, slurries: next, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3,
+    }));
+  }, [wellData, drillingFluid, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3]);
+
   const handleCalculate = useCallback(() => {
     const snapshot = normalizeCementingSnapshot({
       wellData,
@@ -705,6 +712,7 @@ export default function Index() {
                   displacementFluids={calcSnapshot.displacementFluids}
                   pressure={pressureResult}
                   volumes={volumes}
+                  onApplySlurries={applyProtocolSlurries}
                 />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАСЧЁТ» для получения результатов</div>

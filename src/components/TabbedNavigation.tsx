@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ClipboardList, BarChart3, Film } from "lucide-react";
+import { ClipboardList, BarChart3, Film, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TabItem {
@@ -39,7 +39,6 @@ const GROUPS: TabGroup[] = [
       { value: "schedule", label: "Закачка" },
       { value: "hydraulics", label: "Гидравлика" },
       { value: "lab", label: "Лаборатория и рецептура" },
-      { value: "optimizer", label: "Автоподбор" },
       { value: "contact", label: "Контакт" },
       { value: "quality", label: "Качество (CQI)" },
       { value: "torquedrag", label: "T&D" },
@@ -54,6 +53,12 @@ const GROUPS: TabGroup[] = [
       { value: "animation", label: "Анимация" },
       { value: "visual", label: "Визуализация" },
     ],
+  },
+  {
+    id: "optimizer",
+    label: "Автоподбор",
+    icon: Wand2,
+    tabs: [{ value: "optimizer", label: "Автоподбор программы" }],
   },
 ];
 
@@ -100,16 +105,18 @@ export default function TabbedNavigation({ activeTab, onTabChange, rightSlot }: 
                 >
                   <Icon className="h-3.5 w-3.5" />
                   <span className="uppercase tracking-wide">{g.label}</span>
-                  <span className={cn("text-[10px] opacity-70", isActive && "opacity-90")}>
-                    {g.tabs.length}
-                  </span>
+                  {g.tabs.length > 1 && (
+                    <span className={cn("text-[10px] opacity-70", isActive && "opacity-90")}>
+                      {g.tabs.length}
+                    </span>
+                  )}
                 </button>
               );
             })}
           </div>
 
           {/* Sub-tabs справа от групп */}
-          <div className="overflow-x-auto scrollbar-hide flex-1 min-w-0">
+          <div className={cn("overflow-x-auto scrollbar-hide flex-1 min-w-0", activeGroup.tabs.length === 1 && "hidden")}>
             <TabsList className="inline-flex w-max h-auto min-w-max">
               {activeGroup.tabs.map((t) => (
                 <TabsTrigger

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { ComposedChart, Line, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { buildLabProgram, buildRecipe, type LabStatus } from "@/lib/cement-program";
 import { fitRheology } from "@/lib/cement-rheology";
+import LabProtocolPanel from "@/components/LabProtocolPanel";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid, PressureProfileResult, VolumeResults, Rheology } from "@/lib/cementing-calculations";
 
 interface Props {
@@ -14,6 +15,7 @@ interface Props {
   displacementFluids: DisplacementFluid[];
   pressure: PressureProfileResult | null;
   volumes: VolumeResults | null;
+  onApplySlurries?: (slurries: SlurryInput[]) => void;
 }
 
 const STATUS: Record<LabStatus, { label: string; cls: string }> = {
@@ -25,7 +27,7 @@ const STATUS: Record<LabStatus, { label: string; cls: string }> = {
 
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
-export default function CementLabSection({ wellData, slurries, buffers, drillingFluid, displacementFluids, pressure, volumes }: Props) {
+export default function CementLabSection({ wellData, slurries, buffers, drillingFluid, displacementFluids, pressure, volumes, onApplySlurries }: Props) {
   const lab = useMemo(() => buildLabProgram(wellData, slurries, pressure, volumes), [wellData, slurries, pressure, volumes]);
   const recipes = useMemo(
     () => slurries.map((s, i) => buildRecipe(s, volumes?.slurryVolumes.find((v) => v.name === s.name)?.slurryVolumeM3 ?? volumes?.slurryVolumes[i]?.slurryVolumeM3 ?? 0)),
@@ -34,6 +36,7 @@ export default function CementLabSection({ wellData, slurries, buffers, drilling
 
   return (
     <div className="space-y-4">
+      <LabProtocolPanel input={{ wellData, slurries, buffers, drillingFluid, pressure, volumes }} onApplySlurries={onApplySlurries} />
       <TemperatureCard lab={lab} />
       {lab.slurries.map((p) => (
         <Card key={p.slurryName} className="p-4 space-y-3">
