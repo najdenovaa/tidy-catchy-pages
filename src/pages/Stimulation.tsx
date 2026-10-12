@@ -43,6 +43,14 @@ import {
 } from "@/lib/stimulation-injection";
 import { calculateWormholes, treatedDamageSkin, REGIME_LABEL } from "@/lib/stimulation-wormhole";
 import { CEMENT_LABEL, type CementQuality } from "@/lib/stimulation-ranking";
+import {
+  buildInjectionSchedule, calculateStimulationEconomics, allocateAcidToZones,
+  type ScheduleStage, type Zone,
+} from "@/lib/stimulation-operations";
+import { interpretStepRateTest, type StepRatePoint } from "@/lib/foam-treatment-diagnostics";
+import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
+import { supabase } from "@/integrations/supabase/client";
+import { Save } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Plus, Trash2 } from "lucide-react";
 
@@ -209,10 +217,34 @@ export default function Stimulation() {
   const mineralogy: Mineralogy = useMemo(() => toLegacyMineralogy(detailedMin), [detailedMin]);
 
   // Давление гидроразрыва (упрощённая Eaton) — для сравнения с давлением обработки
-  const pFracMPa = useMemo(
+  const pFracEaton = useMemo(
     () => fracturePressureMPa(depthProfile, reservoir.reservoirPressureMPa, stressState, construction.perfTopTVD),
     [depthProfile, reservoir.reservoirPressureMPa, stressState, construction.perfTopTVD]
   );
+  // Ступенчатая закачка (SRT): давление разрыва по факту
+  const [srtPoints, setSrtPoints] = useState<StepRatePoint[]>([]);
+  const [srtPressureType, setSrtPressureType] = useState<"bhp" | "surface">("surface");
+  const [srtFluidDensity, setSrtFluidDensity] = useState(1.0);
+  const [pFracOverride, setPFracOverride] = useState(0);
+  const srtBhpPoints = useMemo(() => srtPoints.map((p) => ({
+    rate: p.rate,
+    pressure: srtPressureType === "bhp" ? p.pressure : p.pressure + (srtFluidDensity * 1000 * 9.81 * construction.perfTopTVD) / 1e6,
+  })), [srtPoints, srtPressureType, srtFluidDensity, construction.perfTopTVD]);
+  const srt = useMemo(() => interpretStepRateTest(srtBhpPoints), [srtBhpPoints]);
+  const pFracMPa = pFracOverride > 0 ? pFracOverride : pFracEaton;
+
+  // График закачки, пропластки, экономика
+  const [pumpMaxLpm, setPumpMaxLpm] = useState(400);
+  const [wellFluidDensity, setWellFluidDensity] = useState(1.05);
+  const [zones, setZones] = useState<Zone[]>([
+    { name: "Пропласток 1", h_m: 4, k_mD: 60, skin: 4 },
+    { name: "Пропласток 2", h_m: 8, k_mD: 8, skin: 9 },
+  ]);
+  const [diverterEff, setDiverterEff] = useState(0);
+  const [econ, setEcon] = useState({
+    pricePerUnit: 30000, mineralTaxPerUnit: 15000, opexPerUnit: 3000, profitTaxRate: 0.25, discountRate: 0.15,
+    reagentCostRub: 0, serviceCostRub: 600000, mobilizationRub: 300000, downtimeDays: 3,
+  });
 
   const drilling: DrillingHistory = useMemo(() => ({
     mudType, mudWeight: 1.18, overbalanceMPa, soakTimeDays: soakDays,
@@ -457,6 +489,47 @@ export default function Stimulation() {
   );
   const catalogRateMid = (selected.recommendedRate[0] + selected.recommendedRate[1]) / 2;
 
+  const scheduleStages: ScheduleStage[] = useMemo(() => {
+    if (stages) return [
+      { name: "Preflush", volumeM3: stages.preflush.volumeM3, density_gcm3: 1.03 },
+      { name: "Основная кислота", volumeM3: stages.mainAcid.volumeM3, density_gcm3: dissLive.densityGcc, isMainAcid: true },
+      { name: "Afterflush", volumeM3: stages.afterflush.volumeM3, density_gcm3: 1.03 },
+      { name: "Продавка", volumeM3: displacement.totalM3, density_gcm3: wellFluidDensity },
+    ];
+    return [
+      { name: "Основной реагент", volumeM3: acidVol, density_gcm3: Math.max(0.7, selected.mainReagent.density), isMainAcid: true },
+      { name: "Продавка", volumeM3: displacement.totalM3, density_gcm3: wellFluidDensity },
+    ];
+  }, [stages, dissLive.densityGcc, displacement.totalM3, wellFluidDensity, acidVol, selected.mainReagent.density]);
+
+  const schedule = useMemo(() => {
+    if (selected.category === "nitrogen") return null;
+    return buildInjectionSchedule({
+      stages: scheduleStages, wellboreVolumeM3: displacement.totalM3, pathMD: construction.perfTopMD,
+      perfTVD: construction.perfTopTVD, tubingID_mm: construction.tubingID_mm, tubingLengthM: Math.min(construction.tubingShoeMD, construction.perfTopMD),
+      initialWellboreDensity_gcm3: wellFluidDensity, reservoirPressureMPa: reservoir.reservoirPressureMPa,
+      fracturePressureMPa: pFracMPa, safetyMarginMPa: fracMarginMPa, k_mD: reservoir.permeability_mD, h_m: reservoir.payZoneM,
+      fluidViscosity_cP: injFluidViscosity, skinStart: skinCurrent, skinEnd: skinAfterTreatment,
+      pumpMaxLpm, minRateLpm: 10, drainageRadiusM: 250, wellboreRadiusM: 0.108,
+    });
+  }, [selected.category, scheduleStages, displacement.totalM3, construction, wellFluidDensity, reservoir, pFracMPa, fracMarginMPa, injFluidViscosity, skinCurrent, skinAfterTreatment, pumpMaxLpm]);
+
+  const zoneAllocation = useMemo(
+    () => allocateAcidToZones(zones, acidVol, selected.volumePerMeterPay * selected.numberOfCycles, diverterEff),
+    [zones, acidVol, selected.volumePerMeterPay, selected.numberOfCycles, diverterEff],
+  );
+
+  useEffect(() => {
+    setDiverterEff(selected.type === "acid_diversion" ? 0.7 : selected.category === "foam" || selected.type === "foam_acid_combo" ? 0.5 : 0);
+  }, [selected.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const reagentCostAuto = selected.mainReagent.costPerM3 * acidVol;
+  const economics = useMemo(() => calculateStimulationEconomics(forecast, {
+    ...econ,
+    reagentCostRub: econ.reagentCostRub > 0 ? econ.reagentCostRub : reagentCostAuto,
+    oilDensity_kgm3: fluidProps.oilDensity_kgm3, isGas,
+  }), [forecast, econ, reagentCostAuto, fluidProps.oilDensity_kgm3, isGas]);
+
   const chartData = useMemo(() => forecast.map((p) => ({
     month: p.month,
     baseline: Number(p.qBaseline.toFixed(2)),
@@ -465,6 +538,72 @@ export default function Stimulation() {
     cum: Number(p.cumulativeDeltaM3.toFixed(0)),
   })), [forecast]);
 
+
+  // ── Сохранение в кабинет / загрузка ──
+  const calcId = searchParams.get("calc");
+  const selectedWellId = searchParams.get("well");
+  const [saveOpen, setSaveOpen] = useState(false);
+  const buildPayload = (): SaveCalcPayload => ({
+    module: "stimulation",
+    title: `ОПЗ ${wellName} ${new Date().toLocaleDateString("ru-RU")}`,
+    well_data: { wellName, reservoir, construction, fluidType },
+    calc_params: {
+      gasGravity, zFactorManual, dewPointMPa, condGasRatio, bhpCurrentMPa,
+      qInitial, qCurrent, waterCut, monthsHistory, skinCurrent, historyMode, measured,
+      detailedMin, geologyMode, fluidProps, depthProfile, stressState,
+      perfDensity, mudType, overbalanceMPa, soakDays, distanceToContactM, cementQuality,
+      selectedMethodId, composition, plannedRateLpm, injFluidViscosity, fracMarginMPa,
+      viOptCmMin, pvBtOpt, damageRadiusM, hfLiveRadiusM,
+      srtPoints, srtPressureType, srtFluidDensity, pFracOverride,
+      pumpMaxLpm, wellFluidDensity, zones, diverterEff, econ,
+    },
+    results: {
+      method: selected.nameRu, acidVolM3: acidVol, skinAfter: skinAfterTreatment, pFracMPa,
+      maxRateStartLpm: injection.maxRateStartLpm, maxSurfaceMPa: injection.maxSurfacePressureMPa,
+      cumulativeDeltaM3: forecast[forecast.length - 1]?.cumulativeDeltaM3 ?? 0, npv: economics.npv,
+    },
+  });
+  useEffect(() => {
+    if (!calcId) return;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { toast.error("Войдите в кабинет, чтобы открыть расчёт"); return; }
+      const { data, error } = await supabase.from("saved_calculations").select("*").eq("id", calcId).single();
+      if (error || !data || data.user_id !== session.user.id) { toast.error("Не удалось загрузить расчёт"); return; }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const w = (data.well_data ?? {}) as any, p = (data.calc_params ?? {}) as any;
+      if (w.wellName) setWellName(w.wellName);
+      if (w.reservoir) setReservoir(w.reservoir);
+      if (w.construction) setConstruction(w.construction);
+      if (w.fluidType) setFluidType(w.fluidType);
+      const num = (k: string, f: (v: number) => void) => { if (typeof p[k] === "number") f(p[k]); };
+      num("gasGravity", setGasGravity); num("zFactorManual", setZFactorManual); num("dewPointMPa", setDewPointMPa);
+      num("condGasRatio", setCondGasRatio); num("bhpCurrentMPa", setBhpCurrentMPa); num("qInitial", setQInitial);
+      num("qCurrent", setQCurrent); num("waterCut", setWaterCut); num("monthsHistory", setMonthsHistory);
+      num("skinCurrent", setSkinCurrent); num("perfDensity", setPerfDensity); num("overbalanceMPa", setOverbalanceMPa);
+      num("soakDays", setSoakDays); num("distanceToContactM", setDistanceToContactM); num("plannedRateLpm", setPlannedRateLpm);
+      num("injFluidViscosity", setInjFluidViscosity); num("fracMarginMPa", setFracMarginMPa); num("viOptCmMin", setViOptCmMin);
+      num("pvBtOpt", setPvBtOpt); num("damageRadiusM", setDamageRadiusM); num("hfLiveRadiusM", setHfLiveRadiusM);
+      num("srtFluidDensity", setSrtFluidDensity); num("pFracOverride", setPFracOverride); num("pumpMaxLpm", setPumpMaxLpm);
+      num("wellFluidDensity", setWellFluidDensity); num("diverterEff", setDiverterEff);
+      if (p.historyMode) setHistoryMode(p.historyMode);
+      if (Array.isArray(p.measured)) setMeasured(p.measured);
+      if (p.detailedMin) setDetailedMin(p.detailedMin);
+      if (p.geologyMode) setGeologyMode(p.geologyMode);
+      if (p.fluidProps) setFluidProps(p.fluidProps);
+      if (p.depthProfile) setDepthProfile(p.depthProfile);
+      if (p.stressState) setStressState(p.stressState);
+      if (p.mudType) setMudType(p.mudType);
+      if (p.cementQuality) setCementQuality(p.cementQuality);
+      if (p.selectedMethodId) setSelectedMethodId(p.selectedMethodId);
+      if (p.composition) setTimeout(() => setComposition(p.composition), 0);
+      if (Array.isArray(p.srtPoints)) setSrtPoints(p.srtPoints);
+      if (p.srtPressureType) setSrtPressureType(p.srtPressureType);
+      if (Array.isArray(p.zones)) setZones(p.zones);
+      if (p.econ) setEcon((x) => ({ ...x, ...p.econ }));
+      toast.success(`Расчёт «${data.title}» загружен`);
+    })();
+  }, [calcId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleExport() {
     try {
@@ -494,7 +633,9 @@ export default function Stimulation() {
             <ArrowLeft className="w-4 h-4" /> На главную
           </Link>
           <h1 className="text-base sm:text-lg font-semibold text-foreground">Интенсификация добычи (ОПЗ)</h1>
-          <span className="text-xs text-muted-foreground hidden sm:inline">КРС · Стимуляция</span>
+          <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setSaveOpen(true)}>
+            <Save className="w-3.5 h-3.5" /> <span className="hidden sm:inline">В кабинет</span>
+          </Button>
         </div>
       </header>
 
@@ -873,6 +1014,104 @@ export default function Stimulation() {
               </Card>
             )}
 
+            {selected.category !== "nitrogen" && (
+              <Card className="p-4 space-y-3">
+                <h3 className="font-semibold">Ступенчатая закачка (определение давления ГРП по факту)</h3>
+                <p className="text-xs text-muted-foreground">Введите стабилизированное давление на каждой ступени расхода. Излом на графике «давление — расход» — давление раскрытия трещины.</p>
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div className="space-y-1">
+                    <Label>Давление в таблице</Label>
+                    <Select value={srtPressureType} onValueChange={(v) => setSrtPressureType(v as "bhp" | "surface")}>
+                      <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="surface">на устье</SelectItem>
+                        <SelectItem value="bhp">забойное</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {srtPressureType === "surface" && (
+                    <div className="w-48"><Field label="ρ жидкости теста, г/см³" value={srtFluidDensity} onChange={setSrtFluidDensity} step={0.01} hint="Для пересчёта в забойное; трение на малых расходах не учитывается" /></div>
+                  )}
+                  <Button size="sm" variant="outline" onClick={() => setSrtPoints([...srtPoints, { rate: (srtPoints[srtPoints.length - 1]?.rate ?? 0) + 20, pressure: srtPoints[srtPoints.length - 1]?.pressure ?? 0 }])}>
+                    <Plus className="w-3 h-3 mr-1" />Ступень
+                  </Button>
+                </div>
+                {srtPoints.length > 0 && (
+                  <table className="w-full text-xs max-w-md">
+                    <thead><tr><th className="text-left p-1">Расход, м³/сут</th><th className="text-left p-1">Давление, МПа</th><th></th></tr></thead>
+                    <tbody>
+                      {srtPoints.map((pt, i) => (
+                        <tr key={i}>
+                          <td className="p-1"><Input type="number" className="h-7 text-xs" value={pt.rate} onChange={(e) => setSrtPoints(srtPoints.map((x, j) => j === i ? { ...x, rate: parseFloat(e.target.value) || 0 } : x))} /></td>
+                          <td className="p-1"><Input type="number" className="h-7 text-xs" value={pt.pressure} onChange={(e) => setSrtPoints(srtPoints.map((x, j) => j === i ? { ...x, pressure: parseFloat(e.target.value) || 0 } : x))} /></td>
+                          <td className="p-1"><Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setSrtPoints(srtPoints.filter((_, j) => j !== i))}><Trash2 className="w-3 h-3" /></Button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <div className="text-sm">{srt.verdictText}</div>
+                {srt.verdict !== "insufficient_data" && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                    <KV k="Приёмистость по тесту" v={`${srt.matrixInjectivity.toFixed(1)} м³/(сут·МПа)`} />
+                    <KV k="Приёмистость по расчёту (текущий скин)" v={`${injection.injectivityStart.toFixed(1)} м³/(сут·МПа)`} />
+                    {srt.formationPartingPressure != null && <KV k="Давление раскрытия (забой)" v={`${srt.formationPartingPressure.toFixed(1)} МПа`} />}
+                  </div>
+                )}
+                <div className="flex items-center gap-3 flex-wrap">
+                  {srt.formationPartingPressure != null && (
+                    <Button size="sm" onClick={() => setPFracOverride(+srt.formationPartingPressure!.toFixed(1))}>Принять Pгрп = {srt.formationPartingPressure.toFixed(1)} МПа</Button>
+                  )}
+                  {pFracOverride > 0 && (
+                    <>
+                      <Badge variant="outline">Pгрп из теста: {pFracOverride} МПа (Итон: {pFracEaton.toFixed(1)})</Badge>
+                      <Button size="sm" variant="ghost" onClick={() => setPFracOverride(0)}>Вернуть расчёт по Итону</Button>
+                    </>
+                  )}
+                </div>
+              </Card>
+            )}
+
+            {(selected.category === "acid" || selected.category === "combo" || selected.category === "foam") && (
+              <Card className="p-4 space-y-3">
+                <h3 className="font-semibold">Распределение реагента по пропласткам</h3>
+                <p className="text-xs text-muted-foreground">Без отклонителя реагент уходит в пропласток с наибольшей приёмистостью (k·h и скин). Отклонитель выравнивает профиль.</p>
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50"><tr>
+                    <th className="p-1.5 text-left">Пропласток</th><th className="p-1.5 text-left">h, м</th><th className="p-1.5 text-left">k, мД</th><th className="p-1.5 text-left">Скин</th>
+                    <th className="p-1.5 text-right">Доля</th><th className="p-1.5 text-right">Получит, м³</th><th className="p-1.5 text-right">Нужно, м³</th><th className="p-1.5 text-right">Охват</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {zones.map((z, i) => {
+                      const a = zoneAllocation[i];
+                      return (
+                        <tr key={i} className="border-t border-border/40">
+                          <td className="p-1"><Input className="h-7 text-xs" value={z.name} onChange={(e) => setZones(zones.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} /></td>
+                          {(["h_m", "k_mD", "skin"] as const).map((k) => (
+                            <td key={k} className="p-1"><Input type="number" className="h-7 text-xs w-20" value={z[k]} onChange={(e) => setZones(zones.map((x, j) => j === i ? { ...x, [k]: parseFloat(e.target.value) || 0 } : x))} /></td>
+                          ))}
+                          <td className="p-1 text-right">{a?.sharePct.toFixed(0)}%</td>
+                          <td className="p-1 text-right">{a?.volumeM3.toFixed(1)}</td>
+                          <td className="p-1 text-right">{a?.requiredM3.toFixed(1)}</td>
+                          <td className={`p-1 text-right font-medium ${a && a.coveragePct < 50 ? "text-red-600" : a && a.coveragePct < 80 ? "text-amber-600" : "text-green-600"}`}>{a?.coveragePct.toFixed(0)}%</td>
+                          <td className="p-1"><Button size="icon" variant="ghost" className="h-7 w-7" disabled={zones.length <= 1} onClick={() => setZones(zones.filter((_, j) => j !== i))}><Trash2 className="w-3 h-3" /></Button></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <div className="flex flex-wrap items-end gap-3">
+                  <Button size="sm" variant="outline" onClick={() => setZones([...zones, { name: `Пропласток ${zones.length + 1}`, h_m: 3, k_mD: 10, skin: 5 }])}><Plus className="w-3 h-3 mr-1" />Пропласток</Button>
+                  <div className="w-64"><Field label="Эффективность отклонения (0–1)" value={diverterEff} onChange={(v) => setDiverterEff(Math.min(1, Math.max(0, v)))} step={0.1} hint="0 — без отклонителя; волокна/шары/пена 0.5–0.8; 1 — идеально по толщине" /></div>
+                </div>
+                {zoneAllocation.some((a) => a.coveragePct < 50) && (
+                  <div className="text-xs text-amber-700 dark:text-amber-300">
+                    ⚠ {zoneAllocation.filter((a) => a.coveragePct < 50).map((a) => a.name).join(", ")} — получит меньше половины нужного объёма. Нужен отклонитель или поинтервальная обработка (пакер).
+                  </div>
+                )}
+              </Card>
+            )}
+
             {(selected.category === "acid" || selected.category === "foam" || selected.category === "combo") && (
               <AcidCompositionEditor
                 value={composition}
@@ -1084,6 +1323,52 @@ export default function Stimulation() {
 
           {/* ─────────── PLAN ─────────── */}
           <TabsContent value="plan" className="space-y-4 mt-4">
+            {schedule && (
+              <Card className="p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <h3 className="font-semibold">График закачки</h3>
+                  <span className="text-xs text-muted-foreground">общее время {schedule.totalTimeMin.toFixed(0)} мин · макс. на устье {schedule.maxSurfaceMPa.toFixed(1)} МПа · макс. забойное {schedule.maxBhpMPa.toFixed(1)} МПа (Pгрп {pFracMPa.toFixed(1)})</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <Field label="Подача насоса макс., л/мин" value={pumpMaxLpm} onChange={setPumpMaxLpm} step={50} hint="По паспорту агрегата" />
+                  <Field label="ρ скважинной жидкости, г/см³" value={wellFluidDensity} onChange={setWellFluidDensity} step={0.01} hint="Заполнение ствола до начала и жидкость продавки" />
+                </div>
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50"><tr><th className="p-1.5 text-left">Стадия</th><th className="p-1.5 text-right">Объём, м³</th><th className="p-1.5 text-right">Время, мин</th><th className="p-1.5 text-right">Средний расход, л/мин</th><th className="p-1.5 text-right">Макс. на устье, МПа</th></tr></thead>
+                  <tbody>
+                    {schedule.stages.map((st) => (
+                      <tr key={st.name} className="border-t border-border/40">
+                        <td className="p-1.5">{st.name}</td>
+                        <td className="p-1.5 text-right">{st.volumeM3.toFixed(1)}</td>
+                        <td className="p-1.5 text-right">{st.startMin.toFixed(0)}–{st.endMin.toFixed(0)}</td>
+                        <td className="p-1.5 text-right">{st.avgRateLpm.toFixed(0)}</td>
+                        <td className="p-1.5 text-right">{st.maxSurfaceMPa.toFixed(1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{ width: "100%", height: 280 }}>
+                  <ResponsiveContainer>
+                    <LineChart data={schedule.points.filter((_, i) => i % 3 === 0).map((p) => ({ v: +p.volumeM3.toFixed(1), surf: +p.surfacePressureMPa.toFixed(2), bhp: +p.bhpMPa.toFixed(2), rate: +p.rateLpm.toFixed(0) }))} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="v" type="number" stroke="hsl(var(--muted-foreground))" label={{ value: "закачано, м³", position: "insideBottom", offset: -2, fontSize: 11 }} />
+                      <YAxis yAxisId="P" stroke="hsl(var(--muted-foreground))" label={{ value: "МПа", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                      <YAxis yAxisId="Q" orientation="right" stroke="#10b981" label={{ value: "л/мин", angle: 90, position: "insideRight", fontSize: 11 }} />
+                      <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+                      <Legend />
+                      <Line yAxisId="P" type="monotone" dataKey="surf" name="На устье, МПа" stroke="hsl(var(--primary))" dot={false} strokeWidth={2} />
+                      <Line yAxisId="P" type="monotone" dataKey="bhp" name="Забойное, МПа" stroke="#f59e0b" dot={false} />
+                      <Line yAxisId="Q" type="stepAfter" dataKey="rate" name="Расход, л/мин" stroke="#10b981" dot={false} strokeDasharray="4 4" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                {schedule.warnings.map((w, i) => (
+                  <div key={i} className={`text-xs ${w.startsWith("🔴") ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground"}`}>{w}</div>
+                ))}
+              </Card>
+            )}
+
+
             {stages ? (
               <Card className="p-4 space-y-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1181,6 +1466,42 @@ export default function Stimulation() {
                 </ResponsiveContainer>
               </div>
             </Card>
+            <Card className="p-4 space-y-3">
+              <h3 className="font-semibold">Экономика обработки</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <Field label={`Цена (нетбэк), руб/${economics.unitLabel}`} value={econ.pricePerUnit} onChange={(v) => setEcon({ ...econ, pricePerUnit: v })} step={500} />
+                <Field label={`НДПИ, руб/${economics.unitLabel}`} value={econ.mineralTaxPerUnit} onChange={(v) => setEcon({ ...econ, mineralTaxPerUnit: v })} step={500} hint="Ставка меняется ежемесячно — введите актуальную" />
+                <Field label={`Опер. затраты, руб/${economics.unitLabel}`} value={econ.opexPerUnit} onChange={(v) => setEcon({ ...econ, opexPerUnit: v })} step={100} />
+                <Field label="Налог на прибыль, доля" value={econ.profitTaxRate} onChange={(v) => setEcon({ ...econ, profitTaxRate: v })} step={0.01} />
+                <Field label="Ставка дисконтирования, доля/год" value={econ.discountRate} onChange={(v) => setEcon({ ...econ, discountRate: v })} step={0.01} />
+                <Field label="Реагенты, руб (0 = по каталогу)" value={econ.reagentCostRub} onChange={(v) => setEcon({ ...econ, reagentCostRub: v })} step={10000} hint={`По каталогу: ${Math.round(reagentCostAuto).toLocaleString("ru-RU")} руб`} />
+                <Field label="Сервис (бригада, техника), руб" value={econ.serviceCostRub} onChange={(v) => setEcon({ ...econ, serviceCostRub: v })} step={10000} />
+                <Field label="Мобилизация, руб" value={econ.mobilizationRub} onChange={(v) => setEcon({ ...econ, mobilizationRub: v })} step={10000} />
+                <Field label="Простой скважины, сут" value={econ.downtimeDays} onChange={(v) => setEcon({ ...econ, downtimeDays: v })} />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <Stat label="Затраты на обработку" value={`${(economics.treatmentCostRub / 1e6).toFixed(2)} млн ₽`} sub={`+ потери на простое ${(economics.downtimeLossRub / 1e6).toFixed(2)} млн ₽`} />
+                <Stat label={`Доп. добыча (36 мес)`} value={`${economics.incrementalUnitsTotal.toFixed(0)} ${economics.unitLabel}`} sub={`чистый доход ${economics.marginPerUnit.toFixed(0)} руб/${economics.unitLabel}`} />
+                <Stat label="NPV" value={`${(economics.npv / 1e6).toFixed(2)} млн ₽`} sub={economics.irrAnnual != null ? `IRR ${(economics.irrAnnual * 100).toFixed(0)}% год.` : undefined} />
+                <Stat label="Окупаемость" value={economics.paybackMonths != null ? `${economics.paybackMonths} мес` : "не окупается"} sub={`индекс доходности ${economics.pi.toFixed(2)}`} />
+              </div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <LineChart data={economics.months.map((m) => ({ month: m.month, cum: +(m.cumulative / 1e6).toFixed(2), disc: +(m.cumulativeDiscounted / 1e6).toFixed(2) }))}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" label={{ value: "мес", position: "insideBottom", offset: -2, fontSize: 11 }} />
+                    <YAxis stroke="hsl(var(--muted-foreground))" label={{ value: "млн ₽", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+                    <Legend />
+                    <Line type="monotone" dataKey="cum" name="Накопленный поток" stroke="hsl(var(--primary))" dot={false} />
+                    <Line type="monotone" dataKey="disc" name="Дисконтированный" stroke="#10b981" dot={false} strokeDasharray="4 4" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              {economics.warnings.map((w, i) => (
+                <div key={i} className={`text-xs ${w.startsWith("🔴") ? "text-red-600 font-medium" : "text-muted-foreground"}`}>{w}</div>
+              ))}
+            </Card>
           </TabsContent>
 
           {/* ─────────── REPORT ─────────── */}
@@ -1199,6 +1520,14 @@ export default function Stimulation() {
           </TabsContent>
         </Tabs>
       </main>
+      <SaveToCabinetDialog
+        open={saveOpen}
+        onOpenChange={setSaveOpen}
+        defaultTitle={`ОПЗ ${wellName} ${new Date().toLocaleDateString("ru-RU")}`}
+        initialWellId={selectedWellId}
+        calcId={calcId}
+        buildPayload={buildPayload}
+      />
 
       <footer className="border-t border-border bg-card mt-10">
         <div className="max-w-6xl mx-auto px-4 py-4 text-xs text-muted-foreground text-center">

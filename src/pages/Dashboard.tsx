@@ -167,6 +167,7 @@ export default function Dashboard() {
     if (m === "cementing-analysis") return <Cpu className="w-4 h-4 text-cyan-500" />;
     if (m === "drilling-fluids") return <Droplets className="w-4 h-4 text-blue-500" />;
     if (m === "workover") return <Wrench className="w-4 h-4 text-amber-600" />;
+    if (m === "stimulation") return <FlaskConical className="w-4 h-4 text-emerald-600" />;
     return <Zap className="w-4 h-4 text-yellow-500" />;
   };
 
@@ -177,6 +178,7 @@ export default function Dashboard() {
     if (m === "cementing-analysis") return "Анализ цементирования";
     if (m === "drilling-fluids") return "Буровые растворы";
     if (m === "workover") return "КРС";
+    if (m === "stimulation") return "Интенсификация (ОПЗ)";
     return "ГРП";
   };
 
@@ -185,6 +187,7 @@ export default function Dashboard() {
       : c.module === "coiled-tubing" ? "/coiled-tubing"
       : c.module === "cementing-analysis" ? "/cementing/analysis"
       : c.module === "workover" ? "/workover"
+      : c.module === "stimulation" ? "/stimulation"
       : "/cementing/program";
     return `${base}?from=dashboard&well=${c.well_id}&calc=${c.id}`;
   };
@@ -336,15 +339,16 @@ export default function Dashboard() {
               <p className="text-xs text-muted-foreground">Выберите скважину выше, чтобы увидеть её расчёты</p>
             ) : (
               <Tabs defaultValue="all" className="w-full">
-                <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full max-w-3xl h-auto">
+                <TabsList className="grid grid-cols-3 sm:grid-cols-7 w-full max-w-4xl h-auto">
                   <TabsTrigger value="all" className="text-xs">Все ({calcs.length})</TabsTrigger>
                   <TabsTrigger value="cementing" className="text-xs"><FlaskConical className="w-3 h-3 mr-1" /> Цем. ({calcs.filter(c => c.module === "cementing").length})</TabsTrigger>
                   <TabsTrigger value="cement-plug" className="text-xs"><Blocks className="w-3 h-3 mr-1" /> Мосты ({calcs.filter(c => c.module === "cement-plug").length})</TabsTrigger>
                   <TabsTrigger value="coiled-tubing" className="text-xs"><Cable className="w-3 h-3 mr-1" /> ГНКТ ({calcs.filter(c => c.module === "coiled-tubing").length})</TabsTrigger>
                   <TabsTrigger value="cementing-analysis" className="text-xs"><Cpu className="w-3 h-3 mr-1" /> Анализ ({calcs.filter(c => c.module === "cementing-analysis").length})</TabsTrigger>
                   <TabsTrigger value="workover" className="text-xs"><Wrench className="w-3 h-3 mr-1" /> КРС ({calcs.filter(c => c.module === "workover").length})</TabsTrigger>
+                  <TabsTrigger value="stimulation" className="text-xs"><FlaskConical className="w-3 h-3 mr-1" /> ОПЗ ({calcs.filter(c => c.module === "stimulation").length})</TabsTrigger>
                 </TabsList>
-                {(["all", "cementing", "cement-plug", "coiled-tubing", "cementing-analysis", "workover"] as const).map(tab => {
+                {(["all", "cementing", "cement-plug", "coiled-tubing", "cementing-analysis", "workover", "stimulation"] as const).map(tab => {
                   const list = tab === "all" ? calcs : calcs.filter(c => c.module === tab);
                   return (
                     <TabsContent key={tab} value={tab} className="mt-3">

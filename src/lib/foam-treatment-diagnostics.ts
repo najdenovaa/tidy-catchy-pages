@@ -860,6 +860,6 @@ export function interpretStepRateTest(points: StepRatePoint[]): StepRateInterpre
       { rate: pts[pts.length - 1].rate, pressure: fitF.a + fitF.b * pts[pts.length - 1].rate },
     ],
     verdict: "fracture_detected",
-    verdictText: `Обнаружено давление разрыва пласта ${fpp.toFixed(1)} МПа при ${fppRate.toFixed(0)} м³/сут. Безопасный максимум для пенообработки: ${(fpp * 0.9).toFixed(1)} МПа.`,
+    verdictText: `Обнаружено давление разрыва пласта ${fpp.toFixed(1)} МПа при ${fppRate.toFixed(0)} м³/сут. Безопасное забойное давление при обработке: ${(fpp * 0.9).toFixed(1)} МПа.`,
   };
 }

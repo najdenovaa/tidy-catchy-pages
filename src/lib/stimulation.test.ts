@@ -136,3 +136,54 @@ describe("Прогноз начинается с текущего дебита",
     expect(f[0].qBaseline).toBeCloseTo(35, 0);
   });
 });
+
+import { buildInjectionSchedule, calculateStimulationEconomics, allocateAcidToZones } from "./stimulation-operations";
+
+describe("График закачки", () => {
+  const base = {
+    wellboreVolumeM3: 7.4, pathMD: 2200, perfTVD: 2200, tubingID_mm: 62, tubingLengthM: 2150,
+    initialWellboreDensity_gcm3: 1.05, reservoirPressureMPa: 22, fracturePressureMPa: 41.4, safetyMarginMPa: 1.5,
+    k_mD: 15, h_m: 12, fluidViscosity_cP: 1.2, skinStart: 8, skinEnd: -0.5, pumpMaxLpm: 500, minRateLpm: 10,
+    drainageRadiusM: 250, wellboreRadiusM: 0.108,
+  };
+  const stages = [
+    { name: "Preflush", volumeM3: 3.6, density_gcm3: 1.03 },
+    { name: "HCl", volumeM3: 18, density_gcm3: 1.074, isMainAcid: true },
+    { name: "Afterflush", volumeM3: 3.6, density_gcm3: 1.03 },
+    { name: "Продавка", volumeM3: 7.4, density_gcm3: 1.05 },
+  ];
+  it("объём сохраняется, забойное ниже Pгрп, расход растёт по мере снятия скина", () => {
+    const r = buildInjectionSchedule({ ...base, stages });
+    expect(r.points[r.points.length - 1].volumeM3).toBeCloseTo(32.6, 6);
+    expect(r.maxBhpMPa).toBeLessThan(41.4);
+    expect(r.points[r.points.length - 1].rateLpm).toBeGreaterThan(r.points[0].rateLpm);
+  });
+  it("в пласт сначала входит скважинная жидкость, кислота — после заполнения ствола", () => {
+    const r = buildInjectionSchedule({ ...base, stages });
+    const firstAcid = r.points.find((p) => p.entering === "HCl")!;
+    expect(firstAcid.volumeM3).toBeGreaterThan(7.4 + 3.6 - 0.2);
+  });
+});
+
+describe("Экономика", () => {
+  it("NPV = дисконтированный поток минус затраты", () => {
+    const fc = Array.from({ length: 12 }, (_, m) => ({ month: m, qBaseline: 30, qTreated: 40, deltaQ: 10, cumulativeDeltaM3: 0 }));
+    const e = calculateStimulationEconomics(fc, {
+      pricePerUnit: 40000, mineralTaxPerUnit: 15000, opexPerUnit: 5000, oilDensity_kgm3: 850, isGas: false,
+      profitTaxRate: 0.25, discountRate: 0, reagentCostRub: 1e6, serviceCostRub: 0, mobilizationRub: 0, downtimeDays: 0,
+    });
+    const margin = (40000 - 15000 - 5000) * 0.75;
+    expect(e.npv).toBeCloseTo(12 * 10 * 0.85 * 30.4 * margin - 1e6, 0);
+  });
+});
+
+describe("Распределение по пропласткам", () => {
+  const zones = [{ name: "A", h_m: 4, k_mD: 100, skin: 2 }, { name: "B", h_m: 8, k_mD: 5, skin: 5 }];
+  it("без отклонителя — по приёмистости, с идеальным — по толщине", () => {
+    const no = allocateAcidToZones(zones, 12, 1, 0);
+    expect(no[0].sharePct).toBeGreaterThan(80);
+    const ideal = allocateAcidToZones(zones, 12, 1, 1);
+    expect(ideal[0].volumeM3).toBeCloseTo(4, 6);
+    expect(ideal[1].volumeM3).toBeCloseTo(8, 6);
+  });
+});
