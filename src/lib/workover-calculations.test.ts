@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  calculatePacker, calculateFreePoint, killMargin,
   calculateDrag, calculateKill, calculateFishing, diagnoseStuck,
   pipeBodyYieldKN, pipeYieldForceKN, tubingFrictionMPa, annulusFrictionMPa,
   planMultiIntervalKill, KILL_SALTS,
@@ -143,9 +144,12 @@ describe("Ловильные работы и ясс", () => {
 describe("Прихват", () => {
   it("освобождение учитывает вес колонны над прихватом", () => {
     const d = diagnoseStuck(vertical, {
-      canRotate: true, canMoveDown: false, canMoveUp: false, stuckDepthMD: 1800,
-      occurredDuringCirculation: true, deltaP_MPa: 1, contactLenM: 5, mudcakeFriction: 0.25,
+      canRotate: false, canMoveDown: false, canMoveUp: false, stuckDepthMD: 1800,
+      circulation: "free", onset: "after_static", packerInString: false, sandProduction: false,
+      deposits: false, afterCementing: false, perfTopMD: 1790, perfBottomMD: 1810,
+      deltaP_MPa: 1, contactLenM: 5, mudcakeFriction: 0.25,
     }, 1000, 150);
+    expect(d.type).toBe("differential");
     expect(d.requiredHookLoadKN).toBeCloseTo(150 + d.freeingForceKN, 6);
   });
 });
@@ -158,5 +162,96 @@ describe("Многоинтервальное глушение", () => {
     ], KILL_SALTS[1], 30, "medium", 5);
     expect(plan.governingInterval).toBe(1);
     expect(plan.warnings.some((w) => w.startsWith("🔴") && w.includes("1900"))).toBe(true);
+  });
+});
+
+describe("Пакер по Lubinski", () => {
+  it("поршневой эффект, раздувание и температура совпадают с формулами", () => {
+    const L = 2000;
+    const r = calculatePacker({
+      type: "hydraulic", setDepthMD: L, sealBoreID_mm: 80, ratingDiffMPa: 35, ratingLoadKN: 300,
+      connection: "free", sealStrokeMM: 3000,
+      tubingSurfaceMPa0: 0, annulusSurfaceMPa0: 0, tubingFluidDensity0: 1.1, annulusFluidDensity: 1.1,
+      tubingSurfaceMPa1: 15, annulusSurfaceMPa1: 0, tubingFluidDensity1: 1.1, avgTempChangeC: -20,
+    }, vertical);
+    const E = 210e9, Ai = (Math.PI / 4) * 0.062 ** 2, Ao = (Math.PI / 4) * 0.073 ** 2, As = Ao - Ai;
+    const Ap = (Math.PI / 4) * 0.08 ** 2, R2 = (73 / 62) ** 2;
+    const F1 = (Ap - Ai) * 15e6;
+    expect(r.dLPistonMM).toBeCloseTo((-L * F1) / (E * As) * 1000, 3);
+    expect(r.dLBallooningMM).toBeCloseTo(((-2 * 0.3 * L) / E) * (15e6 / (R2 - 1)) * 1000, 3);
+    expect(r.dLTemperatureMM).toBeCloseTo(L * 1.24e-5 * -20 * 1000, 3);
+    expect(r.diffPressureMPa).toBeCloseTo(15, 6);
+    expect(r.buckled).toBe(true);
+    expect(r.dLBucklingMM).toBeLessThan(0);
+  });
+
+  it("заякоренные НКТ: нагрузка на пакер = сумма эквивалентных сил", () => {
+    const r = calculatePacker({
+      type: "hydraulic", setDepthMD: 2000, sealBoreID_mm: 80, ratingDiffMPa: 35, ratingLoadKN: 300,
+      connection: "anchored", sealStrokeMM: 0,
+      tubingSurfaceMPa0: 0, annulusSurfaceMPa0: 0, tubingFluidDensity0: 1.1, annulusFluidDensity: 1.1,
+      tubingSurfaceMPa1: 15, annulusSurfaceMPa1: 0, tubingFluidDensity1: 1.1, avgTempChangeC: -20,
+    }, vertical);
+    expect(r.packerLoadKN).toBeCloseTo(r.fPistonKN + r.fBallooningKN + r.fTemperatureKN, 6);
+    expect(r.packerLoadKN).toBeGreaterThan(0); // давление в НКТ и охлаждение — растяжение у пакера
+  });
+});
+
+describe("Johancsik: знак изгибающей составляющей", () => {
+  it("на участке набора Fn = |T·Δθ + W·sinθ| (натяжение прижимает к верхней стенке)", () => {
+    const build: WorkoverWellData = {
+      ...vertical, wellDepthMD: 1000,
+      trajectory: [{ md: 0, tvd: 0, zenith: 0, azimuth: 0 }, { md: 1000, tvd: 0, zenith: 60, azimuth: 0 }],
+    };
+    const r = calculateDrag({ operation: "pull_out", frictionCoeff: 0.3, bottomLoadKN: 200 }, build);
+    const i = 50; // сегмент 500–510 м
+    const p = r.points[i], below = r.points[i + 1];
+    const zUp = (p.md / 1000) * 60 * Math.PI / 180, zLow = (below.md / 1000) * 60 * Math.PI / 180;
+    const W = 9.67 * 10 * 9.81 * (1 - 1.1 / 7.85);
+    const expected = Math.abs(below.hookLoadKN * 1000 * (zUp - zLow) + W * Math.sin((zUp + zLow) / 2));
+    expect(p.normalForceN).toBeCloseTo(expected, 3);
+  });
+
+  it("момент в вертикальной скважине = 0, в наклонной > 0", () => {
+    expect(calculateDrag({ operation: "rotate", frictionCoeff: 0.3 }, vertical).surfaceTorqueKNm).toBeCloseTo(0, 6);
+    expect(calculateDrag({ operation: "rotate", frictionCoeff: 0.3 }, deviated).surfaceTorqueKNm).toBeGreaterThan(0.5);
+  });
+
+  it("расхаживание: подъём > спуск", () => {
+    const r = calculateDrag({ operation: "work_pipe", frictionCoeff: 0.3 }, deviated);
+    expect(r.pickUpKN).toBeGreaterThan(r.slackOffKN);
+  });
+});
+
+describe("Точка прихвата с учётом трения", () => {
+  it("в вертикальной скважине совпадает с законом Гука", () => {
+    const r = calculateFreePoint({ pulledForceKN: 100, measuredStretchM: 0.8 }, vertical, 0.3);
+    expect(r.freePointMD).toBeCloseTo(r.idealFreePointMD, -1);
+  });
+  it("в наклонной скважине глубже, чем по Гуку", () => {
+    const r = calculateFreePoint({ pulledForceKN: 100, measuredStretchM: 0.9 }, deviated, 0.3);
+    expect(r.freePointMD).toBeGreaterThan(r.idealFreePointMD);
+    expect(r.backOffMD).toBeCloseTo(r.freePointMD - 15, 6);
+  });
+});
+
+describe("Запас по ПБ", () => {
+  it("10% до 1200 м, 5% глубже, с ограничением", () => {
+    expect(killMargin(10, 1000, "pb", 0).mpa).toBeCloseTo(1.0, 6);
+    expect(killMargin(20, 1000, "pb", 0).mpa).toBeCloseTo(1.5, 6);
+    expect(killMargin(28, 2200, "pb", 0).mpa).toBeCloseTo(1.4, 6);
+    expect(killMargin(28, 2200, "manual", 7).mpa).toBeCloseTo(1.96, 6);
+  });
+});
+
+describe("Диагностика прихвата КРС", () => {
+  it("песок при затруднённой циркуляции и пескопроявлении", () => {
+    const d = diagnoseStuck(vertical, {
+      canRotate: false, canMoveDown: true, canMoveUp: false, stuckDepthMD: 1800,
+      circulation: "restricted", onset: "gradual", packerInString: false, sandProduction: true,
+      deposits: false, afterCementing: false,
+    });
+    expect(d.type).toBe("sand");
+    expect(d.ranking.reduce((a, b) => a + b.probability, 0)).toBeCloseTo(1, 6);
   });
 });

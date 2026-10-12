@@ -21,10 +21,25 @@ import type { TrajectoryPoint } from "./cementing-calculations";
 
 // ────────── BLOCK 0: shared inputs ──────────
 
+/** Предел текучести σт (не менее), МПа. ГОСТ 633-80 табл. 6 (Д — исполнение А) и API 5CT. */
 export const STEEL_GRADES: Record<string, number> = {
+  "Д": 379, "К": 491, "Е": 552, "Л": 654, "М": 724, "Р": 930,
   J55: 379, K55: 379, N80: 552, L80: 552,
   C90: 621, T95: 655, P110: 758, Q125: 862,
 };
+
+/** Гладкие НКТ по ГОСТ 633-80, табл. 2 (масса 1 м трубы — по стандарту). */
+export const GOST_TUBING_SIZES = [
+  { label: "33×3,5", od: 33.4, wall: 3.5, massKgm: 2.6 },
+  { label: "42×3,5", od: 42.2, wall: 3.5, massKgm: 3.3 },
+  { label: "48×4,0", od: 48.3, wall: 4.0, massKgm: 4.4 },
+  { label: "60×5,0", od: 60.3, wall: 5.0, massKgm: 6.8 },
+  { label: "73×5,5", od: 73.0, wall: 5.5, massKgm: 9.2 },
+  { label: "73×7,0", od: 73.0, wall: 7.0, massKgm: 11.4 },
+  { label: "89×6,5", od: 88.9, wall: 6.5, massKgm: 13.2 },
+  { label: "102×6,5", od: 101.6, wall: 6.5, massKgm: 15.2 },
+  { label: "114×7,0", od: 114.3, wall: 7.0, massKgm: 18.5 },
+] as const;
 
 export interface WorkoverWellData {
   wellDepthMD: number;
@@ -161,6 +176,22 @@ function interpolateAzimuthDeg(md: number, traj: TrajectoryPoint[]): number {
   return traj[traj.length - 1].azimuth ?? 0;
 }
 
+/** Вертикальная глубина по MD (линейная интерполяция по точкам траектории с рассчитанной TVD). */
+export function tvdAtMD(md: number, traj: TrajectoryPoint[]): number {
+  if (!traj.length) return md;
+  if (md <= traj[0].md) return traj[0].tvd + (md - traj[0].md);
+  for (let i = 1; i < traj.length; i++) {
+    if (md <= traj[i].md) {
+      const a = traj[i - 1], b = traj[i];
+      const t = (md - a.md) / Math.max(1e-6, b.md - a.md);
+      return a.tvd + t * (b.tvd - a.tvd);
+    }
+  }
+  // ниже последней точки — по последнему зенитному углу
+  const last = traj[traj.length - 1];
+  return last.tvd + (md - last.md) * Math.cos((last.zenith * Math.PI) / 180);
+}
+
 function averageZenithDeg(traj: TrajectoryPoint[], upToMD: number): number {
   if (!traj.length || upToMD <= 0) return 0;
   const step = 25;
@@ -172,58 +203,163 @@ function averageZenithDeg(traj: TrajectoryPoint[], upToMD: number): number {
   return n ? sum / n : 0;
 }
 
-// ────────── BLOCK 1: packers ──────────
+// ────────── BLOCK 1: packers (паспорт + усилия в НКТ по Lubinski) ──────────
 
 export type PackerType = "mechanical" | "hydraulic" | "hydrostatic" | "permanent" | "retrievable";
 
+/** Свобода перемещения НКТ относительно пакера */
+export type TubingPackerConnection = "free" | "anchored";
+
 export interface PackerInput {
   type: PackerType;
-  packerOD_mm: number;
-  elementLength_mm: number;
   setDepthMD: number;
-  rubberFrictionCoeff: number;
-  setPressureMPa: number;
-  setForceWeight_kN?: number;
-  differentialPressureMPa: number;
+  /** Внутренний диаметр уплотнительного ствола (полированной втулки) пакера, мм */
+  sealBoreID_mm: number;
+  /** Паспорт: допустимый перепад давления на пакер, МПа */
+  ratingDiffMPa: number;
+  /** Паспорт: допустимая осевая нагрузка на пакер (натяжение/сжатие), кН */
+  ratingLoadKN: number;
+  connection: TubingPackerConnection;
+  /** Ход уплотнений (для свободного соединения), мм */
+  sealStrokeMM: number;
+  // Состояние при посадке (начальное)
+  tubingSurfaceMPa0: number;
+  annulusSurfaceMPa0: number;
+  tubingFluidDensity0: number;
+  annulusFluidDensity: number;
+  // Рабочее состояние (конечное)
+  tubingSurfaceMPa1: number;
+  annulusSurfaceMPa1: number;
+  tubingFluidDensity1: number;
+  /** Среднее изменение температуры НКТ, °C (охлаждение при закачке < 0) */
+  avgTempChangeC: number;
 }
 
 export interface PackerResult {
-  holdCapacityKN: number;
-  releaseForceKN: number;
-  sealIntegrityMPa: number;
-  slipBiteForceKN: number;
-  contactAreaM2: number;
+  packerTVD: number;
+  /** Давление под пакером (в НКТ) и над пакером (в затрубье), МПа: [до, после] */
+  pTubingAtPacker: [number, number];
+  pAnnulusAtPacker: [number, number];
+  /** Перепад на пакер (под − над) в рабочем состоянии, МПа */
+  diffPressureMPa: number;
+  /** Удлинение НКТ (+) / укорочение (−), мм */
+  dLPistonMM: number;
+  dLBucklingMM: number;
+  dLBallooningMM: number;
+  dLTemperatureMM: number;
+  dLTotalMM: number;
+  /** Эквивалентные силы, кН (+ = растяжение НКТ у пакера) */
+  fPistonKN: number;
+  fBallooningKN: number;
+  fTemperatureKN: number;
+  /** Фиктивная сила изгиба Ff = Ap·(Pi − Po), кН; > 0 — НКТ изгибается */
+  fictitiousForceKN: number;
+  buckled: boolean;
+  neutralPointFromPackerM: number;
+  /** Для заякоренных НКТ: нагрузка на пакер (+ натяжение, − сжатие), кН */
+  packerLoadKN: number;
   isSecure: boolean;
   warnings: string[];
 }
 
-export function calculatePacker(input: PackerInput): PackerResult {
-  const D = input.packerOD_mm / 1000;
-  const L = input.elementLength_mm / 1000;
-  const contactArea = Math.PI * D * L;
-  const setPress = input.setPressureMPa * 1e6;
-  const holdCapacity = (input.rubberFrictionCoeff * setPress * contactArea) / 1000;
-  const releaseForce = holdCapacity * 1.2; // adhesion factor
-  const sealIntegrity = input.setPressureMPa * 0.85;
-  const slipBite = input.setForceWeight_kN ?? holdCapacity * 0.5;
+const POISSON = 0.3;
+const THERMAL_EXP = 1.24e-5; // 1/°C, сталь
 
+/**
+ * Изменение длины и усилия НКТ над пакером при переходе от состояния посадки к рабочему
+ * (Lubinski, 1962; Hammerlindl): поршневой эффект, продольный изгиб, раздувание, температура.
+ */
+export function calculatePacker(input: PackerInput, well: WorkoverWellData): PackerResult {
+  const L = Math.max(1, Math.min(input.setDepthMD, well.wellDepthMD));
+  const H = tvdAtMD(L, well.trajectory);
+  const E = well.pipeYoungModulusGPa * 1e9;
+  const do_ = well.pipeOD_mm / 1000, di = well.pipeID_mm / 1000;
+  const Ao = (Math.PI / 4) * do_ * do_;
+  const Ai = (Math.PI / 4) * di * di;
+  const As = Math.max(1e-6, Ao - Ai);
+  const Ap = (Math.PI / 4) * (input.sealBoreID_mm / 1000) ** 2;
+  const R2 = (do_ / di) ** 2;
+  const I = (Math.PI / 64) * (do_ ** 4 - di ** 4);
+  const r = Math.max(0, (well.casingID_mm - well.pipeOD_mm) / 2000);
+
+  const hydro = (rho: number) => (rho * 1000 * G * H) / 1e6; // МПа
+  const Pi0 = input.tubingSurfaceMPa0 + hydro(input.tubingFluidDensity0);
+  const Po0 = input.annulusSurfaceMPa0 + hydro(input.annulusFluidDensity);
+  const Pi1 = input.tubingSurfaceMPa1 + hydro(input.tubingFluidDensity1);
+  const Po1 = input.annulusSurfaceMPa1 + hydro(input.annulusFluidDensity);
+
+  const dPi = (Pi1 - Pi0) * 1e6, dPo = (Po1 - Po0) * 1e6;
+  // Среднее по длине изменение давления: устье + половина гидростатики
+  const dPia = ((input.tubingSurfaceMPa1 - input.tubingSurfaceMPa0) +
+    (hydro(input.tubingFluidDensity1) - hydro(input.tubingFluidDensity0)) / 2) * 1e6;
+  const dPoa = (input.annulusSurfaceMPa1 - input.annulusSurfaceMPa0) * 1e6;
+
+  // 1. Поршневой эффект: F1 > 0 — сила вверх на торец НКТ (сжатие)
+  const F1 = (Ap - Ai) * dPi - (Ap - Ao) * dPo;
+  const dL1 = (-L * F1) / (E * As);
+
+  // 3. Раздувание (ballooning)
+  const dL3 = ((-2 * POISSON * L) / E) * (dPia - R2 * dPoa) / (R2 - 1);
+  // Эквивалентные силы = сила, которую должен приложить пакер, чтобы не дать НКТ изменить длину
+  // (+ = растяжение НКТ у пакера): F = −E·As·ΔL/L
+  const F3 = 2 * POISSON * (dPia * Ai - dPoa * Ao);
+
+  // 4. Температура
+  const dL4 = L * THERMAL_EXP * input.avgTempChangeC;
+  const F4 = -E * As * THERMAL_EXP * input.avgTempChangeC; // при запрете перемещения: охлаждение → растяжение
+
+  // 2. Продольный (спиральный) изгиб под действием давления
+  const w = well.pipeWeight_kgm * G + input.tubingFluidDensity1 * 1000 * G * Ai - input.annulusFluidDensity * 1000 * G * Ao; // Н/м
+  const bucklingDL = (Pi: number, Po: number) => {
+    const Ff = Ap * (Pi - Po) * 1e6;
+    if (Ff <= 0 || w <= 0 || r <= 0) return 0;
+    const n = Ff / w;
+    const base = (r * r * Ff * Ff) / (8 * E * I * w);
+    return n <= L ? -base : -base * (L / n) * (2 - L / n);
+  };
+  const dL2 = bucklingDL(Pi1, Po1) - bucklingDL(Pi0, Po0);
+  const Ff1 = Ap * (Pi1 - Po1) * 1e6;
+
+  const dLlinear = dL1 + dL3 + dL4;
+  const dLTotal = dLlinear + dL2;
+  // Заякоренные НКТ: пакер удерживает длину → нагрузка = E·As·(−ΔL)/L
+  const packerLoad = input.connection === "anchored" ? (-E * As * dLlinear) / L / 1000 : 0;
+
+  const diff = Pi1 - Po1;
   const warnings: string[] = [];
-  if (input.differentialPressureMPa > sealIntegrity)
+  if (Math.abs(diff) > input.ratingDiffMPa)
+    warnings.push(`🔴 Перепад на пакер ${diff.toFixed(1)} МПа > паспортного ${input.ratingDiffMPa} МПа.`);
+  if (input.connection === "free" && Math.abs(dLTotal) * 1000 > input.sealStrokeMM)
     warnings.push(
-      `⚠ Перепад ${input.differentialPressureMPa} МПа > герметичности ${sealIntegrity.toFixed(1)} МПа — риск пропуска.`,
+      `🔴 Перемещение НКТ ${(dLTotal * 1000).toFixed(0)} мм больше хода уплотнений ${input.sealStrokeMM} мм — ${dLTotal < 0 ? "уплотнения выйдут из ствола пакера" : "упор в пакер"}. Увеличить ход или посадить с разгрузкой.`,
     );
+  if (input.connection === "anchored" && Math.abs(packerLoad) > input.ratingLoadKN)
+    warnings.push(`🔴 Нагрузка на пакер ${packerLoad.toFixed(0)} кН > паспортной ${input.ratingLoadKN} кН.`);
+  if (input.connection === "anchored" && packerLoad < 0)
+    warnings.push("⚠ НКТ сжаты на пакере — возможен продольный изгиб над пакером. Проверить разгрузку и центраторы.");
+  if (Ff1 > 0 && input.connection === "free")
+    warnings.push(`НКТ над пакером в спиральном изгибе на ${Math.min(L, Ff1 / Math.max(w, 1e-6)).toFixed(0)} м (Ff = ${(Ff1 / 1000).toFixed(0)} кН).`);
   if (input.type === "permanent")
     warnings.push("Постоянный пакер — срыв невозможен, только разбуривание/фрезерование.");
-  if (input.rubberFrictionCoeff < 0.25 || input.rubberFrictionCoeff > 0.55)
-    warnings.push("μ резины вне диапазона 0.25–0.55 — проверьте паспорт пакера.");
 
   return {
-    holdCapacityKN: holdCapacity,
-    releaseForceKN: releaseForce,
-    sealIntegrityMPa: sealIntegrity,
-    slipBiteForceKN: slipBite,
-    contactAreaM2: contactArea,
-    isSecure: input.differentialPressureMPa <= sealIntegrity,
+    packerTVD: H,
+    pTubingAtPacker: [Pi0, Pi1],
+    pAnnulusAtPacker: [Po0, Po1],
+    diffPressureMPa: diff,
+    dLPistonMM: dL1 * 1000,
+    dLBucklingMM: dL2 * 1000,
+    dLBallooningMM: dL3 * 1000,
+    dLTemperatureMM: dL4 * 1000,
+    dLTotalMM: dLTotal * 1000,
+    fPistonKN: F1 / 1000,
+    fBallooningKN: F3 / 1000,
+    fTemperatureKN: F4 / 1000,
+    fictitiousForceKN: Ff1 / 1000,
+    buckled: Ff1 > 0,
+    neutralPointFromPackerM: Ff1 > 0 ? Math.min(L, Ff1 / Math.max(w, 1e-6)) : 0,
+    packerLoadKN: packerLoad,
+    isSecure: !warnings.some((x) => x.startsWith("🔴")),
     warnings,
   };
 }
@@ -234,21 +370,20 @@ export type ReleaseMechanism = "tension" | "rotation" | "pressure_release" | "mi
 
 export interface PackerReleaseInput {
   packerType: PackerType;
-  holdCapacityKN: number;
-  monthsInService: number;
-  h2sPresent: boolean;
-  scaleDepositRate: number;     // kN/month (3–15)
+  /** Паспорт: усилие срыва (срезные винты/кольцо), кН. Для срыва вращением — 0. */
+  releaseShearKN: number;
+  /** Дополнительное усилие: отложения, прихват плашек, кН (по опыту на месторождении) */
+  extraStuckKN: number;
   pipeWeightAboveKN: number;
-  pipeYieldMPa: number;
-  pipeOD_mm: number;
-  pipeID_mm: number;
-  /** Допустимая нагрузка на колонну (с учётом резьбы, износа и запаса), кН. Если задана — используется вместо тела трубы ÷1.25. */
-  pipeTensileLimitKN?: number;
+  /** Допустимая нагрузка на колонну (резьба, износ, запас), кН */
+  pipeTensileLimitKN: number;
+  /** Допустимая нагрузка подъёмника, кН */
+  rigAllowableKN?: number;
 }
 
 export interface PackerReleaseResult {
   releaseForceKN: number;
-  breakdown: { baseHold: number; adhesion: number; scaleStick: number };
+  breakdown: { shear: number; extra: number };
   totalPullRequiredKN: number;
   pipeTensileLimitKN: number;
   canReleaseByTension: boolean;
@@ -257,13 +392,10 @@ export interface PackerReleaseResult {
 }
 
 export function calculatePackerRelease(input: PackerReleaseInput): PackerReleaseResult {
-  const adhesion = input.holdCapacityKN * (0.15 + 0.01 * Math.min(input.monthsInService, 24));
-  const scaleStick = input.scaleDepositRate * input.monthsInService * (input.h2sPresent ? 1.5 : 1.0);
-  const releaseForce = input.holdCapacityKN + adhesion + scaleStick;
+  const releaseForce = Math.max(0, input.releaseShearKN) + Math.max(0, input.extraStuckKN);
   const totalPull = releaseForce + input.pipeWeightAboveKN;
-  const A = (Math.PI / 4) * ((input.pipeOD_mm / 1000) ** 2 - (input.pipeID_mm / 1000) ** 2);
-  const tensileLimit = input.pipeTensileLimitKN ?? (input.pipeYieldMPa * 1e6 * A) / 1000 / 1.25;
-  const canRelease = totalPull < tensileLimit;
+  const limit = Math.min(input.pipeTensileLimitKN, input.rigAllowableKN ?? Infinity);
+  const canRelease = totalPull < limit;
 
   let mechanism: ReleaseMechanism;
   const warnings: string[] = [];
@@ -272,29 +404,26 @@ export function calculatePackerRelease(input: PackerReleaseInput): PackerRelease
     warnings.push("Постоянный пакер — срыв невозможен. Только разбуривание/фрезерование.");
   } else if (!canRelease) {
     mechanism = input.packerType === "mechanical" ? "rotation" : "mill_out";
+    const by = totalPull >= input.pipeTensileLimitKN ? `допустимой для колонны ${input.pipeTensileLimitKN.toFixed(0)} кН` : `лимита подъёмника ${input.rigAllowableKN?.toFixed(0)} кН`;
     warnings.push(
-      `🔴 Усилие срыва ${totalPull.toFixed(0)} кН > предела колонны ${tensileLimit.toFixed(0)} кН. Натяжкой НЕ сорвать — труба порвётся. Применить ${mechanism === "rotation" ? "срыв вращением" : "фрезерование"}.`,
+      `🔴 Нужно ${totalPull.toFixed(0)} кН на крюке > ${by}. Натяжкой не сорвать — ${mechanism === "rotation" ? "срыв вращением" : "фрезерование"}.`,
     );
   } else if (input.packerType === "mechanical") {
     mechanism = "rotation";
   } else if (input.packerType === "hydraulic" || input.packerType === "hydrostatic") {
     mechanism = "pressure_release";
-    warnings.push("Гидравлический пакер: сначала сбросить давление, затем натяжка.");
+    warnings.push("Гидравлический пакер: выровнять давление над и под пакером, затем натяжка.");
   } else {
     mechanism = "tension";
   }
-  if (input.monthsInService > 24)
-    warnings.push(
-      `⚠ Срок эксплуатации ${input.monthsInService} мес — пакер сильно прикипел (адгезия +${((adhesion / input.holdCapacityKN) * 100).toFixed(0)}%, отложения ${scaleStick.toFixed(0)} кН).`,
-    );
-  if (input.h2sPresent)
-    warnings.push("⚠ H₂S среда — продукты коррозии увеличивают прихват плашек в 1.5×.");
+  if (input.releaseShearKN <= 0 && input.packerType !== "mechanical" && input.packerType !== "permanent")
+    warnings.push("Усилие срыва по паспорту не задано — расчёт неполный.");
 
   return {
     releaseForceKN: releaseForce,
-    breakdown: { baseHold: input.holdCapacityKN, adhesion, scaleStick },
+    breakdown: { shear: Math.max(0, input.releaseShearKN), extra: Math.max(0, input.extraStuckKN) },
     totalPullRequiredKN: totalPull,
-    pipeTensileLimitKN: tensileLimit,
+    pipeTensileLimitKN: input.pipeTensileLimitKN,
     canReleaseByTension: canRelease,
     recommendedMechanism: mechanism,
     warnings,
@@ -334,6 +463,8 @@ export interface KillInput {
   killFluidYP_Pa: number;
   pumpRateLs: number;
   safetyMarginPct: number;
+  /** "pb" — запас по Правилам безопасности (10% до 1200 м TVD, 5% глубже); "manual" — safetyMarginPct */
+  marginMode?: "pb" | "manual";
   /** Реология жидкости, находящейся в скважине (для давления начала циркуляции). По умолчанию = жидкость глушения. */
   currentFluidPV_cP?: number;
   currentFluidYP_Pa?: number;
@@ -342,6 +473,10 @@ export interface KillInput {
 }
 
 export interface KillResult {
+  /** Применённый запас: % от Pпл и МПа */
+  appliedMarginPct: number;
+  appliedMarginMPa: number;
+  marginRule: string;
   killDensity: number;
   balanceDensity: number;
   bottomholePressureMPa: number;
@@ -391,12 +526,36 @@ export function calculateKillFriction(
   return totalLoss;
 }
 
+/**
+ * Запас противодавления над пластовым.
+ * ПБ НГП (приказ Ростехнадзора № 534): не менее 10% для глубин до 1200 м по вертикали,
+ * 5% — глубже. Верхние ограничения 1.5 и 2.5–3.0 МПа приняты по практике прежних ПБ —
+ * сверить с действующей редакцией.
+ */
+export function killMargin(
+  formationPressureMPa: number, tvd: number, mode: "pb" | "manual", manualPct: number,
+): { mpa: number; rule: string } {
+  if (mode === "manual") {
+    return { mpa: (formationPressureMPa * manualPct) / 100, rule: `вручную ${manualPct}%` };
+  }
+  const shallow = tvd <= 1200;
+  const pct = shallow ? 10 : 5;
+  const cap = shallow ? 1.5 : 3.0;
+  const raw = (formationPressureMPa * pct) / 100;
+  const mpa = Math.min(raw, cap);
+  return {
+    mpa,
+    rule: `ПБ: ${pct}% (${shallow ? "до" : "глубже"} 1200 м TVD)${raw > cap ? `, ограничено ${cap} МПа` : ""}`,
+  };
+}
+
 export function calculateKill(input: KillInput): KillResult {
   const tvd = Math.max(1, input.reservoirDepthTVD);
   const md = Math.max(1, input.wellDepthMD);
 
   const balanceDensity = (input.formationPressureMPa * 1e6) / (G * tvd) / 1000;
-  const killDensity = balanceDensity * (1 + input.safetyMarginPct / 100);
+  const margin = killMargin(input.formationPressureMPa, tvd, input.marginMode ?? "manual", input.safetyMarginPct);
+  const killDensity = ((input.formationPressureMPa + margin.mpa) * 1e6) / (G * tvd) / 1000;
   const bhp = (killDensity * 1000 * G * tvd) / 1e6;
   const exceedsFracture = bhp > input.fracturePressureMPa;
 
@@ -489,6 +648,9 @@ export function calculateKill(input: KillInput): KillResult {
   }
 
   return {
+    appliedMarginPct: (margin.mpa / Math.max(1e-6, input.formationPressureMPa)) * 100,
+    appliedMarginMPa: margin.mpa,
+    marginRule: margin.rule,
     killDensity,
     balanceDensity,
     bottomholePressureMPa: bhp,
@@ -543,66 +705,110 @@ export interface DragPoint {
   zenithDeg: number;
   doglegDegPer10m: number;
   normalForceN: number;
+  /** Крутящий момент в сечении при вращении, кН·м */
+  torqueKNm: number;
 }
 
 export interface DragResult {
   points: DragPoint[];
+  /** Нагрузка на крюке (натяжение у устья), кН */
   maxHookLoadKN: number;
   freeWeightKN: number;
   appliedFrictionCoeff: number;
+  /** Момент на устье при вращении, кН·м */
+  surfaceTorqueKNm: number;
+  /** Расхаживание: нагрузка при подъёме и при спуске, кН */
+  pickUpKN: number;
+  slackOffKN: number;
 }
 
-export function calculateDrag(input: DragInput, well: WorkoverWellData): DragResult {
-  const step = 10; // m
+/**
+ * Модель «мягкой нити» (Johancsik, 1984), шаг 10 м снизу вверх:
+ *   Fn = √[(T·Δφ·sin θ̄)² + (T·Δθ + W·sin θ̄)²],  Δθ = θверх − θниз
+ *   на участке набора кривизны натяжение прижимает трубу к верхней стенке и частично
+ *   компенсирует вес, на участке спада — складывается с ним.
+ *   ΔT = W·cos θ̄ ± μ·Fn;  при вращении ΔT = W·cos θ̄, ΔM = μ·Fn·r.
+ */
+function tensionProfile(
+  op: "pull_out" | "run_in" | "rotate",
+  mu: number,
+  well: WorkoverWellData,
+  bottomLoadKN: number,
+): { points: DragPoint[]; freeWeight: number; torque: number } {
+  const step = 10;
   const bf = 1 - well.fluidDensity_gcm3 / 7.85;
-  const mu = input.lubricant ? input.lubricant.lubricatedFrictionCoeff : input.frictionCoeff;
-
-  let tension = (input.bottomLoadKN ?? 0) * 1000;
+  const rPipe = well.pipeOD_mm / 2000;
+  let tension = bottomLoadKN * 1000;
+  let torque = 0;
   let freeWeight = 0;
   const points: DragPoint[] = [];
 
   for (let md = well.wellDepthMD; md > 0; md -= step) {
-    const zenDeg = interpolateZenithDeg(md, well.trajectory);
-    const zenDegPrev = interpolateZenithDeg(Math.max(0, md - step), well.trajectory);
-    const aziDeg = interpolateAzimuthDeg(md, well.trajectory);
-    const aziDegPrev = interpolateAzimuthDeg(Math.max(0, md - step), well.trajectory);
-    const zen = (zenDeg * Math.PI) / 180;
-    const zenPrev = (zenDegPrev * Math.PI) / 180;
-    const dAzi = ((aziDeg - aziDegPrev) * Math.PI) / 180;
+    const seg = Math.min(step, md);
+    const mdUp = md - seg;
+    const zLow = (interpolateZenithDeg(md, well.trajectory) * Math.PI) / 180;
+    const zUp = (interpolateZenithDeg(mdUp, well.trajectory) * Math.PI) / 180;
+    const aLow = (interpolateAzimuthDeg(md, well.trajectory) * Math.PI) / 180;
+    const aUp = (interpolateAzimuthDeg(mdUp, well.trajectory) * Math.PI) / 180;
+    const zAvg = (zLow + zUp) / 2;
+    const dTheta = zUp - zLow;
+    let dPhi = aUp - aLow;
+    if (dPhi > Math.PI) dPhi -= 2 * Math.PI;
+    if (dPhi < -Math.PI) dPhi += 2 * Math.PI;
 
-    // Полный 3D dogleg (минимальная кривизна): cosβ = cos(I2−I1) − sin I1·sin I2·(1−cos ΔA)
-    const cosBeta = Math.cos(zen - zenPrev) - Math.sin(zen) * Math.sin(zenPrev) * (1 - Math.cos(dAzi));
-    const dogleg = Math.acos(Math.max(-1, Math.min(1, cosBeta))); // рад/шаг
-
-    const wSeg = well.pipeWeight_kgm * step * 9.81 * bf;
-    const wNormal = wSeg * Math.sin(zen);                  // прижатие от веса
-    const tNormal = Math.abs(tension) * dogleg;            // прижатие от натяжения в перегибе (T·dα)
-    const normalForce = Math.sqrt(wNormal * wNormal + tNormal * tNormal);
-    const drag = mu * normalForce;
-    const axial = wSeg * Math.cos(zen);
+    const W = well.pipeWeight_kgm * seg * G * bf;
+    const fnSide = tension * dPhi * Math.sin(zAvg);
+    const fnPlane = tension * dTheta + W * Math.sin(zAvg);
+    const normalForce = Math.sqrt(fnSide * fnSide + fnPlane * fnPlane);
+    const axial = W * Math.cos(zAvg);
+    const drag = op === "rotate" ? 0 : mu * normalForce;
 
     freeWeight += axial;
-    if (input.operation === "pull_out") tension += axial + drag;
-    else if (input.operation === "run_in") tension += axial - drag;
-    else tension += axial;
+    tension += op === "pull_out" ? axial + drag : op === "run_in" ? axial - drag : axial;
+    if (op === "rotate") torque += mu * normalForce * rPipe;
+
+    const cosBeta = Math.cos(zUp - zLow) - Math.sin(zLow) * Math.sin(zUp) * (1 - Math.cos(aUp - aLow));
+    const dogleg = Math.acos(Math.max(-1, Math.min(1, cosBeta)));
 
     points.push({
-      md,
+      md: mdUp,
       hookLoadKN: tension / 1000,
       dragKN: drag / 1000,
-      zenithDeg: zenDeg,
-      doglegDegPer10m: (dogleg * 180) / Math.PI,
+      zenithDeg: (zUp * 180) / Math.PI,
+      doglegDegPer10m: ((dogleg * 180) / Math.PI) * (10 / seg),
       normalForceN: normalForce,
+      torqueKNm: torque / 1000,
     });
   }
   points.reverse();
+  return { points, freeWeight, torque };
+}
+
+export function calculateDrag(input: DragInput, well: WorkoverWellData): DragResult {
+  const mu = input.lubricant ? input.lubricant.lubricatedFrictionCoeff : input.frictionCoeff;
+  const bottom = input.bottomLoadKN ?? 0;
+  const op = input.operation === "work_pipe" ? "pull_out" : input.operation;
+  const main = tensionProfile(op, mu, well, bottom);
+  const up = op === "pull_out" ? main : tensionProfile("pull_out", mu, well, bottom);
+  const down = tensionProfile("run_in", mu, well, bottom);
+  const rot = op === "rotate" ? main : tensionProfile("rotate", mu, well, bottom);
   return {
-    points,
+    points: main.points,
     // Нагрузка на крюке — натяжение у устья (первая точка после разворота: наименьшая MD)
-    maxHookLoadKN: points[0]?.hookLoadKN ?? 0,
-    freeWeightKN: freeWeight / 1000,
+    maxHookLoadKN: main.points[0]?.hookLoadKN ?? 0,
+    freeWeightKN: main.freeWeight / 1000,
     appliedFrictionCoeff: mu,
+    surfaceTorqueKNm: rot.torque / 1000,
+    pickUpKN: up.points[0]?.hookLoadKN ?? 0,
+    slackOffKN: down.points[0]?.hookLoadKN ?? 0,
   };
+}
+
+/** Предел текучести тела трубы на кручение, кН·м: τт = 0.577·σт, M = τт·J/(D/2). */
+export function pipeTorsionalYieldKNm(well: WorkoverWellData): number {
+  const do_ = well.pipeOD_mm / 1000, di = well.pipeID_mm / 1000;
+  const J = (Math.PI / 32) * (do_ ** 4 - di ** 4);
+  return (0.577 * well.pipeYieldMPa * 1e6 * J) / (do_ / 2) / 1000;
 }
 
 export interface LubricantResult {
@@ -648,49 +854,126 @@ export interface FreePointInput {
   measuredStretchM: number;
 }
 
-export function calculateFreePoint(input: FreePointInput, well: WorkoverWellData): {
+export interface FreePointResult {
   freePointMD: number;
   freePipeLength: number;
+  /** По закону Гука без учёта трения */
   idealFreePointMD: number;
   frictionCorrectionPct: number;
   avgZenithDeg: number;
-} {
+  /** Рекомендуемая глубина отворота/отрезания: на 1–2 трубы выше точки прихвата */
+  backOffMD: number;
+  /** Удлинение, которое дала бы вся колонна до забоя при этой натяжке, м */
+  maxStretchToBottomM: number;
+  belowBottom: boolean;
+}
+
+/**
+ * Точка прихвата по растяжению с учётом трения: дополнительная натяжка ΔF на устье
+ * затухает по глубине из-за трения в искривлённом стволе (модель затяжек).
+ * Ищется длина L свободной части, при которой Σ ΔT(s)·ds / (E·A) = ΔL замеренное.
+ */
+export function calculateFreePoint(input: FreePointInput, well: WorkoverWellData, frictionCoeff = 0.3): FreePointResult {
   const A = pipeCrossArea_m2(well.pipeOD_mm, well.pipeID_mm);
   const E = well.pipeYoungModulusGPa * 1e9;
-  const dF = input.pulledForceKN * 1000;
-  if (dF <= 0) return { freePointMD: 0, freePipeLength: 0, idealFreePointMD: 0, frictionCorrectionPct: 0, avgZenithDeg: 0 };
-  const ideal = (E * A * input.measuredStretchM) / dF;
-  // Поправка трения: в искривлённой скважине часть растяжения «съедается»
-  // трением свободной части → реальная точка прихвата глубже расчётной.
-  const avgZen = averageZenithDeg(well.trajectory, Math.min(ideal, well.wellDepthMD));
-  const frictionFactor = 1 + 0.15 * Math.sin((avgZen * Math.PI) / 180); // до +15% в горизонтали
-  const corrected = ideal * frictionFactor;
-  const clamped = Math.min(Math.max(0, corrected), well.wellDepthMD);
+  const dF = input.pulledForceKN;
+  const empty: FreePointResult = {
+    freePointMD: 0, freePipeLength: 0, idealFreePointMD: 0, frictionCorrectionPct: 0,
+    avgZenithDeg: 0, backOffMD: 0, maxStretchToBottomM: 0, belowBottom: false,
+  };
+  if (dF <= 0 || input.measuredStretchM <= 0) return empty;
+  const ideal = (E * A * input.measuredStretchM) / (dF * 1000);
+
+  const stretchFor = (L: number): number => {
+    const w = { ...well, wellDepthMD: L };
+    const ref = tensionProfile("rotate", frictionCoeff, w, 0).points;
+    const surfaceRef = ref[0]?.hookLoadKN ?? 0;
+    // нагрузка у прихвата B, при которой на устье натяжение выросло ровно на ΔF
+    let lo = 0, hi = dF;
+    let pull = tensionProfile("pull_out", frictionCoeff, w, hi).points;
+    for (let k = 0; k < 40; k++) {
+      const mid = (lo + hi) / 2;
+      const p = tensionProfile("pull_out", frictionCoeff, w, mid).points;
+      if ((p[0]?.hookLoadKN ?? 0) - surfaceRef > dF) hi = mid; else lo = mid;
+      pull = p;
+    }
+    let s = 0;
+    for (let i = 0; i < pull.length; i++) {
+      const seg = i + 1 < pull.length ? pull[i + 1].md - pull[i].md : L - pull[i].md;
+      const dT = Math.max(0, (pull[i].hookLoadKN - ref[i].hookLoadKN) * 1000);
+      s += (dT * seg) / (E * A);
+    }
+    return s;
+  };
+
+  const maxStretch = stretchFor(well.wellDepthMD);
+  let L: number;
+  let belowBottom = false;
+  if (input.measuredStretchM >= maxStretch) {
+    L = well.wellDepthMD;
+    belowBottom = true;
+  } else {
+    let lo = 10, hi = well.wellDepthMD;
+    for (let k = 0; k < 30; k++) {
+      const mid = (lo + hi) / 2;
+      if (stretchFor(mid) < input.measuredStretchM) lo = mid; else hi = mid;
+    }
+    L = (lo + hi) / 2;
+  }
+
   return {
-    freePointMD: clamped,
-    freePipeLength: clamped,
-    idealFreePointMD: Math.min(Math.max(0, ideal), well.wellDepthMD),
-    frictionCorrectionPct: (frictionFactor - 1) * 100,
-    avgZenithDeg: avgZen,
+    freePointMD: L,
+    freePipeLength: L,
+    idealFreePointMD: Math.min(ideal, well.wellDepthMD),
+    frictionCorrectionPct: (L / Math.max(1e-6, ideal) - 1) * 100,
+    avgZenithDeg: averageZenithDeg(well.trajectory, L),
+    backOffMD: Math.max(0, L - 15),
+    maxStretchToBottomM: maxStretch,
+    belowBottom,
   };
 }
 
-export type StuckType = "differential" | "mechanical" | "keyseat" | "cuttings" | "cement";
+/** Виды прихвата в КРС */
+export type StuckType = "sand" | "deposits" | "packer" | "differential" | "mechanical" | "cement";
+
+export type CirculationState = "free" | "restricted" | "none";
+export type StuckOnset = "moving_sudden" | "gradual" | "after_static";
 
 export interface StuckSymptoms {
   canRotate: boolean;
   canMoveDown: boolean;
   canMoveUp: boolean;
   stuckDepthMD: number;
-  occurredDuringCirculation: boolean;
+  circulation: CirculationState;
+  onset: StuckOnset;
+  /** В компоновке есть пакер/якорь */
+  packerInString: boolean;
+  packerDepthMD?: number;
+  /** Пескопроявление / песчаная пробка в скважине */
+  sandProduction: boolean;
+  /** АСПО, соли, продукты коррозии */
+  deposits: boolean;
+  /** Недавние цементные/изоляционные работы */
+  afterCementing: boolean;
+  /** Интервал перфорации, MD */
+  perfTopMD?: number;
+  perfBottomMD?: number;
   deltaP_MPa?: number;
   contactLenM?: number;
   mudcakeFriction?: number;
 }
 
+export interface StuckRankItem {
+  type: StuckType;
+  score: number;
+  probability: number;
+  reasons: string[];
+}
+
 export interface StuckDiagnosis {
   type: StuckType;
   probability: number;
+  ranking: StuckRankItem[];
   freeingForceKN: number;
   pipeYieldKN: number;
   rigAllowableKN?: number;
@@ -713,52 +996,94 @@ export function differentialSticking(
   return (mudcakeFriction * deltaP_MPa * 1e6 * A) / 1000;
 }
 
+export const STUCK_LABELS: Record<StuckType, string> = {
+  sand: "Песчаная пробка",
+  deposits: "АСПО / соли / коррозия",
+  packer: "Несработавший пакер / якорь",
+  differential: "Дифференциальный (у перфорации)",
+  mechanical: "Механический (посторонний предмет, смятие колонны)",
+  cement: "Цементный",
+};
+
+export const STUCK_RECOMMENDATIONS: Record<StuckType, string> = {
+  sand: "Восстановить циркуляцию (обратная промывка при возможности), промыть пробку с расхаживанием; при отсутствии циркуляции — ГНКТ/промывка через отдельную колонну. Не превышать допустимую натяжку.",
+  deposits: "Горячая промывка (нефть/вода), растворители АСПО или кислотная ванна для солей, затем расхаживание. Подобрать реагент по анализу отложений.",
+  packer: "Сорвать пакер по паспортной процедуре (сброс давления, вращение, натяжка на срезные винты). При неудаче — отворот над пакером и фрезерование.",
+  differential: "Снизить репрессию (облегчить жидкость/снизить уровень), установить ванну со смазкой с высокой проникающей способностью, расхаживание с вращением.",
+  mechanical: "Определить точку прихвата, расхаживание вниз и ясс вниз; печать для обследования головы; фрезерование. Проверить колонну на смятие (шаблонирование/ПГИ).",
+  cement: "Разбуривание/фрезерование цемента, отворот выше прихвата; при свежем цементе — немедленная промывка.",
+};
+
+/**
+ * Экспертная диагностика по признакам (балльная оценка). Признаки и веса открыты в `reasons`.
+ */
 export function diagnoseStuck(
   well: WorkoverWellData,
-  symptoms: StuckSymptoms,
+  s: StuckSymptoms,
   rigAllowableKN?: number,
   stringLoadKN = 0,
 ): StuckDiagnosis {
-  let type: StuckType;
-  if (symptoms.canRotate && !symptoms.canMoveUp && !symptoms.canMoveDown) type = "differential";
-  else if (symptoms.canMoveDown && !symptoms.canMoveUp) type = "keyseat";
-  else if (!symptoms.canRotate && !symptoms.canMoveUp && !symptoms.canMoveDown) type = "mechanical";
-  else type = "cuttings";
+  const items: Record<StuckType, StuckRankItem> = {
+    sand: { type: "sand", score: 0, probability: 0, reasons: [] },
+    deposits: { type: "deposits", score: 0, probability: 0, reasons: [] },
+    packer: { type: "packer", score: 0, probability: 0, reasons: [] },
+    differential: { type: "differential", score: 0, probability: 0, reasons: [] },
+    mechanical: { type: "mechanical", score: 0, probability: 0, reasons: [] },
+    cement: { type: "cement", score: 0, probability: 0, reasons: [] },
+  };
+  const add = (t: StuckType, pts: number, why: string) => { items[t].score += pts; items[t].reasons.push(`${pts > 0 ? "+" : ""}${pts} ${why}`); };
+
+  const nearPerf = s.perfTopMD !== undefined && s.perfBottomMD !== undefined && s.perfBottomMD > 0 &&
+    s.stuckDepthMD >= s.perfTopMD - 20 && s.stuckDepthMD <= s.perfBottomMD + 20;
+  const nearPacker = s.packerInString && s.packerDepthMD !== undefined && Math.abs(s.stuckDepthMD - s.packerDepthMD) <= 50;
+
+  // Циркуляция — главный различающий признак
+  if (s.circulation === "free") { add("differential", 2, "циркуляция свободная"); add("packer", 1, "циркуляция свободная"); add("mechanical", 1, "циркуляция свободная"); }
+  if (s.circulation === "restricted") { add("sand", 3, "циркуляция затруднена"); add("deposits", 2, "циркуляция затруднена"); }
+  if (s.circulation === "none") { add("sand", 3, "циркуляции нет"); add("cement", 2, "циркуляции нет"); add("deposits", 1, "циркуляции нет"); }
+
+  if (s.sandProduction) add("sand", 3, "пескопроявление");
+  if (s.deposits) add("deposits", 3, "АСПО/соли в скважине");
+  if (s.afterCementing) add("cement", 4, "после цементных работ");
+  if (s.packerInString) add("packer", 2, "пакер/якорь в компоновке");
+  if (nearPacker) add("packer", 3, "прихват на глубине пакера");
+  if (nearPerf) add("differential", 3, "прихват напротив перфорации");
+  else add("differential", -2, "не у перфорации (в обсаженном стволе маловероятен)");
+
+  if (s.onset === "after_static") { add("differential", 3, "после остановки без движения"); add("sand", 1, "после остановки (осаждение песка)"); }
+  if (s.onset === "gradual") { add("deposits", 2, "затяжки нарастали постепенно"); add("sand", 1, "затяжки нарастали постепенно"); }
+  if (s.onset === "moving_sudden") { add("mechanical", 3, "резкая посадка при движении"); }
+
+  if (s.canMoveDown && !s.canMoveUp) { add("mechanical", 2, "ходит вниз, не ходит вверх"); add("sand", 1, "ходит вниз (пробка над компоновкой)"); }
+  if (!s.canMoveDown && !s.canMoveUp && !s.canRotate) { add("cement", 1, "нет ни хода, ни вращения"); add("differential", 1, "нет ни хода, ни вращения"); }
+  if (s.canRotate) { add("differential", -1, "вращается"); add("packer", 1, "вращается"); }
+
+  const list = Object.values(items).map((it) => ({ ...it, score: Math.max(0, it.score) }));
+  const total = list.reduce((a, b) => a + b.score, 0) || 1;
+  list.forEach((it) => { it.probability = it.score / total; });
+  list.sort((a, b) => b.score - a.score);
+  const top = list[0];
 
   let freeingForce = 0;
-  if (type === "differential" && symptoms.deltaP_MPa && symptoms.contactLenM) {
-    freeingForce = differentialSticking(
-      symptoms.deltaP_MPa,
-      symptoms.contactLenM,
-      well.pipeOD_mm,
-      symptoms.mudcakeFriction ?? 0.25,
-    );
+  if (top.type === "differential" && s.deltaP_MPa && s.contactLenM) {
+    freeingForce = differentialSticking(s.deltaP_MPa, s.contactLenM, well.pipeOD_mm, s.mudcakeFriction ?? 0.25);
   }
-
   const pipeYield = pipeYieldForceKN(well);
   const limit = rigAllowableKN ? Math.min(pipeYield, rigAllowableKN) : pipeYield;
   const requiredHook = stringLoadKN + freeingForce;
   const canFree = freeingForce > 0 && requiredHook < limit;
 
-  const recommendation =
-    type === "differential"
-      ? "Спот-жидкость (нефтяная/смазка с проникающей способностью), снизить ΔP, расхаживание."
-      : type === "keyseat"
-        ? "Проработка желоба, вращение при подъёме."
-        : type === "mechanical"
-          ? "Ясс вниз, фрезерование, освобождение секции."
-          : "Восстановить циркуляцию, промыть шлам.";
-
   return {
-    type,
-    probability: 0.8,
+    type: top.type,
+    probability: top.probability,
+    ranking: list,
     freeingForceKN: freeingForce,
     pipeYieldKN: pipeYield,
     rigAllowableKN,
     stringLoadKN,
     requiredHookLoadKN: requiredHook,
     canFreeByPull: canFree,
-    recommendation,
+    recommendation: STUCK_RECOMMENDATIONS[top.type],
   };
 }
 
@@ -1046,11 +1371,12 @@ export function planMultiIntervalKill(
   mixingIntensity: "low" | "medium" | "high",
   safetyMarginPct: number,
   temperatureC: number = 20,
+  marginMode: "pb" | "manual" = "manual",
 ): MultiIntervalKill {
   const withDensity: KillInterval[] = intervals.map((iv) => {
     const tvd = Math.max(1, iv.bottomTVD);
-    const bal = (iv.formationPressureMPa * 1e6) / (G * tvd) / 1000;
-    return { ...iv, requiredKillDensity: bal * (1 + safetyMarginPct / 100) };
+    const m = killMargin(iv.formationPressureMPa, tvd, marginMode, safetyMarginPct);
+    return { ...iv, requiredKillDensity: ((iv.formationPressureMPa + m.mpa) * 1e6) / (G * tvd) / 1000 };
   });
 
   let governing = 0;

@@ -1,4 +1,6 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
+import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-calculations";
 import { Link } from "react-router-dom";
 import { Home, ArrowLeft, Wrench, Anchor, Activity, Magnet, Search, Construction as Crane, Droplets } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -17,8 +19,8 @@ import {
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import TermsFooter from "@/components/TermsFooter";
 import {
-  STEEL_GRADES, CONNECTION_LABELS, type ConnectionType,
-  pipeYieldForceKN, pipeBodyYieldKN,
+  STEEL_GRADES, CONNECTION_LABELS, type ConnectionType, GOST_TUBING_SIZES, tvdAtMD,
+  pipeYieldForceKN, pipeBodyYieldKN, pipeTorsionalYieldKNm, STUCK_LABELS,
   calculatePacker, calculatePackerRelease, calculateDrag, calculateLubricant,
   calculateFreePoint, diagnoseStuck, calculateFishing, calculateRigCapacity,
   calculateKill, KILL_FLUIDS,
@@ -45,19 +47,19 @@ const NumberField = memo(function NumberField({ label, value, onChange, unit, hi
 
 const DEFAULT_WELL: WorkoverWellData = {
   wellDepthMD: 2500,
-  trajectory: [
+  trajectory: calculateTVDFromSurvey([
     { md: 0, tvd: 0, zenith: 0, azimuth: 0 },
     { md: 800, tvd: 800, zenith: 0, azimuth: 0 },
-    { md: 1500, tvd: 1450, zenith: 35, azimuth: 90 },
-    { md: 2500, tvd: 2200, zenith: 55, azimuth: 90 },
-  ],
+    { md: 1500, tvd: 0, zenith: 35, azimuth: 90 },
+    { md: 2500, tvd: 0, zenith: 55, azimuth: 90 },
+  ]),
   casingID_mm: 152,
   holeDiameter_mm: 215.9,
   pipeOD_mm: 73,
   pipeID_mm: 62,
   pipeWeight_kgm: 9.67,
-  pipeGrade: "N80",
-  pipeYieldMPa: STEEL_GRADES.N80,
+  pipeGrade: "Е",
+  pipeYieldMPa: STEEL_GRADES["Е"],
   pipeYoungModulusGPa: 210,
   fluidDensity_gcm3: 1.10,
   fluidPV_cP: 15,
@@ -70,6 +72,43 @@ export default function Workover() {
   const [well, setWell] = useState<WorkoverWellData>(DEFAULT_WELL);
   const updateWell = <K extends keyof WorkoverWellData>(k: K, v: WorkoverWellData[K]) =>
     setWell((w) => ({ ...w, [k]: v }));
+
+  // ──── Траектория ────
+  const [trajOpen, setTrajOpen] = useState(false);
+  const trajFileRef = useRef<HTMLInputElement>(null);
+  const updateTrajectory = (pts: TrajectoryPoint[]) => {
+    const calc = calculateTVDFromSurvey(pts.filter((p) => Number.isFinite(p.md)));
+    setWell((w) => ({ ...w, trajectory: calc }));
+  };
+  const importTrajectory = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target?.result, { type: "array" });
+        const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        const find = (row: Record<string, unknown>, keys: string[]) => {
+          for (const k of Object.keys(row)) if (keys.some((s) => k.toLowerCase().includes(s))) return row[k];
+          return null;
+        };
+        const pts = rows.map((r) => ({
+          md: parseFloat(String(find(r, ["md", "глубина", "depth", "ствол"]))),
+          zenith: parseFloat(String(find(r, ["zenith", "зенит", "incl", "угол"]))),
+          azimuth: parseFloat(String(find(r, ["azimuth", "азимут", "az"]))),
+          tvd: 0,
+        })).filter((p) => [p.md, p.zenith, p.azimuth].every(Number.isFinite));
+        if (pts.length >= 2) {
+          updateTrajectory(pts);
+          setTrajOpen(true);
+          const lastMD = Math.max(...pts.map((p) => p.md));
+          if (lastMD > well.wellDepthMD) updateWell("wellDepthMD", lastMD);
+        }
+      } catch { /* неверный файл — оставляем текущую траекторию */ }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
 
   const pipeYield = useMemo(() => pipeYieldForceKN(well), [well]);
   const pipeBody = useMemo(() => pipeBodyYieldKN(well), [well]);
@@ -102,28 +141,27 @@ export default function Workover() {
 
   // ──── Packer ────
   const [packer, setPacker] = useState<PackerInput>({
-    type: "hydraulic", packerOD_mm: 118, elementLength_mm: 150, setDepthMD: 2200,
-    rubberFrictionCoeff: 0.4, setPressureMPa: 20, differentialPressureMPa: 15,
+    type: "hydraulic", setDepthMD: 2200, sealBoreID_mm: 80, ratingDiffMPa: 35, ratingLoadKN: 300,
+    connection: "free", sealStrokeMM: 1500,
+    tubingSurfaceMPa0: 0, annulusSurfaceMPa0: 0, tubingFluidDensity0: 1.10, annulusFluidDensity: 1.10,
+    tubingSurfaceMPa1: 15, annulusSurfaceMPa1: 0, tubingFluidDensity1: 1.10, avgTempChangeC: -20,
   });
-  const packerResult = useMemo(() => calculatePacker(packer), [packer]);
+  const packerResult = useMemo(() => calculatePacker(packer, well), [packer, well]);
 
   // ──── Packer RELEASE ────
   const [releaseExtra, setReleaseExtra] = useState({
-    monthsInService: 12, h2sPresent: false, scaleDepositRate: 6, pipeWeightAboveKN: 0,
+    releaseShearKN: 90, extraStuckKN: 0, pipeWeightAboveKN: 0,
   });
   const weightAbovePackerAuto = useMemo(() => pullOutLoadTo(packer.setDepthMD), [well, drag.frictionCoeff, packer.setDepthMD]); // eslint-disable-line react-hooks/exhaustive-deps
   const weightAbovePacker = releaseExtra.pipeWeightAboveKN > 0 ? releaseExtra.pipeWeightAboveKN : weightAbovePackerAuto;
   const releaseResult = useMemo(() => calculatePackerRelease({
     packerType: packer.type,
-    holdCapacityKN: packerResult.holdCapacityKN,
-    monthsInService: releaseExtra.monthsInService,
-    h2sPresent: releaseExtra.h2sPresent,
-    scaleDepositRate: releaseExtra.scaleDepositRate,
+    releaseShearKN: releaseExtra.releaseShearKN,
+    extraStuckKN: releaseExtra.extraStuckKN,
     pipeWeightAboveKN: weightAbovePacker,
-    pipeYieldMPa: well.pipeYieldMPa,
-    pipeOD_mm: well.pipeOD_mm, pipeID_mm: well.pipeID_mm,
     pipeTensileLimitKN: pipeYield,
-  } as PackerReleaseInput), [packer.type, packerResult.holdCapacityKN, releaseExtra, weightAbovePacker, well.pipeYieldMPa, well.pipeOD_mm, well.pipeID_mm, pipeYield]);
+    rigAllowableKN: rigResult.allowableLoadKN,
+  } as PackerReleaseInput), [packer.type, releaseExtra, weightAbovePacker, pipeYield, rigResult.allowableLoadKN]);
 
   // ──── Kill ────
   const [kill, setKill] = useState<KillInput>({
@@ -131,7 +169,7 @@ export default function Workover() {
     formationPressureMPa: 28, reservoirDepthTVD: 2200, fracturePressureMPa: 42,
     currentMudDensity: 1.10,
     wellDepthMD: 2500, casingID_mm: 152, tubingOD_mm: 73, tubingID_mm: 62,
-    killFluidPV_cP: 20, killFluidYP_Pa: 6, pumpRateLs: 8, safetyMarginPct: 5,
+    killFluidPV_cP: 20, killFluidYP_Pa: 6, pumpRateLs: 8, safetyMarginPct: 5, marginMode: "pb",
   });
   // Геометрия и текущая жидкость — из общих данных скважины
   const killInput = useMemo<KillInput>(() => ({
@@ -183,20 +221,24 @@ export default function Workover() {
   ]);
   const multiIntervalPlan = useMemo(() => {
     if (!selectedSalt || killIntervals.length === 0) return null;
-    return planMultiIntervalKill(killIntervals, selectedSalt, Math.max(0.1, effectiveBrineVolume), brineMixing, kill.safetyMarginPct, brineTempC);
-  }, [killIntervals, selectedSalt, effectiveBrineVolume, brineMixing, kill.safetyMarginPct, brineTempC]);
+    return planMultiIntervalKill(killIntervals, selectedSalt, Math.max(0.1, effectiveBrineVolume), brineMixing, kill.safetyMarginPct, brineTempC, kill.marginMode ?? "manual");
+  }, [killIntervals, selectedSalt, effectiveBrineVolume, brineMixing, kill.safetyMarginPct, brineTempC, kill.marginMode]);
 
   // ──── Stuck pipe ────
   const [fp, setFp] = useState<FreePointInput>({ pulledForceKN: 196, measuredStretchM: 1.5 });
-  const fpResult = useMemo(() => calculateFreePoint(fp, well), [fp, well]);
+  const fpResult = useMemo(() => calculateFreePoint(fp, well, drag.frictionCoeff), [fp, well, drag.frictionCoeff]);
   const [symptoms, setSymptoms] = useState<StuckSymptoms>({
     canRotate: true, canMoveDown: false, canMoveUp: false,
-    stuckDepthMD: 1800, occurredDuringCirculation: true, deltaP_MPa: 8, contactLenM: 30, mudcakeFriction: 0.25,
+    stuckDepthMD: 1800, circulation: "restricted", onset: "gradual",
+    packerInString: false, sandProduction: true, deposits: false, afterCementing: false,
+    perfTopMD: 2300, perfBottomMD: 2350,
+    deltaP_MPa: 8, contactLenM: 30, mudcakeFriction: 0.25,
   });
+  const symptomsEff = useMemo<StuckSymptoms>(() => ({ ...symptoms, packerDepthMD: packer.setDepthMD }), [symptoms, packer.setDepthMD]);
   const stuckStringLoad = useMemo(() => pullOutLoadTo(symptoms.stuckDepthMD), [well, drag.frictionCoeff, symptoms.stuckDepthMD]); // eslint-disable-line react-hooks/exhaustive-deps
   const stuckDiag = useMemo(
-    () => diagnoseStuck(well, symptoms, rigResult.allowableLoadKN, stuckStringLoad),
-    [well, symptoms, rigResult.allowableLoadKN, stuckStringLoad],
+    () => diagnoseStuck(well, symptomsEff, rigResult.allowableLoadKN, stuckStringLoad),
+    [well, symptomsEff, rigResult.allowableLoadKN, stuckStringLoad],
   );
   const lubeResult = useMemo(
     () => calculateLubricant(lube, dragNoLube.maxHookLoadKN, dragLube.maxHookLoadKN,
@@ -224,6 +266,16 @@ export default function Workover() {
       lube: +(b[i]?.hookLoadKN ?? 0).toFixed(1),
     }));
   }, [dragNoLube, dragLube]);
+  const torqueChart = useMemo(() => {
+    if (drag.operation !== "rotate") return [];
+    // момент в сечении = трение всей колонны ниже этого сечения
+    const a = dragNoLube.points, b = dragLube.points;
+    return a.map((p, i) => ({
+      md: Math.round(p.md),
+      base: +p.torqueKNm.toFixed(3),
+      lube: +(b[i]?.torqueKNm ?? 0).toFixed(3),
+    }));
+  }, [dragNoLube, dragLube, drag.operation]);
 
   // NumberField is defined at module scope (below) to avoid remount-on-render (focus loss).
 
@@ -258,6 +310,20 @@ export default function Workover() {
           <CardContent className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
             <NumberField label="Глубина MD" unit="м" value={well.wellDepthMD} onChange={(v) => updateWell("wellDepthMD", v)} />
             <NumberField label="ID обсадной" unit="мм" value={well.casingID_mm} onChange={(v) => updateWell("casingID_mm", v)} />
+            <div className="space-y-1">
+              <Label className="text-xs">НКТ по ГОСТ 633-80</Label>
+              <Select value={GOST_TUBING_SIZES.find((t) => Math.abs(t.od - well.pipeOD_mm) < 0.5 && Math.abs(t.od - 2 * t.wall - well.pipeID_mm) < 0.5)?.label ?? "custom"}
+                onValueChange={(v) => {
+                  const t = GOST_TUBING_SIZES.find((x) => x.label === v);
+                  if (t) setWell((w) => ({ ...w, pipeOD_mm: t.od, pipeID_mm: +(t.od - 2 * t.wall).toFixed(1), pipeWeight_kgm: t.massKgm }));
+                }}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="custom" disabled>Свой размер</SelectItem>
+                  {GOST_TUBING_SIZES.map((t) => <SelectItem key={t.label} value={t.label}>{t.label} мм, {t.massKgm} кг/м</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <NumberField label="НКТ OD" unit="мм" value={well.pipeOD_mm} onChange={(v) => updateWell("pipeOD_mm", v)} />
             <NumberField label="НКТ ID" unit="мм" value={well.pipeID_mm} onChange={(v) => updateWell("pipeID_mm", v)} />
             <NumberField label="Вес погонный" unit="кг/м" value={well.pipeWeight_kgm} onChange={(v) => updateWell("pipeWeight_kgm", v)} />
@@ -294,6 +360,73 @@ export default function Workover() {
           </CardContent>
         </Card>
 
+
+        {/* ─── Траектория ─── */}
+        <Card>
+          <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-base flex items-center gap-2">
+              Траектория (инклинометрия)
+              <span className="text-xs font-normal text-muted-foreground">
+                {well.trajectory.length} точек · забой TVD {tvdAtMD(well.wellDepthMD, well.trajectory).toFixed(0)} м · max зенит {Math.max(0, ...well.trajectory.map((t) => t.zenith)).toFixed(0)}°
+              </span>
+            </CardTitle>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setTrajOpen((o) => !o)}>
+                {trajOpen ? "Свернуть" : "Редактировать"}
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => trajFileRef.current?.click()}>Импорт Excel</Button>
+              <input ref={trajFileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={importTrajectory} />
+            </div>
+          </CardHeader>
+          {trajOpen && (
+            <CardContent className="space-y-2">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">MD, м</TableHead>
+                      <TableHead className="text-xs">Зенит, °</TableHead>
+                      <TableHead className="text-xs">Азимут, °</TableHead>
+                      <TableHead className="text-xs">TVD, м (расчёт)</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {well.trajectory.map((t, idx) => (
+                      <TableRow key={idx}>
+                        {(["md", "zenith", "azimuth"] as const).map((k) => (
+                          <TableCell key={k}>
+                            <BlurInput type="number" value={t[k]} className="h-7 text-xs w-24"
+                              onValueCommit={(v) => updateTrajectory(well.trajectory.map((p, i) => (i === idx ? { ...p, [k]: num(v) } : p)))} />
+                          </TableCell>
+                        ))}
+                        <TableCell className="text-xs">{t.tvd.toFixed(1)}</TableCell>
+                        <TableCell>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" disabled={well.trajectory.length <= 2}
+                            onClick={() => updateTrajectory(well.trajectory.filter((_, i) => i !== idx))}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button size="sm" variant="outline" className="h-7 text-xs"
+                  onClick={() => {
+                    const last = well.trajectory[well.trajectory.length - 1];
+                    updateTrajectory([...well.trajectory, { md: (last?.md ?? 0) + 100, zenith: last?.zenith ?? 0, azimuth: last?.azimuth ?? 0, tvd: 0 }]);
+                  }}>
+                  <Plus className="w-3 h-3 mr-1" />Точка
+                </Button>
+                <a href="/trajectory_template.xlsx" download className="text-xs text-primary hover:underline">Шаблон Excel</a>
+                <span className="text-[10px] text-muted-foreground">TVD — по методу минимальной кривизны. Ниже последней точки зенит считается постоянным.</span>
+              </div>
+            </CardContent>
+          )}
+        </Card>
+
         {/* ─── Сводка нагрузок (всегда видна) ─── */}
         <Card className="border-primary/40">
           <CardHeader className="pb-2">
@@ -325,9 +458,9 @@ export default function Workover() {
           <TabsContent value="packer" className="space-y-4">
             <div className="grid lg:grid-cols-2 gap-4">
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Параметры пакера</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Пакер и паспортные данные</CardTitle></CardHeader>
                 <CardContent className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1 col-span-2">
+                  <div className="space-y-1">
                     <Label className="text-xs">Тип</Label>
                     <Select value={packer.type} onValueChange={(v) => setPacker((p) => ({ ...p, type: v as PackerInput["type"] }))}>
                       <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
@@ -340,72 +473,121 @@ export default function Workover() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <NumberField label="OD пакера" unit="мм" value={packer.packerOD_mm} onChange={(v) => setPacker((p) => ({ ...p, packerOD_mm: v }))} />
-                  <NumberField label="Длина элемента" unit="мм" value={packer.elementLength_mm} onChange={(v) => setPacker((p) => ({ ...p, elementLength_mm: v }))} />
-                  <NumberField label="Глубина посадки MD" unit="м" value={packer.setDepthMD} onChange={(v) => setPacker((p) => ({ ...p, setDepthMD: v }))} />
-                  <NumberField label="μ резины" value={packer.rubberFrictionCoeff} onChange={(v) => setPacker((p) => ({ ...p, rubberFrictionCoeff: v }))} hint="0.30–0.50" />
-                  <NumberField label="Давление посадки" unit="МПа" value={packer.setPressureMPa} onChange={(v) => setPacker((p) => ({ ...p, setPressureMPa: v }))} />
-                  <NumberField label="Рабочий ΔP" unit="МПа" value={packer.differentialPressureMPa} onChange={(v) => setPacker((p) => ({ ...p, differentialPressureMPa: v }))} />
+                  <div className="space-y-1">
+                    <Label className="text-xs">Соединение НКТ с пакером</Label>
+                    <Select value={packer.connection} onValueChange={(v) => setPacker((p) => ({ ...p, connection: v as PackerInput["connection"] }))}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="free">Свободное (уплотнения в стволе)</SelectItem>
+                        <SelectItem value="anchored">Заякорено (жёстко)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <NumberField label="Глубина посадки MD" unit="м" value={packer.setDepthMD} onChange={(v) => setPacker((p) => ({ ...p, setDepthMD: v }))}
+                    hint={`TVD ${packerResult.packerTVD.toFixed(0)} м`} />
+                  <NumberField label="ID уплотнительного ствола" unit="мм" value={packer.sealBoreID_mm} onChange={(v) => setPacker((p) => ({ ...p, sealBoreID_mm: v }))} hint="по паспорту пакера" />
+                  <NumberField label="Допустимый перепад (паспорт)" unit="МПа" value={packer.ratingDiffMPa} onChange={(v) => setPacker((p) => ({ ...p, ratingDiffMPa: v }))} />
+                  <NumberField label="Допустимая нагрузка (паспорт)" unit="кН" value={packer.ratingLoadKN} onChange={(v) => setPacker((p) => ({ ...p, ratingLoadKN: v }))} />
+                  {packer.connection === "free" && (
+                    <NumberField label="Ход уплотнений" unit="мм" value={packer.sealStrokeMM} onChange={(v) => setPacker((p) => ({ ...p, sealStrokeMM: v }))} />
+                  )}
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Результаты</CardTitle></CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  <Row k="Площадь контакта элемента" v={`${packerResult.contactAreaM2.toFixed(4)} м²`} />
-                  <Row k="Несущая способность (μ·P·A)" v={`${packerResult.holdCapacityKN.toFixed(0)} кН`} />
-                  <Row k="Усилие срыва (+адгезия 20%)" v={`${packerResult.releaseForceKN.toFixed(0)} кН`} />
-                  <Row k="Герметичность (0.85·P_set)" v={`${packerResult.sealIntegrityMPa.toFixed(1)} МПа`} />
-                  <Row k="Сила заклинивания плашек" v={`${packerResult.slipBiteForceKN.toFixed(0)} кН`} />
-                  <div className="pt-2">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Давления и температура: посадка → работа</CardTitle></CardHeader>
+                <CardContent className="grid grid-cols-2 gap-3">
+                  <NumberField label="P в НКТ на устье, при посадке" unit="МПа" value={packer.tubingSurfaceMPa0} onChange={(v) => setPacker((p) => ({ ...p, tubingSurfaceMPa0: v }))} />
+                  <NumberField label="P в НКТ на устье, в работе" unit="МПа" value={packer.tubingSurfaceMPa1} onChange={(v) => setPacker((p) => ({ ...p, tubingSurfaceMPa1: v }))} hint="закачка, опрессовка, ГРП" />
+                  <NumberField label="P в затрубье на устье, при посадке" unit="МПа" value={packer.annulusSurfaceMPa0} onChange={(v) => setPacker((p) => ({ ...p, annulusSurfaceMPa0: v }))} />
+                  <NumberField label="P в затрубье на устье, в работе" unit="МПа" value={packer.annulusSurfaceMPa1} onChange={(v) => setPacker((p) => ({ ...p, annulusSurfaceMPa1: v }))} />
+                  <NumberField label="ρ в НКТ при посадке" unit="г/см³" value={packer.tubingFluidDensity0} onChange={(v) => setPacker((p) => ({ ...p, tubingFluidDensity0: v }))} />
+                  <NumberField label="ρ в НКТ в работе" unit="г/см³" value={packer.tubingFluidDensity1} onChange={(v) => setPacker((p) => ({ ...p, tubingFluidDensity1: v }))} />
+                  <NumberField label="ρ в затрубье" unit="г/см³" value={packer.annulusFluidDensity} onChange={(v) => setPacker((p) => ({ ...p, annulusFluidDensity: v }))} />
+                  <NumberField label="ΔT средняя по НКТ" unit="°C" value={packer.avgTempChangeC} onChange={(v) => setPacker((p) => ({ ...p, avgTempChangeC: v }))} hint="закачка холодной жидкости < 0" />
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Перемещения и усилия НКТ (Lubinski)</CardTitle></CardHeader>
+              <CardContent className="grid lg:grid-cols-2 gap-4 text-sm">
+                <div className="space-y-1">
+                  <Row k="P под пакером (в НКТ): посадка → работа" v={`${packerResult.pTubingAtPacker[0].toFixed(1)} → ${packerResult.pTubingAtPacker[1].toFixed(1)} МПа`} />
+                  <Row k="P над пакером (затрубье): посадка → работа" v={`${packerResult.pAnnulusAtPacker[0].toFixed(1)} → ${packerResult.pAnnulusAtPacker[1].toFixed(1)} МПа`} />
+                  <Row k="Перепад на пакер в работе" v={<strong>{packerResult.diffPressureMPa.toFixed(1)} МПа</strong>}
+                    tone={Math.abs(packerResult.diffPressureMPa) > packer.ratingDiffMPa ? "danger" : "ok"} />
+                  <Row k="Фиктивная сила Ff = Ap·(Pi − Po)" v={`${packerResult.fictitiousForceKN.toFixed(0)} кН`} />
+                  <Row k="Спиральный изгиб над пакером" v={packerResult.buckled ? `да, ${packerResult.neutralPointFromPackerM.toFixed(0)} м` : "нет"}
+                    tone={packerResult.buckled ? "warn" : undefined} />
+                  {packer.connection === "anchored" && (
+                    <Row k="Нагрузка на пакер (+ натяжение, − сжатие)" v={<strong>{packerResult.packerLoadKN.toFixed(0)} кН</strong>}
+                      tone={Math.abs(packerResult.packerLoadKN) > packer.ratingLoadKN ? "danger" : "ok"} />
+                  )}
+                </div>
+                <div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Эффект</TableHead>
+                        <TableHead className="text-xs text-right">ΔL, мм</TableHead>
+                        <TableHead className="text-xs text-right">Сила при заякоривании, кН</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <TableRow><TableCell className="text-xs">Поршневой</TableCell><TableCell className="text-xs text-right">{packerResult.dLPistonMM.toFixed(0)}</TableCell><TableCell className="text-xs text-right">{packerResult.fPistonKN.toFixed(0)}</TableCell></TableRow>
+                      <TableRow><TableCell className="text-xs">Раздувание</TableCell><TableCell className="text-xs text-right">{packerResult.dLBallooningMM.toFixed(0)}</TableCell><TableCell className="text-xs text-right">{packerResult.fBallooningKN.toFixed(0)}</TableCell></TableRow>
+                      <TableRow><TableCell className="text-xs">Температура</TableCell><TableCell className="text-xs text-right">{packerResult.dLTemperatureMM.toFixed(0)}</TableCell><TableCell className="text-xs text-right">{packerResult.fTemperatureKN.toFixed(0)}</TableCell></TableRow>
+                      <TableRow><TableCell className="text-xs">Продольный изгиб</TableCell><TableCell className="text-xs text-right">{packerResult.dLBucklingMM.toFixed(0)}</TableCell><TableCell className="text-xs text-right">—</TableCell></TableRow>
+                      <TableRow><TableCell className="text-xs font-semibold">Итого</TableCell><TableCell className="text-xs text-right font-semibold">{packerResult.dLTotalMM.toFixed(0)}</TableCell>
+                        <TableCell className="text-xs text-right font-semibold">{(packerResult.fPistonKN + packerResult.fBallooningKN + packerResult.fTemperatureKN).toFixed(0)}</TableCell></TableRow>
+                    </TableBody>
+                  </Table>
+                  <p className="text-[10px] text-muted-foreground pt-1">ΔL &lt; 0 — НКТ укорачиваются (уплотнения выходят вверх). Сила &gt; 0 — растяжение НКТ у пакера.</p>
+                </div>
+                <div className="lg:col-span-2 space-y-2">
+                  <div>
                     {packerResult.isSecure
-                      ? <Badge className="bg-green-600">🟢 Пакер держит перепад</Badge>
-                      : <Badge variant="destructive">🔴 Превышение ΔP — риск пропуска</Badge>}
+                      ? <Badge className="bg-green-600">🟢 В пределах паспорта пакера</Badge>
+                      : <Badge variant="destructive">🔴 Превышение паспортных пределов</Badge>}
                   </div>
                   {packerResult.warnings.map((w, i) => (
                     <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
                   ))}
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* ─── Срыв пакера ─── */}
             <Card className="border-amber-500/40">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  🔧 Срыв пакера (release) — операция извлечения
+                  🔧 Срыв пакера — операция извлечения
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid lg:grid-cols-2 gap-4">
                 <div className="grid grid-cols-2 gap-3">
-                  <NumberField label="Срок эксплуатации" unit="мес"
-                    value={releaseExtra.monthsInService}
-                    onChange={(v) => setReleaseExtra((s) => ({ ...s, monthsInService: v }))}
-                    hint="растёт адгезия и отложения" />
-                  <NumberField label="Интенсивность отложений" unit="кН/мес"
-                    value={releaseExtra.scaleDepositRate}
-                    onChange={(v) => setReleaseExtra((s) => ({ ...s, scaleDepositRate: v }))}
-                    hint="соли/парафин/коррозия (3–15)" />
+                  <NumberField label="Усилие срыва по паспорту" unit="кН"
+                    value={releaseExtra.releaseShearKN}
+                    onChange={(v) => setReleaseExtra((s) => ({ ...s, releaseShearKN: v }))}
+                    hint="срезные винты/кольцо; вращением — 0" />
+                  <NumberField label="Доп. усилие (отложения, прихват)" unit="кН"
+                    value={releaseExtra.extraStuckKN}
+                    onChange={(v) => setReleaseExtra((s) => ({ ...s, extraStuckKN: v }))}
+                    hint="по опыту на месторождении" />
                   <NumberField label="Вес колонны над пакером" unit="кН"
                     value={releaseExtra.pipeWeightAboveKN}
                     onChange={(v) => setReleaseExtra((s) => ({ ...s, pipeWeightAboveKN: v }))}
                     hint={`0 = расчёт с затяжками (${weightAbovePackerAuto.toFixed(0)} кН)`} />
-                  <label className="flex items-end gap-2 text-xs cursor-pointer pb-2">
-                    <input type="checkbox" checked={releaseExtra.h2sPresent}
-                      onChange={(e) => setReleaseExtra((s) => ({ ...s, h2sPresent: e.target.checked }))} />
-                    H₂S среда (×1.5 прихват)
-                  </label>
                 </div>
                 <div className="space-y-2 text-sm">
-                  <Row k="Базовое удержание" v={`${releaseResult.breakdown.baseHold.toFixed(0)} кН`} />
-                  <Row k="Адгезия резины" v={`+${releaseResult.breakdown.adhesion.toFixed(0)} кН`} />
-                  <Row k="Прихват отложениями" v={`+${releaseResult.breakdown.scaleStick.toFixed(0)} кН`} />
-                  <Row k="Усилие срыва" v={<strong>{releaseResult.releaseForceKN.toFixed(0)} кН</strong>} />
-                  <Row k="Полное усилие (+ вес колонны)" v={`${releaseResult.totalPullRequiredKN.toFixed(0)} кН`}
+                  <Row k="Срыв по паспорту" v={`${releaseResult.breakdown.shear.toFixed(0)} кН`} />
+                  <Row k="Дополнительное усилие" v={`+${releaseResult.breakdown.extra.toFixed(0)} кН`} />
+                  <Row k="Вес колонны над пакером" v={`+${weightAbovePacker.toFixed(0)} кН`} />
+                  <Row k="Нагрузка на крюке для срыва" v={<strong>{releaseResult.totalPullRequiredKN.toFixed(0)} кН</strong>}
                     tone={releaseResult.canReleaseByTension ? "ok" : "danger"} />
                   <Row k="Допустимо на колонну (резьба, износ, ÷1.25)" v={`${releaseResult.pipeTensileLimitKN.toFixed(0)} кН`} />
-                  <Row k="Лимит подъёмника" v={`${rigResult.allowableLoadKN.toFixed(0)} кН`}
-                    tone={releaseResult.totalPullRequiredKN > rigResult.allowableLoadKN ? "danger" : undefined} />
+                  <Row k="Лимит подъёмника" v={`${rigResult.allowableLoadKN.toFixed(0)} кН`} />
                   <div className="pt-1 flex flex-wrap gap-2">
                     {releaseResult.canReleaseByTension
                       ? <Badge className="bg-green-600">🟢 Сорвётся натяжкой</Badge>
@@ -443,11 +625,24 @@ export default function Workover() {
                   <NumberField label="Pпл" unit="МПа" value={kill.formationPressureMPa}
                     onChange={(v) => setKill({ ...kill, formationPressureMPa: v })} />
                   <NumberField label="TVD пласта" unit="м" value={kill.reservoirDepthTVD}
-                    onChange={(v) => setKill({ ...kill, reservoirDepthTVD: v })} />
+                    onChange={(v) => setKill({ ...kill, reservoirDepthTVD: v })} hint={`TVD забоя по траектории: ${tvdAtMD(well.wellDepthMD, well.trajectory).toFixed(0)} м`} />
                   <NumberField label="Pгрп (предел)" unit="МПа" value={kill.fracturePressureMPa}
                     onChange={(v) => setKill({ ...kill, fracturePressureMPa: v })} />
-                  <NumberField label="Запас плотности" unit="%" value={kill.safetyMarginPct}
-                    onChange={(v) => setKill({ ...kill, safetyMarginPct: v })} hint="обычно 3–5%" />
+                  <div className="space-y-1">
+                    <Label className="text-xs">Запас противодавления</Label>
+                    <Select value={kill.marginMode ?? "manual"} onValueChange={(v) => setKill({ ...kill, marginMode: v as "pb" | "manual" })}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pb">По ПБ НГП (10% / 5%)</SelectItem>
+                        <SelectItem value="manual">Вручную, %</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground">10% до 1200 м TVD, 5% глубже</p>
+                  </div>
+                  {(kill.marginMode ?? "manual") === "manual" && (
+                    <NumberField label="Запас плотности" unit="%" value={kill.safetyMarginPct}
+                      onChange={(v) => setKill({ ...kill, safetyMarginPct: v })} />
+                  )}
                   <NumberField label="PV жидкости глушения" unit="сП" value={kill.killFluidPV_cP}
                     onChange={(v) => setKill({ ...kill, killFluidPV_cP: v })} hint="рассол 1–3, полимерная 10–30" />
                   <NumberField label="YP жидкости глушения" unit="Па" value={kill.killFluidYP_Pa}
@@ -465,7 +660,8 @@ export default function Workover() {
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Результаты глушения</CardTitle></CardHeader>
                 <CardContent className="space-y-2 text-sm">
                   <Row k="Плотность баланса" v={`${killResult.balanceDensity.toFixed(3)} г/см³`} />
-                  <Row k={`Плотность глушения (+${kill.safetyMarginPct}%)`}
+                  <Row k={`Запас: ${killResult.marginRule}`} v={`+${killResult.appliedMarginMPa.toFixed(2)} МПа (${killResult.appliedMarginPct.toFixed(1)}%)`} />
+                  <Row k="Плотность глушения"
                     v={<strong>{killResult.killDensity.toFixed(3)} г/см³</strong>} />
                   <Row k="Подбор жидкости" v={<Badge variant="secondary">{killResult.selectedFluid}</Badge>} />
                   <Row k="Забойное (после глушения)" v={`${killResult.bottomholePressureMPa.toFixed(2)} МПа`}
@@ -774,6 +970,9 @@ export default function Workover() {
                   <Row k="Нагрузка на крюке (без смазки)" v={`${dragNoLube.maxHookLoadKN.toFixed(0)} кН`} />
                   <Row k="Нагрузка на крюке (со смазкой)" v={`${dragLube.maxHookLoadKN.toFixed(0)} кН`} />
                   <Row k="Применённый μ" v={`${activeDrag.appliedFrictionCoeff.toFixed(2)}`} />
+                  <Row k="Расхаживание: подъём / спуск" v={`${activeDrag.pickUpKN.toFixed(0)} / ${activeDrag.slackOffKN.toFixed(0)} кН`} />
+                  <Row k="Момент на устье при вращении" v={`${activeDrag.surfaceTorqueKNm.toFixed(2)} кН·м`} />
+                  <Row k="Предел тела трубы на кручение" v={`${pipeTorsionalYieldKNm(well).toFixed(1)} кН·м`} />
                   {useLube && (
                     <>
                       <Row k="Снижение трения" v={`${lubeResult.frictionReductionPct.toFixed(0)} %`} />
@@ -810,29 +1009,55 @@ export default function Workover() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
+
+            {drag.operation === "rotate" && (
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Крутящий момент по глубине</CardTitle></CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <LineChart data={torqueChart}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="md" label={{ value: "MD, м", position: "insideBottom", offset: -5 }} />
+                      <YAxis label={{ value: "Момент, кН·м", angle: -90, position: "insideLeft" }} />
+                      <Tooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="base" name="Без смазки" stroke="#0ea5e9" dot={false} />
+                      <Line type="monotone" dataKey="lube" name="Со смазкой" stroke="#10b981" dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                  <p className="text-[10px] text-muted-foreground">Для гладких НКТ ограничение по моменту — момент свинчивания резьбы по паспорту/ГОСТ, он значительно ниже предела тела трубы.</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* ──────────────── STUCK ──────────────── */}
           <TabsContent value="stuck" className="space-y-4">
             <div className="grid lg:grid-cols-2 gap-4">
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Точка прихвата (метод растяжения)</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Точка прихвата (растяжение с учётом трения)</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
-                  <NumberField label="Приложенное натяжение ΔF" unit="кН" value={fp.pulledForceKN} onChange={(v) => setFp({ ...fp, pulledForceKN: v })} hint="свыше веса колонны" />
+                  <NumberField label="Приложенное натяжение ΔF" unit="кН" value={fp.pulledForceKN} onChange={(v) => setFp({ ...fp, pulledForceKN: v })} hint="сверх веса колонны" />
                   <NumberField label="Измеренное удлинение ΔL" unit="м" value={fp.measuredStretchM} onChange={(v) => setFp({ ...fp, measuredStretchM: v })} />
                   <div className="border-t pt-3 text-sm space-y-1">
-                    <Row k="Закон Гука: L = E·A·ΔL/ΔF" v="" />
-                    <Row k="Идеальная точка прихвата" v={`${fpResult.idealFreePointMD.toFixed(0)} м`} />
-                    <Row k="Средний зенит свободной части" v={`${fpResult.avgZenithDeg.toFixed(1)}°`} />
-                    <Row k="Поправка на трение в искривлении" v={`+${fpResult.frictionCorrectionPct.toFixed(1)}%`} />
-                    <Row k="Точка прихвата (с поправкой)" v={<strong>{fpResult.freePointMD.toFixed(0)} м</strong>} />
-                    <Row k="Длина свободной колонны" v={`${fpResult.freePipeLength.toFixed(0)} м`} />
+                    <Row k="По закону Гука L = E·A·ΔL/ΔF (без трения)" v={`${fpResult.idealFreePointMD.toFixed(0)} м`} />
+                    <Row k={`С учётом трения (μ = ${drag.frictionCoeff}), средний зенит ${fpResult.avgZenithDeg.toFixed(0)}°`} v={`+${fpResult.frictionCorrectionPct.toFixed(1)}%`} />
+                    <Row k="Точка прихвата" v={<strong>{fpResult.freePointMD.toFixed(0)} м</strong>} />
+                    <Row k="Отворот / отрезание (1–2 трубы выше)" v={`≈ ${fpResult.backOffMD.toFixed(0)} м`} />
                   </div>
+                  {fpResult.belowBottom && (
+                    <Alert className="py-2"><AlertDescription className="text-xs">
+                      🔴 Удлинение {fp.measuredStretchM} м больше, чем даёт вся колонна до забоя ({fpResult.maxStretchToBottomM.toFixed(2)} м). Проверьте замер, натяжку и данные колонны.
+                    </AlertDescription></Alert>
+                  )}
+                  <p className="text-[10px] text-muted-foreground">
+                    Натяжка затухает по глубине из-за трения в искривлённом стволе, поэтому замеренное удлинение меньше, чем без трения, а точка прихвата глубже. Расчёт — для однородной колонны.
+                  </p>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Диагностика типа прихвата</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Признаки прихвата</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-3 gap-2">
                     {([["canRotate", "Вращается"], ["canMoveDown", "Ходит вниз"], ["canMoveUp", "Ходит вверх"]] as const).map(([k, lbl]) => (
@@ -843,26 +1068,97 @@ export default function Workover() {
                     ))}
                   </div>
                   <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Циркуляция</Label>
+                      <Select value={symptoms.circulation} onValueChange={(v) => setSymptoms({ ...symptoms, circulation: v as StuckSymptoms["circulation"] })}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="free">Свободная</SelectItem>
+                          <SelectItem value="restricted">Затруднена (рост давления)</SelectItem>
+                          <SelectItem value="none">Нет</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Как возник</Label>
+                      <Select value={symptoms.onset} onValueChange={(v) => setSymptoms({ ...symptoms, onset: v as StuckSymptoms["onset"] })}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="moving_sudden">Резко при движении</SelectItem>
+                          <SelectItem value="gradual">Затяжки нарастали</SelectItem>
+                          <SelectItem value="after_static">После остановки</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      ["sandProduction", "Пескопроявление"],
+                      ["deposits", "АСПО / соли"],
+                      ["packerInString", `Пакер в компоновке (${packer.setDepthMD} м)`],
+                      ["afterCementing", "После цементных работ"],
+                    ] as const).map(([k, lbl]) => (
+                      <label key={k} className="flex items-center gap-2 text-xs cursor-pointer">
+                        <input type="checkbox" checked={symptoms[k]} onChange={(e) => setSymptoms({ ...symptoms, [k]: e.target.checked })} />
+                        {lbl}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
                     <NumberField label="Глубина прихвата" unit="м" value={symptoms.stuckDepthMD} onChange={(v) => setSymptoms({ ...symptoms, stuckDepthMD: v })} />
-                    <NumberField label="ΔP на корке" unit="МПа" value={symptoms.deltaP_MPa ?? 0} onChange={(v) => setSymptoms({ ...symptoms, deltaP_MPa: v })} />
-                    <NumberField label="Длина контакта" unit="м" value={symptoms.contactLenM ?? 0} onChange={(v) => setSymptoms({ ...symptoms, contactLenM: v })} />
-                    <NumberField label="μ корки" value={symptoms.mudcakeFriction ?? 0.25} onChange={(v) => setSymptoms({ ...symptoms, mudcakeFriction: v })} hint="0.15–0.35" />
+                    <NumberField label="Перфорация, верх" unit="м" value={symptoms.perfTopMD ?? 0} onChange={(v) => setSymptoms({ ...symptoms, perfTopMD: v })} />
+                    <NumberField label="Перфорация, низ" unit="м" value={symptoms.perfBottomMD ?? 0} onChange={(v) => setSymptoms({ ...symptoms, perfBottomMD: v })} />
                   </div>
-                  <div className="border-t pt-3 text-sm space-y-1">
-                    <Row k="Тип прихвата" v={<Badge>{labelStuck(stuckDiag.type)}</Badge>} />
-                    <Row k="Усилие освобождения (μ·ΔP·A)" v={`${stuckDiag.freeingForceKN.toFixed(0)} кН`} />
-                    <Row k="Вес колонны до прихвата (с затяжками)" v={`${stuckDiag.stringLoadKN.toFixed(0)} кН`} />
-                    <Row k="Требуемая нагрузка на крюке" v={<strong>{stuckDiag.requiredHookLoadKN.toFixed(0)} кН</strong>} />
-                    <Row k="Допустимо на НКТ" v={`${stuckDiag.pipeYieldKN.toFixed(0)} кН`} />
-                    <Row k="Лимит подъёмника" v={`${rigResult.allowableLoadKN.toFixed(0)} кН`} />
-                    <Row k="Освободится натяжением" v={stuckDiag.canFreeByPull
-                      ? <Badge className="bg-green-600">ДА</Badge>
-                      : <Badge variant="destructive">НЕТ</Badge>} />
-                  </div>
-                  <Alert><AlertDescription className="text-xs">{stuckDiag.recommendation}</AlertDescription></Alert>
                 </CardContent>
               </Card>
             </div>
+
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Диагностика: вероятный вид прихвата</CardTitle></CardHeader>
+              <CardContent className="grid lg:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  {stuckDiag.ranking.map((r, i) => (
+                    <div key={r.type} className="space-y-0.5">
+                      <div className="flex justify-between text-xs">
+                        <span className={i === 0 ? "font-semibold" : "text-muted-foreground"}>{STUCK_LABELS[r.type]}</span>
+                        <span className={i === 0 ? "font-semibold" : "text-muted-foreground"}>{(r.probability * 100).toFixed(0)}%</span>
+                      </div>
+                      <div className="h-1.5 rounded bg-muted overflow-hidden">
+                        <div className={`h-full ${i === 0 ? "bg-primary" : "bg-muted-foreground/40"}`} style={{ width: `${r.probability * 100}%` }} />
+                      </div>
+                      {i === 0 && r.reasons.length > 0 && (
+                        <p className="text-[10px] text-muted-foreground">{r.reasons.join("; ")}</p>
+                      )}
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-muted-foreground pt-1">Экспертная балльная оценка по признакам, не замена исследованию (печать, ПГИ, прихватоопределитель).</p>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <Row k="Вероятный вид" v={<Badge>{STUCK_LABELS[stuckDiag.type]}</Badge>} />
+                  <Row k="Вес колонны до прихвата (с затяжками)" v={`${stuckDiag.stringLoadKN.toFixed(0)} кН`} />
+                  {stuckDiag.type === "differential" && (
+                    <div className="grid grid-cols-3 gap-2 py-1">
+                      <NumberField label="Репрессия ΔP" unit="МПа" value={symptoms.deltaP_MPa ?? 0} onChange={(v) => setSymptoms({ ...symptoms, deltaP_MPa: v })} />
+                      <NumberField label="Длина контакта" unit="м" value={symptoms.contactLenM ?? 0} onChange={(v) => setSymptoms({ ...symptoms, contactLenM: v })} />
+                      <NumberField label="μ корки" value={symptoms.mudcakeFriction ?? 0.25} onChange={(v) => setSymptoms({ ...symptoms, mudcakeFriction: v })} hint="0.15–0.35" />
+                    </div>
+                  )}
+                  {stuckDiag.freeingForceKN > 0 && (
+                    <>
+                      <Row k="Усилие освобождения (μ·ΔP·A)" v={`${stuckDiag.freeingForceKN.toFixed(0)} кН`} />
+                      <Row k="Требуемая нагрузка на крюке" v={<strong>{stuckDiag.requiredHookLoadKN.toFixed(0)} кН</strong>} />
+                      <Row k="Освободится натяжением" v={stuckDiag.canFreeByPull
+                        ? <Badge className="bg-green-600">ДА</Badge>
+                        : <Badge variant="destructive">НЕТ</Badge>} />
+                    </>
+                  )}
+                  <Row k="Допустимо на НКТ" v={`${stuckDiag.pipeYieldKN.toFixed(0)} кН`} />
+                  <Row k="Лимит подъёмника" v={`${rigResult.allowableLoadKN.toFixed(0)} кН`} />
+                  <Row k="Запас натяжки сверх веса" v={`${Math.max(0, Math.min(stuckDiag.pipeYieldKN, rigResult.allowableLoadKN) - stuckDiag.stringLoadKN).toFixed(0)} кН`} />
+                  <Alert><AlertDescription className="text-xs">{stuckDiag.recommendation}</AlertDescription></Alert>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ──────────────── FISHING ──────────────── */}
@@ -981,7 +1277,9 @@ export default function Workover() {
                     <ScenarioRow label="Подъём колонны (без смазки)" need={pullOutFull} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
                     <ScenarioRow label="Подъём со смазкой" need={calculateDrag({ operation: "pull_out", frictionCoeff: drag.frictionCoeff, lubricant: lube }, well).maxHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
                     <ScenarioRow label="Срыв пакера" need={releaseResult.totalPullRequiredKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
-                    <ScenarioRow label="Освобождение прихвата" need={stuckDiag.requiredHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
+                    {stuckDiag.freeingForceKN > 0 && (
+                      <ScenarioRow label="Освобождение прихвата" need={stuckDiag.requiredHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
+                    )}
                     <ScenarioRow label="Ловильная операция" need={fishResult.requiredHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
                   </TableBody>
                 </Table>
