@@ -1,3 +1,4 @@
+import { buildLabProgram, buildRecipe } from "./cement-program";
 import {
   Document, Packer, Paragraph, Table, TableRow, TableCell,
   TextRun, HeadingLevel, AlignmentType, WidthType,
@@ -73,6 +74,52 @@ function kvTable(rows: { label: string; value: string }[]): Table {
     layout: TableLayoutType.FIXED,
     rows: rows.map(r => kvRow(r.label, r.value)),
   });
+}
+
+
+function gridTable(headers: string[], rows: string[][]): Table {
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [new TableRow({ children: headers.map((h) => headerCell(h)) }), ...rows.map((r) => new TableRow({ children: r.map((c) => cell(c)) }))],
+  });
+}
+
+function noteParagraph(text: string): Paragraph {
+  return new Paragraph({ spacing: { before: 60, after: 60 }, children: [new TextRun({ text, size: 18, font: "Calibri", color: "7A4A00" })] });
+}
+
+function buildLabPage(wellData: WellData, slurries: SlurryInput[], volumes: VolumeResults, pressureResult: PressureProfileResult): Paragraph[] {
+  const lab = buildLabProgram(wellData, slurries, pressureResult, volumes);
+  const out: Paragraph[] = [sectionTitle("Температурный режим")];
+  out.push(kvTable([
+    { label: "BHCT расчётная", value: `${fmt(lab.bhct.bhctC, 0)} °C (${lab.bhct.method})` },
+    { label: "BHCT, принятая в программе испытаний", value: `${fmt(lab.bhctUsedC, 0)} °C` },
+    { label: "Геотермический градиент", value: `${fmt(lab.bhct.gradientCper100m, 2)} °C/100 м` },
+    { label: "Температура поверхности", value: `${fmt(lab.surfaceC, 0)} °C` },
+  ]) as any);
+  lab.notes.forEach((n) => out.push(noteParagraph(`⚠ ${n}`)));
+  const st: Record<string, string> = { ok: "выполнено", fail: "НЕ ПРОХОДИТ", todo: "испытать", info: "" };
+  lab.slurries.forEach((p, i) => {
+    out.push(sectionTitle(`Программа лабораторных испытаний — ${p.slurryName}`));
+    out.push(new Paragraph({ spacing: { after: 80 }, children: [new TextRun({ text: `Интервал ${fmt(p.topMD, 0)}–${fmt(p.bottomMD, 0)} м; время работы раствора ${fmt(p.jobTimeMin, 0)} мин; выход на BHCT ${fmt(p.rampMin, 0)} мин; давление ${fmt(p.testPressureMPa, 1)} МПа.`, size: 18, font: "Calibri" })] }));
+    out.push(gridTable(["Испытание", "Условия", "Критерий", "Статус", "Норматив"], p.tests.map((t) => [t.test, t.conditions, t.criterion, `${st[t.status]}${t.actual ? ` (${t.actual})` : ""}`, t.reference])) as any);
+    p.warnings.forEach((w) => out.push(noteParagraph(`⚠ ${w}`)));
+    const vol = volumes.slurryVolumes[i]?.slurryVolumeM3 ?? 0;
+    const r = buildRecipe(slurries[i], vol);
+    out.push(sectionTitle(`Рецептура по абсолютным объёмам — ${p.slurryName}`));
+    out.push(gridTable(["Компонент", "Уд. вес, г/см³", "кг на 1 м³", "На операцию"], [
+      ["Цемент", fmt(r.cementSG, 2), fmt(r.perM3.cementKg, 0), `${fmt(r.totals.cementT, 2)} т`],
+      ...r.perM3.additives.map((a) => [a.name, fmt(a.sg, 2), fmt(a.kgPerM3, 1), `${fmt(a.totalKg, 0)} кг`]),
+      ["Вода затворения", "1.00", fmt(r.perM3.waterL, 0), `${fmt(r.totals.waterM3, 2)} м³`],
+    ]) as any);
+    out.push(kvTable([
+      { label: "В/С для проектной плотности", value: fmt(r.wcForDesign, 3) },
+      { label: "Выход раствора", value: `${fmt(r.yieldM3perT, 3)} м³/т` },
+      { label: "С запасом 5%: сухая смесь / вода", value: `${fmt(r.totals.blendWithReserveT, 2)} т / ${fmt(r.totals.waterWithReserveM3, 2)} м³` },
+    ]) as any);
+    r.warnings.forEach((w) => out.push(noteParagraph(`⚠ ${w}`)));
+  });
+  return out;
 }
 
 // ======== Page builders ========
@@ -284,7 +331,7 @@ function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volume
   );
   const traj = getEffectiveTrajectory(wellData);
   const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);
-  const bhct = calculateBHCT(wellData.bottomTempStatic, 20, bottomTVD);
+  const bhct = calculateBHCT(wellData.bottomTempStatic, wellData.surfaceTemp ?? 15, bottomTVD);
   const maxThickening30 = Math.max(...slurries.map(s => s.thickeningTime30Bc || 0));
   const maxThickening50 = Math.max(...slurries.map(s => s.thickeningTime50Bc || 0));
   const safeTime = calculateSafeTime(workTimeWithCement, maxThickening30, maxThickening50);
@@ -959,6 +1006,7 @@ export async function exportToDocx(
   const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult, buffers);
   const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolumeWithCompression, displacementFluids, wellData.casingDepthMD);
   const materialsContent = buildMaterialsPage(materials);
+  const labContent = buildLabPage(wellData, slurries, volumes, pressureResult);
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
   const chartsDataContent = buildChartsDataPage(pressureResult, images?.chartImages);
   const trajectoryContent = buildTrajectoryPage(wellData, images?.visualImages);
@@ -1016,6 +1064,18 @@ export async function exportToDocx(
           }),
         },
         children: materialsContent,
+      },
+      {
+        properties: {},
+        headers: {
+          default: new Header({
+            children: [new Paragraph({
+              alignment: AlignmentType.RIGHT,
+              children: [new TextRun({ text: "Лаборатория и рецептура", size: 16, color: "999999", font: "Calibri", italics: true })],
+            })],
+          }),
+        },
+        children: labContent,
       },
       {
         properties: {},

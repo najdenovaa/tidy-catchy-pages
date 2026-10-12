@@ -38,6 +38,7 @@ const GROUPS: TabGroup[] = [
       { value: "materials", label: "Материалы" },
       { value: "schedule", label: "Закачка" },
       { value: "hydraulics", label: "Гидравлика" },
+      { value: "lab", label: "Лаборатория и рецептура" },
       { value: "contact", label: "Контакт" },
       { value: "quality", label: "Качество (CQI)" },
       { value: "torquedrag", label: "T&D" },

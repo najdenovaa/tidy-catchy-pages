@@ -34,7 +34,7 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
   );
   const traj = getEffectiveTrajectory(wellData);
   const bottomTVD = interpolateTVD(wellData.casingDepthMD, traj);
-  const bhct = calculateBHCT(wellData.bottomTempStatic, 20, bottomTVD);
+  const bhct = calculateBHCT(wellData.bottomTempStatic, wellData.surfaceTemp ?? 15, bottomTVD);
 
   const maxThickening30 = Math.max(...slurries.map(s => s.thickeningTime30Bc || 0));
   const maxThickening50 = Math.max(...slurries.map(s => s.thickeningTime50Bc || 0));

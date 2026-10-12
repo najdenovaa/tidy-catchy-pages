@@ -1,8 +1,21 @@
 // Core cementing calculation formulas
+import { hbFromFann, hbFriction, flowIndexN, type FannReadings, type HBParams } from "./cement-rheology";
 
 export interface Rheology {
   pv: number; // Пластическая вязкость, сПз
   yp: number; // ДНС (динамическое напряжение сдвига), Па
+  /** Показания вискозиметра Fann 600/300/200/100/6/3 — если заданы, гидравлика считается по Гершелю–Балкли */
+  fann?: FannReadings;
+}
+
+/** Параметры Гершеля–Балкли из показаний Fann (кэш по объекту реологии). */
+const hbCache = new WeakMap<object, HBParams | null>();
+export function hbOf(r: Rheology | undefined): HBParams | undefined {
+  if (!r || !r.fann) return undefined;
+  if (hbCache.has(r)) return hbCache.get(r) ?? undefined;
+  const hb = hbFromFann(r.fann) ?? null;
+  hbCache.set(r, hb);
+  return hb ?? undefined;
 }
 
 /** Default rheology values when user hasn't provided them (pv=0 & yp=0) */
@@ -19,6 +32,10 @@ const DEFAULT_RHEOLOGY: Record<FluidCategory, Rheology> = {
 /** Returns user rheology if filled (pv or yp > 0), otherwise returns defaults for the category */
 export function effectiveRheology(r: Rheology, category: FluidCategory): Rheology {
   if (r.pv > 0 || r.yp > 0) return r;
+  if (r.fann && hbOf(r)) {
+    const r600 = Number(r.fann.r600) || 0, r300 = Number(r.fann.r300) || 0;
+    return { ...r, pv: Math.max(0, r600 - r300), yp: Math.max(0, 2 * r300 - r600) * 0.4788 };
+  }
   return DEFAULT_RHEOLOGY[category];
 }
 
@@ -34,6 +51,8 @@ export interface Additive {
   percentage: number; // % от массы цемента (bwoc) или смеси (bwob)
   percentageType: AdditivePercentageType; // тип расчёта процента
   massKg: number; // кг (автовычисляемое)
+  /** Удельный вес (плотность материала), г/см³ — для расчёта рецептуры по абсолютным объёмам */
+  specificGravity?: number;
 }
 
 export interface FlowRateStep {
@@ -108,6 +127,8 @@ export interface WellData {
   cavernIntervals?: CavernInterval[];
   reservoirLayers?: ReservoirLayer[];
   ckodShearPressureMPa?: number; // давление среза пробки на ЦКОД, МПа (по умолчанию 1.5)
+  /** Температура нейтрального слоя / поверхности, °C (по умолчанию 15) */
+  surfaceTemp?: number;
   /** Профиль центрирования: отступ от стенки (standoff, %) по глубине — из модуля центрирования */
   standoffProfile?: { md: number; standoffPct: number }[];
   /** Средний standoff, %, если профиля нет (по умолчанию 67 — минимум API RP 10D-2) */
@@ -221,6 +242,8 @@ export interface SlurryInput {
   waterRatio: number; // В/Ц (водоцементное отношение)
   yieldPerTon: number; // Выход раствора, м³/т
   washVolume?: number; // м³ — объём раствора на вымыв (только для первого/верхнего раствора)
+  /** Плотность сухого тампонажного материала, г/см³ (ПЦТ — 3.15) */
+  cementSG?: number;
 }
 
 // Вычислить высоту столба цемента для i-го раствора
@@ -940,7 +963,7 @@ export function calculateHydraulics(
     if (dispComposite && dispComposite.totalVolM3 > 0) {
       frictionPipe = dispSchedule.reduce((sum, it) => {
         const lenShare = data.casingDepthMD * (it.volumeM3 / dispComposite.totalVolM3);
-        return sum + frictionLossWithRegime(flowRateM3min, lenShare, dHydPipe, it.rheology.pv, it.rheology.yp, pipeAreaM2, it.densityGcm3 * 1000).pressureMPa;
+        return sum + frictionLossWithRegime(flowRateM3min, lenShare, dHydPipe, it.rheology.pv, it.rheology.yp, pipeAreaM2, it.densityGcm3 * 1000, "pipe", hbOf(it.rheology)).pressureMPa;
       }, 0);
     } else {
       frictionPipe = frictionLossWithRegime(flowRateM3min, data.casingDepthMD, dHydPipe, dispRheo.pv, dispRheo.yp, pipeAreaM2, displacementDensity * 1000).pressureMPa;
@@ -1014,6 +1037,12 @@ export function calculateContactTime(
 // === BHCT ===
 
 export function calculateBHCT(bottomTempC: number, surfaceTempC: number = 20, depthM: number = 3200): number {
+  // Kutasov–Targhi (база API RP 10B): Tc = −50.64 + 804.9·Γ + (1.342 − 12.22·Γ)·Ts, Γ в °C/м
+  const G = depthM > 0 ? (bottomTempC - surfaceTempC) / depthM : 0;
+  if (bottomTempC >= 74.4 && bottomTempC <= 212.2 && G * 100 >= 1.51 && G * 100 <= 4.45) {
+    const t = -50.64 + 804.9 * G + (1.342 - 12.22 * G) * bottomTempC;
+    return Math.min(bottomTempC, Math.max(surfaceTempC, t));
+  }
   const bhstF = bottomTempC * 9 / 5 + 32;
   const depthFt = depthM * 3.28084;
   const ratio = 0.7 + 0.3 * (depthFt / 15000);
@@ -1259,7 +1288,7 @@ export function calculatePressureProfile(
   const avgCasingID = weightedAverageCasingID(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
   const pipeCapacity = totalPipeVolumeForRange(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
   const pipeVPM = wellData.casingDepthMD > 0 ? pipeCapacity / wellData.casingDepthMD : pipeVolumePerMeter(avgCasingID);
-  interface PumpBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; pv?: number; yp?: number; }
+  interface PumpBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; pv?: number; yp?: number; hb?: HBParams; }
   const pumpHistory: PumpBatch[] = [];
   let totalPumped = 0;
   let freefallBatchIdx = -1;
@@ -1380,7 +1409,7 @@ export function calculatePressureProfile(
   const initEcd = bottomTVD > 0 ? hydroMudFull / (0.00981 * bottomTVD) : 0;
   points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: mudDensityGcm3, annMudHeightM: initProfile.mudH, annBufferHeightM: initProfile.bufferH, annCementHeightM: initProfile.cementH, annDisplHeightM: initProfile.displH, freefallSettledM3: 0, annularVelocityMps: 0, ecdAtBottomGcm3: initEcd, ecdStaticAtBottomGcm3: initEcd, ecdAtPrevShoeGcm3: mudDensityGcm3, fracGradEcdGcm3, porePressureEcdGcm3 });
 
-  interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; rateLps: number; isCement: boolean; compressionCoeff: number; durationMin?: number; isFlushPause?: boolean; fluidType: AnnularFluidType }
+  interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; hb?: HBParams; rateLps: number; isCement: boolean; compressionCoeff: number; durationMin?: number; isFlushPause?: boolean; fluidType: AnnularFluidType }
   const stages: Stage[] = [];
 
   // Буферы — по шагам
@@ -1389,12 +1418,12 @@ export function calculatePressureProfile(
     if (b.flowRateSteps.length > 1) {
       b.flowRateSteps.forEach(step => {
         if (step.volumeM3 > 0) {
-          stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, rateLps: step.rateLps, isCement: false, compressionCoeff: 1.0, fluidType: 'buffer' as AnnularFluidType });
+          stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, hb: hbOf(bRheo), rateLps: step.rateLps, isCement: false, compressionCoeff: 1.0, fluidType: 'buffer' as AnnularFluidType });
         }
       });
     } else {
       const rate = b.flowRateSteps.length > 0 ? b.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: b.name, volume: b.volume, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, rateLps: rate, isCement: false, compressionCoeff: 1.0, fluidType: 'buffer' as AnnularFluidType });
+      stages.push({ name: b.name, volume: b.volume, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, hb: hbOf(bRheo), rateLps: rate, isCement: false, compressionCoeff: 1.0, fluidType: 'buffer' as AnnularFluidType });
     }
   });
 
@@ -1412,12 +1441,12 @@ export function calculatePressureProfile(
     if (s.flowRateSteps.length > 1) {
       s.flowRateSteps.forEach(step => {
         if (step.volumeM3 > 0) {
-          stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, rateLps: step.rateLps, isCement: true, compressionCoeff: 1.0, fluidType: 'cement' as AnnularFluidType });
+          stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, hb: hbOf(sRheo), rateLps: step.rateLps, isCement: true, compressionCoeff: 1.0, fluidType: 'cement' as AnnularFluidType });
         }
       });
     } else {
       const rate = s.flowRateSteps.length > 0 ? s.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: s.name, volume: vol, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, rateLps: rate, isCement: true, compressionCoeff: 1.0, fluidType: 'cement' as AnnularFluidType });
+      stages.push({ name: s.name, volume: vol, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, hb: hbOf(sRheo), rateLps: rate, isCement: true, compressionCoeff: 1.0, fluidType: 'cement' as AnnularFluidType });
     }
   });
 
@@ -1428,6 +1457,7 @@ export function calculatePressureProfile(
     densityGcm3: mudDensityGcm3,
     pv: mudRheo.pv,
     yp: mudRheo.yp,
+    hb: hbOf(mudRheo),
     rateLps: flushVolumeM3 > 0 && flushTimeMin > 0 ? (flushVolumeM3 / (flushTimeMin * 60)) * 1000 : 0,
     isCement: false,
     compressionCoeff: 1.0,
@@ -1447,6 +1477,7 @@ export function calculatePressureProfile(
       densityGcm3: it.densityGcm3,
       pv: it.rheology.pv,
       yp: it.rheology.yp,
+      hb: hbOf(it.rheology),
       rateLps: it.rateLps > 0 ? it.rateLps : fallbackDispRate,
       isCement: false,
       compressionCoeff: it.compressionCoeff,
@@ -1640,7 +1671,7 @@ export function calculatePressureProfile(
   }
 
   // ═══ Послойное трение в затрубье и проверка по пластам ═══
-  interface AnnSeg { topMD: number; bottomMD: number; density: number; pv: number; yp: number }
+  interface AnnSeg { topMD: number; bottomMD: number; density: number; pv: number; yp: number; hb?: HBParams }
   const avgBy = <T,>(arr: T[], w: (x: T) => number, f: (x: T) => number, def: number) => {
     const W = arr.reduce((a, x) => a + w(x), 0);
     return W > 0 ? arr.reduce((a, x) => a + w(x) * f(x), 0) / W : def;
@@ -1651,19 +1682,19 @@ export function calculatePressureProfile(
   const bufRheo = buffers.map((b) => effectiveRheology(b.rheology, 'buffer'));
   const bufferPvDef = avgBy(buffers.map((b, i) => ({ b, r: bufRheo[i] })), (x) => x.b.volume || 1, (x) => x.r.pv, 25);
   const bufferYpDef = avgBy(buffers.map((b, i) => ({ b, r: bufRheo[i] })), (x) => x.b.volume || 1, (x) => x.r.yp, 25);
-  const rheoForBatch = (b: { fluidType: AnnularFluidType; pv?: number; yp?: number }) => {
-    if (b.pv !== undefined && b.yp !== undefined) return { pv: b.pv, yp: b.yp };
+  const rheoForBatch = (b: { fluidType: AnnularFluidType; pv?: number; yp?: number; hb?: HBParams }): { pv: number; yp: number; hb?: HBParams } => {
+    if (b.pv !== undefined && b.yp !== undefined) return { pv: b.pv, yp: b.yp, hb: b.hb };
     if (b.fluidType === 'cement') return { pv: cementPvDef, yp: cementYpDef };
     if (b.fluidType === 'buffer') return { pv: bufferPvDef, yp: bufferYpDef };
-    return { pv: mudRheo.pv, yp: mudRheo.yp };
+    return { pv: mudRheo.pv, yp: mudRheo.yp, hb: hbOf(mudRheo) };
   };
 
   /** Сегменты затрубья снизу вверх по текущему состоянию закачки (та же логика заполнения, что и гидростатика). */
   function annularSegments(): AnnSeg[] {
     const segs: AnnSeg[] = [];
-    const exit: { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; pv?: number; yp?: number }[] = [];
+    const exit: { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; pv?: number; yp?: number; hb?: HBParams }[] = [];
     const mudExited = Math.min(totalPumped, pipeCapacity);
-    if (mudExited > 0) exit.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited, fluidType: 'mud', pv: mudRheo.pv, yp: mudRheo.yp });
+    if (mudExited > 0) exit.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited, fluidType: 'mud', pv: mudRheo.pv, yp: mudRheo.yp, hb: hbOf(mudRheo) });
     let pumpedExited = Math.max(0, totalPumped - pipeCapacity);
     for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
       if (pumpHistory[i].fluidType === 'displacement') continue;
@@ -1681,12 +1712,12 @@ export function calculatePressureProfile(
         const avail = inLower ? bottom - Math.max(prevShoe, 0) : bottom;
         const len = Math.min(avail, vol / Math.max(1e-9, vpm));
         if (len <= 1e-9) break;
-        segs.push({ topMD: bottom - len, bottomMD: bottom, density: exit[i].densityGcm3 * 1000, pv: r.pv, yp: r.yp });
+        segs.push({ topMD: bottom - len, bottomMD: bottom, density: exit[i].densityGcm3 * 1000, pv: r.pv, yp: r.yp, hb: r.hb });
         bottom -= len;
         vol -= len * vpm;
       }
     }
-    if (bottom > 0) segs.push({ topMD: 0, bottomMD: bottom, density: mudDensityGcm3 * 1000, pv: mudRheo.pv, yp: mudRheo.yp });
+    if (bottom > 0) segs.push({ topMD: 0, bottomMD: bottom, density: mudDensityGcm3 * 1000, pv: mudRheo.pv, yp: mudRheo.yp, hb: hbOf(mudRheo) });
     return segs;
   }
 
@@ -1721,8 +1752,8 @@ export function calculatePressureProfile(
         const dh = lower ? dHydAnnLower : dHydAnnUpper;
         const area = lower ? annAreaLower : annAreaUpper;
         const outer = lower ? wellData.holeDiameter : prevID;
-        const r = frictionLossWithRegime(flowRateM3min, len, dh, sg.pv, sg.yp, area, sg.density, "annulus");
-        const f = eccentricityFrictionFactor(standoffAt((z + zTop) / 2), wellData.casingOD / outer, sg.pv, sg.yp, r.regime);
+        const r = frictionLossWithRegime(flowRateM3min, len, dh, sg.pv, sg.yp, area, sg.density, "annulus", sg.hb);
+        const f = eccentricityFrictionFactor(standoffAt((z + zTop) / 2), wellData.casingOD / outer, sg.pv, sg.yp, r.regime, sg.hb);
         p += r.pressureMPa * f;
         if (!reported && lower) { re = r.reynolds; regime = r.regime; reported = true; }
         z = zTop;
@@ -1970,10 +2001,10 @@ export function calculatePressureProfile(
     // Трубное трение — взвешенное по доле заполнения трубы закачиваемым флюидом
     // Часть трубы занята новым флюидом, остальное — буровым раствором
     const densityKgM3 = s.densityGcm3 * 1000;
-    const frPipePumped = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3);
-    const frPipeMud = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, mudRheo.pv, mudRheo.yp, pipeAreaM2, drillingFluid.density);
+    const frPipePumped = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3, "pipe", s.hb);
+    const frPipeMud = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, mudRheo.pv, mudRheo.yp, pipeAreaM2, drillingFluid.density, "pipe", hbOf(mudRheo));
 
-    pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0, fluidType: s.fluidType, pv: s.pv, yp: s.yp });
+    pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0, fluidType: s.fluidType, pv: s.pv, yp: s.yp, hb: s.hb });
     const batchIdx = pumpHistory.length - 1;
 
     const isDisplacement = !s.isCement && cementStartFound && !s.isFlushPause;
@@ -2028,8 +2059,8 @@ export function calculatePressureProfile(
       const actualFlowRateM3min = actualRateLps * 0.06;
 
       // Пересчёт трения
-      const frPipePumpedActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3);
-      const frPipeMudActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, mudRheo.pv, mudRheo.yp, pipeAreaM2, drillingFluid.density);
+      const frPipePumpedActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3, "pipe", s.hb);
+      const frPipeMudActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, mudRheo.pv, mudRheo.yp, pipeAreaM2, drillingFluid.density, "pipe", hbOf(mudRheo));
       const frPipe = frPipePumpedActual.pressureMPa * filledFraction + frPipeMudActual.pressureMPa * (1 - filledFraction);
 
       // Трение в затрубье — послойно по фактическому заполнению, с эксцентриситетом по глубине
@@ -2174,11 +2205,15 @@ interface FrictionResult { pressureMPa: number; reynolds: number; regime: number
  * Ламинар: труба — 32μv/D² + 16τ/(3D); кольцевой зазор (щелевое приближение) — 48μv/Dh² + 6τ/Dh.
  * Турбулент: Фаннинг (Блазиус) по гидравлическому диаметру.
  */
-function frictionLossWithRegime(flowRateM3min: number, lengthM: number, dHydMm: number, pv: number, yp: number, flowAreaM2: number, densityKgM3: number, geometry: "pipe" | "annulus" = "pipe"): FrictionResult {
+function frictionLossWithRegime(flowRateM3min: number, lengthM: number, dHydMm: number, pv: number, yp: number, flowAreaM2: number, densityKgM3: number, geometry: "pipe" | "annulus" = "pipe", hb?: HBParams): FrictionResult {
   const dHyd = dHydMm / 1000;
   if (dHyd <= 0 || flowRateM3min <= 0) return { pressureMPa: 0, reynolds: 0, regime: 0 };
   const area = flowAreaM2 > 0 ? flowAreaM2 : (Math.PI / 4) * dHyd * dHyd;
   const v = (flowRateM3min / 60) / area;
+  if (hb) {
+    const r = hbFriction(hb, v, dHyd, lengthM, densityKgM3, geometry);
+    return { pressureMPa: r.pressureMPa, reynolds: r.reynolds, regime: r.regime };
+  }
   const pvPas = pv / 1000;
 
   // Эффективная вязкость (Бингам)
@@ -2216,13 +2251,10 @@ function frictionLossWithRegime(flowRateM3min: number, lengthM: number, dHydMm: 
  * отношение потерь в эксцентричном и концентричном кольце.
  * e = 1 − standoff, K = Di/Do, n — индекс течения (по PV/YP через показания Fann 600/300).
  */
-export function eccentricityFrictionFactor(standoffPct: number, diOverDo: number, pv: number, ypPa: number, regime: number): number {
+export function eccentricityFrictionFactor(standoffPct: number, diOverDo: number, pv: number, ypPa: number, regime: number, hb?: HBParams): number {
   const e = Math.min(0.95, Math.max(0, 1 - standoffPct / 100));
   if (e <= 0) return 1;
-  const ypLbf = ypPa / 0.4788; // Па → lbf/100ft²
-  const t300 = Math.max(1e-3, pv + ypLbf);
-  const t600 = Math.max(t300 * 1.0001, 2 * pv + ypLbf);
-  const n = Math.min(1, Math.max(0.1, 3.32 * Math.log10(t600 / t300)));
+  const n = flowIndexN(hb, pv, ypPa);
   const K = Math.min(0.99, Math.max(0.01, diOverDo));
   const sn = Math.sqrt(n);
   const lam = 1 - 0.072 * (e / n) * Math.pow(K, 0.8454) - 1.5 * e * e * sn * Math.pow(K, 0.1852) + 0.96 * e * e * e * sn * Math.pow(K, 0.2527);
@@ -2232,10 +2264,10 @@ export function eccentricityFrictionFactor(standoffPct: number, diOverDo: number
 }
 
 /** Экспорт для проверки: потери в кольцевом зазоре (МПа). */
-export function annularFrictionMPa(flowRateLps: number, lengthM: number, outerMm: number, innerMm: number, pv: number, yp: number, densityKgM3: number, standoffPct = 100): FrictionResult {
+export function annularFrictionMPa(flowRateLps: number, lengthM: number, outerMm: number, innerMm: number, pv: number, yp: number, densityKgM3: number, standoffPct = 100, hb?: HBParams): FrictionResult {
   const area = (Math.PI / 4) * ((outerMm / 1000) ** 2 - (innerMm / 1000) ** 2);
-  const r = frictionLossWithRegime(flowRateLps * 0.06, lengthM, outerMm - innerMm, pv, yp, area, densityKgM3, "annulus");
-  const f = eccentricityFrictionFactor(standoffPct, innerMm / outerMm, pv, yp, r.regime);
+  const r = frictionLossWithRegime(flowRateLps * 0.06, lengthM, outerMm - innerMm, pv, yp, area, densityKgM3, "annulus", hb);
+  const f = eccentricityFrictionFactor(standoffPct, innerMm / outerMm, pv, yp, r.regime, hb);
   return { ...r, pressureMPa: r.pressureMPa * f };
 }
 

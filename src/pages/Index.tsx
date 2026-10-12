@@ -26,6 +26,7 @@ import CasingRotationSection from "@/components/CasingRotationSection";
 import AnalysisChatPanel from "@/components/AnalysisChatPanel";
 import WOCFromProgram from "@/components/WOCFromProgram";
 import ZoneChecksCard from "@/components/ZoneChecksCard";
+import CementLabSection from "@/components/CementLabSection";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
@@ -653,6 +654,24 @@ export default function Index() {
                 <ZoneChecksCard zoneChecks={pressureResult.zoneChecks} standoffSource={standoffProfile ? "profile" : "default"} avgStandoffPct={avgStandoffPct} />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="lab">
+            <div data-tab-content="lab">
+              {calcSnapshot && volumes ? (
+                <CementLabSection
+                  wellData={snapWellData ?? calcSnapshot.wellData}
+                  slurries={calcSnapshot.slurries}
+                  buffers={calcSnapshot.buffers}
+                  drillingFluid={calcSnapshot.drillingFluid}
+                  displacementFluids={calcSnapshot.displacementFluids}
+                  pressure={pressureResult}
+                  volumes={volumes}
+                />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">Нажмите «РАСЧЁТ» для получения результатов</div>
               )}
             </div>
           </TabsContent>

@@ -2,6 +2,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { DebouncedInput } from "@/components/DebouncedInput";
+import FannEditor from "@/components/FannEditor";
+import { additiveSG } from "@/lib/cement-program";
 import { Label } from "@/components/ui/label";
 import { useState, memo, useCallback, useMemo, ChangeEvent } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
@@ -45,7 +47,8 @@ const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "ckodDepth", label: "Глубина ЦКОД (по стволу)", unit: "м" },
   { key: "cavernCoeff", label: "Коэффициент кавернозности", unit: "" },
   { key: "bottomTempStatic", label: "BHST (статическая t°)", unit: "°C" },
-  { key: "bottomTempCirc", label: "BHCT (циркуляционная t°)", unit: "°C" },
+  { key: "bottomTempCirc", label: "BHCT (циркуляционная t°; 0 — расчёт)", unit: "°C" },
+  { key: "surfaceTemp", label: "t° нейтрального слоя / поверхности", unit: "°C" },
   { key: "pumpZoneTop", label: "Зона ГНО — верх (MD)", unit: "м" },
   { key: "pumpZoneBottom", label: "Зона ГНО — низ (MD)", unit: "м" },
 ];
@@ -872,6 +875,7 @@ export default function InputSection(props: Props) {
                   <Input type="number" step="0.1" value={drillingFluid.rheology.yp || ""} onChange={(e) => handleMudChange("yp", e.target.value)} className="h-9 text-sm" />
                 </div>
               </div>
+              <div className="mt-2"><FannEditor rheology={drillingFluid.rheology} onChange={(r) => onDrillingFluidChange({ ...drillingFluid, rheology: r })} /></div>
             </div>
             <div className="mt-4">
               <p className="text-xs font-medium text-muted-foreground mb-2">Реология на забое (опционально)</p>
@@ -915,6 +919,7 @@ export default function InputSection(props: Props) {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">PV, сПз</Label><DebouncedInput type="number" value={b.rheology.pv || ""} onChange={(e) => handleBufferChange(idx, "pv", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><DebouncedInput type="number" step="0.1" value={b.rheology.yp || ""} onChange={(e) => handleBufferChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
                 </div>
+                <FannEditor rheology={b.rheology} onChange={(r) => { const u = [...buffers]; u[idx] = { ...u[idx], rheology: r }; onBuffersChange(u); }} />
                 {/* Режимы закачки */}
                 <FlowRateStepsEditor
                   steps={b.flowRateSteps}
@@ -1030,7 +1035,12 @@ export default function InputSection(props: Props) {
                         <DebouncedInput type="number" step="0.1" value={s.rheology.yp || ""} onChange={(e) => handleSlurryChange(idx, "yp", e.target.value)} className="h-8 text-sm" placeholder="YP" />
                       </div>
                     </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Уд. вес сухого цемента, г/см³</Label>
+                      <DebouncedInput type="number" step="0.01" value={s.cementSG || ""} placeholder="3.15 (ПЦТ)" onChange={(e) => { const u = [...slurries]; u[idx] = { ...u[idx], cementSG: parseFloat(e.target.value) || undefined }; onSlurriesChange(u); }} className="h-8 text-sm" />
+                    </div>
                   </div>
+                  <FannEditor rheology={s.rheology} onChange={(r) => { const u = [...slurries]; u[idx] = { ...u[idx], rheology: r }; onSlurriesChange(u); }} />
                   {/* Режимы закачки */}
                   <FlowRateStepsEditor
                     steps={s.flowRateSteps}
@@ -1072,6 +1082,8 @@ export default function InputSection(props: Props) {
                             {computedMass > 0 ? computedMass.toFixed(1) : "—"}
                           </div>
                           <span className="text-xs text-muted-foreground">кг</span>
+                          <DebouncedInput type="number" step="0.01" value={a.specificGravity || ""} placeholder={`ρ ${additiveSG(a).sg}`} onChange={(e) => { const u = [...slurries]; const sl = { ...u[idx], additives: [...u[idx].additives] }; sl.additives[aIdx] = { ...sl.additives[aIdx], specificGravity: parseFloat(e.target.value) || undefined }; u[idx] = sl; onSlurriesChange(u); }} className="h-7 text-xs w-16" />
+                          <span className="text-[10px] text-muted-foreground" title="Удельный вес добавки для рецептуры по абсолютным объёмам">г/см³</span>
                           <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: u[idx].additives.filter((_, i) => i !== aIdx) }; onSlurriesChange(u); }} className="text-xs text-destructive">✕</button>
                         </div>
                       );
@@ -1130,6 +1142,7 @@ export default function InputSection(props: Props) {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><DebouncedInput type="number" step="0.1" value={df.rheology.yp || ""} onChange={(e) => handleDispFluidChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Коэфф. сжатия</Label><DebouncedInput type="number" step="0.01" value={df.compressionCoeff || ""} onChange={(e) => handleDispFluidChange(idx, "compressionCoeff", e.target.value)} className="h-8 text-sm" placeholder="1.00" /></div>
                 </div>
+                <FannEditor rheology={df.rheology} onChange={(r) => { const u = [...displacementFluids]; u[idx] = { ...u[idx], rheology: r }; onDisplacementFluidsChange(u); }} />
                 <FlowRateStepsEditor
                   steps={df.flowRateSteps}
                   totalVolume={calcDispVol}

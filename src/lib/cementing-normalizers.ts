@@ -93,9 +93,14 @@ const normalizeBufferType = (value: unknown): BufferFluid["bufferType"] => {
 
 function normalizeRheology(value: unknown, fallback: Rheology = { pv: 0, yp: 0 }): Rheology {
   const source = isRecord(value) ? value : {};
+  const fannSrc = isRecord(source.fann) ? source.fann : null;
+  const fann = fannSrc
+    ? Object.fromEntries(["r600", "r300", "r200", "r100", "r6", "r3"].map((k) => [k, toNumber(fannSrc[k], 0)]))
+    : undefined;
   return {
     pv: toNumber(source.pv, fallback.pv),
     yp: toNumber(source.yp, fallback.yp),
+    ...(fann && Object.values(fann).some((v) => v > 0) ? { fann } : {}),
   };
 }
 
@@ -106,6 +111,7 @@ function normalizeAdditive(value: unknown): Additive {
     percentage: toNumber(source.percentage, 0),
     percentageType: source.percentageType === "bwob" ? "bwob" : "bwoc",
     massKg: toNumber(source.massKg, 0),
+    ...(toNumber(source.specificGravity, 0) > 0 ? { specificGravity: toNumber(source.specificGravity, 0) } : {}),
   };
 }
 
@@ -202,6 +208,8 @@ export function normalizeWellData(value: unknown): WellData {
     casingSections: casingSections && casingSections.length > 0 ? casingSections : undefined,
     cavernIntervals: cavernIntervals && cavernIntervals.length > 0 ? cavernIntervals : undefined,
     reservoirLayers: reservoirLayers && reservoirLayers.length > 0 ? reservoirLayers : undefined,
+    ...(toNumber(source.ckodShearPressureMPa, 0) > 0 ? { ckodShearPressureMPa: toNumber(source.ckodShearPressureMPa, 0) } : {}),
+    ...(source.surfaceTemp !== undefined && source.surfaceTemp !== null && source.surfaceTemp !== "" && Number.isFinite(Number(source.surfaceTemp)) ? { surfaceTemp: Number(source.surfaceTemp) } : {}),
   };
 }
 
@@ -247,6 +255,7 @@ export function normalizeSlurryInput(value: unknown, index = 0): SlurryInput {
     waterRatio: toNumber(source.waterRatio, 0),
     yieldPerTon: toNumber(source.yieldPerTon, 0),
     washVolume: toNumber(source.washVolume, 0),
+    ...(toNumber(source.cementSG, 0) > 0 ? { cementSG: toNumber(source.cementSG, 0) } : {}),
   };
 }
 
