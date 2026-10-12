@@ -25,6 +25,7 @@ import DrillingHydraulicsSection from "@/components/DrillingHydraulicsSection";
 import CasingRotationSection from "@/components/CasingRotationSection";
 import AnalysisChatPanel from "@/components/AnalysisChatPanel";
 import WOCFromProgram from "@/components/WOCFromProgram";
+import ZoneChecksCard from "@/components/ZoneChecksCard";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
@@ -249,11 +250,24 @@ export default function Index() {
     [calcSnapshot, volumes]
   );
 
+  // Профиль центрирования → гидравлика (эксцентриситет по глубине)
+  const standoffProfile = useMemo(
+    () => centralizationResults && centralizationResults.length > 0
+      ? [...centralizationResults].sort((a, b) => a.md - b.md).map((r) => ({ md: r.md, standoffPct: r.standoff }))
+      : undefined,
+    [centralizationResults],
+  );
+  const avgStandoffPct = standoffProfile ? standoffProfile.reduce((a, r) => a + r.standoffPct, 0) / standoffProfile.length : 67;
+  const snapWellData = useMemo(
+    () => calcSnapshot ? { ...calcSnapshot.wellData, standoffProfile, annularStandoffPct: avgStandoffPct } : null,
+    [calcSnapshot, standoffProfile, avgStandoffPct],
+  );
+
   const pressureResult = useMemo(
-    () => calcSnapshot && volumes
-      ? calculatePressureProfile(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.drillingFluid, calcSnapshot.displacementFluids, calcSnapshot.fractureGradient, volumes.displacementVolumeWithCompression, calcSnapshot.flushTimeMin, calcSnapshot.flushVolumeM3)
+    () => calcSnapshot && volumes && snapWellData
+      ? calculatePressureProfile(snapWellData, calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.drillingFluid, calcSnapshot.displacementFluids, calcSnapshot.fractureGradient, volumes.displacementVolumeWithCompression, calcSnapshot.flushTimeMin, calcSnapshot.flushVolumeM3)
       : null,
-    [calcSnapshot, volumes]
+    [calcSnapshot, volumes, snapWellData]
   );
 
   // Карта макс. BHP по этапам/режимам из динамической симуляции
@@ -419,7 +433,7 @@ export default function Index() {
     );
     const computedMaterials = calculateMaterials(freshSnapshot.slurries, freshSnapshot.buffers, freshSnapshot.wellData);
     const computedPressure = calculatePressureProfile(
-      freshSnapshot.wellData, freshSnapshot.slurries, freshSnapshot.buffers,
+      { ...freshSnapshot.wellData, standoffProfile }, freshSnapshot.slurries, freshSnapshot.buffers,
       freshSnapshot.drillingFluid, freshSnapshot.displacementFluids,
       freshSnapshot.fractureGradient, computedVolumes.displacementVolumeWithCompression,
       freshSnapshot.flushTimeMin, freshSnapshot.flushVolumeM3,
@@ -619,7 +633,7 @@ export default function Index() {
             <div data-tab-content="hydraulics">
               {calcSnapshot && volumes ? (
                 <HydraulicsSection
-                  wellData={calcSnapshot.wellData}
+                  wellData={snapWellData ?? calcSnapshot.wellData}
                   slurries={calcSnapshot.slurries}
                   fractureGradient={calcSnapshot.fractureGradient}
                   displacementDensity={calcSnapshot.displacementFluids[0]?.density ?? 1000}
@@ -634,6 +648,9 @@ export default function Index() {
                   dynamicPreStopP={pressureResult ? (() => { const pts = pressureResult.points; const stopIdx = pts.findIndex(p => p.stage.includes('СТОП')); return stopIdx > 0 ? pts[stopIdx - 1].surfacePressure : undefined; })() : undefined}
                   pressureData={pressureResult?.points}
                 />
+              ) : null}
+              {calcSnapshot && volumes && pressureResult ? (
+                <ZoneChecksCard zoneChecks={pressureResult.zoneChecks} standoffSource={standoffProfile ? "profile" : "default"} avgStandoffPct={avgStandoffPct} />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
               )}

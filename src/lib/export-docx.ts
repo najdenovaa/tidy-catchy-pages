@@ -319,7 +319,7 @@ function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volume
     { label: "Давление ГРП", value: `${fmt(results.fracturePressure)} МПа` },
     { label: "Коэффициент безопасности (макс. ЗД / ГРП)", value: `${fmt(dynamicSafetyCoeff, 3)}` },
     { label: "Давление на насосе перед посадкой пробки", value: `${fmt(dynamicPreStopP ?? 0)} МПа` },
-    { label: "Скачок давления посадки пробки", value: `2.75 МПа` },
+    { label: "Скачок давления посадки пробки (срез ЦКОД)", value: `${fmt(wellData.ckodShearPressureMPa ?? 1.5)} МПа` },
     { label: "Расчётное давление «СТОП»", value: `${fmt(dynamicStopP ?? results.stopPressure)} МПа` },
     { label: "BHCT", value: `${fmt(bhct, 1)} °C` },
   ];
@@ -339,6 +339,13 @@ function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volume
   content.push(kvTable(volRows) as any);
   content.push(sectionTitle("6. Гидравлический расчёт"));
   content.push(kvTable(pressRows) as any);
+  if (pressureResult?.zoneChecks && pressureResult.zoneChecks.length > 0) {
+    content.push(sectionTitle("6a. Давление в затрубье по пластам (за всю операцию)"));
+    content.push(kvTable(pressureResult.zoneChecks.map((z) => ({
+      label: `${z.name} (MD ${fmt(z.depthMD, 0)} м)`,
+      value: `макс. ${fmt(z.maxPressureMPa)} / допустимо ${fmt(z.limitMPa)} МПа (${z.limitKind}), запас ${fmt(z.marginMPa)} МПа${z.marginMPa < 0 ? " — ПРЕВЫШЕНИЕ" : ""}`,
+  }))) as any);
+  }
   content.push(new Paragraph({
     spacing: { after: 100 },
     children: [new TextRun({

@@ -34,8 +34,18 @@ export default function SafetyTrafficLight({ pressureResult, volumes, centraliza
   const indicators: Indicator[] = useMemo(() => {
     const out: Indicator[] = [];
 
-    // 1) ЭЦП vs давление ГРП
-    if (pressureResult && pressureResult.points.length > 0) {
+    // 1) Давление в затрубье vs допустимое — худшая точка (забой или пласт с ГРП/поглощением)
+    if (pressureResult && pressureResult.zoneChecks && pressureResult.zoneChecks.length > 0) {
+      const worst = [...pressureResult.zoneChecks].sort((a, b) => a.maxPressureMPa / a.limitMPa < b.maxPressureMPa / b.limitMPa ? 1 : -1)[0];
+      const ratio = worst.limitMPa > 0 ? worst.maxPressureMPa / worst.limitMPa : 0;
+      const status: Status = ratio === 0 ? "muted" : ratio >= 1 ? "danger" : ratio >= 0.95 ? "warning" : "ok";
+      out.push({
+        label: worst.name.startsWith("Забой") ? "ЭЦП vs ГРП" : `Давление: ${worst.name}`,
+        value: `${worst.maxPressureMPa.toFixed(1)} / ${worst.limitMPa.toFixed(1)} МПа`,
+        status,
+        hint: `${(ratio * 100).toFixed(0)}% от ${worst.limitKind === "поглощение" ? "давления поглощения" : "ГРП"}`,
+      });
+    } else if (pressureResult && pressureResult.points.length > 0) {
       const maxBHP = Math.max(...pressureResult.points.map((p) => p.bottomholePressure));
       const fracP = pressureResult.points[0]?.fracturePressure ?? 0;
       const ratio = fracP > 0 ? maxBHP / fracP : 0;

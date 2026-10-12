@@ -31,7 +31,7 @@ interface Props {
   onCalculate?: () => void;
 }
 
-type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers'>;
+type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers' | 'standoffProfile'>;
 const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "wellDepthMD", label: "Глубина скважины (по стволу)", unit: "м" },
   { key: "wellDepthTVD", label: "Глубина скважины (по вертикали)", unit: "м" },
