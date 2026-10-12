@@ -27,6 +27,8 @@ import AnalysisChatPanel from "@/components/AnalysisChatPanel";
 import WOCFromProgram from "@/components/WOCFromProgram";
 import ZoneChecksCard from "@/components/ZoneChecksCard";
 import CementLabSection from "@/components/CementLabSection";
+import ProgramOptimizerSection from "@/components/ProgramOptimizerSection";
+import { applyVariant, type ProgramVariant } from "@/lib/cement-optimizer";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
@@ -208,6 +210,17 @@ export default function Index() {
 
     loadSavedCalculation();
   }, [calcId]);
+
+  const applyOptimizerVariant = useCallback((v: ProgramVariant) => {
+    const r = applyVariant(buffers, slurries, displacementFluids, v);
+    setBuffers(r.buffers);
+    setSlurries(r.slurries);
+    setDisplacementFluids(r.displacementFluids);
+    setCalcSnapshot(normalizeCementingSnapshot({
+      wellData, drillingFluid, slurries: r.slurries, buffers: r.buffers, displacementFluids: r.displacementFluids,
+      fractureGradient, flushTimeMin, flushVolumeM3,
+    }));
+  }, [buffers, slurries, displacementFluids, wellData, drillingFluid, fractureGradient, flushTimeMin, flushVolumeM3]);
 
   const handleCalculate = useCallback(() => {
     const snapshot = normalizeCementingSnapshot({
@@ -654,6 +667,29 @@ export default function Index() {
                 <ZoneChecksCard zoneChecks={pressureResult.zoneChecks} standoffSource={standoffProfile ? "profile" : "default"} avgStandoffPct={avgStandoffPct} />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="optimizer">
+            <div data-tab-content="optimizer">
+              {calcSnapshot ? (
+                <ProgramOptimizerSection
+                  input={{
+                    wellData: snapWellData ?? calcSnapshot.wellData,
+                    drillingFluid: calcSnapshot.drillingFluid,
+                    buffers: calcSnapshot.buffers,
+                    slurries: calcSnapshot.slurries,
+                    displacementFluids: calcSnapshot.displacementFluids,
+                    fractureGradient: calcSnapshot.fractureGradient,
+                    flushTimeMin: calcSnapshot.flushTimeMin,
+                    flushVolumeM3: calcSnapshot.flushVolumeM3,
+                    centralization: centralizationResults ?? undefined,
+                  }}
+                  onApply={applyOptimizerVariant}
+                />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">Нажмите «РАСЧЁТ» для получения результатов</div>
               )}
             </div>
           </TabsContent>

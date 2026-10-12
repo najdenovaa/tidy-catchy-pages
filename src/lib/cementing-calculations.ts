@@ -1218,7 +1218,9 @@ export function calculatePressureProfile(
   fractureGradient: number,
   displacementVol: number,
   flushTimeMin: number = 10,
-  flushVolumeM3: number = 0
+  flushVolumeM3: number = 0,
+  /** fast — без расчёта макс. безопасного расхода в каждой точке (для оптимизатора) */
+  opts: { fast?: boolean } = {},
 ): PressureProfileResult {
   const points: PressurePoint[] = [];
   slurries = slurries.map((s) => ({
@@ -1721,18 +1723,18 @@ export function calculatePressureProfile(
     return segs;
   }
 
-  const SUBSTEP_M = 50;
+  const SUBSTEP_M = opts.fast ? 100 : 50;
+  const standoffProf = wellData.standoffProfile && wellData.standoffProfile.length > 0
+    ? [...wellData.standoffProfile].sort((a, b) => a.md - b.md) : null;
   function standoffAt(md: number): number {
-    const prof = wellData.standoffProfile;
-    if (prof && prof.length > 0) {
+    const prof = standoffProf;
+    if (prof) {
       if (md <= prof[0].md) return prof[0].standoffPct;
-      for (let i = 1; i < prof.length; i++) {
-        if (md <= prof[i].md) {
-          const a = prof[i - 1], b = prof[i];
-          return a.standoffPct + ((md - a.md) / Math.max(1e-6, b.md - a.md)) * (b.standoffPct - a.standoffPct);
-        }
-      }
-      return prof[prof.length - 1].standoffPct;
+      if (md >= prof[prof.length - 1].md) return prof[prof.length - 1].standoffPct;
+      let lo = 0, hi = prof.length - 1; // бинарный поиск: профиль центрирования — сотни точек
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (prof[mid].md < md) lo = mid; else hi = mid; }
+      const a = prof[lo], b = prof[hi];
+      return a.standoffPct + ((md - a.md) / Math.max(1e-6, b.md - a.md)) * (b.standoffPct - a.standoffPct);
     }
     return wellData.annularStandoffPct ?? 67;
   }
@@ -1799,7 +1801,7 @@ export function calculatePressureProfile(
     if (!ok(0)) return 0;
     let lo = 0, hi = 50 * 0.06;
     if (ok(hi)) return 50;
-    for (let it = 0; it < 18; it++) { const mid = (lo + hi) / 2; if (ok(mid)) lo = mid; else hi = mid; }
+    for (let it = 0; it < 11; it++) { const mid = (lo + hi) / 2; if (ok(mid)) lo = mid; else hi = mid; }
     return lo / 0.06;
   }
 
@@ -2098,7 +2100,7 @@ export function calculatePressureProfile(
         const frictionAtShoe = annFrictionAbove(actualFlowRateM3min, prevShoe, segsNow).pressureMPa;
         ecdPrevShoe = (hydroAtShoe + frictionAtShoe) / (0.00981 * prevShoeTVD);
       }
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: maxSafeRateNow(segsNow), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps, ecdAtBottomGcm3: ecdBottom, ecdStaticAtBottomGcm3: ecdStaticBottom, ecdAtPrevShoeGcm3: ecdPrevShoe, fracGradEcdGcm3, porePressureEcdGcm3 });
+      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: opts.fast ? 0 : maxSafeRateNow(segsNow), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps, ecdAtBottomGcm3: ecdBottom, ecdStaticAtBottomGcm3: ecdStaticBottom, ecdAtPrevShoeGcm3: ecdPrevShoe, fracGradEcdGcm3, porePressureEcdGcm3 });
 
       trackZones(actualFlowRateM3min, segsNow, s.name, tNow);
 
