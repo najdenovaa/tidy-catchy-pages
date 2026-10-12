@@ -219,11 +219,9 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
     children.push(heading("6. Кинетика и проникновение"));
     children.push(kv([
       ["Скорость реакции, моль/(м²·с)", kinetics.reactionRate.toExponential(2)],
-      ["Радиус проникновения, м", fmt(kinetics.penetrationRadius, 2)],
-      ["Длина wormhole, м", fmt(kinetics.wormholeLength, 2)],
+      ["Радиус заполнения пор кислотой, м", fmt(kinetics.penetrationRadius, 2)],
+      ["Длина червоточин (Buijse–Glasbergen), м", fmt(kinetics.wormholeLength, 2)],
       ["Объём растворённой породы, м³", fmt(kinetics.dissolutionVolume, 2)],
-      ["Отработано кислоты, м³", fmt(kinetics.spentAcidVolume, 2)],
-      ["Остаточная концентрация, %", fmt(kinetics.residualAcidConcentration, 1)],
     ]));
   }
 

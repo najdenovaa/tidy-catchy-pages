@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { rankMethods, type ReservoirData, type RankedMethod, scoreColor } from "@/lib/stimulation-ranking";
 import { STIMULATION_METHODS, METHOD_CATEGORY_LABEL, COLLECTOR_LABEL, type StimulationMethod, type CollectorType, type MethodCategory } from "@/lib/stimulation-methods";
-import { buildAcidStages, computeAcidKinetics, optimalAcidRate, computeAcidStoichiometry } from "@/lib/stimulation-acid";
+import { buildAcidStages, computeAcidKinetics, computeAcidStoichiometry } from "@/lib/stimulation-acid";
 import { DEFAULT_ACID_COMPOSITION, calculateDissolvingPower, formatAcidLabel, acidPenetration, type AcidComposition } from "@/lib/acid-chemistry";
 import AcidCompositionEditor from "@/components/AcidCompositionEditor";
 import WormholeVisualization from "@/components/WormholeVisualization";
@@ -39,8 +39,10 @@ import SolventCalcPanel from "@/components/SolventCalcPanel";
 import NitrogenCalcPanel from "@/components/NitrogenCalcPanel";
 import type { SolventResult, NitrogenResult } from "@/lib/stimulation-special";
 import {
-  calculateMatrixInjection, displacementVolumeM3, DEFAULT_CONSTRUCTION, type WellConstruction,
+  calculateMatrixInjection, displacementVolumeM3, DEFAULT_CONSTRUCTION, injectivity, type WellConstruction,
 } from "@/lib/stimulation-injection";
+import { calculateWormholes, treatedDamageSkin, REGIME_LABEL } from "@/lib/stimulation-wormhole";
+import { CEMENT_LABEL, type CementQuality } from "@/lib/stimulation-ranking";
 import * as XLSX from "xlsx";
 import { Plus, Trash2 } from "lucide-react";
 
@@ -181,6 +183,14 @@ export default function Stimulation() {
   const [plannedRateLpm, setPlannedRateLpm] = useState(0); // 0 = авто
   const [injFluidViscosity, setInjFluidViscosity] = useState(1.2);
   const [fracMarginMPa, setFracMarginMPa] = useState(1.5);
+  // Параметры керна для червоточин и зоны повреждения
+  const [viOptCmMin, setViOptCmMin] = useState(1.5);
+  const [pvBtOpt, setPvBtOpt] = useState(0.6);
+  const [damageRadiusM, setDamageRadiusM] = useState(0.5);
+  const [hfLiveRadiusM, setHfLiveRadiusM] = useState(0.3);
+  // Риск обводнения
+  const [distanceToContactM, setDistanceToContactM] = useState(0);
+  const [cementQuality, setCementQuality] = useState<CementQuality>("unknown");
 
   const reservoirSnap: ReservoirSnapshot = useMemo(() => ({
     Pr: reservoir.reservoirPressureMPa,
@@ -245,7 +255,10 @@ export default function Stimulation() {
     });
   }, [gasIPR, fluidType, reservoir, bhpCurrentMPa, dewPointMPa, condGasRatio, waterCut, qCurrent]);
 
-  const ranked = useMemo(() => rankMethods(reservoir, damage), [reservoir, damage]);
+  const ranked = useMemo(
+    () => rankMethods({ ...reservoir, waterCutPct: historyMode === "measured" ? (history[history.length - 1]?.waterCut ?? waterCut) : waterCut, distanceToContactM, cementQuality }, damage),
+    [reservoir, damage, waterCut, distanceToContactM, cementQuality, historyMode, history],
+  );
   const selected = useMemo(() => STIMULATION_METHODS.find((m) => m.id === selectedMethodId)!, [selectedMethodId]);
   const selectedRanked = useMemo(() => ranked.find((r) => r.method.id === selectedMethodId), [ranked, selectedMethodId]);
 
@@ -350,43 +363,66 @@ export default function Stimulation() {
   const [solventResult, setSolventResult] = useState<(SolventResult & { penetrationRadiusM: number }) | null>(null);
   const [nitrogenResult, setNitrogenResult] = useState<(NitrogenResult & { targetBhpMPa: number }) | null>(null);
 
-  // Декомпозиция скина: чтобы знать радиус повреждённой зоны и компоненту S_damage
+  // Декомпозиция скина: механический, от наклона, псевдо и компонента повреждения S_damage
   const skinDecomp = useMemo(
     () => decomposeSkin(skinCurrent, reservoirSnap, 0, perfDensity),
     [skinCurrent, reservoirSnap, perfDensity]
   );
 
-  // ФАКТИЧЕСКОЕ снижение скина — выводится из физики расчёта, а не из таблицы
-  const skinReductionCalc = useMemo(() => {
-    const rDamage = skinDecomp.damagedZoneRadius;
-    const sDamage = skinDecomp.skinDamage;
-    const rw = reservoirSnap.rw;
+  // Расход: плановый или авто = 90% от максимального матричного в начале закачки (при текущем скине)
+  const maxRateStartLpmPre = useMemo(() => {
+    const J = injectivity(reservoir.permeability_mD, reservoir.payZoneM, injFluidViscosity, 250, 0.108, skinCurrent);
+    return (J * Math.max(0, pFracMPa - fracMarginMPa - reservoir.reservoirPressureMPa) * 1000) / 1440;
+  }, [reservoir, injFluidViscosity, skinCurrent, pFracMPa, fracMarginMPa]);
+  const autoRateLpm = Math.max(10, Math.floor(maxRateStartLpmPre * 0.9));
+  const effectiveRateLpm = plannedRateLpm > 0 ? plannedRateLpm : autoRateLpm;
 
-    // Кислота / комбо — Hawkins + бонус от wormhole (карбонат)
-    if ((selected.category === "acid" || selected.category === "combo") && kinetics) {
-      const rTreated = kinetics.penetrationRadius;
-      const baseDS = rTreated >= rDamage ? sDamage : sDamage * (rTreated / rDamage);
-      const sWormhole = kinetics.wormholeLength > 0
-        ? Math.log(1 + kinetics.wormholeLength / rw) * 0.5
-        : 0;
-      return baseDS + sWormhole;
+  // Червоточины (карбонаты, кислота/комбо) — Buijse–Glasbergen
+  const usesWormholes = reservoir.collectorType !== "sandstone"
+    && (selected.category === "acid" || selected.category === "combo")
+    && composition.hfPct === 0;
+  const wormhole = useMemo(() => {
+    if (!usesWormholes) return null;
+    return calculateWormholes({
+      acidVolumeM3: acidVol, rateLpm: effectiveRateLpm, payZoneM: reservoir.payZoneM,
+      porosity: reservoir.porosity, wellboreRadiusM: 0.108, viOptCmMin, pvBtOpt,
+    });
+  }, [usesWormholes, acidVol, effectiveRateLpm, reservoir.payZoneM, reservoir.porosity, viOptCmMin, pvBtOpt]);
+
+  // Радиус обработанной зоны и скин повреждения после обработки (Хокинс по зонам)
+  const treatment = useMemo(() => {
+    const rw = 0.108;
+    let rTreated = rw;
+    let wormholes = false;
+    let basis = "";
+    if (wormhole) {
+      rTreated = wormhole.wormholeRadiusM; wormholes = true; basis = "фронт червоточин (Buijse–Glasbergen)";
+    } else if ((selected.category === "acid" || selected.category === "combo") && kinetics) {
+      // терриген: активная HF расходуется в первых десятках см
+      rTreated = Math.min(rw + kinetics.penetrationRadius, rw + hfLiveRadiusM); basis = "зона активной кислоты (ограничена расходом HF)";
+    } else if (selected.category === "foam" && kinetics) {
+      rTreated = rw + kinetics.penetrationRadius; basis = "объём жидкой фазы пены";
+    } else if (selected.category === "solvent" && solventResult) {
+      rTreated = solventResult.penetrationRadiusM; basis = "радиус растворителя";
+    } else {
+      return null;
     }
-    // Пенокислотная обработка — kinetics есть, но эффективный радиус меньше (пена тормозит реакцию)
-    if (selected.category === "foam" && kinetics) {
-      const rTreated = kinetics.penetrationRadius * 0.75;
-      return rTreated >= rDamage ? sDamage : sDamage * (rTreated / rDamage);
-    }
-    // Растворитель — радиус очистки из solventResult
-    if (selected.category === "solvent" && solventResult) {
-      const rClean = solventResult.penetrationRadiusM;
-      return rClean >= rDamage ? sDamage : sDamage * (rClean / rDamage);
-    }
-    // Азот — скин не снимается, действует через депрессию (ниже)
-    return 0;
-  }, [selected, kinetics, solventResult, skinDecomp, reservoirSnap]);
+    const r = treatedDamageSkin({
+      damageSkin: skinDecomp.skinDamage, damageRadiusM, treatedRadiusM: rTreated, wellboreRadiusM: rw, wormholes,
+    });
+    return { rTreated, basis, ...r };
+  }, [wormhole, selected, kinetics, hfLiveRadiusM, solventResult, skinDecomp.skinDamage, damageRadiusM]);
+
+  const skinAfterTreatment = treatment
+    ? Math.max(-6, skinDecomp.skinMechanical + skinDecomp.skinDeviation + skinDecomp.skinPseudo + treatment.skinAfter)
+    : skinCurrent;
+  // Снижение скина — из физики расчёта, а не из таблицы
+  const skinReductionCalc = skinCurrent - skinAfterTreatment;
 
   // Forecast: для большинства методов — снятие скина; для азота — изменение Pwf
   const arps = useMemo(() => fitArpsDecline(history), [history]);
+  // Прогноз начинается с текущего момента — после последнего замера истории
+  const historyEndMonth = history.length ? history[history.length - 1].month : 0;
   const forecast = useMemo(() => {
     if (selected.category === "nitrogen" && nitrogenResult) {
       // Прирост дебита пропорционален росту депрессии (Pr - Pwf)
@@ -395,7 +431,7 @@ export default function Stimulation() {
       const dpNew = Math.max(0.5, Pr - nitrogenResult.targetBhpMPa);
       const liftRatio = dpNew / dpOld;
       // используем тот же контейнер ForecastPoint, считаем вручную
-      const out = forecastPostTreatment(arps, reservoirSnap, skinCurrent, skinCurrent, 36, 0.035);
+      const out = forecastPostTreatment(arps, reservoirSnap, skinCurrent, skinCurrent, 36, 0.035, historyEndMonth);
       let cum = 0;
       return out.map((p) => {
         const qT = p.qBaseline * liftRatio;
@@ -405,23 +441,16 @@ export default function Stimulation() {
         return { ...p, qTreated, deltaQ: qTreated - p.qBaseline, cumulativeDeltaM3: cum };
       });
     }
-    const skinNew = Math.max(-3, skinCurrent - skinReductionCalc);
-    return forecastPostTreatment(arps, reservoirSnap, skinCurrent, skinNew, 36, 0.025);
-  }, [arps, reservoirSnap, skinCurrent, selected, skinReductionCalc, nitrogenResult, reservoir, bhpCurrentMPa]);
+    return forecastPostTreatment(arps, reservoirSnap, skinCurrent, skinAfterTreatment, 36, 0.025, historyEndMonth);
+  }, [arps, reservoirSnap, skinCurrent, selected, skinAfterTreatment, nitrogenResult, reservoir, bhpCurrentMPa, historyEndMonth]);
 
   // Матричная закачка: максимальный расход без ГРП и давление на устье
-  const skinAfterTreatment = Math.max(-3, skinCurrent - skinReductionCalc);
   const injectionBase = useMemo(() => ({
     k_mD: reservoir.permeability_mD, h_m: reservoir.payZoneM, skin: skinCurrent, skinAfter: skinAfterTreatment,
     fluidViscosity_cP: injFluidViscosity, fluidDensity_gcm3: dissLive.densityGcc,
     reservoirPressureMPa: reservoir.reservoirPressureMPa, fracturePressureMPa: pFracMPa,
     drainageRadiusM: 250, wellboreRadiusM: 0.108, safetyMarginMPa: fracMarginMPa, construction,
   }), [reservoir, skinCurrent, skinAfterTreatment, injFluidViscosity, dissLive.densityGcc, pFracMPa, fracMarginMPa, construction]);
-  const autoRateLpm = useMemo(
-    () => Math.max(10, Math.floor(calculateMatrixInjection({ ...injectionBase, plannedRateLpm: 1 }).maxRateStartLpm * 0.9)),
-    [injectionBase],
-  );
-  const effectiveRateLpm = plannedRateLpm > 0 ? plannedRateLpm : autoRateLpm;
   const injection = useMemo(
     () => calculateMatrixInjection({ ...injectionBase, plannedRateLpm: effectiveRateLpm }),
     [injectionBase, effectiveRateLpm],
@@ -441,7 +470,7 @@ export default function Stimulation() {
     try {
       await exportStimulationDocx({
         reservoir, method: selected, ranked: selectedRanked,
-        acidVolM3: acidVol, damage, kinetics, stages, forecast, wellName,
+        acidVolM3: acidVol, damage, kinetics: kinetics ? { ...kinetics, wormholeLength: wormhole?.wormholeLengthM ?? 0 } : null, stages, forecast, wellName,
         composition, acidLabel,
         acidDensityGcc: dissLive.densityGcc,
         effectiveAcidStrength: dissLive.effectiveAcidStrength,
@@ -719,6 +748,16 @@ export default function Stimulation() {
                 </div>
                 <Field label="Репрессия, МПа" value={overbalanceMPa} onChange={setOverbalanceMPa} step={0.5} />
                 <Field label="Контакт с буровым, сут" value={soakDays} onChange={setSoakDays} />
+                <Field label="До ВНК/ГВК от подошвы перф., м (0 — нет данных)" value={distanceToContactM} onChange={setDistanceToContactM} hint="Близкий контакт — риск прорыва воды при кислотной обработке" />
+                <div className="space-y-1">
+                  <Label>Цемент за колонной (АКЦ)</Label>
+                  <Select value={cementQuality} onValueChange={(v) => setCementQuality(v as CementQuality)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(CEMENT_LABEL) as CementQuality[]).map((k) => <SelectItem key={k} value={k}>{CEMENT_LABEL[k]}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </Card>
 
@@ -849,31 +888,59 @@ export default function Stimulation() {
               <Card className="p-4 space-y-4">
                 <h3 className="font-semibold">Кинетика и проникновение</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                  <KV k="Скорость реакции" v={`${kinetics.reactionRate.toExponential(2)} моль/(м²·с)`} />
-                  <KV k="Радиус проникновения" v={`${kinetics.penetrationRadius.toFixed(2)} м`} />
-                  {kinetics.wormholeLength > 0 && <KV k="Длина wormhole" v={`${kinetics.wormholeLength.toFixed(2)} м`} />}
+                  <KV k="Скорость реакции (Lund–Fogler)" v={`${kinetics.reactionRate.toExponential(2)} моль/(м²·с)`} />
+                  <KV k="Радиус заполнения пор кислотой" v={`${kinetics.penetrationRadius.toFixed(2)} м`} />
                   <KV k="Растворено породы" v={`${kinetics.dissolutionVolume.toFixed(2)} м³`} />
-                  <KV k="Отработанной кислоты" v={`${kinetics.spentAcidVolume.toFixed(2)} м³`} />
-                  <KV k="Остаточная конц." v={`${kinetics.residualAcidConcentration.toFixed(1)}%`} />
+                  {wormhole && (
+                    <>
+                      <KV k="Длина червоточин" v={`${wormhole.wormholeLengthM.toFixed(2)} м`} />
+                      <KV k="v_i у стенки / оптимум" v={`${wormhole.viWallCmMin.toFixed(2)} / ${viOptCmMin} см/мин`} />
+                      <KV k="Расход для оптимума у стенки" v={`${wormhole.optimalRateAtWallLpm.toFixed(0)} л/мин`} />
+                    </>
+                  )}
+                  {treatment && (
+                    <>
+                      <KV k="Радиус обработанной зоны" v={`${treatment.rTreated.toFixed(2)} м (${treatment.basis})`} />
+                      <KV k="k/k_повр (из скина повреждения)" v={treatment.kOverKd.toFixed(1)} />
+                      <KV k="Скин повреждения: до → после" v={`${skinDecomp.skinDamage.toFixed(2)} → ${treatment.skinAfter.toFixed(2)}`} />
+                    </>
+                  )}
+                </div>
+                {wormhole && (
+                  <div className="text-xs text-muted-foreground">
+                    Режим растворения у стенки: <b className="text-foreground">{REGIME_LABEL[wormhole.regimeAtWall]}</b>.
+                    {wormhole.regimeAtWall === "face" || wormhole.regimeAtWall === "conical"
+                      ? " Расход мал — кислота тратится у стенки; поднять расход в пределах допустимого давления."
+                      : wormhole.regimeAtWall === "uniform" ? " Расход велик — кислота расходуется равномерно, червоточины короткие." : ""}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-border/40">
+                  {usesWormholes && (
+                    <>
+                      <Field label="v_i,opt по керну, см/мин" value={viOptCmMin} onChange={setViOptCmMin} step={0.1} hint="Оптимальная межзерновая скорость из кернового теста; известняк + HCl 15%: 0.5–3" />
+                      <Field label="PV_bt,opt по керну" value={pvBtOpt} onChange={setPvBtOpt} step={0.1} hint="Поровые объёмы до прорыва при оптимуме; обычно 0.3–1.5" />
+                    </>
+                  )}
+                  <Field label="Радиус зоны повреждения, м" value={damageRadiusM} onChange={setDamageRadiusM} step={0.1} hint="Глубина загрязнения ПЗП: фильтрат 0.3–1 м, АСПО/соли 0.1–0.5 м" />
+                  {reservoir.collectorType === "sandstone" && (
+                    <Field label="Проникновение активной HF, м" value={hfLiveRadiusM} onChange={setHfLiveRadiusM} step={0.05} hint="HF расходуется быстро: обычно 0.15–0.4 м от стенки" />
+                  )}
                 </div>
                 {/* Wormhole visualization (Da-режим) */}
                 {(() => {
-                  const qOptLpm = optimalAcidRate(
-                    reservoir.permeability_mD, reservoir.porosity, reservoir.temperatureC, 0.216
-                  );
-                  const qActual = (selected.recommendedRate[0] + selected.recommendedRate[1]) / 2;
-                  const damkohler = 0.29 * (qOptLpm / Math.max(1, qActual));
+                  const damkohler = wormhole ? wormhole.damkohlerEquivalent : 0.29;
+                  const whLen = wormhole ? wormhole.wormholeLengthM : 0;
                   return (
                     <>
                       <WormholeVisualization
-                        wormholeLengthM={kinetics.wormholeLength}
+                        wormholeLengthM={whLen}
                         penetrationRadiusM={kinetics.penetrationRadius}
                         wellboreRadiusM={0.108}
                         damkohler={damkohler}
                         reagentColor={selected.category === "foam" ? "#4fc3f7" : "#ff6b35"}
                       />
                       <Wormhole3D
-                        wormholeLengthM={kinetics.wormholeLength}
+                        wormholeLengthM={whLen}
                         penetrationRadiusM={kinetics.penetrationRadius}
                         wellboreRadiusM={0.108}
                         damkohler={damkohler}

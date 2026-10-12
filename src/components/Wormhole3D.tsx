@@ -199,15 +199,16 @@ export default function Wormhole3D({
 }: Props) {
   const regime: "face" | "wormhole" | "conical" | "compact" =
     damkohler < 0.1 ? "face"
-    : damkohler < 0.5 ? "wormhole"
-    : damkohler < 5 ? "conical"
+    : damkohler < 0.6 ? "wormhole"
+    : damkohler < 3 ? "conical"
     : "compact";
 
+  // малый Da — высокий расход (ветвление), большой Da — низкий расход (торцевое растворение)
   const regimeInfo = {
-    face:     { label: "Face dissolution", color: "#f59e0b" },
-    wormhole: { label: "Wormholing (оптимум)", color: "#10b981" },
-    conical:  { label: "Conical / Ramified", color: "#3b82f6" },
-    compact:  { label: "Compact dissolution", color: "#ef4444" },
+    face:     { label: "Ветвящиеся / равномерное", color: "#f59e0b" },
+    wormhole: { label: "Червоточины (оптимум)", color: "#10b981" },
+    conical:  { label: "Конические каналы", color: "#3b82f6" },
+    compact:  { label: "Торцевое растворение", color: "#ef4444" },
   }[regime];
 
   const reagentColor = REAGENT_COLORS[reagentCategory] ?? REAGENT_COLORS.acid;

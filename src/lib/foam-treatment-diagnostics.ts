@@ -448,12 +448,14 @@ export function forecastPostTreatment(
   months: number = 36,
   /** Скорость возврата скина, 1/мес. 0.02 = эффект слабеет на 2%/мес. */
   skinRecoveryRate: number = 0.02,
+  /** Месяц начала прогноза от начала истории (обработка — после последнего замера). */
+  startMonth: number = 0,
 ): ForecastPoint[] {
   const ratio = piRatio(reservoir, skinOld, skinNew);
   const out: ForecastPoint[] = [];
   let cum = 0;
   for (let m = 0; m < months; m++) {
-    const qBase = arpsQ(baseline.qi, baseline.di, baseline.b, m);
+    const qBase = arpsQ(baseline.qi, baseline.di, baseline.b, startMonth + m);
     const effRatio = 1 + (ratio - 1) * Math.exp(-skinRecoveryRate * m);
     const qTreated = qBase * effRatio;
     const dq = qTreated - qBase;

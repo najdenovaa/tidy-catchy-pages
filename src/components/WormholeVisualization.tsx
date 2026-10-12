@@ -32,12 +32,12 @@ export default function WormholeVisualization({
   const r_pen = penetrationRadiusM * scale;
   const r_wh = wormholeLengthM * scale;
 
-  // классификация режима по Da
+  // классификация режима по Da (Fredd–Fogler): малый Da — высокий расход, большой Da — низкий расход
   const regime =
-    damkohler < 0.1 ? { key: "face", label: "Face dissolution", color: "#f59e0b", note: "Расход слишком высокий — кислота смывается, ПЗП «изъедается»" }
-    : damkohler < 0.5 ? { key: "wormhole", label: "Wormholing (оптимум)", color: "#10b981", note: "Da ≈ 0.29 — максимальное проникновение wormhole" }
-    : damkohler < 5 ? { key: "conical", label: "Conical / Ramified", color: "#3b82f6", note: "Расход умеренно низкий — ветвистые каналы" }
-    : { key: "compact", label: "Compact dissolution", color: "#ef4444", note: "Расход слишком низкий — кислота расходуется у стенки" };
+    damkohler < 0.1 ? { key: "face", label: "Ветвящиеся / равномерное", color: "#f59e0b", note: "Расход высокий — много разветвлённых каналов, кислота расходуется по объёму породы" }
+    : damkohler < 0.6 ? { key: "wormhole", label: "Червоточины (оптимум)", color: "#10b981", note: "Da ≈ 0.29 — максимальное проникновение червоточин" }
+    : damkohler < 3 ? { key: "conical", label: "Конические каналы", color: "#3b82f6", note: "Расход умеренно низкий — широкие конические каналы" }
+    : { key: "compact", label: "Торцевое растворение", color: "#ef4444", note: "Расход слишком низкий — кислота расходуется у стенки" };
 
   const channelColor = reagentColor ?? regime.color;
 

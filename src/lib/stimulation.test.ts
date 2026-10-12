@@ -78,3 +78,61 @@ describe("Химия", () => {
     expect(byTVD).toBeLessThan(byMD);
   });
 });
+
+import { buijseGlasbergenVelocity, calculateWormholes, treatedDamageSkin } from "./stimulation-wormhole";
+import { rankMethods } from "./stimulation-ranking";
+
+describe("Червоточины Buijse–Glasbergen", () => {
+  it("при v_i = v_opt скорость фронта ≈ v_i/PV_bt", () => {
+    const v = buijseGlasbergenVelocity(1e-4, 1e-4, 0.5);
+    expect(v).toBeCloseTo((1e-4 / 0.5) * (1 - Math.exp(-4)) ** 2, 10);
+  });
+  it("радиальный рост совпадает с аналитикой при v_i ≫ v_opt", () => {
+    const vOptCm = 1e-4; // очень малый оптимум → B ≈ 1 на всём пути
+    const r = calculateWormholes({ acidVolumeM3: 10, rateLpm: 100, payZoneM: 10, porosity: 0.15, wellboreRadiusM: 0.1, viOptCmMin: vOptCm, pvBtOpt: 0.5 });
+    const q = 100 / 60000, a = q / (2 * Math.PI * 10 * 0.15), vopt = vOptCm / 100 / 60;
+    const K = (Math.pow(a, 2 / 3) * Math.pow(vopt, 1 / 3)) / 0.5;
+    const T = 10 / q;
+    const rExact = Math.pow(Math.pow(0.1, 5 / 3) + (5 / 3) * K * T, 3 / 5);
+    expect(r.wormholeRadiusM).toBeCloseTo(rExact, 2);
+  });
+});
+
+describe("Скин по зонам (Хокинс)", () => {
+  it("без обработки скин повреждения не меняется", () => {
+    expect(treatedDamageSkin({ damageSkin: 5, damageRadiusM: 0.5, treatedRadiusM: 0.108, wellboreRadiusM: 0.108, wormholes: false }).skinAfter).toBeCloseTo(5, 6);
+    expect(treatedDamageSkin({ damageSkin: 5, damageRadiusM: 0.5, treatedRadiusM: 0.108, wellboreRadiusM: 0.108, wormholes: true }).skinAfter).toBeCloseTo(5, 6);
+  });
+  it("червоточины за зоной повреждения дают S = −ln(r_wh/rw)", () => {
+    expect(treatedDamageSkin({ damageSkin: 5, damageRadiusM: 0.5, treatedRadiusM: 2, wellboreRadiusM: 0.108, wormholes: true }).skinAfter).toBeCloseTo(-Math.log(2 / 0.108), 6);
+  });
+  it("частичная очистка: оставшееся повреждение (k/k_d − 1)·ln(r_d/r_t)", () => {
+    const r = treatedDamageSkin({ damageSkin: 5, damageRadiusM: 0.5, treatedRadiusM: 0.3, wellboreRadiusM: 0.108, wormholes: false });
+    expect(r.skinAfter).toBeCloseTo((r.kOverKd - 1) * Math.log(0.5 / 0.3), 6);
+  });
+});
+
+describe("Рейтинг: риск обводнения", () => {
+  const res = { collectorType: "carbonate" as const, temperatureC: 75, permeability_mD: 15, porosity: 0.15, payZoneM: 12, reservoirPressureMPa: 22 };
+  it("близкий ВНК и плохой цемент снижают балл СКО", () => {
+    const base = rankMethods(res).find((r) => r.method.id === "hcl-matrix")!.score;
+    const risky = rankMethods({ ...res, distanceToContactM: 3, cementQuality: "poor" }).find((r) => r.method.id === "hcl-matrix")!.score;
+    expect(risky).toBeLessThan(base - 30);
+  });
+  it("несовместимый коллектор не выше 30 баллов", () => {
+    const r = rankMethods({ ...res, collectorType: "sandstone" }).find((m) => m.method.id === "hcl-matrix")!;
+    expect(r.score).toBeLessThanOrEqual(30);
+  });
+});
+
+import { fitArpsDecline, forecastPostTreatment } from "./foam-treatment-diagnostics";
+
+describe("Прогноз начинается с текущего дебита", () => {
+  it("базовый дебит в месяц 0 прогноза = дебит на конец истории", () => {
+    const hist = Array.from({ length: 19 }, (_, m) => ({ month: m, qOil: 80 * Math.exp((Math.log(35 / 80) / 18) * m) }));
+    const arps = fitArpsDecline(hist);
+    const res = { Pr: 22, Pb: 15, k_mD: 15, h: 12, mu_cP: 1.2, Bo: 1.15, re: 250, rw: 0.108, skin: 8, tempC: 75 };
+    const f = forecastPostTreatment(arps, res, 8, 0, 36, 0.025, 18);
+    expect(f[0].qBaseline).toBeCloseTo(35, 0);
+  });
+});
