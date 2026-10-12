@@ -38,6 +38,11 @@ import { SharedWellCard } from "@/components/SharedWellCard";
 import SolventCalcPanel from "@/components/SolventCalcPanel";
 import NitrogenCalcPanel from "@/components/NitrogenCalcPanel";
 import type { SolventResult, NitrogenResult } from "@/lib/stimulation-special";
+import {
+  calculateMatrixInjection, displacementVolumeM3, DEFAULT_CONSTRUCTION, type WellConstruction,
+} from "@/lib/stimulation-injection";
+import * as XLSX from "xlsx";
+import { Plus, Trash2 } from "lucide-react";
 
 const REAGENT_COLOR_MAP: Record<string, "acid" | "foam" | "solvent" | "nitrogen" | "combo"> = {
   acid: "acid", foam: "foam", solvent: "solvent", nitrogen: "nitrogen", combo: "combo",
@@ -119,7 +124,7 @@ export default function Stimulation() {
 
 
   // ── Derived: build synthetic history ───────────────────────────────
-  const history: ProductionPoint[] = useMemo(() => {
+  const syntheticHistory: ProductionPoint[] = useMemo(() => {
     const pts: ProductionPoint[] = [];
     const months = Math.max(3, monthsHistory);
     const d = qInitial > 0 ? Math.log(Math.max(0.05, qCurrent) / qInitial) / months : 0;
@@ -129,6 +134,53 @@ export default function Stimulation() {
     }
     return pts;
   }, [qInitial, qCurrent, monthsHistory, waterCut]);
+
+  // Замеры добычи (вводятся вручную или из Excel). Если замеров < 3 — используется оценка по Q нач/текущ.
+  const [historyMode, setHistoryMode] = useState<"synthetic" | "measured">("synthetic");
+  const [measured, setMeasured] = useState<ProductionPoint[]>([]);
+  const history: ProductionPoint[] = useMemo(
+    () => (historyMode === "measured" && measured.filter((p) => p.qOil > 0).length >= 3
+      ? [...measured].sort((a, b) => a.month - b.month)
+      : syntheticHistory),
+    [historyMode, measured, syntheticHistory],
+  );
+  const switchToMeasured = () => {
+    if (measured.length === 0) setMeasured(syntheticHistory.map((p) => ({ ...p, qOil: +p.qOil.toFixed(1) })));
+    setHistoryMode("measured");
+  };
+  const importHistory = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target?.result, { type: "array" });
+        const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        const find = (row: Record<string, unknown>, keys: string[]) => {
+          for (const k of Object.keys(row)) if (keys.some((x) => k.toLowerCase().includes(x))) return row[k];
+          return undefined;
+        };
+        const pts = rows.map((r, i) => {
+          const month = parseFloat(String(find(r, ["мес", "month", "период"]) ?? i));
+          const q = parseFloat(String(find(r, ["дебит", "q", "rate", "нефт", "газ"])));
+          const wc = parseFloat(String(find(r, ["обв", "wc", "water", "вод"])));
+          const bhp = parseFloat(String(find(r, ["pзаб", "забой", "bhp", "pwf"])));
+          return { month: Number.isFinite(month) ? month : i, qOil: q, waterCut: Number.isFinite(wc) ? wc : undefined, bhpMPa: Number.isFinite(bhp) ? bhp : undefined };
+        }).filter((p) => Number.isFinite(p.qOil) && p.qOil > 0);
+        if (pts.length >= 3) { setMeasured(pts); setHistoryMode("measured"); toast.success(`Загружено ${pts.length} замеров`); }
+        else toast.error("Нужно не меньше 3 строк с дебитом (столбцы: месяц, дебит, обводнённость, Pзаб)");
+      } catch { toast.error("Не удалось прочитать файл"); }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
+
+  // Конструкция скважины (для продавки, давления на устье и Pгрп по TVD)
+  const [construction, setConstruction] = useState<WellConstruction>(DEFAULT_CONSTRUCTION);
+  const displacement = useMemo(() => displacementVolumeM3(construction), [construction]);
+  const [plannedRateLpm, setPlannedRateLpm] = useState(0); // 0 = авто
+  const [injFluidViscosity, setInjFluidViscosity] = useState(1.2);
+  const [fracMarginMPa, setFracMarginMPa] = useState(1.5);
 
   const reservoirSnap: ReservoirSnapshot = useMemo(() => ({
     Pr: reservoir.reservoirPressureMPa,
@@ -148,8 +200,8 @@ export default function Stimulation() {
 
   // Давление гидроразрыва (упрощённая Eaton) — для сравнения с давлением обработки
   const pFracMPa = useMemo(
-    () => fracturePressureMPa(depthProfile, reservoir.reservoirPressureMPa, stressState),
-    [depthProfile, reservoir.reservoirPressureMPa, stressState]
+    () => fracturePressureMPa(depthProfile, reservoir.reservoirPressureMPa, stressState, construction.perfTopTVD),
+    [depthProfile, reservoir.reservoirPressureMPa, stressState, construction.perfTopTVD]
   );
 
   const drilling: DrillingHistory = useMemo(() => ({
@@ -248,10 +300,10 @@ export default function Stimulation() {
       payZoneM: reservoir.payZoneM,
       mainAcidName: acidLabel,
       mainAcidVolPerM: selected.volumePerMeterPay,
-      tubingVolumeM3: 4.0,
+      tubingVolumeM3: displacement.totalM3,
       hasHF: composition.hfPct > 0,
     });
-  }, [selected, reservoir, acidLabel, composition.hfPct]);
+  }, [selected, reservoir, acidLabel, composition.hfPct, displacement.totalM3]);
 
   // Стехиометрия растворения породы — плотность раствора из ЖИВОГО состава
   const stoichiometry = useMemo(() => {
@@ -278,7 +330,7 @@ export default function Stimulation() {
   const sensitivityData = useMemo(() => {
     if (selected.category !== "acid" && selected.category !== "combo" && selected.category !== "foam") return [];
     const rockKind: "carbonate" | "sandstone" | "dolomite" = rockType;
-    const pumpLpm = (selected.recommendedRate[0] + selected.recommendedRate[1]) / 2;
+    const pumpLpm = plannedRateLpm > 0 ? plannedRateLpm : (selected.recommendedRate[0] + selected.recommendedRate[1]) / 2;
     const pts: { hcl: number; rPen: number; rockKg: number; co2: number }[] = [];
     for (let h = 5; h <= 30; h += 1) {
       const comp = { ...composition, hclPct: h };
@@ -290,7 +342,7 @@ export default function Stimulation() {
       pts.push({ hcl: h, rPen: +(p.penetrationRadiusM - 0.108).toFixed(3), rockKg: +rockKg.toFixed(0), co2: +(d.co2GeneratedStdM3PerM3 * acidVol).toFixed(1) });
     }
     return pts;
-  }, [selected.category, composition, reservoir, acidVol, rockType, selected.recommendedRate]);
+  }, [selected.category, composition, reservoir, acidVol, rockType, selected.recommendedRate, plannedRateLpm]);
 
 
 
@@ -357,6 +409,25 @@ export default function Stimulation() {
     return forecastPostTreatment(arps, reservoirSnap, skinCurrent, skinNew, 36, 0.025);
   }, [arps, reservoirSnap, skinCurrent, selected, skinReductionCalc, nitrogenResult, reservoir, bhpCurrentMPa]);
 
+  // Матричная закачка: максимальный расход без ГРП и давление на устье
+  const skinAfterTreatment = Math.max(-3, skinCurrent - skinReductionCalc);
+  const injectionBase = useMemo(() => ({
+    k_mD: reservoir.permeability_mD, h_m: reservoir.payZoneM, skin: skinCurrent, skinAfter: skinAfterTreatment,
+    fluidViscosity_cP: injFluidViscosity, fluidDensity_gcm3: dissLive.densityGcc,
+    reservoirPressureMPa: reservoir.reservoirPressureMPa, fracturePressureMPa: pFracMPa,
+    drainageRadiusM: 250, wellboreRadiusM: 0.108, safetyMarginMPa: fracMarginMPa, construction,
+  }), [reservoir, skinCurrent, skinAfterTreatment, injFluidViscosity, dissLive.densityGcc, pFracMPa, fracMarginMPa, construction]);
+  const autoRateLpm = useMemo(
+    () => Math.max(10, Math.floor(calculateMatrixInjection({ ...injectionBase, plannedRateLpm: 1 }).maxRateStartLpm * 0.9)),
+    [injectionBase],
+  );
+  const effectiveRateLpm = plannedRateLpm > 0 ? plannedRateLpm : autoRateLpm;
+  const injection = useMemo(
+    () => calculateMatrixInjection({ ...injectionBase, plannedRateLpm: effectiveRateLpm }),
+    [injectionBase, effectiveRateLpm],
+  );
+  const catalogRateMid = (selected.recommendedRate[0] + selected.recommendedRate[1]) / 2;
+
   const chartData = useMemo(() => forecast.map((p) => ({
     month: p.month,
     baseline: Number(p.qBaseline.toFixed(2)),
@@ -376,6 +447,7 @@ export default function Stimulation() {
         effectiveAcidStrength: dissLive.effectiveAcidStrength,
         stoichiometry, mineralDissolution, sensitivity: sensitivityData,
         pFracMPa,
+        injection: selected.category !== "nitrogen" ? { ...injection, plannedRateLpm: effectiveRateLpm } : undefined,
       });
 
       toast.success("DOCX-отчёт сформирован");
@@ -489,13 +561,80 @@ export default function Stimulation() {
             </Card>
 
             <Card className="p-4 space-y-4">
-              <h2 className="font-semibold">История добычи</h2>
+              <h2 className="font-semibold">Конструкция скважины</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <Field label="Кровля перфорации MD, м" value={construction.perfTopMD} onChange={(v) => setConstruction({ ...construction, perfTopMD: v })} hint="Глубина по стволу до верхних отверстий" />
+                <Field label="Кровля перфорации TVD, м" value={construction.perfTopTVD} onChange={(v) => setConstruction({ ...construction, perfTopTVD: v })} hint="Вертикальная глубина: для гидростатики и давления ГРП" />
+                <Field label="Башмак НКТ MD, м" value={construction.tubingShoeMD} onChange={(v) => setConstruction({ ...construction, tubingShoeMD: v })} hint="Глубина спуска НКТ/ГНКТ, через которые идёт закачка" />
+                <Field label="ID НКТ, мм" value={construction.tubingID_mm} onChange={(v) => setConstruction({ ...construction, tubingID_mm: v })} step={0.5} hint="73×5.5 → 62 мм; 89×6.5 → 76 мм" />
+                <Field label="ID колонны, мм" value={construction.casingID_mm} onChange={(v) => setConstruction({ ...construction, casingID_mm: v })} step={0.5} hint="146 мм → ~130; 168 мм → ~150" />
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Объём продавки: НКТ {displacement.tubingM3.toFixed(2)} м³ + колонна до перфорации {displacement.casingM3.toFixed(2)} м³ = <b className="text-foreground">{displacement.totalM3.toFixed(2)} м³</b>
+              </div>
+            </Card>
+
+            <Card className="p-4 space-y-4">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h2 className="font-semibold">История добычи</h2>
+                <div className="flex gap-2 items-center">
+                  <Button size="sm" variant={historyMode === "synthetic" ? "default" : "outline"} onClick={() => setHistoryMode("synthetic")}>Оценка по Q нач/текущ</Button>
+                  <Button size="sm" variant={historyMode === "measured" ? "default" : "outline"} onClick={switchToMeasured}>Замеры</Button>
+                  <label className="text-xs text-primary cursor-pointer hover:underline">
+                    Импорт Excel
+                    <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={importHistory} />
+                  </label>
+                </div>
+              </div>
+              {historyMode === "measured" && (
+                <div className="space-y-2">
+                  <div className="overflow-x-auto max-h-72 overflow-y-auto border rounded">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/50 sticky top-0">
+                        <tr><th className="p-1.5 text-left">Месяц</th><th className="p-1.5 text-left">Дебит, {rateUnit}</th><th className="p-1.5 text-left">Обводн., %</th><th className="p-1.5 text-left">Pзаб, МПа</th><th></th></tr>
+                      </thead>
+                      <tbody>
+                        {measured.map((r, i) => (
+                          <tr key={i} className="border-t border-border/40">
+                            {(["month", "qOil", "waterCut", "bhpMPa"] as const).map((k) => (
+                              <td key={k} className="p-1">
+                                <Input type="number" className="h-7 text-xs" value={r[k] ?? ""}
+                                  onChange={(e) => {
+                                    const v = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                                    setMeasured(measured.map((x, j) => (j === i ? { ...x, [k]: k === "month" || k === "qOil" ? (v ?? 0) : v } : x)));
+                                  }} />
+                              </td>
+                            ))}
+                            <td className="p-1">
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setMeasured(measured.filter((_, j) => j !== i))}><Trash2 className="w-3 h-3" /></Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button size="sm" variant="outline" onClick={() => {
+                      const last = measured[measured.length - 1];
+                      setMeasured([...measured, { month: (last?.month ?? -1) + 1, qOil: last?.qOil ?? 0, waterCut: last?.waterCut }]);
+                    }}><Plus className="w-3 h-3 mr-1" />Замер</Button>
+                    <span className="text-[10px] text-muted-foreground">
+                      {measured.filter((p) => p.qOil > 0).length < 3 ? "Нужно не меньше 3 замеров с дебитом — пока используется оценка." : `Кривая Арпса подбирается по ${measured.filter((p) => p.qOil > 0).length} замерам.`}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {historyMode === "synthetic" && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <Field label={`Q начальный, ${rateUnit}`} value={qInitial} onChange={setQInitial} hint="Стартовый дебит после ввода или предыдущего ГТМ — база оценки потери продуктивности" />
                 <Field label={`Q текущий, ${rateUnit}`} value={qCurrent} onChange={setQCurrent} hint="Дебит на момент анализа. Сравнение с Q нач. показывает степень деградации ПЗП" />
                 <Field label={isGas ? "Влагосодержание, %" : "Обводнённость, %"} value={waterCut} onChange={setWaterCut} hint={isGas ? "Содержание воды в продукции газовой скважины — индикатор жидкостной нагрузки и блокады" : "Доля воды в добываемой жидкости (% объёмных)"} />
                 <Field label="Период истории, мес" value={monthsHistory} onChange={setMonthsHistory} hint="За какой период произошло падение Q нач. → Q текущ. Нужно для оценки темпа деградации" />
               </div>
+              )}
+              {historyMode === "synthetic" && (
+                <p className="text-[10px] text-muted-foreground">Оценка: экспоненциальное падение от Q нач. к Q текущ. Для подбора реальной кривой падения введите замеры.</p>
+              )}
             </Card>
 
             {gasIPR && (
@@ -645,7 +784,8 @@ export default function Stimulation() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <Stat label="Объём реагента" value={`${acidVol.toFixed(1)} м³`} sub={`${selected.volumePerMeterPay} м³/м × ${reservoir.payZoneM} м × ${selected.numberOfCycles} цикл.`} />
-              <Stat label="Расход" value={`${selected.recommendedRate[0]}–${selected.recommendedRate[1]} л/мин`} />
+              <Stat label="Плановый расход" value={`${effectiveRateLpm.toFixed(0)} л/мин`}
+                sub={selected.category === "nitrogen" ? undefined : `макс. без ГРП: ${injection.maxRateStartLpm.toFixed(0)} → ${injection.maxRateEndLpm.toFixed(0)} л/мин; каталог ${selected.recommendedRate[0]}–${selected.recommendedRate[1]}`} />
               <Stat label="Выдержка" value={`${selected.soakTimeMin[0]}–${selected.soakTimeMin[1]} мин`} />
               <Stat
                 label="Расчётное ΔS (из физики)"
@@ -658,6 +798,41 @@ export default function Stimulation() {
               />
               <Stat label="Успешность" value={`${selected.successRate}%`} />
             </div>
+
+            {selected.category !== "nitrogen" && (
+              <Card className="p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <h3 className="font-semibold">Режим матричной закачки</h3>
+                  <Badge variant={injection.regime === "frac" ? "destructive" : injection.regime === "near_frac" ? "default" : "outline"}>
+                    {injection.regime === "frac" ? "🔴 ГРП" : injection.regime === "near_frac" ? "⚠ близко к ГРП" : "🟢 матричный режим"}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <Field label="Плановый расход, л/мин (0 = авто)" value={plannedRateLpm} onChange={setPlannedRateLpm} step={10}
+                    hint={`Авто: 90% от максимума в начале закачки = ${autoRateLpm} л/мин`} />
+                  <Field label="Вязкость закачиваемой жидкости, сПз" value={injFluidViscosity} onChange={setInjFluidViscosity} step={0.1} hint="HCl 15% ≈ 1.1–1.3; гелированная кислота — по паспорту" />
+                  <Field label="Запас до Pгрп, МПа" value={fracMarginMPa} onChange={setFracMarginMPa} step={0.5} hint="Забойное давление держать ниже Pгрп на эту величину" />
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <KV k="Pгрп (Итон, по TVD)" v={`${pFracMPa.toFixed(1)} МПа`} />
+                  <KV k="Приёмистость: сейчас → после" v={`${injection.injectivityStart.toFixed(1)} → ${injection.injectivityEnd.toFixed(1)} м³/(сут·МПа)`} />
+                  <KV k="Макс. расход без ГРП: начало → конец" v={`${injection.maxRateStartLpm.toFixed(0)} → ${injection.maxRateEndLpm.toFixed(0)} л/мин`} />
+                  <KV k="Забойное при плановом расходе" v={`${injection.bhpAtPlannedMPa.toFixed(1)} МПа`} />
+                  <KV k="Гидростатика / трение в НКТ" v={`${injection.hydrostaticMPa.toFixed(1)} / ${injection.frictionAtPlannedMPa.toFixed(2)} МПа`} />
+                  <KV k="Давление на устье (план)" v={`${injection.surfacePressureMPa.toFixed(1)} МПа`} />
+                  <KV k="Макс. давление на устье" v={`${injection.maxSurfacePressureMPa.toFixed(1)} МПа`} />
+                  <KV k="Опрессовка линий (1.5×)" v={`${injection.lineTestPressureMPa.toFixed(1)} МПа`} />
+                </div>
+                {catalogRateMid > injection.maxRateStartLpm && (
+                  <div className="text-xs text-amber-700 dark:text-amber-300">
+                    ⚠ Расход из каталога метода ({selected.recommendedRate[0]}–{selected.recommendedRate[1]} л/мин) выше максимального для этого пласта ({injection.maxRateStartLpm.toFixed(0)} л/мин) — на нём пласт будет разорван.
+                  </div>
+                )}
+                {injection.warnings.map((w, i) => (
+                  <div key={i} className={`text-xs ${w.startsWith("🔴") ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground"}`}>{w}</div>
+                ))}
+              </Card>
+            )}
 
             {(selected.category === "acid" || selected.category === "foam" || selected.category === "combo") && (
               <AcidCompositionEditor
@@ -719,7 +894,7 @@ export default function Stimulation() {
                   Реакция:{" "}
                   {stoichiometry.rock === "carbonate" && "2 HCl + CaCO₃ → CaCl₂ + H₂O + CO₂"}
                   {stoichiometry.rock === "dolomite" && "4 HCl + CaMg(CO₃)₂ → CaCl₂ + MgCl₂ + 2 H₂O + 2 CO₂"}
-                  {stoichiometry.rock === "sandstone" && "4 HF + SiO₂ → SiF₄ + 2 H₂O   (+ HCl растворяет карбонатный цемент)"}
+                  {stoichiometry.rock === "sandstone" && "6 HF + SiO₂ → H₂SiF₆ + 2 H₂O   (+ HCl растворяет карбонатный цемент)"}
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                   <KV k="HCl в реагенте" v={`${stoichiometry.hclMassKg.toFixed(0)} кг`} />
@@ -877,11 +1052,11 @@ export default function Stimulation() {
             <Card className="p-4">
               <h3 className="font-semibold mb-2">Шаги операции</h3>
               <ol className="text-sm space-y-1 list-decimal pl-5">
-                <li>Подготовка устья, опрессовка линий на 1.5×Pзак</li>
+                <li>Подготовка устья, опрессовка нагнетательных линий на {injection.lineTestPressureMPa.toFixed(1)} МПа (1.5 × макс. давления на устье)</li>
                 <li>Закачка preflush (если применимо)</li>
-                <li>Закачка основного реагента на режиме {selected.recommendedRate[0]}–{selected.recommendedRate[1]} л/мин</li>
+                <li>Закачка основного реагента: начать с {effectiveRateLpm.toFixed(0)} л/мин, давление на устье ≈ {injection.surfacePressureMPa.toFixed(1)} МПа; по мере снижения давления поднимать расход до {injection.maxRateEndLpm.toFixed(0)} л/мин, не превышая {injection.maxSurfacePressureMPa.toFixed(1)} МПа на устье</li>
                 {selected.requiresN2 && <li>Поддержание FQ = {selected.targetFoamQuality}% по линии N₂</li>}
-                <li>Продавка скважинной жидкостью</li>
+                <li>Продавка скважинной жидкостью: {displacement.totalM3.toFixed(2)} м³ (НКТ до башмака + колонна до кровли перфорации)</li>
                 <li>Выдержка {selected.soakTimeMin[0]}–{selected.soakTimeMin[1]} мин</li>
                 {selected.numberOfCycles > 1 && <li>Повтор циклов ×{selected.numberOfCycles}</li>}
                 <li>Вызов притока, освоение, контроль дебита</li>

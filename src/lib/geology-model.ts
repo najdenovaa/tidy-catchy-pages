@@ -163,10 +163,15 @@ export function overburdenPressureMPa(d: DepthProfile, s: StressState): number {
   return +(d.depthMD_m * s.overburdenGradient_MPa_per_100m / 100).toFixed(2);
 }
 
+/**
+ * Давление ГРП по Итону: Pf = K·(σv − Pp) + Pp, K = eatonRatio (= ν/(1−ν)).
+ * Горное давление считается по вертикальной глубине (TVD); если она не задана — по MD.
+ */
 export function fracturePressureMPa(
-  d: DepthProfile, Pp_MPa: number, s: StressState
+  d: DepthProfile, Pp_MPa: number, s: StressState, tvdM?: number,
 ): number {
-  const sigmaV = d.depthMD_m * s.overburdenGradient_MPa_per_100m / 100;
+  const depth = tvdM ?? d.depthMD_m;
+  const sigmaV = depth * s.overburdenGradient_MPa_per_100m / 100;
   return +(s.eatonRatio * sigmaV + (1 - s.eatonRatio) * Pp_MPa).toFixed(2);
 }
 

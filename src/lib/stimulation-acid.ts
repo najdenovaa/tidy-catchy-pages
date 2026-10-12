@@ -1,3 +1,5 @@
+import { reactionRate, hclMolarity, co2ZFactor } from "./acid-chemistry";
+
 // Кинетика кислотной реакции, wormhole, многоступенчатость, дивертер
 export interface AcidReactionKinetics {
   reactionRate: number;              // моль/(м²·с)
@@ -8,13 +10,10 @@ export interface AcidReactionKinetics {
   residualAcidConcentration: number; // %
 }
 
-// Скорость реакции HCl с CaCO₃ (Lund & Fogler)
+// Скорость реакции HCl с CaCO₃ — единая кинетика Lund–Fogler из acid-chemistry
+// (Ea = 62.8 кДж/моль, порядок 0.63 по концентрации HCl в моль/л).
 export function hclReactionRate(tempC: number, concentration: number): number {
-  const A = 7.31e7;
-  const Ea = 55000;
-  const R = 8.314;
-  const T = tempC + 273.15;
-  return A * Math.exp(-Ea / (R * T)) * (concentration / 100);
+  return reactionRate(hclMolarity(concentration), tempC);
 }
 
 // Оптимальный расход для wormholing (Da ≈ 0.29)
@@ -71,7 +70,7 @@ export function computeAcidKinetics(opts: {
 // Реакции:
 //   Карбонат:   2 HCl + CaCO₃ → CaCl₂ + H₂O + CO₂                (M_HCl=36.46, M_CaCO₃=100.09)
 //   Доломит:    4 HCl + CaMg(CO₃)₂ → CaCl₂ + MgCl₂ + 2H₂O + 2CO₂ (M=184.4)
-//   Песчаник:   4 HF  + SiO₂ → SiF₄ + 2H₂O                        (M_HF=20.01, M_SiO₂=60.08)
+//   Песчаник:   6 HF  + SiO₂ → H₂SiF₆ + 2H₂O                      (M_HF=20.01, M_SiO₂=60.08)
 // Плотности (кг/м³): CaCO₃ 2710, CaMg(CO₃)₂ 2840, SiO₂ 2650.
 // V_CO₂ при н.у. = n · 22.4 / 1000 [м³ст]; в забое: V_бз = V_ст·(P_ст/P_бз)·(T_бз/T_ст)·Z.
 
@@ -125,7 +124,7 @@ export function computeAcidStoichiometry(opts: {
     const nCaCO3 = nHCl / 2;
     const cementKg = nCaCO3 * 100.09 / 1000;
     co2Mol = nCaCO3;
-    const sioKg = (nHF / 4) * 60.08 / 1000;
+    const sioKg = (nHF / 6) * 60.08 / 1000;
     rockKg = cementKg + sioKg;
     rockM3 = cementKg / 2710 + sioKg / 2650;
     caCl2 = nCaCO3 * 110.98 / 1000;
@@ -144,8 +143,8 @@ export function computeAcidStoichiometry(opts: {
   if (opts.bhPressureMPa && opts.bhTemperatureC != null) {
     const Pbh = Math.max(0.5, opts.bhPressureMPa);
     const Tbh = (opts.bhTemperatureC ?? 25) + 273.15;
-    const Z = 0.92;
-    co2VolBh = co2VolStd * (0.101 / Pbh) * (Tbh / 273.15) * Z;
+    const Z = co2ZFactor(Pbh, Tbh);
+    co2VolBh = co2VolStd * (0.101325 / Pbh) * (Tbh / 273.15) * Z;
   }
   if (opts.rock !== "sandstone" && co2VolBh > 0) {
     notes.push(
@@ -209,7 +208,8 @@ export function buildAcidStages(opts: {
   const isSandHF = collectorType === "sandstone" && hasHF;
 
   const preflushVolPerM = isSandHF ? 0.5 : 0.3;
-  const afterflushVolPerM = isSandHF ? 0.5 : 0.3;
+  // Глинокислота: afterflush не меньше объёма основной кислоты (вытеснение HF за зону осадков)
+  const afterflushVolPerM = isSandHF ? Math.max(0.5, mainAcidVolPerM) : 0.3;
 
   const preflush: AcidStage = {
     role: "preflush",
@@ -244,6 +244,7 @@ export function buildAcidStages(opts: {
       : "Вытеснение отработанной кислоты, стабилизация эмульсий",
     critical: isSandHF,
   };
+  // Продавка: объём НКТ до башмака + колонна до кровли перфорации (передаётся снаружи)
   const disp = { fluid: "Скважинная жидкость", volumeM3: tubingVolumeM3 };
   const total = preflush.volumeM3 + main.volumeM3 + after.volumeM3 + disp.volumeM3;
 
@@ -251,8 +252,8 @@ export function buildAcidStages(opts: {
   if (isSandHF) {
     recs.push("Глинокислота: СТРОГО соблюдать 3 стадии — без preflush HCl выпадет CaF₂.");
     recs.push("Соотношение HCl:HF = 12:3 / 13.5:1.5 / 10:2 (по составу глин: каолинит/иллит).");
-    recs.push("Закачка только в matrix-режиме (< 0.05 bbl/min/ft) — давление ниже ГРП.");
-    recs.push("Afterflush ≥ 1.5× объёма main HF — обязательная защита от вторичных осадков.");
+    recs.push("Закачка только в матричном режиме: забойное давление ниже Pгрп (см. расчёт максимального расхода).");
+    recs.push("Afterflush — не меньше объёма основной кислоты: вытесняет HF за зону вторичных осадков.");
   } else {
     recs.push("Карбонат: контролировать Da ≈ 0.29 для оптимального wormholing.");
     recs.push("Preflush необходим при контакте с пластовой водой высокой минерализации.");

@@ -678,7 +678,7 @@ export default function FoamTreatmentSection() {
               <Metric label="Прирост дебита" value={`+${fmt(result.expectedProductionIncreasePct, 0)} %`} accent="ok" />
             </div>
             <p className="text-[11px] text-muted-foreground mt-3">
-              Прогноз по формуле Дюпюи: Q = (k·h·ΔP)/(18.41·μ·B·(ln(Re/rw)+S)).
+              Прогноз по формуле Дюпюи: Q = (k·h·ΔP)/(1.866·μ·B·(ln(Re/rw)+S)), ΔP в МПа.
             </p>
           </div>
 

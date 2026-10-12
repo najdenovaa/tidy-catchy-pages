@@ -89,10 +89,16 @@ export interface IPRResult {
   flowEfficiency: number;
 }
 
+/**
+ * Константа Дюпюи для J [м³/(сут·МПа)] при k [мД], h [м], μ [сПз]:
+ * J = 2π·k·h / (μ·B·(ln(re/rw)+S)) в СИ → C = 1 / (2π·9.869e-16·1e6/1e-3·86400) ≈ 1.866.
+ * (Часто встречающееся 18.41 относится к давлению в атмосферах.)
+ */
+export const DARCY_OIL_CONSTANT = 1 / (2 * Math.PI * 9.869e-16 * 1e6 / 1e-3 * 86400);
+
 /** Радиальный коэффициент продуктивности по Дюпюи, м³/(сут·МПа). */
-function darcyJ(k_mD: number, h: number, mu: number, Bo: number, re: number, rw: number, skin: number): number {
-  // Метрическая форма: J = (k·h) / (18.41·μ·Bo·(ln(re/rw)+S))
-  const denom = 18.41 * mu * Bo * (Math.log(re / rw) + skin);
+export function darcyJ(k_mD: number, h: number, mu: number, Bo: number, re: number, rw: number, skin: number): number {
+  const denom = DARCY_OIL_CONSTANT * mu * Bo * (Math.log(re / rw) + skin);
   return denom > 0 ? (k_mD * h) / denom : 0;
 }
 
@@ -584,8 +590,8 @@ export function mobilityReductionFactor(FQ: number, surfPct: number): number {
 export function calculateInjectivity(
   k_mD: number, h: number, mu_cP: number, re: number, rw: number, skin: number,
 ): number {
-  const denom = mu_cP * (Math.log(re / rw) + skin);
-  return denom > 0 ? (2 * Math.PI * k_mD * h * 86400) / (denom * 1e6) : 0;
+  const denom = DARCY_OIL_CONSTANT * mu_cP * (Math.log(re / rw) + skin);
+  return denom > 0 ? (k_mD * h) / denom : 0;
 }
 
 /**

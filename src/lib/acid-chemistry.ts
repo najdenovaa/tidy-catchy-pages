@@ -54,13 +54,29 @@ export interface DissolvingResult {
   effectiveAcidStrength: number;    // эффективная % HCl с учётом замедлителя
 }
 
-// ── Z-фактор CO₂ (упрощённая корреляция Tr/Pr) ──
+// ── Z-фактор CO₂ по уравнению состояния Пенга–Робинсона ──
+// CO₂: Tc = 304.13 K, Pc = 7.377 МПа, ω = 0.224. Берётся наибольший действительный корень
+// (газ / сверхкритический флюид — типичное состояние CO₂ на забое при T > 31 °C).
 export function co2ZFactor(P_MPa: number, T_K: number): number {
-  const Tc = 304.13, Pc = 7.38;
-  const Tr = T_K / Tc;
-  const Pr = Math.max(0.05, P_MPa) / Pc;
-  const z = 1 - (0.27 * Pr) / Tr + 0.08 * Pr * Pr / (Tr * Tr);
-  return Math.max(0.25, Math.min(1.05, z));
+  const R = 8.314, Tc = 304.13, Pc = 7.377e6, w = 0.224;
+  const P = Math.max(0.01, P_MPa) * 1e6;
+  const kappa = 0.37464 + 1.54226 * w - 0.26992 * w * w;
+  const alpha = (1 + kappa * (1 - Math.sqrt(T_K / Tc))) ** 2;
+  const a = (0.45724 * R * R * Tc * Tc) / Pc * alpha;
+  const b = (0.0778 * R * Tc) / Pc;
+  const A = (a * P) / (R * R * T_K * T_K);
+  const B = (b * P) / (R * T_K);
+  const c2 = -(1 - B), c1 = A - 3 * B * B - 2 * B, c0 = -(A * B - B * B - B * B * B);
+  const f = (z: number) => z * z * z + c2 * z * z + c1 * z + c0;
+  const df = (z: number) => 3 * z * z + 2 * c2 * z + c1;
+  // Ньютон от большого начального значения → наибольший корень
+  let z = Math.max(1, 2 * B + 1);
+  for (let i = 0; i < 100; i++) {
+    const step = f(z) / df(z);
+    z -= step;
+    if (Math.abs(step) < 1e-10) break;
+  }
+  return Number.isFinite(z) && z > B ? z : 1;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -115,6 +131,11 @@ export function calculateDissolvingPower(
     co2GeneratedStdM3PerM3: co2VolStd,
     effectiveAcidStrength,
   };
+}
+
+/** Молярность HCl, моль/л, из массовой концентрации, %. */
+export function hclMolarity(concPct: number): number {
+  return (hclDensity(concPct) * 1000 * (concPct / 100)) / M.HCl;
 }
 
 // ── Скорость реакции HCl–CaCO₃ (Lund-Fogler, Arrhenius) ──

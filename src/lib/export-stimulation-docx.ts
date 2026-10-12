@@ -1,3 +1,4 @@
+import type { MatrixInjectionResult } from "./stimulation-injection";
 /**
  * Экспорт план-программы ОПЗ (модуль интенсификации) в DOCX.
  */
@@ -95,13 +96,14 @@ export interface StimulationExportBundle {
   mineralDissolution?: MineralDissolution | null;
   sensitivity?: SensitivityPoint[];
   pFracMPa?: number;
+  injection?: MatrixInjectionResult & { plannedRateLpm: number };
 }
 
 export async function exportStimulationDocx(b: StimulationExportBundle): Promise<void> {
   const {
     reservoir, method, ranked, acidVolM3, damage, kinetics, stages, forecast, wellName,
     composition, acidLabel, acidDensityGcc, effectiveAcidStrength,
-    stoichiometry, mineralDissolution, sensitivity, pFracMPa,
+    stoichiometry, mineralDissolution, sensitivity, pFracMPa, injection,
   } = b;
 
   const children: (Paragraph | Table)[] = [];
@@ -254,6 +256,21 @@ export async function exportStimulationDocx(b: StimulationExportBundle): Promise
       ...(pFracMPa != null ? [["P гидроразрыва (Eaton), МПа", fmt(pFracMPa, 1)] as [string, string]] : []),
     ]));
     mineralDissolution.warnings.forEach((w) => children.push(textP(`⚠ ${w}`, { color: "B8860B" })));
+  }
+
+  // 6d. Режим матричной закачки
+  if (injection) {
+    children.push(heading("6d. Режим матричной закачки"));
+    children.push(kv([
+      ["Приёмистость при текущем скине / после обработки, м³/(сут·МПа)", `${fmt(injection.injectivityStart, 2)} / ${fmt(injection.injectivityEnd, 2)}`],
+      ["Макс. расход без ГРП: в начале / в конце, л/мин", `${fmt(injection.maxRateStartLpm, 0)} / ${fmt(injection.maxRateEndLpm, 0)}`],
+      ["Плановый расход, л/мин", fmt(injection.plannedRateLpm, 0)],
+      ["Забойное давление при плановом расходе, МПа", fmt(injection.bhpAtPlannedMPa, 1)],
+      ["Давление на устье при плановом расходе, МПа", fmt(injection.surfacePressureMPa, 1)],
+      ["Макс. допустимое давление на устье, МПа", fmt(injection.maxSurfacePressureMPa, 1)],
+      ["Опрессовка нагнетательных линий, МПа", fmt(injection.lineTestPressureMPa, 1)],
+    ]));
+    injection.warnings.forEach((w) => children.push(textP(w, { color: w.startsWith("🔴") ? "C00000" : "B8860B" })));
   }
 
   // 6c. Чувствительность к HCl%

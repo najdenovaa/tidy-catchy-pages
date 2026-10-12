@@ -2,10 +2,10 @@
  * Газовый IPR (Rawlins-Schellhardt / Darcy radial) + газовые повреждения.
  *
  * Применяется для газовых и газоконденсатных скважин:
- *   q_g = (k · h · (P_r² − P_wf²)) / (1422 · μ_g · Z · T · (ln(r_e/r_w) + S))
+ *   q_g = (k · h · (P_r² − P_wf²)) / (1.29 · μ_g · Z · T · (ln(r_e/r_w) + S + D·q))
  *
- * Размерности (метрические/полевые гибрид, как принято в ОПЗ-расчётах РФ):
- *   k — мД, h — м, P — МПа, T — K, μ_g — сПз → q_g [тыс.м³/сут].
+ * Размерности: k — мД, h — м, P — МПа, T — K, μ_g — сПз → q_g [тыс.м³/сут]
+ * при стандартных условиях ГОСТ 2939 (20 °C, 0.101325 МПа).
  *
  * Вспомогательные:
  *   • Z-фактор по Papay (быстрая корреляция, ±3% для P_pr < 15)
@@ -98,6 +98,9 @@ function estimateNonDarcyD(k_mD: number, h_m: number, gravity: number): number {
   return (6e-5 * gravity) / (Math.max(1, h_m) * Math.sqrt(Math.max(0.1, k_mD)));
 }
 
+/** Константа газового притока в метрических единицах (см. вывод в calculateGasIPR). */
+export const GAS_FLOW_CONSTANT = 1 / ((Math.PI * 9.869e-16 * 1e12 * 293.15) / (1e-3 * 101325) * 86400 / 1000);
+
 /* ── Главный расчёт ────────────────────────────────────────────────── */
 export function calculateGasIPR(input: GasIPRInput): GasIPRResult {
   const {
@@ -118,12 +121,12 @@ export function calculateGasIPR(input: GasIPRInput): GasIPRResult {
   const D = input.nonDarcyD ?? estimateNonDarcyD(k, h, gasGravity);
   const lnRatio = Math.log(re / rw);
 
-  // Метрическая форма уравнения газовой радиальной фильтрации (P²-форма):
-  //   q_g [тыс.м³/сут] = (k[мД] × h[м] × (Pr²−Pwf²)[МПа²]) /
-  //                      (C_metric × μ_g[сПз] × Z × T[K] × (ln(re/rw) + S))
-  // C_metric ≈ 12.74 — выведено из псевдодавления для метрических единиц
-  // (эквивалент полевой константы 1422 при пересчёте psi→МПа, ft→м, Mscf/d→тыс.м³/сут).
-  const C_metric = 12.74;
+  // Радиальный приток газа в P²-форме (стационарный, Дарси), вывод в СИ:
+  //   q_ст = π·k·h·(Pr² − Pwf²)·T_ст / (μ·Z·T·P_ст·(ln(re/rw) + S))
+  // k [мД] → ×9.869e-16 м², P [МПа] → ×1e6 Па, μ [сПз] → ×1e-3 Па·с,
+  // стандартные условия ГОСТ 2939: T_ст = 293.15 K, P_ст = 0.101325 МПа; q → тыс.м³/сут.
+  //   q [тыс.м³/сут] = k·h·(Pr²−Pwf²) / (C·μ·Z·T·(ln(re/rw)+S)),  C ≈ 1.29
+  const C_metric = GAS_FLOW_CONSTANT;
   const denom0 = C_metric * mu_g * z * T * (lnRatio + skin);
 
   // Решаем неявно: q = (k·h·(Pr²−Pwf²)) / (C_metric·μ·Z·T·(lnR + S + D·q))
