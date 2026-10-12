@@ -129,6 +129,8 @@ export interface WellData {
   ckodShearPressureMPa?: number; // давление среза пробки на ЦКОД, МПа (по умолчанию 1.5)
   /** Температура нейтрального слоя / поверхности, °C (по умолчанию 15) */
   surfaceTemp?: number;
+  /** Тип обсадной колонны (для нормативной проверки) */
+  casingType?: "direction" | "conductor" | "intermediate" | "production" | "liner";
   /** Профиль центрирования: отступ от стенки (standoff, %) по глубине — из модуля центрирования */
   standoffProfile?: { md: number; standoffPct: number }[];
   /** Средний standoff, %, если профиля нет (по умолчанию 67 — минимум API RP 10D-2) */

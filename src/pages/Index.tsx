@@ -28,6 +28,8 @@ import WOCFromProgram from "@/components/WOCFromProgram";
 import ZoneChecksCard from "@/components/ZoneChecksCard";
 import CementLabSection from "@/components/CementLabSection";
 import ProgramOptimizerSection from "@/components/ProgramOptimizerSection";
+import NormsRiskSection from "@/components/NormsRiskSection";
+import LogisticsSection from "@/components/LogisticsSection";
 import { applyVariant, type ProgramVariant } from "@/lib/cement-optimizer";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
@@ -228,6 +230,11 @@ export default function Index() {
       wellData, drillingFluid, slurries: next, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3,
     }));
   }, [wellData, drillingFluid, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3]);
+
+  const setCasingType = useCallback((t: NonNullable<WellData["casingType"]>) => {
+    setWellData((prev) => ({ ...prev, casingType: t }));
+    setCalcSnapshot((prev) => (prev ? { ...prev, wellData: { ...prev.wellData, casingType: t } } : prev));
+  }, []);
 
   const handleCalculate = useCallback(() => {
     const snapshot = normalizeCementingSnapshot({
@@ -674,6 +681,38 @@ export default function Index() {
                 <ZoneChecksCard zoneChecks={pressureResult.zoneChecks} standoffSource={standoffProfile ? "profile" : "default"} avgStandoffPct={avgStandoffPct} />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="norms">
+            <div data-tab-content="norms">
+              {calcSnapshot && volumes ? (
+                <NormsRiskSection
+                  wellData={snapWellData ?? calcSnapshot.wellData}
+                  slurries={calcSnapshot.slurries}
+                  buffers={calcSnapshot.buffers}
+                  drillingFluid={calcSnapshot.drillingFluid}
+                  displacementFluids={calcSnapshot.displacementFluids}
+                  fractureGradient={calcSnapshot.fractureGradient}
+                  flushTimeMin={calcSnapshot.flushTimeMin}
+                  flushVolumeM3={calcSnapshot.flushVolumeM3}
+                  pressure={pressureResult}
+                  volumes={volumes}
+                  onCasingTypeChange={setCasingType}
+                />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">Нажмите «РАСЧЁТ» для получения результатов</div>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="logistics">
+            <div data-tab-content="logistics">
+              {calcSnapshot && pressureResult && materials ? (
+                <LogisticsSection pressure={pressureResult} materials={materials} slurries={calcSnapshot.slurries} />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">Нажмите «РАСЧЁТ» для получения результатов</div>
               )}
             </div>
           </TabsContent>

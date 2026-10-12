@@ -129,7 +129,8 @@ export function buildLabProgram(
       const reach = points.find((p, i) => i >= firstIdx && p.cumulativeVolume - v0 >= pipeVol);
       rampMin = reach ? reach.time - startT : jobTimeMin;
     }
-    const requiredThickeningMin = Math.ceil(Math.max(jobTimeMin * 1.25, jobTimeMin + 60));
+    // ПБ НГП: расчётная продолжительность цементирования ≤ 75% времени начала загустевания; плюс не менее 30 мин запаса
+    const requiredThickeningMin = Math.ceil(Math.max(jobTimeMin / 0.75, jobTimeMin + 30));
     const tt30 = s.thickeningTime30Bc || 0;
     const warnings: string[] = [];
 
@@ -144,10 +145,10 @@ export function buildLabProgram(
     tests.push({
       test: "Время загустевания (консистометр под давлением)",
       conditions: `BHCT ${bhctUsedC.toFixed(0)} °C, ${maxBhp.toFixed(1)} МПа; выход на режим за ${rampMin.toFixed(0)} мин`,
-      criterion: `до 30 Вс ≥ ${requiredThickeningMin} мин (время работы ${jobTimeMin.toFixed(0)} мин × 1.25, но не менее +60 мин)`,
+      criterion: `до 30 Вс ≥ ${requiredThickeningMin} мин (время работы ${jobTimeMin.toFixed(0)} мин ≤ 75% времени загустевания, запас не менее 30 мин)`,
       actual: tt30 > 0 ? `${tt30} мин` : undefined,
       status: tt30 > 0 ? (tt30 >= requiredThickeningMin ? "ok" : "fail") : "todo",
-      reference: "API RP 10B-2 §9; ПБ НГП — запас ≥ 25%",
+      reference: "API RP 10B-2 §9; ПБ НГП — работа ≤ 75% времени загустевания",
     });
     if (tt30 > 0 && tt30 < requiredThickeningMin) {
       warnings.push(`Время загустевания ${tt30} мин меньше требуемого ${requiredThickeningMin} мин — увеличить дозировку замедлителя или сократить время операции.`);

@@ -107,7 +107,8 @@ describe("Температура и программа испытаний", () =
     const prog = buildLabProgram(well, sl, pr, vols);
     const p = prog.slurries[0];
     expect(p.jobTimeMin).toBeGreaterThan(30);
-    expect(p.requiredThickeningMin).toBeGreaterThanOrEqual(p.jobTimeMin + 60);
+    expect(p.requiredThickeningMin).toBeGreaterThanOrEqual(p.jobTimeMin / 0.75 - 1);
+    expect(p.requiredThickeningMin).toBeGreaterThanOrEqual(p.jobTimeMin + 30);
     expect(p.tests.find((t) => t.test.startsWith("Время загустевания"))!.status).toBe("fail");
     expect(p.tests.some((t) => t.test.startsWith("Статическое напряжение"))).toBe(true); // газ → SGS
     expect(p.tests.find((t) => t.test.startsWith("Водоотдача"))!.criterion).toContain("50");

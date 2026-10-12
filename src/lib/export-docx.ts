@@ -1,4 +1,7 @@
 import { buildLabProgram, buildRecipe } from "./cement-program";
+import { checkNorms, inferCasingType, CASING_TYPE_LABEL } from "./cement-norms";
+import { planLogistics } from "./cement-logistics";
+import { runLossRisk, DEFAULT_RISK, type RiskResult } from "./cement-risk";
 import {
   Document, Packer, Paragraph, Table, TableRow, TableCell,
   TextRun, HeadingLevel, AlignmentType, WidthType,
@@ -119,6 +122,47 @@ function buildLabPage(wellData: WellData, slurries: SlurryInput[], volumes: Volu
     ]) as any);
     r.warnings.forEach((w) => out.push(noteParagraph(`⚠ ${w}`)));
   });
+  return out;
+}
+
+function buildNormsPage(wellData: WellData, slurries: SlurryInput[], buffers: BufferFluid[], drillingFluid: DrillingFluid, volumes: VolumeResults, pressureResult: PressureProfileResult): Paragraph[] {
+  const lab = buildLabProgram(wellData, slurries, pressureResult, volumes);
+  const casingType = wellData.casingType ?? inferCasingType(wellData);
+  const checks = checkNorms({ wellData, slurries, buffers, drillingFluid, pressure: pressureResult, lab, casingType, hasSkc: true });
+  const st: Record<string, string> = { ok: "выполнено", fail: "НАРУШЕНИЕ", warn: "на грани", manual: "проверить", na: "н/п" };
+  const out: Paragraph[] = [sectionTitle(`Проверка по ПБ НГП и рекомендациям (колонна: ${CASING_TYPE_LABEL[casingType].toLowerCase()})`)];
+  out.push(noteParagraph("«Норма ПБ» — ФНП «Правила безопасности в нефтяной и газовой промышленности» (приказ Ростехнадзора № 534), раздел о креплении скважин; «по аналогии» — норма для бурового раствора, применённая к затрубью; «рекомендация» — отраслевая практика / API."));
+  out.push(gridTable(["Требование", "Норматив", "По программе", "Статус", "Тип / источник"], checks.map((c) => [c.title, c.requirement, c.actual, st[c.status], `${c.kind}; ${c.reference}`])) as any);
+  return out;
+}
+
+function buildLogisticsPage(pressureResult: PressureProfileResult, materials: MaterialSummary, slurries: SlurryInput[]): Paragraph[] {
+  const r = planLogistics(pressureResult, materials, slurries);
+  const hm = (m: number) => `${Math.floor(m / 60)} ч ${String(Math.round(m % 60)).padStart(2, "0")} мин`;
+  const out: Paragraph[] = [sectionTitle("Техника, персонал и график работ")];
+  out.push(gridTable(["Техника", "Кол-во", "Обоснование"], r.equipment.map((e) => [e.name, String(e.count), e.note])) as any);
+  out.push(new Paragraph({ children: [] }));
+  out.push(gridTable(["Персонал", "Кол-во, чел."], [...r.personnel.map((p) => [p.role, String(p.count)]), ["Итого", String(r.personnel.reduce((t, p) => t + p.count, 0))]]) as any);
+  out.push(new Paragraph({ children: [] }));
+  out.push(gridTable(["Этап", "Начало", "Длительность"], r.timeline.map((t) => [t.step, hm(t.startMin), hm(t.durationMin)])) as any);
+  r.notes.forEach((n) => out.push(noteParagraph(`⚠ ${n}`)));
+  return out;
+}
+
+function buildRiskPage(r: RiskResult): Paragraph[] {
+  const pc = (v: number) => `${(v * 100).toFixed(1)}%`;
+  const out: Paragraph[] = [sectionTitle(`Вероятностная оценка риска (Монте-Карло, ${r.iterations} реализаций)`)];
+  out.push(kvTable([
+    { label: "Вероятность поглощения", value: pc(r.pLoss) },
+    { label: "Вероятность снижения давления ниже пластового", value: pc(r.pUnderbalance) },
+    { label: "Мин. запас до ГРП/поглощения P10 / P50 / P90, МПа", value: `${fmt(r.margin.p10, 2)} / ${fmt(r.margin.p50, 2)} / ${fmt(r.margin.p90, 2)}` },
+    { label: "Запас по расчёту без разброса, МПа", value: fmt(r.deterministicMargin, 2) },
+    { label: "Верх цемента P10 / P50 / P90, м", value: `${fmt(r.toc.p10, 0)} / ${fmt(r.toc.p50, 0)} / ${fmt(r.toc.p90, 0)} (план ${fmt(r.toc.planned, 0)})` },
+    ...(r.toc.pBelowRequired !== null ? [{ label: "Вероятность подъёма ниже нормы (кровля пласта − 150 м)", value: pc(r.toc.pBelowRequired) }] : []),
+  ]) as any);
+  out.push(new Paragraph({ children: [] }));
+  out.push(gridTable(["Фактор неопределённости", "Влияние на запас (корреляция)"], r.sensitivity.map((x) => [x.factor, x.corr.toFixed(2)])) as any);
+  out.push(noteParagraph("Разброс: градиент ГРП/поглощения σ 4%, пластовое давление σ 3%, кавернозность σ 5%, реология σ 15%, плотность цемента σ 0,015 г/см³, отступ колонны σ 8 п.п., расход σ 5%."));
   return out;
 }
 
@@ -968,8 +1012,25 @@ export async function exportToDocx(
   const materials = preComputed?.materials ?? calculateMaterials(slurries, buffers, wellData);
   const workTimeWithCement = pressureResult.stopTime - pressureResult.cementStartTime;
 
+  const approvalBlock = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [new TableRow({
+      children: ["СОГЛАСОВАНО", "УТВЕРЖДАЮ"].map((h) => new TableCell({
+        borders: { top: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" }, bottom: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" }, left: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" }, right: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" } },
+        width: { size: 50, type: WidthType.PERCENTAGE },
+        children: [
+          new Paragraph({ children: [new TextRun({ text: h, bold: true, size: 22, font: "Calibri" })] }),
+          new Paragraph({ children: [new TextRun({ text: h === "УТВЕРЖДАЮ" ? "Главный инженер" : "Представитель заказчика", size: 20, font: "Calibri" })] }),
+          new Paragraph({ children: [new TextRun({ text: "______________________________", size: 20, font: "Calibri" })] }),
+          new Paragraph({ spacing: { before: 120 }, children: [new TextRun({ text: "______________ / ______________ /", size: 20, font: "Calibri" })] }),
+          new Paragraph({ spacing: { before: 120 }, children: [new TextRun({ text: "«___» ____________ 20__ г.", size: 20, font: "Calibri" })] }),
+        ],
+      })),
+    })],
+  });
   const titlePage: Paragraph[] = [
-    new Paragraph({ spacing: { before: 2000 }, children: [] }),
+    approvalBlock as any,
+    new Paragraph({ spacing: { before: 1400 }, children: [] }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
@@ -1007,6 +1068,13 @@ export async function exportToDocx(
   const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolumeWithCompression, displacementFluids, wellData.casingDepthMD);
   const materialsContent = buildMaterialsPage(materials);
   const labContent = buildLabPage(wellData, slurries, volumes, pressureResult);
+  const normsContent = buildNormsPage(wellData, slurries, buffers, drillingFluid, volumes, pressureResult);
+  const logisticsContent = buildLogisticsPage(pressureResult, materials, slurries);
+  let riskContent: Paragraph[] = [];
+  try {
+    const risk = await runLossRisk({ wellData, drillingFluid, buffers, slurries, displacementFluids, fractureGradient, flushTimeMin: preComputed?.flushTimeMin ?? 10, flushVolumeM3: preComputed?.flushVolumeM3 ?? 0 }, { ...DEFAULT_RISK, iterations: 100 });
+    riskContent = buildRiskPage(risk);
+  } catch { riskContent = []; }
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
   const chartsDataContent = buildChartsDataPage(pressureResult, images?.chartImages);
   const trajectoryContent = buildTrajectoryPage(wellData, images?.visualImages);
@@ -1076,6 +1144,18 @@ export async function exportToDocx(
           }),
         },
         children: labContent,
+      },
+      {
+        properties: {},
+        headers: {
+          default: new Header({
+            children: [new Paragraph({
+              alignment: AlignmentType.RIGHT,
+              children: [new TextRun({ text: "Нормы, техника, риски", size: 16, color: "999999", font: "Calibri", italics: true })],
+            })],
+          }),
+        },
+        children: [...normsContent, ...logisticsContent, ...riskContent],
       },
       {
         properties: {},

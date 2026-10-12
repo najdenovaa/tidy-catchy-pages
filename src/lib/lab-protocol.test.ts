@@ -83,10 +83,10 @@ describe("Протокол", () => {
   it("правка дозировки в протоколе переносится в программу, В/С пересчитывается", () => {
     const { protocol, designs } = buildLabProtocol(input);
     const t = protocol.sections.find((x) => x.id === "recipe-1")!.tables![0];
-    const row = t.rows.find((r) => /Замедлитель/.test(r[1]))!;
+    const row = t.rows.find((r) => /Понизитель водоотдачи/.test(r[1]))!;
     row[3] = "0,35";
     const adds = additivesFromProtocol(protocol, 1, designs)!;
-    expect(adds.find((a) => /Замедлитель/.test(a.name))!.percentage).toBe(0.35);
+    expect(adds.find((a) => /Понизитель водоотдачи/.test(a.name))!.percentage).toBe(0.35);
     const next = applyProtocolToSlurries(protocol, slurries, designs);
     expect(next[1].thickeningTime30Bc).toBe(150); // замер не перезаписан
     expect(next[0].thickeningTime30Bc).toBeGreaterThan(0); // прогноз записан
