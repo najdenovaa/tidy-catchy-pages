@@ -8,6 +8,18 @@ import drillingBanner from "@/assets/drilling-banner.jpg";
 import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
 import { supabase } from "@/integrations/supabase/client";
 
+const AppleIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
+    <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701" />
+  </svg>
+);
+
+const AndroidIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
+    <path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084.0338-.1667.0714-.2493.1092L5.5626 5.5586c-.0943-.1633-.3074-.2209-.4707-.1269-.1634.0943-.2214.3034-.1271.4707L6.9572 9.371C3.7029 11.3036 1.3796 14.9086 1 18.6464h22c-.3796-3.7378-2.7029-7.3428-5.9572-9.2754l1.993-3.4673c.0942-.1673.0362-.3764-.1272-.4707-.1633-.094-.3764-.0364-.4706.1269zm-11.398 6.0078c.6267 0 1.1345.5078 1.1345 1.1345 0 .6266-.5078 1.1344-1.1345 1.1344-.6266 0-1.1344-.5078-1.1344-1.1344 0-.6267.5078-1.1345 1.1344-1.1345zm9.9168 0c.6266 0 1.1344.5078 1.1344 1.1345 0 .6266-.5078 1.1344-1.1344 1.1344-.6267 0-1.1345-.5078-1.1345-1.1344 0-.6267.5078-1.1345 1.1345-1.1345z" />
+  </svg>
+);
+
 const modules = [
   { title: "Цементирование скважин", description: "Программа цементирования, цементные мосты, анализ качества", icon: FlaskConical, to: "/cementing", available: true },
   { title: "Буровые растворы", description: "Подбор и расчёт буровых растворов", icon: Droplets, to: "/drilling-fluids", available: false },
@@ -133,10 +145,20 @@ export default function Home() {
         <footer className="w-full">
           <div className="bg-card border-t border-border py-6">
             <div className="max-w-5xl mx-auto px-4 text-center space-y-3">
-              <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
                 <a href="https://t.me/deallbiz_bot" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">🧪 Бот химической продукции DeAll</a>
                 <span className="text-border">|</span>
                 <a href="https://t.me/deallbiz" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">📢 Новостной канал DeAll</a>
+                <span className="text-border">|</span>
+                <a href="https://apps.apple.com/ru/app/deallsoft/id6793684019" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
+                  <AppleIcon className="w-3.5 h-3.5" />
+                  Приложение в App Store
+                </a>
+                <span className="text-border">|</span>
+                <a href="https://www.rustore.ru/catalog/app/app.rork.w7r61ukk1hg2jt8ys7bgb" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
+                  <AndroidIcon className="w-3.5 h-3.5" />
+                  Приложение Android
+                </a>
               </div>
               <div className="pt-2 border-t border-border/50">
                 <Link to="/terms" className="text-xs text-muted-foreground hover:text-primary transition-colors">
