@@ -30,6 +30,7 @@ import CementLabSection from "@/components/CementLabSection";
 import ProgramOptimizerSection from "@/components/ProgramOptimizerSection";
 import NormsRiskSection from "@/components/NormsRiskSection";
 import LogisticsSection from "@/components/LogisticsSection";
+import SkcControlSection from "@/components/SkcControlSection";
 import { applyVariant, type ProgramVariant, type CentralizerPlan } from "@/lib/cement-optimizer";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
@@ -240,6 +241,11 @@ export default function Index() {
   const setCasingType = useCallback((t: NonNullable<WellData["casingType"]>) => {
     setWellData((prev) => ({ ...prev, casingType: t }));
     setCalcSnapshot((prev) => (prev ? { ...prev, wellData: { ...prev.wellData, casingType: t } } : prev));
+  }, []);
+
+  const applyCalibration = useCallback((patch: { frictionCalibration: number; cavernCoeff?: number }) => {
+    setWellData((prev) => ({ ...prev, ...patch }));
+    setCalcSnapshot((prev) => (prev ? { ...prev, wellData: { ...prev.wellData, ...patch } } : prev));
   }, []);
 
   const handleCalculate = useCallback(() => {
@@ -719,6 +725,25 @@ export default function Index() {
                 <LogisticsSection pressure={pressureResult} materials={materials} slurries={calcSnapshot.slurries} />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАСЧЁТ» для получения результатов</div>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="skc">
+            <div data-tab-content="skc">
+              {calcSnapshot && pressureResult && volumes ? (
+                <SkcControlSection
+                  wellData={snapWellData ?? calcSnapshot.wellData}
+                  slurries={calcSnapshot.slurries}
+                  buffers={calcSnapshot.buffers}
+                  drillingFluid={calcSnapshot.drillingFluid}
+                  displacementFluids={calcSnapshot.displacementFluids}
+                  plan={pressureResult}
+                  volumes={volumes}
+                  onApplyCalibration={applyCalibration}
+                />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">Нажмите «РАСЧЁТ» — запись станции сравнивается с расчётом программы</div>
               )}
             </div>
           </TabsContent>

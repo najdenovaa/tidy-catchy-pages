@@ -210,6 +210,7 @@ export function normalizeWellData(value: unknown): WellData {
     reservoirLayers: reservoirLayers && reservoirLayers.length > 0 ? reservoirLayers : undefined,
     ...(typeof source.casingType === "string" && ["direction", "conductor", "intermediate", "production", "liner"].includes(source.casingType)
       ? { casingType: source.casingType as WellData["casingType"] } : {}),
+    ...(toNumber(source.frictionCalibration, 0) > 0 ? { frictionCalibration: toNumber(source.frictionCalibration, 1) } : {}),
     ...(toNumber(source.ckodShearPressureMPa, 0) > 0 ? { ckodShearPressureMPa: toNumber(source.ckodShearPressureMPa, 0) } : {}),
     ...(source.surfaceTemp !== undefined && source.surfaceTemp !== null && source.surfaceTemp !== "" && Number.isFinite(Number(source.surfaceTemp)) ? { surfaceTemp: Number(source.surfaceTemp) } : {}),
   };

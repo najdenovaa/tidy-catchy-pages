@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Text, Line, Grid } from "@react-three/drei";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import CopyImageButton from "./CopyImageButton";
@@ -734,7 +734,7 @@ export default function WellVisualization(props: Props) {
         </CardHeader>
         <CardContent>
           <div ref={vis3dRef} className="rounded-lg border border-border overflow-hidden" style={{ height: "550px" }}>
-            <Canvas camera={{ position: [1.5, -0.3, 1.5], fov: 45, near: 0.001, far: 100 }} gl={{ preserveDrawingBuffer: true }}>
+            <Canvas frameloop="demand" camera={{ position: [1.5, -0.3, 1.5], fov: 45, near: 0.001, far: 100 }} gl={{ preserveDrawingBuffer: true }}>
               <WellScene3D {...props} />
             </Canvas>
           </div>

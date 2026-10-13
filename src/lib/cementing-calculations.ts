@@ -129,6 +129,8 @@ export interface WellData {
   ckodShearPressureMPa?: number; // давление среза пробки на ЦКОД, МПа (по умолчанию 1.5)
   /** Температура нейтрального слоя / поверхности, °C (по умолчанию 15) */
   surfaceTemp?: number;
+  /** Калибровочный множитель трения по факту предыдущих работ (1 — без калибровки) */
+  frictionCalibration?: number;
   /** Тип обсадной колонны (для нормативной проверки) */
   casingType?: "direction" | "conductor" | "intermediate" | "production" | "liner";
   /** Профиль центрирования: отступ от стенки (standoff, %) по глубине — из модуля центрирования */
@@ -1170,6 +1172,8 @@ export interface PressurePoint {
   ecdStaticAtBottomGcm3?: number; // Статическая ЭЦП на забое (без трения), г/см³
   fracGradEcdGcm3?: number;       // Градиент ГРП в единицах плотности, г/см³
   porePressureEcdGcm3?: number;   // Пластовое давление в единицах плотности, г/см³
+  /** Давление на устье без трения (разность гидростатик затрубья и трубы), МПа */
+  surfaceStaticMPa?: number;
 }
 
 /** ЭЦП = (P_гидростат + ΔP_трение) / (0.00981 × TVD). Результат в г/см³. */
@@ -1726,6 +1730,8 @@ export function calculatePressureProfile(
   }
 
   const SUBSTEP_M = opts.fast ? 100 : 50;
+  /** Калибровка по факту: множитель на все потери на трение */
+  const kFriction = wellData.frictionCalibration && wellData.frictionCalibration > 0 ? wellData.frictionCalibration : 1;
   const standoffProf = wellData.standoffProfile && wellData.standoffProfile.length > 0
     ? [...wellData.standoffProfile].sort((a, b) => a.md - b.md) : null;
   function standoffAt(md: number): number {
@@ -1763,7 +1769,7 @@ export function calculatePressureProfile(
         z = zTop;
       }
     }
-    return { pressureMPa: p, reynolds: re, regime };
+    return { pressureMPa: p * kFriction, reynolds: re, regime };
   }
 
   // Точки проверки: забой (общий градиент ГРП) + кровля и подошва каждого пласта (мин. из ГРП и поглощения)
@@ -1969,10 +1975,10 @@ export function calculatePressureProfile(
         const annP = calcAnnularProfile();
         points.push({
           stage: s.name, time: tNow,
-          surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP,
+          surfacePressure: surfP, surfaceStaticMPa: surfP, bottomholePressure: bhp, fracturePressure: fracP,
           cumulativeVolume: savedCumVol, pumpRateLps: 0, annularReturnRate: returnRateLps,
           flowRegimeAnn: 0, reynoldsAnn: 0,
-          maxSafeRateLps: maxSafeRateNow(annularSegments()),
+          maxSafeRateLps: opts.fast ? 0 : maxSafeRateNow(annularSegments()),
           densityGcm3: mudDensityGcm3,
           annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH,
           freefallSettledM3: currentFreefallSettled,
@@ -2065,7 +2071,7 @@ export function calculatePressureProfile(
       // Пересчёт трения
       const frPipePumpedActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3, "pipe", s.hb);
       const frPipeMudActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, mudRheo.pv, mudRheo.yp, pipeAreaM2, drillingFluid.density, "pipe", hbOf(mudRheo));
-      const frPipe = frPipePumpedActual.pressureMPa * filledFraction + frPipeMudActual.pressureMPa * (1 - filledFraction);
+      const frPipe = (frPipePumpedActual.pressureMPa * filledFraction + frPipeMudActual.pressureMPa * (1 - filledFraction)) * kFriction;
 
       // Трение в затрубье — послойно по фактическому заполнению, с эксцентриситетом по глубине
       const segsNow = annularSegments();
@@ -2102,7 +2108,7 @@ export function calculatePressureProfile(
         const frictionAtShoe = annFrictionAbove(actualFlowRateM3min, prevShoe, segsNow).pressureMPa;
         ecdPrevShoe = (hydroAtShoe + frictionAtShoe) / (0.00981 * prevShoeTVD);
       }
-      points.push({ stage: s.name, time: tNow, surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: opts.fast ? 0 : maxSafeRateNow(segsNow), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps, ecdAtBottomGcm3: ecdBottom, ecdStaticAtBottomGcm3: ecdStaticBottom, ecdAtPrevShoeGcm3: ecdPrevShoe, fracGradEcdGcm3, porePressureEcdGcm3 });
+      points.push({ stage: s.name, time: tNow, surfaceStaticMPa: Math.max(0, annHydro - pipeHydro), surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: opts.fast ? 0 : maxSafeRateNow(segsNow), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps, ecdAtBottomGcm3: ecdBottom, ecdStaticAtBottomGcm3: ecdStaticBottom, ecdAtPrevShoeGcm3: ecdPrevShoe, fracGradEcdGcm3, porePressureEcdGcm3 });
 
       trackZones(actualFlowRateM3min, segsNow, s.name, tNow);
 
