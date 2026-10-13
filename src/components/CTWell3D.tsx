@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Text, Line } from "@react-three/drei";
 import * as THREE from "three";
 import type { TrajectoryPoint } from "@/lib/coiled-tubing-calculations";
+import { FONT_3D } from "@/lib/three-font";
 
 // ====== Convert trajectory survey to 3D coordinates ======
 function trajectoryTo3DRaw(traj: TrajectoryPoint[], maxMD: number) {
@@ -103,7 +104,7 @@ function DepthMarker({ position, label, offset }: { position: [number, number, n
         <sphereGeometry args={[0.008, 8, 8]} />
         <meshBasicMaterial color="#ffffff" />
       </mesh>
-      <Text
+      <Text font={FONT_3D}
         position={[position[0] + offset[0], position[1] + offset[1], position[2] + offset[2]]}
         fontSize={0.035}
         color="#aaaaaa"
@@ -202,9 +203,9 @@ function WellScene({ trajectory, maxMD }: { trajectory: TrajectoryPoint[]; maxMD
       </group>
 
       {/* Axis labels */}
-      <Text position={[gridSize / 2 + 0.05, 0, 0]} fontSize={0.025} color="#666">X</Text>
-      <Text position={[0, 0, gridSize / 2 + 0.05]} fontSize={0.025} color="#666">Z</Text>
-      <Text position={[-gridSize / 2 - 0.05, bottomY / 2, 0]} fontSize={0.025} color="#666">TVD</Text>
+      <Text font={FONT_3D} position={[gridSize / 2 + 0.05, 0, 0]} fontSize={0.025} color="#666">X</Text>
+      <Text font={FONT_3D} position={[0, 0, gridSize / 2 + 0.05]} fontSize={0.025} color="#666">Z</Text>
+      <Text font={FONT_3D} position={[-gridSize / 2 - 0.05, bottomY / 2, 0]} fontSize={0.025} color="#666">TVD</Text>
 
       {/* Well tube (casing) */}
       <WellTube path={pathForRange(0, maxMD)} radius={tubeRadius} color="#A8A8A8" opacity={0.6} />
@@ -218,7 +219,7 @@ function WellScene({ trajectory, maxMD }: { trajectory: TrajectoryPoint[]; maxMD
       ))}
 
       {/* Surface marker */}
-      <Text position={[0, 0.08, 0]} fontSize={0.025} color="#999">
+      <Text font={FONT_3D} position={[0, 0.08, 0]} fontSize={0.025} color="#999">
         Устье
       </Text>
 
@@ -227,7 +228,7 @@ function WellScene({ trajectory, maxMD }: { trajectory: TrajectoryPoint[]; maxMD
         <coneGeometry args={[tubeRadius * 2, 0.02, 12]} />
         <meshStandardMaterial color="#FF6B35" emissive="#FF4500" emissiveIntensity={0.3} />
       </mesh>
-      <Text
+      <Text font={FONT_3D}
         position={[shoePos[0] + tubeRadius * 4, shoePos[1], shoePos[2]]}
         fontSize={0.028}
         color="#f59e0b"

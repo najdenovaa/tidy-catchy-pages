@@ -1,0 +1,7 @@
+deallsoft-3d.woff — подмножество шрифта DejaVu Sans (https://dejavu-fonts.github.io/).
+Fonts are (c) Bitstream (see below). DejaVu changes are in public domain.
+Bitstream Vera Fonts Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved. Bitstream Vera is a trademark of Bitstream, Inc.
+Permission is hereby granted, free of charge, to any person obtaining a copy of the fonts accompanying this license ("Fonts")
+and associated documentation files, to reproduce and distribute the Font Software, including without limitation the rights
+to use, copy, merge, publish, distribute, and/or sell copies of the Font Software, subject to the conditions of the
+Bitstream Vera Fonts license: https://dejavu-fonts.github.io/License.html

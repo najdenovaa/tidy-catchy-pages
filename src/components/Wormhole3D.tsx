@@ -2,6 +2,7 @@ import { useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text } from "@react-three/drei";
 import * as THREE from "three";
+import { FONT_3D } from "@/lib/three-font";
 
 interface Props {
   wormholeLengthM: number;
@@ -184,7 +185,7 @@ function Scene({
         {segs.map((s, i) => <Channel key={i} seg={s} color={reagentColor} />)}
       </group>
 
-      <Text position={[0, h / 2 + 0.18, 0]} fontSize={0.07} color="#cbd5e1" anchorX="center">
+      <Text font={FONT_3D} position={[0, h / 2 + 0.18, 0]} fontSize={0.07} color="#cbd5e1" anchorX="center">
         {`r_w=${wellboreRadiusM.toFixed(2)} м · R=${penetrationRadiusM.toFixed(2)} м · L_wh=${wormholeLengthM.toFixed(2)} м · h=${payZoneM.toFixed(1)} м`}
       </Text>
 

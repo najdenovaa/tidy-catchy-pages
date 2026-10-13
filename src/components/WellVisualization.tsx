@@ -8,6 +8,7 @@ import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFlu
 import { getSlurryHeight, interpolateTVD, getCasingID, pipeVolumePerMeter, annularVolumePerMeter } from "@/lib/cementing-calculations";
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import * as THREE from "three";
+import { FONT_3D } from "@/lib/three-font";
 
 interface Props {
   wellData: WellData;
@@ -138,7 +139,7 @@ function DepthMarker({ position, label, offset }: { position: [number, number, n
         <sphereGeometry args={[0.008, 8, 8]} />
         <meshBasicMaterial color="#ffffff" />
       </mesh>
-      <Text
+      <Text font={FONT_3D}
         position={[position[0] + offset[0], position[1] + offset[1], position[2] + offset[2]]}
         fontSize={0.035}
         color="#aaaaaa"
@@ -292,9 +293,9 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
       </group>
 
       {/* Axis labels */}
-      <Text position={[gridSize / 2 + 0.05, 0, 0]} fontSize={0.025} color="#666">X</Text>
-      <Text position={[0, 0, gridSize / 2 + 0.05]} fontSize={0.025} color="#666">Z</Text>
-      <Text position={[-gridSize / 2 - 0.05, bottomY / 2, 0]} fontSize={0.025} color="#666">TVD</Text>
+      <Text font={FONT_3D} position={[gridSize / 2 + 0.05, 0, 0]} fontSize={0.025} color="#666">X</Text>
+      <Text font={FONT_3D} position={[0, 0, gridSize / 2 + 0.05]} fontSize={0.025} color="#666">Z</Text>
+      <Text font={FONT_3D} position={[-gridSize / 2 - 0.05, bottomY / 2, 0]} fontSize={0.025} color="#666">TVD</Text>
 
       {/* Rock / Formation — open hole */}
       <WellTube path={pathForRange(wellData.prevCasingDepth, wellData.casingDepthMD)} radius={holeR * 1.3} color={ROCK_COLOR_3D} opacity={0.3} />
@@ -314,13 +315,13 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
           )}
           {/* Label */}
           {prevCasingLabelPos && (
-            <Text position={prevCasingLabelPos} fontSize={0.028} color={PREV_CASING_STEEL} anchorX="left" fontWeight={600}>
+            <Text font={FONT_3D} position={prevCasingLabelPos} fontSize={0.028} color={PREV_CASING_STEEL} anchorX="left" fontWeight={600}>
               {`Кондуктор ∅${wellData.prevCasingOD} (${wellData.prevCasingDepth}м)`}
             </Text>
           )}
           {/* Shoe depth label */}
           {prevCasingShoePos && (
-            <Text
+            <Text font={FONT_3D}
               position={[prevCasingShoePos[0] + holeR * 3, prevCasingShoePos[1], prevCasingShoePos[2]]}
               fontSize={0.025}
               color="#BBBBBB"
@@ -395,7 +396,7 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
         const midMD = (sec.mdTop + sec.mdBot) / 2;
         const p = interpAt(pts3d, midMD);
         return (
-          <Text key={`cl3d-${i}`} position={[p.x * scale - holeR * 3, p.y * scale, p.z * scale]} fontSize={0.03} color={sec.color} anchorX="right" fontWeight={700}>
+          <Text font={FONT_3D} key={`cl3d-${i}`} position={[p.x * scale - holeR * 3, p.y * scale, p.z * scale]} fontSize={0.03} color={sec.color} anchorX="right" fontWeight={700}>
             {sec.name}
           </Text>
         );
@@ -405,14 +406,14 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
         const midMD = (buf.mdTop + buf.mdBot) / 2;
         const p = interpAt(pts3d, midMD);
         return (
-          <Text key={`bl3d-${i}`} position={[p.x * scale - holeR * 3, p.y * scale, p.z * scale]} fontSize={0.025} color={buf.color} anchorX="right">
+          <Text font={FONT_3D} key={`bl3d-${i}`} position={[p.x * scale - holeR * 3, p.y * scale, p.z * scale]} fontSize={0.025} color={buf.color} anchorX="right">
             {buf.name}
           </Text>
         );
       })}
 
       {/* Axis label */}
-      <Text position={[0, 0.08, 0]} fontSize={0.025} color="#999">
+      <Text font={FONT_3D} position={[0, 0.08, 0]} fontSize={0.025} color="#999">
         Устье
       </Text>
 

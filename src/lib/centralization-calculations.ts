@@ -292,6 +292,8 @@ export function calculateCentralization(
   mudDensity: number,
   turbulators?: TurbulatorInterval[],
   turbulatorPoints?: TurbulatorPoint[],
+  /** Считать только точки в диапазоне MD (для проверки отдельных участков) */
+  range?: { fromMD: number; toMD: number },
 ): CentralizationResult[] {
   const results: CentralizationResult[] = [];
   const step = 5;
@@ -310,7 +312,9 @@ export function calculateCentralization(
   const prevCasingDepth = wellData.prevCasingDepth || 0;
   const prevCasingID = wellData.prevCasingID || wellData.holeDiameter;
 
-  for (let md = 0; md <= wellData.casingDepthMD; md += step) {
+  const mdStart = range ? Math.max(0, Math.ceil(range.fromMD / step) * step) : 0;
+  const mdEnd = range ? Math.min(wellData.casingDepthMD, range.toMD) : wellData.casingDepthMD;
+  for (let md = mdStart; md <= mdEnd; md += step) {
     const { tvd, zenith } = interpolateTrajectory(wellData.trajectory, md);
 
     // Локальный диаметр ствола (предыдущая колонна vs открытый ствол).
@@ -640,10 +644,33 @@ export function autoPlaceCentralizers(
     }
   }
 
+  // Проверка и доводка по полной модели центрирования (calculateCentralization): она учитывает не только
+  // вес колонны, но и прижатие натяжением на участках кривизны. Упрощённая оценка выше этого не видит и на
+  // участках набора угла может давать «1 центратор на 10 труб» там, где колонна фактически лежит на стенке.
+  const CPJ_LADDER = [0.07, 0.1, 0.2, 0.25, 0.34, 0.5, 0.75, 1, 1.5, 2, 3, 4];
+  const verifiedStandoff = (seg: RawSeg, cpj: number): number => {
+    const prof = calculateCentralization(
+      wellData,
+      [{ id: "verify", fromMD: seg.fromMD, toMD: seg.toMD, centralizersPerJoint: cpj, jointLength, spec }],
+      mudDensity, undefined, undefined, { fromMD: seg.fromMD, toMD: seg.toMD },
+    );
+    return prof.length ? Math.min(...prof.map((r) => r.standoff)) : 100;
+  };
+
   const computed = rawSegments.map(seg => {
     const zone = classify(seg);
-    const { cpj, standoff } = solveForZone(seg, zone);
-    return { ...seg, zone, cpj, standoff };
+    const first = solveForZone(seg, zone);
+    let cpj = first.cpj;
+    let standoff = verifiedStandoff(seg, cpj);
+    if (standoff < targetStandoff) {
+      for (const c of CPJ_LADDER) {
+        if (c <= cpj) continue;
+        const so = verifiedStandoff(seg, c);
+        cpj = c; standoff = so;
+        if (so >= targetStandoff) break;
+      }
+    }
+    return { ...seg, zone, cpj, standoff: Math.round(standoff * 10) / 10 };
   });
 
   const merged: AutoPlacementInterval[] = [];
