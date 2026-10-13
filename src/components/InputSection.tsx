@@ -7,7 +7,7 @@ import { additiveSG } from "@/lib/cement-program";
 import { Label } from "@/components/ui/label";
 import { useState, memo, useCallback, useMemo, ChangeEvent } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
-import { getCasingID, getSlurryHeight, annularVolumePerMeter, annularVolumeForInterval, hydrostaticPressure, interpolateTVD, calculateTVDFromSurvey, calculateCement, calculateAdditiveMass, effectiveRheology, cementCategory, calculateHydraulics, getFlowRateLps } from "@/lib/cementing-calculations";
+import { buildDisplacementSchedule, getCasingID, getSlurryHeight, annularVolumePerMeter, annularVolumeForInterval, hydrostaticPressure, interpolateTVD, calculateTVDFromSurvey, calculateCement, calculateAdditiveMass, effectiveRheology, cementCategory, calculateHydraulics, getFlowRateLps } from "@/lib/cementing-calculations";
 import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, AdditivePercentageType, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval, ReservoirLayer } from "@/lib/cementing-calculations";
 import * as XLSX from "xlsx";
 
@@ -62,9 +62,10 @@ function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: bool
   );
 }
 
-const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck, isDynamic }: {
+const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck, isDynamic, remainderLabel }: {
   steps: FlowRateStep[];
   totalVolume: number;
+  remainderLabel?: string;
   onChange: (s: FlowRateStep[]) => void;
   fracCheck?: (rateLps: number) => { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null;
   isDynamic?: boolean;
@@ -121,7 +122,7 @@ const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolu
       })}
       {totalVolume > 0 && (
         <div className={`text-xs ${Math.abs(remaining) < 0.01 ? "text-muted-foreground" : "text-destructive font-medium"}`}>
-          Остаток: {remaining.toFixed(2)} м³ из {totalVolume.toFixed(2)} м³
+          Остаток: {remaining.toFixed(2)} м³ из {totalVolume.toFixed(2)} м³{remainderLabel ? ` (${remainderLabel})` : ""}
         </div>
       )}
     </div>
@@ -1121,10 +1122,22 @@ export default function InputSection(props: Props) {
                 })()}
               </div>
             )}
-            {displacementFluids.map((df, idx) => (
+            {displacementFluids.map((df, idx) => {
+              const explicitOf = (d: DisplacementFluid) => d.flowRateSteps.reduce((ss, st) => ss + (st.volumeM3 || 0), 0);
+              const othersExplicit = displacementFluids.reduce((t, d, j) => (j === idx ? t : t + explicitOf(d)), 0);
+              const portionVol = calcDispVol > 0
+                ? buildDisplacementSchedule(displacementFluids, calcDispVol).filter((it) => it.fluidIndex === idx).reduce((t, it) => t + it.volumeM3, 0)
+                : explicitOf(df);
+              const hasAuto = df.flowRateSteps.some((st) => !(st.volumeM3 > 0));
+              return (
               <div key={idx} className="p-3 rounded-lg bg-muted/30 space-y-3 border border-border/50">
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">{df.name}</span>
+                  <span className="font-medium text-sm">
+                    {displacementFluids.length > 1 ? `${idx + 1}. ` : ""}{df.name}
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      объём порции: <b className="text-foreground">{portionVol.toFixed(2)} м³</b>{hasAuto ? " (с автоостатком)" : ""}
+                    </span>
+                  </span>
                   <div className="flex items-center gap-2">
                     {idx > 0 && (
                       <button onClick={() => { const u = [...displacementFluids]; [u[idx - 1], u[idx]] = [u[idx], u[idx - 1]]; onDisplacementFluidsChange(u); }} className="text-xs px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground" title="Вверх">↑</button>
@@ -1145,10 +1158,11 @@ export default function InputSection(props: Props) {
                 <FannEditor rheology={df.rheology} onChange={(r) => { const u = [...displacementFluids]; u[idx] = { ...u[idx], rheology: r }; onDisplacementFluidsChange(u); }} />
                 <FlowRateStepsEditor
                   steps={df.flowRateSteps}
-                  totalVolume={calcDispVol}
+                  totalVolume={Math.max(0, calcDispVol - othersExplicit)}
                   onChange={(steps) => { const u = [...displacementFluids]; u[idx] = { ...u[idx], flowRateSteps: steps }; onDisplacementFluidsChange(u); }}
                   fracCheck={(rateLps) => fracCheck(rateLps, df.density, df.rheology.pv, df.rheology.yp, true, df.name)}
                   isDynamic={!!dynamicBHPMap}
+                  remainderLabel={displacementFluids.length > 1 ? "доступно для этой порции с учётом остальных" : undefined}
                 />
                 {onCalculate && (
                   <button
@@ -1159,7 +1173,14 @@ export default function InputSection(props: Props) {
                   </button>
                 )}
               </div>
-            ))}
+              );
+            })}
+            {displacementFluids.length > 1 && (
+              <div className="text-[11px] text-muted-foreground">
+                Порции закачиваются подряд и вместе составляют одну продавку: заданные объёмы сохраняются, режимы без объёма (пусто или 0)
+                получают остаток до расчётного объёма. Если сумма больше расчётной — лишнее срезается с конца (пробка сядет раньше).
+              </div>
+            )}
           </CardContent>
         )}
       </Card>

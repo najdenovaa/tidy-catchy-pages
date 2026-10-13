@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildDisplacementSchedule,
   annularFrictionMPa, eccentricityFrictionFactor, calculatePressureProfile, calculateVolumes,
   annularVolumeForInterval, type WellData,
 } from "./cementing-calculations";
@@ -73,5 +74,22 @@ describe("Симуляция цементирования: проверка по
     const good = run({ ...well, annularStandoffPct: 100 });
     const bad = run({ ...well, annularStandoffPct: 30 });
     expect(bad.zoneChecks[0].maxPressureMPa).toBeLessThan(good.zoneChecks[0].maxPressureMPa);
+  });
+});
+
+describe("многопорционная продавка", () => {
+  const rh = { model: "bingham" as const, pv: 10, yp: 5 } as any;
+  const df = (name: string, steps: { rateLps: number; volumeM3: number }[]) => ({ name, density: 1100, rheology: rh, flowRateSteps: steps, compressionCoeff: 1 });
+  it("порции суммируются, автоостаток добирает общий объём", () => {
+    const s = buildDisplacementSchedule([df("Буфер-продавка", [{ rateLps: 10, volumeM3: 3 }]), df("Раствор", [{ rateLps: 15, volumeM3: 0 }]), df("Вода", [{ rateLps: 8, volumeM3: 2 }])], 20);
+    expect(s.map((x) => x.volumeM3)).toEqual([3, 15, 2]);
+    expect(s.reduce((a, x) => a + x.volumeM3, 0)).toBeCloseTo(20, 9);
+    expect(s[1].auto).toBe(true);
+    expect(s.map((x) => x.fluidIndex)).toEqual([0, 1, 2]);
+  });
+  it("избыток заданных объёмов срезается с конца", () => {
+    const s = buildDisplacementSchedule([df("A", [{ rateLps: 10, volumeM3: 12 }]), df("B", [{ rateLps: 10, volumeM3: 12 }])], 20);
+    expect(s.reduce((a, x) => a + x.volumeM3, 0)).toBeCloseTo(20, 9);
+    expect(s[0].volumeM3).toBe(12);
   });
 });

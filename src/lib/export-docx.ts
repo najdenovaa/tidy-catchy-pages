@@ -19,7 +19,7 @@ import {
   calculateVolumes, calculateHydraulics, calculateSafeTime, calculateBHCT,
   calculateMaterials, calculatePressureProfile,
   getSlurryHeight, getCasingID, interpolateTVD, getFlowRateLps, getEffectiveTrajectory,
-  annularVolumePerMeter, pipeVolumePerMeter,
+  annularVolumePerMeter, pipeVolumePerMeter, buildDisplacementSchedule,
 } from "./cementing-calculations";
 
 const fmt = (v: number, dec = 2) => v.toFixed(dec);
@@ -504,30 +504,11 @@ function buildSchedulePage(buffers: BufferFluid[], slurries: SlurryInput[], annu
 
   stages.push({ name: "Промывка ЛВД, сброс пробки", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.5 });
 
-  const totalConfiguredDispVolume = displacementFluids.reduce(
-    (sum, df) => sum + df.flowRateSteps.reduce((stepSum, step) => stepSum + step.volumeM3, 0),
-    0
-  );
-  const totalDispStages = displacementFluids.reduce((sum, df) => sum + Math.max(df.flowRateSteps.length, 1), 0) || 1;
-  const configuredDispScale = totalConfiguredDispVolume > 0 ? displacementVolume / totalConfiguredDispVolume : 1;
-  const fallbackDispStageVolume = totalConfiguredDispVolume > 0 ? 0 : displacementVolume / totalDispStages;
-
-  displacementFluids.forEach((df, dfIdx) => {
-    const label = displacementFluids.length > 1 ? `${df.name} (порция ${dfIdx + 1})` : df.name;
-    if (df.flowRateSteps.length > 0) {
-      const totalStepVol = df.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
-      if (totalStepVol > 0) {
-        df.flowRateSteps.forEach((step, si) => {
-          if (step.volumeM3 > 0) stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 * configuredDispScale });
-        });
-      } else {
-        df.flowRateSteps.forEach((step, si) => {
-          stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: fallbackDispStageVolume });
-        });
-      }
-    } else {
-      stages.push({ name: `Продавка: ${label}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: defaultRate, volume: fallbackDispStageVolume });
-    }
+  buildDisplacementSchedule(displacementFluids, displacementVolume).forEach((it) => {
+    const df = displacementFluids[it.fluidIndex];
+    const portion = displacementFluids.length > 1 ? ` (порция ${it.fluidIndex + 1})` : "";
+    const mode = df.flowRateSteps.length > 1 ? ` (режим ${it.stepIndex + 1})` : "";
+    stages.push({ name: `Продавка: ${df.name}${portion}${mode}${it.auto ? " — остаток" : ""}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: it.rateLps > 0 ? it.rateLps : defaultRate, volume: it.volumeM3 });
   });
 
   stages.push({ name: "Фиксация «СТОП», проверка ЦКОД", fluid: "—", rateLps: 0, volume: 0 });

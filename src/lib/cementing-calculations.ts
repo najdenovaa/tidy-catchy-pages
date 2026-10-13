@@ -606,6 +606,10 @@ export interface DisplacementScheduleItem {
   volumeM3: number;
   compressionCoeff: number;
   fluidIndex: number;
+  /** Номер режима внутри порции */
+  stepIndex: number;
+  /** Объём задан автоматически (остаток до расчётного) */
+  auto: boolean;
 }
 
 /**
@@ -630,7 +634,7 @@ export function buildDisplacementSchedule(
     const steps = Array.isArray(df.flowRateSteps) && df.flowRateSteps.length > 0
       ? df.flowRateSteps
       : [{ rateLps: 0, volumeM3: 0 }];
-    steps.forEach(step => {
+    steps.forEach((step, si) => {
       const vol = Math.max(0, step.volumeM3 || 0);
       items.push({
         name: df.name,
@@ -640,6 +644,8 @@ export function buildDisplacementSchedule(
         volumeM3: vol,
         compressionCoeff: df.compressionCoeff || 1.0,
         fluidIndex: fi,
+        stepIndex: si,
+        auto: vol <= 0,
       });
       if (vol <= 0) openIdx.push(items.length - 1);
     });

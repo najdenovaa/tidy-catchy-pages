@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getSlurryHeight, annularVolumeForInterval } from "@/lib/cementing-calculations";
+import { getSlurryHeight, annularVolumeForInterval, buildDisplacementSchedule } from "@/lib/cementing-calculations";
 import type { BufferFluid, SlurryInput, DisplacementFluid, WellData } from "@/lib/cementing-calculations";
 
 interface Props {
@@ -83,35 +83,20 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
   // 4. Промывка ЛВД
   stages.push({ name: "Промывка ЛВД, сброс пробки", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.5 });
 
-  // 5. Продавка — по порциям (с коэф. сжатия и без)
-  const totalConfiguredDispVolume = displacementFluids.reduce(
-    (sum, df) => sum + df.flowRateSteps.reduce((stepSum, step) => stepSum + step.volumeM3, 0),
-    0
-  );
-  const totalDispStages = displacementFluids.reduce((sum, df) => sum + Math.max(df.flowRateSteps.length, 1), 0) || 1;
-  const configuredDispScale = totalConfiguredDispVolume > 0 ? displacementVolume / totalConfiguredDispVolume : 1;
-  const rawDispScale = totalConfiguredDispVolume > 0 ? rawDisplacementVolume / totalConfiguredDispVolume : 1;
-  const fallbackDispStageVolume = totalConfiguredDispVolume > 0 ? 0 : displacementVolume / totalDispStages;
-  const fallbackRawStageVolume = totalConfiguredDispVolume > 0 ? 0 : rawDisplacementVolume / totalDispStages;
-
-  displacementFluids.forEach((df, dfIdx) => {
-    const label = displacementFluids.length > 1 ? `${df.name} (порция ${dfIdx + 1})` : df.name;
-    if (df.flowRateSteps.length > 0) {
-      const totalStepVol = df.flowRateSteps.reduce((s, st) => s + st.volumeM3, 0);
-      if (totalStepVol > 0) {
-        df.flowRateSteps.forEach((step, si) => {
-          if (step.volumeM3 > 0) {
-            stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 * configuredDispScale, rawVolume: step.volumeM3 * rawDispScale });
-          }
-        });
-      } else {
-        df.flowRateSteps.forEach((step, si) => {
-          stages.push({ name: `Продавка: ${label} (режим ${si + 1})`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: step.rateLps, volume: fallbackDispStageVolume, rawVolume: fallbackRawStageVolume });
-        });
-      }
-    } else {
-      stages.push({ name: `Продавка: ${label}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: defaultRate, volume: fallbackDispStageVolume, rawVolume: fallbackRawStageVolume });
-    }
+  // 5. Продавка — единый график порций (как в расчёте): заданные объёмы сохраняются,
+  //    остаток до расчётного объёма получают порции/режимы без объёма
+  const dispSchedule = buildDisplacementSchedule(displacementFluids, displacementVolume);
+  dispSchedule.forEach((it) => {
+    const df = displacementFluids[it.fluidIndex];
+    const portion = displacementFluids.length > 1 ? ` (порция ${it.fluidIndex + 1})` : "";
+    const mode = df.flowRateSteps.length > 1 ? ` (режим ${it.stepIndex + 1})` : "";
+    stages.push({
+      name: `Продавка: ${df.name}${portion}${mode}${it.auto ? " — остаток" : ""}`,
+      fluid: `${df.name} (${df.density} кг/м³)`,
+      rateLps: it.rateLps > 0 ? it.rateLps : defaultRate,
+      volume: it.volumeM3,
+      rawVolume: it.volumeM3 / compressionCoeff,
+    });
   });
 
   // 6. СТОП
