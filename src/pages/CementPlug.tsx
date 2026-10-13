@@ -808,10 +808,15 @@ export default function CementPlug() {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <RadioGroupItem value="rir" id="mode-rir" data-testid="mode-rir" />
-                      <Label htmlFor="mode-rir" className="text-xs cursor-pointer font-semibold">РИР: негерметичность колонны, перетоки</Label>
+                      <Label htmlFor="mode-rir" className="text-xs cursor-pointer">РИР: негерметичность колонны, перетоки</Label>
                     </div>
                   </RadioGroup>
                 </div>
+                {placementMode === "rir" && (
+                  <p className="text-[10px] text-muted-foreground mt-1.5">
+                    🛠 Режим РИР: ликвидация негерметичности колонны, заколонных и межколонных перетоков задавливанием состава через пакер-ретейнер, извлекаемый пакер или с устья. Расчёт пересчитывается сразу при вводе.
+                  </p>
+                )}
                 {isCasingMode && (
                   <p className="text-[10px] text-muted-foreground mt-1.5">
                     🔧 Режим КРС: мост устанавливается внутри обсадной колонны. Каверновость = 1.0, диаметр ствола = внутренний ∅ колонны.

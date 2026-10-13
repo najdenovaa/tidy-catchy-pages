@@ -147,12 +147,6 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
 
   return (
     <div className="space-y-3" data-testid="rir-module">
-      <Card className="border-primary/30">
-        <CardContent className="py-3 px-4 text-xs text-muted-foreground">
-          <b className="text-foreground">РИР — ремонтно-изоляционные работы.</b> Ликвидация негерметичности колонны (тело, муфты), заколонных и межколонных перетоков,
-          отключение интервалов задавливанием состава через пакер-ретейнер, извлекаемый пакер или с устья. Расчёт пересчитывается сразу при вводе.
-        </CardContent>
-      </Card>
 
       {/* ═══ Исходные данные ═══ */}
       <div className="grid gap-3 lg:grid-cols-2">
