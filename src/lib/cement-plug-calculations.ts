@@ -67,6 +67,10 @@ export interface PlugInputs {
   viscousPadFluid?: PlugFluid;
   /** Distance to pull up above pad top before reverse flush, meters */
   padPullUpAboveM?: number;
+  /** Недопродавка, м³: столько жидкости продавки НЕ закачивают, чтобы трубы при подъёме опорожнялись (0 — точное равновесие) */
+  underDisplacementM3?: number;
+  /** Запас цемента на загрязнение кровли и границ, % от проектного объёма моста */
+  contaminationExcessPct?: number;
 }
 
 /* ───── Geometry helpers ───── */
@@ -165,7 +169,22 @@ export interface PlugResults {
 
   pressureAnnulus: number;
   pressurePipe: number;
+  /** Нет обратного перетока из затрубья в трубы (ΔP трубы − затрубье ≥ 0) */
   isBalanced: boolean;
+  /** Проектный объём моста (сечение × длина), м³ */
+  cementVolumeDesign: number;
+  /** Запас на загрязнение, м³ */
+  cementExcessM3: number;
+  /** Кровля по объёму цемента после подъёма труб, м MD */
+  plugTopByVolumeMD: number;
+  underDisplacementM3: number;
+  recommendedUnderDisplacementM3: number;
+  /** Статический дисбаланс на конце труб: трубы − затрубье, МПа */
+  imbalanceMPa: number;
+  /** Падение уровня в трубах после остановки (U-образный переток), м */
+  uTubeLevelDropM: number;
+  uTubeVolumeM3: number;
+  balanceNotes: string[];
 
   fluidColumns: FluidColumn[];
   pumpingStages: PumpingStage[];
@@ -294,19 +313,27 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const spacerAboveVolAnn = annA * spacerAboveHeightAnn;  // annular portion
   const spacerAboveVolPipe = pipeA * spacerAboveHeightAnn; // pipe portion
 
-  // Cement: target final volume = boreArea × plugLenMD (after pipe removal)
-  const cementVolTotal = boreArea * plugLenMD;
+  // Цемент: проектный объём = сечение ствола × длина моста (после подъёма труб) + запас на загрязнение
+  const cementVolDesign = boreArea * plugLenMD;
+  const excessPct = Math.max(0, input.contaminationExcessPct ?? 0);
+  const cementVolTotal = cementVolDesign * (1 + excessPct / 100);
+  const cementExcessM3 = cementVolTotal - cementVolDesign;
+  // Кровля по объёму после подъёма труб: верхние (кровля по объёму … проектная кровля) — зона возможного загрязнения
+  const plugTopByVolumeMD = Math.max(0, plug.bottomMD - (boreArea > 0 ? cementVolTotal / boreArea : 0));
 
   // Placement height via binary search (accounts for varying pipe sections)
   const placementHeight = findPlacementHeight(cementVolTotal, pipeEndMD, boreDiam, effectiveSections);
   const extraHeight = placementHeight - plugLenMD;
-  const cementHeightAnnMD = placementHeight;
-  const cementHeightPipeMD = placementHeight;
+  let cementHeightAnnMD = placementHeight;
+  let cementHeightPipeMD = placementHeight;
 
-  // Exact cement volumes in annulus and pipe during placement
-  const placementVols = volumeInInterval(pipeEndMD - placementHeight, pipeEndMD, boreDiam, effectiveSections);
-  const cementVolAnn = placementVols.annVol;
-  const cementVolPipe = placementVols.pipeVol;
+  // Недопродавка: последний объём Vu (цемент) остаётся в трубах → в затрубье цемент ниже, в трубах выше
+  const balancedVols = volumeInInterval(pipeEndMD - placementHeight, pipeEndMD, boreDiam, effectiveSections);
+  const underDispM3 = Math.min(Math.max(0, input.underDisplacementM3 ?? 0), balancedVols.annVol * 0.9);
+  const dHann = annA > 0 ? underDispM3 / annA : 0;
+  const dHpipe = pipeA > 0 ? underDispM3 / pipeA : 0;
+  const cementVolAnn = balancedVols.annVol - underDispM3;
+  const cementVolPipe = balancedVols.pipeVol + underDispM3;
 
   // Average steel area for explanation
   const avgSteelArea = placementHeight > 0
@@ -322,39 +349,64 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const spacerBelowPipeHeight = spacerBelowHeightAnn;
   const spacerAbovePipeHeight = spacerAboveHeightAnn;
 
-  // Cement top during placement
+  // Cement top during placement (точное равновесие)
   const cementTopMD = pipeEndMD - placementHeight;
-  const cementTopInPipeMD = cementTopMD;
-  const spacerAboveTopPipeMD = cementTopMD - spacerAboveHeightAnn;
+  const balancedSpacerTopPipeMD = cementTopMD - spacerAboveHeightAnn;
+  // Фактические кровли с учётом недопродавки
+  const annCementTopMD = cementTopMD + dHann;
+  const pipeCementTopMD = cementTopMD - dHpipe;
+  cementHeightAnnMD = pipeEndMD - annCementTopMD;
+  cementHeightPipeMD = pipeEndMD - pipeCementTopMD;
+  const spacerAboveTopPipeMD = pipeCementTopMD - spacerAbovePipeHeight;
 
-  // Displacement volume: pipe internal volume from surface to spacer above top
-  const dispVols = volumeInInterval(0, Math.max(0, spacerAboveTopPipeMD), boreDiam, effectiveSections);
-  const displacementVolume = dispVols.pipeVol;
+  // Объём продавки: трубное пространство от устья до кровли буфера при равновесии, минус недопродавка
+  const dispVols = volumeInInterval(0, Math.max(0, balancedSpacerTopPipeMD), boreDiam, effectiveSections);
+  const displacementVolume = Math.max(0, dispVols.pipeVol - underDispM3);
 
   // Spacer above pipe volume: use pre-calculated split (not volumeInInterval)
   const spacerAbovePipeVol = spacerAboveVolPipe;
 
-  // Static pressures at plug bottom (pipe end level)
-  const spacerAboveTopMD = cementTopMD - spacerAboveHeightAnn;
+  // ── Статика на уровне конца труб: затрубье и трубы считаются по СВОИМ столбам ──
+  const spacerAboveTopMD = annCementTopMD - spacerAboveHeightAnn;
   const spacerBelowBottomMD = plug.bottomMD + spacerBelowHeightAnn;
-  const cementTopTVD = interpolateTVD(Math.max(0, cementTopMD), traj);
-  const spacerAboveTopTVD = interpolateTVD(Math.max(0, spacerAboveTopMD), traj);
-  const spacerBelowBottomTVD = interpolateTVD(Math.min(well.wellDepthMD, spacerBelowBottomMD), traj);
-
-  const mudTVD_ann = Math.max(0, spacerAboveTopTVD);
-  const spacerAboveTVD = Math.max(0, cementTopTVD - spacerAboveTopTVD);
+  const tvdAt = (md: number) => interpolateTVD(Math.min(well.wellDepthMD, Math.max(0, md)), traj);
+  const cementTopTVD = tvdAt(annCementTopMD);
+  const spacerAboveTopTVD = tvdAt(spacerAboveTopMD);
+  const spacerBelowBottomTVD = tvdAt(spacerBelowBottomMD);
   const spacerBelowTVD = Math.max(0, spacerBelowBottomTVD - plugBottomTVD);
-  const cementTVD = Math.max(0, plugBottomTVD - cementTopTVD);
 
-  const pAnn = hydroP(wellFluid.density, mudTVD_ann)
-    + hydroP(spacer.density, spacerAboveTVD)
-    + hydroP(cement.density, cementTVD);
-
-  const pPipe = hydroP(wellFluid.density, mudTVD_ann)
-    + hydroP(spacer.density, spacerAboveTVD)
-    + hydroP(cement.density, cementTVD);
-
-  const isBalanced = Math.abs(pAnn - pPipe) < 0.5;
+  const column = (spacerTopMD: number, cementTopMDx: number) => {
+    const tS = tvdAt(spacerTopMD), tC = tvdAt(cementTopMDx);
+    return hydroP(wellFluid.density, Math.max(0, tS)) + hydroP(spacer.density, Math.max(0, tC - tS)) + hydroP(cement.density, Math.max(0, plugBottomTVD - tC));
+  };
+  const pAnn = column(spacerAboveTopMD, annCementTopMD);
+  const pPipe = column(spacerAboveTopPipeMD, pipeCementTopMD);
+  // >0 — трубы тяжелее: после остановки уровень в трубах опустится (сухой подъём);
+  // <0 — затрубье тяжелее: обратный переток цемента и буфера в трубы
+  const imbalanceMPa = pPipe - pAnn;
+  const topSec = effectiveSections.find((x) => x.fromMD <= 0.01) ?? effectiveSections[0];
+  const surfPipeA = topSec ? area(topSec.id) : pipeA;
+  const surfAnnA = Math.max(1e-4, area(isOpenHole ? well.casingID : boreDiam) - (topSec ? area(topSec.od) : 0));
+  const uTubeLevelDropM = imbalanceMPa > 0 && surfPipeA > 0
+    ? (imbalanceMPa * 1e6) / (wellFluid.density * 1000 * 9.81 * (1 + surfPipeA / surfAnnA)) : 0;
+  const uTubeVolumeM3 = uTubeLevelDropM * surfPipeA;
+  const recommendedUnderDisplacementM3 = Math.min(0.5, Math.max(0.1, Math.round(surfPipeA * 50 * 20) / 20));
+  const balanceNotes: string[] = [];
+  let isBalanced = true;
+  if (imbalanceMPa < -0.02) {
+    isBalanced = false;
+    balanceNotes.push(`Затрубье тяжелее труб на ${(-imbalanceMPa).toFixed(2)} МПа — после остановки цемент и буфер потекут обратно в трубы, кровля моста опустится, подъём будет «мокрым». Проверьте объёмы буферов и продавки.`);
+  } else if (underDispM3 <= 1e-6) {
+    balanceNotes.push(`Точное равновесие: при подъёме первых свечей трубы будут заполнены раствором («мокрый» подъём, перелив на роторе). Обычно недопродавливают ${recommendedUnderDisplacementM3.toFixed(2)} м³.`);
+  } else {
+    balanceNotes.push(`Недопродавка ${underDispM3.toFixed(2)} м³: трубы тяжелее затрубья на ${imbalanceMPa.toFixed(2)} МПа. После остановки уровень в трубах опустится на ≈${uTubeLevelDropM.toFixed(0)} м (${uTubeVolumeM3.toFixed(2)} м³ перетечёт в затрубье) — подъём без перелива.`);
+    if (underDispM3 > 2.5 * recommendedUnderDisplacementM3) {
+      balanceNotes.push(`Недопродавка больше обычной (${recommendedUnderDisplacementM3.toFixed(2)} м³): лишний цемент из труб при подъёме ляжет на кровлю моста и загрязнит её.`);
+    }
+  }
+  if (excessPct > 0) {
+    balanceNotes.push(`Запас на загрязнение ${excessPct.toFixed(0)}% (${cementExcessM3.toFixed(2)} м³): кровля по объёму ≈ ${plugTopByVolumeMD.toFixed(0)} м при проектной ${plug.topMD.toFixed(0)} м; верхние ${(plug.topMD - plugTopByVolumeMD).toFixed(0)} м — зона возможного загрязнения, кровлю проверить разгрузкой/допуском.`);
+  }
 
   // Fluid columns
   const fluidColumns: FluidColumn[] = [];
@@ -370,13 +422,13 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   });
   if (spacerAboveHeightAnn > 0) {
     fluidColumns.push({
-      label: spacer.name + " (верх)", topMD: Math.max(0, spacerAboveTopMD), bottomMD: cementTopMD,
+      label: spacer.name + " (верх)", topMD: Math.max(0, spacerAboveTopMD), bottomMD: annCementTopMD,
       topTVD: spacerAboveTopTVD, bottomTVD: cementTopTVD,
       densityGcm3: spacer.density, color: spacerColor, location: 'annulus',
     });
   }
   fluidColumns.push({
-    label: cement.name, topMD: cementTopMD, bottomMD: plug.bottomMD,
+    label: cement.name, topMD: annCementTopMD, bottomMD: plug.bottomMD,
     topTVD: cementTopTVD, bottomTVD: plugBottomTVD,
     densityGcm3: cement.density, color: cementColor, location: 'annulus',
   });
@@ -396,19 +448,19 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   // Pipe (balanced: same depths as annulus)
   fluidColumns.push({
     label: wellFluid.name + " (труб.)", topMD: 0, bottomMD: Math.max(0, spacerAboveTopPipeMD),
-    topTVD: 0, bottomTVD: spacerAboveTopTVD,
+    topTVD: 0, bottomTVD: tvdAt(spacerAboveTopPipeMD),
     densityGcm3: wellFluid.density, color: mudColor, location: 'pipe',
   });
   if (spacerAbovePipeHeight > 0) {
     fluidColumns.push({
-      label: spacer.name + " (труб. верх)", topMD: Math.max(0, spacerAboveTopPipeMD), bottomMD: cementTopMD,
-      topTVD: spacerAboveTopTVD, bottomTVD: cementTopTVD,
+      label: spacer.name + " (труб. верх)", topMD: Math.max(0, spacerAboveTopPipeMD), bottomMD: pipeCementTopMD,
+      topTVD: tvdAt(spacerAboveTopPipeMD), bottomTVD: tvdAt(pipeCementTopMD),
       densityGcm3: spacer.density, color: spacerColor, location: 'pipe',
     });
   }
   fluidColumns.push({
-    label: cement.name + " (труб.)", topMD: cementTopMD, bottomMD: plug.bottomMD,
-    topTVD: cementTopTVD, bottomTVD: plugBottomTVD,
+    label: cement.name + " (труб.)", topMD: pipeCementTopMD, bottomMD: plug.bottomMD,
+    topTVD: tvdAt(pipeCementTopMD), bottomTVD: plugBottomTVD,
     densityGcm3: cement.density, color: cementColor, location: 'pipe',
   });
   if (spacerBelowHeightAnn > 0 && (input.useViscousPad ?? false)) {
@@ -428,7 +480,11 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const washSections = effectiveSections
     .map(s => ({ ...s, toMD: Math.min(s.toMD, pullOutDepthMD) }))
     .filter(s => s.fromMD < s.toMD);
-  const washVols = volumeInInterval(0, pullOutDepthMD, boreDiam, washSections);
+  // Затрубье выше башмака — по внутреннему диаметру обсадной колонны, ниже — по стволу
+  const shoeMD = isOpenHole ? Math.min(well.casingShoe, pullOutDepthMD) : 0;
+  const washCased = shoeMD > 0 ? volumeInInterval(0, shoeMD, well.casingID, washSections) : { annVol: 0, pipeVol: 0 };
+  const washOpen = volumeInInterval(shoeMD, pullOutDepthMD, boreDiam, washSections);
+  const washVols = { annVol: washCased.annVol + washOpen.annVol, pipeVol: washCased.pipeVol + washOpen.pipeVol };
   let washOneCycleVolume: number;
   if (washType === 'direct') {
     washOneCycleVolume = washVols.annVol;
@@ -543,7 +599,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
       fluid: `${wellFluid.name} (${wellFluid.density} г/см³)`,
       volumeM3: displacementVolume,
       timeMin: pumpTimeDisplacementMin,
-      description: "Продавка до установки равновесия",
+      description: underDispM3 > 0 ? `Продавка с недопродавкой ${underDispM3.toFixed(2)} м³ (трубы опорожнятся при подъёме)` : "Продавка до установки равновесия",
     });
     pumpingStages.push({
       name: "Подъём инструмента",
@@ -592,7 +648,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
       fluid: `${wellFluid.name} (${wellFluid.density} г/см³)`,
       volumeM3: displacementVolume,
       timeMin: pumpTimeDisplacementMin,
-      description: "Продавка до установки равновесия",
+      description: underDispM3 > 0 ? `Продавка с недопродавкой ${underDispM3.toFixed(2)} м³ (трубы опорожнятся при подъёме)` : "Продавка до установки равновесия",
     });
     pumpingStages.push({
       name: "Подъём инструмента",
@@ -634,7 +690,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
       `   Высота цемента в затрубье: ${cementHeightAnnMD.toFixed(1)} м, в трубах: ${cementHeightPipeMD.toFixed(1)} м.`,
       `   ${heightDifferenceExplanation}`,
       spacerAboveVolPipe > 0 ? `9. Закачка верхнего буфера в трубное пространство (${spacerAboveVolPipe.toFixed(3)} м³). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerAboveVolPipe, pumpRateSpacerLs).toFixed(1)} мин.` : null,
-      `10. Продавка жидкостью скважины (${displacementVolume.toFixed(3)} м³). Q=${pumpRateDisplacementLs} л/с, t=${pumpTimeDisplacementMin.toFixed(1)} мин.`,
+      `10. Продавка жидкостью скважины (${displacementVolume.toFixed(3)} м³${underDispM3 > 0 ? `, недопродавка ${underDispM3.toFixed(2)} м³` : ""}). Q=${pumpRateDisplacementLs} л/с, t=${pumpTimeDisplacementMin.toFixed(1)} мин.`,
       `11. Подъём инструмента без вращения на ${pullOutAbovePlugM} м выше кровли (до ${pullOutDepthMD} м MD).`,
       `    Скорость подъёма: ${effectiveTripSpeed.toFixed(2)} м/с. Время подъёма: ${tripTimeMin.toFixed(1)} мин.`,
       `12. ${washTypeText.charAt(0).toUpperCase() + washTypeText.slice(1)} промывка: ${washCycles} цикл(а/ов), объём ${washVolumeM3.toFixed(2)} м³. Q=${pumpRateWashLs} л/с, t=${washTimeMin.toFixed(1)} мин.`,
@@ -642,7 +698,8 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
       `13. Подъём инструмента.`,
       ``,
       `Статическое давление на забое моста:`,
-      `  Затрубье: ${pAnn.toFixed(2)} МПа | Трубы: ${pPipe.toFixed(2)} МПа | ΔP: ${Math.abs(pAnn - pPipe).toFixed(2)} МПа`,
+      `  Затрубье: ${pAnn.toFixed(2)} МПа | Трубы: ${pPipe.toFixed(2)} МПа | ΔP (трубы − затрубье): ${imbalanceMPa.toFixed(2)} МПа`,
+      ...balanceNotes.map((n) => `  ${n}`),
       isOpenHole ? `\nОткрытый ствол: каверн. коэфф. = ${cavernCoeff.toFixed(2)}, эфф. диаметр = ${boreDiam.toFixed(1)} мм` : '',
     ].filter(Boolean).join('\n');
   } else {
@@ -653,7 +710,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
       `   Высота цемента в затрубье: ${cementHeightAnnMD.toFixed(1)} м, в трубах: ${cementHeightPipeMD.toFixed(1)} м.`,
       `   ${heightDifferenceExplanation}`,
       spacerAboveVolPipe > 0 ? `4. Закачка верхнего буфера в трубное пространство (${spacerAboveVolPipe.toFixed(3)} м³). Q=${pumpRateSpacerLs} л/с, t=${volToMin(spacerAboveVolPipe, pumpRateSpacerLs).toFixed(1)} мин.` : null,
-      `5. Продавка жидкостью скважины (${displacementVolume.toFixed(3)} м³). Q=${pumpRateDisplacementLs} л/с, t=${pumpTimeDisplacementMin.toFixed(1)} мин.`,
+      `5. Продавка жидкостью скважины (${displacementVolume.toFixed(3)} м³${underDispM3 > 0 ? `, недопродавка ${underDispM3.toFixed(2)} м³` : ""}). Q=${pumpRateDisplacementLs} л/с, t=${pumpTimeDisplacementMin.toFixed(1)} мин.`,
       `6. Подъём инструмента без вращения на ${pullOutAbovePlugM} м выше кровли (до ${pullOutDepthMD} м MD).`,
       `   Скорость подъёма: ${effectiveTripSpeed.toFixed(2)} м/с. Время подъёма: ${tripTimeMin.toFixed(1)} мин.`,
       `7. ${washTypeText.charAt(0).toUpperCase() + washTypeText.slice(1)} промывка: ${washCycles} цикл(а/ов), объём ${washVolumeM3.toFixed(2)} м³. Q=${pumpRateWashLs} л/с, t=${washTimeMin.toFixed(1)} мин.`,
@@ -661,7 +718,8 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
       `8. Подъём инструмента.`,
       ``,
       `Статическое давление на забое моста:`,
-      `  Затрубье: ${pAnn.toFixed(2)} МПа | Трубы: ${pPipe.toFixed(2)} МПа | ΔP: ${Math.abs(pAnn - pPipe).toFixed(2)} МПа`,
+      `  Затрубье: ${pAnn.toFixed(2)} МПа | Трубы: ${pPipe.toFixed(2)} МПа | ΔP (трубы − затрубье): ${imbalanceMPa.toFixed(2)} МПа`,
+      ...balanceNotes.map((n) => `  ${n}`),
       isOpenHole ? `\nОткрытый ствол: каверн. коэфф. = ${cavernCoeff.toFixed(2)}, эфф. диаметр = ${boreDiam.toFixed(1)} мм` : '',
     ].filter(Boolean).join('\n');
   }
@@ -758,6 +816,15 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     cementVolumeAnn: Math.round(cementVolAnn * 1000) / 1000,
     cementVolumePipe: Math.round(cementVolPipe * 1000) / 1000,
     cementVolumeTotal: Math.round(cementVolTotal * 1000) / 1000,
+    cementVolumeDesign: Math.round(cementVolDesign * 1000) / 1000,
+    cementExcessM3: Math.round(cementExcessM3 * 1000) / 1000,
+    plugTopByVolumeMD: Math.round(plugTopByVolumeMD * 10) / 10,
+    underDisplacementM3: Math.round(underDispM3 * 1000) / 1000,
+    recommendedUnderDisplacementM3,
+    imbalanceMPa: Math.round(imbalanceMPa * 1000) / 1000,
+    uTubeLevelDropM: Math.round(uTubeLevelDropM * 10) / 10,
+    uTubeVolumeM3: Math.round(uTubeVolumeM3 * 1000) / 1000,
+    balanceNotes,
     spacerVolumeBelow: Math.round(effectiveSpacerBelowVol * 1000) / 1000,
     spacerVolumeAbove: Math.round(spacerVolumeAboveM3 * 1000) / 1000,
     spacerBelowHeightAnnMD: Math.round(spacerBelowHeightAnn * 100) / 100,

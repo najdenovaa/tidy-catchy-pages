@@ -85,6 +85,8 @@ interface SessionState {
   viscousPadAdditives?: { name: string; percent: number }[];
   padPullUpAbove?: number;
   placementMode?: PlacementMode;
+  underDisplacement?: number;
+  excessPct?: number;
 }
 
 function loadSession(): Partial<SessionState> {
@@ -163,14 +165,16 @@ export default function CementPlug() {
   const [viscousPadAdditives, setViscousPadAdditives] = useState<{ name: string; percent: number }[]>(saved.viscousPadAdditives || []);
   const [padPullUpAbove, setPadPullUpAbove] = useState(saved.padPullUpAbove ?? 5);
   const [placementMode, setPlacementMode] = useState<PlacementMode>(saved.placementMode || 'openhole');
+  const [underDisplacement, setUnderDisplacement] = useState<number>(saved.underDisplacement ?? 0.2);
+  const [excessPct, setExcessPct] = useState<number>(saved.excessPct ?? 10);
 
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct]);
 
   /* ── Spacer height preview (real-time) ── */
   const isCasingMode = placementMode === 'casing';
@@ -319,6 +323,8 @@ export default function CementPlug() {
       useViscousPad,
       viscousPadFluid: useViscousPad ? viscousPadFluid : undefined,
       padPullUpAboveM: useViscousPad ? padPullUpAbove : undefined,
+      underDisplacementM3: underDisplacement,
+      contaminationExcessPct: excessPct,
     };
   };
 
@@ -393,6 +399,8 @@ export default function CementPlug() {
       if (p.viscousPadFluid) setViscousPadFluid(p.viscousPadFluid);
       if (Array.isArray(p.viscousPadAdditives)) setViscousPadAdditives(p.viscousPadAdditives);
       if (typeof p.padPullUpAbove === "number") setPadPullUpAbove(p.padPullUpAbove);
+      setUnderDisplacement(typeof p.underDisplacement === "number" ? p.underDisplacement : 0);
+      setExcessPct(typeof p.excessPct === "number" ? p.excessPct : 0);
 
       // Restore results if present
       if (data.results) {
@@ -420,10 +428,11 @@ export default function CementPlug() {
         pipeSections, useViscousPad,
         viscousPadFluid: useViscousPad ? viscousPadFluid : undefined,
         viscousPadAdditives: useViscousPad ? viscousPadAdditives : undefined,
+        underDisplacement, excessPct,
       },
       results: { plugResults: currentResults },
     };
-  }, [results, well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives]);
+  }, [results, well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, underDisplacement, excessPct]);
 
   const handleSaveToAccount = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -1159,6 +1168,15 @@ export default function CementPlug() {
                       <Field label="Кол-во циклов промывки" value={washCycles} onChange={v => setWashCycles(Math.max(1, num(v)))} unit="" />
                       <Field label="Скорость подъёма" value={tripSpeed} onChange={v => setTripSpeed(num(v))} unit="м/с" />
                     </div>
+                    <Separator />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Недопродавка" value={underDisplacement} onChange={v => setUnderDisplacement(Math.max(0, num(v)))} unit="м³" />
+                      <Field label="Запас цемента на загрязнение" value={excessPct} onChange={v => setExcessPct(Math.max(0, num(v)))} unit="%" />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Недопродавка: трубы остаются чуть тяжелее затрубья, при подъёме опорожняются без перелива (обычно 0,1–0,5 м³; 0 — точное равновесие).
+                      Запас: верх моста загрязняется буфером/раствором, поэтому цемента берут больше проектного объёма (обычно 10–20%).
+                    </p>
                     <div className="space-y-1">
                       <Label className="text-xs">Тип промывки</Label>
                       <RadioGroup value={washType} onValueChange={v => setWashType(v as WashType)} className="flex gap-4">
@@ -1362,7 +1380,7 @@ export default function CementPlug() {
                     <CardTitle className="text-sm flex items-center gap-2">
                       📊 Результаты расчёта
                       <Badge variant={results.isBalanced ? "default" : "destructive"} className="text-[10px]">
-                        {results.isBalanced ? "Сбалансировано ✓" : "Дисбаланс ⚠"}
+                        {results.isBalanced ? "Равновесие ✓" : "Обратный переток ⚠"}
                       </Badge>
                     </CardTitle>
                   </CardHeader>
@@ -1399,7 +1417,18 @@ export default function CementPlug() {
                       <Separator className="col-span-full my-1" />
                       <ResultRow label="P_статич. затрубье" value={results.pressureAnnulus} unit="МПа" />
                       <ResultRow label="P_статич. трубы" value={results.pressurePipe} unit="МПа" />
-                      <ResultRow label="ΔP" value={Math.abs(results.pressureAnnulus - results.pressurePipe).toFixed(2)} unit="МПа" raw highlight />
+                      <ResultRow label="ΔP (трубы − затрубье)" value={(results.imbalanceMPa ?? results.pressurePipe - results.pressureAnnulus).toFixed(2)} unit="МПа" raw highlight />
+                      {results.underDisplacementM3 !== undefined && (
+                        <>
+                          <ResultRow label="Недопродавка" value={results.underDisplacementM3.toFixed(2)} unit="м³" raw />
+                          <ResultRow label="Падение уровня в трубах" value={results.uTubeLevelDropM.toFixed(0)} unit="м" raw />
+                          <ResultRow label="Кровля по объёму" value={results.plugTopByVolumeMD.toFixed(0)} unit="м MD" raw />
+                          <ResultRow label="Цемент проектный / запас" value={`${results.cementVolumeDesign.toFixed(3)} / ${results.cementExcessM3.toFixed(3)}`} unit="м³" raw />
+                        </>
+                      )}
+                      {results.balanceNotes?.map((n) => (
+                        <div key={n} className={`col-span-full text-[11px] ${n.startsWith("Затрубье тяжелее") || n.startsWith("Недопродавка больше") ? "text-red-600" : n.startsWith("Точное равновесие") ? "text-amber-600" : "text-muted-foreground"}`}>{n}</div>
+                      ))}
                       <Separator className="col-span-full my-1" />
                       <ResultRow label="Подъём на промывку до" value={results.pullOutDepthMD} unit="м MD" />
                       <ResultRow label="Скорость подъёма" value={results.tripSpeedMs.toFixed(2)} unit="м/с" raw />

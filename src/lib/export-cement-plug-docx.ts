@@ -245,6 +245,10 @@ export async function exportCementPlugToDocx(data: CementPlugExportData, options
     kvRow("Цемент (затрубье)", `${fmt(results.cementVolumeAnn, 3)} м³`),
     kvRow("Цемент (трубы)", `${fmt(results.cementVolumePipe, 3)} м³`),
     kvRow("Цемент ИТОГО", `${fmt(results.cementVolumeTotal, 3)} м³`),
+    ...(results.cementExcessM3 !== undefined ? [
+      kvRow("  — проектный объём / запас на загрязнение", `${fmt(results.cementVolumeDesign, 3)} / ${fmt(results.cementExcessM3, 3)} м³`),
+      kvRow("Кровля по объёму после подъёма труб", `${fmt(results.plugTopByVolumeMD, 0)} м MD`),
+    ] : []),
     kvRow("Высота цем. (затрубье)", `${fmt(results.cementHeightAnnMD, 1)} м`),
     kvRow("Высота цем. (трубы)", `${fmt(results.cementHeightPipeMD, 1)} м`),
     kvRow("Буфер сверху", `${fmt(results.spacerVolumeAbove, 3)} м³`),
@@ -278,10 +282,15 @@ export async function exportCementPlugToDocx(data: CementPlugExportData, options
       new TableRow({ children: [hCell("Параметр", 60), hCell("Значение", 40)] }),
       kvRow("P статич. затрубье", `${fmt(results.pressureAnnulus, 2)} МПа`),
       kvRow("P статич. трубы", `${fmt(results.pressurePipe, 2)} МПа`),
-      kvRow("ΔP", `${fmt(Math.abs(results.pressureAnnulus - results.pressurePipe), 2)} МПа`),
-      kvRow("Баланс", results.isBalanced ? "✓ Сбалансировано" : "⚠ Дисбаланс"),
+      kvRow("ΔP (трубы − затрубье)", `${fmt(results.imbalanceMPa ?? results.pressurePipe - results.pressureAnnulus, 2)} МПа`),
+      ...(results.underDisplacementM3 !== undefined ? [
+        kvRow("Недопродавка", `${fmt(results.underDisplacementM3, 2)} м³`),
+        kvRow("Падение уровня в трубах после остановки", `${fmt(results.uTubeLevelDropM, 0)} м (${fmt(results.uTubeVolumeM3, 2)} м³)`),
+      ] : []),
+      kvRow("Баланс", results.isBalanced ? "✓ Без обратного перетока" : "⚠ Обратный переток из затрубья в трубы"),
     ],
   }));
+  (results.balanceNotes ?? []).forEach((n) => children.push(textP(n)));
 
   // ─── 9. Stability Analysis ───
   if (stability) {
