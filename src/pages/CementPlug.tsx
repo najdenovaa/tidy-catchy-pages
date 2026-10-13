@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import TermsFooter from "@/components/TermsFooter";
 import PlugRecipeCard from "@/components/PlugRecipeCard";
+import RirModule from "@/components/rir/RirModule";
 import PlugPlanFactBar from "@/components/PlugPlanFactBar";
 import PlugPillCard, { type PillSettings } from "@/components/PlugPillCard";
 import { designPill, requiredPillGelPa, type PillDesign } from "@/lib/cement-plug-pill";
@@ -64,7 +65,7 @@ function annArea(boreMm: number, pipeODMm: number): number {
   return (Math.PI / 4) * (bo * bo - pi * pi);
 }
 
-export type PlacementMode = 'openhole' | 'casing';
+export type PlacementMode = 'openhole' | 'casing' | 'rir';
 
 interface SessionState {
   well: PlugWellData;
@@ -790,15 +791,13 @@ export default function CementPlug() {
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-3 py-4">
-        <div className="space-y-4">
-          {/* Inputs & results */}
-          <div className="space-y-3">
+        <div className="mb-3">
             {/* Placement mode toggle */}
             <Card>
               <CardContent className="py-3 px-4">
                 <div className="flex items-center gap-4">
                   <p className="text-xs font-medium text-muted-foreground">Тип установки:</p>
-                  <RadioGroup value={placementMode} onValueChange={v => setPlacementMode(v as PlacementMode)} className="flex gap-4">
+                  <RadioGroup value={placementMode} onValueChange={v => setPlacementMode(v as PlacementMode)} className="flex flex-wrap gap-x-4 gap-y-1">
                     <div className="flex items-center gap-1.5">
                       <RadioGroupItem value="openhole" id="mode-oh" />
                       <Label htmlFor="mode-oh" className="text-xs cursor-pointer">Открытый ствол</Label>
@@ -806,6 +805,10 @@ export default function CementPlug() {
                     <div className="flex items-center gap-1.5">
                       <RadioGroupItem value="casing" id="mode-cas" />
                       <Label htmlFor="mode-cas" className="text-xs cursor-pointer">В колонне (КРС)</Label>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <RadioGroupItem value="rir" id="mode-rir" data-testid="mode-rir" />
+                      <Label htmlFor="mode-rir" className="text-xs cursor-pointer font-semibold">РИР: негерметичность колонны, перетоки</Label>
                     </div>
                   </RadioGroup>
                 </div>
@@ -817,6 +820,11 @@ export default function CementPlug() {
               </CardContent>
             </Card>
 
+        </div>
+        {placementMode === "rir" && <RirModule trajectory={trajPoints.length > 1 ? trajPoints : undefined} />}
+        <div className={placementMode === "rir" ? "hidden" : "space-y-4"}>
+          {/* Inputs & results */}
+          <div className="space-y-3">
             <SharedWellCard
               module="cement-plug"
               current={{
