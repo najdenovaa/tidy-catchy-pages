@@ -95,8 +95,15 @@ describe("Цементный мост: устойчивость против о�
     expect(r.interfaces[0].tauRequiredTheoryPa).toBeCloseTo(Y_C_THEORY * 650 * 9.81 * 0.10795, 1);
   });
 
-  it("обычный цемент на буровом растворе в открытом стволе — неустойчив, закрытый низ не спасает", () => {
+  it("промысловая оценка (по умолчанию): обычный мост на растворе устоит с небольшой осадкой", () => {
     const r = ex();
+    expect(r.verdict).toBe("settle");
+    expect(r.interfaces[0].Y0).toBeLessThan(r.interfaces[0].YcExp); // лабораторный критерий не выполнен
+    expect(r.interfaces[0].exchangeLengthM).toBeLessThan(5);
+  });
+
+  it("лабораторная скорость (k = 1): тот же мост неустойчив, закрытый низ не спасает", () => {
+    const r = ex({ velocityFactor: 1 });
     expect(r.verdict).toBe("unstable");
     expect(r.interfaces[0].exchangeLengthM).toBeGreaterThan(5);
     expect(r.recommendations.length).toBeGreaterThan(2);
@@ -202,12 +209,12 @@ import { autoDesignPlug } from "./cement-plug-autodesign";
 describe("Цементный мост: автоподбор", () => {
   it("мост на растворе в открытом стволе: выбирается опора, вариант допустим по всем проверкам", () => {
     const inp = base({ well: { ...base().well, bottomTempStatic: 90, surfaceTemp: 5 } });
-    const a = autoDesignPlug(inp, "abandonment", 24, 0.018);
+    const a = autoDesignPlug({ ...inp, exchangeVelocityFactor: 1 }, "abandonment", 24, 0.018);
     expect(a.best).not.toBeNull();
     expect(a.best!.support).not.toBe("none");
     expect(a.best!.lengthM).toBeGreaterThanOrEqual(50);
     const r = calculateBalancedPlug(a.best!.inputs);
-    expect(["supported", "no-buoyancy", "guaranteed", "stable"]).toContain(r.exchange.verdict);
+    expect(["supported", "no-buoyancy", "guaranteed", "stable", "settle"]).toContain(r.exchange.verdict);
     expect(a.best!.maxBhpMPa!).toBeLessThan(a.best!.fracMPa);
     expect(a.notes.some((n) => n.startsWith("Без опоры"))).toBe(true);
   });
@@ -220,5 +227,12 @@ describe("Цементный мост: автоподбор", () => {
   it("подошва у забоя — опора на забой", () => {
     const inp = base({ plug: { topMD: 2940, bottomMD: 3000 }, well: { ...base().well, bottomTempStatic: 90 } });
     expect(autoDesignPlug(inp, "abandonment", 24, 0.018).best?.support).toBe("bottom");
+  });
+});
+
+describe("Цементный мост: калибровка по отбивкам", () => {
+  it("осадка пропорциональна множителю скорости — калибровка по факту линейна", () => {
+    const mk = (k: number) => calculateBalancedPlug({ ...base(), exchangeVelocityFactor: k }).exchange.interfaces[0].exchangeLengthM;
+    expect(mk(0.2)).toBeCloseTo(2 * mk(0.1), 6);
   });
 });

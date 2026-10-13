@@ -180,6 +180,18 @@ export default function CementPlug() {
   const [plugSupport, setPlugSupport] = useState<PlugSupport | "auto">(saved.plugSupport ?? "auto");
   const [plugPurpose, setPlugPurpose] = useState<PlugPurpose>(saved.plugPurpose ?? "abandonment");
   const [recalcTick, setRecalcTick] = useState(0);
+  // Калибровка скорости обмена по отбивкам кровли (план/факт)
+  const [calibCases, setCalibCases] = useState<{ date: string; planTopMD: number; tagMD: number; rawFallM: number }[]>(() => {
+    try { return JSON.parse(localStorage.getItem("plug_exchange_calib_v1") || "[]"); } catch { return []; }
+  });
+  useEffect(() => { try { localStorage.setItem("plug_exchange_calib_v1", JSON.stringify(calibCases)); } catch { /* недоступно */ } }, [calibCases]);
+  const calibFactor = useMemo(() => {
+    const ratios = calibCases.filter((c) => c.rawFallM > 0.5).map((c) => Math.max(0.5, c.tagMD - c.planTopMD) / c.rawFallM);
+    if (!ratios.length) return undefined;
+    const g = Math.exp(ratios.reduce((t, r) => t + Math.log(r), 0) / ratios.length);
+    return Math.min(2, Math.max(0.005, g));
+  }, [calibCases]);
+  const [tagInput, setTagInput] = useState("");
 
   /* ── Session save ── */
   useEffect(() => {
@@ -342,6 +354,7 @@ export default function CementPlug() {
       underDisplacementM3: underDisplacement,
       contaminationExcessPct: excessPct,
       support: plugSupport === "auto" ? undefined : plugSupport,
+      exchangeVelocityFactor: calibFactor,
     };
   };
 
@@ -1291,9 +1304,11 @@ export default function CementPlug() {
                 {/* ── Устойчивость против обмена жидкостями ── */}
                 {results.exchange && (() => {
                   const ex = results.exchange;
-                  const bad = ex.verdict === "unstable", warn = ex.verdict === "risk" || ex.verdict === "stable";
+                  const bad = ex.verdict === "unstable", warn = ex.verdict === "risk";
                   const tone = bad ? "border-destructive/60" : warn ? "border-amber-500/50" : "border-green-500/40";
-                  const label: Record<string, string> = { supported: "на опоре", "no-buoyancy": "устойчив", guaranteed: "устойчив (гарантированно)", stable: "устойчив, запас мал", risk: "риск обмена", unstable: "НЕУСТОЙЧИВ" };
+                  const label: Record<string, string> = { supported: "на опоре", "no-buoyancy": "устойчив", guaranteed: "устойчив (гарантированно)", stable: "устойчив", settle: "устоит, малая осадка", risk: "риск осадки", unstable: "может уйти" };
+                  const tagMD = parseFloat(tagInput.replace(",", "."));
+                  const topRef = results.plugTopByVolumeMD ?? results.plugTopMD;
                   return (
                     <Card className={`border-2 ${tone}`} data-testid="plug-exchange">
                       <CardHeader className="py-3 px-4">
@@ -1313,12 +1328,33 @@ export default function CementPlug() {
                             fallM={ex.interfaces[0]?.exchangeLengthM ?? 0}
                             padHeightM={results.useViscousPad ? results.spacerBelowHeightAnnMD : 0}
                             verdict={label[ex.verdict]}
+                            factTagMD={Number.isFinite(tagMD) && tagMD > 0 ? tagMD : undefined}
                           />
                           <div className="text-[11px] text-muted-foreground space-y-1 sm:pt-4">
                             <p><b>План</b> — проектный интервал {results.plugTopMD.toFixed(0)}–{results.plugBottomMD.toFixed(0)} м; штриховка сверху — запас на загрязнение (кровля по объёму).</p>
                             <p><b>Прогноз</b> — ожидаемое положение цемента после остановки: при обмене жидкостями цемент опускается, выше остаётся зона смешения (штриховка). Глубина — оценка порядка величины.</p>
                             {results.useViscousPad && <p>Фиолетовым — вязкая пачка под мостом.</p>}
                             <p>Шкала проседания при поглощении ниже моста — в блоке «Осложнения».</p>
+                            {ex.support === "fluid" && (
+                              <div className="rounded-md border border-border p-2 space-y-1 text-foreground" data-testid="plug-calib">
+                                <p className="font-semibold">Факт: отбивка кровли моста</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} inputMode="decimal" placeholder="глубина, м" className="h-7 w-28 rounded border border-border bg-background px-2 text-right" />
+                                  <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={!(Number.isFinite(tagMD) && tagMD > 0)}
+                                    onClick={() => {
+                                      const raw = (ex.interfaces[0]?.exchangeLengthM ?? 0) / Math.max(1e-6, ex.velocityFactor);
+                                      setCalibCases((c) => [...c, { date: new Date().toLocaleDateString("ru-RU"), planTopMD: topRef, tagMD, rawFallM: raw }]);
+                                      setTagInput("");
+                                      setRecalcTick((t) => t + 1);
+                                    }}>Учесть в калибровке</Button>
+                                </div>
+                                <p className="text-muted-foreground">
+                                  {Number.isFinite(tagMD) && tagMD > 0 ? `Факт: кровля ${tagMD >= topRef ? "ниже" : "выше"} расчётной на ${Math.abs(tagMD - topRef).toFixed(1)} м. ` : ""}
+                                  Множитель скорости обмена: {ex.velocityFactor.toFixed(3)} {calibCases.length ? `(по ${calibCases.length} отбивк${calibCases.length === 1 ? "е" : "ам"})` : "(по умолчанию, без отбивок)"}.
+                                  {calibCases.length > 0 && <button className="ml-2 underline" onClick={() => { setCalibCases([]); setRecalcTick((t) => t + 1); }}>сбросить</button>}
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
                         {ex.interfaces.filter((x) => x.verdict !== "no-buoyancy").length > 0 && (

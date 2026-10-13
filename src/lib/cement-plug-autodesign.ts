@@ -53,7 +53,7 @@ export interface AutoDesignResult {
 }
 
 const SUPPORT_COST: Record<SupportOption, number> = { bottom: 0, none: 0, pill: 1, reactivePill: 2.5, mechanical: 4 };
-const OK_VERDICTS = new Set(["supported", "no-buoyancy", "guaranteed", "stable"]);
+const OK_VERDICTS = new Set(["supported", "no-buoyancy", "guaranteed", "stable", "settle"]);
 
 export function autoDesignPlug(base: PlugInputs, purpose: PlugPurpose, wocHours: number, fracGradientMPaPerM: number): AutoDesignResult {
   const req = getPlugRequirements(purpose, 0);
@@ -107,7 +107,8 @@ export function autoDesignPlug(base: PlugInputs, purpose: PlugPurpose, wocHours:
     if (!rec.allOk) reasons.push(`рецептура: не выполнено ${rec.compliance.filter((c) => c.ok === false).map((c) => c.label.split(",")[0]).join(", ")}`);
     if (!r.isTimeSafe) reasons.push("время работы > 75% загустевания");
     if (L < req.minPlugLengthM) reasons.push(`длина < ${req.minPlugLengthM} м`);
-    const cost = SUPPORT_COST[sup] + Math.abs(rho - rho0) * 5 + (L - lMin) / 50 + (r.exchange.verdict === "stable" ? 0.3 : 0);
+    const fall = r.exchange.interfaces[0]?.exchangeLengthM ?? 0;
+    const cost = SUPPORT_COST[sup] + Math.abs(rho - rho0) * 5 + (L - lMin) / 50 + (r.exchange.verdict === "stable" ? 0.3 : 0) + (fall / Math.max(1, L)) * 4;
     cands.push({
       densityGcm3: rho, lengthM: L, topMD: top, support: sup, pillGelPa: pillGel, pillVolumeM3: pillVol,
       underDisplacementM3: inputs.underDisplacementM3 ?? 0, excessPct: inputs.contaminationExcessPct ?? 0,

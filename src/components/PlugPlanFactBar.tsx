@@ -8,14 +8,16 @@ interface Props {
   fallM: number;
   padHeightM?: number;
   verdict: string;
+  /** Фактическая отбивка кровли, м */
+  factTagMD?: number;
 }
 
-export default function PlugPlanFactBar({ planTopMD, planBottomMD, topByVolumeMD, fallM, padHeightM = 0, verdict }: Props) {
+export default function PlugPlanFactBar({ planTopMD, planBottomMD, topByVolumeMD, fallM, padHeightM = 0, verdict, factTagMD }: Props) {
   const L = Math.max(0, planBottomMD - planTopMD);
   const fall = Math.max(0, fallM);
   const washedOut = fall >= L;
-  const top0 = Math.min(planTopMD, topByVolumeMD ?? planTopMD);
-  const span = L + Math.max(fall, padHeightM) + L * 0.6 + 10;
+  const top0 = Math.min(planTopMD, topByVolumeMD ?? planTopMD, factTagMD ?? Infinity);
+  const span = L + Math.max(fall, padHeightM, factTagMD !== undefined ? factTagMD - planTopMD : 0) + L * 0.6 + 10;
   const z0 = top0 - span * 0.12, z1 = z0 + span;
   const H = 300, W = 300, pad = 18;
   const y = (md: number) => pad + ((md - z0) / (z1 - z0)) * (H - 2 * pad);
@@ -70,6 +72,12 @@ export default function PlugPlanFactBar({ planTopMD, planBottomMD, topByVolumeMD
       {ok && [planTopMD, planBottomMD].map((md) => (
         <text key={`o${md}`} x={colX[1] + colW + 9} y={y(md) + 4} fontSize={10} className="fill-green-600">{fmt(md)}</text>
       ))}
+      {factTagMD !== undefined && (
+        <g>
+          <line x1={colX[1] - 8} x2={colX[1] + colW + 8} y1={y(factTagMD)} y2={y(factTagMD)} className="stroke-blue-600" strokeWidth={2.5} />
+          <text x={colX[1] - 10} y={y(factTagMD) - 4} textAnchor="end" fontSize={10} fontWeight={600} className="fill-blue-600">факт {fmt(factTagMD)}</text>
+        </g>
+      )}
       <line x1={colX[0] + colW} x2={colX[1]} y1={y(planTopMD)} y2={y(ok ? planTopMD : washedOut ? planTopMD : factTop)} className={ok ? "stroke-green-600" : "stroke-destructive"} strokeDasharray="3 3" />
       <text x={W / 2} y={H - 3} textAnchor="middle" fontSize={10} className={ok ? "fill-green-600" : "fill-destructive"}>
         {ok ? "мост останется на месте" : washedOut ? "мост размыт по стволу" : `кровля ниже плана на ~${fmt(fall)} м`} · {verdict}

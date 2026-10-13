@@ -106,6 +106,8 @@ export interface PlugInputs {
   contaminationExcessPct?: number;
   /** Что под мостом; по умолчанию — забой, если подошва моста у забоя, иначе жидкость */
   support?: PlugSupport;
+  /** Промысловый множитель скорости обмена (калибровка по отбивкам кровли) */
+  exchangeVelocityFactor?: number;
 }
 
 /* ───── Geometry helpers ───── */
@@ -792,6 +794,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     support, boreDiameterMm: boreDiam, zenithDeg: plugZenithDeg, plugLengthM: plugLenMD,
     cement: fx(cement), below: hasPad ? fx(padFluid) : fx(wellFluid),
     belowPad: hasPad ? fx(wellFluid) : undefined, padLengthM: hasPad ? spacerBelowHeightAnn : undefined,
+    velocityFactor: input.exchangeVelocityFactor,
   });
 
   // ═══ Per-interface contamination (RT fingering) ═══

@@ -16,7 +16,7 @@ interface Props {
 }
 
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "—");
-const VERDICT: Record<string, string> = { supported: "на опоре", "no-buoyancy": "устойчив", guaranteed: "устойчив (гарант.)", stable: "устойчив", risk: "риск обмена", unstable: "неустойчив" };
+const VERDICT: Record<string, string> = { supported: "на опоре", "no-buoyancy": "устойчив", guaranteed: "устойчив (гарант.)", stable: "устойчив", settle: "устоит, малая осадка", risk: "риск осадки", unstable: "может уйти" };
 
 /** Автоподбор конструкции моста: плотность, длина, опора/пачка, недопродавка, запас. */
 export default function PlugAutoDesignCard({ inputs, purpose, wocHours, fracGradient, onApply }: Props) {

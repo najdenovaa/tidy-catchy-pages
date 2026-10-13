@@ -52,9 +52,20 @@ export interface ExchangeInput {
   /** Жидкость под вязкой пачкой (если пачка есть) */
   belowPad?: ExchangeFluid;
   padLengthM?: number;
+  /** Множитель скорости обмена (калибровка по отбивкам); по умолчанию DEFAULT_FIELD_VELOCITY_FACTOR */
+  velocityFactor?: number;
 }
 
-export type ExchangeVerdict = "no-buoyancy" | "guaranteed" | "stable" | "risk" | "unstable" | "supported";
+export type ExchangeVerdict = "no-buoyancy" | "guaranteed" | "stable" | "settle" | "risk" | "unstable" | "supported";
+
+/**
+ * Промысловый множитель скорости обмена относительно лабораторной (Charabin & Frigaard 2024:
+ * труба Ø19 мм, лёгкая жидкость — вода). В скважине обмену мешают структура бурового раствора,
+ * загущение смеси цемент/раствор на границе, неровность стенок — реальная осадка мостов
+ * существенно меньше лабораторной оценки. По умолчанию 0,1 (по опыту установки мостов на растворе
+ * с вязкой пачкой); уточняется по отбивкам кровли (калибровка план/факт).
+ */
+export const DEFAULT_FIELD_VELOCITY_FACTOR = 0.1;
 
 export interface ExchangeInterface {
   upper: string;
@@ -83,6 +94,8 @@ export interface ExchangeResult {
   headline: string;
   details: string[];
   recommendations: string[];
+  /** Использованный промысловый множитель скорости обмена */
+  velocityFactor: number;
 }
 
 const G = 9.81;
@@ -113,7 +126,7 @@ export function gelAt(f: ExchangeFluid, tMin: number): number {
   return f.isCement ? g10 + rate * (tMin - 10) : g10;
 }
 
-function analyseInterface(upper: ExchangeFluid, lower: ExchangeFluid, R: number, zenithDeg: number, plugLengthM: number): ExchangeInterface {
+function analyseInterface(upper: ExchangeFluid, lower: ExchangeFluid, R: number, zenithDeg: number, plugLengthM: number, kField: number): ExchangeInterface {
   const dRho = (upper.density - lower.density) * 1000;
   const YcExp = yieldNumberCriticalExp(zenithDeg);
   const base = { upper: upper.name, lower: lower.name, deltaRhoKgM3: dRho, YcExp, YcTheory: Y_C_THEORY };
@@ -132,7 +145,7 @@ function analyseInterface(upper: ExchangeFluid, lower: ExchangeFluid, R: number,
   }
   const At = dRho / ((upper.density + lower.density) * 1000);
   const vLight = 0.04 * Math.sqrt(2 * At * G * R); // м/с, вязкий режим (Charabin & Frigaard 2024)
-  const vHeavy = 0.5 * vLight;
+  const vHeavy = 0.5 * vLight * kField;
   // Скорость падает до нуля по мере приближения Y к пределу (структура тормозит обмен):
   // v(t) = v_H·(1 − Y(t)/Y_c), интегрируем до остановки
   let exchangeLengthM = 0;
@@ -144,12 +157,13 @@ function analyseInterface(upper: ExchangeFluid, lower: ExchangeFluid, R: number,
   let verdict: ExchangeVerdict;
   if (Y0 >= Y_C_THEORY) verdict = "guaranteed";
   else if (Y0 >= YcExp) verdict = "stable";
-  else if (exchangeLengthM < 0.1 * plugLengthM) verdict = "risk";
+  else if (exchangeLengthM < 0.1 * plugLengthM) verdict = "settle";
+  else if (exchangeLengthM < 0.3 * plugLengthM) verdict = "risk";
   else verdict = "unstable";
   return { ...base, Y0, tauRequiredExpPa: tauReqExp, tauRequiredTheoryPa: tauReqTh, arrestMin, exchangeLengthM, verdict, gelEstimated };
 }
 
-const RANK: Record<ExchangeVerdict, number> = { supported: 0, "no-buoyancy": 0, guaranteed: 1, stable: 2, risk: 3, unstable: 4 };
+const RANK: Record<ExchangeVerdict, number> = { supported: 0, "no-buoyancy": 0, guaranteed: 1, stable: 2, settle: 2.5, risk: 3, unstable: 4 };
 
 export function assessPlugExchange(inp: ExchangeInput): ExchangeResult {
   const R = inp.boreDiameterMm / 2000;
@@ -160,10 +174,12 @@ export function assessPlugExchange(inp: ExchangeInput): ExchangeResult {
       headline: inp.support === "bottom" ? "Мост опирается на забой / ранее установленный мост — более лёгкой жидкости под цементом нет, обмена не будет." : "Мост на механической опоре — обмен с жидкостью ниже опоры исключён.",
       details: ["Остаётся риск смешения на верхней границе с буфером — см. раздел о границах жидкостей."],
       recommendations: inp.support === "bottom" ? ["Убедитесь, что опорный мост / забой проверены разгрузкой; осадок на забое снижает качество подошвы моста."] : [],
+      velocityFactor: inp.velocityFactor ?? DEFAULT_FIELD_VELOCITY_FACTOR,
     };
   }
-  const ifs: ExchangeInterface[] = [analyseInterface({ ...inp.cement, isCement: true }, inp.below, R, inp.zenithDeg, inp.plugLengthM)];
-  if (inp.belowPad) ifs.push(analyseInterface(inp.below, inp.belowPad, R, inp.zenithDeg, inp.padLengthM ?? inp.plugLengthM));
+  const kf = inp.velocityFactor && inp.velocityFactor > 0 ? inp.velocityFactor : DEFAULT_FIELD_VELOCITY_FACTOR;
+  const ifs: ExchangeInterface[] = [analyseInterface({ ...inp.cement, isCement: true }, inp.below, R, inp.zenithDeg, inp.plugLengthM, kf)];
+  if (inp.belowPad) ifs.push(analyseInterface(inp.below, inp.belowPad, R, inp.zenithDeg, inp.padLengthM ?? inp.plugLengthM, kf));
   const worst = ifs.reduce((w, x) => (RANK[x.verdict] > RANK[w.verdict] ? x : w), ifs[0]);
   const main = ifs[0];
   const details: string[] = [];
@@ -172,8 +188,8 @@ export function assessPlugExchange(inp: ExchangeInput): ExchangeResult {
     if (x.verdict === "no-buoyancy") { details.push(`«${x.upper}» над «${x.lower}»: верхняя жидкость не тяжелее нижней — гравитационного обмена нет.`); return; }
     details.push(
       `«${x.upper}» над «${x.lower}»: Δρ = ${fmt(x.deltaRhoKgM3)} кг/м³, Y = ${x.Y0.toFixed(3)} при пределе ${x.YcExp.toFixed(2)} (эксперимент) / ${x.YcTheory.toFixed(2)} (теория). ` +
-      `Нужен СНС ≥ ${fmt(x.tauRequiredExpPa)} Па (гарантированно ≥ ${fmt(x.tauRequiredTheoryPa)} Па).` +
-      (x.Y0 < x.YcExp ? ` Обмен остановится ${Number.isFinite(x.arrestMin) ? `через ≈${fmt(x.arrestMin)} мин` : "только при схватывании"}; оценочно цемент «провалится» на ~${fmt(x.exchangeLengthM)} м.` : "") +
+      `Чтобы обмена не было совсем, нужен СНС ≥ ${fmt(x.tauRequiredExpPa)} Па (гарантированно ≥ ${fmt(x.tauRequiredTheoryPa)} Па).` +
+      (x.Y0 < x.YcExp ? ` Частичный обмен остановится ${Number.isFinite(x.arrestMin) ? `через ≈${fmt(x.arrestMin)} мин` : "только при схватывании"}; ожидаемая осадка ~${fmt(x.exchangeLengthM)} м.` : "") +
       (x.gelEstimated ? " (СНС не задан — оценка по ДНС.)" : ""),
     );
   });
@@ -182,9 +198,10 @@ export function assessPlugExchange(inp: ExchangeInput): ExchangeResult {
     supported: "",
     "no-buoyancy": "Под цементом жидкость не легче цемента — гравитационного обмена нет, мост устойчив.",
     guaranteed: "Мост устойчив: прочность структуры выше теоретического предела — обмен жидкостями невозможен.",
-    stable: "Мост устойчив по экспериментальному критерию, но ниже теоретического предела — запас небольшой.",
-    risk: "Риск обмена: цемент начнёт стекать вниз, но структура остановит его быстро — ожидается загрязнение подошвы на несколько метров.",
-    unstable: "Мост НЕУСТОЙЧИВ: тяжёлый цемент поменяется местами с более лёгкой жидкостью ниже — мост «уйдёт» вниз или окажется размытым.",
+    stable: "Мост устойчив: обмена жидкостями не будет (по экспериментальному критерию).",
+    settle: `Мост устоит: на границе с жидкостью ниже возможен частичный обмен, но структура остановит его — ожидаемая осадка кровли ~${fmt(worst.exchangeLengthM)} м (до 10% длины моста).`,
+    risk: `Риск: ожидаемая осадка кровли ~${fmt(worst.exchangeLengthM)} м (10–30% длины моста) — мост останется, но кровля будет ниже проекта и загрязнена.`,
+    unstable: `Мост может уйти: ожидаемая осадка ~${fmt(worst.exchangeLengthM)} м — больше 30% длины моста.`,
   };
 
   if (RANK[worst.verdict] >= 3) {
@@ -201,5 +218,5 @@ export function assessPlugExchange(inp: ExchangeInput): ExchangeResult {
   }
   if (inp.zenithDeg > 30 && RANK[worst.verdict] >= 2) rec.push(`Наклон ${inp.zenithDeg.toFixed(0)}°: цемент стекает по нижней стенке (оползень) — в наклонных стволах предпочтительна механическая опора.`);
 
-  return { support: inp.support, radiusM: R, interfaces: ifs, verdict: worst.verdict, headline: headlines[worst.verdict], details, recommendations: rec };
+  return { support: inp.support, radiusM: R, interfaces: ifs, verdict: worst.verdict, headline: headlines[worst.verdict], details, recommendations: rec, velocityFactor: kf };
 }
