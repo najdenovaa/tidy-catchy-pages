@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 interface TabItem {
   value: string;
   label: string;
+  /** Подгруппа: между подгруппами ставится разделитель */
+  section?: string;
 }
 
 interface TabGroup {
@@ -33,19 +35,19 @@ const GROUPS: TabGroup[] = [
     label: "Анализ",
     icon: BarChart3,
     tabs: [
-      { value: "charts", label: "Графики" },
-      { value: "trajectory", label: "Траектория" },
-      { value: "materials", label: "Материалы" },
-      { value: "schedule", label: "Закачка" },
-      { value: "hydraulics", label: "Гидравлика" },
-      { value: "lab", label: "Лаборатория и рецептура" },
-      { value: "norms", label: "Нормы и риски" },
-      { value: "logistics", label: "Техника" },
-      { value: "skc", label: "Контроль СКЦ" },
-      { value: "contact", label: "Контакт" },
-      { value: "quality", label: "Качество (CQI)" },
-      { value: "torquedrag", label: "T&D" },
-      { value: "drillhydr", label: "Гидравлика бурения" },
+      { value: "charts", label: "Графики", section: "Расчёт" },
+      { value: "trajectory", label: "Траектория", section: "Расчёт" },
+      { value: "hydraulics", label: "Гидравлика", section: "Расчёт" },
+      { value: "schedule", label: "Закачка", section: "Расчёт" },
+      { value: "materials", label: "Материалы", section: "Расчёт" },
+      { value: "lab", label: "Лаборатория и рецептура", section: "Подготовка" },
+      { value: "norms", label: "Нормы и риски", section: "Подготовка" },
+      { value: "logistics", label: "Техника", section: "Подготовка" },
+      { value: "contact", label: "Контакт", section: "Качество" },
+      { value: "quality", label: "Качество (CQI)", section: "Качество" },
+      { value: "skc", label: "Контроль СКЦ", section: "Качество" },
+      { value: "torquedrag", label: "T&D", section: "Бурение" },
+      { value: "drillhydr", label: "Гидравлика бурения", section: "Бурение" },
     ],
   },
   {
@@ -77,16 +79,26 @@ export default function TabbedNavigation({ activeTab, onTabChange, rightSlot }: 
     [activeTab],
   );
 
+  const sections = useMemo(() => {
+    const out: { name: string; tabs: TabItem[] }[] = [];
+    activeGroup.tabs.forEach((t) => {
+      const name = t.section ?? "";
+      if (!out.length || out[out.length - 1].name !== name) out.push({ name, tabs: [] });
+      out[out.length - 1].tabs.push(t);
+    });
+    return out;
+  }, [activeGroup]);
+
   return (
-    <div className="sticky top-[80px] sm:top-[164px] z-[9] bg-background border-b border-border">
+    <div className="relative sm:sticky sm:top-[164px] z-[9] bg-background border-b border-border">
       <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2 space-y-2">
         {/* Светофор сверху во всю ширину */}
         {rightSlot && <div className="w-full">{rightSlot}</div>}
 
-        {/* Группы + подвкладки на одной горизонтали */}
-        <div className="flex flex-col sm:flex-row gap-2 items-start">
+        {/* Группы — первая строка, подвкладки — под ними во всю ширину */}
+        <div className="flex flex-col gap-2">
           {/* Group switcher */}
-          <div className="flex gap-1 overflow-x-auto scrollbar-hide shrink-0">
+          <div className="flex flex-wrap gap-1">
             {GROUPS.map((g) => {
               const Icon = g.icon;
               const isActive = g.id === activeGroup.id;
@@ -118,17 +130,18 @@ export default function TabbedNavigation({ activeTab, onTabChange, rightSlot }: 
             })}
           </div>
 
-          {/* Sub-tabs справа от групп */}
-          <div className={cn("overflow-x-auto scrollbar-hide flex-1 min-w-0", activeGroup.tabs.length === 1 && "hidden")}>
-            <TabsList className="inline-flex w-max h-auto min-w-max">
-              {activeGroup.tabs.map((t) => (
-                <TabsTrigger
-                  key={t.value}
-                  value={t.value}
-                  className="text-xs py-2 px-3"
-                >
-                  {t.label}
-                </TabsTrigger>
+          {/* Подвкладки переносятся по строкам: всё видно без прокрутки; подгруппы не разрываются */}
+          <div className={cn("w-full", activeGroup.tabs.length === 1 && "hidden")}>
+            <TabsList className="flex flex-wrap justify-start items-center w-full h-auto gap-y-1 gap-x-1 p-1">
+              {sections.map((sec, si) => (
+                <div key={sec.name || si} className={cn("flex flex-wrap items-center", si > 0 && "sm:pl-2 sm:ml-1 sm:border-l border-border/70")}>
+                  {sec.name && <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 px-1">{sec.name}</span>}
+                  {sec.tabs.map((t) => (
+                    <TabsTrigger key={t.value} value={t.value} className="text-xs py-1.5 px-2.5">
+                      {t.label}
+                    </TabsTrigger>
+                  ))}
+                </div>
               ))}
             </TabsList>
           </div>
