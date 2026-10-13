@@ -2289,6 +2289,12 @@ export function annularFrictionMPa(flowRateLps: number, lengthM: number, outerMm
   return { ...r, pressureMPa: r.pressureMPa * f };
 }
 
+/** Экспорт: потери в трубе (МПа), Бингам или Гершель–Балкли (если задан hb). */
+export function pipeFrictionMPa(flowRateLps: number, lengthM: number, idMm: number, pv: number, yp: number, densityKgM3: number, hb?: HBParams): FrictionResult {
+  const area = (Math.PI / 4) * (idMm / 1000) ** 2;
+  return frictionLossWithRegime(flowRateLps * 0.06, lengthM, idMm, pv, yp, area, densityKgM3, "pipe", hb);
+}
+
 // Обратно-совместимая обёртка (без режима)
 function frictionLoss(flowRateM3min: number, lengthM: number, dHydMm: number, pv: number, yp: number, flowAreaM2: number, densityKgM3: number = 1100): number {
   return frictionLossWithRegime(flowRateM3min, lengthM, dHydMm, pv, yp, flowAreaM2, densityKgM3).pressureMPa;

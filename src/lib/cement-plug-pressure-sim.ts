@@ -1,9 +1,13 @@
 /**
- * Time-step pressure simulation for balanced cement plug placement.
- * Generates data points for the combined pressure/volume chart.
+ * Пошаговый расчёт давлений при установке цементного моста (график давление/объём).
+ *
+ * Геометрия по глубине: затрубье выше башмака — по ВД обсадной колонны, ниже — по стволу
+ * с кавернозностью; трубы — по секциям компоновки. Жидкости отслеживаются объёмными пачками,
+ * трение — тем же расчётом, что в программе цементирования (Бингам или Гершель–Балкли по Fann).
  */
 
-import { interpolateTVD, effectiveRheology, type TrajectoryPoint, type Rheology } from "./cementing-calculations";
+import { interpolateTVD, effectiveRheology, hbOf, annularFrictionMPa, pipeFrictionMPa, type Rheology } from "./cementing-calculations";
+import type { PlugFluid } from "./cement-plug-calculations";
 import type { PlugInputs, PlugResults } from "./cement-plug-calculations";
 
 /* ───── Output ───── */
@@ -26,49 +30,14 @@ export interface PressureTimePoint {
   frictionMPa: number;
 }
 
-/* ───── Helpers ───── */
+/* ───── Геометрия ───── */
 
-function areaM2(diamMm: number): number {
-  const d = diamMm / 1000;
-  return (Math.PI / 4) * d * d;
-}
+const areaM2 = (dMm: number) => (Math.PI / 4) * (dMm / 1000) ** 2;
+const hydroMPa = (densGcm3: number, tvdM: number) => (densGcm3 * 9.81 * tvdM) / 1000;
 
-function annAreaM2(outerMm: number, innerMm: number): number {
-  return areaM2(outerMm) - areaM2(innerMm);
-}
-
-/** Bingham friction loss, MPa */
-function frictionBingham(qLs: number, lengthM: number, dHydMm: number, flowAreaM2: number, pv: number, yp: number, densKgM3: number): number {
-  const dHyd = dHydMm / 1000;
-  if (dHyd <= 0 || qLs <= 0 || lengthM <= 0) return 0;
-  const area = flowAreaM2 > 0 ? flowAreaM2 : (Math.PI / 4) * dHyd * dHyd;
-  const v = (qLs / 1000) / area; // m/s
-  const pvPas = pv / 1000;
-  const muEff = pvPas + yp * dHyd / (6 * v);
-  const Re = densKgM3 * v * dHyd / muEff;
-
-  const frLam = (32 * pvPas * v * lengthM) / (dHyd * dHyd) / 1e6;
-  const yieldTerm = (16 * yp * lengthM) / (3 * dHyd) / 1e6;
-  const laminar = frLam + yieldTerm;
-  const f = 0.0791 / Math.pow(Math.max(Re, 100), 0.25);
-  const turbulent = (2 * f * densKgM3 * v * v * lengthM) / dHyd / 1e6;
-
-  if (Re < 2100) return laminar;
-  if (Re > 4000) return turbulent;
-  const blend = (Re - 2100) / 1900;
-  return laminar * (1 - blend) + turbulent * blend;
-}
-
-function hydroMPa(densGcm3: number, tvdM: number): number {
-  return densGcm3 * 9.81 * tvdM / 1000;
-}
-
-/* ───── Simulation ───── */
-
-interface FluidSegment {
-  fluid: 'mud' | 'spacer' | 'cement';
-  lengthM: number; // length in MD
-}
+type FluidKey = "mud" | "spacer" | "pad" | "cement";
+interface Packet { fluid: FluidKey; vol: number }
+interface Cell { top: number; bot: number; len: number; dTvd: number; pipeId: number; pipeOd: number; bore: number; pipeVol: number; annVol: number }
 
 export function simulatePlugPressures(
   input: PlugInputs,
@@ -78,284 +47,168 @@ export function simulatePlugPressures(
   const { well, plug, cement, spacer, wellFluid } = input;
   const traj = well.trajectory.length > 1 ? well.trajectory
     : [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }, { md: well.wellDepthMD, azimuth: 0, zenith: 0, tvd: well.wellDepthMD }];
-
-  const isOpenHole = plug.bottomMD > well.casingShoe;
-  const cavernCoeff = isOpenHole ? Math.max(1, well.cavernCoeff || 1) : 1;
-  const boreDiam = isOpenHole ? well.holeDiameter * Math.sqrt(cavernCoeff) : well.casingID;
+  const tvd = (md: number) => interpolateTVD(Math.max(0, Math.min(well.wellDepthMD, md)), traj);
   const pipeEndMD = plug.bottomMD;
+  const padFluid: PlugFluid = input.useViscousPad && input.viscousPadFluid ? input.viscousPadFluid : spacer;
 
-  const annA = annAreaM2(boreDiam, well.pipeOD);
-  const pipeA = areaM2(well.pipeID);
-  const boreA = areaM2(boreDiam);
+  const sections = results.pipeSectionsUsed?.length ? results.pipeSectionsUsed : [{ fromMD: 0, toMD: pipeEndMD, od: well.pipeOD, id: well.pipeID }];
+  const pipeAt = (md: number) => sections.find((x) => md >= x.fromMD && md < x.toMD) ?? sections[sections.length - 1];
+  const openBore = results.boreDiamUsed;
+  const boreAt = (md: number) => (results.isOpenHole && md > well.casingShoe ? openBore : well.casingID);
 
-  const dHydPipe = well.pipeID; // mm
-  const dHydAnn = boreDiam - well.pipeOD; // mm
-
-  // Frac pressure — at plug bottom (bottomTVD)
-  const shoeTVD = interpolateTVD(well.casingShoe, traj);
-  const bottomTVD = interpolateTVD(pipeEndMD, traj);
-  const fracMPa = fracGradientMPaPerM * bottomTVD;
-  const shoeMD = well.casingShoe;
-  // Distance from bottom of annulus to shoe
-  const belowShoeMD = Math.max(0, pipeEndMD - shoeMD);
-
-  const points: PressureTimePoint[] = [];
-  const dt = 0.5; // time step, min
-
-  // Define fluid properties lookup
-  const fluidProps = (f: 'mud' | 'spacer' | 'cement') => {
-    switch (f) {
-      case 'cement': { const r = effectiveRheology(cement.rheology, cement.density >= 1.65 ? 'heavy_cement' : 'light_cement'); return { density: cement.density, pv: r.pv, yp: r.yp }; }
-      case 'spacer': { const r = effectiveRheology(spacer.rheology, 'buffer'); return { density: spacer.density, pv: r.pv, yp: r.yp }; }
-      default: { const r = effectiveRheology(wellFluid.rheology, 'mud'); return { density: wellFluid.density, pv: r.pv, yp: r.yp }; }
+  // Ячейки по глубине (границы — башмак и концы секций попадают точно)
+  const breaks = new Set<number>([0, pipeEndMD]);
+  if (results.isOpenHole && well.casingShoe > 0 && well.casingShoe < pipeEndMD) breaks.add(well.casingShoe);
+  sections.forEach((x) => { if (x.fromMD > 0 && x.fromMD < pipeEndMD) breaks.add(x.fromMD); if (x.toMD > 0 && x.toMD < pipeEndMD) breaks.add(x.toMD); });
+  const bp = [...breaks].sort((a, b) => a - b);
+  const step = Math.max(2, pipeEndMD / 600);
+  const cells: Cell[] = [];
+  for (let k = 0; k < bp.length - 1; k++) {
+    const n = Math.max(1, Math.ceil((bp[k + 1] - bp[k]) / step));
+    for (let j = 0; j < n; j++) {
+      const top = bp[k] + ((bp[k + 1] - bp[k]) * j) / n, bot = bp[k] + ((bp[k + 1] - bp[k]) * (j + 1)) / n;
+      const mid = (top + bot) / 2, ps = pipeAt(mid), bore = boreAt(mid), len = bot - top;
+      cells.push({ top, bot, len, dTvd: tvd(bot) - tvd(top), pipeId: ps.id, pipeOd: ps.od, bore, pipeVol: areaM2(ps.id) * len, annVol: Math.max(1e-6, areaM2(bore) - areaM2(ps.od)) * len });
     }
+  }
+  const pipeTotal = cells.reduce((t, c) => t + c.pipeVol, 0);
+  const annTotal = cells.reduce((t, c) => t + c.annVol, 0);
+
+  const props = (f: FluidKey) => {
+    const src = f === "cement" ? cement : f === "spacer" ? spacer : f === "pad" ? padFluid : wellFluid;
+    const cat = f === "cement" ? (cement.density >= 1.65 ? "heavy_cement" : "light_cement") : f === "mud" ? "mud" : "buffer";
+    const r: Rheology = effectiveRheology(src.rheology, cat as never);
+    return { density: src.density, pv: r.pv, yp: r.yp, hb: hbOf(src.rheology) };
   };
+  const P: Record<FluidKey, ReturnType<typeof props>> = { mud: props("mud"), spacer: props("spacer"), pad: props("pad"), cement: props("cement") };
 
-  // We track what's pumped INTO the pipe from surface. The pipe pushes fluid out the bottom into annulus.
-  // Pipe: surface → pipeEndMD (length = pipeEndMD)
-  // Annulus: pipeEndMD → surface (length = pipeEndMD, fluid rises from bottom)
+  // Содержимое: трубы — от устья вниз, затрубье — от конца труб вверх
+  let pipe: Packet[] = [{ fluid: "mud", vol: pipeTotal }];
+  let ann: Packet[] = [{ fluid: "mud", vol: annTotal }];
 
-  // Pipe contents: array from surface(top) to bottom. Each segment has fluid type and length.
-  let pipeContents: FluidSegment[] = [{ fluid: 'mud', lengthM: pipeEndMD }];
-  // Annulus contents: array from bottom(pipeEnd) to surface. 
-  let annContents: FluidSegment[] = [{ fluid: 'mud', lengthM: pipeEndMD }];
-
-  // Define pumping stages as: [fluid, volumeM3, pumpRateLs]
-  const stages: { name: string; fluid: 'spacer' | 'cement' | 'mud'; volumeM3: number; rateLs: number }[] = [];
-
-  if (input.spacerVolumeBelowM3 > 0) {
-    stages.push({ name: 'Ниж. буфер', fluid: 'spacer', volumeM3: input.spacerVolumeBelowM3, rateLs: input.pumpRateSpacerLs });
+  const merge = (a: Packet[]) => a.reduce<Packet[]>((m, x) => { if (x.vol <= 1e-12) return m; const l = m[m.length - 1]; if (l && l.fluid === x.fluid) l.vol += x.vol; else m.push({ ...x }); return m; }, []);
+  const takeFromEnd = (a: Packet[], v: number): Packet[] => {
+    const out: Packet[] = [];
+    while (v > 1e-12 && a.length) {
+      const l = a[a.length - 1];
+      const d = Math.min(v, l.vol);
+      out.unshift({ fluid: l.fluid, vol: d }); l.vol -= d; v -= d;
+      if (l.vol <= 1e-12) a.pop();
+    }
+    return out;
+  };
+  function pump(fluid: FluidKey, v: number) {
+    pipe.unshift({ fluid, vol: v });
+    const out = takeFromEnd(pipe, v); // выходит из конца труб (нижние пачки)
+    // в затрубье поступает снизу: первой вышла самая нижняя пачка и её поднимает выше —
+    // поэтому порядок «снизу вверх» в затрубье совпадает с порядком «сверху вниз» в трубах
+    ann = [...out, ...ann];
+    takeFromEnd(ann, v); // уходит на устье
+    pipe = merge(pipe); ann = merge(ann);
   }
-  stages.push({ name: 'Цемент', fluid: 'cement', volumeM3: results.cementVolumeTotal, rateLs: input.pumpRateCementLs });
-  if (input.spacerVolumeAboveM3 > 0) {
-    const spacerAboveTotal = input.spacerVolumeAboveM3;
-    stages.push({ name: 'Верх. буфер', fluid: 'spacer', volumeM3: spacerAboveTotal, rateLs: input.pumpRateSpacerLs });
-  }
-  stages.push({ name: 'Продавка', fluid: 'mud', volumeM3: results.displacementVolume, rateLs: input.pumpRateDisplacementLs });
 
-  let timeMin = 0;
-  let cumulativeVolumeM3 = 0;
-  let cumSpacer = 0;
-  let cumCement = 0;
-  let cumDispl = 0;
-  let cumWash = 0;
-
-  // Helper: compute hydrostatic from a list of fluid segments over a given total length
-  // Segments are ordered from one end; we need TVD-weighted pressures
-  function computeHydrostatic(segments: FluidSegment[], totalMD: number, startMD: number, direction: 'down' | 'up'): number {
-    let pressure = 0;
-    let currentMD = startMD;
-    for (const seg of segments) {
-      const segLen = Math.min(seg.lengthM, Math.max(0, totalMD));
-      if (segLen <= 0) continue;
-      const props = fluidProps(seg.fluid);
-      let md1: number, md2: number;
-      if (direction === 'down') {
-        md1 = currentMD;
-        md2 = currentMD + segLen;
-      } else {
-        md1 = currentMD;
-        md2 = currentMD - segLen;
+  /** Обход ячеек с распределением пачек: callback(cell, fluid, доля ячейки). */
+  function walk(packets: Packet[], order: Cell[], volOf: (c: Cell) => number, cb: (c: Cell, f: FluidKey, frac: number) => void) {
+    let pi = 0, left = packets[0]?.vol ?? 0;
+    for (const c of order) {
+      let need = volOf(c);
+      const total = need;
+      while (need > 1e-12 && pi < packets.length) {
+        const d = Math.min(need, left);
+        cb(c, packets[pi].fluid, d / total);
+        need -= d; left -= d;
+        if (left <= 1e-12) { pi++; left = packets[pi]?.vol ?? 0; }
       }
-      const tvd1 = interpolateTVD(Math.max(0, Math.min(well.wellDepthMD, md1)), traj);
-      const tvd2 = interpolateTVD(Math.max(0, Math.min(well.wellDepthMD, md2)), traj);
-      const dTVD = Math.abs(tvd2 - tvd1);
-      pressure += hydroMPa(props.density, dTVD);
-      currentMD = direction === 'down' ? md2 : md2;
+      if (need > 1e-12) cb(c, "mud", need / total);
     }
-    return pressure;
   }
 
-  // Compute friction for pipe contents
-  function computePipeFriction(rateLs: number): number {
-    if (rateLs <= 0) return 0;
-    let totalFriction = 0;
-    for (const seg of pipeContents) {
-      if (seg.lengthM <= 0) continue;
-      const props = fluidProps(seg.fluid);
-      totalFriction += frictionBingham(rateLs, seg.lengthM, dHydPipe, pipeA, props.pv, props.yp, props.density * 1000);
-    }
-    return totalFriction;
-  }
-
-  // Compute friction for annulus contents
-  function computeAnnFriction(rateLs: number): number {
-    if (rateLs <= 0) return 0;
-    let totalFriction = 0;
-    for (const seg of annContents) {
-      if (seg.lengthM <= 0) continue;
-      const props = fluidProps(seg.fluid);
-      totalFriction += frictionBingham(rateLs, seg.lengthM, dHydAnn, annA, props.pv, props.yp, props.density * 1000);
-    }
-    return totalFriction * 0.8; // annular friction coefficient
-  }
-
-  // Push fluid into pipe from surface (top), fluid exits bottom into annulus
-  function pumpVolume(fluid: 'mud' | 'spacer' | 'cement', volumeM3: number) {
-    const lengthInPipe = pipeA > 0 ? volumeM3 / pipeA : 0;
-    // Add to top of pipe
-    pipeContents.unshift({ fluid, lengthM: lengthInPipe });
-    // Trim pipe to pipeEndMD - overflow goes to annulus bottom
-    let totalPipeLen = pipeContents.reduce((s, seg) => s + seg.lengthM, 0);
-    let overflow: FluidSegment[] = [];
-    while (totalPipeLen > pipeEndMD && pipeContents.length > 0) {
-      const last = pipeContents[pipeContents.length - 1];
-      const excess = totalPipeLen - pipeEndMD;
-      if (excess >= last.lengthM) {
-        overflow.unshift(last);
-        pipeContents.pop();
-        totalPipeLen -= last.lengthM;
-      } else {
-        overflow.unshift({ fluid: last.fluid, lengthM: excess });
-        last.lengthM -= excess;
-        totalPipeLen = pipeEndMD;
-      }
-    }
-    // Overflow enters annulus from bottom - convert pipe volume to annular length
-    for (const seg of overflow) {
-      const volM3 = seg.lengthM * pipeA;
-      const annLen = annA > 0 ? volM3 / annA : 0;
-      annContents.unshift({ fluid: seg.fluid, lengthM: annLen });
-    }
-    // Trim annulus to pipeEndMD
-    let totalAnnLen = annContents.reduce((s, seg) => s + seg.lengthM, 0);
-    while (totalAnnLen > pipeEndMD && annContents.length > 0) {
-      const last = annContents[annContents.length - 1];
-      const excess = totalAnnLen - pipeEndMD;
-      if (excess >= last.lengthM) {
-        annContents.pop();
-        totalAnnLen -= last.lengthM;
-      } else {
-        last.lengthM -= excess;
-        totalAnnLen = pipeEndMD;
-      }
-    }
-    // Merge consecutive same-fluid segments
-    pipeContents = mergeSegments(pipeContents);
-    annContents = mergeSegments(annContents);
-  }
-
-  function mergeSegments(segs: FluidSegment[]): FluidSegment[] {
-    const merged: FluidSegment[] = [];
-    for (const s of segs) {
-      if (merged.length > 0 && merged[merged.length - 1].fluid === s.fluid) {
-        merged[merged.length - 1].lengthM += s.lengthM;
-      } else {
-        merged.push({ ...s });
-      }
-    }
-    return merged;
-  }
+  const bottomTVD = tvd(pipeEndMD);
+  const fracMPa = fracGradientMPaPerM * bottomTVD;
+  const cellsUp = [...cells].reverse();
+  const points: PressureTimePoint[] = [];
+  let timeMin = 0, cum = 0, cumSpacer = 0, cumCement = 0, cumDispl = 0, cumWash = 0;
 
   function computePoint(stage: string, rateLs: number): PressureTimePoint {
-    // Hydrostatic: pipe is surface→bottom (down), annulus is bottom→surface (up)
-    const hPipe = computeHydrostatic(pipeContents, pipeEndMD, 0, 'down');
-    const hAnn = computeHydrostatic(annContents, pipeEndMD, pipeEndMD, 'up');
-
-    const fPipe = computePipeFriction(rateLs);
-    const fAnn = computeAnnFriction(rateLs);
-
-    // BHP at plug bottom: P_bottom = hydro_ann + friction_ann (annulus open at surface)
+    let hPipe = 0, fPipe = 0, hAnn = 0, fAnn = 0, hBelowShoe = 0, fBelowShoe = 0;
+    walk(pipe, cells, (c) => c.pipeVol, (c, f, fr) => {
+      const p = P[f];
+      hPipe += hydroMPa(p.density, c.dTvd * fr);
+      if (rateLs > 0) fPipe += pipeFrictionMPa(rateLs, c.len * fr, c.pipeId, p.pv, p.yp, p.density * 1000, p.hb).pressureMPa;
+    });
+    walk(ann, cellsUp, (c) => c.annVol, (c, f, fr) => {
+      const p = P[f];
+      const h = hydroMPa(p.density, c.dTvd * fr);
+      const fr2 = rateLs > 0 ? annularFrictionMPa(rateLs, c.len * fr, c.bore, c.pipeOd, p.pv, p.yp, p.density * 1000, 100, p.hb).pressureMPa : 0;
+      hAnn += h; fAnn += fr2;
+      if (results.isOpenHole && c.top >= well.casingShoe - 1e-6) { hBelowShoe += h; fBelowShoe += fr2; }
+    });
     const bhp = hAnn + fAnn;
-
-    // Pressure at casing shoe from annulus side:
-    // P_shoe = BHP - hydro(bottom→shoe) - friction(bottom→shoe)
-    // We compute partial hydrostatic & friction for the below-shoe portion of annulus
-    let hBelowShoe = 0;
-    let fBelowShoe = 0;
-    if (belowShoeMD > 0) {
-      let remainMD = belowShoeMD;
-      for (const seg of annContents) {
-        if (remainMD <= 0) break;
-        const segLen = Math.min(seg.lengthM, remainMD);
-        if (segLen <= 0) continue;
-        const props = fluidProps(seg.fluid);
-        // Hydrostatic for this segment
-        const md1 = pipeEndMD - (belowShoeMD - remainMD);
-        const md2 = md1 - segLen;
-        const tvd1 = interpolateTVD(Math.max(0, Math.min(well.wellDepthMD, md1)), traj);
-        const tvd2 = interpolateTVD(Math.max(0, Math.min(well.wellDepthMD, md2)), traj);
-        hBelowShoe += hydroMPa(props.density, Math.abs(tvd1 - tvd2));
-        // Friction for this segment
-        if (rateLs > 0) {
-          fBelowShoe += frictionBingham(rateLs, segLen, dHydAnn, annA, props.pv, props.yp, props.density * 1000) * 0.8;
-        }
-        remainMD -= segLen;
-      }
-    }
-    const shoePress = Math.max(0, bhp - hBelowShoe - fBelowShoe);
-
-    // Surface pressure balance: P_surface + hPipe - fPipe = BHP
-    const surface = Math.max(0, hAnn + fAnn - hPipe + fPipe);
-
     return {
-      timeMin,
-      stage,
-      pumpRateLs: rateLs,
-      volumePumpedM3: cumulativeVolumeM3,
-      volSpacerM3: cumSpacer,
-      volCementM3: cumCement,
-      volDisplM3: cumDispl,
-      volWashM3: cumWash,
+      timeMin, stage, pumpRateLs: rateLs, volumePumpedM3: cum,
+      volSpacerM3: cumSpacer, volCementM3: cumCement, volDisplM3: cumDispl, volWashM3: cumWash,
       bhpMPa: bhp,
-      shoePressMPa: shoePress,
-      surfaceMPa: surface,
-      fracMPa,
-      hydroStaticAnnMPa: hAnn,
-      hydroStaticPipeMPa: hPipe,
-      frictionMPa: fPipe + fAnn,
+      shoePressMPa: Math.max(0, bhp - hBelowShoe - fBelowShoe),
+      surfaceMPa: Math.max(0, hAnn + fAnn - hPipe + fPipe),
+      fracMPa, hydroStaticAnnMPa: hAnn, hydroStaticPipeMPa: hPipe, frictionMPa: fPipe + fAnn,
     };
   }
 
-  // Initial point (static, before pumping)
-  points.push(computePoint('Статика', 0));
+  const stages: { name: string; fluid: FluidKey; volumeM3: number; rateLs: number }[] = [];
+  if (input.useViscousPad && input.spacerVolumeBelowM3 > 0) stages.push({ name: "Вязкая пачка", fluid: "pad", volumeM3: input.spacerVolumeBelowM3, rateLs: input.pumpRateSpacerLs });
+  // Верхний буфер делится как в программе: затрубная часть — перед цементом, трубная — после
+  const spAnn = results.annArea * results.spacerAboveHeightAnnMD, spPipe = Math.max(0, input.spacerVolumeAboveM3 - spAnn);
+  if (spAnn > 0) stages.push({ name: "Буфер (затрубье)", fluid: "spacer", volumeM3: spAnn, rateLs: input.pumpRateSpacerLs });
+  stages.push({ name: "Цемент", fluid: "cement", volumeM3: results.cementVolumeTotal, rateLs: input.pumpRateCementLs });
+  if (spPipe > 0) stages.push({ name: "Буфер (трубы)", fluid: "spacer", volumeM3: spPipe, rateLs: input.pumpRateSpacerLs });
+  stages.push({ name: "Продавка", fluid: "mud", volumeM3: results.displacementVolume, rateLs: input.pumpRateDisplacementLs });
 
-  // Pumping stages
-  for (const stage of stages) {
-    const { name, fluid, volumeM3, rateLs } = stage;
-    if (volumeM3 <= 0 || rateLs <= 0) continue;
-
-    const totalTimeStageSec = (volumeM3 * 1000 / rateLs);
-    const totalTimeStageMin = totalTimeStageSec / 60;
-    const steps = Math.max(1, Math.ceil(totalTimeStageMin / dt));
-    const actualDt = totalTimeStageMin / steps;
-    const dVol = volumeM3 / steps;
-
-    for (let s = 0; s < steps; s++) {
-      pumpVolume(fluid, dVol);
-      timeMin += actualDt;
-      cumulativeVolumeM3 += dVol;
-      if (fluid === 'spacer') cumSpacer += dVol;
-      else if (fluid === 'cement') cumCement += dVol;
-      else cumDispl += dVol;
-      points.push(computePoint(name, rateLs));
+  const dt = 0.5;
+  points.push(computePoint("Статика", 0));
+  for (const st of stages) {
+    if (st.volumeM3 <= 0 || st.rateLs <= 0) continue;
+    const tStage = (st.volumeM3 * 1000) / st.rateLs / 60;
+    const n = Math.max(1, Math.ceil(tStage / dt));
+    for (let k = 0; k < n; k++) {
+      const dv = st.volumeM3 / n;
+      pump(st.fluid, dv);
+      timeMin += tStage / n; cum += dv;
+      if (st.fluid === "cement") cumCement += dv; else if (st.fluid === "mud") cumDispl += dv; else cumSpacer += dv;
+      points.push(computePoint(st.name, st.rateLs));
     }
   }
-
-  // Pull-out phase
-  const tripTimeMin = results.tripTimeMin;
-  if (tripTimeMin > 0) {
-    const tripSteps = Math.max(1, Math.ceil(tripTimeMin / dt));
-    const tripDt = tripTimeMin / tripSteps;
-    for (let s = 0; s < tripSteps; s++) {
-      timeMin += tripDt;
-      points.push(computePoint('Подъём', 0));
+  // После продавки трубы поднимают из цемента: статика моста (затрубье на подошве), на устье 0
+  const afterPlace = computePoint("Подъём", 0);
+  const staticBhp = afterPlace.hydroStaticAnnMPa;
+  const staticShoe = afterPlace.shoePressMPa;
+  if (results.tripTimeMin > 0) {
+    const n = Math.max(1, Math.ceil(results.tripTimeMin / dt));
+    for (let k = 0; k < n; k++) {
+      timeMin += results.tripTimeMin / n;
+      points.push({ ...afterPlace, timeMin, surfaceMPa: 0, bhpMPa: staticBhp, frictionMPa: 0 });
     }
   }
-
-  // Wash phase
-  const washTimeMin = results.washTimeMin;
-  if (washTimeMin > 0 && input.pumpRateWashLs > 0) {
-    const washSteps = Math.max(1, Math.ceil(washTimeMin / dt));
-    const washDt = washTimeMin / washSteps;
-    for (let s = 0; s < washSteps; s++) {
-      timeMin += washDt;
-      const dWashVol = results.washVolumeM3 / washSteps;
-      cumulativeVolumeM3 += dWashVol;
-      cumWash += dWashVol;
-      points.push(computePoint('Промывка', input.pumpRateWashLs));
+  // Промывка над мостом: циркуляция раствора выше конца труб; цемент ниже — в статике
+  if (results.washTimeMin > 0 && input.pumpRateWashLs > 0) {
+    const q = input.pumpRateWashLs, pm = P.mud, zEnd = results.pullOutDepthMD;
+    let fp = 0, fa = 0, faBelowShoe = 0;
+    cells.forEach((c) => {
+      if (c.top >= zEnd) return;
+      const len = Math.min(c.bot, zEnd) - c.top;
+      fp += pipeFrictionMPa(q, len, c.pipeId, pm.pv, pm.yp, pm.density * 1000, pm.hb).pressureMPa;
+      const fr = annularFrictionMPa(q, len, c.bore, c.pipeOd, pm.pv, pm.yp, pm.density * 1000, 100, pm.hb).pressureMPa;
+      fa += fr;
+      if (results.isOpenHole && c.top >= well.casingShoe - 1e-6) faBelowShoe += fr;
+    });
+    const n = Math.max(1, Math.ceil(results.washTimeMin / dt));
+    for (let k = 0; k < n; k++) {
+      timeMin += results.washTimeMin / n;
+      const dv = results.washVolumeM3 / n; cum += dv; cumWash += dv;
+      points.push({
+        ...afterPlace, timeMin, stage: "Промывка", pumpRateLs: q, volumePumpedM3: cum, volWashM3: cumWash,
+        bhpMPa: staticBhp + fa, shoePressMPa: staticShoe + (fa - faBelowShoe), surfaceMPa: fp + fa, frictionMPa: fp + fa,
+      });
     }
   }
-
   return points;
 }

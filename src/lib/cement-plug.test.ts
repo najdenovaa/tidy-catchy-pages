@@ -132,3 +132,67 @@ describe("Цементный мост: устойчивость против о�
     expect(calculateBalancedPlug(base({ plug: { topMD: 2950, bottomMD: 3000 } })).exchange.verdict).toBe("supported");
   });
 });
+
+import { simulatePlugPressures } from "./cement-plug-pressure-sim";
+
+describe("Цементный мост: давления при закачке", () => {
+  const inp = base({ underDisplacementM3: 0 });
+  const res = calculateBalancedPlug(inp);
+  const pts = simulatePlugPressures(inp, res, 0.018);
+  it("статика: забойное = гидростатика раствора по TVD", () => {
+    expect(pts[0].bhpMPa).toBeCloseTo(1.2 * 9.81 * 2650 / 1000, 2);
+    expect(pts[0].surfaceMPa).toBeCloseTo(0, 3);
+  });
+  it("после продавки цемент и буфер стоят на равновесии: давление на устье ≈ 0 без циркуляции", () => {
+    const lastPump = [...pts].reverse().find((p) => p.stage === "Продавка")!;
+    expect(Math.abs(lastPump.hydroStaticAnnMPa - lastPump.hydroStaticPipeMPa)).toBeLessThan(0.05);
+    expect(lastPump.hydroStaticAnnMPa).toBeCloseTo(res.pressureAnnulus, 1);
+  });
+  it("трение в затрубье выше башмака считается по колонне, а не по стволу (меньше зазор → больше потери)", () => {
+    const wide = simulatePlugPressures({ ...inp, well: { ...inp.well, casingID: 230 } }, calculateBalancedPlug({ ...inp, well: { ...inp.well, casingID: 230 } }), 0.018);
+    const f1 = pts.find((p) => p.stage === "Цемент")!.frictionMPa, f2 = wide.find((p) => p.stage === "Цемент")!.frictionMPa;
+    expect(f1).toBeGreaterThan(f2);
+  });
+  it("Гершель–Балкли по Fann меняет трение", () => {
+    const fann = { r600: 60, r300: 38, r200: 30, r100: 20, r6: 8, r3: 7 };
+    const i2 = { ...inp, wellFluid: { ...inp.wellFluid, rheology: { ...inp.wellFluid.rheology, fann } } };
+    const p2 = simulatePlugPressures(i2, calculateBalancedPlug(i2), 0.018);
+    expect(p2.find((p) => p.stage === "Цемент")!.frictionMPa).not.toBeCloseTo(pts.find((p) => p.stage === "Цемент")!.frictionMPa, 3);
+  });
+});
+
+import { plugTemperatures } from "./cement-plug-calculations";
+import { designPlugSlurry, plugRequiredThickeningMin, plugJobTimeMin, buildPlugLabProtocol } from "./cement-plug-recipe";
+
+describe("Цементный мост: температура и рецептура", () => {
+  const inp = base({ well: { ...base().well, bottomTempStatic: 95, surfaceTemp: 5 } });
+  const r = calculateBalancedPlug(inp);
+  it("статика по градиенту, BHCT ниже статики на подошве", () => {
+    const t = plugTemperatures(inp.well, inp.plug);
+    expect(t.tBottomStaticC).toBeCloseTo(5 + 90 * 2650 / 3000, 1);
+    expect(t.bhctC).toBeLessThan(t.tBottomStaticC);
+    expect(t.estimated).toBe(false);
+    expect(plugTemperatures(base().well, base().plug).estimated).toBe(true);
+  });
+  it("требуемое загустевание: работа раствора ≤ 75% и не менее +30 мин", () => {
+    const job = plugJobTimeMin(r);
+    expect(plugRequiredThickeningMin(r)).toBeGreaterThanOrEqual(job / 0.75);
+    expect(plugRequiredThickeningMin(r)).toBeGreaterThanOrEqual(job + 30);
+  });
+  it("рецептура: плотность замыкается, загустевание и прочность по назначению", () => {
+    const ab = designPlugSlurry(inp, r, "abandonment", 24);
+    expect(ab.design.densityGcm3).toBeCloseTo(1.85, 2);
+    expect(ab.design.predicted.thickening30BcMin).toBeGreaterThanOrEqual(plugRequiredThickeningMin(r));
+    const ko = designPlugSlurry(inp, r, "kickoff", 24);
+    expect(ko.targets.strength24MinMPa).toBe(14);
+    const lc = designPlugSlurry(inp, r, "lost_circulation", 24);
+    expect(lc.design.components.some((c) => c.role === "fiber")).toBe(true);
+  });
+  it("протокол моста собирается и содержит требования", () => {
+    const res = designPlugSlurry(inp, r, "kickoff", 24);
+    const p = buildPlugLabProtocol(inp, r, res, "kickoff", 24);
+    const rows = p.sections.find((s) => s.id === "props-0")!.tables![0].rows;
+    expect(rows.find((x) => x[0].startsWith("Прочность 24"))![1]).toBe("≥ 14,00");
+    expect(p.sections.find((s) => s.id === "recipe-0")!.tables![0].rows.length).toBeGreaterThan(3);
+  });
+});

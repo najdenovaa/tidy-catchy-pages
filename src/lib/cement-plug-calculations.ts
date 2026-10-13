@@ -4,6 +4,7 @@
 
 import { interpolateTVD, calculateTVDFromSurvey, type TrajectoryPoint, type Rheology } from "./cementing-calculations";
 import { calculatePlugStability, type StabilityResult } from "./cement-plug-stability";
+import { bhctKutasovTarghi, staticTempAt } from "./cement-program";
 import { assessPlugExchange, type ExchangeResult, type PlugSupport } from "./cement-plug-exchange";
 
 /* ───── Interfaces ───── */
@@ -26,6 +27,37 @@ export interface PlugWellData {
   cavernCoeff: number;
   trajectory: TrajectoryPoint[];
   pipeSections?: PipeSection[];
+  /** Статическая температура на забое скважины (по вертикали), °C */
+  bottomTempStatic?: number;
+  /** Температура на устье / нейтральном слое, °C */
+  surfaceTemp?: number;
+}
+
+export interface PlugTemperatures {
+  surfaceC: number;
+  /** Статическая на забое скважины, °C */
+  bhstWellC: number;
+  tTopStaticC: number;
+  tBottomStaticC: number;
+  /** Циркуляционная на подошве моста (температура испытания на загустевание), °C */
+  bhctC: number;
+  method: string;
+  /** Забойная температура не задана — оценка по градиенту 3 °C/100 м */
+  estimated: boolean;
+  note?: string;
+}
+
+/** Температуры моста: статика по линейному градиенту, BHCT — Kutasov–Targhi (как в программе цементирования). */
+export function plugTemperatures(well: PlugWellData, plug: PlugInterval): PlugTemperatures {
+  const traj = well.trajectory.length > 1 ? well.trajectory : [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }, { md: well.wellDepthMD, azimuth: 0, zenith: 0, tvd: well.wellDepthMD }];
+  const tdTvd = interpolateTVD(well.wellDepthMD, traj);
+  const surfaceC = Number.isFinite(well.surfaceTemp) && well.surfaceTemp !== undefined ? well.surfaceTemp : 10;
+  const estimated = !(well.bottomTempStatic && well.bottomTempStatic > 0);
+  const bhstWellC = estimated ? surfaceC + 0.03 * tdTvd : well.bottomTempStatic!;
+  const topTvd = interpolateTVD(plug.topMD, traj), botTvd = interpolateTVD(plug.bottomMD, traj);
+  const tTop = staticTempAt(topTvd, bhstWellC, surfaceC, tdTvd), tBot = staticTempAt(botTvd, bhstWellC, surfaceC, tdTvd);
+  const b = bhctKutasovTarghi(tBot, surfaceC, botTvd);
+  return { surfaceC, bhstWellC, tTopStaticC: tTop, tBottomStaticC: tBot, bhctC: b.bhctC, method: b.method, estimated, note: estimated ? "Забойная температура не задана — оценка по градиенту 3 °C/100 м. Введите замер для точности." : b.note };
 }
 
 export interface PlugFluid {
@@ -190,6 +222,7 @@ export interface PlugResults {
   balanceNotes: string[];
   /** Устойчивость против гравитационного обмена жидкостями (основной критерий устойчивости моста) */
   exchange: ExchangeResult;
+  temperatures: PlugTemperatures;
 
   fluidColumns: FluidColumn[];
   pumpingStages: PumpingStage[];
@@ -841,6 +874,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     uTubeVolumeM3: Math.round(uTubeVolumeM3 * 1000) / 1000,
     balanceNotes,
     exchange,
+    temperatures: plugTemperatures(well, plug),
     spacerVolumeBelow: Math.round(effectiveSpacerBelowVol * 1000) / 1000,
     spacerVolumeAbove: Math.round(spacerVolumeAboveM3 * 1000) / 1000,
     spacerBelowHeightAnnMD: Math.round(spacerBelowHeightAnn * 100) / 100,

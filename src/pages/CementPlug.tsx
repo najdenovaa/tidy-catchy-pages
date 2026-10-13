@@ -19,6 +19,7 @@ import CementPlugVisualization from "@/components/CementPlugVisualization";
 import CementPlugPressureChart from "@/components/CementPlugPressureChart";
 import CementPlugAnimation from "@/components/CementPlugAnimation";
 import { PLUG_SUPPORT_LABEL, type PlugSupport } from "@/lib/cement-plug-exchange";
+import { plugTemperatures } from "@/lib/cement-plug-calculations";
 import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults, type WashType, type PipeSection } from "@/lib/cement-plug-calculations";
 import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
@@ -27,6 +28,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import TermsFooter from "@/components/TermsFooter";
+import PlugRecipeCard from "@/components/PlugRecipeCard";
+import type { SlurryDesign } from "@/lib/cement-recipe-designer";
 import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
 import CementPlugTypesCard from "@/components/CementPlugTypesCard";
 import PlugCuringMapCard from "@/components/PlugCuringMapCard";
@@ -179,6 +182,9 @@ export default function CementPlug() {
     return () => clearTimeout(timer);
   }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct, plugSupport]);
 
+  /* ── Температуры моста (BHCT) ── */
+  const temps = useMemo(() => plugTemperatures({ ...well, trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory }, plug), [well, trajPoints, plug]);
+
   /* ── Spacer height preview (real-time) ── */
   const isCasingMode = placementMode === 'casing';
   const isOpenHole = !isCasingMode && plug.bottomMD > well.casingShoe;
@@ -330,6 +336,18 @@ export default function CementPlug() {
       contaminationExcessPct: excessPct,
       support: plugSupport === "auto" ? undefined : plugSupport,
     };
+  };
+
+  // Входные данные, соответствующие последнему расчёту (для подбора рецептуры)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const inputsAtCalc = useMemo(() => buildInputs(), [results]);
+  const applyPlugDesign = (d: SlurryDesign) => {
+    const r = d.predicted.rheo27;
+    setCement((c) => ({ ...c, rheology: { pv: Math.round(r.pv), yp: Math.round(r.ypPa * 10) / 10, fann: { ...r.fann } } }));
+    setThickeningTime(Math.round(d.predicted.thickening50BcMin));
+    setAdditives(d.components.map((c) => ({ name: c.name, percent: Math.round(c.pctBwoc * 100) / 100 })));
+    setWcRatio(Math.round(d.waterToBlend * 1000) / 1000);
+    setSlurryYield(Math.round(d.yieldM3PerT * 1000) / 1000);
   };
 
   const calculate = () => {
@@ -764,7 +782,12 @@ export default function CementPlug() {
                         <Field label="Коэфф. кавернозности" value={well.cavernCoeff} onChange={v => setWell(w => ({ ...w, cavernCoeff: num(v) }))} unit="" />
                       )}
                       <Field label="Градиент ГРП" value={fracGradient} onChange={v => setFracGradient(num(v))} unit="МПа/м" />
+                      <Field label="t° статич. на забое" value={well.bottomTempStatic ?? 0} onChange={v => setWell(w => ({ ...w, bottomTempStatic: num(v) }))} unit="°C" />
+                      <Field label="t° на устье" value={well.surfaceTemp ?? 10} onChange={v => setWell(w => ({ ...w, surfaceTemp: num(v) }))} unit="°C" />
                     </div>
+                    <p className={`text-[10px] ${temps.estimated ? "text-amber-600" : "text-muted-foreground"}`}>
+                      Мост: статика кровля/подошва {temps.tTopStaticC.toFixed(0)}/{temps.tBottomStaticC.toFixed(0)} °C · BHCT {temps.bhctC.toFixed(0)} °C ({temps.method}){temps.estimated ? " — забойная t° не задана, оценка по градиенту 3 °C/100 м" : ""}
+                    </p>
                     {isOpenHole && (
                       <p className="text-[10px] text-amber-400">⚠ Открытый ствол: эфф. диаметр = {effectiveBore.toFixed(1)} мм (Kкав = {well.cavernCoeff})</p>
                     )}
@@ -1001,7 +1024,7 @@ export default function CementPlug() {
 
                     <AdvancedItem id="adv-opt" title="Оптимизатор конструкции моста" open={advOpen.opt} onToggle={() => toggleAdv("opt")}>
                       <PlugOptimizerCard
-                        defaultBHCT={60}
+                        defaultBHCT={Math.round(temps.bhctC)}
                         defaultBoreMm={placementMode === "openhole" ? well.holeDiameter : well.casingID}
                         defaultMaxLengthM={Math.max(100, plug.bottomMD - plug.topMD + 50)}
                       />
@@ -1235,7 +1258,7 @@ export default function CementPlug() {
                       settingTimeStartMin={settingTimeStartMin}
                       settingTimeEndMin={settingTimeEndMin}
                       trajectory={trajPoints.map(p => ({ md: p.md, zenithDeg: p.zenith, tvd: p.tvd }))}
-                      bhTempC={60}
+                      bhTempC={Math.round(temps.bhctC)}
                     />
                   </CardContent>
                 </CollapsibleContent>
@@ -1306,6 +1329,11 @@ export default function CementPlug() {
                     </Card>
                   );
                 })()}
+
+                {/* ── Рецептура раствора для моста ── */}
+                {results.temperatures && (
+                  <PlugRecipeCard inputs={inputsAtCalc} results={results} wocHours={wocTimeHours} onApply={applyPlugDesign} />
+                )}
 
                 {/* ── Stability analysis card ── */}
                 {results.stability && (
