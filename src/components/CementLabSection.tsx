@@ -5,6 +5,8 @@ import { ComposedChart, Line, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Leg
 import { buildLabProgram, buildRecipe, type LabStatus } from "@/lib/cement-program";
 import { fitRheology } from "@/lib/cement-rheology";
 import LabProtocolPanel from "@/components/LabProtocolPanel";
+import LabTargetsPanel from "@/components/LabTargetsPanel";
+import type { LabTargets } from "@/lib/cement-recipe-designer";
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid, PressureProfileResult, VolumeResults, Rheology } from "@/lib/cementing-calculations";
 
 interface Props {
@@ -34,9 +36,22 @@ export default function CementLabSection({ wellData, slurries, buffers, drilling
     [slurries, volumes],
   );
 
+  // Требования технолога: правятся здесь, сохраняются в растворы при записи рецептуры в программу
+  const [targets, setTargets] = useState<(LabTargets | undefined)[]>(() => slurries.map((s) => s.labTargets));
+  const savedKey = slurries.map((s) => JSON.stringify(s.labTargets ?? null)).join("|");
+  useEffect(() => { setTargets(slurries.map((s) => s.labTargets)); }, [savedKey, slurries.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const slurriesT = useMemo(() => slurries.map((s, i) => (targets[i] === s.labTargets ? s : { ...s, labTargets: targets[i] })), [slurries, targets]);
+  const protoInput = useMemo(() => ({ wellData, slurries: slurriesT, buffers, drillingFluid, pressure, volumes }), [wellData, slurriesT, buffers, drillingFluid, pressure, volumes]);
+
   return (
     <div className="space-y-4">
-      <LabProtocolPanel input={{ wellData, slurries, buffers, drillingFluid, pressure, volumes }} onApplySlurries={onApplySlurries} />
+      <LabTargetsPanel
+        input={protoInput}
+        targets={targets}
+        onTargetsChange={(i, t) => setTargets((arr) => { const n = slurries.map((_, j) => arr[j]); n[i] = t; return n; })}
+        onApplySlurries={onApplySlurries}
+      />
+      <LabProtocolPanel input={protoInput} onApplySlurries={onApplySlurries} />
       <TemperatureCard lab={lab} />
       {lab.slurries.map((p) => (
         <Card key={p.slurryName} className="p-4 space-y-3">

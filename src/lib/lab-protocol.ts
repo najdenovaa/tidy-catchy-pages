@@ -8,7 +8,7 @@ import {
   type WellData, type SlurryInput, type BufferFluid, type DrillingFluid, type PressureProfileResult, type VolumeResults, type Additive,
 } from "./cementing-calculations";
 import { buildLabProgram, buildRecipe, additiveSG, type LabProgramResult } from "./cement-program";
-import { designSlurry, conditionsFor, type SlurryDesign } from "./cement-recipe-designer";
+import { designToTargets, conditionsFor, type SlurryDesign, type DesignConditions, type TargetDesignResult } from "./cement-recipe-designer";
 
 export interface ProtocolTable { id: string; headers: string[]; rows: string[][]; widths?: number[] }
 export interface ProtocolSection { id: string; title: string; paragraphs?: string[]; tables?: ProtocolTable[]; bullets?: string[] }
@@ -37,24 +37,31 @@ export interface ProtocolInput {
   volumes: VolumeResults | null;
 }
 
-export function designAll(p: ProtocolInput, lab?: LabProgramResult): { lab: LabProgramResult; designs: SlurryDesign[] } {
+/** Условия подбора для каждого раствора программы. */
+export function conditionsAll(p: ProtocolInput, lab?: LabProgramResult): { lab: LabProgramResult; conditions: DesignConditions[] } {
   const l = lab ?? buildLabProgram(p.wellData, p.slurries, p.pressure, p.volumes);
   const traj = getEffectiveTrajectory(p.wellData);
   const layers = p.wellData.reservoirLayers ?? [];
   const minMargin = p.pressure?.zoneChecks?.length ? Math.min(...p.pressure.zoneChecks.map((z) => z.marginMPa)) : null;
-  const designs = p.slurries.map((s, i) => {
+  const conditions = p.slurries.map((s, i) => {
     const ls = l.slurries[i];
     const maxZen = traj.filter((t) => t.md >= ls.topMD - 1 && t.md <= ls.bottomMD + 1).reduce((m, t) => Math.max(m, t.zenith || 0), 0)
       || traj.reduce((m, t) => Math.max(m, t.zenith || 0), 0);
-    return designSlurry(conditionsFor(s, i, p.slurries.length, ls, p.wellData.bottomTempStatic, layers, maxZen, minMargin));
+    return conditionsFor(s, i, p.slurries.length, ls, p.wellData.bottomTempStatic, layers, maxZen, minMargin);
   });
-  return { lab: l, designs };
+  return { lab: l, conditions };
+}
+
+export function designAll(p: ProtocolInput, lab?: LabProgramResult): { lab: LabProgramResult; designs: SlurryDesign[]; results: TargetDesignResult[] } {
+  const { lab: l, conditions } = conditionsAll(p, lab);
+  const results = conditions.map((c, i) => designToTargets(c, p.slurries[i].labTargets));
+  return { lab: l, designs: results.map((r) => r.design), results };
 }
 
 const ROLE_ORDER = ["silica", "extender", "lightweight", "weighting", "fluidLoss", "dispersant", "retarder", "accelerator", "gasBlock", "expanding", "stabilizer", "fiber", "defoamer"];
 
 export function buildLabProtocol(p: ProtocolInput, number?: string): { protocol: LabProtocol; designs: SlurryDesign[] } {
-  const { lab, designs } = designAll(p);
+  const { lab, designs, results } = designAll(p);
   const w = p.wellData;
   const traj = getEffectiveTrajectory(w);
   const now = new Date();
@@ -114,7 +121,7 @@ export function buildLabProtocol(p: ProtocolInput, number?: string): { protocol:
         ["Давление испытания, МПа", ...lab.slurries.map((s) => f(s.testPressureMPa, 1))],
         ["Время выхода на режим, мин", ...lab.slurries.map((s) => f(s.rampMin, 0))],
         ["Время работы раствора (от затворения до посадки пробки), мин", ...lab.slurries.map((s) => f(s.jobTimeMin, 0))],
-        ["Требуемое время загустевания до 30 Вс, мин", ...lab.slurries.map((s) => `≥ ${f(s.requiredThickeningMin, 0)}`)],
+        ["Требуемое время загустевания до 30 Вс, мин", ...results.map((r) => `≥ ${f(r.targets.thickeningMinMin, 0)}${r.targets.thickeningMaxMin ? ` и ≤ ${f(r.targets.thickeningMaxMin, 0)}` : ""}`)],
       ],
     }],
   });
@@ -162,31 +169,32 @@ export function buildLabProtocol(p: ProtocolInput, number?: string): { protocol:
     });
 
     const pr = d.predicted;
-    const req30 = ls.requiredThickeningMin;
+    const T = results[i].targets;
+    const req30 = T.thickeningMinMin;
     const isTail = i === p.slurries.length - 1;
     const fannStr = (r: SlurryDesign["predicted"]["rheo27"]) => `${r.fann.r600}/${r.fann.r300}/${r.fann.r200}/${r.fann.r100}/${r.fann.r6}/${r.fann.r3}`;
     const verdict = (ok: boolean) => (ok ? "соответствует (прогноз)" : "НЕ соответствует (прогноз)");
     // Требования к прочности: хвостовая пачка — к разбуриванию; головная облегчённая — к началу работы камня
-    const s24req = isTail ? 3.5 : 0.35;
-    const s48req = isTail ? 3.5 : 0.7;
+    const s24req = T.strength24MinMPa;
+    const s48req = T.strength48MinMPa;
     const wocReq = isTail ? 24 : 48;
     const propsRows: string[][] = [
       ["Плотность, г/см³", "20 ± 2 °C, рычажные весы под давлением", `${f(s.density, 2)} ± 0,02`, f(d.densityGcm3, 3), BLANK, verdict(Math.abs(d.densityGcm3 - s.density) <= 0.02)],
-      ["Растекаемость по конусу АзНИИ, см", "20 ± 2 °C", "≥ 18", f(pr.spreadCm, 1), BLANK, verdict(pr.spreadCm >= 18)],
-      ["Реология при 27 °C: PV, сПз / ДНС, Па", "Вискозиметр Fann 35 (R1B1F1)", "прокачиваемость, ДНС ≤ 25 Па", `${f(pr.rheo27.pv, 0)} / ${f(pr.rheo27.ypPa, 1)}`, BLANK, verdict(pr.rheo27.ypPa <= 25)],
+      ["Растекаемость по конусу АзНИИ, см", "20 ± 2 °C", `≥ ${f(T.spreadMinCm, 0)}`, f(pr.spreadCm, 1), BLANK, verdict(pr.spreadCm >= T.spreadMinCm)],
+      ["Реология при 27 °C: PV, сПз / ДНС, Па", "Вискозиметр Fann 35 (R1B1F1)", `ДНС ≤ ${f(T.yieldPointMaxPa, 0)} Па`, `${f(pr.rheo27.pv, 0)} / ${f(pr.rheo27.ypPa, 1)}`, BLANK, verdict(pr.rheo27.ypPa <= T.yieldPointMaxPa)],
       ["Показания Fann 600/300/200/100/6/3 при 27 °C, дел.", "после затворения", "—", fannStr(pr.rheo27), BLANK, "—"],
       [`Реология при ${f(ls.bhctC, 0)} °C: PV, сПз / ДНС, Па`, "после кондиционирования 20 мин", "—", `${f(pr.rheoBhct.pv, 0)} / ${f(pr.rheoBhct.ypPa, 1)}`, BLANK, "—"],
       [`Показания Fann при ${f(ls.bhctC, 0)} °C, дел.`, "после кондиционирования", "—", fannStr(pr.rheoBhct), BLANK, "—"],
       ["Водоотдача, мл/30 мин", `${f(Math.min(ls.bhctC, 88), 0)} °C, ΔP 6,9 МПа, сетка 325 mesh`, `≤ ${f(pr.fluidLossTargetMl, 0)}`, f(pr.fluidLossMl, 0), BLANK, verdict(pr.fluidLossMl <= pr.fluidLossTargetMl)],
-      ["Свободная вода (водоотделение), %", `BHCT, 2 ч, ${maxZen > 30 ? "под углом 45°" : "вертикально"}`, maxZen > 30 ? "0" : "≤ 0,5", f(pr.freeWaterPct, 1), BLANK, verdict(maxZen > 30 ? pr.freeWaterPct === 0 : pr.freeWaterPct <= 0.5)],
+      ["Свободная вода (водоотделение), %", `BHCT, 2 ч, ${maxZen > 30 ? "под углом 45°" : "вертикально"}`, T.freeWaterMaxPct === 0 ? "0" : `≤ ${f(T.freeWaterMaxPct, 1)}`, f(pr.freeWaterPct, 1), BLANK, verdict(pr.freeWaterPct <= T.freeWaterMaxPct + 1e-9)],
       ["Седиментационная устойчивость (Δρ верх/низ), г/см³", "BHCT, твердение в вертикальной трубке", "≤ 0,05", f(pr.sedimentationGcm3, 2), BLANK, verdict(pr.sedimentationGcm3 <= 0.05)],
-      ["Время загустевания до 30 Вс, мин", `${f(ls.bhctC, 0)} °C, ${f(ls.testPressureMPa, 1)} МПа, выход на режим ${f(ls.rampMin, 0)} мин`, `≥ ${f(req30, 0)}`, f(pr.thickening30BcMin, 0), BLANK, verdict(pr.thickening30BcMin >= req30)],
+      ["Время загустевания до 30 Вс, мин", `${f(ls.bhctC, 0)} °C, ${f(ls.testPressureMPa, 1)} МПа, выход на режим ${f(ls.rampMin, 0)} мин`, `≥ ${f(req30, 0)}${T.thickeningMaxMin ? `, ≤ ${f(T.thickeningMaxMin, 0)}` : ""}`, f(pr.thickening30BcMin, 0), BLANK, verdict(pr.thickening30BcMin >= req30 && (!T.thickeningMaxMin || pr.thickening30BcMin <= T.thickeningMaxMin))],
       ["Время загустевания до 50 / 100 Вс, мин", "то же", "—", `${f(pr.thickening50BcMin, 0)} / ${f(pr.thickening100BcMin, 0)}`, BLANK, "—"],
       [`Прочность на сжатие 24 ч (кровля, ${f(ls.tTopStaticC, 0)} °C), МПа`, "УЗ-анализатор / кубы, давление испытания", `≥ ${f(s24req, 1)}`, f(pr.strength24TopMPa, 1), BLANK, verdict(pr.strength24TopMPa >= s24req)],
       [`Прочность на сжатие 48 ч (кровля, ${f(ls.tTopStaticC, 0)} °C), МПа`, "то же", `≥ ${f(s48req, 1)}`, f(pr.strength48TopMPa, 1), BLANK, verdict(pr.strength48TopMPa >= s48req)],
       [`Прочность на сжатие 24 / 48 ч (подошва, ${f(ls.tBottomStaticC, 0)} °C), МПа`, "то же", `≥ ${f(s48req, 1)} (48 ч)`, `${f(pr.strength24BottomMPa, 1)} / ${f(pr.strength48BottomMPa, 1)}`, BLANK, verdict(pr.strength48BottomMPa >= s48req)],
       ["Время ОЗЦ до 3,5 МПа на кровле, ч", "по кривой набора прочности", `≤ ${wocReq}`, Number.isFinite(pr.wocTo35MPaHours) ? f(pr.wocTo35MPaHours, 0) : "> 48", BLANK, isTail ? verdict(Number.isFinite(pr.wocTo35MPaHours) && pr.wocTo35MPaHours <= wocReq) : "справочно"],
-      ...(pr.sgsTransitionMin !== null ? [["Переходный период СНС 48 → 240 Па, мин", "SGS-анализатор, BHCT → BHST", "≤ 45", f(pr.sgsTransitionMin, 0), BLANK, verdict(pr.sgsTransitionMin <= 45)]] : []),
+      ...(pr.sgsTransitionMin !== null ? [["Переходный период СНС 48 → 240 Па, мин", "SGS-анализатор, BHCT → BHST", `≤ ${f(T.sgsMaxMin ?? 45, 0)}`, f(pr.sgsTransitionMin, 0), BLANK, verdict(pr.sgsTransitionMin <= (T.sgsMaxMin ?? 45))]] : []),
       ...(pr.expansionPct !== null ? [["Линейное расширение камня через 7 сут, %", "BHST, водная среда", "≥ 0,3", f(pr.expansionPct, 1), BLANK, verdict(pr.expansionPct >= 0.3)]] : []),
     ];
     sections.push({
@@ -205,7 +213,7 @@ export function buildLabProtocol(p: ProtocolInput, number?: string): { protocol:
     }],
   });
 
-  const allOk = designs.every((d, i) => d.predicted.thickening30BcMin >= lab.slurries[i].requiredThickeningMin && d.predicted.fluidLossMl <= d.predicted.fluidLossTargetMl);
+  const allOk = results.every((r) => r.allOk);
   sections.push({
     id: "concl", title: `${secNo++}. Заключение`,
     paragraphs: [

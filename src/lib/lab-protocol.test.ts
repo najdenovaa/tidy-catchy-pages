@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildLabProtocol, applyProtocolToSlurries, protocolToHtml, additivesFromProtocol } from "./lab-protocol";
-import { designSlurry, neatThickeningMin } from "./cement-recipe-designer";
+import { designSlurry, neatThickeningMin, designToTargets, type DesignConditions } from "./cement-recipe-designer";
 import { exportLabProtocolDocx } from "./export-lab-protocol-docx";
 import { calculatePressureProfile, calculateVolumes, type WellData } from "./cementing-calculations";
 import { buildRecipe } from "./cement-program";
@@ -100,5 +100,60 @@ describe("Протокол", () => {
     const blob = await exportLabProtocolDocx(protocol, "x.docx", true);
     expect(blob).toBeTruthy();
     expect((blob as Blob).size).toBeGreaterThan(5000);
+  });
+});
+
+describe("Подбор под требования технолога", () => {
+  const base: DesignConditions = { densityGcm3: 1.9, bhctC: 60, tTopC: 40, tBottomC: 70, bhstC: 80, maxPressureMPa: 35, requiredThickeningMin: 150, coversPay: true, gas: false, maxZenithDeg: 10, lossMarginMPa: 3, isTail: true };
+  const pct = (d: { components: { role: string; pctBwoc: number }[] }, role: string) => d.components.filter((c) => c.role === role).reduce((s, c) => s + c.pctBwoc, 0);
+
+  it("без требований — значения программы, все выполнены", () => {
+    const r = designToTargets(base);
+    expect(r.targets.thickeningMinMin).toBe(150);
+    expect(r.allOk).toBe(true);
+  });
+
+  it("жёстче водоотдача → больше понизителя, требование выполнено", () => {
+    const a = designToTargets(base), b = designToTargets(base, { fluidLossMaxMl: 40 });
+    expect(pct(b.design, "fluidLoss")).toBeGreaterThan(pct(a.design, "fluidLoss"));
+    expect(b.design.predicted.fluidLossMl).toBeLessThanOrEqual(40);
+    expect(b.compliance.find((x) => x.key === "fl")?.ok).toBe(true);
+  });
+
+  it("длиннее время загустевания → больше замедлителя; окно ≤ max соблюдается", () => {
+    const b = designToTargets(base, { thickeningMinMin: 300, thickeningMaxMin: 380 });
+    expect(b.design.predicted.thickening30BcMin).toBeGreaterThanOrEqual(300);
+    expect(b.design.predicted.thickening30BcMin).toBeLessThanOrEqual(380);
+    expect(pct(b.design, "retarder")).toBeGreaterThan(pct(designToTargets(base).design, "retarder"));
+  });
+
+  it("низкая ДНС → итерационно растёт пластификатор", () => {
+    const a = designToTargets(base), b = designToTargets(base, { yieldPointMaxPa: a.design.predicted.rheo27.ypPa * 0.6 });
+    expect(pct(b.design, "dispersant")).toBeGreaterThan(pct(a.design, "dispersant"));
+    expect(b.compliance.find((x) => x.key === "yp")?.ok).toBe(true);
+  });
+
+  it("газонепроницаемость и выбор облегчения задаются флагами", () => {
+    const g = designToTargets({ ...base, isTail: false }, { gasTight: true });
+    expect(pct(g.design, "gasBlock")).toBeGreaterThan(0);
+    const m = designToTargets({ ...base, densityGcm3: 1.5, isTail: false }, { extender: "microspheres" });
+    expect(pct(m.design, "lightweight")).toBeGreaterThan(0);
+    expect(m.design.densityGcm3).toBeCloseTo(1.5, 2);
+  });
+
+  it("требование ранней прочности облегчённого раствора — замена бентонита / ускоритель", () => {
+    const c = { ...base, densityGcm3: 1.5, tTopC: 25, isTail: false };
+    const a = designToTargets(c);
+    const b = designToTargets(c, { strength24MinMPa: Math.max(2, a.design.predicted.strength24TopMPa * 1.5) });
+    expect(b.design.predicted.strength24TopMPa).toBeGreaterThan(a.design.predicted.strength24TopMPa);
+    expect(b.actions.length).toBeGreaterThan(0);
+  });
+
+  it("протокол берёт требования технолога", () => {
+    const sl = slurries.map((s, i) => (i === 1 ? { ...s, labTargets: { fluidLossMaxMl: 35, thickeningMinMin: 260 } } : s));
+    const { protocol } = buildLabProtocol({ ...input, slurries: sl });
+    const t = protocol.sections.find((x) => x.id === "props-1")!.tables![0].rows;
+    expect(t.find((r) => r[0].startsWith("Водоотдача"))![2]).toBe("≤ 35");
+    expect(t.find((r) => r[0].startsWith("Время загустевания до 30"))![2]).toBe("≥ 260");
   });
 });

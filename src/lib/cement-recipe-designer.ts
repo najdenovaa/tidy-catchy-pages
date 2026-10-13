@@ -126,7 +126,21 @@ function rheologyAt(phi: number, bent: number, dFla: number, dDisp: number, late
   return { pv, ypPa: yp, fann: { r600: dial(600), r300: dial(300), r200: dial(200), r100: dial(100), r6: dial(6), r3: dial(3) } };
 }
 
-export function designSlurry(c: DesignConditions): SlurryDesign {
+/** Управляемые параметры подбора (задаются требованиями технолога или итерациями подбора). */
+export interface DesignOptions {
+  thickeningMinMin?: number;
+  thickeningMaxMin?: number;
+  fluidLossMaxMl?: number;
+  freeWaterMaxPct?: number;
+  gasTight?: boolean;
+  expansion?: boolean;
+  fiber?: boolean;
+  extender?: "auto" | "bentonite" | "microspheres";
+  dispersantMin?: number;
+  acceleratorPct?: number;
+}
+
+export function designSlurry(c: DesignConditions, o: DesignOptions = {}): SlurryDesign {
   const cementSG = 3.15;
   const rho = c.densityGcm3;
   const warnings: string[] = [];
@@ -159,9 +173,16 @@ export function designSlurry(c: DesignConditions): SlurryDesign {
 
   let wc = solve();
   if (wc > WC_NEAT_MAX + (0.4 * silica) / 100) {
-    // облегчённый: бентонит до 14%, далее микросферы
-    for (bent = 0.5; bent <= 14; bent += 0.5) { wc = solve(); if (wc <= wcMax(bent)) break; }
-    if (bent > 14) {
+    // облегчённый: бентонит (до 14%, при выборе «только бентонит» — до 16%), далее микросферы
+    const bentMax = o.extender === "bentonite" ? 16 : 14;
+    if (o.extender !== "microspheres") {
+      for (bent = 0.5; bent <= bentMax; bent += 0.5) { wc = solve(); if (wc <= wcMax(bent)) break; }
+    } else bent = bentMax + 1;
+    if (bent > bentMax && o.extender === "bentonite") {
+      bent = bentMax; wc = solve();
+      warnings.push(`Плотность ${rho.toFixed(2)} г/см³ бентонитом (16%) без избытка воды не достигается — риск водоотделения и низкой прочности; рассмотрите микросферы.`);
+      rationale.push(`Облегчение только бентонитом (выбрано технологом): ${bent}%.`);
+    } else if (bent > bentMax) {
       bent = 4;
       if (c.maxPressureMPa < 18) { microName = "Алюмосиликатные полые микросферы (АСПМ)"; microSG = 0.7; }
       else if (c.maxPressureMPa < 50) { microName = "Стеклянные полые микросферы, прочность ≥ 55 МПа"; microSG = 0.46; }
@@ -195,12 +216,12 @@ export function designSlurry(c: DesignConditions): SlurryDesign {
   const isLight = bent > 0 || micro > 0;
 
   // ── Водоотдача ──
-  const flTarget = c.gas ? 50 : c.coversPay ? 100 : 250;
+  const flTarget = o.fluidLossMaxMl ?? (c.gas ? 50 : c.coversPay ? 100 : 250);
   const fl0 = 1200 / (1 + 0.15 * bent);
   const tempK = 1 + 0.006 * Math.max(0, c.bhctC - 50);
   let dFla = flTarget < fl0 ? 0.12 * Math.sqrt(fl0 / (flTarget * 0.85) - 1) * tempK : 0;
   dFla = clamp(round(dFla, 0.05), 0, 1.2);
-  const latex = c.gas && c.isTail ? 8 : 0;
+  const latex = (o.gasTight ?? (c.gas && c.isTail)) ? 8 : 0;
   if (dFla > 0) {
     add({ role: "fluidLoss", name: c.bhctC > 90 ? "Понизитель водоотдачи (синтетический полимер AMPS, термостойкий)" : "Понизитель водоотдачи (синтетический полимер / гидроксиэтилцеллюлоза)", purpose: `Водоотдача ≤ ${flTarget} мл/30 мин`, pctBwoc: dFla, sg: 1.3 });
     rationale.push(`Понизитель водоотдачи ${dFla.toFixed(2)}%: цель ≤ ${flTarget} мл/30 мин (${c.gas ? "газовые пласты" : c.coversPay ? "продуктивные пласты" : "кондуктор / непродуктивный интервал"}).`);
@@ -210,14 +231,15 @@ export function designSlurry(c: DesignConditions): SlurryDesign {
   // ── Газоблокировка, расширение, волокно ──
   if (latex) {
     add({ role: "gasBlock", name: "Газоблокирующая добавка (латекс SBR) со стабилизатором", purpose: "Сокращение переходного периода, перекрытие пор камня от миграции газа", pctBwoc: latex, sg: 1.02 });
-    rationale.push("Газовые пласты в интервале — латексная газоблокирующая добавка 8%.");
+    rationale.push(o.gasTight ? "Газонепроницаемость (требование) — латексная газоблокирующая добавка 8%." : "Газовые пласты в интервале — латексная газоблокирующая добавка 8%.");
   }
-  if (c.isTail && c.coversPay) {
+  const expansion = o.expansion ?? (c.isTail && c.coversPay);
+  if (expansion) {
     add({ role: "expanding", name: "Расширяющая добавка (MgO / CaO-основа)", purpose: "Компенсация усадки, плотный контакт с колонной и породой", pctBwoc: 3, sg: 3.3 });
   }
-  if (c.lossMarginMPa !== null && c.lossMarginMPa < 1.5) {
+  if (o.fiber ?? (c.lossMarginMPa !== null && c.lossMarginMPa < 1.5)) {
     add({ role: "fiber", name: "Армирующее волокно (полипропилен / минеральное)", purpose: "Снижение поглощения в слабых пластах, повышение трещиностойкости камня", pctBwoc: 0.25, sg: 1.3 });
-    rationale.push(`Запас до поглощения ${c.lossMarginMPa.toFixed(2)} МПа — добавлено волокно 0.25% против поглощения.`);
+    rationale.push(c.lossMarginMPa !== null && c.lossMarginMPa < 1.5 ? `Запас до поглощения ${c.lossMarginMPa.toFixed(2)} МПа — добавлено волокно 0.25% против поглощения.` : "Армирующее волокно 0.25% (требование).");
   }
 
   // ── Пластификатор ──
@@ -226,24 +248,30 @@ export function designSlurry(c: DesignConditions): SlurryDesign {
     dDisp = 0.15 + 0.4 * Math.max(0, (0.44 - wc) / 0.09) + (dFla > 0.4 ? 0.15 : 0);
     dDisp = clamp(round(dDisp, 0.05), 0, 0.8);
   } else if (dFla > 0.5) dDisp = 0.1;
+  if (o.dispersantMin !== undefined) dDisp = clamp(round(Math.max(dDisp, o.dispersantMin), 0.05), 0, 1);
   if (dDisp > 0) add({ role: "dispersant", name: "Пластификатор (полинафталинсульфонат, тип С-3)", purpose: "Снижение вязкости и ДНС, прокачиваемость", pctBwoc: dDisp, sg: 1.35 });
 
   // ── Стабилизация от водоотделения ──
-  const needStab = (c.maxZenithDeg > 30 || c.gas) && bent < 2;
+  const needStab = ((c.maxZenithDeg > 30 || c.gas) || (o.freeWaterMaxPct !== undefined && o.freeWaterMaxPct < 0.3)) && bent < 2;
   if (needStab) add({ role: "stabilizer", name: "Стабилизатор (биополимер, тип велановой камеди)", purpose: "Нулевое водоотделение и отсутствие седиментации в наклонном стволе", pctBwoc: 0.05, sg: 1.5 });
 
   // ── Время загустевания: замедлитель / ускоритель ──
-  const req = Math.max(60, c.requiredThickeningMin);
-  const ttBase = neatThickeningMin(c.bhctC) * (1 + 0.3 * dFla) * (1 + 0.2 * dDisp) * Math.pow(Math.max(0.3, wc) / 0.44, 0.8) * (latex ? 1.15 : 1);
-  const ttTarget = req * 1.2;
-  let dRet = 0, cacl = 0;
+  const req = Math.max(30, o.thickeningMinMin ?? Math.max(60, c.requiredThickeningMin));
+  let cacl = o.acceleratorPct && o.acceleratorPct > 0 ? o.acceleratorPct : 0;
+  const ttBase = neatThickeningMin(c.bhctC) * (1 + 0.3 * dFla) * (1 + 0.2 * dDisp) * Math.pow(Math.max(0.3, wc) / 0.44, 0.8) * (latex ? 1.15 : 1) / (1 + 0.35 * cacl);
+  const ttTarget = o.thickeningMaxMin && o.thickeningMaxMin > req ? Math.min(req * 1.2, (req + o.thickeningMaxMin) / 2) : req * 1.2;
+  if (cacl > 0) {
+    add({ role: "accelerator", name: "Хлорид кальция (ускоритель)", purpose: `Ускорение набора прочности при ${c.tTopC.toFixed(0)} °C на кровле`, pctBwoc: cacl, sg: 1.96 });
+    rationale.push(`Ускоритель CaCl₂ ${cacl}% — для требуемой ранней прочности; время загустевания пересчитано с его учётом.`);
+  }
+  let dRet = 0;
   const aRet = c.bhctC > 90 ? 6 : 8;
   if (ttBase < ttTarget && round((ttTarget / ttBase - 1) / aRet, 0.01) > 0) {
     dRet = clamp(round((ttTarget / ttBase - 1) / aRet, 0.01), 0, 1.5);
     add({ role: "retarder", name: c.bhctC > 90 ? "Замедлитель высокотемпературный (синтетический)" : "Замедлитель схватывания (лигносульфонатный)", purpose: `Время загустевания ≥ ${req.toFixed(0)} мин при BHCT ${c.bhctC.toFixed(0)} °C`, pctBwoc: dRet, sg: 1.3 });
     rationale.push(`Без замедлителя время загустевания ≈ ${ttBase.toFixed(0)} мин < требуемых ${req.toFixed(0)} — замедлитель ${dRet.toFixed(2)}% (цель ${ttTarget.toFixed(0)} мин с запасом 20%).`);
     if (dRet >= 1.5) warnings.push("Требуемая дозировка замедлителя на пределе — время загустевания подтвердить испытанием обязательно; рассмотреть сокращение времени операции.");
-  } else if (ttBase > req * 2.5 && c.tTopC < 25) {
+  } else if (cacl === 0 && ttBase > req * 2.5 && c.tTopC < 25) {
     cacl = clamp(round(((ttBase / (req * 1.5)) - 1) / 0.35, 0.5), 0, 3);
     if (cacl > 0) {
       add({ role: "accelerator", name: "Хлорид кальция (ускоритель)", purpose: `Ускорение схватывания и набора прочности при ${c.tTopC.toFixed(0)} °C на кровле`, pctBwoc: cacl, sg: 1.96 });
@@ -252,7 +280,8 @@ export function designSlurry(c: DesignConditions): SlurryDesign {
   } else {
     rationale.push(`Время загустевания без замедлителя ≈ ${ttBase.toFixed(0)} мин при требуемых ${req.toFixed(0)} — замедлитель не нужен.`);
   }
-  const tt = (ttBase * (1 + aRet * dRet)) / (1 + 0.35 * cacl);
+  const tt = ttBase * (1 + aRet * dRet) / (o.acceleratorPct && o.acceleratorPct > 0 ? 1 : (1 + 0.35 * cacl));
+  if (o.thickeningMaxMin && tt > o.thickeningMaxMin) warnings.push(`Время загустевания ${tt.toFixed(0)} мин больше заданного максимума ${o.thickeningMaxMin} мин.`);
 
   // ── Пеногаситель (всегда при полимерах) ──
   add({ role: "defoamer", name: "Пеногаситель (полигликолевый / силиконовый)", purpose: "Исключение вовлечения воздуха при затворении (точность плотности)", pctBwoc: 0.2, sg: 1.0 });
@@ -290,7 +319,7 @@ export function designSlurry(c: DesignConditions): SlurryDesign {
   const s24Top = s24(c.tTopC), s24Bot = s24(c.tBottomC);
   const s48 = (v: number, t: number) => Math.min(v * 1.35, neatStrength24(t) * strFactor * 1.6);
   // ОЗЦ до 3.5 МПа: S(t) = S∞·(1 − exp(−(t − t0)/τ)), t0 — начало схватывания при статической T кровли
-  const ttTopH = ((ttBase * (1 + aRet * dRet)) / (1 + 0.35 * cacl)) * Math.exp(0.0205 * (c.bhctC - c.tTopC)) / 60;
+  const ttTopH = tt * Math.exp(0.0205 * (c.bhctC - c.tTopC)) / 60;
   const t0 = Math.min(20, ttTopH * 1.2), tau = 12;
   const sInf = s24Top / Math.max(0.05, 1 - Math.exp(-(24 - t0) / tau));
   const woc = sInf > 3.5 ? t0 - tau * Math.log(1 - 3.5 / sInf) : Infinity;
@@ -298,7 +327,7 @@ export function designSlurry(c: DesignConditions): SlurryDesign {
   if (!Number.isFinite(woc) || woc > 48) warnings.push(`На кровле (${c.tTopC.toFixed(0)} °C) прочность 3.5 МПа набирается дольше 48 ч — нужен ускоритель или более тёплый интервал под ОЗЦ.`);
   if (s24Top < 0.7) warnings.push(`Прогноз прочности на кровле через 24 ч — ${s24Top.toFixed(1)} МПа. Время ОЗЦ определять по лабораторному испытанию при ${c.tTopC.toFixed(0)} °C.`);
 
-  const sgs = c.gas ? (latex ? 35 : 75) : null;
+  const sgs = c.gas || latex ? (latex ? 35 : 75) : null;
   if (c.gas && sgs !== null && sgs > 45) warnings.push("Переходный период СНС больше 45 мин — риск миграции газа.");
 
   const extenderNote = micro > 0 && microSG < 0.7 ? " Микросферы частично разрушаются под давлением — плотность в скважине может вырасти на 0.02–0.05 г/см³." : "";
@@ -324,7 +353,7 @@ export function designSlurry(c: DesignConditions): SlurryDesign {
       strength24BottomMPa: s24Bot, strength48BottomMPa: s48(s24Bot, c.tBottomC),
       wocTo35MPaHours: woc,
       sgsTransitionMin: sgs,
-      expansionPct: c.isTail && c.coversPay ? 0.8 : null,
+      expansionPct: expansion ? 0.8 : null,
     },
     warnings, rationale,
   };
@@ -361,4 +390,149 @@ export function applyDesignToSlurry(s: SlurryInput, d: SlurryDesign, keepMeasure
     thickeningTime30Bc: keepMeasured && s.thickeningTime30Bc > 0 ? s.thickeningTime30Bc : Math.round(d.predicted.thickening30BcMin),
     thickeningTime50Bc: keepMeasured && s.thickeningTime50Bc > 0 ? s.thickeningTime50Bc : Math.round(d.predicted.thickening50BcMin),
   };
+}
+
+// ════════════════════ Подбор под требования технолога ════════════════════
+
+/** Требования к раствору, задаваемые технологом (пустое поле — значение по умолчанию из программы испытаний). */
+export interface LabTargets {
+  thickeningMinMin?: number;
+  thickeningMaxMin?: number;
+  fluidLossMaxMl?: number;
+  freeWaterMaxPct?: number;
+  yieldPointMaxPa?: number;
+  spreadMinCm?: number;
+  strength24MinMPa?: number;
+  strength48MinMPa?: number;
+  sgsMaxMin?: number;
+  gasTight?: boolean;
+  expansion?: boolean;
+  fiber?: boolean;
+  extender?: "auto" | "bentonite" | "microspheres";
+}
+
+/** Требования по умолчанию: ПБ НГП, API RP 10B-2 и типовая практика для назначения пачки. */
+export function defaultTargets(c: DesignConditions): Required<Omit<LabTargets, "thickeningMaxMin" | "sgsMaxMin">> & Pick<LabTargets, "thickeningMaxMin" | "sgsMaxMin"> {
+  return {
+    thickeningMinMin: Math.round(Math.max(60, c.requiredThickeningMin)),
+    thickeningMaxMin: undefined,
+    fluidLossMaxMl: c.gas ? 50 : c.coversPay ? 100 : 250,
+    freeWaterMaxPct: c.maxZenithDeg > 30 ? 0 : 0.5,
+    yieldPointMaxPa: 25,
+    spreadMinCm: 18,
+    strength24MinMPa: c.isTail ? 3.5 : 0.35,
+    strength48MinMPa: c.isTail ? 3.5 : 0.7,
+    sgsMaxMin: c.gas ? 45 : undefined,
+    gasTight: c.gas && c.isTail,
+    expansion: c.isTail && c.coversPay,
+    fiber: c.lossMarginMPa !== null && c.lossMarginMPa < 1.5,
+    extender: "auto",
+  };
+}
+
+export function mergeTargets(c: DesignConditions, user?: LabTargets) {
+  const d = defaultTargets(c);
+  const out = { ...d } as ReturnType<typeof defaultTargets>;
+  if (user) (Object.keys(user) as (keyof LabTargets)[]).forEach((k) => {
+    const v = user[k];
+    if (v !== undefined && v !== null && !(typeof v === "number" && !Number.isFinite(v))) (out as Record<string, unknown>)[k] = v;
+  });
+  return out;
+}
+
+export interface ComplianceRow { key: string; label: string; target: string; predicted: string; ok: boolean | null; deficit: number }
+
+const fx = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d).replace(".", ",") : "—");
+
+export function complianceOf(d: SlurryDesign, t: ReturnType<typeof defaultTargets>): ComplianceRow[] {
+  const p = d.predicted;
+  const rows: ComplianceRow[] = [];
+  const min = (key: string, label: string, target: number | undefined, val: number, dec = 1) => {
+    if (target === undefined) return;
+    rows.push({ key, label, target: `≥ ${fx(target, dec)}`, predicted: fx(val, dec), ok: val >= target - 1e-9, deficit: Math.max(0, (target - val) / Math.max(target, 1e-6)) });
+  };
+  const max = (key: string, label: string, target: number | undefined, val: number, dec = 1) => {
+    if (target === undefined) return;
+    rows.push({ key, label, target: `≤ ${fx(target, dec)}`, predicted: fx(val, dec), ok: val <= target + 1e-9, deficit: Math.max(0, (val - target) / Math.max(target, 1)) });
+  };
+  min("tt", "Время загустевания до 30 Вс, мин", t.thickeningMinMin, p.thickening30BcMin, 0);
+  max("ttMax", "Время загустевания до 30 Вс (не более), мин", t.thickeningMaxMin, p.thickening30BcMin, 0);
+  max("fl", "Водоотдача, мл/30 мин", t.fluidLossMaxMl, p.fluidLossMl, 0);
+  max("fw", "Свободная вода, %", t.freeWaterMaxPct, p.freeWaterPct, 1);
+  max("yp", "ДНС при 27 °C, Па", t.yieldPointMaxPa, p.rheo27.ypPa, 1);
+  min("spread", "Растекаемость, см", t.spreadMinCm, p.spreadCm, 1);
+  min("s24", "Прочность 24 ч на кровле, МПа", t.strength24MinMPa, p.strength24TopMPa, 2);
+  min("s48", "Прочность 48 ч на кровле, МПа", t.strength48MinMPa, p.strength48TopMPa, 2);
+  if (t.sgsMaxMin !== undefined) {
+    const v = p.sgsTransitionMin ?? 75;
+    rows.push({ key: "sgs", label: "Переходный период СНС, мин", target: `≤ ${fx(t.sgsMaxMin, 0)}`, predicted: fx(v, 0), ok: v <= t.sgsMaxMin, deficit: Math.max(0, (v - t.sgsMaxMin) / t.sgsMaxMin) });
+  }
+  if (t.expansion) rows.push({ key: "exp", label: "Расширение камня, %", target: "≥ 0,3", predicted: fx(p.expansionPct ?? 0, 1), ok: (p.expansionPct ?? 0) >= 0.3, deficit: 0 });
+  rows.push({ key: "rho", label: "Плотность, г/см³", target: "проектная ± 0,02", predicted: fx(d.densityGcm3, 3), ok: null, deficit: 0 });
+  return rows;
+}
+
+export interface TargetDesignResult {
+  design: SlurryDesign;
+  targets: ReturnType<typeof defaultTargets>;
+  compliance: ComplianceRow[];
+  allOk: boolean;
+  actions: string[];
+}
+
+/** Подбор химии и рецептуры под требования: начальный подбор + итерационная корректировка дозировок. */
+export function designToTargets(c: DesignConditions, user?: LabTargets): TargetDesignResult {
+  const t = mergeTargets(c, user);
+  const base: DesignOptions = {
+    thickeningMinMin: t.thickeningMinMin, thickeningMaxMin: t.thickeningMaxMin,
+    fluidLossMaxMl: t.fluidLossMaxMl, freeWaterMaxPct: t.freeWaterMaxPct,
+    gasTight: t.gasTight,
+    expansion: t.expansion, fiber: t.fiber, extender: t.extender,
+  };
+  const score = (rows: ComplianceRow[]) => rows.reduce((s, r) => s + (r.ok === false ? 1 + r.deficit : 0), 0);
+  let opts = { ...base };
+  let design = designSlurry(c, opts);
+  let rows = complianceOf(design, t);
+  let sc = score(rows);
+  const actions: string[] = [];
+  const pct = (d: SlurryDesign, role: AdditiveRole) => d.components.filter((x) => x.role === role).reduce((s, x) => s + x.pctBwoc, 0);
+
+  for (let iter = 0; iter < 16 && sc > 0; iter++) {
+    const fail = new Set(rows.filter((r) => r.ok === false).map((r) => r.key));
+    const cands: { o: DesignOptions; note: string }[] = [];
+    if (fail.has("yp") || fail.has("spread")) {
+      const cur = pct(design, "dispersant");
+      if (cur < 1) cands.push({ o: { ...opts, dispersantMin: Math.min(1, cur + 0.1) }, note: `пластификатор увеличен до ${Math.min(1, cur + 0.1).toFixed(2)}% (ДНС / растекаемость)` });
+    }
+    if (fail.has("s24") || fail.has("s48")) {
+      if (opts.extender === "auto" && pct(design, "extender") > 4) cands.push({ o: { ...opts, extender: "microspheres" }, note: "бентонит заменён микросферами — меньше воды затворения, выше прочность" });
+      const acc = opts.acceleratorPct ?? 0;
+      if (acc < 3 && c.tTopC < 60) cands.push({ o: { ...opts, acceleratorPct: acc + 0.5 }, note: `ускоритель CaCl₂ ${(acc + 0.5).toFixed(1)}% — ранняя прочность на кровле` });
+      if (!fail.has("yp") && (opts.dispersantMin ?? 0) < 0.8 && pct(design, "dispersant") < 0.8) cands.push({ o: { ...opts, dispersantMin: pct(design, "dispersant") + 0.1 }, note: "пластификатор увеличен для снижения водопотребности" });
+    }
+    if (fail.has("sgs") && !opts.gasTight) cands.push({ o: { ...opts, gasTight: true }, note: "введена газоблокирующая добавка (переходный период СНС)" });
+    if (fail.has("fw") && opts.extender !== "bentonite" && pct(design, "extender") < 2) cands.push({ o: { ...opts, freeWaterMaxPct: 0 }, note: "введён стабилизатор (свободная вода)" });
+    if (fail.has("fl")) cands.push({ o: { ...opts, fluidLossMaxMl: Math.max(20, (opts.fluidLossMaxMl ?? 100) * 0.8) }, note: "увеличен понизитель водоотдачи" });
+    if (fail.has("tt")) cands.push({ o: { ...opts, thickeningMinMin: (opts.thickeningMinMin ?? t.thickeningMinMin) * 1.1 }, note: "увеличен замедлитель (время загустевания)" });
+    if (fail.has("ttMax") && (opts.acceleratorPct ?? 0) < 3 && c.bhctC < 80) {
+      const acc = (opts.acceleratorPct ?? 0) + 0.5;
+      cands.push({ o: { ...opts, acceleratorPct: acc }, note: `ускоритель CaCl₂ ${acc.toFixed(1)}% — сокращение времени загустевания` });
+    }
+
+    let best: { o: DesignOptions; d: SlurryDesign; r: ComplianceRow[]; s: number; note: string } | null = null;
+    for (const k of cands) {
+      const d = designSlurry(c, k.o);
+      const r = complianceOf(d, t);
+      const s = score(r);
+      if (s < sc - 1e-6 && (!best || s < best.s)) best = { o: k.o, d, r, s, note: k.note };
+    }
+    if (!best) break;
+    opts = best.o; design = best.d; rows = best.r; sc = best.s;
+    // одна запись на реагент: последняя дозировка заменяет предыдущую
+    const cat = best.note.replace(/[\d.,]+%.*$/, "");
+    const at = actions.findIndex((x) => x.replace(/[\d.,]+%.*$/, "") === cat);
+    if (at >= 0) actions[at] = best.note; else actions.push(best.note);
+  }
+  if (actions.length) design = { ...design, rationale: [...design.rationale, `Корректировка под требования технолога: ${actions.join("; ")}.`] };
+  return { design, targets: t, compliance: rows, allOk: rows.every((r) => r.ok !== false), actions };
 }

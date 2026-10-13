@@ -259,6 +259,7 @@ export function normalizeSlurryInput(value: unknown, index = 0): SlurryInput {
     yieldPerTon: toNumber(source.yieldPerTon, 0),
     washVolume: toNumber(source.washVolume, 0),
     ...(toNumber(source.cementSG, 0) > 0 ? { cementSG: toNumber(source.cementSG, 0) } : {}),
+    ...(source.labTargets && typeof source.labTargets === 'object' ? { labTargets: { ...source.labTargets } } : {}),
   };
 }
 
