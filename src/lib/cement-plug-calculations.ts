@@ -4,6 +4,7 @@
 
 import { interpolateTVD, calculateTVDFromSurvey, type TrajectoryPoint, type Rheology } from "./cementing-calculations";
 import { calculatePlugStability, type StabilityResult } from "./cement-plug-stability";
+import { assessPlugExchange, type ExchangeResult, type PlugSupport } from "./cement-plug-exchange";
 
 /* ───── Interfaces ───── */
 
@@ -71,6 +72,8 @@ export interface PlugInputs {
   underDisplacementM3?: number;
   /** Запас цемента на загрязнение кровли и границ, % от проектного объёма моста */
   contaminationExcessPct?: number;
+  /** Что под мостом; по умолчанию — забой, если подошва моста у забоя, иначе жидкость */
+  support?: PlugSupport;
 }
 
 /* ───── Geometry helpers ───── */
@@ -185,6 +188,8 @@ export interface PlugResults {
   uTubeLevelDropM: number;
   uTubeVolumeM3: number;
   balanceNotes: string[];
+  /** Устойчивость против гравитационного обмена жидкостями (основной критерий устойчивости моста) */
+  exchange: ExchangeResult;
 
   fluidColumns: FluidColumn[];
   pumpingStages: PumpingStage[];
@@ -746,6 +751,16 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     zenithDeg: plugZenithDeg,
   });
 
+  // ═══ Устойчивость против обмена жидкостями ═══
+  const support: PlugSupport = input.support ?? (plug.bottomMD >= well.wellDepthMD - 1 ? "bottom" : "fluid");
+  const hasPad = useViscousPad && spacerVolumeBelowM3 > 0;
+  const fx = (f: PlugFluid) => ({ name: f.name, density: f.density, gel10s: f.gel10sec, gel10min: f.gel10min, yp: f.rheology.yp });
+  const exchange = assessPlugExchange({
+    support, boreDiameterMm: boreDiam, zenithDeg: plugZenithDeg, plugLengthM: plugLenMD,
+    cement: fx(cement), below: hasPad ? fx(padFluid) : fx(wellFluid),
+    belowPad: hasPad ? fx(wellFluid) : undefined, padLengthM: hasPad ? spacerBelowHeightAnn : undefined,
+  });
+
   // ═══ Per-interface contamination (RT fingering) ═══
   const RT_C = 4 * Math.PI;
   const zenithRad = (plugZenithDeg * Math.PI) / 180;
@@ -825,6 +840,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     uTubeLevelDropM: Math.round(uTubeLevelDropM * 10) / 10,
     uTubeVolumeM3: Math.round(uTubeVolumeM3 * 1000) / 1000,
     balanceNotes,
+    exchange,
     spacerVolumeBelow: Math.round(effectiveSpacerBelowVol * 1000) / 1000,
     spacerVolumeAbove: Math.round(spacerVolumeAboveM3 * 1000) / 1000,
     spacerBelowHeightAnnMD: Math.round(spacerBelowHeightAnn * 100) / 100,

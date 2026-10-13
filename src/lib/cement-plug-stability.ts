@@ -23,8 +23,9 @@
  * Fluid below CAN drain away → piston model applies.
  * Uses wall friction model: ΔP_resist = (4/Dh) × Σ(τ × L)
  *
- * In BOTH cases, the plug position is stable in confined systems.
- * The question is only about INTERFACE QUALITY (contamination depth).
+ * ВНИМАНИЕ: этот модуль оценивает только качество границ (глубину смешения).
+ * Устойчивость самого моста против встречного гравитационного обмена (цемент стекает вниз,
+ * лёгкая жидкость поднимается) — в cement-plug-exchange.ts; закрытый низ её НЕ обеспечивает.
  */
 
 export interface StabilityParams {
@@ -228,9 +229,6 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
     warnings.push(`ℹ СНС не задан — используется оценка: Gel ≈ ${GEL_FROM_YP_FACTOR}×YP. Для точности введите СНС.`);
   }
 
-  if (isConfined) {
-    warnings.push(`✅ Устойчивость моста — стабилен.`);
-  }
 
   const zenithDeg = p.zenithDeg ?? 0;
   if (zenithDeg > 5) {
@@ -272,12 +270,12 @@ export function calculatePlugStability(p: StabilityParams): StabilityResult {
   let recommendation = '';
   if (isConfined) {
     if (interfaceRisk === 'low') {
-      recommendation = `Мост стабилен. Интерфейс чистый (SF = ${interfaceSF.toFixed(2)}).`;
+      recommendation = `Граница чистая (SF = ${interfaceSF.toFixed(2)}). Устойчивость моста против обмена жидкостями — в разделе выше.`;
     } else if (interfaceRisk === 'medium') {
-      recommendation = `Мост стабилен. Незначительное смешение на интерфейсе (~${contaminationDepthM.toFixed(1)} м).\n` +
+      recommendation = `Незначительное смешение на границе (~${contaminationDepthM.toFixed(1)} м).\n` +
         `Для улучшения качества герметизации увеличьте СНС буфера до ≥ ${requiredSpacerGel.toFixed(1)} Па.`;
     } else {
-      recommendation = `Мост стабилен, но высокий риск загрязнения интерфейса (~${contaminationDepthM.toFixed(1)} м).\n` +
+      recommendation = `Высокий риск загрязнения границы (~${contaminationDepthM.toFixed(1)} м).\n` +
         `Рекомендации:\n` +
         `1. Увеличьте СНС 10 мин буфера до ≥ ${requiredSpacerGel.toFixed(1)} Па\n` +
         `2. Увеличьте объём нижнего буфера (компенсация зоны смешения)\n` +

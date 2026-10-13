@@ -292,9 +292,28 @@ export async function exportCementPlugToDocx(data: CementPlugExportData, options
   }));
   (results.balanceNotes ?? []).forEach((n) => children.push(textP(n)));
 
+  // ─── 8а. Устойчивость против обмена жидкостями ───
+  const ex = results.exchange;
+  if (ex) {
+    children.push(heading("8а. Устойчивость моста против обмена жидкостями"));
+    children.push(textP(ex.headline));
+    const exRows = [new TableRow({ children: [hCell("Граница", 34), hCell("Y / предел (эксп./теор.)", 22), hCell("Нужный СНС, Па", 22), hCell("Провал цемента", 22)] })];
+    ex.interfaces.filter((x) => x.verdict !== "no-buoyancy").forEach((x) => {
+      exRows.push(new TableRow({ children: [
+        new TableCell({ children: [textP(`${x.upper} → ${x.lower}`)] }),
+        new TableCell({ children: [textP(`${x.Y0.toFixed(3)} / ${x.YcExp.toFixed(2)} / ${x.YcTheory.toFixed(2)}`)] }),
+        new TableCell({ children: [textP(`≥ ${x.tauRequiredExpPa.toFixed(0)} (гарант. ${x.tauRequiredTheoryPa.toFixed(0)})`)] }),
+        new TableCell({ children: [textP(x.exchangeLengthM > 0 ? `~${x.exchangeLengthM.toFixed(0)} м` : "—")] }),
+      ] }));
+    });
+    if (exRows.length > 1) children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: exRows }));
+    ex.recommendations.forEach((r) => children.push(textP(`• ${r}`)));
+    children.push(textP("Критерий: Y = СНС/(Δρ·g·R); обмен невозможен при Y ≥ 0,61 (Frigaard & Scherzer 2000), по экспериментам не возникает при Y ≥ 0,2–0,3 (Crawshaw & Frigaard 1999; Charabin & Frigaard 2024)."));
+  }
+
   // ─── 9. Stability Analysis ───
   if (stability) {
-    children.push(heading("9. Устойчивость моста"));
+    children.push(heading("9. Смешение на границах жидкостей"));
 
     if (stability.isConfined) {
       children.push(textP("Замкнутая система — мост стабилен.", { bold: true }));

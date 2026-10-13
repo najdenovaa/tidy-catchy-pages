@@ -78,3 +78,57 @@ describe("Цементный мост: промывка", () => {
     expect(r.washVolumeM3).toBeCloseTo(ann, 1);
   });
 });
+
+import { assessPlugExchange, yieldNumberCriticalExp, gelAt, Y_C_THEORY } from "./cement-plug-exchange";
+
+describe("Цементный мост: устойчивость против обмена жидкостями", () => {
+  const cem = { name: "Цемент", density: 1.85, gel10s: 10, gel10min: 30, yp: 10 };
+  const mud = { name: "Раствор", density: 1.2, gel10s: 3, gel10min: 6, yp: 5 };
+  const ex = (o: Partial<Parameters<typeof assessPlugExchange>[0]> = {}) =>
+    assessPlugExchange({ support: "fluid", boreDiameterMm: 215.9, zenithDeg: 0, plugLengthM: 50, cement: cem, below: mud, ...o });
+
+  it("Y = СНС/(Δρ·g·R) и пределы по наклону", () => {
+    const r = ex();
+    expect(r.interfaces[0].Y0).toBeCloseTo(10 / (650 * 9.81 * 0.10795), 4);
+    expect(yieldNumberCriticalExp(0)).toBe(0.2);
+    expect(yieldNumberCriticalExp(45)).toBeCloseTo(0.3, 6);
+    expect(r.interfaces[0].tauRequiredTheoryPa).toBeCloseTo(Y_C_THEORY * 650 * 9.81 * 0.10795, 1);
+  });
+
+  it("обычный цемент на буровом растворе в открытом стволе — неустойчив, закрытый низ не спасает", () => {
+    const r = ex();
+    expect(r.verdict).toBe("unstable");
+    expect(r.interfaces[0].exchangeLengthM).toBeGreaterThan(5);
+    expect(r.recommendations.length).toBeGreaterThan(2);
+  });
+
+  it("пачка с достаточным СНС делает мост устойчивым; пачка тяжелее цемента — обмена нет", () => {
+    const need = ex().interfaces[0].tauRequiredTheoryPa;
+    const pad = { name: "Пачка", density: 1.15, gel10s: need * 1.1, gel10min: need * 1.3, yp: 30 };
+    const r = ex({ below: pad, belowPad: mud, padLengthM: 40 });
+    expect(r.interfaces[0].verdict).toBe("guaranteed");
+    const heavy = ex({ below: { ...pad, density: 1.9, gel10s: 5, gel10min: 10 }, belowPad: mud });
+    expect(heavy.interfaces[0].verdict).toBe("no-buoyancy");
+    // но тяжёлая пачка над лёгким раствором — новая неустойчивая граница
+    expect(heavy.interfaces[1].deltaRhoKgM3).toBeGreaterThan(0);
+  });
+
+  it("узкий ствол (колонна 114 мм) устойчивее широкого при той же реологии", () => {
+    expect(ex({ boreDiameterMm: 100 }).interfaces[0].Y0).toBeGreaterThan(ex({ boreDiameterMm: 250 }).interfaces[0].Y0);
+  });
+
+  it("опора на забой / механическая — обмена нет", () => {
+    expect(ex({ support: "bottom" }).verdict).toBe("supported");
+    expect(ex({ support: "mechanical" }).verdict).toBe("supported");
+  });
+
+  it("структура цемента растёт со временем, раствор выходит на плато", () => {
+    expect(gelAt({ ...cem, isCement: true }, 30)).toBeGreaterThan(gelAt({ ...cem, isCement: true }, 10));
+    expect(gelAt(mud, 30)).toBeCloseTo(gelAt(mud, 10), 6);
+  });
+
+  it("расчёт моста: подошва у забоя → опора, иначе — анализ обмена", () => {
+    expect(calculateBalancedPlug(base()).exchange.support).toBe("fluid");
+    expect(calculateBalancedPlug(base({ plug: { topMD: 2950, bottomMD: 3000 } })).exchange.verdict).toBe("supported");
+  });
+});

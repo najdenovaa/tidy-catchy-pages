@@ -18,6 +18,7 @@ import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import CementPlugVisualization from "@/components/CementPlugVisualization";
 import CementPlugPressureChart from "@/components/CementPlugPressureChart";
 import CementPlugAnimation from "@/components/CementPlugAnimation";
+import { PLUG_SUPPORT_LABEL, type PlugSupport } from "@/lib/cement-plug-exchange";
 import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults, type WashType, type PipeSection } from "@/lib/cement-plug-calculations";
 import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
@@ -87,6 +88,7 @@ interface SessionState {
   placementMode?: PlacementMode;
   underDisplacement?: number;
   excessPct?: number;
+  plugSupport?: PlugSupport | "auto";
 }
 
 function loadSession(): Partial<SessionState> {
@@ -167,14 +169,15 @@ export default function CementPlug() {
   const [placementMode, setPlacementMode] = useState<PlacementMode>(saved.placementMode || 'openhole');
   const [underDisplacement, setUnderDisplacement] = useState<number>(saved.underDisplacement ?? 0.2);
   const [excessPct, setExcessPct] = useState<number>(saved.excessPct ?? 10);
+  const [plugSupport, setPlugSupport] = useState<PlugSupport | "auto">(saved.plugSupport ?? "auto");
 
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct, plugSupport });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct, plugSupport]);
 
   /* ── Spacer height preview (real-time) ── */
   const isCasingMode = placementMode === 'casing';
@@ -325,6 +328,7 @@ export default function CementPlug() {
       padPullUpAboveM: useViscousPad ? padPullUpAbove : undefined,
       underDisplacementM3: underDisplacement,
       contaminationExcessPct: excessPct,
+      support: plugSupport === "auto" ? undefined : plugSupport,
     };
   };
 
@@ -401,6 +405,7 @@ export default function CementPlug() {
       if (typeof p.padPullUpAbove === "number") setPadPullUpAbove(p.padPullUpAbove);
       setUnderDisplacement(typeof p.underDisplacement === "number" ? p.underDisplacement : 0);
       setExcessPct(typeof p.excessPct === "number" ? p.excessPct : 0);
+      setPlugSupport(p.plugSupport ?? "auto");
 
       // Restore results if present
       if (data.results) {
@@ -428,11 +433,11 @@ export default function CementPlug() {
         pipeSections, useViscousPad,
         viscousPadFluid: useViscousPad ? viscousPadFluid : undefined,
         viscousPadAdditives: useViscousPad ? viscousPadAdditives : undefined,
-        underDisplacement, excessPct,
+        underDisplacement, excessPct, plugSupport,
       },
       results: { plugResults: currentResults },
     };
-  }, [results, well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, underDisplacement, excessPct]);
+  }, [results, well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, underDisplacement, excessPct, plugSupport]);
 
   const handleSaveToAccount = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -884,6 +889,18 @@ export default function CementPlug() {
                       <Field label="Низ моста" value={plug.bottomMD} onChange={v => setPlug(p => ({ ...p, bottomMD: num(v) }))} unit="м MD" />
                     </div>
                     <p className="text-[10px] text-muted-foreground mt-1">Длина моста: {Math.max(0, plug.bottomMD - plug.topMD)} м</p>
+                    <div className="mt-2 space-y-1">
+                      <Label className="text-xs">Что под мостом</Label>
+                      <select
+                        value={plugSupport}
+                        onChange={(e) => setPlugSupport(e.target.value as PlugSupport | "auto")}
+                        className="h-8 w-full rounded border border-border bg-background px-2 text-xs"
+                        data-testid="plug-support"
+                      >
+                        <option value="auto">автоматически: забой, если подошва у забоя, иначе жидкость</option>
+                        {(Object.keys(PLUG_SUPPORT_LABEL) as PlugSupport[]).map((k) => <option key={k} value={k}>{PLUG_SUPPORT_LABEL[k]}</option>)}
+                      </select>
+                    </div>
                     {isCasingMode && (
                       <p className="text-[10px] text-muted-foreground mt-0.5">
                         🔧 Мост в колонне ∅{well.casingID} мм · Затрубье: ∅{well.casingID}–∅{well.pipeOD} мм
@@ -1228,6 +1245,68 @@ export default function CementPlug() {
             {/* Results */}
             {results && (
               <>
+                {/* ── Устойчивость против обмена жидкостями ── */}
+                {results.exchange && (() => {
+                  const ex = results.exchange;
+                  const bad = ex.verdict === "unstable", warn = ex.verdict === "risk" || ex.verdict === "stable";
+                  const tone = bad ? "border-destructive/60" : warn ? "border-amber-500/50" : "border-green-500/40";
+                  const label: Record<string, string> = { supported: "на опоре", "no-buoyancy": "устойчив", guaranteed: "устойчив (гарантированно)", stable: "устойчив, запас мал", risk: "риск обмена", unstable: "НЕУСТОЙЧИВ" };
+                  return (
+                    <Card className={`border-2 ${tone}`} data-testid="plug-exchange">
+                      <CardHeader className="py-3 px-4">
+                        <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
+                          {bad ? <ShieldAlert className="w-4 h-4 text-destructive" /> : <ShieldCheck className={`w-4 h-4 ${warn ? "text-amber-500" : "text-green-500"}`} />}
+                          Устойчивость моста: не «провалится» ли цемент
+                          <Badge variant={bad ? "destructive" : warn ? "secondary" : "default"} className="text-[10px]">{label[ex.verdict]}</Badge>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="pt-0 space-y-2 text-xs">
+                        <p className={`font-medium ${bad ? "text-destructive" : warn ? "text-amber-600" : "text-green-600"}`}>{ex.headline}</p>
+                        {ex.interfaces.filter((x) => x.verdict !== "no-buoyancy").length > 0 && (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-[11px]">
+                              <thead className="bg-muted/50">
+                                <tr>
+                                  <th className="p-1 text-left">Граница</th>
+                                  <th className="p-1 text-right">Δρ, кг/м³</th>
+                                  <th className="p-1 text-right">Y (число текучести)</th>
+                                  <th className="p-1 text-right">Предел (эксп. / теор.)</th>
+                                  <th className="p-1 text-right">Нужный СНС, Па</th>
+                                  <th className="p-1 text-right">Обмен остановится</th>
+                                  <th className="p-1 text-right">Провал цемента</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {ex.interfaces.filter((x) => x.verdict !== "no-buoyancy").map((x) => (
+                                  <tr key={x.upper + x.lower} className="border-t border-border/40">
+                                    <td className="p-1">{x.upper} → {x.lower}</td>
+                                    <td className="p-1 text-right">{x.deltaRhoKgM3.toFixed(0)}</td>
+                                    <td className={`p-1 text-right font-semibold ${x.Y0 >= x.YcExp ? "text-green-600" : "text-destructive"}`}>{x.Y0.toFixed(3)}</td>
+                                    <td className="p-1 text-right">{x.YcExp.toFixed(2)} / {x.YcTheory.toFixed(2)}</td>
+                                    <td className="p-1 text-right">≥ {x.tauRequiredExpPa.toFixed(0)} (гарант. {x.tauRequiredTheoryPa.toFixed(0)})</td>
+                                    <td className="p-1 text-right">{x.Y0 >= x.YcExp ? "—" : Number.isFinite(x.arrestMin) ? `через ${x.arrestMin.toFixed(0)} мин` : "при схватывании"}</td>
+                                    <td className="p-1 text-right">{x.exchangeLengthM > 0 ? `~${x.exchangeLengthM.toFixed(0)} м` : "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        {ex.details.map((d) => <p key={d} className="text-[11px] text-muted-foreground">{d}</p>)}
+                        {ex.recommendations.length > 0 && (
+                          <div className="rounded-md bg-muted/40 p-2 space-y-1">
+                            <p className="font-semibold text-[11px]">Что сделать:</p>
+                            {ex.recommendations.map((r) => <p key={r} className="text-[11px]">• {r}</p>)}
+                          </div>
+                        )}
+                        <p className="text-[10px] text-muted-foreground">
+                          Критерий: число текучести Y = СНС / (Δρ·g·R). Обмен невозможен при Y ≥ 0,61 (теория, Frigaard & Scherzer 2000); по экспериментам не возникает при Y ≥ 0,2–0,3 в зависимости от наклона (Crawshaw & Frigaard 1999; Charabin & Frigaard, JFM 2024). Глубина «провала» — оценка порядка величины.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  );
+                })()}
+
                 {/* ── Stability analysis card ── */}
                 {results.stability && (
                   <Card className={`border-2 ${
@@ -1243,13 +1322,9 @@ export default function CementPlug() {
                   }`}>
                     <CardHeader className="py-3 px-4">
                       <CardTitle className="text-sm flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-green-500" />
-                        Устойчивость моста
-                        {results.stability.isConfined ? (
-                          <Badge variant="default" className="text-[10px]">
-                            Замкнутая система — стабилен
-                          </Badge>
-                        ) : (
+                        <ShieldCheck className="w-4 h-4 text-muted-foreground" />
+                        Смешение на границах жидкостей
+                        {results.stability.isConfined ? null : (
                           <Badge
                             variant={results.stability.minStabilityFactor >= 1.5 ? "default" : results.stability.isStable ? "secondary" : "destructive"}
                             className="text-[10px]"
