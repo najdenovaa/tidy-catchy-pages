@@ -91,6 +91,10 @@ export function autoDesignPlug(base: PlugInputs, purpose: PlugPurpose, wocHours:
       densities = [...new Set([...densities.filter((d) => d >= need), need, need + 0.05].map((x) => Math.round(x * 100) / 100))];
       notes.push(`Проявление: рассмотрены только плотности цемента ≥ ${need.toFixed(2)} г/см³ (удержание пласта).`);
     }
+    if (e0.requiredMudDensity) {
+      notes.push(`При проектной длине и плотности проявление не удержать (нужен раствор над мостом ≥ ${e0.requiredMudDensity.toFixed(2)} г/см³). Проверены более тяжёлый цемент и более длинный мост; если вариантов нет — сначала заглушите пласт.`);
+      densities = [...new Set([...densities, rho0 + 0.1, rho0 + 0.2, rho0 + 0.3].filter((d) => d >= rho0 && d <= 2.3).map((x) => Math.round(x * 100) / 100))];
+    }
   }
   const complTargets: LabTargets = compl
     ? { ...((compl.type === "loss" || compl.type === "both") && compl.lossRate > 0 ? { fiber: true } : {}), ...((compl.type === "kick" || compl.type === "both") && compl.fluidType === "gas" ? { gasTight: true } : {}) }

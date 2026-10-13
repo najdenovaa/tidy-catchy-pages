@@ -293,14 +293,22 @@ describe("Цементный мост: осложнения в итогах", ()
     const loss = evaluatePlugComplications(inp, r, { ...DEFAULT_COMPL_PARAMS, type: "loss", lossRate: 20, zoneDepthMD: 2700, zoneThickness: 10 });
     expect(loss.active).toBe(true);
     expect(loss.realTopMD).toBeGreaterThanOrEqual(r.plugTopMD);
-    const kick = evaluatePlugComplications(inp, r, { ...DEFAULT_COMPL_PARAMS, type: "kick", formationPressure: 40, zoneDepthMD: 2700 });
+    // гидростатика столба на глубине пласта ≈ 32,1 МПа (раствор 1,2 + цемент 1,85 на 50 м + раствор до пласта)
+    const hold = evaluatePlugComplications(inp, r, { ...DEFAULT_COMPL_PARAMS, type: "kick", formationPressure: 31, zoneDepthMD: 2700 });
+    expect(hold.kickBreakThrough).toBe(false);
+    const kick = evaluatePlugComplications(inp, r, { ...DEFAULT_COMPL_PARAMS, type: "kick", formationPressure: 32.2, zoneDepthMD: 2700 });
+    expect(kick.kickBreakThrough).toBe(true);
     expect(kick.requiredCementDensity).not.toBeNull();
+    expect(kick.requiredCementDensity!).toBeLessThanOrEqual(2.3);
+    const strong = evaluatePlugComplications(inp, r, { ...DEFAULT_COMPL_PARAMS, type: "kick", formationPressure: 40, zoneDepthMD: 2700 });
+    expect(strong.requiredCementDensity).toBeNull();
+    expect(strong.requiredMudDensity!).toBeGreaterThan(1.2);
     const off = evaluatePlugComplications(inp, r, { ...DEFAULT_COMPL_PARAMS, lossRate: 0 });
     expect(off.active).toBe(false);
   });
   it("автоподбор с проявлением не предлагает плотность ниже нужной", () => {
     const inp = base({ well: { ...base().well, bottomTempStatic: 90 } });
-    const c = { ...DEFAULT_COMPL_PARAMS, type: "kick" as const, formationPressure: 48, zoneDepthMD: 2700 };
+    const c = { ...DEFAULT_COMPL_PARAMS, type: "kick" as const, formationPressure: 32.2, zoneDepthMD: 2700 };
     const r = calculateBalancedPlug(inp);
     const need = evaluatePlugComplications(inp, r, c).requiredCementDensity ?? 0;
     const a = autoDesignPlug(inp, "abandonment", 24, 0.025, { complications: c });

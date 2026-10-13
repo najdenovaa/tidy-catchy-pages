@@ -4,6 +4,7 @@
  * сведены к итогам: реальное положение и длина моста, потери цемента, нужная плотность.
  */
 import type { PlugInputs, PlugResults } from "./cement-plug-calculations";
+import { interpolateTVD } from "./cementing-calculations";
 import {
   calculateComplications, analyzePlugComplicationFull,
   type ComplicationResult, type FullComplicationAnalysis, type ComplicationType, type LossBehavior, type LossZoneType,
@@ -54,6 +55,8 @@ export interface PlugComplicationSummary {
   reachesLossZone: boolean;
   kickBreakThrough: boolean;
   requiredCementDensity: number | null;
+  /** Плотность раствора над мостом, если цементом проявление не удержать */
+  requiredMudDensity: number | null;
   lossZone: { topMD: number; thicknessM: number } | null;
   risk: "low" | "medium" | "high" | "critical";
   headline: string;
@@ -69,7 +72,7 @@ export function evaluatePlugComplications(inp: PlugInputs, r: PlugResults, p: Pl
   const base: PlugComplicationSummary = {
     active: false, scenario: "none", hasLoss, hasKick, plannedTopMD, plannedBottomMD,
     realTopMD: plannedTopMD, realBottomMD: plannedBottomMD, realLengthM: r.plugLengthMD, topDropM: 0, cementLostM3: 0,
-    correctedCementVolumeM3: r.cementVolumeTotal, reachesLossZone: false, kickBreakThrough: false, requiredCementDensity: null,
+    correctedCementVolumeM3: r.cementVolumeTotal, reachesLossZone: false, kickBreakThrough: false, requiredCementDensity: null, requiredMudDensity: null,
     lossZone: hasLoss ? { topMD: p.zoneDepthMD, thicknessM: p.zoneThickness } : null,
     risk: "low", headline: "", notes: [], calc: null, full: null,
   };
@@ -83,15 +86,21 @@ export function evaluatePlugComplications(inp: PlugInputs, r: PlugResults, p: Pl
   const traj = (inp.well.trajectory.length > 1 ? inp.well.trajectory : [{ md: 0, zenith: 0, tvd: 0, azimuth: 0 }, { md: plannedBottomMD + 200, zenith: 0, tvd: plannedBottomMD + 200, azimuth: 0 }])
     .map((t) => ({ md: t.md, zenithDeg: t.zenith, tvd: t.tvd }));
 
+  // Время работы раствора до остановки (закачка, продавка, подъём из цемента) — без промывки
+  const contactMin = r.pumpTimeCementMin + r.pumpTimeSpacerAboveMin + r.pumpTimeDisplacementMin + r.tripTimeMin;
+  const trajFull = inp.well.trajectory.length > 1 ? inp.well.trajectory : [{ md: 0, zenith: 0, tvd: 0, azimuth: 0 }, { md: inp.well.wellDepthMD, zenith: 0, tvd: inp.well.wellDepthMD, azimuth: 0 }];
+  const zoneTVD = p.zoneDepthTVD > 0 ? p.zoneDepthTVD : interpolateTVD(p.zoneDepthMD, trajFull);
   const calc = calculateComplications(
-    { type: p.type, lossRateM3h: p.lossRate, lossBehavior: p.lossBehavior, zoneDepthMD: p.zoneDepthMD, zoneDepthTVD: p.zoneDepthTVD || p.zoneDepthMD,
+    { type: p.type, lossRateM3h: p.lossRate, lossBehavior: p.lossBehavior, zoneDepthMD: p.zoneDepthMD, zoneDepthTVD: zoneTVD,
       zoneThicknessM: p.zoneThickness, formationPressureMPa: p.formationPressure, formationFluidType: p.fluidType },
     {
       annAreaM2: r.annArea, pipeAreaM2: r.pipeArea, boreDiamMm: r.boreDiamUsed, pipeODMm: r.pipeSectionsUsed?.[0]?.od ?? 89,
       plugLengthMD: r.plugLengthMD, plugTopMD: plannedTopMD, plugBottomMD: plannedBottomMD, cementVolumeTotalM3: r.cementVolumeTotal,
-      totalOperationTimeMin: r.totalOperationTimeMin, spacerVolumeBelowM3: inp.useViscousPad ? inp.spacerVolumeBelowM3 : 0, plugBottomTVD: r.plugBottomTVD,
+      totalOperationTimeMin: contactMin, spacerVolumeBelowM3: inp.useViscousPad ? inp.spacerVolumeBelowM3 : 0, plugBottomTVD: r.plugBottomTVD,
       thickeningTimeMin: inp.thickeningTimeMin, settingTimeStartMin: 0, settingTimeEndMin: 0, hasViscousPad: !!inp.useViscousPad,
       cement: fp(inp.cement), spacer: fp(inp.spacer), wellFluid: fp(inp.wellFluid), viscousPad: fp(pad),
+      columnPressureAtPlugBottomMPa: r.pressureAnnulus, cementColumnTVD: r.plugLengthTVD, plugTopTVD: r.plugTopTVD,
+      belowFluidDensityGcm3: inp.useViscousPad && inp.viscousPadFluid ? inp.viscousPadFluid.density : inp.wellFluid.density,
     },
   );
 
@@ -103,7 +112,7 @@ export function evaluatePlugComplications(inp: PlugInputs, r: PlugResults, p: Pl
     plannedTopMD, plannedBottomMD,
     hasLoss ? { topMD: p.zoneDepthMD, thicknessM: Math.max(0.5, p.zoneThickness), zoneType: p.zoneType, porosity: p.zonePorosity, initialLossRateM3h: p.lossRate, drainageRadiusM: p.drainageRadius } : null,
     toFull(fp(inp.cement), true), toFull(fp(inp.wellFluid)), inp.useViscousPad ? toFull(fp(pad)) : null, padHeight,
-    traj, r.annArea, r.boreDiamUsed / 1000, p.frictionCoeff, r.totalOperationTimeMin || 60, p.lcmFactor, p.bhTempInput || r.temperatures?.bhctC || 60,
+    traj, r.annArea, r.boreDiamUsed / 1000, p.frictionCoeff, contactMin || 60, p.lcmFactor, p.bhTempInput || r.temperatures?.bhctC || 60,
     hasKick ? p.formationPressure : 0, p.fluidType === "gas", p.fluidType, r.plugBottomTVD, p.userBcAtStop,
   );
 
@@ -122,9 +131,11 @@ export function evaluatePlugComplications(inp: PlugInputs, r: PlugResults, p: Pl
     notes.push(`Зона поглощения ${full.scenario === "zone_inside" ? "в интервале моста" : "выше моста"}: потери цемента при установке ${calc.cementLostM3.toFixed(2)} м³.`);
   }
   if (hasKick) {
-    if (calc.kickCanBreakThrough) notes.push(`Проявление: пластовое давление ${p.formationPressure} МПа может прорвать мост — нужна плотность цемента ≥ ${calc.requiredCementDensityGcm3.toFixed(2)} г/см³.`);
-    else notes.push(`Проявление: гидростатика моста удерживает пласт (запас ${(-calc.pressureDifferenceMPa).toFixed(1)} МПа).`);
-    if (full.kickInvasionM > 0.1) notes.push(`Внедрение флюида в подошву до ${full.kickInvasionM.toFixed(1)} м.`);
+    if (calc.kickCanBreakThrough) notes.push(calc.requiredCementDensityGcm3 <= 2.3
+      ? `Проявление: пластовое давление ${p.formationPressure} МПа выше гидростатики столба на глубине пласта (${calc.cementHydrostaticMPa.toFixed(1)} МПа) — нужна плотность цемента ≥ ${calc.requiredCementDensityGcm3.toFixed(2)} г/см³.`
+      : `Проявление: пластовое давление ${p.formationPressure} МПа выше гидростатики столба (${calc.cementHydrostaticMPa.toFixed(1)} МПа); цементом не удержать — утяжелите раствор над мостом до ≥ ${calc.requiredMudDensityGcm3.toFixed(2)} г/см³ и заглушите пласт до установки.`);
+    else notes.push(`Проявление: гидростатика столба на глубине пласта ${calc.cementHydrostaticMPa.toFixed(1)} МПа удерживает пласт (запас ${(-calc.pressureDifferenceMPa).toFixed(1)} МПа).`);
+    if (calc.kickCanBreakThrough && calc.cementInvasionM + calc.padInvasionM > 0.1) notes.push(`Внедрение флюида снизу: пачка ${calc.padInvasionM.toFixed(1)} м, цемент ${calc.cementInvasionM.toFixed(1)} м.`);
   }
   const risk = reaches || calc.kickCanBreakThrough ? "critical" : calc.riskLevel;
   const drop = Math.max(0, realTop - plannedTopMD);
@@ -135,7 +146,8 @@ export function evaluatePlugComplications(inp: PlugInputs, r: PlugResults, p: Pl
     ...base, active: true, scenario: full.scenario === "none" && hasLoss ? "loss_simple" : full.scenario,
     realTopMD: realTop, realBottomMD: realBottom, realLengthM: realLen, topDropM: drop, cementLostM3: cementLost,
     correctedCementVolumeM3: calc.correctedCementVolumeM3, reachesLossZone: reaches, kickBreakThrough: calc.kickCanBreakThrough,
-    requiredCementDensity: hasKick ? calc.requiredCementDensityGcm3 : null,
+    requiredCementDensity: hasKick && calc.kickCanBreakThrough && calc.requiredCementDensityGcm3 <= 2.3 ? calc.requiredCementDensityGcm3 : null,
+    requiredMudDensity: hasKick && calc.kickCanBreakThrough && calc.requiredCementDensityGcm3 > 2.3 ? calc.requiredMudDensityGcm3 : null,
     risk, headline, notes: [...notes, ...calc.recommendations.slice(0, 4)], calc, full,
   };
 }

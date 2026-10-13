@@ -1378,6 +1378,9 @@ export default function CementPlug() {
                             <tr className="border-t border-border/40"><td className="p-1">Кровля / подошва моста, м</td><td className="p-1 text-right">{complEval.plannedTopMD.toFixed(0)} / {complEval.plannedBottomMD.toFixed(0)}</td><td className="p-1 text-right font-semibold">{complEval.realTopMD.toFixed(1)} / {complEval.realBottomMD.toFixed(1)}</td></tr>
                             <tr className="border-t border-border/40"><td className="p-1">Длина моста, м</td><td className="p-1 text-right">{results.plugLengthMD.toFixed(0)}</td><td className="p-1 text-right font-semibold">{complEval.realLengthM.toFixed(1)}</td></tr>
                             <tr className="border-t border-border/40"><td className="p-1">Цемент, м³</td><td className="p-1 text-right">{results.cementVolumeTotal.toFixed(2)}</td><td className="p-1 text-right">потери {complEval.cementLostM3.toFixed(2)} · нужно {complEval.correctedCementVolumeM3.toFixed(2)}</td></tr>
+                            {complEval.requiredMudDensity !== null && (
+                              <tr className="border-t border-border/40"><td className="p-1">Плотность раствора над мостом, г/см³</td><td className="p-1 text-right">{inputsAtCalc.wellFluid.density.toFixed(2)}</td><td className="p-1 text-right text-destructive font-semibold">нужно ≥ {complEval.requiredMudDensity.toFixed(2)}</td></tr>
+                            )}
                             {complEval.requiredCementDensity !== null && (
                               <tr className="border-t border-border/40"><td className="p-1">Плотность цемента, г/см³</td><td className="p-1 text-right">{inputsAtCalc.cement.density.toFixed(2)}</td><td className={`p-1 text-right ${complEval.kickBreakThrough ? "text-destructive font-semibold" : ""}`}>нужно ≥ {complEval.requiredCementDensity.toFixed(2)}</td></tr>
                             )}
@@ -1394,6 +1397,11 @@ export default function CementPlug() {
                             if (complEval.requiredCementDensity && complEval.requiredCementDensity > cement.density) setCement((c) => ({ ...c, density: Math.ceil(complEval.requiredCementDensity! * 100) / 100 }));
                             setRecalcTick((t) => t + 1);
                           }}>Учесть в проекте (объём, плотность)</Button>
+                          {complEval.requiredMudDensity !== null && (
+                            <Button size="sm" variant="outline" onClick={() => { setWellFluid((w) => ({ ...w, density: Math.ceil(complEval.requiredMudDensity! * 100) / 100 })); setRecalcTick((t) => t + 1); }}>
+                              Заглушить: раствор ≥ {complEval.requiredMudDensity.toFixed(2)} г/см³
+                            </Button>
+                          )}
                           <span className="text-[11px] text-muted-foreground self-center">Автоподбор ниже тоже учитывает осложнения.</span>
                         </div>
                       )}
@@ -1426,7 +1434,7 @@ export default function CementPlug() {
                             planBottomMD={results.plugBottomMD}
                             topByVolumeMD={results.plugTopByVolumeMD}
                             forecastTopMD={Math.max(results.plugTopMD + (ex.interfaces[0]?.topDropM ?? 0), complEval?.active ? complEval.realTopMD : -Infinity)}
-                            forecastBottomMD={Math.max(results.plugBottomMD, complEval?.active ? complEval.realBottomMD : -Infinity)}
+                            forecastBottomMD={complEval?.active ? complEval.realBottomMD : results.plugBottomMD}
                             bottomSmearM={ex.interfaces[0]?.bottomSmearM ?? 0}
                             lossZone={complEval?.active ? complEval.lossZone : null}
                             padHeightM={results.useViscousPad ? results.spacerBelowHeightAnnMD : 0}

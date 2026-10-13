@@ -63,6 +63,14 @@ export interface ComplicationCalcParams {
   settingTimeEndMin: number;
   /** Is viscous pad used? */
   hasViscousPad: boolean;
+  /** Статическое давление столба (раствор + буфер + цемент) на подошве моста, МПа — для проявления */
+  columnPressureAtPlugBottomMPa?: number;
+  /** Высота цементного столба по вертикали, м */
+  cementColumnTVD?: number;
+  /** Плотность жидкости между подошвой моста и пластом, г/см³ */
+  belowFluidDensityGcm3?: number;
+  /** Вертикальная глубина кровли моста, м */
+  plugTopTVD?: number;
 
   // Fluid properties
   cement: FluidProps;
@@ -136,6 +144,8 @@ export interface ComplicationResult {
   kickCanBreakThrough: boolean;
   /** Required cement density to hold formation pressure, g/cm³ */
   requiredCementDensityGcm3: number;
+  /** Плотность раствора над мостом, нужная для удержания пласта (если цементом не достичь), г/см³ */
+  requiredMudDensityGcm3: number;
 
   // Corrected volumes
   /** Recommended cement volume with compensation, m³ */
@@ -384,14 +394,29 @@ export function calculateComplications(
   // ═══ KICK CALCULATIONS ═══
   const plugBottomTVD = params.plugBottomTVD;
   const cementHydro = cement.densityGcm3 * 1000 * G * plugLenAnn / 1e6;
-  const cementHydroAtZone = cement.densityGcm3 * 1000 * G * plugBottomTVD / 1e6;
+  // Гидростатика на глубине пласта: весь столб (раствор + буфер + цемент) на подошве моста
+  // + жидкость между подошвой и пластом. Без данных о столбе — прежняя оценка по цементу.
+  const zoneTVD = inputs.zoneDepthTVD > 0 ? inputs.zoneDepthTVD : plugBottomTVD;
+  const belowRho = params.belowFluidDensityGcm3 ?? wellFluid.densityGcm3;
+  const hasColumn = params.columnPressureAtPlugBottomMPa !== undefined && params.columnPressureAtPlugBottomMPa > 0;
+  const cementTVD = Math.max(1, params.cementColumnTVD ?? plugLenAnn);
+  const cementPart = cement.densityGcm3 * G * cementTVD / 1000;
+  const cementHydroAtZone = hasColumn
+    ? params.columnPressureAtPlugBottomMPa! + belowRho * G * (zoneTVD - plugBottomTVD) / 1000
+    : cement.densityGcm3 * 1000 * G * plugBottomTVD / 1e6;
 
   const pressureDiff = formationPressureMPa - cementHydroAtZone;
   const kickBreakThrough = type !== 'loss' && pressureDiff > 0;
 
-  const requiredDensity = plugBottomTVD > 0
-    ? (formationPressureMPa * 1e6) / (1000 * G * plugBottomTVD) / 1000
-    : cement.densityGcm3;
+  // Нужная плотность цемента: недостающее давление добирается только цементным столбом
+  const requiredDensity = hasColumn
+    ? cement.densityGcm3 + Math.max(0, pressureDiff) / (G * cementTVD / 1000)
+    : plugBottomTVD > 0 ? (formationPressureMPa * 1e6) / (1000 * G * plugBottomTVD) / 1000 : cement.densityGcm3;
+  // Альтернатива: утяжелить раствор над мостом (запас 1,5 МПа)
+  const topTVD = params.plugTopTVD ?? Math.max(1, plugBottomTVD - cementTVD);
+  const requiredMudDensity = hasColumn && topTVD > 0
+    ? wellFluid.densityGcm3 + Math.max(0, pressureDiff + 1.5) / (G * topTVD / 1000)
+    : wellFluid.densityGcm3;
 
   // ═══ REAL PLUG INTERVALS (с учётом нижней вязкой пачки) ═══
   // Нижняя пачка находится ПОД подошвой цементного моста: plugBottom → plugBottom + height.
@@ -579,9 +604,11 @@ export function calculateComplications(
   if (type === 'kick' || type === 'both') {
     if (kickBreakThrough) {
       riskLevel = riskLevel === 'critical' ? 'critical' : 'high';
-      recs.push(`⚠ ПРОЯВЛЕНИЕ: пластовое давление (${formationPressureMPa.toFixed(2)} МПа) > гидростатика цемента (${cementHydroAtZone.toFixed(2)} МПа).`);
+      recs.push(`⚠ ПРОЯВЛЕНИЕ: пластовое давление (${formationPressureMPa.toFixed(2)} МПа) > гидростатика столба на глубине пласта (${cementHydroAtZone.toFixed(2)} МПа).`);
       recs.push(`Приток ${formationFluidType === 'gas' ? 'газа' : formationFluidType === 'oil' ? 'нефти' : 'воды'} может размыть нижнюю границу моста.`);
-      recs.push(`Необходимая плотность цемента: ≥${requiredDensity.toFixed(2)} г/см³.`);
+      recs.push(requiredDensity <= 2.3
+        ? `Необходимая плотность цемента: ≥${requiredDensity.toFixed(2)} г/см³.`
+        : `Цементом не удержать (нужно ${requiredDensity.toFixed(2)} г/см³): утяжелите раствор над мостом до ≥${requiredMudDensity.toFixed(2)} г/см³ (запас 1,5 МПа) и заглушите пласт до установки моста.`);
       recs.push(`Ускорьте закачку для минимизации времени контакта притока с цементом.`);
 
       // ═══ ФЛЮИД-СПЕЦИФИЧНЫЕ РЕЦЕПТУРЫ ═══
@@ -610,7 +637,7 @@ export function calculateComplications(
       }
       recs.push(`📐 Буфер снизу — утяжелённый, плотность ≥${(formationPressureMPa / (G * plugBottomTVD * 1e-3) + 0.05).toFixed(2)} г/см³, СНС ≥40 Па за 10 мин для сопротивления притоку.`);
     } else if (type === 'kick') {
-      recs.push(`Гидростатика цемента (${cementHydroAtZone.toFixed(2)} МПа) > пластовое давление (${formationPressureMPa.toFixed(2)} МПа). Мост удержит приток.`);
+      recs.push(`Гидростатика столба на глубине пласта (${cementHydroAtZone.toFixed(2)} МПа) > пластовое давление (${formationPressureMPa.toFixed(2)} МПа). Мост удержит приток.`);
       recs.push(`Запас по давлению: ${Math.abs(pressureDiff).toFixed(2)} МПа.`);
     }
   }
@@ -651,6 +678,7 @@ export function calculateComplications(
     pressureDifferenceMPa: Math.round(pressureDiff * 100) / 100,
     kickCanBreakThrough: kickBreakThrough,
     requiredCementDensityGcm3: Math.round(requiredDensity * 100) / 100,
+    requiredMudDensityGcm3: Math.round(requiredMudDensity * 100) / 100,
     correctedCementVolumeM3: Math.round(correctedCement * 1000) / 1000,
     correctedSpacerBelowM3: Math.round(correctedSpacerBelow * 1000) / 1000,
     totalOperationTimeMin: Math.round(totalOpTime * 10) / 10,
@@ -1368,7 +1396,9 @@ export function analyzePlugComplicationFull(
   let kickLift: KickLiftResult | null = null;
   let kick: KickResult | null = null;
   if (kickFormationPressureMPa > 0) {
-    const hydro = cement.densityGcm3 * 1000 * 9.81 * (plugBottomMD) / 1e6;
+    const topTVDh = trajectory.length ? interpolateTVD(plugTopMD, trajectory) : plugTopMD;
+    const botTVDh = Number.isFinite(plugBottomTVD) && plugBottomTVD > 0 ? plugBottomTVD : plugBottomMD;
+    const hydro = (wellFluid.densityGcm3 * topTVDh + cement.densityGcm3 * Math.max(0, botTVDh - topTVDh)) * 1000 * 9.81 / 1e6;
     const gel = cement.gel10minPa > 0 ? cement.gel10minPa : cement.ypPa * 3;
     kickInv = kickInvasion(kickFormationPressureMPa, hydro, gel, boreDiamM, plugBottomMD - plugTopMD);
     kickLift = calculateKickLift(
@@ -1457,10 +1487,11 @@ export function calculateKick(
   const plugLen = Math.max(1, plugBottomMD - plugTopMD);
   const wallPerim = Math.PI * boreDiamM;
   const warnings: string[] = [];
-  void trajectory; void zoneMD;
+  void zoneMD;
 
-  // Гидростатика моста на уровне подошвы (TVD)
-  const cementHydro = cement.densityGcm3 * 1000 * G * plugBottomTVD / 1e6;
+  // Гидростатика столба на уровне подошвы (TVD): раствор над мостом + цемент
+  const topTVDk = trajectory.length ? interpolateTVD(plugTopMD, trajectory) : Math.max(0, plugBottomTVD - plugLen);
+  const cementHydro = (wellFluid.densityGcm3 * topTVDk + cement.densityGcm3 * Math.max(0, plugBottomTVD - topTVDk)) * 1000 * G / 1e6;
   const excess = formationPressureMPa - cementHydro;
 
   // Сопротивление геля цемента на полную длину моста (в эквиваленте МПа)
