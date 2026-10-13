@@ -197,7 +197,7 @@ export default function RirSqueezeSimCard({ sim, hasTool, spot, toolLabel, holdM
         <div className="grid gap-3 lg:grid-cols-[300px_1fr]" data-docimg="sim">
           <div className="flex flex-col items-center gap-2">
             <SqueezeAnimation p={p} hasTool={hasTool} spot={spot} toolLabel={toolLabel} />
-            <div className="flex w-full items-center gap-2">
+            <div className="flex w-full items-center gap-2" data-noexport="true">
               <Button size="sm" variant="outline" className="h-7 w-7 p-0" aria-label={playing ? "Пауза" : "Воспроизвести"} onClick={() => { if (!playing && idx >= sim.points.length - 1) setIdx(0); setPlaying((x) => !x); }}>
                 {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
               </Button>

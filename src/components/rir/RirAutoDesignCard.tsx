@@ -26,7 +26,7 @@ function VariantMap({ r, bestId }: { r: RirAutoResult; bestId?: string }) {
         <CartesianGrid stroke="hsl(var(--border))" strokeOpacity={0.5} />
         <ReferenceArea y1={0} y2={75} fill="hsl(142 70% 45%)" fillOpacity={0.06} />
         <XAxis type="number" dataKey="x" name="Время" tick={axisTick} label={{ value: "Время операции, мин", position: "insideBottom", offset: -8, fontSize: 11 }} />
-        <YAxis type="number" dataKey="y" name="Время жизни" domain={[0, yMax]} tick={axisTick} label={{ value: "Использовано времени жизни, %", angle: -90, position: "insideLeft", fontSize: 10, dy: 60 }} />
+        <YAxis type="number" dataKey="y" name="Время жизни" domain={[0, yMax]} tick={axisTick} width={52} label={{ value: "Время жизни, %", angle: -90, position: "insideLeft", fontSize: 11, style: { textAnchor: "middle" } }} />
         <ZAxis range={[28, 28]} />
         <ReferenceLine y={75} stroke="hsl(0 72% 51%)" strokeDasharray="4 3" label={{ value: "75%", fontSize: 10, position: "insideTopRight", fill: "hsl(0 72% 51%)" }} />
         <Tooltip contentStyle={tipStyle} content={({ payload }) => {

@@ -126,7 +126,7 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
         try {
           const svg = el.children.length === 1 ? el.querySelector<SVGSVGElement>(":scope > svg") : null;
           if (svg) { const r = await svgToPngDataUrl(svg); return { dataUrl: r.dataUrl, caption, widthPx: r.width, heightPx: r.height }; }
-          const dataUrl = await toPng(el, { backgroundColor: "#ffffff", pixelRatio: 2, style: { color: "#111827" } });
+          const dataUrl = await toPng(el, { backgroundColor: "#ffffff", pixelRatio: 2, style: { color: "#111827" }, filter: (node) => !(node instanceof HTMLElement && node.dataset.noexport === "true") });
           return { dataUrl, caption, widthPx: el.offsetWidth, heightPx: el.offsetHeight };
         } catch { return undefined; }
       };
