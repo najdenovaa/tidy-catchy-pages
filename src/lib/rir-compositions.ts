@@ -29,6 +29,8 @@ export interface CompositionConditions {
   targetDensity: number;
   /** Нужна газонепроницаемость (межколонное давление газа) */
   gasTight?: boolean;
+  /** Предельная вязкость смолы при BHCT, мПа·с (узкие зазоры — 100, иначе 300) */
+  maxViscosityMPas?: number;
 }
 
 export interface CompComponent { name: string; role: string; purpose: string; /** % от массы цемента или м.ч. на 100 м.ч. смолы */ dose: number; doseUnit: string; kgPerM3: number; sg: number }
@@ -196,11 +198,13 @@ export function designResin(c: CompositionConditions): CompositionDesign {
     const ln25 = wR * Math.log(15000) + wH * Math.log(h!.visc25) + wD * Math.log(3);
     return Math.exp(ln25) * Math.exp(-0.05 * (T - 25));
   };
+  const vMax = c.maxViscosityMPas ?? 300;
   let dil = 5;
-  for (; dil <= 30; dil += 1) if (viscMix(dil, c.bhctC) <= 300) break;
-  dil = Math.min(30, dil);
+  for (; dil <= 40; dil += 1) if (viscMix(dil, c.bhctC) <= vMax) break;
+  dil = Math.min(40, dil);
   const visc = viscMix(dil, c.bhctC);
-  if (visc > 300) warnings.push(`Вязкость при ${c.bhctC.toFixed(0)} °C ≈ ${visc.toFixed(0)} мПа·с — выше 300; проникновение в микрозазоры будет медленным, допускается задавливание при повышенном давлении в окне.`);
+  if (visc > vMax) warnings.push(`Вязкость при ${c.bhctC.toFixed(0)} °C ≈ ${visc.toFixed(0)} мПа·с — выше ${vMax}; проникновение в зазоры будет медленным.`);
+  if (dil > 30) warnings.push(`Разбавителя ${dil} м.ч. (> 30) — снижается прочность и термостойкость; проверить отверждение в лаборатории.`);
 
   // Плотность: смола + отвердитель + разбавитель ≈ 1,1–1,17; утяжеление баритом с тиксотропом
   const parts = [
@@ -248,7 +252,7 @@ export function designResin(c: CompositionConditions): CompositionDesign {
     props: [
       { label: "Плотность, г/см³", value: density.toFixed(2), target: c.targetDensity > 0 ? `${c.targetDensity.toFixed(2)} ± 0,02` : "—" },
       { label: "Соотношение смола : отвердитель (по массе)", value: `100 : ${phr}` },
-      { label: `Вязкость при ${c.bhctC.toFixed(0)} °C, мПа·с`, value: visc.toFixed(0), target: "≤ 300", ok: visc <= 300 },
+      { label: `Вязкость при ${c.bhctC.toFixed(0)} °C, мПа·с`, value: visc.toFixed(0), target: `≤ ${vMax}`, ok: visc <= vMax },
       { label: "Вязкость при 25 °C, мПа·с", value: viscMix(dil, 25).toFixed(0) },
       { label: `Время жизни (гелеобразование) при ${c.bhctC.toFixed(0)} °C, мин`, value: tGel.toFixed(0), target: `≥ ${req.toFixed(0)}`, ok: tGel >= req },
       { label: `Отверждение при ${c.bhstC.toFixed(0)} °C, ч`, value: cureH.toFixed(0) },
@@ -283,4 +287,10 @@ export function designRirComposition(kind: "cement" | "microcement" | "resin" | 
     };
   }
   return null; // обычный цемент — рецептура в модуле мостов/цементирования
+}
+
+/** Целевая вязкость смолы при BHCT по раскрытию канала (мПа·с): чем уже канал, тем жиже. */
+export function resinViscosityTarget(apertureUm: number | null): number {
+  if (apertureUm === null) return 150;
+  return apertureUm < 45 ? 60 : apertureUm < 150 ? 120 : 250;
 }

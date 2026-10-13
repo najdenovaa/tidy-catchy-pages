@@ -4,6 +4,7 @@ import { COMPOSITION_LABEL, LEAK_KIND_LABEL, TOOL_LABEL, type RirInputs, type Ri
 import type { CompositionDesign, RirCompositionResult } from "./rir-compositions";
 import type { TubingMechResult } from "./rir-tubing";
 import type { WorkStep } from "./rir-calculations";
+import type { SqueezeSimResult } from "./rir-squeeze-sim";
 
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d).replace(".", ",") : "—");
 
@@ -23,7 +24,7 @@ function recipeSection(id: string, title: string, d: CompositionDesign, vol: num
   };
 }
 
-export function buildRirProtocol(inp: RirInputs, res: RirResult, comp: RirCompositionResult | null, mech: TubingMechResult | null, work: WorkStep[]): LabProtocol {
+export function buildRirProtocol(inp: RirInputs, res: RirResult, comp: RirCompositionResult | null, mech: TubingMechResult | null, work: WorkStep[], sim?: SqueezeSimResult | null): LabProtocol {
   const now = new Date(), date = now.toLocaleDateString("ru-RU");
   const sections: ProtocolSection[] = [];
   sections.push({
@@ -61,6 +62,15 @@ export function buildRirProtocol(inp: RirInputs, res: RirResult, comp: RirCompos
     sections.push(recipeSection("recipe-0", `${n++}. ${comp.primary.title} — рецептура и свойства`, comp.primary, comp.split ? comp.split.primaryM3 : res.volumes.totalM3));
     if (comp.secondary && comp.split) sections.push(recipeSection("recipe-1", `${n++}. ${comp.secondary.title} — рецептура и свойства`, comp.secondary, comp.split.secondaryM3));
   }
+  if (sim) sections.push({
+    id: "sim", title: `${n++}. Моделирование задавливания (прогноз)`,
+    paragraphs: [`Итог: ${sim.outcomeText}`, `Время операции ${f(sim.totalTimeMin, 0)} мин; использовано ${f(sim.workLifeUsedPct, 0)}% времени жизни состава; давление в конце ${f(sim.finalSurfaceMPa, 1)} МПа на устье.`],
+    tables: [
+      { id: "sim-st", headers: ["Этап", "Начало, мин", "Конец, мин"], widths: [60, 20, 20], rows: sim.stages.map((s) => [s.name, f(s.t0, 0), f(s.t1, 0)]) },
+      { id: "sim-h", headers: ["Ступень", "P начала выдержки, МПа", "P конца, МПа", "Падение, %"], widths: [25, 25, 25, 25], rows: sim.holds.map((h) => [String(h.stage), f(h.pStart, 1), f(h.pEnd, 1), f(h.decayPct, 0)]) },
+    ],
+    bullets: sim.warnings.map((w) => `⚠ ${w}`),
+  });
   sections.push({ id: "work", title: `${n++}. Ход работ`, bullets: work.map((s, i) => `${i + 1}. ${s.title}. ${s.text}`) });
   sections.push({
     id: "concl", title: `${n}. Заключение`,

@@ -72,6 +72,9 @@ export const COMPOSITION_LABEL: Record<CompositionKind, string> = {
   resin_micro: "Комбинация: смола в «голову» + микроцемент",
 };
 
+/** Эффективная вязкость состава в канале относительно воды (для расчёта расхода задавливания). */
+export const MU_REL: Record<CompositionKind, number> = { cement: 40, microcement: 15, resin: 100, resin_micro: 100 };
+
 /** Крупность частиц d95, мкм (для правила проходимости). */
 export const D95_UM: Record<CompositionKind, number> = { cement: 90, microcement: 15, resin: 0, resin_micro: 15 };
 
@@ -166,6 +169,8 @@ export interface RirResult {
   governing: string;
   /** Расход задавливания при допустимом давлении, м³/ч */
   squeezeRateAtMaxM3h: number;
+  /** Расход задавливания составом при допустимом давлении, м³/ч */
+  compositionRateAtMaxM3h: number;
   volumes: { tubingM3: number; belowToolM3: number; squeezeM3: number; reserveM3: number; totalM3: number; displacementM3: number; reverseOutM3: number };
   timing: { pumpMin: number; displaceMin: number; hesitationMin: number; reverseMin: number; jobMin: number; requiredWorkLifeMin: number };
   profile: PressureProfilePoint[];
@@ -304,13 +309,17 @@ export function calculateRir(inp: RirInputs): RirResult {
   const tubingM3 = toolDepth > 0 ? area(tubingID) * toolDepth : 0;
   const belowFrom = inp.tool.kind === "bradenhead" ? Math.max(0, inp.leak.topMD - 50) : inp.tool.setDepthMD;
   const belowToolM3 = area(casingID) * Math.max(0, inp.leak.bottomMD + 5 - belowFrom);
-  const caps: Record<CompositionKind, [number, number]> = { cement: [0.5, 3], microcement: [0.3, 2], resin: [0.05, 0.6], resin_micro: [0.2, 1.5] };
+  // Объём задавливания — по расходу САМОГО состава при допустимом давлении (вязкость выше воды в μ раз)
+  const caps: Record<CompositionKind, [number, number]> = { cement: [0.2, 3], microcement: [0.05, 2], resin: [0.02, 0.6], resin_micro: [0.05, 1.5] };
   const [vMin, vMax] = caps[comp];
-  const squeezeM3 = Math.min(vMax, Math.max(vMin, qMax * 0.5)); // ~30 мин задавливания на допустимом давлении
+  const qComp = qMax / MU_REL[comp]; // м³/ч
+  const squeezeM3 = Math.min(vMax, Math.max(vMin, qComp * 1.0)); // ~1 ч задавливания составом на допустимом давлении
+  if (fit && qComp > 0 && vMin / qComp > 2) warnings.push(`Канал плотный для выбранного состава: при допустимом давлении состав пойдёт с расходом ~${(qComp * 1000).toFixed(0)} л/ч — даже минимальный объём ${vMin} м³ займёт ${(vMin / qComp).toFixed(1)} ч. Нужен состав меньшей вязкости (смола ≤ 100 мПа·с) или больше окно давлений.`);
   const reserveM3 = comp === "resin" ? 0.05 : 0.2;
   if ((comp === "resin" || comp === "resin_micro") && belowToolM3 > 0.2) warnings.push(`Под инструментом ${belowToolM3.toFixed(2)} м³ — для смолы дорого: установите ретейнер ближе к нарушению (5–10 м) или заполните колонну ниже нарушения песчаной/вязкой пачкой.`);
   const totalM3 = belowToolM3 + squeezeM3 + reserveM3;
-  const displacementM3 = tubingM3; // до ретейнера; излишки над ним вымываются обратной промывкой
+  // Продавка: состав доводится до ретейнера, в НКТ остаётся объём на ступенчатое задавливание
+  const displacementM3 = Math.max(0, tubingM3 - squeezeM3);
   const reverseOutM3 = tubingM3 * 1.5;
 
   // ── Время ──
@@ -358,7 +367,7 @@ export function calculateRir(inp: RirInputs): RirResult {
   }
   W.push({ title: "Определение приёмистости", text: `Закачка технической воды на 2–3 режимах (расход / давление). ${fit ? `Расчётный индекс приёмистости ${f1(fit.J, 2)} м³/(ч·МПа), давление начала приёмистости на глубине нарушения ${f1(fit.openingBhpMPa, 1)} МПа.` : ""} Допустимое давление на устье — не более ${f1(maxSurf, 1)} МПа (ограничение: ${gov.name}).` });
   W.push({ title: "Приготовление состава", text: `${COMPOSITION_LABEL[comp]}, плотность ${f1(rhoC, 2)} г/см³, объём ${f1(totalM3, 2)} м³ (под ${toolName || "интервал"} ${f1(belowToolM3, 2)}, задавливание ${f1(squeezeM3, 2)}, запас ${f1(reserveM3, 2)}). Время жизни / загустевания при ${f1(bhct, 0)} °C — не менее ${requiredWorkLifeMin} мин.`, volumeM3: totalM3 });
-  W.push({ title: "Закачка и продавка", text: `Буфер (техническая вода 0,5 м³), состав ${f1(totalM3, 2)} м³ при ${f1(q, 1)} л/с, продавка ${f1(displacementM3, 2)} м³ до ${toolName || "интервала"}${inp.tool.kind === "retainer" ? " (стыковочный узел в ретейнере)" : ""}.`, volumeM3: displacementM3, timeMin: pumpMin + displaceMin });
+  W.push({ title: "Закачка и продавка", text: `Буфер (техническая вода 0,5 м³), состав ${f1(totalM3, 2)} м³ при ${f1(q, 1)} л/с, продавка ${f1(displacementM3, 2)} м³${inp.tool.kind === "retainer" ? " (стыковочный узел в ретейнере)" : ""} — в НКТ над ${toolName || "интервалом"} остаётся ${f1(squeezeM3, 2)} м³ состава на ступенчатое задавливание.`, volumeM3: displacementM3, timeMin: pumpMin + displaceMin });
   W.push({ title: "Ступенчатое задавливание", text: `${inp.hesitationStages} ступеней по ~${f1(perStage, 2)} м³ с выдержкой ${inp.hesitationHoldMin} мин; рост давления к конечному ${f1(maxSurf * 0.9, 1)} МПа на устье (не превышать ${f1(maxSurf, 1)} МПа). Критерий окончания: давление держится на выдержке (падение ≤ 10%).`, timeMin: hesitationMin });
   if (inp.tool.kind === "retainer") W.push({ title: "Расстыковка и обратная промывка", text: `Снять стыковочный узел с ретейнера (обратный клапан закрывается), приподнять на 5–10 м, обратная промывка ${f1(reverseOutM3, 2)} м³ для вымыва излишков состава из НКТ.`, volumeM3: reverseOutM3, timeMin: reverseMin });
   else if (inp.tool.kind === "packer") W.push({ title: "Срыв пакера и промывка", text: `Сорвать пакер, поднять на 20–30 м выше кровли состава, обратная промывка ${f1(reverseOutM3, 2)} м³.`, volumeM3: reverseOutM3 });
@@ -370,7 +379,7 @@ export function calculateRir(inp: RirInputs): RirResult {
     leakTVD, toolTVD, casingID, tubingID, temps: { bhstC: bhst, bhctC: bhct }, fit, apertureUm, apertureNote, compositionDensity: rhoC,
     composition: comp, compositionReason: reason, penetration,
     casingBurstMPa: casingBurst, casingCollapse, tubingBurstMPa: tubingBurst, tubingCollapse,
-    constraints, maxBhpMPa: maxBhp, maxSurfaceMPa: maxSurf, governing: gov.name, squeezeRateAtMaxM3h: qMax,
+    constraints, maxBhpMPa: maxBhp, maxSurfaceMPa: maxSurf, governing: gov.name, squeezeRateAtMaxM3h: qMax, compositionRateAtMaxM3h: qComp,
     volumes: { tubingM3, belowToolM3, squeezeM3, reserveM3, totalM3, displacementM3, reverseOutM3 },
     timing: { pumpMin, displaceMin, hesitationMin, reverseMin, jobMin, requiredWorkLifeMin },
     profile, hesitation: hes, workProgram: W, warnings,

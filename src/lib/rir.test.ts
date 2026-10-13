@@ -34,10 +34,10 @@ describe("РИР: диагностика и окно давлений", () => {
     expect(mk(0.5)).toBe("microcement");
     expect(mk(0.002)).toBe("resin");
   });
-  it("объём: под ретейнером + задавливание + запас; продавка = объём НКТ", () => {
+  it("объём: под ретейнером + задавливание + запас; продавка = объём НКТ − объём задавливания", () => {
     const v = r.volumes;
     expect(v.totalM3).toBeCloseTo(v.belowToolM3 + v.squeezeM3 + v.reserveM3, 9);
-    expect(v.displacementM3).toBeCloseTo((Math.PI / 4) * ((73 - 11) / 1000) ** 2 * 1820, 3);
+    expect(v.displacementM3).toBeCloseTo((Math.PI / 4) * ((73 - 11) / 1000) ** 2 * 1820 - v.squeezeM3, 3);
   });
   it("без пакера ограничение — разрыв колонны у устья", () => {
     const b = calculateRir({ ...DEFAULT_RIR, tool: { ...DEFAULT_RIR.tool, kind: "bradenhead" } });
@@ -127,5 +127,37 @@ describe("РИР: составы", () => {
     expect(r.primary.kind).toBe("resin");
     expect(r.secondary!.kind).toBe("microcement");
     expect(r.split!.primaryM3 + r.split!.secondaryM3).toBeCloseTo(1.3, 6);
+  });
+});
+
+import { simulateSqueeze } from "./rir-squeeze-sim";
+
+describe("РИР: моделирование задавливания", () => {
+  const r = calculateRir(DEFAULT_RIR);
+  const comp = designRirComposition(r.composition, { bhctC: r.temps.bhctC, bhstC: r.temps.bhstC, requiredWorkLifeMin: r.timing.requiredWorkLifeMin, volumeM3: r.volumes.totalM3, targetDensity: 0 }, r.volumes.squeezeM3)!;
+  const sim = simulateSqueeze(DEFAULT_RIR, r, comp.primary);
+  it("давление на устье не превышает допустимого в каждый момент", () => {
+    for (const p of sim.points) expect(p.surfaceMPa).toBeLessThanOrEqual(p.allowSurfaceMPa + 1e-6);
+  });
+  it("баланс на ступени: прирост в канале = закачано (несжимаемая система)", () => {
+    const st = sim.points.filter((p) => p.stage === "Ступень 1");
+    const a = st[0], b = st[st.length - 1];
+    expect(b.vChannel - a.vChannel).toBeCloseTo(b.vPumped - a.vPumped, 6);
+  });
+  it("типовой случай задавливается, сценарий из-под пакера тоже", () => {
+    expect(sim.outcome).toBe("sealed");
+    const inp = { ...DEFAULT_RIR, tool: { ...DEFAULT_RIR.tool, kind: "packer" as const } };
+    const r2 = calculateRir(inp);
+    const c2 = designRirComposition(r2.composition, { bhctC: r2.temps.bhctC, bhstC: r2.temps.bhstC, requiredWorkLifeMin: r2.timing.requiredWorkLifeMin, volumeM3: r2.volumes.totalM3, targetDensity: 0 }, r2.volumes.squeezeM3)!;
+    const s2 = simulateSqueeze(inp, r2, c2.primary);
+    expect(s2.stages.some((x) => x.name === "Посадка пакера")).toBe(true);
+    expect(s2.compInChannelM3).toBeGreaterThan(0);
+  });
+  it("состав доходит до канала, подвижность падает, есть итог", () => {
+    expect(sim.compInChannelM3).toBeGreaterThan(0);
+    const mob = sim.points.filter((p) => p.vCompChannel > 0).map((p) => p.mobility);
+    expect(mob[mob.length - 1]).toBeLessThan(mob[0]);
+    expect(["sealed", "partial", "no_squeeze"]).toContain(sim.outcome);
+    expect(sim.holds.length).toBeGreaterThan(0);
   });
 });

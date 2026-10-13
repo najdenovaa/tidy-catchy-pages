@@ -10,10 +10,12 @@ import {
 import RirWellSchematic from "./RirWellSchematic";
 import RirTubingCard from "./RirTubingCard";
 import RirCompositionCard from "./RirCompositionCard";
-import { designRirComposition } from "@/lib/rir-compositions";
+import { designRirComposition, resinViscosityTarget } from "@/lib/rir-compositions";
 import { buildRirProtocol } from "@/lib/rir-protocol";
 import { analyseTubing, DEFAULT_TUBING_MECH, type TubingMechInputs } from "@/lib/rir-tubing";
-import { InjectivityChart, PenetrationDiagram, PressureWindowChart, HesitationChart } from "./RirCharts";
+import { InjectivityChart, PenetrationDiagram, PressureWindowChart } from "./RirCharts";
+import RirSqueezeSimCard from "./RirSqueezeSim";
+import { simulateSqueeze } from "@/lib/rir-squeeze-sim";
 
 const KEY = "rir_inputs_v1";
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "—");
@@ -83,7 +85,9 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
   const comp = useMemo(() => designRirComposition(res.composition, {
     bhctC: res.temps.bhctC, bhstC: res.temps.bhstC, requiredWorkLifeMin: res.timing.requiredWorkLifeMin, volumeM3: res.volumes.totalM3,
     targetDensity: inp.compositionDensity, gasTight: inp.leak.kind === "intercasing" && inp.leak.annulusPressureMPa > 0,
+    maxViscosityMPas: resinViscosityTarget(res.apertureUm),
   }, res.volumes.squeezeM3), [res, inp.compositionDensity, inp.leak.kind, inp.leak.annulusPressureMPa]);
+  const sim = useMemo(() => simulateSqueeze(full, res, comp?.primary ?? null), [full, res, comp]);
   const workProgram = useMemo(() => {
     if (!mechRes) return res.workProgram;
     const i = res.workProgram.findIndex((s) => s.title.startsWith("Спуск и установка"));
@@ -228,10 +232,9 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm">План ступенчатого задавливания</CardTitle></CardHeader>
+          <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm">Объёмы и прочность труб</CardTitle></CardHeader>
           <CardContent className="pt-0 space-y-2">
-            <HesitationChart res={res} />
-            <p className="text-[11px] text-muted-foreground">Схема: {inp.hesitationStages} ступеней по ~{f(res.volumes.squeezeM3 / Math.max(1, inp.hesitationStages), 2)} м³ с выдержкой {inp.hesitationHoldMin} мин; давление растёт по мере заполнения канала. Фактическая кривая пишется при работе и сравнивается с планом.</p>
+            <p className="text-[11px] text-muted-foreground">Ступенчатое задавливание: {inp.hesitationStages} ступеней по ~{f(res.volumes.squeezeM3 / Math.max(1, inp.hesitationStages), 2)} м³ с выдержкой {inp.hesitationHoldMin} мин — процесс смоделирован ниже.</p>
             <table className="w-full text-[11px]">
               <thead className="bg-muted/50"><tr><th className="p-1 text-left">Объёмы</th><th className="p-1 text-right">м³</th></tr></thead>
               <tbody>
@@ -257,7 +260,9 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
       </div>
 
       <RirCompositionCard comp={comp} totalM3={res.volumes.totalM3} bhctC={res.temps.bhctC} jobMin={res.timing.jobMin} requiredMin={res.timing.requiredWorkLifeMin}
-        protocol={() => buildRirProtocol(full, res, comp, mechRes, workProgram)} />
+        protocol={() => buildRirProtocol(full, res, comp, mechRes, workProgram, sim)} />
+
+      <RirSqueezeSimCard sim={sim} hasTool={inp.tool.kind !== "bradenhead"} spot={inp.tool.kind === "packer"} toolLabel={inp.tool.kind === "retainer" ? "ретейнер" : "пакер"} holdMin={inp.hesitationHoldMin} />
 
       {mechRes && <RirTubingCard r={mechRes} m={mech} onChange={(p) => setMech((x) => ({ ...x, ...p }))} />}
 
