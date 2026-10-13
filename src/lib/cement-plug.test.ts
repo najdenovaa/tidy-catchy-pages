@@ -102,10 +102,10 @@ describe("Цементный мост: устойчивость против о�
     expect(r.interfaces[0].exchangeLengthM).toBeLessThan(5);
   });
 
-  it("лабораторная скорость (k = 1): тот же мост неустойчив, закрытый низ не спасает", () => {
+  it("лабораторная скорость (k = 1): тот же мост с риском или неустойчив, закрытый низ не спасает", () => {
     const r = ex({ velocityFactor: 1 });
-    expect(r.verdict).toBe("unstable");
-    expect(r.interfaces[0].exchangeLengthM).toBeGreaterThan(5);
+    expect(["risk", "unstable"]).toContain(r.verdict);
+    expect(r.interfaces[0].bottomSmearM).toBeGreaterThan(5);
     expect(r.recommendations.length).toBeGreaterThan(2);
   });
 
@@ -211,12 +211,12 @@ describe("Цементный мост: автоподбор", () => {
     const inp = base({ well: { ...base().well, bottomTempStatic: 90, surfaceTemp: 5 } });
     const a = autoDesignPlug({ ...inp, exchangeVelocityFactor: 1 }, "abandonment", 24, 0.018);
     expect(a.best).not.toBeNull();
-    expect(a.best!.support).not.toBe("none");
+    // без опоры на минимальной длине мост не проходит; если выбран «без опоры» — только более длинный мост
+    if (a.best!.support === "none") expect(a.best!.lengthM).toBeGreaterThan(50);
     expect(a.best!.lengthM).toBeGreaterThanOrEqual(50);
     const r = calculateBalancedPlug(a.best!.inputs);
     expect(["supported", "no-buoyancy", "guaranteed", "stable", "settle"]).toContain(r.exchange.verdict);
     expect(a.best!.maxBhpMPa!).toBeLessThan(a.best!.fracMPa);
-    expect(a.notes.some((n) => n.startsWith("Без опоры"))).toBe(true);
   });
   it("мост в узкой колонне: хватает пачки, механическая опора не нужна", () => {
     const inp = base({ well: { ...base().well, casingShoe: 3000, casingID: 100.5, pipeOD: 60.3, pipeID: 50.3, holeDiameter: 100.5, cavernCoeff: 1, bottomTempStatic: 80 } });
@@ -266,5 +266,44 @@ describe("Цементный мост: рецептура нижней пачк�
     const res = designPlugSlurry(inp, r, "abandonment", 24);
     const p = buildPlugLabProtocol(inp, r, res, "abandonment", 24, designPill(25, 1.2, 60, 2));
     expect(p.sections.some((s) => s.id === "pill")).toBe(true);
+  });
+});
+
+describe("Цементный мост: зависимость осадки от интервала", () => {
+  const mk = (top: number, bot: number, tt = 120) => calculateBalancedPlug(base({ plug: { topMD: top, bottomMD: bot }, thickeningTimeMin: tt, well: { ...base().well, bottomTempStatic: 100, surfaceTemp: 5 } })).exchange.interfaces[0];
+  it("глубже и горячее — структура набирается быстрее, размыв меньше", () => {
+    expect(mk(1000, 1050).bottomSmearM).toBeGreaterThan(mk(2600, 2650).bottomSmearM);
+    expect(mk(1000, 1050).arrestMin).toBeGreaterThan(mk(2600, 2650).arrestMin);
+  });
+  it("длиннее мост — лёгкая жидкость не доходит до кровли", () => {
+    const short = mk(2630, 2650, 300), long = mk(2550, 2650, 300);
+    expect(long.topDropM).toBeLessThanOrEqual(short.topDropM);
+  });
+  it("дольше загустевание — больше обмен", () => {
+    expect(mk(2600, 2650, 300).bottomSmearM).toBeGreaterThan(mk(2600, 2650, 90).bottomSmearM);
+  });
+});
+
+import { evaluatePlugComplications, DEFAULT_COMPL_PARAMS } from "./cement-plug-complication-eval";
+
+describe("Цементный мост: осложнения в итогах", () => {
+  it("поглощение ниже моста меняет итоговое положение; проявление задаёт плотность", () => {
+    const inp = base({ well: { ...base().well, bottomTempStatic: 90 } });
+    const r = calculateBalancedPlug(inp);
+    const loss = evaluatePlugComplications(inp, r, { ...DEFAULT_COMPL_PARAMS, type: "loss", lossRate: 20, zoneDepthMD: 2700, zoneThickness: 10 });
+    expect(loss.active).toBe(true);
+    expect(loss.realTopMD).toBeGreaterThanOrEqual(r.plugTopMD);
+    const kick = evaluatePlugComplications(inp, r, { ...DEFAULT_COMPL_PARAMS, type: "kick", formationPressure: 40, zoneDepthMD: 2700 });
+    expect(kick.requiredCementDensity).not.toBeNull();
+    const off = evaluatePlugComplications(inp, r, { ...DEFAULT_COMPL_PARAMS, lossRate: 0 });
+    expect(off.active).toBe(false);
+  });
+  it("автоподбор с проявлением не предлагает плотность ниже нужной", () => {
+    const inp = base({ well: { ...base().well, bottomTempStatic: 90 } });
+    const c = { ...DEFAULT_COMPL_PARAMS, type: "kick" as const, formationPressure: 48, zoneDepthMD: 2700 };
+    const r = calculateBalancedPlug(inp);
+    const need = evaluatePlugComplications(inp, r, c).requiredCementDensity ?? 0;
+    const a = autoDesignPlug(inp, "abandonment", 24, 0.025, { complications: c });
+    [a.best, ...a.alternatives].filter(Boolean).forEach((x) => expect(x!.densityGcm3).toBeGreaterThanOrEqual(Math.min(need, 1.85) - 1e-9));
   });
 });

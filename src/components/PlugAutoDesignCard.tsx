@@ -6,6 +6,8 @@ import { Wand2, Loader2 } from "lucide-react";
 import type { PlugInputs } from "@/lib/cement-plug-calculations";
 import { autoDesignPlug, SUPPORT_OPTION_LABEL, type AutoDesignResult, type PlugCandidate } from "@/lib/cement-plug-autodesign";
 import { PLUG_PURPOSE_LABEL, type PlugPurpose } from "@/lib/cement-plug-types";
+import type { PlugComplicationParams } from "@/lib/cement-plug-complication-eval";
+import { PILL_TYPE_LABEL } from "@/lib/cement-plug-pill";
 
 interface Props {
   inputs: PlugInputs;
@@ -13,18 +15,19 @@ interface Props {
   wocHours: number;
   fracGradient: number;
   onApply: (c: PlugCandidate) => void;
+  complications?: PlugComplicationParams | null;
 }
 
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 const VERDICT: Record<string, string> = { supported: "на опоре", "no-buoyancy": "устойчив", guaranteed: "устойчив (гарант.)", stable: "устойчив", settle: "устоит, малая осадка", risk: "риск осадки", unstable: "может уйти" };
 
 /** Автоподбор конструкции моста: плотность, длина, опора/пачка, недопродавка, запас. */
-export default function PlugAutoDesignCard({ inputs, purpose, wocHours, fracGradient, onApply }: Props) {
+export default function PlugAutoDesignCard({ inputs, purpose, wocHours, fracGradient, onApply, complications }: Props) {
   const [res, setRes] = useState<AutoDesignResult | null>(null);
   const [busy, setBusy] = useState(false);
   const run = () => {
     setBusy(true);
-    setTimeout(() => { setRes(autoDesignPlug(inputs, purpose, wocHours, fracGradient)); setBusy(false); }, 30);
+    setTimeout(() => { setRes(autoDesignPlug(inputs, purpose, wocHours, fracGradient, { complications })); setBusy(false); }, 30);
   };
   const support = (c: PlugCandidate) => `${SUPPORT_OPTION_LABEL[c.support]}${c.pillGelPa > 0 ? `, СНС ≥ ${c.pillGelPa} Па, ${f(c.pillVolumeM3, 2)} м³` : ""}`;
   const b = res?.best;
@@ -34,6 +37,7 @@ export default function PlugAutoDesignCard({ inputs, purpose, wocHours, fracGrad
         <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
           <Wand2 className="w-4 h-4" /> Автоподбор конструкции моста
           <Badge variant="outline" className="text-[10px]">{PLUG_PURPOSE_LABEL[purpose]}</Badge>
+          {complications && <Badge variant="secondary" className="text-[10px]">с учётом осложнений</Badge>}
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0 space-y-3 text-xs">
@@ -56,9 +60,14 @@ export default function PlugAutoDesignCard({ inputs, purpose, wocHours, fracGrad
                   <span>Опора: {support(b)}</span>
                   <span>Недопродавка: {f(b.underDisplacementM3, 2)} м³</span>
                   <span>Запас на загрязнение: {b.excessPct}%</span>
-                  <span>Устойчивость: {VERDICT[b.exchangeVerdict] ?? b.exchangeVerdict}</span>
+                  <span>Обмен жидкостями: {VERDICT[b.exchangeVerdict] ?? b.exchangeVerdict}</span>
+                  <span className={b.expectedTopDropM > 0.1 * b.lengthM ? "text-amber-600" : ""}>Ожидаемая кровля: {b.expectedTopDropM > 0.5 ? `ниже плана на ${f(b.expectedTopDropM, 1)} м` : "на месте"}{complications ? " (с осложнениями)" : ""}</span>
                   <span>P забой макс / ГРП: {b.maxBhpMPa !== null ? f(b.maxBhpMPa, 1) : "—"} / {f(b.fracMPa, 1)} МПа</span>
                 </div>
+                {b.recipeSummary && <p className="text-[11px]"><b>Цемент:</b> {b.recipeSummary}</p>}
+                {b.pillDesign && b.pillDesign.type !== "none" && (
+                  <p className="text-[11px]"><b>Пачка:</b> {PILL_TYPE_LABEL[b.pillDesign.type]} — {b.pillDesign.components.filter((c) => c.kgPerM3 > 0).map((c) => `${c.name.split(" (")[0].split(",")[0]} ${c.kgPerM3 < 10 ? c.kgPerM3.toFixed(1) : c.kgPerM3.toFixed(0)} кг/м³`).join(", ")}; СНС 10 с ≈ {f(b.pillDesign.predicted.gel10s, 0)} Па</p>
+                )}
                 <Button size="sm" onClick={() => onApply(b)} data-testid="apply-autodesign">Применить и пересчитать</Button>
               </div>
             ) : null}

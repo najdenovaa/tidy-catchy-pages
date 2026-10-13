@@ -1,16 +1,11 @@
-import { useState, useMemo, useEffect } from "react";
+import { useMemo } from "react";
+import { usePlugComplParams, writeComplParams } from "@/lib/plug-complication-store";
 
-/** Параметры осложнений сохраняются между перезагрузками и сворачиванием блока. */
-const COMPL_KEY = "cement_plug_complications_v1";
-function readCompl(): Record<string, unknown> {
-  try { return JSON.parse(localStorage.getItem(COMPL_KEY) || "{}"); } catch { return {}; }
-}
+/** Параметры осложнений общие с итоговым расчётом моста и сохраняются между перезагрузками. */
 function usePersisted<T>(name: string, initial: T): [T, (v: T) => void] {
-  const [v, setV] = useState<T>(() => { const s = readCompl()[name]; return s === undefined ? initial : (s as T); });
-  useEffect(() => {
-    try { const all = readCompl(); all[name] = v; localStorage.setItem(COMPL_KEY, JSON.stringify(all)); } catch { /* хранилище недоступно */ }
-  }, [name, v]);
-  return [v, setV];
+  const all = usePlugComplParams();
+  const v = (all[name] === undefined ? initial : all[name]) as T;
+  return [v, (x: T) => writeComplParams({ [name]: x })];
 }
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";

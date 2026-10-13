@@ -8,7 +8,10 @@
  * (обычная пачка проще реактивной, обе проще механической опоры; меньше отклонение от проекта).
  */
 import { calculateBalancedPlug, type PlugInputs, type PlugResults } from "./cement-plug-calculations";
-import { PUMPABLE_PILL_GEL_PA, yieldNumberCriticalExp, type PlugSupport } from "./cement-plug-exchange";
+import { PUMPABLE_PILL_GEL_PA, assessPlugExchange, type PlugSupport } from "./cement-plug-exchange";
+import { designPill, requiredPillGelPa, type PillDesign } from "./cement-plug-pill";
+import { evaluatePlugComplications, type PlugComplicationParams } from "./cement-plug-complication-eval";
+import type { LabTargets } from "./cement-recipe-designer";
 import { simulatePlugPressures } from "./cement-plug-pressure-sim";
 import { designPlugSlurry } from "./cement-plug-recipe";
 import { getPlugRequirements, type PlugPurpose } from "./cement-plug-types";
@@ -43,6 +46,12 @@ export interface PlugCandidate {
   timeSafe: boolean;
   /** Входные данные варианта — для применения */
   inputs: PlugInputs;
+  /** Рецептура нижней пачки (для вариантов с пачкой) */
+  pillDesign: PillDesign | null;
+  /** Ожидаемое опускание кровли с учётом обмена и осложнений, м */
+  expectedTopDropM: number;
+  /** Кратко: рецептура цемента */
+  recipeSummary: string;
 }
 
 export interface AutoDesignResult {
@@ -55,7 +64,12 @@ export interface AutoDesignResult {
 const SUPPORT_COST: Record<SupportOption, number> = { bottom: 0, none: 0, pill: 1, reactivePill: 2.5, mechanical: 4 };
 const OK_VERDICTS = new Set(["supported", "no-buoyancy", "guaranteed", "stable", "settle"]);
 
-export function autoDesignPlug(base: PlugInputs, purpose: PlugPurpose, wocHours: number, fracGradientMPaPerM: number): AutoDesignResult {
+export interface AutoDesignOptions {
+  /** Осложнения (если включены) — учитываются в каждом варианте */
+  complications?: PlugComplicationParams | null;
+}
+
+export function autoDesignPlug(base: PlugInputs, purpose: PlugPurpose, wocHours: number, fracGradientMPaPerM: number, opts: AutoDesignOptions = {}): AutoDesignResult {
   const req = getPlugRequirements(purpose, 0);
   const bottom = base.plug.bottomMD;
   const curLen = Math.max(0, base.plug.bottomMD - base.plug.topMD);
@@ -63,56 +77,97 @@ export function autoDesignPlug(base: PlugInputs, purpose: PlugPurpose, wocHours:
   const lMin = Math.max(req.minPlugLengthM, 10);
   const lengths = [...new Set([lMin, Math.max(lMin, curLen), lMin + 20, lMin + 50].map((x) => Math.round(x)))].sort((a, b) => a - b);
   const rho0 = base.cement.density;
-  const densities = [...new Set([rho0, rho0 - 0.1, rho0 - 0.2, rho0 - 0.3].filter((x) => x >= 1.4).map((x) => Math.round(x * 100) / 100))];
+  let densities = [...new Set([rho0, rho0 - 0.1, rho0 - 0.2, rho0 - 0.3].filter((x) => x >= 1.4).map((x) => Math.round(x * 100) / 100))];
   const supports: SupportOption[] = atBottom ? ["bottom"] : ["none", "pill", "reactivePill", "mechanical"];
   const notes: string[] = [];
+  const compl = opts.complications ?? null;
+
+  // Осложнения: проявление задаёт минимальную плотность цемента
+  if (compl) {
+    const probe0 = calculateBalancedPlug(base);
+    const e0 = evaluatePlugComplications(base, probe0, compl);
+    if (e0.requiredCementDensity && e0.requiredCementDensity > Math.min(...densities)) {
+      const need = Math.ceil(e0.requiredCementDensity * 100) / 100;
+      densities = [...new Set([...densities.filter((d) => d >= need), need, need + 0.05].map((x) => Math.round(x * 100) / 100))];
+      notes.push(`Проявление: рассмотрены только плотности цемента ≥ ${need.toFixed(2)} г/см³ (удержание пласта).`);
+    }
+  }
+  const complTargets: LabTargets = compl
+    ? { ...((compl.type === "loss" || compl.type === "both") && compl.lossRate > 0 ? { fiber: true } : {}), ...((compl.type === "kick" || compl.type === "both") && compl.fluidType === "gas" ? { gasTight: true } : {}) }
+    : {};
 
   const cands: PlugCandidate[] = [];
   for (const rho of densities) for (const sup of supports) for (const L of lengths) {
     const top = Math.max(0, bottom - L);
     const probe = calculateBalancedPlug({ ...base, plug: { topMD: top, bottomMD: bottom }, cement: { ...base.cement, density: rho }, useViscousPad: false, spacerVolumeBelowM3: 0, support: atBottom ? "bottom" : "fluid" });
-    const R = probe.boreDiamUsed / 2000;
-    const dRho = (rho - base.wellFluid.density) * 1000;
-    const needGel = Math.max(0, yieldNumberCriticalExp(probe.plugZenithDeg) * dRho * 9.81 * R * 1.2);
-    let pillGel = 0;
-    if (sup === "pill") { if (needGel > PUMPABLE_PILL_GEL_PA) continue; pillGel = Math.ceil(needGel); }
-    // Реактивные/сшитые пачки (силикатные, полимер-сшитые) дают СНС в сотни Па; выше ~250 Па — только механическая опора
-    if (sup === "reactivePill") { if (needGel <= PUMPABLE_PILL_GEL_PA || needGel > 250) continue; pillGel = Math.ceil(needGel); }
     const usePill = sup === "pill" || sup === "reactivePill";
     const boreA = (Math.PI / 4) * (probe.boreDiamUsed / 1000) ** 2;
     const pillVol = usePill ? Math.round(boreA * 40 * 100) / 100 : 0;
+    const pillDensity = base.wellFluid.density;
+    const strictGel = requiredPillGelPa({ cementDensity: rho, boreDiameterMm: probe.boreDiamUsed, zenithDeg: probe.plugZenithDeg, pillDensity });
+    let pillGel = 0;
+    if (sup === "pill") {
+      // Обычная пачка: минимальный СНС, при котором кровля опускается не более чем на 5% длины моста
+      const allow = Math.max(1, 0.05 * L);
+      const ok = [15, 20, 25, 30, 40, 50, 60].find((g) => {
+        const ex = assessPlugExchange({ ...probe.exchangeInput, below: { name: "пачка", density: pillDensity, gel10s: g, gel10min: g * 1.5, yp: g * 0.6 }, belowPad: { name: "раствор", density: base.wellFluid.density, gel10s: base.wellFluid.gel10sec, gel10min: base.wellFluid.gel10min, yp: base.wellFluid.rheology.yp } });
+        return OK_VERDICTS.has(ex.verdict) && (ex.interfaces[0]?.topDropM ?? 0) <= allow;
+      });
+      if (ok === undefined) continue;
+      pillGel = ok;
+    }
+    // Реактивные/сшитые пачки дают СНС в сотни Па; выше ~250 Па — только механическая опора
+    if (sup === "reactivePill") { if (strictGel <= PUMPABLE_PILL_GEL_PA || strictGel > 250) continue; pillGel = strictGel; }
+    const pillDesign = usePill ? designPill(pillGel, pillDensity, probe.temperatures?.bhctC ?? 60, pillVol) : null;
     const supportMode: PlugSupport = sup === "bottom" ? "bottom" : sup === "mechanical" ? "mechanical" : "fluid";
-    const inputs: PlugInputs = {
+    let inputs: PlugInputs = {
       ...base,
       plug: { topMD: top, bottomMD: bottom },
       cement: { ...base.cement, density: rho },
       useViscousPad: usePill,
       spacerVolumeBelowM3: pillVol,
-      viscousPadFluid: usePill ? {
-        name: sup === "reactivePill" ? "Реактивная пачка" : "Вязкая пачка",
-        density: base.wellFluid.density,
-        rheology: { pv: 30, yp: Math.max(10, pillGel * 0.4) },
-        gel10sec: pillGel, gel10min: Math.round(pillGel * 1.3),
+      viscousPadFluid: pillDesign ? {
+        name: pillDesign.type === "bentonitePolymer" ? "Вязкая пачка (бентонит-полимер)" : pillDesign.type === "mmh" ? "Вязкая пачка (ММГ)" : "Реактивная пачка",
+        density: pillDesign.densityGcm3, rheology: { pv: pillDesign.predicted.pv, yp: pillDesign.predicted.yp },
+        gel10sec: pillDesign.predicted.gel10s, gel10min: pillDesign.predicted.gel10min,
       } : undefined,
       padPullUpAboveM: base.padPullUpAboveM ?? 5,
       support: supportMode,
       underDisplacementM3: probe.recommendedUnderDisplacementM3,
       contaminationExcessPct: probe.isOpenHole ? 20 : 10,
     };
-    const r = calculateBalancedPlug(inputs);
-    const rec = designPlugSlurry(inputs, r, purpose, wocHours);
+    let r = calculateBalancedPlug(inputs);
     const reasons: string[] = [];
+    let complDrop = 0;
+    if (compl) {
+      let e = evaluatePlugComplications(inputs, r, compl);
+      // Компенсация потерь цемента объёмом
+      if (e.active && e.correctedCementVolumeM3 > r.cementVolumeTotal + 0.01) {
+        const need = Math.ceil(((e.correctedCementVolumeM3 / Math.max(1e-6, r.cementVolumeDesign)) - 1) * 100);
+        inputs = { ...inputs, contaminationExcessPct: Math.min(100, Math.max(inputs.contaminationExcessPct ?? 0, need)) };
+        r = calculateBalancedPlug(inputs);
+        e = evaluatePlugComplications(inputs, r, compl);
+      }
+      if (e.reachesLossZone) reasons.push("осложнения: мост уходит в зону поглощения");
+      if (e.kickBreakThrough) reasons.push("осложнения: проявление прорывает мост");
+      if (e.active && e.realLengthM < req.minPlugLengthM) reasons.push(`осложнения: длина после потерь ${e.realLengthM.toFixed(0)} < ${req.minPlugLengthM} м`);
+      complDrop = e.topDropM;
+    }
+    const rec = designPlugSlurry(inputs, r, purpose, wocHours, complTargets);
     const exOk = OK_VERDICTS.has(r.exchange.verdict);
-    if (!exOk) reasons.push(`устойчивость: ${r.exchange.verdict === "unstable" ? "неустойчив" : "риск обмена"}`);
+    if (!exOk) reasons.push(`устойчивость: ${r.exchange.verdict === "unstable" ? "может уйти" : "риск осадки"}`);
     if (!rec.allOk) reasons.push(`рецептура: не выполнено ${rec.compliance.filter((c) => c.ok === false).map((c) => c.label.split(",")[0]).join(", ")}`);
     if (!r.isTimeSafe) reasons.push("время работы > 75% загустевания");
     if (L < req.minPlugLengthM) reasons.push(`длина < ${req.minPlugLengthM} м`);
-    const fall = r.exchange.interfaces[0]?.exchangeLengthM ?? 0;
-    const cost = SUPPORT_COST[sup] + Math.abs(rho - rho0) * 5 + (L - lMin) / 50 + (r.exchange.verdict === "stable" ? 0.3 : 0) + (fall / Math.max(1, L)) * 4;
+    if (pillDesign && !pillDesign.meets) reasons.push("пачка: СНС не обеспечивается");
+    const drop = Math.max(r.exchange.interfaces[0]?.topDropM ?? 0, complDrop);
+    if (drop > 0.3 * L) reasons.push(`кровля опустится на ${drop.toFixed(0)} м (> 30% длины моста)`);
+    const cost = SUPPORT_COST[sup] + Math.abs(rho - rho0) * 5 + (L - lMin) / 50 + (drop / Math.max(1, L)) * 4 + (pillGel > 30 ? 0.3 : 0);
     cands.push({
-      densityGcm3: rho, lengthM: L, topMD: top, support: sup, pillGelPa: pillGel, pillVolumeM3: pillVol,
+      densityGcm3: rho, lengthM: L, topMD: top, support: sup, pillGelPa: pillGel, pillVolumeM3: pillVol, pillDesign,
       underDisplacementM3: inputs.underDisplacementM3 ?? 0, excessPct: inputs.contaminationExcessPct ?? 0,
-      feasible: reasons.length === 0, reasons, cost, exchangeVerdict: r.exchange.verdict, recipeOk: rec.allOk,
+      feasible: reasons.length === 0, reasons, cost, exchangeVerdict: r.exchange.verdict, recipeOk: rec.allOk, expectedTopDropM: drop,
+      recipeSummary: rec.design.components.filter((c) => c.role !== "defoamer").map((c) => `${c.name.split(" (")[0]} ${c.pctBwoc}%`).join(", "),
       maxBhpMPa: null, fracMPa: fracGradientMPaPerM * r.plugBottomTVD, timeSafe: r.isTimeSafe, inputs,
     });
   }

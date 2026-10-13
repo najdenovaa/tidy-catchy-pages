@@ -20,7 +20,9 @@ import CementPlugPressureChart from "@/components/CementPlugPressureChart";
 import CementPlugAnimation from "@/components/CementPlugAnimation";
 import { PLUG_SUPPORT_LABEL, type PlugSupport } from "@/lib/cement-plug-exchange";
 import { plugTemperatures, PLUG_MODEL_VERSION } from "@/lib/cement-plug-calculations";
-import { DEFAULT_FIELD_VELOCITY_FACTOR, assessPlugExchange } from "@/lib/cement-plug-exchange";
+import { DEFAULT_FIELD_VELOCITY_FACTOR, assessPlugExchange, calibrateVelocityFactor, type ExchangeInput } from "@/lib/cement-plug-exchange";
+import { usePlugComplParams } from "@/lib/plug-complication-store";
+import { evaluatePlugComplications, complParamsFrom } from "@/lib/cement-plug-complication-eval";
 import SafeBoundary from "@/components/SafeBoundary";
 import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults, type WashType, type PipeSection } from "@/lib/cement-plug-calculations";
 import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-calculations";
@@ -189,15 +191,13 @@ export default function CementPlug() {
   const [pillSettings, setPillSettings] = useState<PillSettings>(saved.pillSettings ?? {});
   const [complicationsOn, setComplicationsOn] = useState<boolean>(saved.complicationsOn ?? false);
   // Калибровка скорости обмена по отбивкам кровли (план/факт)
-  const [calibCases, setCalibCases] = useState<{ date: string; planTopMD: number; tagMD: number; rawFallM: number }[]>(() => {
-    try { return JSON.parse(localStorage.getItem("plug_exchange_calib_v1") || "[]"); } catch { return []; }
+  const [calibCases, setCalibCases] = useState<{ date: string; planTopMD: number; tagMD: number; input: ExchangeInput }[]>(() => {
+    try { return (JSON.parse(localStorage.getItem("plug_exchange_calib_v2") || "[]") as { input?: ExchangeInput }[]).filter((c) => c.input) as never; } catch { return []; }
   });
-  useEffect(() => { try { localStorage.setItem("plug_exchange_calib_v1", JSON.stringify(calibCases)); } catch { /* недоступно */ } }, [calibCases]);
+  useEffect(() => { try { localStorage.setItem("plug_exchange_calib_v2", JSON.stringify(calibCases)); } catch { /* недоступно */ } }, [calibCases]);
   const calibFactor = useMemo(() => {
-    const ratios = calibCases.filter((c) => c.rawFallM > 0.5).map((c) => Math.max(0.5, c.tagMD - c.planTopMD) / c.rawFallM);
-    if (!ratios.length) return undefined;
-    const g = Math.exp(ratios.reduce((t, r) => t + Math.log(r), 0) / ratios.length);
-    return Math.min(2, Math.max(0.005, g));
+    const k = calibrateVelocityFactor(calibCases.map((c) => ({ input: c.input, actualDropM: c.tagMD - c.planTopMD })));
+    return k === undefined ? undefined : Math.min(2, Math.max(0.005, k));
   }, [calibCases]);
   const [tagInput, setTagInput] = useState("");
 
@@ -377,6 +377,17 @@ export default function CementPlug() {
     setWcRatio(Math.round(d.waterToBlend * 1000) / 1000);
     setSlurryYield(Math.round(d.yieldM3PerT * 1000) / 1000);
   };
+
+  // Осложнения в итоговом расчёте (когда включены)
+  const complRaw = usePlugComplParams();
+  const complEval = useMemo(() => (complicationsOn && results && results.temperatures
+    ? evaluatePlugComplications(inputsAtCalc, results, complParamsFrom(complRaw, results.temperatures.bhctC)) : null),
+  [complicationsOn, results, inputsAtCalc, complRaw]);
+
+  const recipeExtraTargets = useMemo(() => (complEval?.active
+    ? { ...(complEval.hasLoss ? { fiber: true } : {}), ...(complEval.hasKick && complRaw.fluidType === "gas" ? { gasTight: true } : {}) }
+    : undefined), [complEval, complRaw]);
+  const autoDesignCompl = useMemo(() => (complicationsOn && results?.temperatures ? complParamsFrom(complRaw, results.temperatures.bhctC) : null), [complicationsOn, results, complRaw]);
 
   // Нижняя пачка: нужный СНС по критерию устойчивости, плотность — как у раствора под мостом
   const pillAuto = useMemo(() => {
@@ -1347,6 +1358,49 @@ export default function CementPlug() {
             {/* Results */}
             {results && (
               <SafeBoundary onReset={() => setResults(null)}>
+                {/* ── Итоги с учётом осложнений ── */}
+                {complEval && (
+                  <Card className={`border-2 ${complEval.risk === "critical" ? "border-destructive/60" : complEval.risk === "high" ? "border-amber-500/60" : "border-sky-500/40"}`} data-testid="plug-compl-summary">
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
+                        <AlertTriangle className="w-4 h-4 text-amber-500" /> Итоги с учётом осложнений
+                        <Badge variant={complEval.risk === "critical" ? "destructive" : "secondary"} className="text-[10px]">
+                          {{ low: "риск низкий", medium: "риск умеренный", high: "риск высокий", critical: "критично" }[complEval.risk]}
+                        </Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-0 space-y-2 text-xs">
+                      <p className="font-medium">{complEval.headline}</p>
+                      {complEval.active && (
+                        <table className="w-full max-w-xl text-[11px]">
+                          <thead className="bg-muted/50"><tr><th className="p-1 text-left">Показатель</th><th className="p-1 text-right">Проект</th><th className="p-1 text-right">С осложнениями</th></tr></thead>
+                          <tbody>
+                            <tr className="border-t border-border/40"><td className="p-1">Кровля / подошва моста, м</td><td className="p-1 text-right">{complEval.plannedTopMD.toFixed(0)} / {complEval.plannedBottomMD.toFixed(0)}</td><td className="p-1 text-right font-semibold">{complEval.realTopMD.toFixed(1)} / {complEval.realBottomMD.toFixed(1)}</td></tr>
+                            <tr className="border-t border-border/40"><td className="p-1">Длина моста, м</td><td className="p-1 text-right">{results.plugLengthMD.toFixed(0)}</td><td className="p-1 text-right font-semibold">{complEval.realLengthM.toFixed(1)}</td></tr>
+                            <tr className="border-t border-border/40"><td className="p-1">Цемент, м³</td><td className="p-1 text-right">{results.cementVolumeTotal.toFixed(2)}</td><td className="p-1 text-right">потери {complEval.cementLostM3.toFixed(2)} · нужно {complEval.correctedCementVolumeM3.toFixed(2)}</td></tr>
+                            {complEval.requiredCementDensity !== null && (
+                              <tr className="border-t border-border/40"><td className="p-1">Плотность цемента, г/см³</td><td className="p-1 text-right">{inputsAtCalc.cement.density.toFixed(2)}</td><td className={`p-1 text-right ${complEval.kickBreakThrough ? "text-destructive font-semibold" : ""}`}>нужно ≥ {complEval.requiredCementDensity.toFixed(2)}</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      )}
+                      {complEval.notes.map((n) => <p key={n} className="text-muted-foreground">• {n}</p>)}
+                      {complEval.active && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" onClick={() => {
+                            const design = results.cementVolumeDesign || results.cementVolumeTotal;
+                            const need = Math.ceil(((complEval.correctedCementVolumeM3 / Math.max(1e-6, design)) - 1) * 100);
+                            if (need > excessPct) setExcessPct(Math.min(100, need));
+                            if (complEval.requiredCementDensity && complEval.requiredCementDensity > cement.density) setCement((c) => ({ ...c, density: Math.ceil(complEval.requiredCementDensity! * 100) / 100 }));
+                            setRecalcTick((t) => t + 1);
+                          }}>Учесть в проекте (объём, плотность)</Button>
+                          <span className="text-[11px] text-muted-foreground self-center">Автоподбор ниже тоже учитывает осложнения.</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* ── Устойчивость против обмена жидкостями ── */}
                 {results.exchange && (() => {
                   const ex = results.exchange;
@@ -1371,14 +1425,17 @@ export default function CementPlug() {
                             planTopMD={results.plugTopMD}
                             planBottomMD={results.plugBottomMD}
                             topByVolumeMD={results.plugTopByVolumeMD}
-                            fallM={ex.interfaces[0]?.exchangeLengthM ?? 0}
+                            forecastTopMD={Math.max(results.plugTopMD + (ex.interfaces[0]?.topDropM ?? 0), complEval?.active ? complEval.realTopMD : -Infinity)}
+                            forecastBottomMD={Math.max(results.plugBottomMD, complEval?.active ? complEval.realBottomMD : -Infinity)}
+                            bottomSmearM={ex.interfaces[0]?.bottomSmearM ?? 0}
+                            lossZone={complEval?.active ? complEval.lossZone : null}
                             padHeightM={results.useViscousPad ? results.spacerBelowHeightAnnMD : 0}
                             verdict={label[ex.verdict]}
                             factTagMD={Number.isFinite(tagMD) && tagMD > 0 ? tagMD : undefined}
                           />
                           <div className="text-[11px] text-muted-foreground space-y-1 sm:pt-4">
                             <p><b>План</b> — проектный интервал {results.plugTopMD.toFixed(0)}–{results.plugBottomMD.toFixed(0)} м; штриховка сверху — запас на загрязнение (кровля по объёму).</p>
-                            <p><b>Прогноз</b> — ожидаемое положение цемента после остановки: при обмене жидкостями цемент опускается, выше остаётся зона смешения (штриховка). Глубина — оценка порядка величины.</p>
+                            <p><b>Прогноз</b> — где окажется цемент после остановки. Лёгкая жидкость снизу поднимается в мост; кровля опускается, только если она пройдёт всю длину моста (поэтому длинные мосты и быстрый набор структуры на глубине держат лучше). Штриховка снизу — размыв подошвы «языками» цемента.{complEval?.active ? " Учтены осложнения: проседание в зону поглощения / внедрение флюида." : ""}</p>
                             {results.useViscousPad && <p>Фиолетовым — вязкая пачка под мостом.</p>}
                             <p>Шкала проседания при поглощении ниже моста — в блоке «Осложнения».</p>
                             {ex.support === "fluid" && (
@@ -1388,8 +1445,8 @@ export default function CementPlug() {
                                   <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} inputMode="decimal" placeholder="глубина, м" className="h-7 w-28 rounded border border-border bg-background px-2 text-right" />
                                   <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={!(Number.isFinite(tagMD) && tagMD > 0)}
                                     onClick={() => {
-                                      const raw = (ex.interfaces[0]?.exchangeLengthM ?? 0) / Math.max(1e-6, ex.velocityFactor ?? DEFAULT_FIELD_VELOCITY_FACTOR);
-                                      setCalibCases((c) => [...c, { date: new Date().toLocaleDateString("ru-RU"), planTopMD: topRef, tagMD, rawFallM: raw }]);
+                                      if (!results.exchangeInput) return;
+                                      setCalibCases((c) => [...c, { date: new Date().toLocaleDateString("ru-RU"), planTopMD: topRef, tagMD, input: results.exchangeInput }]);
                                       setTagInput("");
                                       setRecalcTick((t) => t + 1);
                                     }}>Учесть в калибровке</Button>
@@ -1414,7 +1471,8 @@ export default function CementPlug() {
                                   <th className="p-1 text-right">Предел (эксп. / теор.)</th>
                                   <th className="p-1 text-right">Нужный СНС, Па</th>
                                   <th className="p-1 text-right">Обмен остановится</th>
-                                  <th className="p-1 text-right">Провал цемента</th>
+                                  <th className="p-1 text-right">Кровля опустится</th>
+                                  <th className="p-1 text-right">Размыв подошвы</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1426,7 +1484,8 @@ export default function CementPlug() {
                                     <td className="p-1 text-right">{x.YcExp.toFixed(2)} / {x.YcTheory.toFixed(2)}</td>
                                     <td className="p-1 text-right">≥ {x.tauRequiredExpPa.toFixed(0)} (гарант. {x.tauRequiredTheoryPa.toFixed(0)})</td>
                                     <td className="p-1 text-right">{x.Y0 >= x.YcExp ? "—" : Number.isFinite(x.arrestMin) ? `через ${x.arrestMin.toFixed(0)} мин` : "при схватывании"}</td>
-                                    <td className="p-1 text-right">{x.exchangeLengthM > 0 ? `~${x.exchangeLengthM.toFixed(0)} м` : "—"}</td>
+                                    <td className="p-1 text-right">{(x.topDropM ?? x.exchangeLengthM) > 0.5 ? `~${(x.topDropM ?? x.exchangeLengthM).toFixed(1)} м` : "нет"}</td>
+                                    <td className="p-1 text-right">{(x.bottomSmearM ?? 0) > 0.5 ? `~${x.bottomSmearM.toFixed(0)} м` : "—"}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -1451,14 +1510,16 @@ export default function CementPlug() {
                 {/* ── Рецептура раствора для моста ── */}
                 {results.temperatures && (
                   <PlugRecipeCard inputs={inputsAtCalc} results={results} wocHours={wocTimeHours} purpose={plugPurpose} onPurposeChange={setPlugPurpose} onApply={applyPlugDesign}
-                    pill={results.exchange?.support === "fluid" ? pillAuto?.design : undefined} />
+                    pill={results.exchange?.support === "fluid" ? pillAuto?.design : undefined}
+                    extraTargets={recipeExtraTargets} />
                 )}
                 {pillAuto && results.exchange?.support === "fluid" && (
                   <PlugPillCard design={pillAuto.design} autoNeedPa={pillAuto.need} strictPa={pillAuto.strict} practicePa={pillAuto.practice} allowFallM={pillAuto.allowFall} autoDensity={pillAuto.density} autoVolume={pillAuto.volume}
                     bhctC={results.temperatures?.bhctC ?? 60} settings={pillSettings} onSettings={setPillSettings} onApply={applyPill} />
                 )}
                 {results.temperatures && (
-                  <PlugAutoDesignCard inputs={inputsAtCalc} purpose={plugPurpose} wocHours={wocTimeHours} fracGradient={fracGradient} onApply={applyCandidate} />
+                  <PlugAutoDesignCard inputs={inputsAtCalc} purpose={plugPurpose} wocHours={wocTimeHours} fracGradient={fracGradient} onApply={applyCandidate}
+                    complications={autoDesignCompl} />
                 )}
 
                 {/* ── Stability analysis card ── */}

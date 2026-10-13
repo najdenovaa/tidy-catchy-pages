@@ -5,7 +5,7 @@
 import { interpolateTVD, calculateTVDFromSurvey, type TrajectoryPoint, type Rheology } from "./cementing-calculations";
 import { calculatePlugStability, type StabilityResult } from "./cement-plug-stability";
 import { bhctKutasovTarghi, staticTempAt } from "./cement-program";
-import { assessPlugExchange, type ExchangeResult, type PlugSupport } from "./cement-plug-exchange";
+import { assessPlugExchange, type ExchangeInput, type ExchangeResult, type PlugSupport } from "./cement-plug-exchange";
 
 /* ───── Interfaces ───── */
 
@@ -179,7 +179,7 @@ export interface PumpingStage {
 }
 
 /** Версия модели результатов: сохранённые результаты другой версии не показываются (пересчёт). */
-export const PLUG_MODEL_VERSION = 6;
+export const PLUG_MODEL_VERSION = 7;
 
 export interface PlugResults {
   modelVersion?: number;
@@ -228,6 +228,8 @@ export interface PlugResults {
   balanceNotes: string[];
   /** Устойчивость против гравитационного обмена жидкостями (основной критерий устойчивости моста) */
   exchange: ExchangeResult;
+  /** Входные данные анализа обмена (для калибровки по отбивкам) */
+  exchangeInput: ExchangeInput;
   temperatures: PlugTemperatures;
 
   fluidColumns: FluidColumn[];
@@ -794,12 +796,21 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   const support: PlugSupport = input.support ?? (plug.bottomMD >= well.wellDepthMD - 1 ? "bottom" : "fluid");
   const hasPad = useViscousPad && spacerVolumeBelowM3 > 0;
   const fx = (f: PlugFluid) => ({ name: f.name, density: f.density, gel10s: f.gel10sec, gel10min: f.gel10min, yp: f.rheology.yp });
-  const exchange = assessPlugExchange({
+  // Кинетика цемента в интервале моста: время загустевания (50 Вс при BHCT) пересчитывается на
+  // статическую температуру моста; возраст раствора к остановке — закачка, продавка и подъём из цемента
+  const temps = plugTemperatures(well, plug);
+  const tStat = (temps.tTopStaticC + temps.tBottomStaticC) / 2;
+  const tempK = Math.exp(-0.0205 * Math.max(0, tStat - temps.bhctC));
+  const t50 = thickeningTimeMin > 0 ? thickeningTimeMin * tempK : 0;
+  const cementKinetics = t50 > 0 ? { ageAtStopMin: pumpTimeCementMin + pumpTimeSpacerAboveMin + pumpTimeDisplacementMin + tripTimeMin, t30Min: 0.85 * t50, t50Min: t50 } : undefined;
+  const exchangeInput: ExchangeInput = {
+    cementKinetics,
     support, boreDiameterMm: boreDiam, zenithDeg: plugZenithDeg, plugLengthM: plugLenMD,
     cement: fx(cement), below: hasPad ? fx(padFluid) : fx(wellFluid),
     belowPad: hasPad ? fx(wellFluid) : undefined, padLengthM: hasPad ? spacerBelowHeightAnn : undefined,
     velocityFactor: input.exchangeVelocityFactor,
-  });
+  };
+  const exchange = assessPlugExchange(exchangeInput);
 
   // ═══ Per-interface contamination (RT fingering) ═══
   const RT_C = 4 * Math.PI;
@@ -882,7 +893,8 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     uTubeVolumeM3: Math.round(uTubeVolumeM3 * 1000) / 1000,
     balanceNotes,
     exchange,
-    temperatures: plugTemperatures(well, plug),
+    exchangeInput,
+    temperatures: temps,
     spacerVolumeBelow: Math.round(effectiveSpacerBelowVol * 1000) / 1000,
     spacerVolumeAbove: Math.round(spacerVolumeAboveM3 * 1000) / 1000,
     spacerBelowHeightAnnMD: Math.round(spacerBelowHeightAnn * 100) / 100,

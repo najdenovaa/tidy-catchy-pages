@@ -19,6 +19,8 @@ interface Props {
   onPurposeChange: (p: PlugPurpose) => void;
   onApply: (d: SlurryDesign) => void;
   pill?: PillDesign;
+  /** Требования от осложнений (волокно при поглощении, газоблок при газопроявлении) */
+  extraTargets?: LabTargets;
 }
 
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "—");
@@ -33,10 +35,10 @@ const FIELDS: { key: NumKey; label: string; unit: string; dec: number }[] = [
 ];
 
 /** Подбор рецептуры для моста под требования технолога + расчётный протокол. */
-export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onPurposeChange: setPurpose, onApply, pill }: Props) {
+export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onPurposeChange: setPurpose, onApply, pill, extraTargets }: Props) {
   const [user, setUser] = useState<LabTargets>({});
   const [msg, setMsg] = useState<string | null>(null);
-  const res = useMemo(() => designPlugSlurry(inputs, results, purpose, wocHours, user), [inputs, results, purpose, wocHours, user]);
+  const res = useMemo(() => designPlugSlurry(inputs, results, purpose, wocHours, { ...(extraTargets ?? {}), ...user }), [inputs, results, purpose, wocHours, user, extraTargets]);
   const d = res.design;
   const t = results.temperatures;
   const set = (k: keyof LabTargets, v: unknown) => setUser((u) => { const n = { ...u, [k]: v } as LabTargets; if (v === undefined) delete (n as Record<string, unknown>)[k]; return n; });

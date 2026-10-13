@@ -297,13 +297,13 @@ export async function exportCementPlugToDocx(data: CementPlugExportData, options
   if (ex) {
     children.push(heading("8а. Устойчивость моста против обмена жидкостями"));
     children.push(textP(ex.headline));
-    const exRows = [new TableRow({ children: [hCell("Граница", 34), hCell("Y / предел (эксп./теор.)", 22), hCell("Нужный СНС, Па", 22), hCell("Провал цемента", 22)] })];
+    const exRows = [new TableRow({ children: [hCell("Граница", 34), hCell("Y / предел (эксп./теор.)", 22), hCell("Нужный СНС, Па", 22), hCell("Кровля / подошва", 22)] })];
     ex.interfaces.filter((x) => x.verdict !== "no-buoyancy").forEach((x) => {
       exRows.push(new TableRow({ children: [
         new TableCell({ children: [textP(`${x.upper} → ${x.lower}`)] }),
         new TableCell({ children: [textP(`${x.Y0.toFixed(3)} / ${x.YcExp.toFixed(2)} / ${x.YcTheory.toFixed(2)}`)] }),
         new TableCell({ children: [textP(`≥ ${x.tauRequiredExpPa.toFixed(0)} (гарант. ${x.tauRequiredTheoryPa.toFixed(0)})`)] }),
-        new TableCell({ children: [textP(x.exchangeLengthM > 0 ? `~${x.exchangeLengthM.toFixed(0)} м` : "—")] }),
+        new TableCell({ children: [textP(`кровля ${(x.topDropM ?? 0) > 0.5 ? `−${x.topDropM.toFixed(1)} м` : "на месте"}; размыв подошвы ${(x.bottomSmearM ?? 0).toFixed(0)} м`)] }),
       ] }));
     });
     if (exRows.length > 1) children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: exRows }));

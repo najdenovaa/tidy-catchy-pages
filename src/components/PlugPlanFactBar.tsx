@@ -1,30 +1,36 @@
-/** Шкала «План / прогноз» положения моста: проектный интервал и ожидаемое положение после обмена жидкостями. */
+/** Шкала «План / прогноз» положения моста: проект и ожидаемое положение (обмен жидкостями, осложнения), отбивка по факту. */
 interface Props {
   planTopMD: number;
   planBottomMD: number;
   /** Кровля по объёму с запасом на загрязнение */
   topByVolumeMD?: number;
-  /** Оценочный «провал» цемента, м */
-  fallM: number;
+  /** Прогноз: кровля и подошва чистого цемента */
+  forecastTopMD: number;
+  forecastBottomMD: number;
+  /** Размыв подошвы «языками» цемента, м */
+  bottomSmearM?: number;
   padHeightM?: number;
+  /** Зона поглощения (при включённых осложнениях) */
+  lossZone?: { topMD: number; thicknessM: number } | null;
   verdict: string;
   /** Фактическая отбивка кровли, м */
   factTagMD?: number;
 }
 
-export default function PlugPlanFactBar({ planTopMD, planBottomMD, topByVolumeMD, fallM, padHeightM = 0, verdict, factTagMD }: Props) {
-  const L = Math.max(0, planBottomMD - planTopMD);
-  const fall = Math.max(0, fallM);
-  const washedOut = fall >= L;
-  const top0 = Math.min(planTopMD, topByVolumeMD ?? planTopMD, factTagMD ?? Infinity);
-  const span = L + Math.max(fall, padHeightM, factTagMD !== undefined ? factTagMD - planTopMD : 0) + L * 0.6 + 10;
-  const z0 = top0 - span * 0.12, z1 = z0 + span;
+export default function PlugPlanFactBar({ planTopMD, planBottomMD, topByVolumeMD, forecastTopMD, forecastBottomMD, bottomSmearM = 0, padHeightM = 0, lossZone, verdict, factTagMD }: Props) {
+  const drop = Math.max(0, forecastTopMD - planTopMD);
+  const washedOut = forecastBottomMD - forecastTopMD < 0.5;
+  const zMin = Math.min(planTopMD, topByVolumeMD ?? planTopMD, factTagMD ?? Infinity);
+  const zMaxRaw = Math.max(planBottomMD + padHeightM, forecastBottomMD + bottomSmearM, factTagMD ?? 0, lossZone ? lossZone.topMD + lossZone.thicknessM : 0);
+  const span = Math.max(20, zMaxRaw - zMin);
+  const z0 = zMin - span * 0.15, z1 = zMaxRaw + span * 0.15;
   const H = 300, W = 300, pad = 18;
   const y = (md: number) => pad + ((md - z0) / (z1 - z0)) * (H - 2 * pad);
   const colX = [70, 190], colW = 56;
-  const factTop = planTopMD + fall, factBot = planBottomMD + fall;
   const fmt = (v: number) => v.toFixed(0);
-  const ok = fall < 0.5;
+  const ok = drop < 0.5 && bottomSmearM < 0.5;
+  const rect = (x: number, a: number, b: number, cls: string, fill?: string) =>
+    b - a > 0.01 ? <rect x={x} y={y(a)} width={colW} height={Math.max(1, y(b) - y(a))} className={cls} fill={fill} /> : null;
 
   const Col = ({ x, title, children }: { x: number; title: string; children: React.ReactNode }) => (
     <g>
@@ -42,35 +48,31 @@ export default function PlugPlanFactBar({ planTopMD, planBottomMD, topByVolumeMD
           <line x1="0" y1="0" x2="0" y2="6" className="stroke-slate-500" strokeWidth="2.5" />
         </pattern>
       </defs>
+      {lossZone && (
+        <g>
+          <rect x={colX[0] - 4} y={y(lossZone.topMD)} width={colX[1] + colW - colX[0] + 8} height={Math.max(2, y(lossZone.topMD + lossZone.thicknessM) - y(lossZone.topMD))} className="fill-red-500/25" />
+          <text x={colX[1] + colW + 9} y={y(lossZone.topMD) + 10} fontSize={9} className="fill-red-600">поглощение</text>
+        </g>
+      )}
       <Col x={colX[0]} title="План">
-        {padHeightM > 0 && <rect x={colX[0]} y={y(planBottomMD)} width={colW} height={y(planBottomMD + padHeightM) - y(planBottomMD)} className="fill-purple-400/60" />}
-        <rect x={colX[0]} y={y(planTopMD)} width={colW} height={y(planBottomMD) - y(planTopMD)} className="fill-slate-400" />
-        {topByVolumeMD !== undefined && topByVolumeMD < planTopMD - 0.5 && (
-          <rect x={colX[0]} y={y(topByVolumeMD)} width={colW} height={y(planTopMD) - y(topByVolumeMD)} fill="url(#mix-hatch)" />
-        )}
+        {rect(colX[0], planBottomMD, planBottomMD + padHeightM, "fill-purple-400/60")}
+        {rect(colX[0], planTopMD, planBottomMD, "fill-slate-400")}
+        {topByVolumeMD !== undefined && topByVolumeMD < planTopMD - 0.5 && rect(colX[0], topByVolumeMD, planTopMD, "", "url(#mix-hatch)")}
       </Col>
       <Col x={colX[1]} title="Прогноз">
-        {padHeightM > 0 && <rect x={colX[1]} y={y(factBot)} width={colW} height={Math.max(0, y(planBottomMD + padHeightM + fall) - y(factBot))} className="fill-purple-400/60" />}
-        {!washedOut && <rect x={colX[1]} y={y(factTop)} width={colW} height={y(factBot) - y(factTop)} className={ok ? "fill-slate-400" : "fill-slate-400/80"} />}
-        {fall > 0.5 && (
-          <rect x={colX[1]} y={y(planTopMD)} width={colW} height={y(washedOut ? factBot : factTop) - y(planTopMD)} fill="url(#mix-hatch)" />
-        )}
+        {rect(colX[1], forecastBottomMD, forecastBottomMD + padHeightM, "fill-purple-400/60")}
+        {!washedOut && rect(colX[1], forecastTopMD, forecastBottomMD, "fill-slate-400")}
+        {drop > 0.5 && rect(colX[1], planTopMD, forecastTopMD, "", "url(#mix-hatch)")}
+        {bottomSmearM > 0.5 && rect(colX[1], forecastBottomMD, forecastBottomMD + bottomSmearM, "", "url(#mix-hatch)")}
       </Col>
-      {/* Отметки глубин */}
       {[planTopMD, planBottomMD].map((md) => (
         <g key={`p${md}`}>
           <line x1={colX[0] - 6} x2={colX[0]} y1={y(md)} y2={y(md)} className="stroke-foreground" />
           <text x={colX[0] - 9} y={y(md) + 4} textAnchor="end" fontSize={10} className="fill-foreground">{fmt(md)}</text>
         </g>
       ))}
-      {fall > 0.5 && !washedOut && [factTop, factBot].map((md) => (
-        <g key={`f${md}`}>
-          <line x1={colX[1] + colW} x2={colX[1] + colW + 6} y1={y(md)} y2={y(md)} className="stroke-destructive" />
-          <text x={colX[1] + colW + 9} y={y(md) + 4} fontSize={10} className="fill-destructive">{fmt(md)}</text>
-        </g>
-      ))}
-      {ok && [planTopMD, planBottomMD].map((md) => (
-        <text key={`o${md}`} x={colX[1] + colW + 9} y={y(md) + 4} fontSize={10} className="fill-green-600">{fmt(md)}</text>
+      {[forecastTopMD, forecastBottomMD].map((md, i) => (
+        <text key={`f${i}`} x={colX[1] + colW + 9} y={y(md) + 4} fontSize={10} className={ok ? "fill-green-600" : "fill-destructive"}>{fmt(md)}</text>
       ))}
       {factTagMD !== undefined && (
         <g>
@@ -78,9 +80,9 @@ export default function PlugPlanFactBar({ planTopMD, planBottomMD, topByVolumeMD
           <text x={colX[1] - 10} y={y(factTagMD) - 4} textAnchor="end" fontSize={10} fontWeight={600} className="fill-blue-600">факт {fmt(factTagMD)}</text>
         </g>
       )}
-      <line x1={colX[0] + colW} x2={colX[1]} y1={y(planTopMD)} y2={y(ok ? planTopMD : washedOut ? planTopMD : factTop)} className={ok ? "stroke-green-600" : "stroke-destructive"} strokeDasharray="3 3" />
-      <text x={W / 2} y={H - 3} textAnchor="middle" fontSize={10} className={ok ? "fill-green-600" : "fill-destructive"}>
-        {ok ? "мост останется на месте" : washedOut ? "мост размыт по стволу" : `кровля ниже плана на ~${fmt(fall)} м`} · {verdict}
+      <line x1={colX[0] + colW} x2={colX[1]} y1={y(planTopMD)} y2={y(forecastTopMD)} className={ok ? "stroke-green-600" : "stroke-destructive"} strokeDasharray="3 3" />
+      <text x={W / 2} y={H - 3} textAnchor="middle" fontSize={10} className={ok ? "fill-green-600" : drop > 0.5 ? "fill-destructive" : "fill-amber-600"}>
+        {washedOut ? "мост размыт" : drop > 0.5 ? `кровля ниже плана на ~${drop.toFixed(1)} м` : bottomSmearM > 0.5 ? `кровля на месте, подошва размыта ~${fmt(bottomSmearM)} м` : "мост останется на месте"} · {verdict}
       </text>
     </svg>
   );
