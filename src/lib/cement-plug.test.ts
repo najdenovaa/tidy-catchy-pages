@@ -236,3 +236,35 @@ describe("Цементный мост: калибровка по отбивка�
     expect(mk(0.2)).toBeCloseTo(2 * mk(0.1), 6);
   });
 });
+
+import { designPill, requiredPillGelPa } from "./cement-plug-pill";
+
+describe("Цементный мост: рецептура нижней пачки", () => {
+  it("нужный СНС: Y_c·Δρ·g·R·1,2; пачка не легче цемента — не нужен", () => {
+    expect(requiredPillGelPa({ cementDensity: 1.85, boreDiameterMm: 200, zenithDeg: 0, pillDensity: 1.2 })).toBe(Math.ceil(0.2 * 650 * 9.81 * 0.1 * 1.2));
+    expect(requiredPillGelPa({ cementDensity: 1.85, boreDiameterMm: 200, zenithDeg: 0, pillDensity: 1.9 })).toBe(0);
+  });
+  it("тип пачки по нужному СНС и температуре", () => {
+    expect(designPill(20, 1.2, 60, 2).type).toBe("bentonitePolymer");
+    expect(designPill(45, 1.2, 60, 2).type).toBe("mmh");
+    expect(designPill(150, 1.2, 70, 2).type).toBe("crosslinkedPAA");
+    expect(designPill(150, 1.2, 110, 2).type).toBe("silicate");
+    expect(designPill(400, 1.2, 60, 2).type).toBe("none");
+  });
+  it("бентонит-полимерная: СНС обеспечен, плотность доведена баритом по балансу масс и объёмов", () => {
+    const d = designPill(25, 1.35, 60, 2);
+    expect(d.meets).toBe(true);
+    expect(d.predicted.gel10s).toBeGreaterThanOrEqual(25);
+    const mass = d.waterLPerM3 + d.components.reduce((t, c) => t + c.kgPerM3, 0);
+    const vol = d.waterLPerM3 / 1000 + d.components.reduce((t, c) => t + c.kgPerM3 / c.sg / 1000, 0);
+    expect(mass / vol / 1000).toBeCloseTo(1.35, 2);
+    expect(d.components.some((c) => c.name.startsWith("Барит"))).toBe(true);
+  });
+  it("протокол моста включает рецептуру пачки", () => {
+    const inp = base({ well: { ...base().well, bottomTempStatic: 90 } });
+    const r = calculateBalancedPlug(inp);
+    const res = designPlugSlurry(inp, r, "abandonment", 24);
+    const p = buildPlugLabProtocol(inp, r, res, "abandonment", 24, designPill(25, 1.2, 60, 2));
+    expect(p.sections.some((s) => s.id === "pill")).toBe(true);
+  });
+});

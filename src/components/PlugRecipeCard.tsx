@@ -9,6 +9,7 @@ import { PLUG_PURPOSE_LABEL, type PlugPurpose } from "@/lib/cement-plug-types";
 import { designPlugSlurry, buildPlugLabProtocol, plugJobTimeMin, plugRequiredThickeningMin } from "@/lib/cement-plug-recipe";
 import { protocolToHtml } from "@/lib/lab-protocol";
 import { exportLabProtocolDocx } from "@/lib/export-lab-protocol-docx";
+import type { PillDesign } from "@/lib/cement-plug-pill";
 
 interface Props {
   inputs: PlugInputs;
@@ -17,6 +18,7 @@ interface Props {
   purpose: PlugPurpose;
   onPurposeChange: (p: PlugPurpose) => void;
   onApply: (d: SlurryDesign) => void;
+  pill?: PillDesign;
 }
 
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "—");
@@ -31,7 +33,7 @@ const FIELDS: { key: NumKey; label: string; unit: string; dec: number }[] = [
 ];
 
 /** Подбор рецептуры для моста под требования технолога + расчётный протокол. */
-export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onPurposeChange: setPurpose, onApply }: Props) {
+export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onPurposeChange: setPurpose, onApply, pill }: Props) {
   const [user, setUser] = useState<LabTargets>({});
   const [msg, setMsg] = useState<string | null>(null);
   const res = useMemo(() => designPlugSlurry(inputs, results, purpose, wocHours, user), [inputs, results, purpose, wocHours, user]);
@@ -39,7 +41,7 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
   const t = results.temperatures;
   const set = (k: keyof LabTargets, v: unknown) => setUser((u) => { const n = { ...u, [k]: v } as LabTargets; if (v === undefined) delete (n as Record<string, unknown>)[k]; return n; });
 
-  const protocol = () => buildPlugLabProtocol(inputs, results, res, purpose, wocHours);
+  const protocol = () => buildPlugLabProtocol(inputs, results, res, purpose, wocHours, pill);
   const print = () => {
     const w = window.open("", "_blank");
     if (!w) { setMsg("Браузер заблокировал окно печати — разрешите всплывающие окна."); return; }

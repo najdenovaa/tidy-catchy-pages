@@ -20,7 +20,7 @@ import CementPlugPressureChart from "@/components/CementPlugPressureChart";
 import CementPlugAnimation from "@/components/CementPlugAnimation";
 import { PLUG_SUPPORT_LABEL, type PlugSupport } from "@/lib/cement-plug-exchange";
 import { plugTemperatures, PLUG_MODEL_VERSION } from "@/lib/cement-plug-calculations";
-import { DEFAULT_FIELD_VELOCITY_FACTOR } from "@/lib/cement-plug-exchange";
+import { DEFAULT_FIELD_VELOCITY_FACTOR, assessPlugExchange } from "@/lib/cement-plug-exchange";
 import SafeBoundary from "@/components/SafeBoundary";
 import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults, type WashType, type PipeSection } from "@/lib/cement-plug-calculations";
 import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-calculations";
@@ -32,6 +32,8 @@ import * as XLSX from "xlsx";
 import TermsFooter from "@/components/TermsFooter";
 import PlugRecipeCard from "@/components/PlugRecipeCard";
 import PlugPlanFactBar from "@/components/PlugPlanFactBar";
+import PlugPillCard, { type PillSettings } from "@/components/PlugPillCard";
+import { designPill, requiredPillGelPa, type PillDesign } from "@/lib/cement-plug-pill";
 import PlugAutoDesignCard from "@/components/PlugAutoDesignCard";
 import type { PlugCandidate } from "@/lib/cement-plug-autodesign";
 import type { PlugPurpose } from "@/lib/cement-plug-types";
@@ -99,6 +101,8 @@ interface SessionState {
   excessPct?: number;
   plugSupport?: PlugSupport | "auto";
   plugPurpose?: PlugPurpose;
+  pillSettings?: PillSettings;
+  complicationsOn?: boolean;
 }
 
 function loadSession(): Partial<SessionState> {
@@ -182,6 +186,8 @@ export default function CementPlug() {
   const [plugSupport, setPlugSupport] = useState<PlugSupport | "auto">(saved.plugSupport ?? "auto");
   const [plugPurpose, setPlugPurpose] = useState<PlugPurpose>(saved.plugPurpose ?? "abandonment");
   const [recalcTick, setRecalcTick] = useState(0);
+  const [pillSettings, setPillSettings] = useState<PillSettings>(saved.pillSettings ?? {});
+  const [complicationsOn, setComplicationsOn] = useState<boolean>(saved.complicationsOn ?? false);
   // Калибровка скорости обмена по отбивкам кровли (план/факт)
   const [calibCases, setCalibCases] = useState<{ date: string; planTopMD: number; tagMD: number; rawFallM: number }[]>(() => {
     try { return JSON.parse(localStorage.getItem("plug_exchange_calib_v1") || "[]"); } catch { return []; }
@@ -198,10 +204,10 @@ export default function CementPlug() {
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct, plugSupport, plugPurpose });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct, plugSupport, plugPurpose, pillSettings, complicationsOn });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct, plugSupport, plugPurpose]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct, plugSupport, plugPurpose, pillSettings, complicationsOn]);
 
   /* ── Температуры моста (BHCT) ── */
   const temps = useMemo(() => plugTemperatures({ ...well, trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory }, plug), [well, trajPoints, plug]);
@@ -370,6 +376,34 @@ export default function CementPlug() {
     setAdditives(d.components.map((c) => ({ name: c.name, percent: Math.round(c.pctBwoc * 100) / 100 })));
     setWcRatio(Math.round(d.waterToBlend * 1000) / 1000);
     setSlurryYield(Math.round(d.yieldM3PerT * 1000) / 1000);
+  };
+
+  // Нижняя пачка: нужный СНС по критерию устойчивости, плотность — как у раствора под мостом
+  const pillAuto = useMemo(() => {
+    if (!results) return null;
+    const density = pillSettings.densityGcm3 ?? inputsAtCalc.wellFluid.density;
+    const strict = requiredPillGelPa({ cementDensity: inputsAtCalc.cement.density, boreDiameterMm: results.boreDiamUsed, zenithDeg: results.plugZenithDeg, pillDensity: density });
+    // «По практике»: минимальный СНС, при котором ожидаемая осадка ≤ 5% длины моста (не меньше 1 м)
+    const allowFall = Math.max(1, 0.05 * results.plugLengthMD);
+    const fallWith = (g: number) => assessPlugExchange({
+      support: "fluid", boreDiameterMm: results.boreDiamUsed, zenithDeg: results.plugZenithDeg, plugLengthM: results.plugLengthMD,
+      cement: { name: "ц", density: inputsAtCalc.cement.density, gel10s: inputsAtCalc.cement.gel10sec, gel10min: inputsAtCalc.cement.gel10min, yp: inputsAtCalc.cement.rheology.yp },
+      below: { name: "п", density, gel10s: g, gel10min: g * 1.5, yp: g * 0.6 }, velocityFactor: calibFactor,
+    }).interfaces[0]?.exchangeLengthM ?? 0;
+    let practice = strict;
+    for (const g of [15, 20, 25, 30, 40, 50, 60, 80, 100, 150, 200, 250]) { if (g >= strict) break; if (fallWith(g) <= allowFall) { practice = g; break; } }
+    const need = (pillSettings.mode ?? "practice") === "strict" ? strict : practice;
+    const boreA = (Math.PI / 4) * (results.boreDiamUsed / 1000) ** 2;
+    const volume = inputsAtCalc.useViscousPad && inputsAtCalc.spacerVolumeBelowM3 > 0 ? inputsAtCalc.spacerVolumeBelowM3 : Math.round(boreA * 40 * 100) / 100;
+    const design = designPill(pillSettings.needGelPa ?? need, density, results.temperatures?.bhctC ?? 60, pillSettings.volumeM3 ?? volume);
+    return { need, strict, practice, allowFall, density: inputsAtCalc.wellFluid.density, volume, design };
+  }, [results, inputsAtCalc, pillSettings, calibFactor]);
+  const applyPill = (d: PillDesign) => {
+    setUseViscousPad(true);
+    setViscousPadFluid((f) => ({ ...f, name: d.type === "bentonitePolymer" ? "Вязкая пачка (бентонит-полимер)" : d.type === "mmh" ? "Вязкая пачка (ММГ)" : "Реактивная пачка",
+      density: Math.round(d.densityGcm3 * 100) / 100, rheology: { pv: d.predicted.pv, yp: d.predicted.yp }, gel10sec: d.predicted.gel10s, gel10min: d.predicted.gel10min }));
+    setSpacerVolumeBelow(d.volumeM3);
+    setRecalcTick((t) => t + 1);
   };
 
   const applyCandidate = (c: PlugCandidate) => {
@@ -1271,17 +1305,27 @@ export default function CementPlug() {
             </Collapsible>
 
             {/* Complications analysis */}
-            <Collapsible open={openSections.complications} onOpenChange={() => toggle("complications")}>
-              <Card>
-                <CollapsibleTrigger className="w-full">
-                  <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
+            <Collapsible open={complicationsOn && openSections.complications} onOpenChange={() => { if (complicationsOn) toggle("complications"); }}>
+              <Card className={complicationsOn ? "" : "opacity-80"}>
+                <CardHeader className="py-3 px-4 flex flex-row items-center justify-between gap-3 space-y-0">
+                  <CollapsibleTrigger className="flex-1 flex items-center justify-between text-left" disabled={!complicationsOn}>
                     <CardTitle className="text-sm">⚠️ Осложнения (поглощение / проявление)</CardTitle>
-                    <ChevronDown className={`w-4 h-4 transition-transform ${openSections.complications ? "rotate-180" : ""}`} />
-                  </CardHeader>
-                </CollapsibleTrigger>
+                    {complicationsOn && <ChevronDown className={`w-4 h-4 transition-transform ${openSections.complications ? "rotate-180" : ""}`} />}
+                  </CollapsibleTrigger>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Label htmlFor="compl-on" className="text-xs cursor-pointer">{complicationsOn ? "Включены" : "Выключены"}</Label>
+                    <Switch
+                      id="compl-on" checked={complicationsOn} data-testid="complications-toggle"
+                      onCheckedChange={(v) => { setComplicationsOn(v); if (v && !openSections.complications) toggle("complications"); }}
+                    />
+                  </div>
+                </CardHeader>
+                {!complicationsOn && (
+                  <CardContent className="pt-0 text-[11px] text-muted-foreground">Осложнения не учитываются. Включите, если при установке моста ожидается поглощение или проявление.</CardContent>
+                )}
                 <CollapsibleContent>
                   <CardContent className="pt-0">
-                    <ComplicationsSection
+                    {complicationsOn && <ComplicationsSection
                       results={results}
                       cement={{ density: cement.density, pv: cement.rheology.pv, yp: cement.rheology.yp, gel10min: cement.gel10min || 0 }}
                       spacer={{ density: spacer.density, pv: spacer.rheology.pv, yp: spacer.rheology.yp, gel10min: spacer.gel10min || 0 }}
@@ -1294,7 +1338,7 @@ export default function CementPlug() {
                       settingTimeEndMin={settingTimeEndMin}
                       trajectory={trajPoints.map(p => ({ md: p.md, zenithDeg: p.zenith, tvd: p.tvd }))}
                       bhTempC={Math.round(temps.bhctC)}
-                    />
+                    />}
                   </CardContent>
                 </CollapsibleContent>
               </Card>
@@ -1406,7 +1450,12 @@ export default function CementPlug() {
 
                 {/* ── Рецептура раствора для моста ── */}
                 {results.temperatures && (
-                  <PlugRecipeCard inputs={inputsAtCalc} results={results} wocHours={wocTimeHours} purpose={plugPurpose} onPurposeChange={setPlugPurpose} onApply={applyPlugDesign} />
+                  <PlugRecipeCard inputs={inputsAtCalc} results={results} wocHours={wocTimeHours} purpose={plugPurpose} onPurposeChange={setPlugPurpose} onApply={applyPlugDesign}
+                    pill={results.exchange?.support === "fluid" ? pillAuto?.design : undefined} />
+                )}
+                {pillAuto && results.exchange?.support === "fluid" && (
+                  <PlugPillCard design={pillAuto.design} autoNeedPa={pillAuto.need} strictPa={pillAuto.strict} practicePa={pillAuto.practice} allowFallM={pillAuto.allowFall} autoDensity={pillAuto.density} autoVolume={pillAuto.volume}
+                    bhctC={results.temperatures?.bhctC ?? 60} settings={pillSettings} onSettings={setPillSettings} onApply={applyPill} />
                 )}
                 {results.temperatures && (
                   <PlugAutoDesignCard inputs={inputsAtCalc} purpose={plugPurpose} wocHours={wocTimeHours} fracGradient={fracGradient} onApply={applyCandidate} />

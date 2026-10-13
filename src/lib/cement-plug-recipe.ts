@@ -7,6 +7,7 @@ import type { PlugInputs, PlugResults } from "./cement-plug-calculations";
 import { designToTargets, type DesignConditions, type LabTargets, type TargetDesignResult } from "./cement-recipe-designer";
 import { getPlugRequirements, PLUG_PURPOSE_LABEL, type PlugPurpose } from "./cement-plug-types";
 import type { LabProtocol, ProtocolSection } from "./lab-protocol";
+import { PILL_TYPE_LABEL, type PillDesign } from "./cement-plug-pill";
 
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d).replace(".", ",") : "—");
 
@@ -52,7 +53,7 @@ export function designPlugSlurry(inp: PlugInputs, r: PlugResults, purpose: PlugP
 }
 
 /** Расчётный протокол подбора рецептуры для моста (формат общий с программой цементирования). */
-export function buildPlugLabProtocol(inp: PlugInputs, r: PlugResults, res: TargetDesignResult, purpose: PlugPurpose, wocHours: number): LabProtocol {
+export function buildPlugLabProtocol(inp: PlugInputs, r: PlugResults, res: TargetDesignResult, purpose: PlugPurpose, wocHours: number, pill?: PillDesign): LabProtocol {
   const d = res.design, p = d.predicted, t = r.temperatures;
   const now = new Date();
   const date = now.toLocaleDateString("ru-RU");
@@ -117,8 +118,30 @@ export function buildPlugLabProtocol(inp: PlugInputs, r: PlugResults, res: Targe
     }],
     bullets: d.warnings.map((w) => `⚠ ${w}`),
   });
+  let concl = 4;
+  if (pill && pill.type !== "none") {
+    sections.push({
+      id: "pill", title: "4. Нижняя пачка (опора моста) — рекомендуемая рецептура",
+      paragraphs: [`${PILL_TYPE_LABEL[pill.type]}. Объём ${f(pill.volumeM3, 2)} м³, плотность ${f(pill.densityGcm3, 2)} г/см³. Требование: СНС 10 с ≥ ${f(pill.targetGel10sPa, 0)} Па (устойчивость моста против обмена с цементом, запас 20%).`],
+      tables: [
+        { id: "pill-t", headers: ["Компонент", "Назначение", "кг/м³", "На пачку (+5%)"], widths: [34, 38, 12, 16], rows: [
+          ["Вода техническая пресная", "Основа", `${pill.waterLPerM3} л`, `${f((pill.waterLPerM3 * pill.volumeM3 * 1.05) / 1000, 2)} м³`],
+          ...pill.components.map((c) => [c.name, c.purpose, f(c.kgPerM3, c.kgPerM3 < 10 ? 1 : 0), `${f(c.kgPerM3 * pill.volumeM3 * 1.05, 0)} кг`]),
+        ] },
+        { id: "pill-props", headers: ["Показатель", "Требование", "Прогноз системы", "Факт"], widths: [40, 20, 20, 20], rows: [
+          ["Плотность, г/см³", f(pill.densityGcm3, 2) + " ± 0,02", f(pill.densityGcm3, 2), ""],
+          ["СНС 10 с, Па", `≥ ${f(pill.targetGel10sPa, 0)}`, f(pill.predicted.gel10s, 0), ""],
+          ["СНС 10 мин, Па", "—", f(pill.predicted.gel10min, 0), ""],
+          ["ПВ, мПа·с / ДНС, Па", "прокачиваемость", `${f(pill.predicted.pv, 0)} / ${f(pill.predicted.yp, 1)}`, ""],
+          ...(pill.predicted.gelTimeMin ? [["Время гелеобразования при BHCT, мин", "> закачки и продавки пачки", f(pill.predicted.gelTimeMin, 0), ""]] : []),
+        ] },
+      ],
+      bullets: [...pill.procedure.map((p, i) => `${i + 1}. ${p}`), ...pill.warnings.map((w) => `⚠ ${w}`)],
+    });
+    concl = 5;
+  }
   sections.push({
-    id: "concl", title: "4. Заключение",
+    id: "concl", title: `${concl}. Заключение`,
     paragraphs: [
       res.allOk ? "По расчётному прогнозу рецептура удовлетворяет требованиям к раствору для моста данного назначения." : "По расчётному прогнозу часть требований не выполняется — см. строки «НЕ соответствует»; рецептура требует корректировки.",
       "Перед применением подтвердить испытанием на фактической партии цемента и реагентов: плотность, время загустевания при BHCT и давлении, прочность при температуре кровли к сроку ОЗЦ, СНС 10 с / 10 мин (входит в расчёт устойчивости моста).",
