@@ -8,7 +8,7 @@ import type { SqueezeSimResult } from "./rir-squeeze-sim";
 
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d).replace(".", ",") : "—");
 
-function recipeSection(id: string, title: string, d: CompositionDesign, vol: number): ProtocolSection {
+export function recipeSection(id: string, title: string, d: CompositionDesign, vol: number): ProtocolSection {
   return {
     id, title,
     paragraphs: [`${d.system}. Объём ${f(vol, 2)} м³ (+5% запас).`],

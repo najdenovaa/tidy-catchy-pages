@@ -161,3 +161,36 @@ describe("РИР: моделирование задавливания", () => {
     expect(sim.holds.length).toBeGreaterThan(0);
   });
 });
+
+import { autoDesignRir, planRir, applyVariant } from "./rir-autodesign";
+import { buildRirProgram, stageRegime } from "./rir-program";
+
+describe("РИР: автоподбор и программа работ", () => {
+  it("автоподбор: лучший вариант задавлен и в пределах 75% времени жизни; узкий канал — только смола", () => {
+    const a = autoDesignRir(DEFAULT_RIR);
+    expect(a.best?.outcome).toBe("sealed");
+    expect(a.best!.workLifeUsedPct).toBeLessThanOrEqual(75);
+    const tight = autoDesignRir({ ...DEFAULT_RIR, injectivity: [{ rateM3h: 0.02, surfacePressureMPa: 8 }, { rateM3h: 0.05, surfacePressureMPa: 12 }] });
+    expect(new Set(tight.variants.map((v) => v.composition))).toEqual(new Set(["resin"]));
+    const applied = applyVariant(DEFAULT_RIR, a.best!);
+    expect(applied.composition).toBe(a.best!.composition);
+    expect(applied.hesitationStages).toBe(a.best!.stages);
+  });
+  it("план: время жизни увеличивается, если моделирование показывает > 75%", () => {
+    const r = calculateRir(DEFAULT_RIR);
+    const p = planRir(DEFAULT_RIR, r);
+    if (p.extendedByModel) expect(p.requiredWorkLifeMin).toBeGreaterThan(r.timing.requiredWorkLifeMin);
+    expect(p.sim.workLifeUsedPct).toBeLessThanOrEqual(90);
+  });
+  it("программа работ: разделы, регламент, осложнения", () => {
+    const r = calculateRir(DEFAULT_RIR);
+    const p = planRir(DEFAULT_RIR, r);
+    const prog = buildRirProgram(DEFAULT_RIR, r, p.comp, null, r.workProgram, p.sim, p.requiredWorkLifeMin);
+    const ids = prog.sections.map((s) => s.id);
+    for (const id of ["goal", "well", "window", "regime", "equip", "work", "contingency", "accept", "hse"]) expect(ids).toContain(id);
+    const reg = stageRegime(p.sim);
+    expect(reg.length).toBe(p.sim.stages.length);
+    const pumped = reg.filter((x) => x.kind !== "hold").reduce((t, x) => t + x.volM3, 0);
+    expect(pumped).toBeCloseTo(p.sim.points[p.sim.points.length - 1].vPumped, 3);
+  });
+});

@@ -1,6 +1,7 @@
 import {
-  AlignmentType, BorderStyle, Document, Packer, Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun, WidthType,
+  AlignmentType, BorderStyle, Document, ImageRun, Packer, Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun, WidthType,
 } from "docx";
+import { dataUrlToArrayBuffer } from "./capture-image";
 import { saveAs } from "file-saver";
 import type { LabProtocol, ProtocolTable } from "./lab-protocol";
 
@@ -58,6 +59,13 @@ export async function exportLabProtocolDocx(p: LabProtocol, filename = "lab-prot
   for (const s of p.sections) {
     children.push(new Paragraph({ spacing: { before: 200, after: 80 }, keepNext: true, children: [run(s.title, { bold: true, size: 22 })] }));
     for (const para of s.paragraphs ?? []) children.push(new Paragraph({ spacing: { after: 60 }, children: [run(para)] }));
+    for (const im of s.images ?? []) {
+      const w = Math.min(620, im.widthPx), h = Math.round((im.heightPx / im.widthPx) * w);
+      try {
+        children.push(new Paragraph({ alignment: AlignmentType.CENTER, keepNext: true, children: [new ImageRun({ data: dataUrlToArrayBuffer(im.dataUrl), transformation: { width: w, height: h } })] }));
+        children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [run(im.caption, { italics: true, size: 18 })] }));
+      } catch { /* изображение не встроилось — пропускаем */ }
+    }
     for (const t of s.tables ?? []) { children.push(table(t)); children.push(new Paragraph({ children: [] })); }
     for (const b of s.bullets ?? []) children.push(new Paragraph({ bullet: { level: 0 }, children: [run(b, { size: 18 })] }));
   }

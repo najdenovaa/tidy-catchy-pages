@@ -78,3 +78,43 @@ export function dataUrlToArrayBuffer(dataUrl: string): ArrayBuffer {
   }
   return bytes.buffer;
 }
+
+/**
+ * SVG → PNG с переносом вычисленных стилей (fill/stroke и т. п. из CSS-классов) в атрибуты.
+ * Надёжнее html-to-image для схем с паттернами и маркерами (url(#id)).
+ */
+export async function svgToPngDataUrl(svg: SVGSVGElement, scale = 2, background = "#ffffff"): Promise<{ dataUrl: string; width: number; height: number }> {
+  const rect = svg.getBoundingClientRect();
+  const w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height));
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  const src = [svg, ...Array.from(svg.querySelectorAll("*"))];
+  const dst = [clone, ...Array.from(clone.querySelectorAll("*"))];
+  const props = ["fill", "stroke", "stroke-width", "stroke-dasharray", "opacity", "fill-opacity", "stroke-opacity", "font-size", "font-weight", "font-family", "text-anchor", "dominant-baseline"];
+  src.forEach((el, i) => {
+    const cs = getComputedStyle(el as Element);
+    const d = dst[i] as Element;
+    for (const p of props) {
+      const v = cs.getPropertyValue(p);
+      if (!v) continue;
+      // не затираем ссылки на паттерны/градиенты из атрибутов
+      const attr = d.getAttribute(p);
+      if (attr && attr.startsWith("url(")) continue;
+      d.setAttribute(p, v.includes("url(") ? (attr ?? v) : v);
+    }
+    d.removeAttribute("class");
+  });
+  clone.setAttribute("width", String(w));
+  clone.setAttribute("height", String(h));
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  const xml = new XMLSerializer().serializeToString(clone);
+  const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
+  const img = new Image();
+  await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("svg load")); img.src = url; });
+  const c = document.createElement("canvas");
+  c.width = w * scale; c.height = h * scale;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = background; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.scale(scale, scale);
+  ctx.drawImage(img, 0, 0, w, h);
+  return { dataUrl: c.toDataURL("image/png"), width: w, height: h };
+}

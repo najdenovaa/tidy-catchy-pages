@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2, AlertTriangle, Wrench, Gauge, FlaskConical, ListChecks, LineChart as LineIcon } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, Wrench, Gauge, FlaskConical, ListChecks, LineChart as LineIcon, Printer, FileText } from "lucide-react";
+import { toPng } from "html-to-image";
+import { svgToPngDataUrl } from "@/lib/capture-image";
+import { buildRirProgram, type RirProgramImages } from "@/lib/rir-program";
+import { protocolToHtml, type ProtocolImage } from "@/lib/lab-protocol";
+import { exportLabProtocolDocx } from "@/lib/export-lab-protocol-docx";
 import {
   calculateRir, DEFAULT_RIR, STEEL_GRADES, LEAK_KIND_LABEL, TOOL_LABEL, COMPOSITION_LABEL,
   type RirInputs, type LeakKind, type ToolKind, type CompositionKind,
@@ -10,12 +15,12 @@ import {
 import RirWellSchematic from "./RirWellSchematic";
 import RirTubingCard from "./RirTubingCard";
 import RirCompositionCard from "./RirCompositionCard";
-import { designRirComposition, resinViscosityTarget } from "@/lib/rir-compositions";
 import { buildRirProtocol } from "@/lib/rir-protocol";
 import { analyseTubing, DEFAULT_TUBING_MECH, type TubingMechInputs } from "@/lib/rir-tubing";
 import { InjectivityChart, PenetrationDiagram, PressureWindowChart } from "./RirCharts";
 import RirSqueezeSimCard from "./RirSqueezeSim";
-import { simulateSqueeze } from "@/lib/rir-squeeze-sim";
+import { planRir, applyVariant } from "@/lib/rir-autodesign";
+import RirAutoDesignCard from "./RirAutoDesignCard";
 
 const KEY = "rir_inputs_v1";
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "—");
@@ -72,6 +77,8 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
   const res = useMemo(() => calculateRir(full), [full]);
   const [mech, setMech] = useState<TubingMechInputs>(() => { try { return { ...DEFAULT_TUBING_MECH, ...JSON.parse(localStorage.getItem("rir_mech_v1") || "{}") }; } catch { return DEFAULT_TUBING_MECH; } });
   useEffect(() => { try { localStorage.setItem("rir_mech_v1", JSON.stringify(mech)); } catch { /* недоступно */ } }, [mech]);
+  // извлекаемый пакер закреплён на НКТ (якорь), ретейнер — стингер в уплотнении (свободный)
+  const mechEff = useMemo<TubingMechInputs>(() => (inp.tool.kind === "packer" ? { ...mech, mode: "anchored" } : mech), [mech, inp.tool.kind]);
   const mechRes = useMemo(() => {
     if (inp.tool.kind === "bradenhead") return null;
     const tdT = res.leakTVD > 0 ? res.toolTVD / res.leakTVD : 1;
@@ -80,33 +87,60 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
       casingIdMm: res.casingID, wellFluidDensity: inp.wellFluidDensity, surfaceTempC: inp.surfaceTempC,
       toolStaticC: inp.surfaceTempC + (res.temps.bhstC - inp.surfaceTempC) * tdT, toolCircC: inp.surfaceTempC + (res.temps.bhctC - inp.surfaceTempC) * tdT,
       squeezeSurfaceMPa: res.maxSurfaceMPa, annulusBackPressureMPa: inp.annulusBackPressureMPa,
-    }, mech);
-  }, [inp, res, mech]);
-  const comp = useMemo(() => designRirComposition(res.composition, {
-    bhctC: res.temps.bhctC, bhstC: res.temps.bhstC, requiredWorkLifeMin: res.timing.requiredWorkLifeMin, volumeM3: res.volumes.totalM3,
-    targetDensity: inp.compositionDensity, gasTight: inp.leak.kind === "intercasing" && inp.leak.annulusPressureMPa > 0,
-    maxViscosityMPas: resinViscosityTarget(res.apertureUm),
-  }, res.volumes.squeezeM3), [res, inp.compositionDensity, inp.leak.kind, inp.leak.annulusPressureMPa]);
-  const sim = useMemo(() => simulateSqueeze(full, res, comp?.primary ?? null), [full, res, comp]);
+    }, mechEff);
+  }, [inp, res, mechEff]);
+  const plan = useMemo(() => planRir(full, res), [full, res]);
+  const comp = plan.comp, sim = plan.sim;
   const workProgram = useMemo(() => {
-    if (!mechRes) return res.workProgram;
-    const i = res.workProgram.findIndex((s) => s.title.startsWith("Спуск и установка"));
-    const step = {
+    const w = res.workProgram.map((s) => {
+      if (s.title !== "Ступенчатое задавливание") return s;
+      const st = sim.stages.filter((x) => x.name.startsWith("Ступень"));
+      const last = sim.holds[sim.holds.length - 1];
+      return { ...s, timeMin: st.length ? (sim.stages[sim.stages.length - 1].t1 - st[0].t0) : s.timeMin,
+        text: `${s.text} По моделированию: ${sim.holds.length} ступ.${last ? `, давление на последней выдержке ${last.pStart.toFixed(1)} → ${last.pEnd.toFixed(1)} МПа (падение ${last.decayPct.toFixed(0)}%)` : ""}; итог — ${sim.outcome === "sealed" ? "задавлено" : sim.outcome === "partial" ? "частично" : "не задавлено"}. Фактическую кривую сравнивать с расчётной.` };
+    });
+    if (!mechRes) return w;
+    const i = w.findIndex((s) => s.title.startsWith("Спуск и установка"));
+    w.splice(i >= 0 ? i + 1 : 2, 0, {
       title: "Контроль НКТ при задавливании",
-      text: `По расчёту Лубинского НКТ ${mechRes.totalDLmm < 0 ? "укоротятся" : "удлинятся"} на ${Math.abs(mechRes.totalDLmm).toFixed(0)} мм. ${mech.mode === "free"
-        ? `Разгрузка на ретейнер ${Math.max(mech.setDownKN, mechRes.setDownNeededKN ?? 0)} кН${mechRes.backPressureNeededMPa !== null ? `, противодавление в затрубье ${mechRes.backPressureNeededMPa.toFixed(1)} МПа` : ""} — стингер остаётся в уплотнении.`
-        : `Усилие на пакер в конце задавливания ${mechRes.packerForceKN.toFixed(0)} кН.`} Контролировать вес на крюке: ${mechRes.hookLoad.initialKN.toFixed(0)} → ${mechRes.hookLoad.squeezeKN.toFixed(0)} кН.`,
-    };
-    const w = [...res.workProgram];
-    w.splice(i >= 0 ? i + 1 : 2, 0, step);
+      text: `По расчёту Лубинского НКТ ${mechRes.totalDLmm < 0 ? "укоротятся" : "удлинятся"} на ${Math.abs(mechRes.totalDLmm).toFixed(0)} мм. ${mechEff.mode === "free"
+        ? `Разгрузка на ретейнер ${Math.max(mechEff.setDownKN, mechRes.setDownNeededKN ?? 0)} кН${mechRes.backPressureNeededMPa !== null ? `, противодавление в затрубье ${mechRes.backPressureNeededMPa.toFixed(1)} МПа` : ""} — стингер остаётся в уплотнении.`
+        : `Усилие на пакер в конце задавливания ${mechRes.packerForceKN.toFixed(0)} кН (допустимо ${mechEff.packerLoadRatingKN} кН).`} Контролировать вес на крюке: ${mechRes.hookLoad.initialKN.toFixed(0)} → ${mechRes.hookLoad.squeezeKN.toFixed(0)} кН.`,
+    });
     return w;
-  }, [res, mechRes, mech]);
+  }, [res, mechRes, mechEff, sim]);
   const up = (patch: Partial<RirInputs>) => setInp((s) => ({ ...s, ...patch }));
   const setCasing = (p: Partial<RirInputs["casing"]>) => setInp((s) => ({ ...s, casing: { ...s.casing, ...p } }));
   const setLeak = (p: Partial<RirInputs["leak"]>) => setInp((s) => ({ ...s, leak: { ...s.leak, ...p } }));
   const setTool = (p: Partial<RirInputs["tool"]>) => setInp((s) => ({ ...s, tool: { ...s.tool, ...p } }));
   const setTub = (p: Partial<RirInputs["tubing"]>) => setInp((s) => ({ ...s, tubing: { ...s.tubing, ...p } }));
   const setOuter = (p: Partial<NonNullable<RirInputs["outerCasing"]>>) => setInp((s) => ({ ...s, outerCasing: { ...(s.outerCasing ?? { odMm: 244.5, wallMm: 8.9, shoeMD: 0 }), ...p } }));
+
+  const [exporting, setExporting] = useState(false);
+  const exportProgram = async (mode: "docx" | "print") => {
+    setExporting(true);
+    try {
+      const shot = async (key: string, caption: string): Promise<ProtocolImage | undefined> => {
+        const el = document.querySelector<HTMLElement>(`[data-docimg="${key}"]`);
+        if (!el || !el.offsetWidth) return undefined;
+        try {
+          const svg = el.children.length === 1 ? el.querySelector<SVGSVGElement>(":scope > svg") : null;
+          if (svg) { const r = await svgToPngDataUrl(svg); return { dataUrl: r.dataUrl, caption, widthPx: r.width, heightPx: r.height }; }
+          const dataUrl = await toPng(el, { backgroundColor: "#ffffff", pixelRatio: 2, style: { color: "#111827" } });
+          return { dataUrl, caption, widthPx: el.offsetWidth, heightPx: el.offsetHeight };
+        } catch { return undefined; }
+      };
+      const images: RirProgramImages = {
+        schematic: await shot("schematic", "Рис. 1. Схема скважины и компоновки при РИР"),
+        injectivity: await shot("injectivity", "Рис. 2. Приёмистость: замеры и аппроксимация, окно давлений"),
+        window: await shot("window", "Рис. 3. Окно давлений по глубине"),
+        sim: await shot("sim", "Рис. 4. Моделирование закачки и задавливания: давление на устье, допустимое давление, объём состава в канале"),
+      };
+      const prog = buildRirProgram(full, res, comp, mechRes, workProgram, sim, plan.requiredWorkLifeMin, images);
+      if (mode === "docx") await exportLabProtocolDocx(prog, "План_РИР.docx");
+      else { const w = window.open("", "_blank"); if (w) { w.document.write(protocolToHtml(prog)); w.document.close(); w.focus(); setTimeout(() => w.print(), 400); } }
+    } finally { setExporting(false); }
+  };
 
   const winSurf = res.maxSurfaceMPa;
   const fitOk = !res.fit || res.maxBhpMPa > res.fit.openingBhpMPa;
@@ -184,14 +218,17 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
         <Kpi label="Допустимо на устье" value={`${f(winSurf, 1)} МПа`} sub={`на глубине ${f(res.maxBhpMPa, 1)} МПа`} tone={winSurf <= 0 ? "bad" : undefined} />
         <Kpi label="Ограничивает" value={res.governing.split(" (")[0]} tone={!fitOk ? "bad" : undefined} />
         <Kpi label="Объём состава" value={`${f(res.volumes.totalM3, 2)} м³`} sub={`задавливание ${f(res.volumes.squeezeM3, 2)} м³`} />
-        <Kpi label="Время жизни состава" value={`≥ ${res.timing.requiredWorkLifeMin} мин`} sub={`операция ${f(res.timing.jobMin, 0)} мин · BHCT ${f(res.temps.bhctC, 0)} °C`} />
+        <Kpi label="Время жизни состава" value={`≥ ${plan.requiredWorkLifeMin} мин`} sub={`операция ${f(sim.totalTimeMin, 0)} мин · BHCT ${f(res.temps.bhctC, 0)} °C`} />
       </div>
       {res.warnings.map((w) => <div key={w} className="text-xs text-amber-700 dark:text-amber-500 flex gap-1.5"><AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{w}</div>)}
+      {plan.extendedByModel && <div className="text-xs text-sky-700 dark:text-sky-400 flex gap-1.5"><FlaskConical className="w-3.5 h-3.5 shrink-0 mt-0.5" />Время жизни состава увеличено до {plan.requiredWorkLifeMin} мин: по моделированию работа с составом занимает дольше, чем по плану ({res.timing.requiredWorkLifeMin} мин) — рецептура пересчитана.</div>}
+
+      <RirAutoDesignCard inp={full} onApply={(v) => setInp((s) => applyVariant(s, v))} />
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
         <Card>
           <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm">Схема работ</CardTitle></CardHeader>
-          <CardContent className="pt-0 flex justify-center"><RirWellSchematic inp={full} res={res} /></CardContent>
+          <CardContent className="pt-0 flex justify-center"><div data-docimg="schematic" className="w-full flex justify-center"><RirWellSchematic inp={full} res={res} /></div></CardContent>
         </Card>
         <div className="space-y-3">
           <Card>
@@ -205,7 +242,7 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
           <Card>
             <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm flex items-center gap-2"><LineIcon className="w-4 h-4" />Приёмистость</CardTitle></CardHeader>
             <CardContent className="pt-0">
-              <InjectivityChart res={res} />
+              <div data-docimg="injectivity"><InjectivityChart res={res} /></div>
               <p className="text-[11px] text-muted-foreground">Устьевое давление пересчитано на глубину нарушения (+ гидростатика воды − трение в НКТ). Зелёная зона — рабочее окно задавливания{res.fit ? `; при допустимом давлении расход ≈ ${f(res.squeezeRateAtMaxM3h, 2)} м³/ч` : ""}.</p>
             </CardContent>
           </Card>
@@ -216,7 +253,7 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
         <Card>
           <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm flex items-center gap-2"><Gauge className="w-4 h-4" />Окно давлений по глубине</CardTitle></CardHeader>
           <CardContent className="pt-0">
-            <PressureWindowChart res={res} leakTopMD={inp.leak.topMD} leakBottomMD={inp.leak.bottomMD} toolMD={inp.tool.kind === "bradenhead" ? 0 : inp.tool.setDepthMD} />
+            <div data-docimg="window"><PressureWindowChart res={res} leakTopMD={inp.leak.topMD} leakBottomMD={inp.leak.bottomMD} toolMD={inp.tool.kind === "bradenhead" ? 0 : inp.tool.setDepthMD} /></div>
             <table className="w-full text-[11px] mt-2">
               <thead className="bg-muted/50"><tr><th className="p-1 text-left">Ограничение</th><th className="p-1 text-right">На глубине нарушения</th><th className="p-1 text-right">На устье</th></tr></thead>
               <tbody>
@@ -259,15 +296,19 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
         </Card>
       </div>
 
-      <RirCompositionCard comp={comp} totalM3={res.volumes.totalM3} bhctC={res.temps.bhctC} jobMin={res.timing.jobMin} requiredMin={res.timing.requiredWorkLifeMin}
+      <RirCompositionCard comp={comp} totalM3={res.volumes.totalM3} bhctC={res.temps.bhctC} jobMin={sim.totalTimeMin} requiredMin={plan.requiredWorkLifeMin}
         protocol={() => buildRirProtocol(full, res, comp, mechRes, workProgram, sim)} />
 
       <RirSqueezeSimCard sim={sim} hasTool={inp.tool.kind !== "bradenhead"} spot={inp.tool.kind === "packer"} toolLabel={inp.tool.kind === "retainer" ? "ретейнер" : "пакер"} holdMin={inp.hesitationHoldMin} />
 
-      {mechRes && <RirTubingCard r={mechRes} m={mech} onChange={(p) => setMech((x) => ({ ...x, ...p }))} />}
+      {mechRes && <RirTubingCard r={mechRes} m={mechEff} onChange={(p) => setMech((x) => ({ ...x, ...p }))} />}
 
       <Card>
-        <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm flex items-center gap-2"><ListChecks className="w-4 h-4" />Ход работ <Badge variant="outline" className="text-[10px]">формируется по расчёту</Badge></CardTitle></CardHeader>
+        <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm flex items-center gap-2 flex-wrap"><ListChecks className="w-4 h-4" />Ход работ <Badge variant="outline" className="text-[10px]">формируется по расчёту</Badge>
+          <span className="ml-auto flex gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={exporting} onClick={() => exportProgram("print")}><Printer className="w-3.5 h-3.5 mr-1" />Печать</Button>
+            <Button size="sm" className="h-7 text-[11px]" disabled={exporting} onClick={() => exportProgram("docx")} data-testid="rir-program-docx"><FileText className="w-3.5 h-3.5 mr-1" />{exporting ? "Формирую…" : "План работ (Word)"}</Button>
+          </span></CardTitle></CardHeader>
         <CardContent className="pt-0">
           <ol className="space-y-2">
             {workProgram.map((s, i) => (

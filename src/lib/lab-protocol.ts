@@ -11,7 +11,8 @@ import { buildLabProgram, buildRecipe, additiveSG, type LabProgramResult } from 
 import { designToTargets, conditionsFor, type SlurryDesign, type DesignConditions, type TargetDesignResult } from "./cement-recipe-designer";
 
 export interface ProtocolTable { id: string; headers: string[]; rows: string[][]; widths?: number[] }
-export interface ProtocolSection { id: string; title: string; paragraphs?: string[]; tables?: ProtocolTable[]; bullets?: string[] }
+export interface ProtocolImage { dataUrl: string; caption: string; widthPx: number; heightPx: number }
+export interface ProtocolSection { id: string; title: string; paragraphs?: string[]; tables?: ProtocolTable[]; bullets?: string[]; images?: ProtocolImage[] }
 export interface LabProtocol {
   version: 1;
   createdAt: string;
@@ -299,7 +300,7 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 
 export function protocolToHtml(p: LabProtocol): string {
   const table = (t: ProtocolTable) => `<table><thead><tr>${t.headers.map((h, i) => `<th${t.widths?.[i] ? ` style="width:${t.widths[i]}%"` : ""}>${esc(h)}</th>`).join("")}</tr></thead><tbody>${t.rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
-  const body = p.sections.map((s) => `<section><h2>${esc(s.title)}</h2>${(s.paragraphs ?? []).map((x) => `<p>${esc(x)}</p>`).join("")}${(s.tables ?? []).map(table).join("")}${s.bullets?.length ? `<ul>${s.bullets.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}</section>`).join("");
+  const body = p.sections.map((s) => `<section><h2>${esc(s.title)}</h2>${(s.paragraphs ?? []).map((x) => `<p>${esc(x)}</p>`).join("")}${(s.images ?? []).map((im) => `<figure style="text-align:center;margin:8px 0"><img src="${im.dataUrl}" style="max-width:100%;height:auto" /><figcaption style="font-size:11px">${esc(im.caption)}</figcaption></figure>`).join("")}${(s.tables ?? []).map(table).join("")}${s.bullets?.length ? `<ul>${s.bullets.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}</section>`).join("");
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>${esc(p.title)}</title>
 <style>
 body{font-family:"Times New Roman",serif;font-size:11pt;color:#000;margin:15mm}

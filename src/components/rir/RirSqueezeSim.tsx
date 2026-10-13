@@ -194,7 +194,7 @@ export default function RirSqueezeSimCard({ sim, hasTool, spot, toolLabel, holdM
             <div key={n} className="rounded-md border border-border/60 p-2"><p className="text-[10px] text-muted-foreground">{n}</p><p className={`text-base font-semibold ${c}`}>{v}</p></div>
           ))}
         </div>
-        <div className="grid gap-3 lg:grid-cols-[300px_1fr]">
+        <div className="grid gap-3 lg:grid-cols-[300px_1fr]" data-docimg="sim">
           <div className="flex flex-col items-center gap-2">
             <SqueezeAnimation p={p} hasTool={hasTool} spot={spot} toolLabel={toolLabel} />
             <div className="flex w-full items-center gap-2">

@@ -166,6 +166,8 @@ export interface RirResult {
   /** Допустимое давление задавливания на глубине нарушения и на устье, МПа */
   maxBhpMPa: number;
   maxSurfaceMPa: number;
+  /** Допустимое на устье при НКТ, заполненных водой (приёмистость, продавка), МПа */
+  maxSurfaceWaterMPa: number;
   governing: string;
   /** Расход задавливания при допустимом давлении, м³/ч */
   squeezeRateAtMaxM3h: number;
@@ -300,6 +302,7 @@ export function calculateRir(inp: RirInputs): RirResult {
   const maxSurf = Math.max(0, toSurf(maxBhp));
   if (hydroComp >= maxBhp) warnings.push(`Гидростатика столба состава ${rhoC.toFixed(2)} г/см³ (${hydroComp.toFixed(1)} МПа) уже не меньше допустимого давления на глубине нарушения (${maxBhp.toFixed(1)} МПа) — снизьте плотность состава или закачивайте под пакер с минимальным столбом.`);
   if (fit && maxBhp <= fit.openingBhpMPa) warnings.push(`Допустимое давление (${maxBhp.toFixed(1)} МПа) ниже давления начала приёмистости (${fit.openingBhpMPa.toFixed(1)} МПа) — задавить состав в окне давлений нельзя. Рассмотрите смолу (вязкость близка к воде), снижение плотности состава или противодавление над пакером.`);
+  const maxSurfW = Math.max(0, Math.min(maxBhp - 1.0 * G * leakTVD / 1000, ...constraints.filter((c) => c.atDepthMD === 0).map((c) => c.limitSurfaceMPa)));
   const qMax = fit ? Math.max(0, fit.J * (maxBhp - fit.openingBhpMPa)) : 0;
   // Смятие колонны ниже пакера после работ (снижение уровня / освоение): справочно
   const collapseMargin = casingCollapse.pMPa / inp.sfCollapse;
@@ -365,10 +368,11 @@ export function calculateRir(inp: RirInputs): RirResult {
   if (inp.tool.kind !== "bradenhead") {
     W.push({ title: `Спуск и установка: ${toolName}`, text: `Спуск ${toolName}а на НКТ ${inp.tubing.odMm}×${inp.tubing.wallMm} мм до ${f1(inp.tool.setDepthMD, 0)} м, посадка по инструкции производителя, опрессовка НКТ на ${f1(Math.min(tubingBurst / inp.sfBurst, Math.max(maxSurf * 1.25, maxSurf + 3)), 1)} МПа (выше планового давления задавливания).` });
   }
-  W.push({ title: "Определение приёмистости", text: `Закачка технической воды на 2–3 режимах (расход / давление). ${fit ? `Расчётный индекс приёмистости ${f1(fit.J, 2)} м³/(ч·МПа), давление начала приёмистости на глубине нарушения ${f1(fit.openingBhpMPa, 1)} МПа.` : ""} Допустимое давление на устье — не более ${f1(maxSurf, 1)} МПа (ограничение: ${gov.name}).` });
+  W.push({ title: "Определение приёмистости", text: `Закачка технической воды на 2–3 режимах (расход / давление). ${fit ? `Расчётный индекс приёмистости ${f1(fit.J, 2)} м³/(ч·МПа), давление начала приёмистости на глубине нарушения ${f1(fit.openingBhpMPa, 1)} МПа.` : ""} Допустимое давление на устье при закачке воды — не более ${f1(maxSurfW, 1)} МПа (ограничение: ${gov.name}).` });
   W.push({ title: "Приготовление состава", text: `${COMPOSITION_LABEL[comp]}, плотность ${f1(rhoC, 2)} г/см³, объём ${f1(totalM3, 2)} м³ (под ${toolName || "интервал"} ${f1(belowToolM3, 2)}, задавливание ${f1(squeezeM3, 2)}, запас ${f1(reserveM3, 2)}). Время жизни / загустевания при ${f1(bhct, 0)} °C — не менее ${requiredWorkLifeMin} мин.`, volumeM3: totalM3 });
-  W.push({ title: "Закачка и продавка", text: `Буфер (техническая вода 0,5 м³), состав ${f1(totalM3, 2)} м³ при ${f1(q, 1)} л/с, продавка ${f1(displacementM3, 2)} м³${inp.tool.kind === "retainer" ? " (стыковочный узел в ретейнере)" : ""} — в НКТ над ${toolName || "интервалом"} остаётся ${f1(squeezeM3, 2)} м³ состава на ступенчатое задавливание.`, volumeM3: displacementM3, timeMin: pumpMin + displaceMin });
-  W.push({ title: "Ступенчатое задавливание", text: `${inp.hesitationStages} ступеней по ~${f1(perStage, 2)} м³ с выдержкой ${inp.hesitationHoldMin} мин; рост давления к конечному ${f1(maxSurf * 0.9, 1)} МПа на устье (не превышать ${f1(maxSurf, 1)} МПа). Критерий окончания: давление держится на выдержке (падение ≤ 10%).`, timeMin: hesitationMin });
+  if (inp.tool.kind === "packer") W.push({ title: "Закачка и доводка состава до нарушения", text: `Пакер не посажен (циркуляция через низ НКТ в затрубье): буфер (техническая вода 0,5 м³), состав ${f1(totalM3, 2)} м³ при ${f1(q, 1)} л/с, продавка до выхода состава под глубину установки пакера и до подошвы нарушения. Посадить пакер, закрыть затрубье — в НКТ над пакером остаётся состав на ступенчатое задавливание.`, volumeM3: totalM3, timeMin: pumpMin + displaceMin });
+  else W.push({ title: "Закачка и продавка", text: `Буфер (техническая вода 0,5 м³), состав ${f1(totalM3, 2)} м³ при ${f1(q, 1)} л/с, продавка ${f1(displacementM3, 2)} м³${inp.tool.kind === "retainer" ? " (стыковочный узел в ретейнере)" : ""} — в НКТ над ${toolName || "интервалом"} остаётся ${f1(squeezeM3, 2)} м³ состава на ступенчатое задавливание.`, volumeM3: displacementM3, timeMin: pumpMin + displaceMin });
+  W.push({ title: "Ступенчатое задавливание", text: `${inp.hesitationStages} ступеней по ~${f1(perStage, 2)} м³ с выдержкой ${inp.hesitationHoldMin} мин; давление на устье не выше допустимого по столбу в НКТ: ${f1(maxSurf, 1)} МПа при НКТ, заполненных составом, до ${f1(maxSurfW, 1)} МПа при продавочной воде в НКТ (по забою ${f1(maxBhp, 1)} МПа). Критерий окончания: давление держится на выдержке (падение ≤ 10%).`, timeMin: hesitationMin });
   if (inp.tool.kind === "retainer") W.push({ title: "Расстыковка и обратная промывка", text: `Снять стыковочный узел с ретейнера (обратный клапан закрывается), приподнять на 5–10 м, обратная промывка ${f1(reverseOutM3, 2)} м³ для вымыва излишков состава из НКТ.`, volumeM3: reverseOutM3, timeMin: reverseMin });
   else if (inp.tool.kind === "packer") W.push({ title: "Срыв пакера и промывка", text: `Сорвать пакер, поднять на 20–30 м выше кровли состава, обратная промывка ${f1(reverseOutM3, 2)} м³.`, volumeM3: reverseOutM3 });
   W.push({ title: comp === "resin" ? "Отверждение смолы" : "ОЗЦ", text: comp === "resin" ? `Выдержка на отверждение при ${f1(bhst, 0)} °C по паспорту состава (обычно 12–24 ч).` : `ОЗЦ при ${f1(bhst, 0)} °C — по лабораторной кривой прочности (обычно 24–48 ч).` });
@@ -379,7 +383,7 @@ export function calculateRir(inp: RirInputs): RirResult {
     leakTVD, toolTVD, casingID, tubingID, temps: { bhstC: bhst, bhctC: bhct }, fit, apertureUm, apertureNote, compositionDensity: rhoC,
     composition: comp, compositionReason: reason, penetration,
     casingBurstMPa: casingBurst, casingCollapse, tubingBurstMPa: tubingBurst, tubingCollapse,
-    constraints, maxBhpMPa: maxBhp, maxSurfaceMPa: maxSurf, governing: gov.name, squeezeRateAtMaxM3h: qMax, compositionRateAtMaxM3h: qComp,
+    constraints, maxBhpMPa: maxBhp, maxSurfaceMPa: maxSurf, maxSurfaceWaterMPa: maxSurfW, governing: gov.name, squeezeRateAtMaxM3h: qMax, compositionRateAtMaxM3h: qComp,
     volumes: { tubingM3, belowToolM3, squeezeM3, reserveM3, totalM3, displacementM3, reverseOutM3 },
     timing: { pumpMin, displaceMin, hesitationMin, reverseMin, jobMin, requiredWorkLifeMin },
     profile, hesitation: hes, workProgram: W, warnings,
