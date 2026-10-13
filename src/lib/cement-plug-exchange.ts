@@ -15,6 +15,7 @@
  * «бок о бок» требует сдвига обеих, и одной достаточно прочной жидкости хватает, чтобы его остановить.
  *
  * Скорость обмена — оценка порядка величины: фронт лёгкой жидкости ≈ 4% от инерционного масштаба
+ * (и снижается до нуля по мере набора структуры: v·(1 − Y(t)/Y_c), инженерное допущение)
  * V_t = √(2·At·g·R) (Charabin & Frigaard 2024, вязкий режим), цемент — примерно вдвое медленнее.
  * Обмен прекращается, когда структура цемента наберёт Y_c,exp.
  */
@@ -130,9 +131,16 @@ function analyseInterface(upper: ExchangeFluid, lower: ExchangeFluid, R: number,
     for (let t = 0.5; t <= 600; t += 0.5) if (tau(t) >= tauReqExp) { arrestMin = t; break; }
   }
   const At = dRho / ((upper.density + lower.density) * 1000);
-  const vLight = 0.04 * Math.sqrt(2 * At * G * R); // м/с
+  const vLight = 0.04 * Math.sqrt(2 * At * G * R); // м/с, вязкий режим (Charabin & Frigaard 2024)
   const vHeavy = 0.5 * vLight;
-  const exchangeLengthM = Y0 >= YcExp ? 0 : Math.min(plugLengthM * 3, vHeavy * (Number.isFinite(arrestMin) ? arrestMin : 600) * 60);
+  // Скорость падает до нуля по мере приближения Y к пределу (структура тормозит обмен):
+  // v(t) = v_H·(1 − Y(t)/Y_c), интегрируем до остановки
+  let exchangeLengthM = 0;
+  if (Y0 < YcExp) {
+    const tEnd = Number.isFinite(arrestMin) ? arrestMin : 600;
+    for (let t = 0; t < tEnd; t += 0.5) exchangeLengthM += vHeavy * Math.max(0, 1 - tau(t + 0.25) / buoy / YcExp) * 30;
+    exchangeLengthM = Math.min(plugLengthM * 3, exchangeLengthM);
+  }
   let verdict: ExchangeVerdict;
   if (Y0 >= Y_C_THEORY) verdict = "guaranteed";
   else if (Y0 >= YcExp) verdict = "stable";
