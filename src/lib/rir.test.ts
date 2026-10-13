@@ -48,3 +48,45 @@ describe("РИР: диагностика и окно давлений", () => {
     expect(r.timing.requiredWorkLifeMin).toBeGreaterThanOrEqual(r.timing.jobMin / 0.75);
   });
 });
+
+import { analyseTubing, DEFAULT_TUBING_MECH, type MechLoadCase } from "./rir-tubing";
+
+describe("РИР: НКТ и пакер (Лубинский)", () => {
+  const lc: MechLoadCase = { toolMD: 1820, toolTVD: 1820, tubingOdMm: 73, tubingWallMm: 5.5, tubingGrade: "Е (N80/L80)", casingIdMm: 130.7,
+    wellFluidDensity: 1.0, surfaceTempC: 20, toolStaticC: 20, toolCircC: 20, squeezeSurfaceMPa: 0, annulusBackPressureMPa: 0 };
+  const m = { ...DEFAULT_TUBING_MECH, injectionTempC: 20, displacementDensity: 1.0 };
+  it("без изменений давлений и температуры НКТ не перемещаются", () => {
+    const r = analyseTubing(lc, m);
+    expect(Math.abs(r.totalDLmm)).toBeLessThan(1e-6);
+  });
+  it("температура: ΔL = β·L·ΔT", () => {
+    const r = analyseTubing({ ...lc, toolStaticC: 60, toolCircC: 60 }, { ...m, injectionTempC: 20 });
+    const dT = (20 + 60) / 2 - (20 + 60) / 2; // одинаково → 0
+    expect(r.effects.find((e) => e.key === "temp")!.dLmm).toBeCloseTo(1.24e-5 * 1820 * dT * 1000, 6);
+    const r2 = analyseTubing({ ...lc, toolStaticC: 60, toolCircC: 40 }, { ...m, injectionTempC: 10 });
+    expect(r2.effects.find((e) => e.key === "temp")!.dLmm).toBeCloseTo(1.24e-5 * 1820 * ((10 + 40) / 2 - (20 + 60) / 2) * 1000, 3);
+  });
+  it("поршень: ΔL1 = −L·[(Ap−Ai)ΔPi]/(E·As)", () => {
+    const r = analyseTubing({ ...lc, squeezeSurfaceMPa: 10 }, m);
+    const od = 0.073, id = 0.062, Ai = Math.PI / 4 * id * id, As = Math.PI / 4 * od * od - Ai, Ap = Math.PI / 4 * 0.0683 ** 2;
+    expect(r.effects.find((e) => e.key === "piston")!.dLmm).toBeCloseTo(-1820 * (Ap - Ai) * 10e6 / (2.07e11 * As) * 1000, 3);
+  });
+  it("давление в НКТ укорачивает трубы; противодавление в затрубье уменьшает укорочение и изгиб", () => {
+    const a = analyseTubing({ ...lc, squeezeSurfaceMPa: 15 }, m);
+    const b = analyseTubing({ ...lc, squeezeSurfaceMPa: 15, annulusBackPressureMPa: 8 }, m);
+    expect(a.totalDLmm).toBeLessThan(0);
+    expect(b.totalDLmm).toBeGreaterThan(a.totalDLmm);
+    expect(a.buckling.buckled).toBe(true);
+    expect(b.buckling.fictitiousKN).toBeLessThan(a.buckling.fictitiousKN);
+  });
+  it("свободный стингер: при малой разгрузке выходит из ретейнера, предлагается разгрузка / противодавление", () => {
+    const r = analyseTubing({ ...lc, squeezeSurfaceMPa: 25 }, { ...m, setDownKN: 5, sealTravelMm: 100 });
+    expect(r.stingerUnseats).toBe(true);
+    expect(r.setDownNeededKN).not.toBeNull();
+  });
+  it("закреплённые НКТ: укорочение даёт растяжение пакера = k·|ΔL| − разгрузка", () => {
+    const r = analyseTubing({ ...lc, squeezeSurfaceMPa: 15 }, { ...m, mode: "anchored", setDownKN: 20 });
+    expect(r.packerForceKN).toBeCloseTo(-20 + r.restrainForceKN, 6);
+    expect(r.packerForceKN).toBeGreaterThan(0);
+  });
+});

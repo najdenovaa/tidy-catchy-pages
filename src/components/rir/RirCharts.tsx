@@ -83,7 +83,7 @@ export function PressureWindowChart({ res, leakTopMD, leakBottomMD, toolMD }: { 
       <LineChart layout="vertical" width={w || 520} height={320} data={data} margin={{ top: 8, right: 16, bottom: 18, left: 8 }}>
         <CartesianGrid stroke="hsl(var(--border))" strokeOpacity={0.5} />
         <XAxis type="number" tick={axisTick} label={{ value: "Давление, МПа", position: "insideBottom", offset: -8, fontSize: 11 }} />
-        <YAxis type="number" dataKey="md" reversed tick={axisTick} domain={[0, "dataMax"]} label={{ value: "Глубина, м", angle: -90, position: "insideLeft", fontSize: 11 }} />
+        <YAxis type="number" dataKey="md" tick={axisTick} domain={[0, "dataMax"]} label={{ value: "Глубина, м", angle: -90, position: "insideLeft", fontSize: 11 }} />
         <Tooltip contentStyle={tipStyle} formatter={(v: number) => `${Number(v).toFixed(1)} МПа`} labelFormatter={(m) => `${m} м`} />
         <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11 }} />
         <ReferenceArea y1={leakTopMD} y2={leakBottomMD} fill="hsl(0 72% 51%)" fillOpacity={0.15} />

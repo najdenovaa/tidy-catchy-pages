@@ -8,6 +8,8 @@ import {
   type RirInputs, type LeakKind, type ToolKind, type CompositionKind,
 } from "@/lib/rir-calculations";
 import RirWellSchematic from "./RirWellSchematic";
+import RirTubingCard from "./RirTubingCard";
+import { analyseTubing, DEFAULT_TUBING_MECH, type TubingMechInputs } from "@/lib/rir-tubing";
 import { InjectivityChart, PenetrationDiagram, PressureWindowChart, HesitationChart } from "./RirCharts";
 
 const KEY = "rir_inputs_v1";
@@ -63,6 +65,31 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(inp)); } catch { /* недоступно */ } }, [inp]);
   const full = useMemo(() => ({ ...inp, trajectory: trajectory && trajectory.length > 1 ? trajectory : inp.trajectory }), [inp, trajectory]);
   const res = useMemo(() => calculateRir(full), [full]);
+  const [mech, setMech] = useState<TubingMechInputs>(() => { try { return { ...DEFAULT_TUBING_MECH, ...JSON.parse(localStorage.getItem("rir_mech_v1") || "{}") }; } catch { return DEFAULT_TUBING_MECH; } });
+  useEffect(() => { try { localStorage.setItem("rir_mech_v1", JSON.stringify(mech)); } catch { /* недоступно */ } }, [mech]);
+  const mechRes = useMemo(() => {
+    if (inp.tool.kind === "bradenhead") return null;
+    const tdT = res.leakTVD > 0 ? res.toolTVD / res.leakTVD : 1;
+    return analyseTubing({
+      toolMD: inp.tool.setDepthMD, toolTVD: res.toolTVD, tubingOdMm: inp.tubing.odMm, tubingWallMm: inp.tubing.wallMm, tubingGrade: inp.tubing.grade,
+      casingIdMm: res.casingID, wellFluidDensity: inp.wellFluidDensity, surfaceTempC: inp.surfaceTempC,
+      toolStaticC: inp.surfaceTempC + (res.temps.bhstC - inp.surfaceTempC) * tdT, toolCircC: inp.surfaceTempC + (res.temps.bhctC - inp.surfaceTempC) * tdT,
+      squeezeSurfaceMPa: res.maxSurfaceMPa, annulusBackPressureMPa: inp.annulusBackPressureMPa,
+    }, mech);
+  }, [inp, res, mech]);
+  const workProgram = useMemo(() => {
+    if (!mechRes) return res.workProgram;
+    const i = res.workProgram.findIndex((s) => s.title.startsWith("Спуск и установка"));
+    const step = {
+      title: "Контроль НКТ при задавливании",
+      text: `По расчёту Лубинского НКТ ${mechRes.totalDLmm < 0 ? "укоротятся" : "удлинятся"} на ${Math.abs(mechRes.totalDLmm).toFixed(0)} мм. ${mech.mode === "free"
+        ? `Разгрузка на ретейнер ${Math.max(mech.setDownKN, mechRes.setDownNeededKN ?? 0)} кН${mechRes.backPressureNeededMPa !== null ? `, противодавление в затрубье ${mechRes.backPressureNeededMPa.toFixed(1)} МПа` : ""} — стингер остаётся в уплотнении.`
+        : `Усилие на пакер в конце задавливания ${mechRes.packerForceKN.toFixed(0)} кН.`} Контролировать вес на крюке: ${mechRes.hookLoad.initialKN.toFixed(0)} → ${mechRes.hookLoad.squeezeKN.toFixed(0)} кН.`,
+    };
+    const w = [...res.workProgram];
+    w.splice(i >= 0 ? i + 1 : 2, 0, step);
+    return w;
+  }, [res, mechRes, mech]);
   const up = (patch: Partial<RirInputs>) => setInp((s) => ({ ...s, ...patch }));
   const setCasing = (p: Partial<RirInputs["casing"]>) => setInp((s) => ({ ...s, casing: { ...s.casing, ...p } }));
   const setLeak = (p: Partial<RirInputs["leak"]>) => setInp((s) => ({ ...s, leak: { ...s.leak, ...p } }));
@@ -222,11 +249,13 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
         </Card>
       </div>
 
+      {mechRes && <RirTubingCard r={mechRes} m={mech} onChange={(p) => setMech((x) => ({ ...x, ...p }))} />}
+
       <Card>
         <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm flex items-center gap-2"><ListChecks className="w-4 h-4" />Ход работ <Badge variant="outline" className="text-[10px]">формируется по расчёту</Badge></CardTitle></CardHeader>
         <CardContent className="pt-0">
           <ol className="space-y-2">
-            {res.workProgram.map((s, i) => (
+            {workProgram.map((s, i) => (
               <li key={s.title} className="flex gap-3 text-xs">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-[11px] font-semibold">{i + 1}</span>
                 <div><p className="font-semibold">{s.title}{s.timeMin ? <span className="font-normal text-muted-foreground"> · ~{f(s.timeMin, 0)} мин</span> : null}</p><p className="text-muted-foreground">{s.text}</p></div>
