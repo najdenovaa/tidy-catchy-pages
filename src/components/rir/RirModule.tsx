@@ -9,6 +9,9 @@ import {
 } from "@/lib/rir-calculations";
 import RirWellSchematic from "./RirWellSchematic";
 import RirTubingCard from "./RirTubingCard";
+import RirCompositionCard from "./RirCompositionCard";
+import { designRirComposition } from "@/lib/rir-compositions";
+import { buildRirProtocol } from "@/lib/rir-protocol";
 import { analyseTubing, DEFAULT_TUBING_MECH, type TubingMechInputs } from "@/lib/rir-tubing";
 import { InjectivityChart, PenetrationDiagram, PressureWindowChart, HesitationChart } from "./RirCharts";
 
@@ -77,6 +80,10 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
       squeezeSurfaceMPa: res.maxSurfaceMPa, annulusBackPressureMPa: inp.annulusBackPressureMPa,
     }, mech);
   }, [inp, res, mech]);
+  const comp = useMemo(() => designRirComposition(res.composition, {
+    bhctC: res.temps.bhctC, bhstC: res.temps.bhstC, requiredWorkLifeMin: res.timing.requiredWorkLifeMin, volumeM3: res.volumes.totalM3,
+    targetDensity: inp.compositionDensity, gasTight: inp.leak.kind === "intercasing" && inp.leak.annulusPressureMPa > 0,
+  }, res.volumes.squeezeM3), [res, inp.compositionDensity, inp.leak.kind, inp.leak.annulusPressureMPa]);
   const workProgram = useMemo(() => {
     if (!mechRes) return res.workProgram;
     const i = res.workProgram.findIndex((s) => s.title.startsWith("Спуск и установка"));
@@ -248,6 +255,9 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
           </CardContent>
         </Card>
       </div>
+
+      <RirCompositionCard comp={comp} totalM3={res.volumes.totalM3} bhctC={res.temps.bhctC} jobMin={res.timing.jobMin} requiredMin={res.timing.requiredWorkLifeMin}
+        protocol={() => buildRirProtocol(full, res, comp, mechRes, workProgram)} />
 
       {mechRes && <RirTubingCard r={mechRes} m={mech} onChange={(p) => setMech((x) => ({ ...x, ...p }))} />}
 

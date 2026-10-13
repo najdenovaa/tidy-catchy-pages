@@ -308,6 +308,7 @@ export function calculateRir(inp: RirInputs): RirResult {
   const [vMin, vMax] = caps[comp];
   const squeezeM3 = Math.min(vMax, Math.max(vMin, qMax * 0.5)); // ~30 мин задавливания на допустимом давлении
   const reserveM3 = comp === "resin" ? 0.05 : 0.2;
+  if ((comp === "resin" || comp === "resin_micro") && belowToolM3 > 0.2) warnings.push(`Под инструментом ${belowToolM3.toFixed(2)} м³ — для смолы дорого: установите ретейнер ближе к нарушению (5–10 м) или заполните колонну ниже нарушения песчаной/вязкой пачкой.`);
   const totalM3 = belowToolM3 + squeezeM3 + reserveM3;
   const displacementM3 = tubingM3; // до ретейнера; излишки над ним вымываются обратной промывкой
   const reverseOutM3 = tubingM3 * 1.5;

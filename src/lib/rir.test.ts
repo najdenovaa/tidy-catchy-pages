@@ -90,3 +90,42 @@ describe("РИР: НКТ и пакер (Лубинский)", () => {
     expect(r.packerForceKN).toBeGreaterThan(0);
   });
 });
+
+import { designMicrocement, designResin, designRirComposition } from "./rir-compositions";
+
+describe("РИР: составы", () => {
+  const c = { bhctC: 48, bhstC: 58, requiredWorkLifeMin: 183, volumeM3: 1.3, targetDensity: 0 };
+  it("микроцемент: баланс масс и объёмов на 1 м³, загустевание ≥ требуемого", () => {
+    const d = designMicrocement(c);
+    const mass = d.waterLPerM3 + d.components.reduce((t, x) => t + x.kgPerM3, 0);
+    const vol = d.waterLPerM3 / 1000 + d.components.reduce((t, x) => t + x.kgPerM3 / x.sg / 1000, 0);
+    expect(vol).toBeCloseTo(1, 2);
+    expect(mass / 1000).toBeCloseTo(1.55, 2);
+    expect(d.workLifeAtBhctMin).toBeGreaterThanOrEqual(183);
+    expect(d.components.some((x) => x.role === "retarder")).toBe(true);
+  });
+  it("смола: стехиометрия, время жизни ≥ требуемого, вязкость снижена разбавителем", () => {
+    const d = designResin(c);
+    expect(d.workLifeAtBhctMin).toBeGreaterThanOrEqual(183);
+    const res = d.components.find((x) => x.role === "resin")!, hd = d.components.find((x) => x.role === "hardener")!;
+    expect(hd.dose).toBeGreaterThan(10);
+    expect(res.dose).toBe(100);
+    const vol = d.components.reduce((t, x) => t + x.kgPerM3 / x.sg / 1000, 0);
+    expect(vol).toBeCloseTo(1, 3);
+  });
+  it("горячая скважина — ароматический амин / ангидрид, холодная — алифатический", () => {
+    expect(designResin({ ...c, bhctC: 120, bhstC: 140, requiredWorkLifeMin: 150 }).system).toMatch(/ДЭТДА|МТГФА|ангидрид/i);
+    expect(designResin({ ...c, bhctC: 20, bhstC: 25, requiredWorkLifeMin: 60 }).system).toMatch(/ПЭПА|Полиэфирамин|ИФДА/);
+  });
+  it("утяжеление смолы баритом до плотности", () => {
+    const d = designResin({ ...c, targetDensity: 1.4 });
+    expect(d.densityGcm3).toBeCloseTo(1.4, 2);
+    expect(d.components.some((x) => x.role === "weight")).toBe(true);
+  });
+  it("комбинация: смола в «голову» + микроцемент", () => {
+    const r = designRirComposition("resin_micro", c, 0.6)!;
+    expect(r.primary.kind).toBe("resin");
+    expect(r.secondary!.kind).toBe("microcement");
+    expect(r.split!.primaryM3 + r.split!.secondaryM3).toBeCloseTo(1.3, 6);
+  });
+});
