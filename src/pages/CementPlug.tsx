@@ -29,6 +29,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import TermsFooter from "@/components/TermsFooter";
 import PlugRecipeCard from "@/components/PlugRecipeCard";
+import PlugPlanFactBar from "@/components/PlugPlanFactBar";
 import PlugAutoDesignCard from "@/components/PlugAutoDesignCard";
 import type { PlugCandidate } from "@/lib/cement-plug-autodesign";
 import type { PlugPurpose } from "@/lib/cement-plug-types";
@@ -1304,6 +1305,22 @@ export default function CementPlug() {
                       </CardHeader>
                       <CardContent className="pt-0 space-y-2 text-xs">
                         <p className={`font-medium ${bad ? "text-destructive" : warn ? "text-amber-600" : "text-green-600"}`}>{ex.headline}</p>
+                        <div className="flex flex-col sm:flex-row gap-3 items-start">
+                          <PlugPlanFactBar
+                            planTopMD={results.plugTopMD}
+                            planBottomMD={results.plugBottomMD}
+                            topByVolumeMD={results.plugTopByVolumeMD}
+                            fallM={ex.interfaces[0]?.exchangeLengthM ?? 0}
+                            padHeightM={results.useViscousPad ? results.spacerBelowHeightAnnMD : 0}
+                            verdict={label[ex.verdict]}
+                          />
+                          <div className="text-[11px] text-muted-foreground space-y-1 sm:pt-4">
+                            <p><b>План</b> — проектный интервал {results.plugTopMD.toFixed(0)}–{results.plugBottomMD.toFixed(0)} м; штриховка сверху — запас на загрязнение (кровля по объёму).</p>
+                            <p><b>Прогноз</b> — ожидаемое положение цемента после остановки: при обмене жидкостями цемент опускается, выше остаётся зона смешения (штриховка). Глубина — оценка порядка величины.</p>
+                            {results.useViscousPad && <p>Фиолетовым — вязкая пачка под мостом.</p>}
+                            <p>Шкала проседания при поглощении ниже моста — в блоке «Осложнения».</p>
+                          </div>
+                        </div>
                         {ex.interfaces.filter((x) => x.verdict !== "no-buoyancy").length > 0 && (
                           <div className="overflow-x-auto">
                             <table className="w-full text-[11px]">

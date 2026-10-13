@@ -1,4 +1,17 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+
+/** Параметры осложнений сохраняются между перезагрузками и сворачиванием блока. */
+const COMPL_KEY = "cement_plug_complications_v1";
+function readCompl(): Record<string, unknown> {
+  try { return JSON.parse(localStorage.getItem(COMPL_KEY) || "{}"); } catch { return {}; }
+}
+function usePersisted<T>(name: string, initial: T): [T, (v: T) => void] {
+  const [v, setV] = useState<T>(() => { const s = readCompl()[name]; return s === undefined ? initial : (s as T); });
+  useEffect(() => {
+    try { const all = readCompl(); all[name] = v; localStorage.setItem(COMPL_KEY, JSON.stringify(all)); } catch { /* хранилище недоступно */ }
+  }, [name, v]);
+  return [v, setV];
+}
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { BlurInput } from "@/components/BlurInput";
@@ -57,23 +70,23 @@ export default function ComplicationsSection({
   spacerVolumeBelow, thickeningTimeMin, settingTimeStartMin, settingTimeEndMin,
   trajectory = [], bhTempC = 60,
 }: Props) {
-  const [type, setType] = useState<ComplicationType>('loss');
-  const [lossRate, setLossRate] = useState(10);
-  const [zoneDepthMD, setZoneDepthMD] = useState(0);
-  const [zoneDepthTVD, setZoneDepthTVD] = useState(0);
-  const [zoneThickness, setZoneThickness] = useState(10);
-  const [formationPressure, setFormationPressure] = useState(0);
-  const [fluidType, setFluidType] = useState<'gas' | 'oil' | 'water'>('water');
-  const [lossBehavior, setLossBehavior] = useState<LossBehavior>('stable');
+  const [type, setType] = usePersisted<ComplicationType>('type', 'loss');
+  const [lossRate, setLossRate] = usePersisted('lossRate', 10);
+  const [zoneDepthMD, setZoneDepthMD] = usePersisted('zoneDepthMD', 0);
+  const [zoneDepthTVD, setZoneDepthTVD] = usePersisted('zoneDepthTVD', 0);
+  const [zoneThickness, setZoneThickness] = usePersisted('zoneThickness', 10);
+  const [formationPressure, setFormationPressure] = usePersisted('formationPressure', 0);
+  const [fluidType, setFluidType] = usePersisted<'gas' | 'oil' | 'water'>('fluidType', 'water');
+  const [lossBehavior, setLossBehavior] = usePersisted<LossBehavior>('lossBehavior', 'stable');
   // Master-prompt: расширенные параметры физики проседания
-  const [zoneType, setZoneType] = useState<LossZoneType>('fracture');
-  const [zonePorosity, setZonePorosity] = useState(0.15);
-  const [drainageRadius, setDrainageRadius] = useState(15);
-  const [thick30Bc, setThick30Bc] = useState(0);
-  const [frictionCoeff, setFrictionCoeff] = useState(0.3);
-  const [lcmFactor, setLcmFactor] = useState(1);
-  const [bhTempInput, setBhTempInput] = useState(bhTempC);
-  const [userBcAtStop, setUserBcAtStop] = useState(0); // 0 = авто из кривой загустевания
+  const [zoneType, setZoneType] = usePersisted<LossZoneType>('zoneType', 'fracture');
+  const [zonePorosity, setZonePorosity] = usePersisted('zonePorosity', 0.15);
+  const [drainageRadius, setDrainageRadius] = usePersisted('drainageRadius', 15);
+  const [thick30Bc, setThick30Bc] = usePersisted('thick30Bc', 0);
+  const [frictionCoeff, setFrictionCoeff] = usePersisted('frictionCoeff', 0.3);
+  const [lcmFactor, setLcmFactor] = usePersisted('lcmFactor', 1);
+  const [bhTempInput, setBhTempInput] = usePersisted('bhTempInput', bhTempC);
+  const [userBcAtStop, setUserBcAtStop] = usePersisted('userBcAtStop', 0); // 0 = авто из кривой загустевания
 
   const toFluidProps = (f: FluidData) => ({
     densityGcm3: f.density,
