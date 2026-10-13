@@ -160,7 +160,8 @@ export function simulateSqueeze(inp: RirInputs, res: RirResult, design: Composit
       if (kind === "comp" && compAge < 0) compAge = t;
       t += dt;
       const Ps = friction(q) + Math.max(0, spot ? rhoW * 9.81 * tvdLeak - hydro() : rhoW * 9.81 * tvdTool - hydroTub());
-      record(name, q, hydro(), Ps);
+      // при циркуляции нарушение под давлением затрубья, ограничение — только по НКТ / устью
+      record(name, q, hydro(), Ps, Number.isFinite(surfCap) ? Math.max(surfCap, Ps) : Math.max(Ps, allowSurf(hydro(), friction(q))));
     }
     stagesOut.push({ name, t0, t1: t, kind: "pump" });
   };
@@ -171,6 +172,13 @@ export function simulateSqueeze(inp: RirInputs, res: RirResult, design: Composit
   circ("Состав", "comp", compInPhaseA);
   if (compV <= pathV) circ(spot ? "Доводка состава до нарушения" : "Продавка до инструмента", "disp", Math.max(0, pathV - compV));
   if (spot) { stagesOut.push({ name: "Посадка пакера", t0: t, t1: t + 5, kind: "hold" }); t += 5; record("Посадка пакера", 0, hydro(), 0); }
+
+  // ── Окно давлений закрыто: допустимое на забое не выше давления начала приёмистости ──
+  if (P0 >= bhpCap - 1e3) {
+    const txt = `Окно давлений закрыто: допустимое давление на глубине нарушения ${(bhpCap / 1e6).toFixed(1)} МПа не выше давления начала приёмистости ${(P0 / 1e6).toFixed(1)} МПа — задавить состав без превышения ограничений нельзя. Снизьте плотность состава / жидкости в НКТ, примените противодавление над пакером или переустановите инструмент; при межколонном перетоке — рассмотрите закачку через межколонное пространство.`;
+    warnings.push("Состав остался в НКТ — после закачки сразу обратная промывка.");
+    return { points, stages: stagesOut, holds: [], outcome: "no_squeeze", outcomeText: txt, finalSurfaceMPa: points[points.length - 1]?.surfaceMPa ?? 0, compInChannelM3: 0, totalTimeMin: t, workLifeUsedPct: compAge >= 0 ? ((t - compAge) / Math.max(1, workLife)) * 100 : 0, warnings };
+  }
 
   // ── Фаза Б: стыковка и задавливание (под инструментом жидкость → канал, затем состав) ──
   let Pbh = Math.max(hydro(), P0);

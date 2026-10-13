@@ -1,3 +1,4 @@
+import { inductionHours } from "./cement-plug-types";
 /**
  * Cement plug complications module.
  * Calculates real plug length under lost circulation or kick conditions.
@@ -1104,12 +1105,12 @@ export function analyzeVolumeEffect(
 // ───── БЛОК 7: СЕРИЯ МОСТОВ + ОЗЦ ─────
 export function compressiveStrength(hours: number, bhTempC: number, ucsMax = 24, kRef = 0.045, alpha = 0.03): number {
   const k = kRef * Math.exp(alpha * (bhTempC - 20));
-  return ucsMax * (1 - Math.exp(-k * Math.max(hours, 0)));
+  return ucsMax * (1 - Math.exp(-k * Math.max(hours - inductionHours(bhTempC), 0)));
 }
 export function waitOnCementTime(targetUCS: number, bhTempC: number, ucsMax = 24, kRef = 0.045, alpha = 0.03): number {
   const k = kRef * Math.exp(alpha * (bhTempC - 20));
   const ratio = Math.min(0.99, Math.max(0.01, targetUCS / ucsMax));
-  return -Math.log(1 - ratio) / Math.max(k, 1e-6);
+  return inductionHours(bhTempC) - Math.log(1 - ratio) / Math.max(k, 1e-6);
 }
 
 export interface PlugDesign {

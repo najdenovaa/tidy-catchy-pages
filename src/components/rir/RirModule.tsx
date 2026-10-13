@@ -295,7 +295,7 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
 
       <RirSqueezeSimCard sim={sim} hasTool={inp.tool.kind !== "bradenhead"} spot={inp.tool.kind === "packer"} toolLabel={inp.tool.kind === "retainer" ? "ретейнер" : "пакер"} holdMin={inp.hesitationHoldMin} />
 
-      {mechRes && <RirTubingCard r={mechRes} m={mechEff} onChange={(p) => setMech((x) => ({ ...x, ...p }))} />}
+      {mechRes && <RirTubingCard modeLocked={inp.tool.kind === "packer"} r={mechRes} m={mechEff} onChange={(p) => setMech((x) => ({ ...x, ...p }))} />}
 
       <Card>
         <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm flex items-center gap-2 flex-wrap"><ListChecks className="w-4 h-4" />Ход работ <Badge variant="outline" className="text-[10px]">формируется по расчёту</Badge>

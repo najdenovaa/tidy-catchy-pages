@@ -33,19 +33,19 @@ export default function WOCSimulator() {
           </Link>
           <div className="flex items-center gap-3 text-xs">
             <Link to="/cementing" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-              <ArrowLeft className="w-4 h-4" /> Назад
+              <ArrowLeft className="w-4 h-4" /> <span className="hidden sm:inline">Назад</span>
             </Link>
             <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-              <Home className="w-4 h-4" /> Главная
+              <Home className="w-4 h-4" /> <span className="hidden sm:inline">Главная</span>
             </Link>
             <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-              <LayoutDashboard className="w-4 h-4" /> Кабинет
+              <LayoutDashboard className="w-4 h-4" /> <span className="hidden sm:inline">Кабинет</span>
             </Link>
             <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
-              <Send className="w-4 h-4" /> Поддержка
+              <Send className="w-4 h-4" /> <span className="hidden sm:inline">Поддержка</span>
             </a>
             <button onClick={handleLogout} className="flex items-center gap-1.5 text-muted-foreground hover:text-destructive">
-              <LogOut className="w-4 h-4" /> Выйти
+              <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Выйти</span>
             </button>
           </div>
         </div>

@@ -107,7 +107,7 @@ function StingerPicture({ r, m }: { r: TubingMechResult; m: TubingMechInputs }) 
   );
 }
 
-export default function RirTubingCard({ r, m, onChange }: { r: TubingMechResult; m: TubingMechInputs; onChange: (p: Partial<TubingMechInputs>) => void }) {
+export default function RirTubingCard({ r, m, onChange, modeLocked }: { r: TubingMechResult; m: TubingMechInputs; onChange: (p: Partial<TubingMechInputs>) => void; modeLocked?: boolean }) {
   return (
     <Card className={r.verdict === "bad" ? "border-2 border-destructive/60" : r.verdict === "warn" ? "border-2 border-amber-500/50" : ""} data-testid="rir-tubing">
       <CardHeader className="py-2.5 px-4">
@@ -122,7 +122,7 @@ export default function RirTubingCard({ r, m, onChange }: { r: TubingMechResult;
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           <label className="flex flex-col gap-0.5 text-[11px] col-span-2">
             <span className="text-muted-foreground">Крепление НКТ</span>
-            <select value={m.mode} onChange={(e) => onChange({ mode: e.target.value as PackerMode })} className="h-8 rounded border border-border bg-background px-2 text-xs">
+            <select value={m.mode} disabled={modeLocked} title={modeLocked ? "Извлекаемый пакер: НКТ закреплены на пакере" : undefined} onChange={(e) => onChange({ mode: e.target.value as PackerMode })} className="h-8 rounded border border-border bg-background px-2 text-xs disabled:opacity-70">
               {Object.entries(PACKER_MODE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </label>

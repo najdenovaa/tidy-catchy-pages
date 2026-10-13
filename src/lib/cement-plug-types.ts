@@ -50,6 +50,14 @@ const CEMENT_KINETICS: Record<CementClass, CementKinetics> = {
   PCT_II_50:  { ucsMaxMPa: 18, kRef: 0.060, alpha: 0.025 },
 };
 
+/**
+ * Индукционный период (до начала схватывания), ч: прочность не набирается, пока раствор жидкий.
+ * Типично для класса G без добавок: ~12 ч при 20 °C, ~4 ч при 60 °C, ~2 ч при 90 °C.
+ */
+export function inductionHours(temperatureC: number): number {
+  return Math.max(1.5, 12 * Math.exp(-0.028 * (temperatureC - 20)));
+}
+
 /** Прочность на одноосное сжатие, МПа, в момент времени t (час). */
 export function compressiveStrengthVsTime(
   cls: CementClass,
@@ -58,7 +66,7 @@ export function compressiveStrengthVsTime(
 ): number {
   const p = CEMENT_KINETICS[cls];
   const k = p.kRef * Math.exp(p.alpha * (temperatureC - 20));
-  return p.ucsMaxMPa * (1 - Math.exp(-k * Math.max(0, hours)));
+  return p.ucsMaxMPa * (1 - Math.exp(-k * Math.max(0, hours - inductionHours(temperatureC))));
 }
 
 /** Время (час) до достижения требуемой прочности. */
@@ -70,7 +78,7 @@ export function waitOnCementTime(
   const p = CEMENT_KINETICS[cls];
   if (requiredStrengthMPa >= p.ucsMaxMPa) return Infinity;
   const k = p.kRef * Math.exp(p.alpha * (temperatureC - 20));
-  return -Math.log(1 - requiredStrengthMPa / p.ucsMaxMPa) / k;
+  return inductionHours(temperatureC) - Math.log(1 - requiredStrengthMPa / p.ucsMaxMPa) / k;
 }
 
 /** Полная кривая UCS(t) для графика. */

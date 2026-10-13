@@ -747,7 +747,7 @@ export default function CementPlug() {
             <div className="mt-0.5 sm:ml-10 text-center sm:text-left">
               <h1 className="text-sm sm:text-lg font-medium text-muted-foreground leading-tight">Цементные мосты</h1>
               <p className="text-xs text-muted-foreground/70">
-                {isCasingMode ? "Установка мостов в колонне (КРС)" : "Установка мостов на равновесие"}
+                {placementMode === "rir" ? "Ремонтно-изоляционные работы (РИР)" : isCasingMode ? "Установка мостов в колонне (КРС)" : "Установка мостов на равновесие"}
               </p>
             </div>
           </div>
@@ -755,16 +755,16 @@ export default function CementPlug() {
             {loadingSavedCalc && <p className="text-xs text-muted-foreground">Загрузка сохранённого расчёта...</p>}
             <div className="flex items-center gap-3">
               <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
-                <Home className="w-4 h-4" /> <span>Главная</span>
+                <Home className="w-4 h-4" /> <span className="hidden sm:inline">Главная</span>
               </Link>
               <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
-                <LayoutDashboard className="w-4 h-4" /> <span>Кабинет</span>
+                <LayoutDashboard className="w-4 h-4" /> <span className="hidden sm:inline">Кабинет</span>
               </Link>
               <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
-                <Send className="w-4 h-4" /> <span>Поддержка</span>
+                <Send className="w-4 h-4" /> <span className="hidden sm:inline">Поддержка</span>
               </a>
               <button onClick={handleLogout} className="flex items-center gap-1.5 text-muted-foreground hover:text-destructive transition-colors text-xs">
-                <LogOut className="w-4 h-4" /> <span>Выйти</span>
+                <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Выйти</span>
               </button>
             </div>
             <div className="flex items-center gap-1.5 sm:gap-3 flex-1 sm:flex-none justify-end flex-wrap">

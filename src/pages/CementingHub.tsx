@@ -41,19 +41,19 @@ export default function CementingHub() {
           </Link>
           <div className="flex items-center gap-3">
             <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
-              <ArrowLeft className="w-4 h-4" /> <span>Назад</span>
+              <ArrowLeft className="w-4 h-4" /> <span className="hidden sm:inline">Назад</span>
             </Link>
             <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
-              <Home className="w-4 h-4" /> <span>Главная</span>
+              <Home className="w-4 h-4" /> <span className="hidden sm:inline">Главная</span>
             </Link>
             <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
-              <LayoutDashboard className="w-4 h-4" /> <span>Кабинет</span>
+              <LayoutDashboard className="w-4 h-4" /> <span className="hidden sm:inline">Кабинет</span>
             </Link>
             <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
-              <Send className="w-4 h-4" /> <span>Поддержка</span>
+              <Send className="w-4 h-4" /> <span className="hidden sm:inline">Поддержка</span>
             </a>
             <button onClick={handleLogout} className="flex items-center gap-1.5 text-muted-foreground hover:text-destructive transition-colors text-xs">
-              <LogOut className="w-4 h-4" /> <span>Выйти</span>
+              <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Выйти</span>
             </button>
           </div>
         </div>

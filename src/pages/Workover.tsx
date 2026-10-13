@@ -479,10 +479,10 @@ export default function Workover() {
               <Save className="w-3.5 h-3.5" /> <span className="hidden sm:inline">В кабинет</span>
             </Button>
             <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground text-xs">
-              <ArrowLeft className="w-4 h-4" /> <span>Назад</span>
+              <ArrowLeft className="w-4 h-4" /> <span className="hidden sm:inline">Назад</span>
             </Link>
             <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground text-xs">
-              <Home className="w-4 h-4" /> <span>Главная</span>
+              <Home className="w-4 h-4" /> <span className="hidden sm:inline">Главная</span>
             </Link>
           </div>
         </div>

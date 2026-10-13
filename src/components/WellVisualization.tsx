@@ -426,7 +426,15 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
 }
 
 // ====== 2D Longitudinal Cross-Section (side view) ======
-function CrossSection({ wellData, slurries, buffers, drillingFluid }: Omit<Props, "displacementFluids">) {
+function CrossSection(props: Omit<Props, "displacementFluids">) {
+  const { wellData } = props;
+  if (!(wellData.casingDepthMD > 0) || !(wellData.holeDiameter > 0) || !(wellData.casingOD > 0)) {
+    return <p className="py-10 text-center text-sm text-muted-foreground">Введите глубину спуска колонны, диаметры скважины и колонны — схема построится автоматически.</p>;
+  }
+  return <CrossSectionInner {...props} />;
+}
+
+function CrossSectionInner({ wellData, slurries, buffers, drillingFluid }: Omit<Props, "displacementFluids">) {
   const w = 420, h = 700;
   const marginLeft = 60, marginRight = 140, marginTop = 30, marginBottom = 35;
   const plotW = w - marginLeft - marginRight;
