@@ -19,7 +19,9 @@ import CementPlugVisualization from "@/components/CementPlugVisualization";
 import CementPlugPressureChart from "@/components/CementPlugPressureChart";
 import CementPlugAnimation from "@/components/CementPlugAnimation";
 import { PLUG_SUPPORT_LABEL, type PlugSupport } from "@/lib/cement-plug-exchange";
-import { plugTemperatures } from "@/lib/cement-plug-calculations";
+import { plugTemperatures, PLUG_MODEL_VERSION } from "@/lib/cement-plug-calculations";
+import { DEFAULT_FIELD_VELOCITY_FACTOR } from "@/lib/cement-plug-exchange";
+import SafeBoundary from "@/components/SafeBoundary";
 import { calculateBalancedPlug, type PlugInputs, type PlugWellData, type PlugFluid, type PlugInterval, type PlugResults, type WashType, type PipeSection } from "@/lib/cement-plug-calculations";
 import { calculateTVDFromSurvey, type TrajectoryPoint } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
@@ -158,7 +160,7 @@ export default function CementPlug() {
   const [trajPoints, setTrajPoints] = useState<TrajectoryPoint[]>(saved.trajPoints || well.trajectory);
   const [results, setResults] = useState<PlugResults | null>(() => {
     const r = saved.lastResults;
-    return r && r.pumpTimeCementMin !== undefined ? r : null;
+    return r && r.pumpTimeCementMin !== undefined && r.modelVersion === PLUG_MODEL_VERSION ? r : null;
   });
   const [wcRatio, setWcRatio] = useState(saved.wcRatio ?? 0.44);
   const [slurryYield, setSlurryYield] = useState(saved.slurryYield ?? 0.63);
@@ -1300,7 +1302,7 @@ export default function CementPlug() {
 
             {/* Results */}
             {results && (
-              <>
+              <SafeBoundary onReset={() => setResults(null)}>
                 {/* ── Устойчивость против обмена жидкостями ── */}
                 {results.exchange && (() => {
                   const ex = results.exchange;
@@ -1342,7 +1344,7 @@ export default function CementPlug() {
                                   <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} inputMode="decimal" placeholder="глубина, м" className="h-7 w-28 rounded border border-border bg-background px-2 text-right" />
                                   <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={!(Number.isFinite(tagMD) && tagMD > 0)}
                                     onClick={() => {
-                                      const raw = (ex.interfaces[0]?.exchangeLengthM ?? 0) / Math.max(1e-6, ex.velocityFactor);
+                                      const raw = (ex.interfaces[0]?.exchangeLengthM ?? 0) / Math.max(1e-6, ex.velocityFactor ?? DEFAULT_FIELD_VELOCITY_FACTOR);
                                       setCalibCases((c) => [...c, { date: new Date().toLocaleDateString("ru-RU"), planTopMD: topRef, tagMD, rawFallM: raw }]);
                                       setTagInput("");
                                       setRecalcTick((t) => t + 1);
@@ -1350,7 +1352,7 @@ export default function CementPlug() {
                                 </div>
                                 <p className="text-muted-foreground">
                                   {Number.isFinite(tagMD) && tagMD > 0 ? `Факт: кровля ${tagMD >= topRef ? "ниже" : "выше"} расчётной на ${Math.abs(tagMD - topRef).toFixed(1)} м. ` : ""}
-                                  Множитель скорости обмена: {ex.velocityFactor.toFixed(3)} {calibCases.length ? `(по ${calibCases.length} отбивк${calibCases.length === 1 ? "е" : "ам"})` : "(по умолчанию, без отбивок)"}.
+                                  Множитель скорости обмена: {(ex.velocityFactor ?? DEFAULT_FIELD_VELOCITY_FACTOR).toFixed(3)} {calibCases.length ? `(по ${calibCases.length} отбивк${calibCases.length === 1 ? "е" : "ам"})` : "(по умолчанию, без отбивок)"}.
                                   {calibCases.length > 0 && <button className="ml-2 underline" onClick={() => { setCalibCases([]); setRecalcTick((t) => t + 1); }}>сбросить</button>}
                                 </p>
                               </div>
@@ -1727,7 +1729,7 @@ export default function CementPlug() {
                     </div>
                   </CardContent>
                 </Card>
-              </>
+              </SafeBoundary>
             )}
           </div>
 

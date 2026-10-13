@@ -178,7 +178,11 @@ export interface PumpingStage {
   description: string;
 }
 
+/** Версия модели результатов: сохранённые результаты другой версии не показываются (пересчёт). */
+export const PLUG_MODEL_VERSION = 6;
+
 export interface PlugResults {
+  modelVersion?: number;
   annArea: number;
   pipeArea: number;
   plugLengthMD: number;
@@ -856,6 +860,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
   }
 
   return {
+    modelVersion: PLUG_MODEL_VERSION,
     annArea: annA,
     pipeArea: pipeA,
     plugLengthMD: plugLenMD,
