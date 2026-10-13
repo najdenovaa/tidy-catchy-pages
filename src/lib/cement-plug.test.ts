@@ -196,3 +196,29 @@ describe("Цементный мост: температура и рецепту�
     expect(p.sections.find((s) => s.id === "recipe-0")!.tables![0].rows.length).toBeGreaterThan(3);
   });
 });
+
+import { autoDesignPlug } from "./cement-plug-autodesign";
+
+describe("Цементный мост: автоподбор", () => {
+  it("мост на растворе в открытом стволе: выбирается опора, вариант допустим по всем проверкам", () => {
+    const inp = base({ well: { ...base().well, bottomTempStatic: 90, surfaceTemp: 5 } });
+    const a = autoDesignPlug(inp, "abandonment", 24, 0.018);
+    expect(a.best).not.toBeNull();
+    expect(a.best!.support).not.toBe("none");
+    expect(a.best!.lengthM).toBeGreaterThanOrEqual(50);
+    const r = calculateBalancedPlug(a.best!.inputs);
+    expect(["supported", "no-buoyancy", "guaranteed", "stable"]).toContain(r.exchange.verdict);
+    expect(a.best!.maxBhpMPa!).toBeLessThan(a.best!.fracMPa);
+    expect(a.notes.some((n) => n.startsWith("Без опоры"))).toBe(true);
+  });
+  it("мост в узкой колонне: хватает пачки, механическая опора не нужна", () => {
+    const inp = base({ well: { ...base().well, casingShoe: 3000, casingID: 100.5, pipeOD: 60.3, pipeID: 50.3, holeDiameter: 100.5, cavernCoeff: 1, bottomTempStatic: 80 } });
+    const a = autoDesignPlug(inp, "zonal_isolation", 24, 0.02);
+    expect(a.best).not.toBeNull();
+    expect(a.best!.support).not.toBe("mechanical");
+  });
+  it("подошва у забоя — опора на забой", () => {
+    const inp = base({ plug: { topMD: 2940, bottomMD: 3000 }, well: { ...base().well, bottomTempStatic: 90 } });
+    expect(autoDesignPlug(inp, "abandonment", 24, 0.018).best?.support).toBe("bottom");
+  });
+});

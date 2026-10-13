@@ -14,6 +14,8 @@ interface Props {
   inputs: PlugInputs;
   results: PlugResults;
   wocHours: number;
+  purpose: PlugPurpose;
+  onPurposeChange: (p: PlugPurpose) => void;
   onApply: (d: SlurryDesign) => void;
 }
 
@@ -29,8 +31,7 @@ const FIELDS: { key: NumKey; label: string; unit: string; dec: number }[] = [
 ];
 
 /** Подбор рецептуры для моста под требования технолога + расчётный протокол. */
-export default function PlugRecipeCard({ inputs, results, wocHours, onApply }: Props) {
-  const [purpose, setPurpose] = useState<PlugPurpose>("abandonment");
+export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onPurposeChange: setPurpose, onApply }: Props) {
   const [user, setUser] = useState<LabTargets>({});
   const [msg, setMsg] = useState<string | null>(null);
   const res = useMemo(() => designPlugSlurry(inputs, results, purpose, wocHours, user), [inputs, results, purpose, wocHours, user]);

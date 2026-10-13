@@ -29,6 +29,9 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import TermsFooter from "@/components/TermsFooter";
 import PlugRecipeCard from "@/components/PlugRecipeCard";
+import PlugAutoDesignCard from "@/components/PlugAutoDesignCard";
+import type { PlugCandidate } from "@/lib/cement-plug-autodesign";
+import type { PlugPurpose } from "@/lib/cement-plug-types";
 import type { SlurryDesign } from "@/lib/cement-recipe-designer";
 import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
 import CementPlugTypesCard from "@/components/CementPlugTypesCard";
@@ -92,6 +95,7 @@ interface SessionState {
   underDisplacement?: number;
   excessPct?: number;
   plugSupport?: PlugSupport | "auto";
+  plugPurpose?: PlugPurpose;
 }
 
 function loadSession(): Partial<SessionState> {
@@ -173,14 +177,16 @@ export default function CementPlug() {
   const [underDisplacement, setUnderDisplacement] = useState<number>(saved.underDisplacement ?? 0.2);
   const [excessPct, setExcessPct] = useState<number>(saved.excessPct ?? 10);
   const [plugSupport, setPlugSupport] = useState<PlugSupport | "auto">(saved.plugSupport ?? "auto");
+  const [plugPurpose, setPlugPurpose] = useState<PlugPurpose>(saved.plugPurpose ?? "abandonment");
+  const [recalcTick, setRecalcTick] = useState(0);
 
   /* ── Session save ── */
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct, plugSupport });
+      saveSession({ well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, lastResults: results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct, plugSupport, plugPurpose });
     }, 500);
     return () => clearTimeout(timer);
-  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct, plugSupport]);
+  }, [well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, results, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, padPullUpAbove, placementMode, underDisplacement, excessPct, plugSupport, plugPurpose]);
 
   /* ── Температуры моста (BHCT) ── */
   const temps = useMemo(() => plugTemperatures({ ...well, trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory }, plug), [well, trajPoints, plug]);
@@ -349,6 +355,19 @@ export default function CementPlug() {
     setWcRatio(Math.round(d.waterToBlend * 1000) / 1000);
     setSlurryYield(Math.round(d.yieldM3PerT * 1000) / 1000);
   };
+
+  const applyCandidate = (c: PlugCandidate) => {
+    setPlug({ topMD: c.inputs.plug.topMD, bottomMD: c.inputs.plug.bottomMD });
+    setCement((x) => ({ ...x, density: c.densityGcm3 }));
+    setUseViscousPad(!!c.inputs.useViscousPad);
+    if (c.inputs.useViscousPad && c.inputs.viscousPadFluid) setViscousPadFluid(c.inputs.viscousPadFluid);
+    setSpacerVolumeBelow(c.inputs.spacerVolumeBelowM3);
+    setPlugSupport(c.support === "mechanical" ? "mechanical" : c.support === "bottom" ? "bottom" : "fluid");
+    setUnderDisplacement(c.underDisplacementM3);
+    setExcessPct(c.excessPct);
+    setRecalcTick((t) => t + 1);
+  };
+  useEffect(() => { if (recalcTick > 0) calculate(); }, [recalcTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const calculate = () => {
     const inputs = buildInputs();
@@ -1332,7 +1351,10 @@ export default function CementPlug() {
 
                 {/* ── Рецептура раствора для моста ── */}
                 {results.temperatures && (
-                  <PlugRecipeCard inputs={inputsAtCalc} results={results} wocHours={wocTimeHours} onApply={applyPlugDesign} />
+                  <PlugRecipeCard inputs={inputsAtCalc} results={results} wocHours={wocTimeHours} purpose={plugPurpose} onPurposeChange={setPlugPurpose} onApply={applyPlugDesign} />
+                )}
+                {results.temperatures && (
+                  <PlugAutoDesignCard inputs={inputsAtCalc} purpose={plugPurpose} wocHours={wocTimeHours} fracGradient={fracGradient} onApply={applyCandidate} />
                 )}
 
                 {/* ── Stability analysis card ── */}
