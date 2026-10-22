@@ -43,8 +43,10 @@ export interface D2Fluid {
 export interface D2Stage {
   fluid: number;
   volumeM3: number;
-  /** Расход, м³/с */
+  /** Расход, м³/с (0 — выдержка длительностью holdS) */
   rateM3s: number;
+  /** Длительность выдержки без закачки, с (для rateM3s = 0) */
+  holdS?: number;
 }
 
 export interface D2Geometry {
@@ -76,6 +78,23 @@ export interface D2Input {
   /** Выдержка после продавки, мин (0 — не считать) */
   settleMin?: number;
   onProgress?: (frac: number) => void;
+  // ── Режим «лист» (канал за колонной, РИР): произвольная геометрия, источник, выходы ──
+  /** Раскрытие (гидравлический зазор), м, по глубине и углу (θ: 0 — верх ствола) */
+  customGap?: (md: number, theta: number) => number;
+  /** Ёмкостная толщина (объём на единицу площади), м; по умолчанию = раскрытие */
+  storageGap?: (md: number, theta: number) => number;
+  /** Длина окружности листа, м (для customGap) */
+  arcLength?: number;
+  /** Считать всю окружность без вращения */
+  fullCircle?: boolean;
+  /** Источник вместо притока снизу: интервал глубин и сектор углов (рад, может переходить через 0) */
+  source?: { mdTop: number; mdBot: number; thetaFrom: number; thetaTo: number };
+  /** Выходы с заданным давлением: верх (по умолчанию) и/или низ */
+  outlets?: { top: boolean; bottom: boolean };
+  /** Изменение свойств во времени: множители вязкости и ДНС по времени с первого входа жидкости, с */
+  fluidTime?: (fluid: number, tSinceIn: number) => { mu: number; ty: number };
+  /** Кольматация: подвижность ячейки exp(−k·S), S — прошедший через ячейку объём жидкости fluid / объём ячейки */
+  plugging?: { fluid: number; k: number };
 }
 
 export interface D2Snapshot {
@@ -218,11 +237,13 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
   const warnings: string[] = [];
   const rpm = Math.max(0, inp.rotationRpm ?? 0);
-  const full = rpm > 0;
+  const sheet = !!inp.customGap;
+  const full = rpm > 0 || !!inp.fullCircle;
   const nHalf = Math.max(6, Math.round(inp.nTheta ?? 16));
   const nT = full ? 2 * nHalf : nHalf;
   const span = full ? 2 * Math.PI : Math.PI;
   const share = full ? 1 : 0.5; // доля окружности в расчёте
+  const outTop = inp.outlets ? inp.outlets.top : true, outBot = inp.outlets ? inp.outlets.bottom : false;
   const L = Math.max(10, inp.zBot - inp.zTop);
   const nZ = Math.max(20, Math.round(inp.nZ ?? Math.min(240, Math.max(60, L / 5))));
   const dz = L / nZ;
@@ -246,25 +267,27 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
     const rO = Math.max(g.rHole, g.rCasing + 0.003), rI = g.rCasing;
     const Hm = rO - rI, e = Math.min(0.95, Math.max(0, 1 - g.standoff));
     sOff[j] = 1 - e; incl[j] = g.inclDeg;
-    ds[j] = (((rO + rI) / 2) * span) / nT;
+    ds[j] = sheet ? ((inp.arcLength ?? 2 * Math.PI * rI) * (span / (2 * Math.PI))) / nT : (((rO + rI) / 2) * span) / nT;
     Uw[j] = omega * rI;
     const b = (g.inclDeg * Math.PI) / 180;
     cosB[j] = Math.cos(b); sinB[j] = Math.sin(b);
     for (let i = 0; i < nT; i++) {
       const k = j * nT + i;
-      h[k] = Hm * (1 + e * Math.cos(thC[i]));
-      V[k] = h[k] * ds[j] * dz;
+      h[k] = sheet ? Math.max(1e-7, inp.customGap!(md, thC[i])) : Hm * (1 + e * Math.cos(thC[i]));
+      V[k] = (sheet && inp.storageGap ? Math.max(1e-7, inp.storageGap(md, thC[i])) : h[k]) * ds[j] * dz;
     }
   }
 
   // ── Доли жидкостей ──
   const c: Float64Array[] = Array.from({ length: nF }, (_, f) => { const a = new Float64Array(N); if (f === 0) a.fill(1); return a; });
   const rho = new Float64Array(N), mu = new Float64Array(N), ty = new Float64Array(N);
-  const gelMul = new Float64Array(nF).fill(1);
+  const gelMul = new Float64Array(nF).fill(1), muMul = new Float64Array(nF).fill(1), tyMul = new Float64Array(nF).fill(1);
+  const firstIn = new Float64Array(nF).fill(-1);
+  const mob = new Float64Array(N).fill(1), S = new Float64Array(N);
   const mixProps = () => {
     for (let k = 0; k < N; k++) {
       let r = 0, m = 0, y = 0;
-      for (let f = 0; f < nF; f++) { const w = c[f][k]; if (w <= 0) continue; const fl = inp.fluids[f]; r += w * fl.density; m += w * Math.log(Math.max(1e-4, fl.pv)); y += w * fl.yp * gelMul[f]; }
+      for (let f = 0; f < nF; f++) { const w = c[f][k]; if (w <= 0) continue; const fl = inp.fluids[f]; r += w * fl.density; m += w * Math.log(Math.max(1e-4, fl.pv * muMul[f])); y += w * fl.yp * gelMul[f] * tyMul[f]; }
       rho[k] = r; mu[k] = Math.exp(m); ty[k] = y;
     }
   };
@@ -277,7 +300,18 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const Ttop = new Float64Array(nT), Btop = new Float64Array(nT);
   const p = new Float64Array(N), gAbs = new Float64Array(N);
   const Ft = new Float64Array(nFT), Fz = new Float64Array(nFZ), Ftop = new Float64Array(nT);
-  const Qin = new Float64Array(nT);
+  const Qin = new Float64Array(N);
+  const Tbot = new Float64Array(nT), Bbot = new Float64Array(nT), Fbot = new Float64Array(nT);
+  // давление на нижнем выходе — гидростатика исходной жидкости
+  let pBot = 0; for (let j = 0; j < nZ; j++) pBot += inp.fluids[0].density * G * cosB[j] * dz;
+  // ячейки источника
+  const srcCells: number[] = [];
+  if (inp.source) {
+    const sc = inp.source;
+    const inSector = (th: number) => { const a = ((th - sc.thetaFrom) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI); const w = ((sc.thetaTo - sc.thetaFrom) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) || 2 * Math.PI; return a <= w; };
+    for (let j = 0; j < nZ; j++) if (zC[j] + dz / 2 >= sc.mdTop && zC[j] - dz / 2 <= sc.mdBot) for (let i = 0; i < nT; i++) if (inSector(thC[i])) srcCells.push(j * nT + i);
+    if (!srcCells.length) { const j = Math.min(nZ - 1, Math.max(0, Math.floor((sc.mdTop - inp.zTop) / dz))); srcCells.push(j * nT); }
+  } else for (let i = 0; i < nT; i++) srcCells.push((nZ - 1) * nT + i);
   const diag = new Float64Array(N), rhs = new Float64Array(N);
   const r = new Float64Array(N), zv = new Float64Array(N), d = new Float64Array(N), Ad = new Float64Array(N);
   const ta = new Float64Array(nT), tb = new Float64Array(nT), tc = new Float64Array(nT), tr = new Float64Array(nT), tx = new Float64Array(nT);
@@ -293,7 +327,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
       for (let i = 0; i < nTF; i++) {
         const k = j * nT + i, k2 = j * nT + nb(i), fi = j * nTF + i;
         const hf = faceGap(k, k2), muf = Math.sqrt(mu[k] * mu[k2]), tyf = 0.5 * (ty[k] + ty[k2]), gf = 0.5 * (gAbs[k] + gAbs[k2]);
-        const C = buckingham(hf, muf, tyf, gf, EPS, Uj);
+        const C = buckingham(hf, muf, tyf, gf, EPS, Uj) * Math.sqrt(mob[k] * mob[k2]);
         const T = (C * dz) / ds[j];
         const thF = ((i + 1) * span) / nT;
         Tt[fi] = T;
@@ -305,20 +339,29 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
       for (let i = 0; i < nT; i++) {
         const k = j * nT + i, k2 = k + nT, fi = k;
         const hf = faceGap(k, k2), muf = Math.sqrt(mu[k] * mu[k2]), tyf = 0.5 * (ty[k] + ty[k2]), gf = 0.5 * (gAbs[k] + gAbs[k2]);
-        const C = buckingham(hf, muf, tyf, gf, EPS, Uj);
+        const C = buckingham(hf, muf, tyf, gf, EPS, Uj) * Math.sqrt(mob[k] * mob[k2]);
         const T = (C * dsf) / dz;
         Tz[fi] = T; Bz[fi] = T * 0.5 * (rho[k] + rho[k2]) * G * cb * dz;
       }
     }
     for (let i = 0; i < nT; i++) {
-      const C = buckingham(h[i], mu[i], ty[i], gAbs[i], EPS, Uw[0] * U);
+      if (!outTop) { Ttop[i] = 0; Btop[i] = 0; continue; }
+      const C = buckingham(h[i], mu[i], ty[i], gAbs[i], EPS, Uw[0] * U) * mob[i];
       const T = (C * ds[0]) / (dz / 2);
       Ttop[i] = T; Btop[i] = T * rho[i] * G * -cosB[0] * (dz / 2);
     }
-    let sumC = 0;
     const jb = nZ - 1;
-    for (let i = 0; i < nT; i++) { const k = jb * nT + i; Qin[i] = buckingham(h[k], mu[k], ty[k], gAbs[k] || 1e3, EPS, Uw[jb] * U) * ds[jb]; sumC += Qin[i]; }
-    for (let i = 0; i < nT; i++) Qin[i] = sumC > 0 ? (Qtot * Qin[i]) / sumC : Qtot / nT;
+    for (let i = 0; i < nT; i++) {
+      const k = jb * nT + i;
+      if (!outBot) { Tbot[i] = 0; Bbot[i] = 0; continue; }
+      const C = buckingham(h[k], mu[k], ty[k], gAbs[k], EPS, Uw[jb] * U) * mob[k];
+      const T = (C * ds[jb]) / (dz / 2);
+      Tbot[i] = T; Bbot[i] = T * rho[k] * G * cosB[jb] * (dz / 2);
+    }
+    let sumC = 0;
+    Qin.fill(0);
+    for (const k of srcCells) { const j = Math.floor(k / nT); Qin[k] = buckingham(h[k], mu[k], ty[k], gAbs[k] || 1e3, EPS, Uw[j] * U) * ds[j] * mob[k]; sumC += Qin[k]; }
+    for (const k of srcCells) Qin[k] = sumC > 0 ? (Qtot * Qin[k]) / sumC : Qtot / srcCells.length;
     diag.fill(0); rhs.fill(0);
     for (let j = 0; j < nZ; j++) for (let i = 0; i < nTF; i++) {
       const fi = j * nTF + i, a = j * nT + i, b = j * nT + nb(i);
@@ -331,7 +374,8 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
       rhs[a] -= Bz[fi]; rhs[b] += Bz[fi];
     }
     for (let i = 0; i < nT; i++) { diag[i] += Ttop[i]; rhs[i] -= Btop[i]; }
-    for (let i = 0; i < nT; i++) rhs[(nZ - 1) * nT + i] += Qin[i];
+    for (let i = 0; i < nT; i++) { const k = (nZ - 1) * nT + i; diag[k] += Tbot[i]; rhs[k] += Tbot[i] * pBot - Bbot[i]; }
+    for (const k of srcCells) rhs[k] += Qin[k];
   };
 
   const matvec = (x: Float64Array, y: Float64Array) => {
@@ -364,7 +408,8 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
       let up = 0, dn = 0;
       for (let i = 0; i < nT; i++) { if (j > 0) up += Tz[(j - 1) * nT + i]; if (j < nZ - 1) dn += Tz[j * nT + i]; }
       let top = 0; if (j === 0) for (let i = 0; i < nT; i++) top += Ttop[i];
-      cA[j] = -up; cC[j] = -dn; cB[j] = up + dn + top;
+      if (j === nZ - 1) for (let i = 0; i < nT; i++) top += Tbot[i];
+      cA[j] = -up; cC[j] = -dn; cB[j] = up + dn + top + 1e-30;
     }
   };
   const coarse = (x: Float64Array, y: Float64Array) => {
@@ -411,6 +456,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
     }
     for (let fi = 0; fi < nFZ; fi++) { const a = fi, b = fi + nT; Fz[fi] = -Tz[fi] * (p[b] - p[a]) + Bz[fi]; }
     for (let i = 0; i < nT; i++) Ftop[i] = -Ttop[i] * (0 - p[i]) + Btop[i]; // наружу через верх
+    for (let i = 0; i < nT; i++) { const k = (nZ - 1) * nT + i; Fbot[i] = -Tbot[i] * (pBot - p[k]) + Bbot[i]; } // наружу через низ
     for (let j = 0; j < nZ; j++) for (let i = 0; i < nT; i++) {
       const k = j * nT + i;
       const pu = j > 0 ? p[k - nT] : 0, pd = j < nZ - 1 ? p[k + nT] : p[k];
@@ -445,7 +491,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
           const up = a - nT >= 0 ? cf[a - nT] : cf[a];
           val = cf[a] + 0.5 * minmod(cf[a] - up, cf[b] - cf[a]);
         } else {
-          const dn = b + nT < N ? cf[b + nT] : (f === inFluid ? 1 : 0);
+          const dn = b + nT < N ? cf[b + nT] : (sheet ? cf[b] : (f === inFluid ? 1 : 0));
           val = cf[b] + 0.5 * minmod(cf[b] - dn, cf[a] - cf[b]);
         }
         const fl = F * dt * val;
@@ -454,8 +500,10 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
       for (let i = 0; i < nT; i++) {
         const F = Ftop[i];
         axNet[i] -= (F >= 0 ? F * cf[i] : F * (f === 0 ? 1 : 0)) * dt;
-        if (inFluid >= 0) axNet[(nZ - 1) * nT + i] += Qin[i] * dt * (f === inFluid ? 1 : 0);
+        const kb = (nZ - 1) * nT + i, Fb = Fbot[i];
+        if (Fb !== 0) axNet[kb] -= (Fb >= 0 ? Fb * cf[kb] : Fb * (f === 0 ? 1 : 0)) * dt;
       }
+      if (inFluid >= 0 && f === inFluid) for (const k of srcCells) axNet[k] += Qin[k] * dt;
       // неявно по окружности (противопоточно), ряд за рядом
       for (let j = 0; j < nZ; j++) {
         const o = j * nT;
@@ -485,7 +533,8 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
       const j = Math.floor(k / nT), i = k - j * nT;
       let outA = 0, outT = 0;
       if (j > 0) { const F = Fz[k - nT]; if (F < 0) outA += -F; } else { const F = Ftop[i]; if (F > 0) outA += F; }
-      if (j < nZ - 1) { const F = Fz[k]; if (F > 0) outA += F; }
+      if (j < nZ - 1) { const F = Fz[k]; if (F > 0) outA += F; } else { const F = Fbot[i]; if (F > 0) outA += F; }
+      if (Qin[k] > 0) outA += Qin[k];
       const fL = i > 0 ? j * nTF + i - 1 : full ? j * nTF + nT - 1 : -1;
       const fR = i < nT - 1 || full ? j * nTF + i : -1;
       if (fL >= 0) { const F = Ft[fL]; if (F < 0) outT += -F; }
@@ -499,7 +548,8 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
 
   // ── Итоги по глубине ──
   const isCem = inp.fluids.map((f) => f.kind === "cement"), isSp = inp.fluids.map((f) => f.kind === "spacer");
-  const stages = inp.stages.filter((s) => s.volumeM3 > 1e-6 && s.rateM3s > 1e-7);
+  const stages = inp.stages.filter((s) => (s.volumeM3 > 1e-9 && s.rateM3s > 1e-9) || (s.rateM3s <= 1e-9 && (s.holdS ?? 0) > 0));
+  const stageDur = (s: D2Stage) => (s.rateM3s > 1e-9 ? s.volumeM3 / s.rateM3s : s.holdS ?? 0);
   const cemVol = (stages.filter((s) => isCem[s.fluid]).reduce((a, s) => a + s.volumeM3, 0)) * share;
   let acc = 0, cementTopMD = inp.zBot;
   for (let j = nZ - 1; j >= 0; j--) { let v = 0; for (let i = 0; i < nT; i++) v += V[j * nT + i]; acc += v; cementTopMD = zC[j] - dz / 2; if (acc >= cemVol) break; }
@@ -561,7 +611,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   };
 
   // ── Время ──
-  const pumpT = stages.reduce((t, s) => t + s.volumeM3 / s.rateM3s, 0);
+  const pumpT = stages.reduce((t, s) => t + stageDur(s), 0);
   const settleS = Math.max(0, inp.settleMin ?? 0) * 60;
   const totalT = pumpT + settleS;
   const maxSnap = inp.maxSnapshots ?? 140;
@@ -578,17 +628,44 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   snap(0, 0); nextSnap = snapDt;
   U = 1;
   let aborted = false;
+  const timeProps = () => {
+    if (!inp.fluidTime) return;
+    for (let f = 0; f < nF; f++) { if (firstIn[f] < 0) continue; const m = inp.fluidTime(f, t - firstIn[f]); muMul[f] = m.mu; tyMul[f] = m.ty; }
+  };
+  const plugK = inp.plugging?.k ?? 0, plugF = inp.plugging?.fluid ?? -1;
+  const accumulatePlug = (dt: number) => {
+    if (plugK <= 0 || plugF < 0) return;
+    const cf = c[plugF];
+    for (let k = 0; k < N; k++) {
+      const j = Math.floor(k / nT), i = k - j * nT;
+      let thr = 0; // объёмный поток через ячейку (по выходящим граням)
+      if (j > 0) { const F = Fz[k - nT]; if (F < 0) thr += -F; } else if (Ftop[i] > 0) thr += Ftop[i];
+      if (j < nZ - 1) { const F = Fz[k]; if (F > 0) thr += F; } else if (Fbot[i] > 0) thr += Fbot[i];
+      const fL = i > 0 ? j * nTF + i - 1 : full ? j * nTF + nT - 1 : -1, fR = i < nT - 1 || full ? j * nTF + i : -1;
+      if (fL >= 0 && Ft[fL] < 0) thr += -Ft[fL];
+      if (fR >= 0 && Ft[fR] > 0) thr += Ft[fR];
+      if (thr <= 0 || cf[k] <= 0.05) continue;
+      S[k] += (thr * cf[k] * dt) / V[k];
+      mob[k] = Math.exp(-plugK * S[k]);
+    }
+  };
+  const outflow = () => { let o = 0; for (let i = 0; i < nT; i++) o += Ftop[i] + Fbot[i]; return o; };
   for (let si = 0; si < stages.length && !aborted; si++) {
     const st = stages[si];
-    let left = st.volumeM3;
+    const hold = st.rateM3s <= 1e-9;
+    let left = hold ? st.holdS ?? 0 : st.volumeM3; // при выдержке — оставшееся время
+    if (!hold && firstIn[st.fluid] < 0) firstIn[st.fluid] = t;
     while (left > 1e-9) {
-      solvePressure(st.rateM3s * share, gInit ? 1 : 6);
+      timeProps(); mixProps();
+      solvePressure(hold ? 0 : st.rateM3s * share, gInit ? (hold ? 2 : 1) : 6);
       gInit = true;
-      const dt = stepDt(Math.min(30, left / st.rateM3s));
-      transport(dt, st.fluid);
+      const dt = stepDt(Math.min(hold ? 60 : 30, hold ? left : left / st.rateM3s));
+      transport(dt, hold ? -1 : st.fluid);
+      accumulatePlug(dt);
       mixProps();
-      t += dt; steps++; left -= st.rateM3s * dt; inVol += st.rateM3s * share * dt;
-      let o = 0; for (let i = 0; i < nT; i++) o += Ftop[i]; outVol += o * dt;
+      t += dt; steps++;
+      if (hold) left -= dt; else { left -= st.rateM3s * dt; inVol += st.rateM3s * share * dt; }
+      outVol += outflow() * dt;
       if (t >= nextSnap - 1e-9) { snap(t, si); nextSnap += snapDt; }
       if (steps % 20 === 0) inp.onProgress?.(Math.min(1, t / totalT));
       if (steps > 200000) { warnings.push("Превышено число шагов расчёта — результат обрезан."); aborted = true; break; }
@@ -611,7 +688,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
       const dt = stepDt(Math.min(60, settleS - tS));
       transport(dt, -1);
       t += dt; tS += dt; steps++;
-      let o = 0; for (let i = 0; i < nT; i++) o += Ftop[i]; outVol += o * dt;
+      outVol += outflow() * dt;
       if (t >= nextSnap - 1e-9) { snap(t, -1); nextSnap += snapDt; }
       if (steps % 20 === 0) inp.onProgress?.(Math.min(1, t / totalT));
       if (steps > 260000) { warnings.push("Выдержка обрезана по числу шагов."); break; }

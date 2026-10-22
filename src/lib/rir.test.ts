@@ -194,3 +194,32 @@ describe("РИР: автоподбор и программа работ", () => 
     expect(pumped).toBeCloseTo(p.sim.points[p.sim.points.length - 1].vPumped, 3);
   });
 });
+
+import { simulateRirChannel } from "./rir-channel-2d";
+
+describe("РИР: распределение состава в канале (2D)", () => {
+  it("объём состава в канале согласован с одномерным моделированием, баланс объёмов", () => {
+    const r = calculateRir(DEFAULT_RIR);
+    const p = planRir(DEFAULT_RIR, r);
+    const { result, meta } = simulateRirChannel(DEFAULT_RIR, r, p.sim, p.comp?.primary ?? null);
+    const inComp = p.sim.compInChannelM3 * 1000;
+    expect(meta.stats.compInSheetL + meta.stats.compOutL).toBeGreaterThan(inComp * 0.9);
+    expect(meta.stats.compInSheetL + meta.stats.compOutL).toBeLessThan(inComp * 1.1);
+    expect(Math.abs(result.summary.massBalanceErrPct)).toBeLessThan(0.5);
+    expect(meta.stats.filledPct).toBeGreaterThan(10);
+  });
+  it("заколонный канал: состав остаётся в канале, камень вне канала не заполняется", () => {
+    const inp = { ...DEFAULT_RIR, leak: { ...DEFAULT_RIR.leak, kind: "behind_casing" as const } };
+    const r = calculateRir(inp);
+    const p = planRir(inp, r);
+    const { result, meta } = simulateRirChannel(inp, r, p.sim, p.comp?.primary ?? null);
+    const comp = result.finalFrac[2];
+    let solid = 0, vSolid = 0, vAll = 0;
+    for (let k = 0; k < comp.length; k++) {
+      const v = comp[k] * result.gap[k] * (meta.solidMask[k] ? 1 : 30); // ёмкость канала много больше камня
+      vAll += v; if (meta.solidMask[k]) { solid++; vSolid += v; }
+    }
+    expect(solid).toBeGreaterThan(0);
+    expect(vSolid / vAll).toBeLessThan(0.02);
+  });
+});

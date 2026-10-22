@@ -74,8 +74,13 @@ function shellGeometry(pts: THREE.Vector3[], fr: ReturnType<typeof frames>, R: n
   return g;
 }
 
-export default function D2Annulus3D({ res, colors, snap, trajectory, cut, height = 520 }: {
+export default function D2Annulus3D({ res, colors, snap, trajectory, cut, height = 520, lowLabel = "▼ низ ствола — узкий зазор", solidMask, markers, radii }: {
   res: D2Result; colors: string[]; snap: number; trajectory: TrajectoryPoint[]; cut: boolean; height?: number;
+  lowLabel?: string | null; solidMask?: Uint8Array;
+  /** Метки на поверхности: глубина, угол (0 — верх), подпись */
+  markers?: { md: number; theta: number; label: string }[];
+  /** Радиусы в единицах сцены: [наружный (канал), колонна] */
+  radii?: [number, number];
 }) {
   const geo = useMemo(() => {
     const dz = (res.zCenters[1] ?? res.zCenters[0] + 1) - res.zCenters[0];
@@ -86,17 +91,17 @@ export default function D2Annulus3D({ res, colors, snap, trajectory, cut, height
     const s = 10 / Math.max(1, L);
     const pts = raw.map((p) => p.sub(o).multiplyScalar(s));
     const fr = frames(pts);
-    const Rh = 0.85, Rc = 0.5;
+    const [Rh, Rc] = radii ?? [0.85, 0.5];
     const shell = shellGeometry(pts, fr, Rh, cut, true);
     const soAt = (j: number) => res.rows[Math.min(res.rows.length - 1, Math.max(0, j - (j === res.nZ ? 1 : 0)))]?.standoff ?? 1;
     const casing = shellGeometry(pts, fr, Rc, false, false, (j) => (1 - soAt(j)) * (Rh - Rc) * 0.95);
     // метки глубин
     const marks: { p: THREE.Vector3; label: string }[] = [];
-    const step = L > 1500 ? 500 : L > 600 ? 200 : 100;
+    const step = L > 1500 ? 500 : L > 600 ? 200 : L > 150 ? 100 : 10;
     for (let j = 0; j <= res.nZ; j++) {
       const md = mds[j];
       if (j === 0 || j === res.nZ || Math.floor(md / step) !== Math.floor(mds[Math.max(0, j - 1)] / step)) {
-        marks.push({ p: pts[j].clone().add(fr.N[j].clone().multiplyScalar(1.6)), label: `${Math.round(md)} м` });
+        marks.push({ p: pts[j].clone().add(fr.N[j].clone().multiplyScalar(Rh + 0.75)), label: `${Math.round(md)} м` });
       }
     }
     // «низ ствола» — подпись у узкой стороны в середине
@@ -107,8 +112,14 @@ export default function D2Annulus3D({ res, colors, snap, trajectory, cut, height
     // камера со стороны выреза (+B), чуть сверху
     const d = Math.max(8, span * 1.45);
     const cam = center.clone().add(fr.B[jm].clone().multiplyScalar(d)).add(fr.N[jm].clone().multiplyScalar(d * 0.25));
-    return { shell, casing, marks, low, center, span, cam };
-  }, [res, trajectory, cut]);
+    const mk = (markers ?? []).map((m) => {
+      const jj = Math.min(res.nZ, Math.max(0, Math.round(((m.md - mds[0]) / (mds[mds.length - 1] - mds[0])) * res.nZ)));
+      const p = pts[jj].clone().add(fr.N[jj].clone().multiplyScalar(Rh * 1.02 * Math.cos(m.theta))).add(fr.B[jj].clone().multiplyScalar(Rh * 1.02 * Math.sin(m.theta)));
+      const lp = pts[jj].clone().add(fr.N[jj].clone().multiplyScalar((Rh + 0.7) * Math.cos(m.theta))).add(fr.B[jj].clone().multiplyScalar((Rh + 0.7) * Math.sin(m.theta)));
+      return { p, lp, label: m.label };
+    });
+    return { shell, casing, marks, low, center, span, cam, mk };
+  }, [res, trajectory, cut, markers, radii]);
 
   // Текстура развёртки: x — глубина, y — угол по окружности
   const tex = useMemo(() => {
@@ -118,7 +129,7 @@ export default function D2Annulus3D({ res, colors, snap, trajectory, cut, height
     t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.LinearFilter;
     return t;
   }, [res]);
-  const blend = useMemo(() => makeBlender(res, colors), [res, colors]);
+  const blend = useMemo(() => makeBlender(res, colors, solidMask), [res, colors, solidMask]);
   useEffect(() => {
     const cnv = tex.image as HTMLCanvasElement;
     const ctx = cnv.getContext("2d")!;
@@ -151,7 +162,13 @@ export default function D2Annulus3D({ res, colors, snap, trajectory, cut, height
         {geo.marks.map((m, i) => (
           <Text key={i} font={FONT_3D} position={[m.p.x, m.p.y, m.p.z]} fontSize={0.3} color="#cbd5e1" anchorX="center" anchorY="middle">{m.label}</Text>
         ))}
-        <Text font={FONT_3D} position={[geo.low.x, geo.low.y, geo.low.z]} fontSize={0.24} color="#fca5a5" anchorX="center">▼ низ ствола — узкий зазор</Text>
+        {lowLabel && <Text font={FONT_3D} position={[geo.low.x, geo.low.y, geo.low.z]} fontSize={0.24} color="#fca5a5" anchorX="center">{lowLabel}</Text>}
+        {geo.mk.map((m, i) => (
+          <group key={`m${i}`}>
+            <mesh position={[m.p.x, m.p.y, m.p.z]}><sphereGeometry args={[0.09, 16, 16]} /><meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={0.6} /></mesh>
+            <Text font={FONT_3D} position={[m.lp.x, m.lp.y, m.lp.z]} fontSize={0.26} color="#fca5a5" anchorX="center">{m.label}</Text>
+          </group>
+        ))}
         <OrbitControls target={[geo.center.x, geo.center.y, geo.center.z]} enableDamping dampingFactor={0.1} />
       </Canvas>
     </div>

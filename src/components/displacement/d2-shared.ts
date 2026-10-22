@@ -6,10 +6,12 @@ export function hexToRgb(hex: string): [number, number, number] {
 }
 
 /** Цвет ячейки как смесь цветов жидкостей по долям. */
-export function makeBlender(res: D2Result, colors: string[]) {
+export function makeBlender(res: D2Result, colors: string[], solidMask?: Uint8Array, solidColor = "#5b5f66") {
   const rgb = colors.map(hexToRgb);
+  const sc = hexToRgb(solidColor);
   const N = res.nTheta * res.nZ, nF = res.fluids.length;
   return (frac: Uint8Array, k: number, out: Uint8ClampedArray, o: number) => {
+    if (solidMask && solidMask[k]) { out[o] = sc[0]; out[o + 1] = sc[1]; out[o + 2] = sc[2]; out[o + 3] = 255; return; }
     let r = 0, g = 0, b = 0, s = 0;
     for (let f = 0; f < nF; f++) {
       const w = frac[f * N + k];
@@ -29,8 +31,8 @@ export function thetaIndex(a: number, nTheta: number, full = false) {
 }
 
 /** Рисует развёртку (вся окружность) в ImageData: ширина = W (по окружности), высота = nZ. */
-export function paintUnwrapped(res: D2Result, colors: string[], snap: number, W: number): ImageData {
-  const blend = makeBlender(res, colors);
+export function paintUnwrapped(res: D2Result, colors: string[], snap: number, W: number, solidMask?: Uint8Array): ImageData {
+  const blend = makeBlender(res, colors, solidMask);
   const img = new ImageData(W, res.nZ);
   const fr = res.snapshots[snap].frac;
   for (let j = 0; j < res.nZ; j++) for (let x = 0; x < W; x++) {
