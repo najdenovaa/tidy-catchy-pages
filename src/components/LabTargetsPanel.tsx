@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FlaskConical, ArrowRightLeft, RotateCcw } from "lucide-react";
 import { conditionsAll, type ProtocolInput } from "@/lib/lab-protocol";
-import { designToTargets, defaultTargets, applyDesignToSlurry, type LabTargets, type TargetDesignResult } from "@/lib/cement-recipe-designer";
+import { designToTargets, defaultTargets, applyDesignToSlurry, BASE_CEMENTS, type LabTargets, type TargetDesignResult } from "@/lib/cement-recipe-designer";
 import type { SlurryInput } from "@/lib/cementing-calculations";
 
 interface Props {
@@ -140,6 +140,13 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
                     </label>
                   ))}
                 </div>
+                <label className="flex items-center justify-between gap-2 text-xs">
+                  <span>Тампонажный цемент</span>
+                  <select value={t.baseCement ?? "auto"} onChange={(e) => set({ baseCement: e.target.value === "auto" ? undefined : (e.target.value as LabTargets["baseCement"]) })} className="h-8 max-w-[60%] rounded border border-border bg-background px-2 text-xs">
+                    <option value="auto">Авто (ПЦТ I-G)</option>
+                    {(Object.keys(BASE_CEMENTS) as (keyof typeof BASE_CEMENTS)[]).map((k) => <option key={k} value={k}>{BASE_CEMENTS[k].short} — {BASE_CEMENTS[k].note}</option>)}
+                  </select>
+                </label>
                 <label className="flex items-center justify-between gap-2 text-xs">
                   <span>Облегчающая добавка</span>
                   <select

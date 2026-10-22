@@ -6,6 +6,7 @@ import { FlaskConical, ArrowRightLeft, Printer, Download } from "lucide-react";
 import type { PlugInputs, PlugResults } from "@/lib/cement-plug-calculations";
 import type { LabTargets, SlurryDesign } from "@/lib/cement-recipe-designer";
 import { PLUG_PURPOSE_LABEL, type PlugPurpose } from "@/lib/cement-plug-types";
+import { BASE_CEMENTS } from "@/lib/cement-recipe-designer";
 import { designPlugSlurry, buildPlugLabProtocol, plugJobTimeMin, plugRequiredThickeningMin } from "@/lib/cement-plug-recipe";
 import { protocolToHtml } from "@/lib/lab-protocol";
 import { exportLabProtocolDocx } from "@/lib/export-lab-protocol-docx";
@@ -68,6 +69,13 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
               <span>Назначение моста</span>
               <select value={purpose} onChange={(e) => setPurpose(e.target.value as PlugPurpose)} className="h-8 rounded border border-border bg-background px-2 text-xs">
                 {(Object.keys(PLUG_PURPOSE_LABEL) as PlugPurpose[]).map((k) => <option key={k} value={k}>{PLUG_PURPOSE_LABEL[k]}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center justify-between gap-2">
+              <span>Тампонажный цемент</span>
+              <select value={user.baseCement ?? "auto"} onChange={(e) => set("baseCement", e.target.value === "auto" ? undefined : e.target.value)} className="h-8 max-w-[60%] rounded border border-border bg-background px-2 text-xs" data-testid="plug-base-cement">
+                <option value="auto">Авто (ПЦТ I-G)</option>
+                {(Object.keys(BASE_CEMENTS) as (keyof typeof BASE_CEMENTS)[]).map((k) => <option key={k} value={k}>{BASE_CEMENTS[k].short} — {BASE_CEMENTS[k].note}</option>)}
               </select>
             </label>
             {FIELDS.map((fd) => (

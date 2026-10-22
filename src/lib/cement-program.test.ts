@@ -139,3 +139,24 @@ describe("Рецептура по абсолютным объёмам", () => {
     expect(r.warnings.some((w) => w.includes("Введённое В/С"))).toBe(true);
   });
 });
+
+import { designSlurry, BASE_CEMENTS, type DesignConditions } from "./cement-recipe-designer";
+
+describe("Выбор базового цемента в подборе рецептуры", () => {
+  const c: DesignConditions = { densityGcm3: 1.85, bhctC: 60, tTopC: 55, tBottomC: 62, bhstC: 75, maxPressureMPa: 30, requiredThickeningMin: 120, coversPay: true, gas: false, maxZenithDeg: 10, lossMarginMPa: null, isTail: true };
+  it("по умолчанию — ПЦТ I-G, выбранный цемент попадает в рецептуру и меняет свойства", () => {
+    const g = designSlurry(c);
+    expect(g.baseCement).toContain("класса G");
+    const h = designSlurry(c, { baseCement: "H" });
+    expect(h.baseCement).toBe(BASE_CEMENTS.H.name);
+    expect(h.cementSG).toBeCloseTo(3.16, 2);
+    const ob = designSlurry({ ...c, densityGcm3: 1.5 }, { baseCement: "IIIOb" });
+    const gl = designSlurry({ ...c, densityGcm3: 1.5 });
+    expect(ob.predicted.strength24TopMPa).toBeLessThan(gl.predicted.strength24TopMPa * 1.5);
+    expect(ob.baseCement).toContain("III-Об");
+  });
+  it("цемент вне своего температурного диапазона — предупреждение", () => {
+    const d = designSlurry({ ...c, bhctC: 85, tBottomC: 90 }, { baseCement: "I50" });
+    expect(d.warnings.some((w) => w.includes("до 50 °C"))).toBe(true);
+  });
+});

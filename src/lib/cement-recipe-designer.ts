@@ -126,6 +126,35 @@ function rheologyAt(phi: number, bent: number, dFla: number, dDisp: number, late
   return { pv, ypPa: yp, fann: { r600: dial(600), r300: dial(300), r200: dial(200), r100: dial(100), r6: dial(6), r3: dial(3) } };
 }
 
+/** Базовые тампонажные цементы (ГОСТ 1581-2019 и типовые). Коэффициенты — относительно ПЦТ класса G. */
+export type BaseCementKey = "auto" | "G" | "H" | "I50" | "I100" | "II50" | "II100" | "IIIOb" | "cold";
+export interface BaseCementSpec {
+  name: string;
+  short: string;
+  /** Плотность сухого цемента, г/см³ */
+  sg: number;
+  /** Множитель времени загустевания чистого раствора */
+  tt: number;
+  /** Множитель прочности */
+  str: number;
+  /** Нормальное В/Ц чистого раствора */
+  wcNeat: number;
+  /** Рекомендуемый интервал статической температуры, °C */
+  tMin: number;
+  tMax: number;
+  note: string;
+}
+export const BASE_CEMENTS: Record<Exclude<BaseCementKey, "auto">, BaseCementSpec> = {
+  G: { name: "ПЦТ I-G-CC-1 (ГОСТ 1581-2019), тампонажный портландцемент класса G", short: "ПЦТ I-G", sg: 3.15, tt: 1, str: 1, wcNeat: 0.44, tMin: 0, tMax: 150, note: "универсальный; выше 110 °C — с кварцевой мукой" },
+  H: { name: "ПЦТ I-H-CC-1 (ГОСТ 1581-2019), тампонажный портландцемент класса H", short: "ПЦТ I-H", sg: 3.16, tt: 1.1, str: 1.05, wcNeat: 0.38, tMin: 0, tMax: 150, note: "грубее помол — меньше воды, выше плотность и прочность" },
+  I50: { name: "ПЦТ I-50 (ГОСТ 1581-2019), бездобавочный для низких и нормальных температур", short: "ПЦТ I-50", sg: 3.1, tt: 0.85, str: 1.1, wcNeat: 0.5, tMin: 15, tMax: 50, note: "15–50 °C: быстрее схватывается и твердеет в холодных интервалах" },
+  I100: { name: "ПЦТ I-100 (ГОСТ 1581-2019), бездобавочный для умеренных температур", short: "ПЦТ I-100", sg: 3.15, tt: 1.05, str: 1, wcNeat: 0.44, tMin: 51, tMax: 100, note: "51–100 °C" },
+  II50: { name: "ПЦТ II-50 (ГОСТ 1581-2019), с минеральными добавками", short: "ПЦТ II-50", sg: 3.0, tt: 0.95, str: 0.85, wcNeat: 0.5, tMin: 15, tMax: 50, note: "15–50 °C; ниже ранняя прочность" },
+  II100: { name: "ПЦТ II-100 (ГОСТ 1581-2019), с минеральными добавками", short: "ПЦТ II-100", sg: 3.0, tt: 1.1, str: 0.85, wcNeat: 0.46, tMin: 51, tMax: 100, note: "51–100 °C" },
+  IIIOb: { name: "ПЦТ III-Об (ГОСТ 1581-2019), облегчённый тампонажный цемент", short: "ПЦТ III-Об", sg: 2.6, tt: 1.1, str: 0.25, wcNeat: 0.8, tMin: 15, tMax: 100, note: "для растворов 1,40–1,65 г/см³ без бентонита; прочность ниже" },
+  cold: { name: "Тампонажный цемент для низких температур (быстротвердеющий, ЦТН)", short: "ЦТН (холодный)", sg: 3.05, tt: 0.6, str: 1.5, wcNeat: 0.46, tMin: -5, tMax: 25, note: "мёрзлые породы и холодные интервалы −5…25 °C" },
+};
+
 /** Управляемые параметры подбора (задаются требованиями технолога или итерациями подбора). */
 export interface DesignOptions {
   thickeningMinMin?: number;
@@ -138,13 +167,23 @@ export interface DesignOptions {
   extender?: "auto" | "bentonite" | "microspheres";
   dispersantMin?: number;
   acceleratorPct?: number;
+  /** Базовый цемент (по умолчанию — ПЦТ класса G) */
+  baseCement?: BaseCementKey;
 }
 
 export function designSlurry(c: DesignConditions, o: DesignOptions = {}): SlurryDesign {
-  const cementSG = 3.15;
+  const baseKey: Exclude<BaseCementKey, "auto"> = !o.baseCement || o.baseCement === "auto" ? "G" : o.baseCement;
+  const base = BASE_CEMENTS[baseKey];
+  const cementSG = base.sg;
   const rho = c.densityGcm3;
   const warnings: string[] = [];
   const rationale: string[] = [];
+  if (o.baseCement && o.baseCement !== "auto") {
+    rationale.push(`Базовый цемент выбран технологом: ${base.short} (${base.note}).`);
+    const tLo = Math.min(c.tTopC, c.bhctC), tHi = Math.max(c.tBottomC, c.bhctC);
+    if (tHi > base.tMax) warnings.push(`${base.short} рассчитан на температуру до ${base.tMax} °C, а в интервале до ${tHi.toFixed(0)} °C — риск преждевременного загустевания и снижения прочности; выберите цемент для более высоких температур.`);
+    if (tLo < base.tMin) warnings.push(`${base.short} рассчитан на температуру от ${base.tMin} °C, а на кровле ${tLo.toFixed(0)} °C — медленный набор прочности; рассмотрите ПЦТ I-50 или цемент для низких температур.`);
+  }
   const comps: DesignedComponent[] = [];
   const add = (x: DesignedComponent) => { if (x.pctBwoc > 0) comps.push({ ...x, pctBwoc: Math.round(x.pctBwoc * 100) / 100 }); };
 
@@ -156,7 +195,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   }
 
   // ── Плотность: облегчение / утяжеление ──
-  const WC_MIN = 0.35, WC_NEAT_MAX = 0.46;
+  const WC_MIN = 0.35 * (base.wcNeat / 0.44), WC_NEAT_MAX = 0.46 * (base.wcNeat / 0.44);
   const wcMax = (bent: number) => WC_NEAT_MAX + 0.053 * bent + (0.4 * silica) / 100;
   let bent = 0, micro = 0, heavy = 0;
   let microName = "", microSG = 0.7;
@@ -258,7 +297,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   // ── Время загустевания: замедлитель / ускоритель ──
   const req = Math.max(30, o.thickeningMinMin ?? Math.max(60, c.requiredThickeningMin));
   let cacl = o.acceleratorPct && o.acceleratorPct > 0 ? o.acceleratorPct : 0;
-  const ttBase = neatThickeningMin(c.bhctC) * (1 + 0.3 * dFla) * (1 + 0.2 * dDisp) * Math.pow(Math.max(0.3, wc) / 0.44, 0.8) * (latex ? 1.15 : 1) / (1 + 0.35 * cacl);
+  const ttBase = neatThickeningMin(c.bhctC) * base.tt * (1 + 0.3 * dFla) * (1 + 0.2 * dDisp) * Math.pow(Math.max(0.3, wc) / 0.44, 0.8) * (latex ? 1.15 : 1) / (1 + 0.35 * cacl);
   const ttTarget = o.thickeningMaxMin && o.thickeningMaxMin > req ? Math.min(req * 1.2, (req + o.thickeningMaxMin) / 2) : req * 1.2;
   if (cacl > 0) {
     add({ role: "accelerator", name: "Хлорид кальция (ускоритель)", purpose: `Ускорение набора прочности при ${c.tTopC.toFixed(0)} °C на кровле`, pctBwoc: cacl, sg: 1.96 });
@@ -314,7 +353,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
 
   // ── Прочность ──
   const wEff = waterKg / (1000 + (silica ? 0 : 0));
-  const strFactor = Math.pow(0.44 / Math.max(0.3, wEff), 1.8) * (1 - 0.004 * micro) * Math.max(0.35, 1 - 0.5 * dRet) * (1 + 0.12 * cacl) * (heavy > 0 ? 0.95 : 1);
+  const strFactor = base.str * Math.pow(base.wcNeat / Math.max(0.3 * (base.wcNeat / 0.44), wEff), 1.8) * (1 - 0.004 * micro) * Math.max(0.35, 1 - 0.5 * dRet) * (1 + 0.12 * cacl) * (heavy > 0 ? 0.95 : 1);
   const s24 = (t: number) => neatStrength24(t) * strFactor * (c.bhstC > 110 && !silica ? 0.6 : 1);
   const s24Top = s24(c.tTopC), s24Bot = s24(c.tBottomC);
   const s48 = (v: number, t: number) => Math.min(v * 1.35, neatStrength24(t) * strFactor * 1.6);
@@ -334,7 +373,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   if (extenderNote) warnings.push(extenderNote.trim());
 
   return {
-    baseCement: c.tTopC < 15 && !c.isTail ? "ПЦТ I-G-CC-1 (ГОСТ 1581-2019); допускается ПЦТ I-50 для холодного интервала" : "ПЦТ I-G-CC-1 (ГОСТ 1581-2019), тампонажный портландцемент класса G",
+    baseCement: baseKey === "G" && (!o.baseCement || o.baseCement === "auto") && c.tTopC < 15 && !c.isTail ? `${base.name}; допускается ПЦТ I-50 для холодного интервала` : base.name,
     cementSG, components: comps,
     waterPctBwoc: wcFinal * 100,
     waterToBlend: waterKg / dry.mass,
@@ -409,10 +448,12 @@ export interface LabTargets {
   expansion?: boolean;
   fiber?: boolean;
   extender?: "auto" | "bentonite" | "microspheres";
+  /** Базовый цемент */
+  baseCement?: BaseCementKey;
 }
 
 /** Требования по умолчанию: ПБ НГП, API RP 10B-2 и типовая практика для назначения пачки. */
-export function defaultTargets(c: DesignConditions): Required<Omit<LabTargets, "thickeningMaxMin" | "sgsMaxMin">> & Pick<LabTargets, "thickeningMaxMin" | "sgsMaxMin"> {
+export function defaultTargets(c: DesignConditions): Required<Omit<LabTargets, "thickeningMaxMin" | "sgsMaxMin" | "baseCement">> & Pick<LabTargets, "thickeningMaxMin" | "sgsMaxMin" | "baseCement"> {
   return {
     thickeningMinMin: Math.round(Math.max(60, c.requiredThickeningMin)),
     thickeningMaxMin: undefined,
@@ -487,7 +528,7 @@ export function designToTargets(c: DesignConditions, user?: LabTargets): TargetD
     thickeningMinMin: t.thickeningMinMin, thickeningMaxMin: t.thickeningMaxMin,
     fluidLossMaxMl: t.fluidLossMaxMl, freeWaterMaxPct: t.freeWaterMaxPct,
     gasTight: t.gasTight,
-    expansion: t.expansion, fiber: t.fiber, extender: t.extender,
+    expansion: t.expansion, fiber: t.fiber, extender: t.extender, baseCement: user?.baseCement,
   };
   const score = (rows: ComplianceRow[]) => rows.reduce((s, r) => s + (r.ok === false ? 1 + r.deficit : 0), 0);
   let opts = { ...base };
