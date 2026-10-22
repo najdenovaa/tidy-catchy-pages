@@ -20,6 +20,7 @@ import { analyseTubing, DEFAULT_TUBING_MECH, type TubingMechInputs } from "@/lib
 import { InjectivityChart, PenetrationDiagram, PressureWindowChart } from "./RirCharts";
 import RirSqueezeSimCard from "./RirSqueezeSim";
 import RirChannelCard from "./RirChannelCard";
+import RirLeak3D from "./RirLeak3D";
 import { planRir, applyVariant } from "@/lib/rir-autodesign";
 import RirAutoDesignCard from "./RirAutoDesignCard";
 
@@ -295,6 +296,8 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
         protocol={() => buildRirProtocol(full, res, comp, mechRes, workProgram, sim)} />
 
       <RirSqueezeSimCard sim={sim} hasTool={inp.tool.kind !== "bradenhead"} spot={inp.tool.kind === "packer"} toolLabel={inp.tool.kind === "retainer" ? "ретейнер" : "пакер"} holdMin={inp.hesitationHoldMin} />
+
+      <RirLeak3D inp={full} res={res} sim={sim} design={comp?.primary ?? null} />
 
       <RirChannelCard inp={full} res={res} sim={sim} design={comp?.primary ?? null} />
 
