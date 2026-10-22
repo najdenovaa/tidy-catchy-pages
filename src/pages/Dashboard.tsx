@@ -56,23 +56,27 @@ export default function Dashboard() {
     check();
   }, [navigate]);
 
+  // Только свои данные: фильтр по пользователю явно (не полагаемся только на политики БД —
+  // у администратора они открывают чужие записи, и в «Кабинете» это выглядело как общие папки)
+  const uid = async () => (await supabase.auth.getSession()).data.session?.user.id ?? "00000000-0000-0000-0000-000000000000";
+
   const loadFields = useCallback(async () => {
-    const { data } = await supabase.from("fields").select("*").order("name");
+    const { data } = await supabase.from("fields").select("*").eq("user_id", await uid()).order("name");
     if (data) setFields(data as Field[]);
   }, []);
 
   const loadPads = useCallback(async (fieldId: string) => {
-    const { data } = await supabase.from("well_pads").select("*").eq("field_id", fieldId).order("name");
+    const { data } = await supabase.from("well_pads").select("*").eq("field_id", fieldId).eq("user_id", await uid()).order("name");
     if (data) setPads(data as WellPad[]);
   }, []);
 
   const loadWells = useCallback(async (padId: string) => {
-    const { data } = await supabase.from("wells").select("*").eq("well_pad_id", padId).order("name");
+    const { data } = await supabase.from("wells").select("*").eq("well_pad_id", padId).eq("user_id", await uid()).order("name");
     if (data) setWells(data as Well[]);
   }, []);
 
   const loadCalcs = useCallback(async (wellId: string) => {
-    const { data } = await supabase.from("saved_calculations").select("*").eq("well_id", wellId).order("created_at", { ascending: false });
+    const { data } = await supabase.from("saved_calculations").select("*").eq("well_id", wellId).eq("user_id", await uid()).order("created_at", { ascending: false });
     if (data) setCalcs(data as SavedCalc[]);
   }, []);
 

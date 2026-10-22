@@ -65,22 +65,22 @@ export default function SaveToCabinetDialog({
       if (!session) { setLoading(false); return; }
       setUserId(session.user.id);
 
-      const { data: f } = await supabase.from("fields").select("id, name").order("name");
+      const { data: f } = await supabase.from("fields").select("id, name").eq("user_id", session.user.id).order("name");
       const fieldsArr = (f || []) as Field[];
       setFields(fieldsArr);
 
       // If initialWellId given, resolve full chain
       if (initialWellId) {
-        const { data: w } = await supabase.from("wells").select("id, name, well_pad_id").eq("id", initialWellId).maybeSingle();
+        const { data: w } = await supabase.from("wells").select("id, name, well_pad_id").eq("id", initialWellId).eq("user_id", session.user.id).maybeSingle();
         if (w) {
           setWellId(w.id);
-          const { data: p } = await supabase.from("well_pads").select("id, name, field_id").eq("id", w.well_pad_id).maybeSingle();
+          const { data: p } = await supabase.from("well_pads").select("id, name, field_id").eq("id", w.well_pad_id).eq("user_id", session.user.id).maybeSingle();
           if (p) {
             setPadId(p.id);
             setFieldId(p.field_id);
-            const { data: padsList } = await supabase.from("well_pads").select("id, name, field_id").eq("field_id", p.field_id).order("name");
+            const { data: padsList } = await supabase.from("well_pads").select("id, name, field_id").eq("field_id", p.field_id).eq("user_id", session.user.id).order("name");
             setPads((padsList || []) as Pad[]);
-            const { data: wellsList } = await supabase.from("wells").select("id, name, well_pad_id").eq("well_pad_id", p.id).order("name");
+            const { data: wellsList } = await supabase.from("wells").select("id, name, well_pad_id").eq("well_pad_id", p.id).eq("user_id", session.user.id).order("name");
             setWells((wellsList || []) as Well[]);
           }
         }
@@ -95,7 +95,8 @@ export default function SaveToCabinetDialog({
   useEffect(() => {
     if (!fieldId) { setPads([]); return; }
     (async () => {
-      const { data } = await supabase.from("well_pads").select("id, name, field_id").eq("field_id", fieldId).order("name");
+      const uid = (await supabase.auth.getSession()).data.session?.user.id ?? "";
+      const { data } = await supabase.from("well_pads").select("id, name, field_id").eq("field_id", fieldId).eq("user_id", uid).order("name");
       const arr = (data || []) as Pad[];
       setPads(arr);
       if (!arr.find(p => p.id === padId)) setPadId(arr.length === 1 ? arr[0].id : "");
@@ -106,7 +107,8 @@ export default function SaveToCabinetDialog({
   useEffect(() => {
     if (!padId) { setWells([]); return; }
     (async () => {
-      const { data } = await supabase.from("wells").select("id, name, well_pad_id").eq("well_pad_id", padId).order("name");
+      const uid = (await supabase.auth.getSession()).data.session?.user.id ?? "";
+      const { data } = await supabase.from("wells").select("id, name, well_pad_id").eq("well_pad_id", padId).eq("user_id", uid).order("name");
       const arr = (data || []) as Well[];
       setWells(arr);
       if (!arr.find(w => w.id === wellId)) setWellId(arr.length === 1 ? arr[0].id : "");
