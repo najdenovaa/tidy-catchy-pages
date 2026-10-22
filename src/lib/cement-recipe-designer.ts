@@ -51,6 +51,8 @@ export interface PredictedRheology { pv: number; ypPa: number; fann: Record<"r60
 
 export interface SlurryDesign {
   baseCement: string;
+  /** Краткое обозначение базового цемента (ПЦТ I-G, ПЦТ I-50 …) */
+  baseCementShort: string;
   cementSG: number;
   components: DesignedComponent[];
   /** Вода, % от массы цемента */
@@ -256,14 +258,17 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
 
   // ── Водоотдача ──
   const flTarget = o.fluidLossMaxMl ?? (c.gas ? 50 : c.coversPay ? 100 : 250);
-  const fl0 = 1200 / (1 + 0.15 * bent);
+  // Водоотдача раствора без понизителя (API, 6.9 МПа): ~1200 мл/30 мин для ПЦТ-G; растёт с В/Ц базового цемента
+  const fl0 = (1200 * Math.pow(base.wcNeat / 0.44, 0.5)) / (1 + 0.15 * bent);
   const tempK = 1 + 0.006 * Math.max(0, c.bhctC - 50);
-  let dFla = flTarget < fl0 ? 0.12 * Math.sqrt(fl0 / (flTarget * 0.85) - 1) * tempK : 0;
+  // Если требование не жёстче водоотдачи чистого раствора — понизитель не нужен
+  let dFla = 0.9 * flTarget < fl0 ? 0.12 * Math.sqrt(Math.max(0, fl0 / (0.9 * flTarget) - 1)) * tempK : 0;
   dFla = clamp(round(dFla, 0.05), 0, 1.2);
+  if (dFla === 0 && o.fluidLossMaxMl !== undefined) rationale.push(`Понизитель водоотдачи не вводится: требование ≤ ${flTarget} мл/30 мин не жёстче водоотдачи раствора без добавки (≈ ${Math.round(fl0)} мл/30 мин).`);
   const latex = (o.gasTight ?? (c.gas && c.isTail)) ? 8 : 0;
   if (dFla > 0) {
-    add({ role: "fluidLoss", name: c.bhctC > 90 ? "Понизитель водоотдачи (синтетический полимер AMPS, термостойкий)" : "Понизитель водоотдачи (синтетический полимер / гидроксиэтилцеллюлоза)", purpose: `Водоотдача ≤ ${flTarget} мл/30 мин`, pctBwoc: dFla, sg: 1.3 });
-    rationale.push(`Понизитель водоотдачи ${dFla.toFixed(2)}%: цель ≤ ${flTarget} мл/30 мин (${c.gas ? "газовые пласты" : c.coversPay ? "продуктивные пласты" : "кондуктор / непродуктивный интервал"}).`);
+    add({ role: "fluidLoss", name: c.bhctC > 90 ? "Понизитель водоотдачи (синтетический полимер AMPS, термостойкий)" : "Понизитель водоотдачи (синтетический полимер / гидроксиэтилцеллюлоза)", purpose: `Водоотдача ≤ ${flTarget} мл/30 мин (без добавки ≈ ${Math.round(fl0)})`, pctBwoc: dFla, sg: 1.3 });
+    rationale.push(`Понизитель водоотдачи ${dFla.toFixed(2)}%: цель ≤ ${flTarget} мл/30 мин, а раствор без добавки отдаёт ≈ ${Math.round(fl0)} мл/30 мин (${o.fluidLossMaxMl !== undefined ? "требование технолога" : c.gas ? "газовые пласты" : c.coversPay ? "продуктивные пласты" : "кондуктор / непродуктивный интервал"}).`);
   }
   const flPred = Math.max(20, (fl0 / (1 + Math.pow(dFla / tempK / 0.12, 2))) * (latex ? 0.7 : 1));
 
@@ -373,6 +378,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   if (extenderNote) warnings.push(extenderNote.trim());
 
   return {
+    baseCementShort: base.short,
     baseCement: baseKey === "G" && (!o.baseCement || o.baseCement === "auto") && c.tTopC < 15 && !c.isTail ? `${base.name}; допускается ПЦТ I-50 для холодного интервала` : base.name,
     cementSG, components: comps,
     waterPctBwoc: wcFinal * 100,

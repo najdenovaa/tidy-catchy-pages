@@ -134,7 +134,7 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
           <Button size="sm" variant="outline" onClick={() => exportLabProtocolDocx(protocol(), "Протокол_рецептуры_моста.docx")}><Download className="w-4 h-4 mr-1" />Протокол — Word</Button>
         </div>
         {msg && <p className="text-green-600">{msg}</p>}
-        <p className="text-[10px] text-muted-foreground">Прогноз по корреляциям (ПЦТ класса G, абсолютные объёмы, API RP 10B-2): время загустевания ±25%, прочность ±30–40%. СНС раствора замерить — он входит в расчёт устойчивости моста.</p>
+        <p className="text-[10px] text-muted-foreground">Прогноз по корреляциям ({d.baseCementShort}, абсолютные объёмы, API RP 10B-2): время загустевания ±25%, прочность ±30–40%. СНС раствора замерить — он входит в расчёт устойчивости моста.</p>
       </CardContent>
     </Card>
   );
