@@ -18,6 +18,7 @@ import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import CementPlugVisualization from "@/components/CementPlugVisualization";
 import CementPlugPressureChart from "@/components/CementPlugPressureChart";
 import CementPlugAnimation from "@/components/CementPlugAnimation";
+import Plug3D from "@/components/plug3d/Plug3D";
 import { PLUG_SUPPORT_LABEL, type PlugSupport } from "@/lib/cement-plug-exchange";
 import { plugTemperatures, PLUG_MODEL_VERSION } from "@/lib/cement-plug-calculations";
 import { DEFAULT_FIELD_VELOCITY_FACTOR, assessPlugExchange, calibrateVelocityFactor, type ExchangeInput } from "@/lib/cement-plug-exchange";
@@ -1867,6 +1868,12 @@ export default function CementPlug() {
           {/* Animation */}
           {results && (
             <CementPlugAnimation inputs={buildInputs()} results={results} />
+          )}
+
+          {results && results.exchange && (
+            <SafeBoundary title="3D-модель моста не отобразилась">
+              <Plug3D inputs={inputsAtCalc ?? buildInputs()} results={results} compl={complEval} kickZoneMD={typeof complRaw.zoneDepthMD === "number" ? (complRaw.zoneDepthMD as number) : null} />
+            </SafeBoundary>
           )}
 
           {/* Visualization & Chart — below results */}

@@ -12,7 +12,7 @@ const SEG = 72;
 const CUT0 = Math.PI * 0.32, CUT1 = Math.PI * 0.68;
 
 /** Положение по траектории (MD → x восток, y вверх, z север), метры. */
-function pathPoints(traj: TrajectoryPoint[], mds: number[]): THREE.Vector3[] {
+export function pathPoints(traj: TrajectoryPoint[], mds: number[]): THREE.Vector3[] {
   const t = traj.length > 1 ? traj.slice().sort((a, b) => a.md - b.md) : [{ md: 0, zenith: 0, azimuth: 0, tvd: 0 }, { md: 1e5, zenith: 0, azimuth: 0, tvd: 1e5 }];
   const out: THREE.Vector3[] = [];
   let x = 0, y = 0, z = 0, md = t[0].md, idx = 0;
@@ -35,7 +35,7 @@ function pathPoints(traj: TrajectoryPoint[], mds: number[]): THREE.Vector3[] {
 }
 
 /** Кольца вдоль пути с ориентацией «0° = верхняя сторона ствола». */
-function frames(pts: THREE.Vector3[]) {
+export function frames(pts: THREE.Vector3[]) {
   const up = new THREE.Vector3(0, 1, 0);
   const T: THREE.Vector3[] = [], Nn: THREE.Vector3[] = [], B: THREE.Vector3[] = [];
   let prevN = new THREE.Vector3(1, 0, 0);
