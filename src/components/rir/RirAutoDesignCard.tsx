@@ -76,7 +76,7 @@ export default function RirAutoDesignCard({ inp, onApply }: { inp: RirInputs; on
             </div>
           )}
           {r.notes.map((n) => <p key={n} className="text-muted-foreground">ℹ {n}</p>)}
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <div>
               <p className="text-[11px] font-semibold">Карта вариантов ({r.evaluated}): цвет — итог моделирования, обведён рекомендуемый</p>
               <VariantMap r={r} bestId={r.best?.id} />

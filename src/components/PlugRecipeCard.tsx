@@ -11,6 +11,7 @@ import { designPlugSlurry, buildPlugLabProtocol, plugJobTimeMin, plugRequiredThi
 import { protocolToHtml } from "@/lib/lab-protocol";
 import { exportLabProtocolDocx } from "@/lib/export-lab-protocol-docx";
 import type { PillDesign } from "@/lib/cement-plug-pill";
+import RecipeDoseTable from "./RecipeDoseTable";
 
 interface Props {
   inputs: PlugInputs;
@@ -63,17 +64,17 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
         <p className="text-muted-foreground">
           Условия: BHCT {f(t.bhctC, 0)} °C, кровля/подошва {f(t.tTopStaticC, 0)}/{f(t.tBottomStaticC, 0)} °C{t.estimated ? " (t° забоя не задана — оценка)" : ""}; работа раствора {f(plugJobTimeMin(results), 0)} мин (закачка, продавка, подъём из цемента) → нужно загустевание ≥ {plugRequiredThickeningMin(results)} мин.
         </p>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div className="space-y-1.5">
             <label className="flex items-center justify-between gap-2">
               <span>Назначение моста</span>
-              <select value={purpose} onChange={(e) => setPurpose(e.target.value as PlugPurpose)} className="h-8 rounded border border-border bg-background px-2 text-xs">
+              <select value={purpose} onChange={(e) => setPurpose(e.target.value as PlugPurpose)} className="h-8 min-w-0 max-w-[60%] rounded border border-border bg-background px-2 text-xs">
                 {(Object.keys(PLUG_PURPOSE_LABEL) as PlugPurpose[]).map((k) => <option key={k} value={k}>{PLUG_PURPOSE_LABEL[k]}</option>)}
               </select>
             </label>
             <label className="flex items-center justify-between gap-2">
               <span>Тампонажный цемент</span>
-              <select value={user.baseCement ?? "auto"} onChange={(e) => set("baseCement", e.target.value === "auto" ? undefined : e.target.value)} className="h-8 max-w-[60%] rounded border border-border bg-background px-2 text-xs" data-testid="plug-base-cement">
+              <select value={user.baseCement ?? "auto"} onChange={(e) => set("baseCement", e.target.value === "auto" ? undefined : e.target.value)} className="h-8 min-w-0 max-w-[60%] rounded border border-border bg-background px-2 text-xs" data-testid="plug-base-cement">
                 <option value="auto">Авто (ПЦТ I-G)</option>
                 {(Object.keys(BASE_CEMENTS) as (keyof typeof BASE_CEMENTS)[]).map((k) => <option key={k} value={k}>{BASE_CEMENTS[k].short} — {BASE_CEMENTS[k].note}</option>)}
               </select>
@@ -101,15 +102,24 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
             </div>
           </div>
           <div className="space-y-2">
-            <table className="w-full text-[11px]">
-              <thead className="bg-muted/50"><tr><th className="p-1 text-left">Компонент</th><th className="p-1 text-right">% bwoc</th></tr></thead>
-              <tbody>
-                <tr className="border-t border-border/40"><td className="p-1">{d.baseCement}</td><td className="p-1 text-right">100</td></tr>
-                {d.components.map((c) => <tr key={c.role + c.name} className="border-t border-border/40"><td className="p-1">{c.name}</td><td className="p-1 text-right">{f(c.pctBwoc, 2)}</td></tr>)}
-                <tr className="border-t border-border/40"><td className="p-1">Вода затворения</td><td className="p-1 text-right">{f(d.waterPctBwoc, 1)}</td></tr>
-              </tbody>
-            </table>
+            <RecipeDoseTable d={d} doses={user.doses} onChange={(doses) => set("doses", doses)} />
             <p className="text-[10px] text-muted-foreground">Плотность {f(d.densityGcm3, 3)} г/см³ · В/С {f(d.waterToBlend, 3)} · выход {f(d.yieldM3PerT, 3)} м³/т</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 text-[10px]" data-testid="recipe-props">
+              {([
+                ["Загустевание 30 Вс", `${f(d.predicted.thickening30BcMin, 0)} мин`],
+                ["Водоотдача", `${f(d.predicted.fluidLossMl, 0)} мл/30 мин`],
+                ["Свободная вода", `${f(d.predicted.freeWaterPct, 1)} %`],
+                ["ПВ / ДНС (27 °C)", `${f(d.predicted.rheo27.pv, 0)} мПа·с / ${f(d.predicted.rheo27.ypPa, 1)} Па`],
+                ["Растекаемость", `${f(d.predicted.spreadCm, 1)} см`],
+                ["Седиментация", `${f(d.predicted.sedimentationGcm3, 2)} г/см³`],
+                ["Прочность 24 ч кровля / подошва", `${f(d.predicted.strength24TopMPa, 1)} / ${f(d.predicted.strength24BottomMPa, 1)} МПа`],
+                ["Прочность 48 ч кровля / подошва", `${f(d.predicted.strength48TopMPa, 1)} / ${f(d.predicted.strength48BottomMPa, 1)} МПа`],
+                ["ОЗЦ до 3,5 МПа (кровля)", Number.isFinite(d.predicted.wocTo35MPaHours) ? `${f(d.predicted.wocTo35MPaHours, 0)} ч` : "> 48 ч"],
+                ...(d.predicted.expansionPct !== null ? [["Расширение камня", `${f(d.predicted.expansionPct, 2)} %`]] : []),
+              ] as [string, string][]).map(([n, v]) => (
+                <div key={n} className="rounded border border-border/50 px-1.5 py-1"><p className="text-muted-foreground leading-tight">{n}</p><p className="font-semibold tabular-nums">{v}</p></div>
+              ))}
+            </div>
             <table className="w-full text-[11px]">
               <thead className="bg-muted/50"><tr><th className="p-1 text-left">Показатель</th><th className="p-1 text-right">Требование</th><th className="p-1 text-right">Прогноз</th><th className="w-5" /></tr></thead>
               <tbody>

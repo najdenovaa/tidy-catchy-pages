@@ -293,7 +293,7 @@ export default function Plug3D({ inputs, results, compl, kickZoneMD }: { inputs:
           ))}
           <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: "#cbd5e1" }} />трубы</span>
         </div>
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <div className="h-[540px] rounded-md overflow-hidden bg-[#0f172a]">
             <Canvas camera={{ position: [camPos.cam.x, camPos.cam.y, camPos.cam.z], fov: 40 }} gl={{ preserveDrawingBuffer: true }}>
               <PlugScene s={s} x={x} traj={traj} />

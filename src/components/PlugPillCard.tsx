@@ -56,11 +56,11 @@ export default function PlugPillCard({ design: d, autoNeedPa, strictPa, practice
           Пачка должна держать цемент. «По практике» — минимальный СНС, при котором ожидаемая осадка кровли не больше 5% длины моста (с учётом калибровки по отбивкам); «без обмена» — СНС по лабораторному критерию с запасом 20%, обмена не будет совсем.
           Плотность по умолчанию — как у раствора под пачкой, чтобы ниже не появилась новая граница «тяжёлое над лёгким». BHCT {f(bhctC, 0)} °C.
         </p>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
           <div className="space-y-1.5">
             <label className="flex items-center justify-between gap-2">
               <span>Требование к пачке</span>
-              <select value={settings.mode ?? "practice"} onChange={(e) => onSettings({ ...settings, mode: e.target.value as PillSettings["mode"], needGelPa: undefined })} className="h-8 rounded border border-border bg-background px-2 text-xs" data-testid="pill-mode">
+              <select value={settings.mode ?? "practice"} onChange={(e) => onSettings({ ...settings, mode: e.target.value as PillSettings["mode"], needGelPa: undefined })} className="h-8 min-w-0 max-w-[60%] rounded border border-border bg-background px-2 text-xs" data-testid="pill-mode">
                 <option value="practice">по практике: осадка ≤ {allowFallM.toFixed(1)} м (СНС ≥ {practicePa} Па)</option>
                 <option value="strict">без обмена: лаб. критерий (СНС ≥ {strictPa} Па)</option>
               </select>

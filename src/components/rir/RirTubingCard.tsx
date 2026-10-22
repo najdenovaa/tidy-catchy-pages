@@ -146,7 +146,7 @@ export default function RirTubingCard({ r, m, onChange, modeLocked }: { r: Tubin
             <div key={a} className="rounded-lg border border-border p-2"><div className="text-[11px] text-muted-foreground">{a}</div><div className="text-base font-semibold leading-tight">{b}</div><div className="text-[10px] text-muted-foreground">{c}</div></div>
           ))}
         </div>
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)] items-start">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)] items-start">
           <div className="flex justify-center"><StingerPicture r={r} m={m} /></div>
           <div><p className="font-semibold mb-1">Вклад эффектов в длину НКТ</p><EffectsChart r={r} /></div>
           <div><p className="font-semibold mb-1">Осевая сила по глубине</p><ForceChart r={r} /></div>

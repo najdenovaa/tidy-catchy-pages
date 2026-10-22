@@ -114,7 +114,7 @@ export default function RirChannelCard({ inp, res, sim, design }: { inp: RirInpu
               {r.fluids.map((fl, i) => <span key={i} className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: meta.colors[i] }} />{fl.name}</span>)}
               <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: "#5b5f66" }} />цементный камень (вне канала)</span>
             </div>
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-[11px] font-semibold flex items-center gap-1"><Box className="w-3.5 h-3.5" />3D: колонна и канал за ней (масштаб по радиусу увеличен)</p>

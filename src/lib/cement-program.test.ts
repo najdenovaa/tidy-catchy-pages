@@ -160,3 +160,23 @@ describe("Выбор базового цемента в подборе реце�
     expect(d.warnings.some((w) => w.includes("до 50 °C"))).toBe(true);
   });
 });
+
+describe("ручные дозировки добавок", () => {
+  const c = { densityGcm3: 1.85, bhctC: 40, tTopC: 30, tBottomC: 45, bhstC: 50, maxPressureMPa: 20, requiredThickeningMin: 200, coversPay: true, gas: false, maxZenithDeg: 10, lossMarginMPa: null, isTail: true };
+  it("свойства пересчитываются по заданным дозировкам", async () => {
+    const { designToTargets } = await import("./cement-recipe-designer");
+    const a = designToTargets(c).design;
+    const lowFla = designToTargets(c, { doses: { fluidLoss: 0.1 } }).design;
+    expect(lowFla.components.find((x) => x.role === "fluidLoss")?.pctBwoc).toBe(0.1);
+    expect(lowFla.predicted.fluidLossMl).toBeGreaterThan(a.predicted.fluidLossMl * 3);
+    const ret = designToTargets(c, { doses: { retarder: 0.6 } }).design;
+    expect(ret.predicted.thickening30BcMin).toBeGreaterThan(a.predicted.thickening30BcMin * 2);
+    expect(ret.predicted.strength24TopMPa).toBeLessThan(a.predicted.strength24TopMPa);
+    const noDef = designToTargets(c, { doses: { defoamer: 0 } }).design;
+    expect(noDef.components.some((x) => x.role === "defoamer")).toBe(false);
+    // плотность сохраняется при любой дозировке
+    const bent = designToTargets(c, { doses: { extender: 6 } }).design;
+    expect(bent.densityGcm3).toBeCloseTo(1.85, 2);
+    expect(bent.waterPctBwoc).toBeGreaterThan(a.waterPctBwoc);
+  });
+});

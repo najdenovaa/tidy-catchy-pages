@@ -6,6 +6,7 @@ import { FlaskConical, ArrowRightLeft, RotateCcw } from "lucide-react";
 import { conditionsAll, type ProtocolInput } from "@/lib/lab-protocol";
 import { designToTargets, defaultTargets, applyDesignToSlurry, BASE_CEMENTS, type LabTargets, type TargetDesignResult } from "@/lib/cement-recipe-designer";
 import type { SlurryInput } from "@/lib/cementing-calculations";
+import RecipeDoseTable from "./RecipeDoseTable";
 
 interface Props {
   input: ProtocolInput;
@@ -118,7 +119,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
               </div>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
               <div className="space-y-2">
                 <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Требования технолога</div>
                 <div className="space-y-1">
@@ -164,16 +165,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
               <div className="space-y-3">
                 <div>
                   <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Подобранная рецептура</div>
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted/50"><tr><th className="p-1 text-left">Компонент</th><th className="p-1 text-right">% bwoc</th></tr></thead>
-                    <tbody>
-                      <tr className="border-t border-border/40"><td className="p-1">{d.baseCement}</td><td className="p-1 text-right">100</td></tr>
-                      {d.components.map((c) => (
-                        <tr key={c.role + c.name} className="border-t border-border/40"><td className="p-1">{c.name}</td><td className="p-1 text-right">{f(c.pctBwoc, 2)}</td></tr>
-                      ))}
-                      <tr className="border-t border-border/40"><td className="p-1">Вода затворения</td><td className="p-1 text-right">{f(d.waterPctBwoc, 1)}</td></tr>
-                    </tbody>
-                  </table>
+                  <RecipeDoseTable d={d} doses={t.doses} onChange={(doses) => set({ doses })} textSize="text-xs" />
                   <div className="text-[11px] text-muted-foreground mt-1">
                     Плотность {f(d.densityGcm3, 3)} г/см³ · В/С {f(d.waterToBlend, 3)} · выход {f(d.yieldM3PerT, 3)} м³/т
                   </div>

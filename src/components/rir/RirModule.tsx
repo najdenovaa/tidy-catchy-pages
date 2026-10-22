@@ -221,7 +221,7 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
 
       <RirAutoDesignCard inp={full} onApply={(v) => setInp((s) => applyVariant(s, v))} />
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
         <Card>
           <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm">Схема работ</CardTitle></CardHeader>
           <CardContent className="pt-0 flex justify-center"><div data-docimg="schematic" className="w-full flex justify-center"><RirWellSchematic inp={full} res={res} /></div></CardContent>
