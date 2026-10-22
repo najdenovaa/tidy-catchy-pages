@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Displacement2DSection from "@/components/displacement/Displacement2DSection";
 import TabbedNavigation from "@/components/TabbedNavigation";
 import SafetyTrafficLight from "@/components/SafetyTrafficLight";
 import ScenarioCompare from "@/components/ScenarioCompare";
@@ -857,6 +858,25 @@ export default function Index() {
               </div>
             </TabsContent>
           </div>
+
+          {activeTab === "displace3d" && (
+            <TabsContent value="displace3d">
+              <div data-tab-content="displace3d">
+                {calcSnapshot && volumes && snapWellData ? (
+                  <Displacement2DSection
+                    wellData={snapWellData}
+                    slurries={calcSnapshot.slurries}
+                    buffers={calcSnapshot.buffers}
+                    drillingFluid={calcSnapshot.drillingFluid}
+                    displacementFluids={calcSnapshot.displacementFluids}
+                    volumes={volumes}
+                  />
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
+                )}
+              </div>
+            </TabsContent>
+          )}
 
           <div className={activeTab !== "contact" ? "h-0 overflow-hidden" : ""}>
             <TabsContent value="contact" forceMount>

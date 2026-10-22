@@ -56,6 +56,7 @@ const GROUPS: TabGroup[] = [
     icon: Film,
     tabs: [
       { value: "animation", label: "Анимация" },
+      { value: "displace3d", label: "Вытеснение 3D" },
       { value: "visual", label: "Визуализация" },
     ],
   },
