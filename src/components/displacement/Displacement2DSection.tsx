@@ -22,7 +22,8 @@ interface Run { result: D2Result; meta: D2Meta; stages: D2Stage[] }
 
 function ProfileChart({ res, designTop }: { res: D2Result; designTop: number }) {
   const [ref, w] = useMeasuredWidth<HTMLDivElement>();
-  const data = res.rows.map((r) => ({ md: Math.round(r.md), cem: +(r.cement * 100).toFixed(1), mud: +(r.mud * 100).toFixed(1), sp: +(r.spacer * 100).toFixed(1), so: +(r.standoff * 100).toFixed(0) }));
+  const settled = res.summary.settleS > 0;
+  const data = res.rows.map((r, i) => ({ md: Math.round(r.md), cem: +(r.cement * 100).toFixed(1), mud: +(r.mud * 100).toFixed(1), sp: +(r.spacer * 100).toFixed(1), so: +(r.standoff * 100).toFixed(0), cov: +(r.coverage * 100).toFixed(0), cov0: +((res.rowsPumpEnd[i]?.coverage ?? r.coverage) * 100).toFixed(0) }));
   return (
     <div ref={ref} className="h-[520px]">
       <LineChart layout="vertical" width={w || 360} height={520} data={data} margin={{ top: 8, right: 12, bottom: 18, left: 8 }}>
@@ -35,6 +36,8 @@ function ProfileChart({ res, designTop }: { res: D2Result; designTop: number }) 
         <Line dataKey="cem" name="Цемент" stroke="#64748b" strokeWidth={2} dot={false} isAnimationActive={false} />
         <Line dataKey="mud" name="Буровой раствор" stroke="#3f7d55" strokeWidth={2} dot={false} isAnimationActive={false} />
         <Line dataKey="sp" name="Буфер" stroke="#e0a63a" dot={false} isAnimationActive={false} />
+        <Line dataKey="cov" name="Охват цементом по окружности" stroke="#0ea5e9" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+        {settled && <Line dataKey="cov0" name="Охват на конец продавки" stroke="#0ea5e9" strokeDasharray="2 3" strokeOpacity={0.7} dot={false} isAnimationActive={false} />}
         <Line dataKey="so" name="Отступ колонны" stroke="hsl(var(--primary))" strokeDasharray="4 3" dot={false} isAnimationActive={false} />
       </LineChart>
     </div>
@@ -53,6 +56,8 @@ export default function Displacement2DSection(p: {
   const [playing, setPlaying] = useState(false);
   const [cut, setCut] = useState(true);
   const [fine, setFine] = useState(false);
+  const [rpm, setRpm] = useState(0);
+  const [settle, setSettle] = useState(30);
   const worker = useRef<Worker | null>(null);
   const reqId = useRef(0);
   const trajectory: TrajectoryPoint[] = useMemo(() => getEffectiveTrajectory(p.wellData), [p.wellData]);
@@ -60,7 +65,7 @@ export default function Displacement2DSection(p: {
   // Входные данные изменились — результат устарел
   const inputKey = useMemo(() => JSON.stringify([p.wellData.casingDepthMD, p.wellData.standoffProfile?.length, p.slurries.map((s) => [s.density, s.topDepthMD, s.rheology]), p.buffers.map((b) => [b.volume, b.density, b.rheology]), p.drillingFluid.density, p.drillingFluid.rheology]), [p]);
   const [runKey, setRunKey] = useState<string | null>(null);
-  const stale = run && runKey !== inputKey;
+  const stale = run && runKey !== `${inputKey}|${rpm}|${settle}`;
 
   useEffect(() => () => worker.current?.terminate(), []);
   const start = () => {
@@ -76,12 +81,12 @@ export default function Displacement2DSection(p: {
       setBusy(false);
       if (m.error) { setErr(m.error); return; }
       setRun({ result: m.result, meta: m.meta, stages: m.stages });
-      setRunKey(inputKey);
+      setRunKey(`${inputKey}|${rpm}|${settle}`);
       setSnap(m.result.snapshots.length - 1);
       w.terminate(); worker.current = null;
     };
     w.onerror = (e) => { setBusy(false); setErr(e.message || "Ошибка расчёта"); };
-    w.postMessage({ id, fine, data: { wellData: p.wellData, slurries: p.slurries, buffers: p.buffers, drillingFluid: p.drillingFluid, displacementFluids: p.displacementFluids, volumes: p.volumes } });
+    w.postMessage({ id, fine, rotationRpm: rpm, settleMin: settle, data: { wellData: p.wellData, slurries: p.slurries, buffers: p.buffers, drillingFluid: p.drillingFluid, displacementFluids: p.displacementFluids, volumes: p.volumes } });
   };
 
   useEffect(() => {
@@ -94,7 +99,7 @@ export default function Displacement2DSection(p: {
   const res = run?.result;
   const meta = run?.meta;
   const sn = res ? res.snapshots[Math.min(snap, res.snapshots.length - 1)] : null;
-  const stageName = res && sn && run ? res.fluids[run.stages[sn.stage]?.fluid ?? 0]?.name : "";
+  const stageName = res && sn && run ? (sn.stage < 0 ? `выдержка, ${mmss(sn.t - res.summary.pumpTimeS)}` : res.fluids[run.stages[sn.stage]?.fluid ?? 0]?.name) : "";
   const fillTone = res ? (res.summary.cementFillPct >= 95 ? "text-emerald-600" : res.summary.cementFillPct >= 85 ? "text-amber-600" : "text-destructive") : "";
 
   return (
@@ -104,6 +109,12 @@ export default function Displacement2DSection(p: {
           <Waves className="w-4 h-4" /> Вытеснение в затрубье: 2D-модель и 3D-вид
           <Badge variant="outline" className="text-[10px]">эксцентриситет · реология · плотности · наклон</Badge>
           <span className="ml-auto flex items-center gap-2">
+            <label className="flex items-center gap-1 text-[11px] font-normal text-muted-foreground">вращение
+              <input type="number" min={0} max={60} step={5} value={rpm} onChange={(e) => setRpm(Math.max(0, Math.min(60, +e.target.value || 0)))} className="h-7 w-14 rounded border border-border bg-background px-1 text-xs" data-testid="d2-rpm" />об/мин</label>
+            <label className="flex items-center gap-1 text-[11px] font-normal text-muted-foreground">выдержка
+              <select value={settle} onChange={(e) => setSettle(+e.target.value)} className="h-7 rounded border border-border bg-background px-1 text-xs" data-testid="d2-settle">
+                {[0, 15, 30, 60].map((m) => <option key={m} value={m}>{m === 0 ? "нет" : `${m} мин`}</option>)}
+              </select></label>
             <label className="flex items-center gap-1 text-[11px] font-normal text-muted-foreground"><input type="checkbox" checked={fine} onChange={(e) => setFine(e.target.checked)} />подробная сетка</label>
             <Button size="sm" className="h-8 text-xs" onClick={start} disabled={busy} data-testid="d2-run">{busy ? "Считаю…" : run ? "Пересчитать" : "Рассчитать вытеснение"}</Button>
           </span>
@@ -132,13 +143,24 @@ export default function Displacement2DSection(p: {
                 <div key={n} className="rounded-md border border-border/60 p-2"><p className="text-[10px] text-muted-foreground">{n}</p><p className={`text-base font-semibold ${c}`}>{v}</p><p className="text-[10px] text-muted-foreground">{s}</p></div>
               ))}
             </div>
+            {(res.summary.settleS > 0 || res.summary.rotationRpm > 0) && (
+              <div className="rounded-md border border-border/60 bg-muted/30 p-2 space-y-0.5">
+                {res.summary.rotationRpm > 0 && <p>Вращение колонны {f(res.summary.rotationRpm)} об/мин при закачке: считается вся окружность; вращение разрушает структуру раствора и уносит его с узкой стороны по окружности.</p>}
+                {res.summary.settleS > 0 && (
+                  <p>Выдержка {f(res.summary.settleS / 60)} мин после продавки: на конец продавки заполнение {f(res.summary.pumpEnd.cementFillPct, 1)}%, канал {f(res.summary.pumpEnd.channelM)} м →
+                    после выдержки {f(res.summary.cementFillPct, 1)}%, канал {f(res.summary.channelM)} м; {Math.abs(res.settleTopShiftM) < 0.05 ? "центр тяжести цемента практически не сместился." : `центр тяжести цемента сместился на ${f(Math.abs(res.settleTopShiftM), 1)} м ${res.settleTopShiftM > 0 ? "вниз" : "вверх"}.`}
+                    {res.summary.channelM < res.summary.pumpEnd.channelM - 1 ? " Тяжёлый цемент стекает к нижней стенке и частично закрывает канал." : res.summary.channelM > res.summary.pumpEnd.channelM + 1 ? " Лёгкий раствор всплывает и вытесняет цемент с верхней стороны — канал растёт." : " Структура жидкостей удерживает распределение — существенных перетоков нет."}</p>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="outline" className="h-7 w-7 p-0" aria-label={playing ? "Пауза" : "Воспроизвести"} onClick={() => { if (!playing && snap >= res.snapshots.length - 1) setSnap(0); setPlaying((x) => !x); }}>
                 {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
               </Button>
               <Button size="sm" variant="outline" className="h-7 w-7 p-0" aria-label="В начало" onClick={() => { setPlaying(false); setSnap(0); }}><RotateCcw className="w-3.5 h-3.5" /></Button>
               <input type="range" min={0} max={res.snapshots.length - 1} value={snap} onChange={(e) => { setPlaying(false); setSnap(+e.target.value); }} className="flex-1 min-w-[160px] accent-[hsl(var(--primary))]" aria-label="Время" />
-              <span className="tabular-nums text-muted-foreground w-44 text-right">t = {mmss(sn.t)} от выхода в затрубье · {stageName}</span>
+              <span className="tabular-nums text-muted-foreground w-56 text-right">t = {mmss(sn.t)} · {stageName}</span>
+              {res.summary.settleS > 0 && <Button size="sm" variant="ghost" className="h-7 text-[10px] px-2" onClick={() => { setPlaying(false); setSnap(res.pumpEndSnap); }}>конец продавки</Button>}
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-1">
               {res.fluids.map((fl, i) => <span key={i} className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: meta.colors[i] }} />{fl.name} <span className="text-muted-foreground">{f(fl.density)} кг/м³, ДНС {f(fl.yp, 1)} Па</span></span>)}
@@ -157,7 +179,7 @@ export default function Displacement2DSection(p: {
                 <D2Map res={res} colors={meta.colors} snap={snap} designTopMD={meta.designCementTopMD} />
               </div>
               <div>
-                <p className="text-[11px] font-semibold mb-1">Итог по глубине (после продавки)</p>
+                <p className="text-[11px] font-semibold mb-1">Итог по глубине{res.summary.settleS > 0 ? " (после выдержки)" : " (после продавки)"}</p>
                 <ProfileChart res={res} designTop={meta.designCementTopMD} />
               </div>
             </div>
@@ -173,7 +195,7 @@ export default function Displacement2DSection(p: {
             {[...meta.notes, ...res.warnings].map((n) => <p key={n} className="text-amber-700 dark:text-amber-500">⚠ {n}</p>)}
             <p className="text-[10px] text-muted-foreground">
               Модель: течение вязкопластичных жидкостей в эксцентричном зазоре, осреднённое по ширине зазора (подход Bittleston–Frigaard, как в промышленных симуляторах вытеснения);
-              ламинарный режим, без вращения и расхаживания колонны. Баланс объёмов {f(Math.abs(res.summary.massBalanceErrPct), 2)}%. Результат — прогноз для сравнения вариантов
+              ламинарный режим, без расхаживания колонны; вращение и рост СНС на выдержке — упрощённо (консервативная поправка на ядра течения в эксцентричном зазоре). Баланс объёмов {f(Math.abs(res.summary.massBalanceErrPct), 2)}%. Результат — прогноз для сравнения вариантов
               (центрирование, буфер, расход, реология), а не гарантия качества крепи.
             </p>
           </>

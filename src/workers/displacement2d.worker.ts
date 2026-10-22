@@ -2,10 +2,10 @@
 import { simulateDisplacement2D } from "@/lib/displacement-2d";
 import { buildDisplacementInput } from "@/lib/displacement-2d-input";
 
-type Msg = { id: number; data: Parameters<typeof buildDisplacementInput>[0]; fine?: boolean };
+type Msg = { id: number; data: Parameters<typeof buildDisplacementInput>[0]; fine?: boolean; rotationRpm?: number; settleMin?: number };
 
 self.onmessage = (e: MessageEvent<Msg>) => {
-  const { id, data, fine } = e.data;
+  const { id, data, fine, rotationRpm, settleMin } = e.data;
   try {
     const { input, meta } = buildDisplacementInput(data);
     let last = 0;
@@ -13,6 +13,7 @@ self.onmessage = (e: MessageEvent<Msg>) => {
       ...input,
       nZ: fine ? Math.round(Math.min(400, Math.max(120, (input.zBot - input.zTop) / 2.5))) : undefined,
       nTheta: fine ? 24 : input.nTheta,
+      rotationRpm, settleMin,
       onProgress: (f) => { const now = Date.now(); if (now - last > 150) { last = now; (self as unknown as Worker).postMessage({ id, progress: f }); } },
     });
     // geom — функция, её не передаём; остальное — структурно клонируемо

@@ -22,7 +22,8 @@ export function makeBlender(res: D2Result, colors: string[]) {
 }
 
 /** Индекс ячейки по окружности для угла a∈[0, 2π): 0 — верхняя (широкая) сторона, π — нижняя (узкая). */
-export function thetaIndex(a: number, nTheta: number) {
+export function thetaIndex(a: number, nTheta: number, full = false) {
+  if (full) return Math.min(nTheta - 1, Math.max(0, Math.floor((a / (2 * Math.PI)) * nTheta)));
   const t = a <= Math.PI ? a : 2 * Math.PI - a;
   return Math.min(nTheta - 1, Math.max(0, Math.floor((t / Math.PI) * nTheta)));
 }
@@ -35,7 +36,7 @@ export function paintUnwrapped(res: D2Result, colors: string[], snap: number, W:
   for (let j = 0; j < res.nZ; j++) for (let x = 0; x < W; x++) {
     // x = 0 — верхняя сторона, центр — нижняя (узкая), края снова верх
     const a = ((x + 0.5) / W) * 2 * Math.PI;
-    const k = j * res.nTheta + thetaIndex(a, res.nTheta);
+    const k = j * res.nTheta + thetaIndex(a, res.nTheta, res.full);
     blend(fr, k, img.data, (j * W + x) * 4);
   }
   return img;

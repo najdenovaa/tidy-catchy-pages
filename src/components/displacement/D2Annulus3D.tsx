@@ -127,7 +127,7 @@ export default function D2Annulus3D({ res, colors, snap, trajectory, cut, height
     const fr = res.snapshots[Math.min(snap, res.snapshots.length - 1)].frac;
     for (let y = 0; y < H; y++) {
       const a = ((y + 0.5) / H) * 2 * Math.PI;
-      const i = thetaIndex(a, res.nTheta);
+      const i = thetaIndex(a, res.nTheta, res.full);
       for (let x = 0; x < W; x++) blend(fr, x * res.nTheta + i, img.data, (y * W + x) * 4);
     }
     ctx.putImageData(img, 0, 0);

@@ -7,14 +7,15 @@ import { normalizeSlurryInput, normalizeBufferFluid, normalizeDisplacementFluid 
 const mud: D2Fluid = { name: "ОБР", density: 1200, pv: 0.025, yp: 10, kind: "mud" };
 const sp: D2Fluid = { name: "Буфер", density: 1300, pv: 0.02, yp: 5, kind: "spacer" };
 const cem: D2Fluid = { name: "Цемент", density: 1850, pv: 0.06, yp: 12, kind: "cement" };
-const sim = (standoff: number, incl: number, fl: D2Fluid[], rate = 0.012) => simulateDisplacement2D({
+const sim = (standoff: number, incl: number, fl: D2Fluid[], rate = 0.012, extra: { rotationRpm?: number; settleMin?: number } = {}) => simulateDisplacement2D({
+  ...extra,
   zTop: 1500, zBot: 2500, nZ: 60, nTheta: 12, geom: () => ({ rHole: 0.108, rCasing: 0.073, standoff, inclDeg: incl }), fluids: fl,
   stages: [{ fluid: 1, volumeM3: 4, rateM3s: rate }, { fluid: 2, volumeM3: 15, rateM3s: rate }],
 });
 const narrowWide = (r: ReturnType<typeof sim>, j: number) => {
   const cemF = r.fluids.map((f) => f.kind === "cement");
   const at = (i: number) => r.finalFrac.reduce((a, fr, f) => a + (cemF[f] ? fr[j * r.nTheta + i] : 0), 0);
-  return { wide: at(0), narrow: at(r.nTheta - 1) };
+  return r.full ? { wide: at(0), narrow: at(r.nTheta / 2) } : { wide: at(0), narrow: at(r.nTheta - 1) };
 };
 
 describe("2D-модель вытеснения в затрубье", () => {
@@ -46,6 +47,28 @@ describe("2D-модель вытеснения в затрубье", () => {
     expect(narrow).toBeLessThan(0.3);
     expect(wide).toBeGreaterThan(0.8);
     expect(r.summary.mudLeftPct).toBeGreaterThan(15);
+  });
+  it("полная окружность совпадает с половиной при исчезающе малом вращении", () => {
+    const fl = [mud, { ...sp, density: 1200 }, { ...cem, density: 1250 }];
+    const half = sim(0.3, 0, fl), full = sim(0.3, 0, fl, 0.012, { rotationRpm: 0.001 });
+    expect(full.full).toBe(true);
+    expect(Math.abs(full.summary.cementFillPct - half.summary.cementFillPct)).toBeLessThan(0.5);
+    expect(Math.abs(full.summary.massBalanceErrPct)).toBeLessThan(0.1);
+  });
+  it("вращение колонны убирает канал на узкой стороне, эффект растёт с оборотами", () => {
+    const fl = [mud, { ...sp, density: 1200 }, { ...cem, density: 1250 }];
+    const r0 = sim(0.3, 0, fl), r5 = sim(0.3, 0, fl, 0.012, { rotationRpm: 5 }), r20 = sim(0.3, 0, fl, 0.012, { rotationRpm: 20 });
+    expect(r5.summary.mudLeftPct).toBeLessThan(r0.summary.mudLeftPct);
+    expect(r20.summary.mudLeftPct).toBeLessThanOrEqual(r5.summary.mudLeftPct + 0.1);
+    expect(r20.summary.channelM).toBeLessThan(r0.summary.channelM);
+  });
+  it("выдержка: тяжёлый цемент в наклонном стволе стекает к нижней стенке и сокращает канал", () => {
+    const fl = [mud, sp, cem];
+    const r = sim(0.3, 60, fl, 0.012, { settleMin: 30 });
+    expect(r.summary.settleS).toBe(1800);
+    expect(r.pumpEndSnap).toBeLessThan(r.snapshots.length - 1);
+    expect(r.summary.channelM).toBeLessThanOrEqual(r.summary.pumpEnd.channelM);
+    expect(Math.abs(r.summary.massBalanceErrPct)).toBeLessThan(0.1);
   });
   it("сборка из программы: в затрубье выходят буфер и цемент за вычетом стакана ниже ЦКОД", () => {
     const well = { wellDepthMD: 2500, wellDepthTVD: 2500, casingDepthMD: 2490, holeDiameter: 215.9, casingOD: 168.3, casingWall: 8.9, prevCasingDepth: 500, prevCasingOD: 244.5, prevCasingID: 226, ckodDepth: 2470, cementRiseHeight: 1500, cavernCoeff: 1.1, bottomTempStatic: 80, bottomTempCirc: 60, pumpZoneTop: 0, pumpZoneBottom: 0,
