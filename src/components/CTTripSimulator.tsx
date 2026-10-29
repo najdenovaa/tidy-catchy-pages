@@ -16,6 +16,7 @@ interface ForcePt {
   axialRIH: number;
   axialPOOH: number;
   bucklingLimit: number;
+  helicalLimit?: number;
 }
 
 interface Props {
@@ -25,6 +26,7 @@ interface Props {
   lockUpDepth: number;
   helicalBucklingLoad: number;
   injectorPullCapacity?: number; // кН
+  injectorSnubCapacity?: number; // кН
 }
 
 type Direction = "in" | "out";
@@ -43,6 +45,7 @@ export default function CTTripSimulator({
   lockUpDepth,
   helicalBucklingLoad,
   injectorPullCapacity = 220,
+  injectorSnubCapacity = 130,
 }: Props) {
   const [stepM, setStepM] = useState(50);
   const [direction, setDirection] = useState<Direction>("in");
@@ -69,8 +72,9 @@ export default function CTTripSimulator({
     const h = findNearest(hookLoadData, md);
     const f = findNearest(forceProfile, md);
     const hook = direction === "in" ? (h?.hookRIH_kgf ?? 0) : (h?.hookPOOH_kgf ?? 0);
-    const axial = direction === "in" ? (f?.axialRIH ?? 0) : (f?.axialPOOH ?? 0);
-    const buck = f?.bucklingLimit ?? helicalBucklingLoad;
+    const axial = Number(direction === "in" ? (f?.axialRIH ?? 0) : (f?.axialPOOH ?? 0)) || 0;
+    const buck = Number(f?.helicalLimit ?? -helicalBucklingLoad) || 0;
+    const sinBuck = Number(f?.bucklingLimit ?? buck) || buck;
     const yieldLimit = h?.yieldLimit80_kgf ?? 0;
     const hookKN = hook * 0.00980665; // kgf → kN
     const yieldKN = yieldLimit * 0.00980665;
@@ -85,11 +89,11 @@ export default function CTTripSimulator({
     }
     // Buckling on RIH (compression > limit)
     if (direction === "in" && axial < 0 && Math.abs(axial) > Math.abs(buck)) {
-      status = "critical";
-      reasons.push(`Спиральный изгиб: |Fa|=${Math.abs(axial).toFixed(0)} кН > предел ${Math.abs(buck).toFixed(0)} кН.`);
-    } else if (direction === "in" && axial < 0 && Math.abs(axial) > 0.7 * Math.abs(buck)) {
       if (status === "ok") status = "warning";
-      reasons.push(`Близко к синусоидальному изгибу (|Fa|>70% от предела).`);
+      reasons.push(`Спиральный изгиб: сжатие ${Math.abs(axial).toFixed(1)} кН > ${Math.abs(buck).toFixed(1)} кН — прижатие к стенке и трение растут.`);
+    } else if (direction === "in" && axial < 0 && Math.abs(axial) > Math.abs(sinBuck)) {
+      if (status === "ok") status = "warning";
+      reasons.push(`Синусоидальный изгиб: сжатие ${Math.abs(axial).toFixed(1)} кН > ${Math.abs(sinBuck).toFixed(1)} кН.`);
     }
     // Yield on POOH
     if (direction === "out" && yieldKN > 0 && hookKN > yieldKN) {
@@ -101,12 +105,17 @@ export default function CTTripSimulator({
     }
     // Negative hookload on RIH = potential pipe-light
     if (direction === "in" && hookKN < 0) {
-      if (status === "ok") status = "warning";
-      reasons.push(`Отрицательный вес на крюке — выталкивание трубы.`);
+      if (-hookKN > injectorSnubCapacity) {
+        status = "critical";
+        reasons.push(`Требуемое проталкивание ${(-hookKN).toFixed(1)} кН > усилия инжектора ${injectorSnubCapacity} кН.`);
+      } else {
+        if (status === "ok") status = "warning";
+        reasons.push(`Индикатор веса отрицательный — трубу проталкивает инжектор (${(-hookKN).toFixed(1)} кН).`);
+      }
     }
 
     return { md, hookKN, axial, buck, yieldKN, status, reasons };
-  }, [idx, stepM, totalDepthMD, hookLoadData, forceProfile, direction, lockUpDepth, helicalBucklingLoad, injectorPullCapacity]);
+  }, [idx, stepM, totalDepthMD, hookLoadData, forceProfile, direction, lockUpDepth, helicalBucklingLoad, injectorPullCapacity, injectorSnubCapacity]);
 
   useEffect(() => { if (idx > totalSteps) setIdx(totalSteps); }, [totalSteps, idx]);
 
@@ -214,7 +223,7 @@ export default function CTTripSimulator({
             <Metric label="Осевая в КНБК" value={`${current.axial.toFixed(1)} кН`}
                     warn={direction === "in" && current.axial < 0 && Math.abs(current.axial) > 0.7 * Math.abs(current.buck)}
                     danger={direction === "in" && current.axial < 0 && Math.abs(current.axial) > Math.abs(current.buck)} />
-            <Metric label="Предел изгиба" value={`${current.buck.toFixed(1)} кН`} muted />
+            <Metric label="Предел спирального изгиба" value={`${current.buck.toFixed(1)} кН`} muted />
             <Metric label="80% σ_y" value={current.yieldKN > 0 ? `${current.yieldKN.toFixed(1)} кН` : "—"} muted />
             <Metric label="Тяга инжектора" value={`${injectorPullCapacity} кН`} muted />
           </div>

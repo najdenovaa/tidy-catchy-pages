@@ -15,6 +15,7 @@ import {
   type FluidData,
   type ToolsData,
   type CTSection,
+  type CTSurfaceOptions,
 } from "./coiled-tubing-calculations";
 
 export interface ReachSensitivityPoint {
@@ -30,6 +31,8 @@ export interface ReachAnalysisInput {
   fluid: FluidData;
   tools: ToolsData;
   sections?: CTSection[];
+  /** наземное оборудование: давление устья учитывается из well, здесь — уплотнитель, инжектор и т.д. */
+  surface?: CTSurfaceOptions;
   targetDepthMD: number;
   baselineFriction: number;
   frictionMin?: number;
@@ -83,6 +86,7 @@ export function analyzeReach(input: ReachAnalysisInput): ReachAnalysisResult {
       input.tools,
       Number(mu.toFixed(3)),
       input.sections,
+      input.surface,
     );
     const lockUp = f.lockUpDepth || 0;
     const reach = lockUp === 0 || lockUp >= input.targetDepthMD;
@@ -102,6 +106,7 @@ export function analyzeReach(input: ReachAnalysisInput): ReachAnalysisResult {
     input.tools,
     input.baselineFriction,
     input.sections,
+      input.surface,
   );
   const baseLockUp = base.lockUpDepth || 0;
   const canReach = baseLockUp === 0 || baseLockUp >= input.targetDepthMD;

@@ -370,11 +370,19 @@ export async function exportCTDocx(input: CTDocxInput, options?: { returnBlob?: 
     ["Вес в жидкости", `${fmt(forces.weightInFluid, 1)} кН`],
     ["Сила трения (СПО ↓ RIH)", `${fmt(forces.dragForceRIH, 1)} кН`],
     ["Сила трения (СПО ↑ POOH)", `${fmt(forces.dragForcePOOH, 1)} кН`],
-    ["Нагрузка на устье (СПО ↓)", `${fmt(forces.surfaceLoadRIH, 1)} кН`, forces.surfaceLoadRIH < 0],
-    ["Нагрузка на устье (СПО ↑)", `${fmt(forces.surfaceLoadPOOH, 1)} кН`],
-    ["Синус. потеря устойчивости", `${fmt(forces.sinusoidalBucklingLoad, 1)} кН`],
-    ["Спиральный изгиб", `${fmt(forces.helicalBucklingLoad, 1)} кН`],
-    ["Глубина lock-up", forces.lockUpDepth > 0 ? `${forces.lockUpDepth.toFixed(0)} м` : "— (нет)", forces.lockUpDepth > 0],
+    ["Сила выталкивания давлением устья (P·A)", `${fmt(forces.pressureAreaForce, 1)} кН`],
+    ["Трение в уплотнителе", `${fmt(forces.stripperFriction, 1)} кН`],
+    ["Индикатор веса на забое: спуск", forces.rihLocked ? "спуск невозможен (запирание)" : `${fmt(forces.surfaceLoadRIH, 1)} кН`, forces.rihLocked || forces.surfaceLoadRIH < 0],
+    ["Индикатор веса на забое: подъём", `${fmt(forces.surfaceLoadPOOH, 1)} кН`],
+    ["Индикатор веса на забое: без движения", `${fmt(forces.surfaceLoadStatic, 1)} кН`],
+    ["Глубина равновесия (выше — проталкивание)", forces.pipeLightDepth > 0 ? `${forces.pipeLightDepth} м` : "— (не требуется)"],
+    ["Макс. требуемое проталкивание / усилие инжектора", `${fmt(forces.maxSnubRequired, 1)} / ${fmt(forces.injectorSnubKN, 0)} кН`, forces.maxSnubRequired > forces.injectorSnubKN],
+    ["Макс. требуемая тяга / тяга инжектора", `${fmt(forces.maxPullRequired, 1)} / ${fmt(forces.injectorPullKN, 0)} кН`, forces.maxPullRequired > 0.9 * forces.injectorPullKN],
+    ["Синусоидальный изгиб на забое (предел)", `${fmt(forces.sinusoidalBucklingLoad, 1)} кН`],
+    ["Спиральный изгиб на забое (предел)", `${fmt(forces.helicalBucklingLoad, 1)} кН`],
+    ["Интервал спирального изгиба при спуске", forces.helicalZone ? `${forces.helicalZone[0]}–${forces.helicalZone[1]} м` : "— (нет)", !!forces.helicalZone],
+    ["Нагрузка на забой: макс. (полное проталкивание) / без проталкивания", `${fmt(forces.wobMaxAtTD, 1)} / ${fmt(forces.wobNoSnubAtTD, 1)} кН`],
+    ["Глубина запирания", forces.lockUpDepth > 0 ? `${forces.lockUpDepth.toFixed(0)} м (${forces.lockUpReason === "injector" ? "не хватает усилия инжектора" : "спиральный изгиб"})` : "— (нет)", forces.lockUpDepth > 0],
   ]));
 
   // Hook Load chart
@@ -427,7 +435,7 @@ export async function exportCTDocx(input: CTDocxInput, options?: { returnBlob?: 
   // Key metrics summary mini-table
   children.push(subTitle("Сводка по нагрузкам"));
   children.push(paramTable([
-    ["Вес на крюке при спуске (на забое)", `${fmt(forces.surfaceLoadRIH, 1)} кН (${fmt(forces.surfaceLoadRIH * 1000 / 9.81, 0)} кгс)`, forces.surfaceLoadRIH < 0],
+    ["Вес на крюке при спуске (на забое)", forces.rihLocked ? "спуск невозможен (запирание)" : `${fmt(forces.surfaceLoadRIH, 1)} кН (${fmt(forces.surfaceLoadRIH * 1000 / 9.81, 0)} кгс)`, forces.rihLocked || forces.surfaceLoadRIH < 0],
     ["Вес на крюке при подъёме (с забоя)", `${fmt(forces.surfaceLoadPOOH, 1)} кН (${fmt(forces.surfaceLoadPOOH * 1000 / 9.81, 0)} кгс)`],
     ["Разница (подъём − спуск)", `${fmt(forces.surfaceLoadPOOH - forces.surfaceLoadRIH, 1)} кН`],
     ["Предел текучести 80%", `${fmt(limits.maxWorkingTension, 1)} кН (${fmt(limits.maxWorkingTension * 1000 / 9.81, 0)} кгс)`],
@@ -450,48 +458,32 @@ export async function exportCTDocx(input: CTDocxInput, options?: { returnBlob?: 
     const interval = 100;
     const intervalRows: string[][] = [];
 
+    const rowOf = (p: HookLoadPoint): string[] => {
+      const rihOk = p.hookRIH_kgf !== null && p.hookRIH_kgf !== undefined && Number.isFinite(p.hookRIH_kgf);
+      let status = "✅";
+      if (p.locked || !rihOk) status = "🔒 Запирание";
+      else if (p.hookRIH_kgf < 0) status = "⬇ Проталкивание";
+      else if (p.hookRIH_kgf < p.yieldLimit80_kgf * 0.05) status = "⚠ Малый вес";
+      if (p.hookPOOH_kgf > p.yieldLimit80_kgf) status = "⛔ Перегрузка";
+      return [
+        `${p.depth}`, fmt(p.tvd, 0),
+        rihOk ? `${p.hookRIH_kgf}` : "—", rihOk ? fmt(p.hookRIH_kN, 1) : "—",
+        `${p.hookPOOH_kgf}`, fmt(p.hookPOOH_kN, 1),
+        rihOk ? `${p.hookPOOH_kgf - p.hookRIH_kgf}` : "—",
+        status,
+      ];
+    };
     for (let d = 0; d <= maxDepth; d += interval) {
-      // Find closest point
       let best = hookLoadData[0];
       let bestDist = Math.abs(best.depth - d);
       for (const p of hookLoadData) {
         const dist = Math.abs(p.depth - d);
         if (dist < bestDist) { best = p; bestDist = dist; }
       }
-      // Status indicator
-      let status = "✅";
-      if (best.hookRIH_kgf <= 0) status = "🔒 Запирание";
-      else if (best.hookRIH_kgf < best.yieldLimit80_kgf * 0.1) status = "⚠ Малый вес";
-      if (best.hookPOOH_kgf > best.yieldLimit80_kgf) status = "⛔ Перегрузка";
-
-      intervalRows.push([
-        `${best.depth}`,
-        fmt(best.tvd, 0),
-        `${best.hookRIH_kgf}`,
-        fmt(best.hookRIH_kN, 1),
-        `${best.hookPOOH_kgf}`,
-        fmt(best.hookPOOH_kN, 1),
-        `${best.hookPOOH_kgf - best.hookRIH_kgf}`,
-        status,
-      ]);
+      intervalRows.push(rowOf(best));
     }
-    // Always add last point if not on interval
     const last = hookLoadData[hookLoadData.length - 1];
-    if (last.depth % interval !== 0) {
-      let status = "✅";
-      if (last.hookRIH_kgf <= 0) status = "🔒 Запирание";
-      if (last.hookPOOH_kgf > last.yieldLimit80_kgf) status = "⛔ Перегрузка";
-      intervalRows.push([
-        `${last.depth}`,
-        fmt(last.tvd, 0),
-        `${last.hookRIH_kgf}`,
-        fmt(last.hookRIH_kN, 1),
-        `${last.hookPOOH_kgf}`,
-        fmt(last.hookPOOH_kN, 1),
-        `${last.hookPOOH_kgf - last.hookRIH_kgf}`,
-        status,
-      ]);
-    }
+    if (last.depth % interval !== 0) intervalRows.push(rowOf(last));
 
     children.push(dataTable(
       ["MD, м", "TVD, м", "Спуск, кгс", "Спуск, кН", "Подъём, кгс", "Подъём, кН", "Δ (кгс)", "Статус"],
@@ -579,10 +571,12 @@ export async function exportCTDocx(input: CTDocxInput, options?: { returnBlob?: 
   // 2.2 Limits
   children.push(sectionTitle("2.2  Пределы давления и нагрузок (CoilLIMIT)"));
   children.push(paramTable([
-    ["Давление разрыва (Barlow)", `${fmt(limits.burstPressure, 1)} МПа`],
+    ["Минимальная толщина стенки (с износом)", `${fmt(limits.minWall, 2)} мм`],
+    ["Давление разрыва (API RP 5C7, Барлоу)", `${fmt(limits.burstPressure, 1)} МПа`],
     ["Макс. рабочее давление (80%)", `${fmt(limits.maxWorkingPressure, 1)} МПа`],
-    ["Давление смятия", `${fmt(limits.collapsePressure, 1)} МПа`],
-    ["Смятие с учётом овальности", `${fmt(limits.collapseWithOvality, 1)} МПа`, limits.collapseWithOvality < well.wellheadPressure],
+    ["Давление смятия (круглая труба)", `${fmt(limits.collapsePressure, 1)} МПа — ${limits.collapseRegime}`],
+    ["Смятие с овальностью (Тимошенко)", `${fmt(limits.collapseWithOvality, 1)} МПа`, limits.collapseWithOvality < well.wellheadPressure],
+    ["Смятие с овальностью при натяжении подъёма", `${fmt(limits.collapseAtLoad, 1)} МПа`],
     ["Предел текучести (растяжение)", `${fmt(limits.yieldTension, 1)} кН`],
     ["Макс. рабочее натяжение (80%)", `${fmt(limits.maxWorkingTension, 1)} кН`],
     ["Коэфф. фон Мизеса (σ_vm / σ_y)", `${fmt(limits.vonMisesRatio, 3)}`, limits.vonMisesRatio >= 0.8],
@@ -603,10 +597,13 @@ export async function exportCTDocx(input: CTDocxInput, options?: { returnBlob?: 
     ["Режим течения в ГНКТ", hydraulics.flowRegimeCT],
     ["Re в затрубье", `${hydraulics.reynoldsAnnulus}`],
     ["Режим течения в затрубье", hydraulics.flowRegimeAnnulus],
-    ["ΔP внутри ГНКТ", `${fmt(hydraulics.dpInsideCT)} МПа`],
+    ["Реология", hydraulics.rheologyModel],
+    ["ΔP в спущенной части ГНКТ", `${fmt(hydraulics.dpCTDeployed)} МПа`],
+    [`ΔP в навитой на барабан части (${hydraulics.reelLengthM} м) и линиях`, `${fmt(hydraulics.dpReel + hydraulics.dpLines)} МПа`],
     ["ΔP в затрубье", `${fmt(hydraulics.dpAnnulus)} МПа`],
     ["ΔP на насадках", `${fmt(hydraulics.dpNozzle)} МПа`],
-    ["Общее ΔP системы", `${fmt(hydraulics.dpTotal)} МПа`, hydraulics.dpTotal > limits.maxWorkingPressure],
+    ["Сумма потерь на трение", `${fmt(hydraulics.dpTotal)} МПа`],
+    ["Давление насоса (с устьевым)", `${fmt(hydraulics.pumpPressure)} МПа`, hydraulics.pumpPressure > limits.maxWorkingPressure],
     ["Гидростатика внутри (TVD)", `${fmt(hydraulics.hydrostaticInside)} МПа`],
     ["Гидростатика в затрубье (TVD)", `${fmt(hydraulics.hydrostaticAnnulus)} МПа`],
     ["ECD на забое (TVD)", `${fmt(hydraulics.ecdAtTD, 3)} г/см³`],
@@ -627,7 +624,7 @@ export async function exportCTDocx(input: CTDocxInput, options?: { returnBlob?: 
       sampled.map(p => [
         fmt(p.flowRate, 2), fmt(p.dpCT, 2), fmt(p.dpAnn, 2), fmt(p.dpNozzle, 2), fmt(p.dpTotal, 2),
       ]),
-      { warn: (ri) => sampled[ri].dpTotal > limits.maxWorkingPressure },
+      { warn: (ri) => sampled[ri].pumpPressure > limits.maxWorkingPressure },
     ));
   }
 

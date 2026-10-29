@@ -8,6 +8,13 @@
  */
 
 import { calculateTVDFromSurvey, interpolateTVD, type TrajectoryPoint } from "./cementing-calculations";
+import {
+  CT_SURFACE_DEFAULTS, forceModel, scanReach, stringLength, pipeFromBottom, ctHydraulics,
+  strengthOf, collapseWithAxial, vonMisesLame, workingEnvelope, type CTSurfaceOptions, type EnvelopeRow,
+} from "./ct-engine";
+
+export type { CTSurfaceOptions };
+export { CT_SURFACE_DEFAULTS };
 
 export type { TrajectoryPoint };
 export { calculateTVDFromSurvey, interpolateTVD };
@@ -52,7 +59,7 @@ export interface FluidData {
 }
 
 export interface PumpData {
-  flowRate: number;    // l/min
+  flowRate: number;    // л/с
   surfacePressure: number; // MPa (calculated)
 }
 
@@ -85,15 +92,7 @@ export const REEL_DIAMETERS: Record<string, number> = {
 };
 export const GUIDE_ARCH_DIAMETER = 1.83;
 
-/**
- * Micro-tortuosity multiplier for friction.
- * Real wellbores have micro-doglegs between survey stations that increase
- * effective friction by 10-20% beyond what the smooth minimum-curvature
- * trajectory predicts. Calibrated against field lock-up data (predicted 3785 m
- * vs actual 3400 m → ~12% underestimate of drag).
- * Applied to the normal-force term in the soft-string drag model.
- */
-const TORTUOSITY_FACTOR = 1.15;
+
 
 // ─── Utility ───
 
@@ -102,7 +101,7 @@ const TORTUOSITY_FACTOR = 1.15;
  * If MD > TVD, calculates an average inclination to honour the TVD input.
  * This ensures friction forces differ between RIH and POOH.
  */
-function buildSyntheticTrajectory(md: number, tvd: number): TrajectoryPoint[] {
+export function buildSyntheticTrajectory(md: number, tvd: number): TrajectoryPoint[] {
   if (md <= 0) return [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }];
   if (tvd >= md || tvd <= 0) {
     // Vertical well
@@ -195,18 +194,51 @@ function getIncAtMD(trajectory: TrajectoryPoint[], md: number): number {
 }
 
 // ─── Module 1: Tubing Forces ───
+// Расчёт — в ct-engine.ts (эффективные силы, 3D, изгиб колонны, устье, уплотнитель, инжектор).
 
 export interface ForceResult {
   weightInAir: number;
   buoyancyFactor: number;
   weightInFluid: number;
+  /** суммарная сила трения при спуске / подъёме на полную глубину, кН */
   dragForceRIH: number;
   dragForcePOOH: number;
+  /** показания индикатора веса на полной глубине (с давлением устья и уплотнителем), кН */
   surfaceLoadRIH: number;
   surfaceLoadPOOH: number;
+  /** без движения, кН */
+  surfaceLoadStatic: number;
   helicalBucklingLoad: number;
   sinusoidalBucklingLoad: number;
+  /** первая глубина, где спуск невозможен (0 — доходит до полной глубины) */
   lockUpDepth: number;
+  lockUpReason: "helical" | "injector" | null;
+  helicalLockDepth: number;
+  injectorLimitDepth: number;
+  /** сила выталкивания давлением устья (P·A наружн.), кН */
+  pressureAreaForce: number;
+  /** трение в уплотнителе, кН */
+  stripperFriction: number;
+  /** глубина равновесия: выше неё при спуске трубу проталкивают (0 — не требуется) */
+  pipeLightDepth: number;
+  /** интервалы глубины КНБК, где требуется проталкивание */
+  snubIntervals: [number, number][];
+  /** спуск на полную глубину невозможен (запирание) */
+  rihLocked: boolean;
+  /** максимальное требуемое проталкивание при спуске, кН */
+  maxSnubRequired: number;
+  /** максимальное требуемое тяговое усилие инжектора при подъёме (с натяжением барабана), кН */
+  maxPullRequired: number;
+  injectorPullKN: number;
+  injectorSnubKN: number;
+  /** доступная нагрузка на забой на полной глубине: при полном проталкивании / без проталкивания, кН */
+  wobMaxAtTD: number;
+  wobNoSnubAtTD: number;
+  /** интервал спирального изгиба при спуске на полную глубину, м (null — нет) */
+  helicalZone: [number, number] | null;
+  sinusoidalZone: [number, number] | null;
+  /** глубина, до которой выполнен расчёт (min(длина ГНКТ, MD)) */
+  deployDepth: number;
 }
 
 export interface DepthForcePoint {
@@ -214,8 +246,12 @@ export interface DepthForcePoint {
   tvd: number;
   axialRIH: number;
   axialPOOH: number;
+  axialStatic: number;
+  /** критические силы сжатия (отрицательные), кН */
   bucklingLimit: number;
   helicalLimit: number;
+  /** 0 — нет изгиба, 1 — синусоидальный, 2 — спиральный (при спуске) */
+  buckleRIH: number;
 }
 
 export interface HookLoadPoint {
@@ -223,10 +259,28 @@ export interface HookLoadPoint {
   tvd: number;
   hookRIH_kgf: number;
   hookPOOH_kgf: number;
+  hookStatic_kgf: number;
   hookRIH_kN: number;
   hookPOOH_kN: number;
+  hookStatic_kN: number;
   yieldLimit80_kgf: number;
   bucklingLimit_kgf: number;
+  /** пределы инжектора: проталкивание (−) и тяга (+), кгс */
+  snubLimit_kgf: number;
+  pullLimit_kgf: number;
+  /** доступная нагрузка на забой (при полном проталкивании / без него), кН */
+  wobMax_kN: number;
+  wobNoSnub_kN: number;
+  locked: boolean;
+}
+
+const kgf = (n: number) => Math.round(n / GRAVITY);
+
+function forceSetup(ct: CTStringData, well: WellGeometry, fluid: FluidData, tools: ToolsData, frictionCoeff: number, sections?: CTSection[], opts: CTSurfaceOptions = {}) {
+  const o = { ...CT_SURFACE_DEFAULTS, ...opts };
+  const model = forceModel(ct, sections, well, fluid, tools.bhaWeight, frictionCoeff, o);
+  const maxD = Math.min(stringLength(ct, sections), well.md);
+  return { o, model, maxD };
 }
 
 export function calculateTubingForces(
@@ -236,149 +290,58 @@ export function calculateTubingForces(
   tools: ToolsData,
   frictionCoeff: number = 0.25,
   sections?: CTSection[],
+  opts: CTSurfaceOptions = {},
 ): ForceResult {
-  const totalCTLen = sections && sections.length > 0
-    ? sections.reduce((s, sec) => s + sec.length, 0) : ct.length;
-
-  // Total weight in air considering sections
-  let totalWeightAirN = 0;
-  if (sections && sections.length > 0) {
-    for (const sec of sections) totalWeightAirN += ctWeightPerMeter(sec.od, sec.wall) * sec.length * GRAVITY;
-  } else {
-    totalWeightAirN = ctWeightPerMeter(ct.od, ct.wall) * ct.length * GRAVITY;
-  }
-  const totalWeightAir = totalWeightAirN / 1000; // kN
-  const bhaWeightN = tools.bhaWeight * GRAVITY / 1000;
-
-  const fluidDensity = fluid.density * 1000;
-  const buoyancyFactor = 1 - fluidDensity / STEEL_DENSITY;
-  const weightInFluid = (totalWeightAir + bhaWeightN) * buoyancyFactor;
-
-  const traj = well.trajectory.length > 1 ? well.trajectory : buildSyntheticTrajectory(well.md, well.tvd);
-
-  // Helper: weight per meter at depth from surface (accounting for sections)
-  const maxDeployLen = Math.min(totalCTLen, well.md);
-  function wpmAt(depthFromSurface: number): number {
-    if (!sections || sections.length === 0) return ctWeightPerMeter(ct.od, ct.wall);
-    // sections[0] = bottom of string, sections[last] = near surface
-    const depthFromBottom = maxDeployLen - depthFromSurface;
-    let cum = 0;
-    for (const sec of sections) {
-      cum += sec.length;
-      if (depthFromBottom <= cum) return ctWeightPerMeter(sec.od, sec.wall);
-    }
-    return ctWeightPerMeter(sections[sections.length - 1].od, sections[sections.length - 1].wall);
-  }
-
-  // Build fine-grained depth grid for integration
-  const integrationSteps = 200;
-  const stepLen = maxDeployLen / integrationSteps;
-
-  let totalDragRIH = 0;
-  let totalDragPOOH = 0;
-  let cumWeightRIH = bhaWeightN * buoyancyFactor * 1000; // N
-  let cumWeightPOOH = bhaWeightN * buoyancyFactor * 1000; // N
-
-  // Integrate from bottom to surface
-  for (let s = integrationSteps; s > 0; s--) {
-    const mdBot = s * stepLen;
-    const mdTop = (s - 1) * stepLen;
-    const segLen = mdBot - mdTop;
-    const mdMid = (mdBot + mdTop) / 2;
-    const incBot = getIncAtMD(traj, mdBot) * Math.PI / 180;
-    const incTop = getIncAtMD(traj, mdTop) * Math.PI / 180;
-    const incAvg = (incBot + incTop) / 2;
-    const dInc = Math.abs(incBot - incTop);
-
-    const w = wpmAt(mdMid) * GRAVITY * buoyancyFactor; // N/m buoyed
-    const segW = w * segLen;
-    const wNormal = Math.abs(segW * Math.sin(incAvg));
-
-    // Curvature-induced normal force
-    const curvNormalRIH = Math.abs(cumWeightRIH * dInc);
-    const totalNormalRIH = Math.sqrt(curvNormalRIH * curvNormalRIH + wNormal * wNormal) * TORTUOSITY_FACTOR;
-    const frictionRIH = frictionCoeff * totalNormalRIH;
-
-    const curvNormalPOOH = Math.abs(cumWeightPOOH * dInc);
-    const totalNormalPOOH = Math.sqrt(curvNormalPOOH * curvNormalPOOH + wNormal * wNormal) * TORTUOSITY_FACTOR;
-    const frictionPOOH = frictionCoeff * totalNormalPOOH;
-
-    const wAxial = segW * Math.cos(incAvg);
-    cumWeightRIH += wAxial - frictionRIH;
-    cumWeightPOOH += wAxial + frictionPOOH;
-
-    totalDragRIH += frictionRIH / 1000; // kN
-    totalDragPOOH += frictionPOOH / 1000;
-  }
-
-  const surfaceLoadRIH = cumWeightRIH / 1000; // N → kN
-  const surfaceLoadPOOH = cumWeightPOOH / 1000;
-
-  const idCasing = well.casingID / 1000;
-  const odCT = ct.od / 1000;
-  const radialClearance = (idCasing - odCT) / 2;
-  const momentOfInertia = (Math.PI / 64) * (Math.pow(odCT, 4) - Math.pow(ctID(ct.od, ct.wall) / 1000, 4));
-  const E = 207000;
-
-  const defaultWPM = sections && sections.length > 0
-    ? ctWeightPerMeter(sections[0].od, sections[0].wall) : ctWeightPerMeter(ct.od, ct.wall);
-  const buoyedWeightPerM = defaultWPM * GRAVITY * buoyancyFactor;
-  const bottomZenith = traj[traj.length - 1]?.zenith || 0;
-
-  const Fsin = radialClearance > 0
-    ? 2 * Math.sqrt(E * 1e6 * momentOfInertia * buoyedWeightPerM * Math.sin(Math.max(bottomZenith * Math.PI / 180, 0.01)) / radialClearance)
-    : 0;
-  const Fhel = Fsin * 1.41;
-
-  let lockUpDepth = 0;
-  // Find lock-up from hook load profile (where RIH hook load goes to 0)
-  {
-    let prevHook = surfaceLoadRIH;
-    for (let d = stepLen; d <= maxDeployLen; d += stepLen) {
-      // Approximate: compute forces for string deployed to depth d
-      const deployed = d;
-      let aRIH = bhaWeightN * buoyancyFactor * 1000; // N
-      const dSteps = Math.ceil(deployed / stepLen);
-      const dStep = deployed / dSteps;
-      for (let j = dSteps; j > 0; j--) {
-        const mB = j * dStep, mT = (j - 1) * dStep;
-        const iB = getIncAtMD(traj, mB) * Math.PI / 180;
-        const iT = getIncAtMD(traj, mT) * Math.PI / 180;
-        const iA = (iB + iT) / 2;
-        const dI = Math.abs(iB - iT);
-        const ww = wpmAt((mB + mT) / 2) * GRAVITY * buoyancyFactor;
-        const sW = ww * dStep;
-        const wN = Math.abs(sW * Math.sin(iA));
-        const cN = Math.abs(aRIH * dI);
-        const tN = Math.sqrt(cN * cN + wN * wN) * TORTUOSITY_FACTOR;
-        aRIH += sW * Math.cos(iA) - frictionCoeff * tN;
-      }
-      const hookKN = aRIH / 1000;
-      if (hookKN <= 0 && prevHook > 0) {
-        // Interpolate
-        const frac = prevHook / (prevHook - hookKN);
-        lockUpDepth = Math.round((d - stepLen) + frac * stepLen);
-        break;
-      }
-      prevHook = hookKN;
-    }
-  }
-
+  const { o, model, maxD } = forceSetup(ct, well, fluid, tools, frictionCoeff, sections, opts);
+  const total = stringLength(ct, sections);
+  let wAir = 0;
+  for (let x = 0; x < total; x += 10) wAir += pipeFromBottom(ct, sections, x + 5).wAir * Math.min(10, total - x);
+  const bhaN = tools.bhaWeight * GRAVITY;
+  const buoyancyFactor = 1 - (fluid.density * 1000) / STEEL_DENSITY;
+  const scan = scanReach(model, maxD, 50, false, o.injectorSnubKN);
+  const td = model.snapshot(maxD, true);
+  // зоны изгиба и трение — на последней достижимой глубине
+  const evalD = scan.lockUpDepth > 0 ? Math.max(1, scan.lockUpDepth * 0.97) : maxD;
+  const prof = model.profile(evalD);
+  const n = prof.st.length - 1;
+  const zone = (state: number): [number, number] | null => {
+    let a = -1, b = -1;
+    for (let i = 0; i <= n; i++) if (prof.rih.buckle[i] >= state) { if (a < 0) a = prof.st[i].md; b = prof.st[i].md; }
+    return a < 0 ? null : [Math.round(a), Math.round(b)];
+  };
   return {
-    weightInAir: totalWeightAir + bhaWeightN,
+    weightInAir: (wAir + bhaN) / 1000,
     buoyancyFactor,
-    weightInFluid,
-    dragForceRIH: totalDragRIH,
-    dragForcePOOH: totalDragPOOH,
-    surfaceLoadRIH,
-    surfaceLoadPOOH,
-    helicalBucklingLoad: Fhel / 1000,
-    sinusoidalBucklingLoad: Fsin / 1000,
-    lockUpDepth,
+    weightInFluid: ((wAir + bhaN) * buoyancyFactor) / 1000,
+    dragForceRIH: prof.rih.drag / 1000,
+    dragForcePOOH: prof.pooh.drag / 1000,
+    surfaceLoadRIH: Number.isFinite(td.wiRIH) ? td.wiRIH : -o.injectorSnubKN,
+    rihLocked: !Number.isFinite(td.wiRIH) || scan.lockUpDepth > 0,
+    surfaceLoadPOOH: td.wiPOOH,
+    surfaceLoadStatic: td.wiStatic,
+    sinusoidalBucklingLoad: (prof.rih.fSin[n] ?? 0) / 1000,
+    helicalBucklingLoad: (prof.rih.fHel[n] ?? 0) / 1000,
+    lockUpDepth: scan.lockUpDepth,
+    lockUpReason: scan.lockUpReason,
+    helicalLockDepth: scan.helicalLockDepth,
+    injectorLimitDepth: scan.injectorLimitDepth,
+    pressureAreaForce: model.pressureForceN / 1000,
+    stripperFriction: model.stripperN / 1000,
+    pipeLightDepth: scan.pipeLightDepth,
+    snubIntervals: scan.snubIntervals,
+    maxSnubRequired: Math.max(scan.maxSnubRequired, Number.isFinite(td.wiRIH) ? -td.wiRIH : 0),
+    maxPullRequired: Math.max(scan.maxPullRequired, td.pullRequired),
+    injectorPullKN: o.injectorPullKN,
+    injectorSnubKN: o.injectorSnubKN,
+    wobMaxAtTD: td.wobMax,
+    wobNoSnubAtTD: td.wobNoSnub,
+    helicalZone: zone(2),
+    sinusoidalZone: zone(1),
+    deployDepth: maxD,
   };
 }
 
-/** Generate hook load vs BHA depth profile (CoilPRO style) */
+/** Индикатор веса по глубине КНБК (спуск / подъём / без движения) + доступная нагрузка на забой. */
 export function generateHookLoadProfile(
   ct: CTStringData,
   well: WellGeometry,
@@ -386,101 +349,39 @@ export function generateHookLoadProfile(
   tools: ToolsData,
   frictionCoeff: number = 0.25,
   sections?: CTSection[],
-  steps: number = 60,
+  steps: number = 50,
+  opts: CTSurfaceOptions = {},
 ): HookLoadPoint[] {
-  const traj = well.trajectory.length > 1 ? well.trajectory : buildSyntheticTrajectory(well.md, well.tvd);
-  const fluidDensity = fluid.density * 1000;
-  const buoyancyFactor = 1 - fluidDensity / STEEL_DENSITY;
-  const bhaWeightN = tools.bhaWeight * GRAVITY; // N
-  const totalCTLen = sections && sections.length > 0
-    ? sections.reduce((s, sec) => s + sec.length, 0) : ct.length;
-  const maxD = Math.min(totalCTLen, well.md);
-
+  const { o, model, maxD } = forceSetup(ct, well, fluid, tools, frictionCoeff, sections, opts);
   const yieldStrength = GRADE_YIELD[ct.grade] || 552;
-  const steelArea = ctCrossSectionArea(ct.od, ct.wall);
-  const yieldTension80 = yieldStrength * steelArea * 1000 * 0.8; // N, 80%
-
-  const odCT = ct.od / 1000;
-  const idCasing = well.casingID / 1000;
-  const rc = Math.max((idCasing - odCT) / 2, 0.001);
-  const I = (Math.PI / 64) * (Math.pow(odCT, 4) - Math.pow(ctID(ct.od, ct.wall) / 1000, 4));
-  const E = 207000e6; // Pa
-
-  function wpmAt(depthFromSurface: number, deployLen: number): number {
-    if (!sections || sections.length === 0) return ctWeightPerMeter(ct.od, ct.wall);
-    const depthFromBottom = deployLen - depthFromSurface;
-    let cum = 0;
-    for (const sec of sections) {
-      cum += sec.length;
-      if (depthFromBottom <= cum) return ctWeightPerMeter(sec.od, sec.wall);
-    }
-    return ctWeightPerMeter(sections[sections.length - 1].od, sections[sections.length - 1].wall);
-  }
-
-  const points: HookLoadPoint[] = [];
-
-  for (let si = 0; si <= steps; si++) {
-    const deployDepth = (maxD / steps) * si;
-    if (deployDepth <= 0) {
-      points.push({
-        depth: 0, tvd: 0,
-        hookRIH_kgf: 0, hookPOOH_kgf: 0,
-        hookRIH_kN: 0, hookPOOH_kN: 0,
-        yieldLimit80_kgf: Math.round(yieldTension80 / GRAVITY),
-        bucklingLimit_kgf: 0,
-      });
-      continue;
-    }
-
-    const tvd = getTVDatMD(traj, deployDepth);
-    const intSteps = Math.max(20, Math.ceil(deployDepth / 15));
-    const dStep = deployDepth / intSteps;
-
-    let aRIH = bhaWeightN * buoyancyFactor; // N
-    let aPOOH = bhaWeightN * buoyancyFactor;
-
-    for (let j = intSteps; j > 0; j--) {
-      const mB = j * dStep, mT = (j - 1) * dStep;
-      const iB = getIncAtMD(traj, mB) * Math.PI / 180;
-      const iT = getIncAtMD(traj, mT) * Math.PI / 180;
-      const iA = (iB + iT) / 2;
-      const dI = Math.abs(iB - iT);
-      const ww = wpmAt((mB + mT) / 2, deployDepth) * GRAVITY * buoyancyFactor;
-      const sW = ww * dStep;
-      const wAx = sW * Math.cos(iA);
-      const wN = Math.abs(sW * Math.sin(iA));
-
-      const cRIH = Math.abs(aRIH * dI);
-      const nRIH = Math.sqrt(cRIH * cRIH + wN * wN) * TORTUOSITY_FACTOR;
-      aRIH += wAx - frictionCoeff * nRIH;
-
-      const cPOOH = Math.abs(aPOOH * dI);
-      const nPOOH = Math.sqrt(cPOOH * cPOOH + wN * wN) * TORTUOSITY_FACTOR;
-      aPOOH += wAx + frictionCoeff * nPOOH;
-    }
-
-    // Buckling limit at bottom
-    const botInc = getIncAtMD(traj, deployDepth) * Math.PI / 180;
-    const wpmBot = wpmAt(deployDepth, deployDepth);
-    const bwpm = wpmBot * GRAVITY * buoyancyFactor;
-    const Fhel = rc > 0 ? 2 * 1.41 * Math.sqrt(E * I * bwpm * Math.sin(Math.max(botInc, 0.01)) / rc) : 0;
-
-    points.push({
-      depth: Math.round(deployDepth),
-      tvd: Math.round(tvd * 10) / 10,
-      hookRIH_kgf: Math.round(aRIH / GRAVITY),
-      hookPOOH_kgf: Math.round(aPOOH / GRAVITY),
-      hookRIH_kN: Math.round(aRIH / 1000 * 10) / 10,
-      hookPOOH_kN: Math.round(aPOOH / 1000 * 10) / 10,
-      yieldLimit80_kgf: Math.round(yieldTension80 / GRAVITY),
-      bucklingLimit_kgf: Math.round(-Fhel / GRAVITY),
+  const y80 = yieldStrength * ctCrossSectionArea(ct.od, ct.wall) * 1e6 * 0.8;
+  const scan = scanReach(model, maxD, steps, true, o.injectorSnubKN);
+  const pts: HookLoadPoint[] = [{
+    depth: 0, tvd: 0, hookRIH_kgf: kgf(-model.pressureForceN - model.stripperN), hookPOOH_kgf: kgf(-model.pressureForceN + model.stripperN), hookStatic_kgf: kgf(-model.pressureForceN),
+    hookRIH_kN: Math.round((-model.pressureForceN - model.stripperN) / 100) / 10, hookPOOH_kN: Math.round((-model.pressureForceN + model.stripperN) / 100) / 10, hookStatic_kN: Math.round(-model.pressureForceN / 100) / 10,
+    yieldLimit80_kgf: kgf(y80), bucklingLimit_kgf: 0, snubLimit_kgf: kgf(-o.injectorSnubKN * 1000), pullLimit_kgf: kgf(o.injectorPullKN * 1000),
+    wobMax_kN: 0, wobNoSnub_kN: 0, locked: false,
+  }];
+  const prof = model.profile(maxD);
+  for (const s of scan.depths) {
+    const rih = Number.isFinite(s.wiRIH) ? s.wiRIH : NaN;
+    const k = Math.min(prof.st.length - 1, Math.max(0, Math.round((s.md / maxD) * (prof.st.length - 1))));
+    pts.push({
+      depth: Math.round(s.md), tvd: Math.round(s.tvd * 10) / 10,
+      hookRIH_kgf: Number.isFinite(rih) ? kgf(rih * 1000) : (null as unknown as number),
+      hookPOOH_kgf: kgf(s.wiPOOH * 1000), hookStatic_kgf: kgf(s.wiStatic * 1000),
+      hookRIH_kN: Number.isFinite(rih) ? Math.round(rih * 10) / 10 : (null as unknown as number),
+      hookPOOH_kN: Math.round(s.wiPOOH * 10) / 10, hookStatic_kN: Math.round(s.wiStatic * 10) / 10,
+      yieldLimit80_kgf: kgf(y80), bucklingLimit_kgf: kgf(-(prof.rih.fHel[k] ?? 0)),
+      snubLimit_kgf: kgf(-o.injectorSnubKN * 1000), pullLimit_kgf: kgf(o.injectorPullKN * 1000),
+      wobMax_kN: Math.round(s.wobMax * 10) / 10, wobNoSnub_kN: Math.round(s.wobNoSnub * 10) / 10,
+      locked: s.helicalLock || s.injectorLimited,
     });
   }
-
-  return points;
+  return pts;
 }
 
-/** Generate depth profile for force chart (axial load distribution at full deployment) */
+/** Распределение эффективной осевой силы по стволу при КНБК на полной глубине. */
 export function generateForceDepthProfile(
   ct: CTStringData,
   well: WellGeometry,
@@ -489,224 +390,138 @@ export function generateForceDepthProfile(
   frictionCoeff: number = 0.25,
   steps: number = 80,
   sections?: CTSection[],
+  opts: CTSurfaceOptions = {},
+  /** глубина КНБК для профиля (по умолчанию — полная глубина; при запирании — чуть выше него) */
+  atDepth?: number,
 ): DepthForcePoint[] {
-  const fluidDensity = fluid.density * 1000;
-  const buoyancyFactor = 1 - fluidDensity / STEEL_DENSITY;
-  const bhaWeightN = tools.bhaWeight * GRAVITY / 1000;
-  const totalCTLen = sections && sections.length > 0
-    ? sections.reduce((s, sec) => s + sec.length, 0) : ct.length;
-
-  const odCT = ct.od / 1000;
-  const idCasing = well.casingID / 1000;
-  const radialClearance = Math.max((idCasing - odCT) / 2, 0.001);
-  const momentOfInertia = (Math.PI / 64) * (Math.pow(odCT, 4) - Math.pow(ctID(ct.od, ct.wall) / 1000, 4));
-  const E = 207000;
-
-  const points: DepthForcePoint[] = [];
-  const maxD = Math.min(totalCTLen, well.md);
-  const stepSize = maxD / steps;
-  const traj = well.trajectory.length > 1 ? well.trajectory : buildSyntheticTrajectory(well.md, well.tvd);
-
-  function wpmAt(d: number): number {
-    if (!sections || sections.length === 0) return ctWeightPerMeter(ct.od, ct.wall);
-    const dfb = maxD - d;
-    let cum = 0;
-    for (const sec of sections) {
-      cum += sec.length;
-      if (dfb <= cum) return ctWeightPerMeter(sec.od, sec.wall);
-    }
-    return ctWeightPerMeter(sections[sections.length - 1].od, sections[sections.length - 1].wall);
-  }
-
-  // Integrate from bottom to surface
-  const depths: number[] = [];
-  for (let s = 0; s <= steps; s++) depths.push(s * stepSize);
-
-  const rihF = new Array(steps + 1).fill(0);
-  const poohF = new Array(steps + 1).fill(0);
-
-  rihF[steps] = bhaWeightN * buoyancyFactor * 1000; // N
-  poohF[steps] = bhaWeightN * buoyancyFactor * 1000;
-
-  for (let i = steps; i > 0; i--) {
-    const mdB = depths[i], mdT = depths[i - 1];
-    const segLen = mdB - mdT;
-    const iB = getIncAtMD(traj, mdB) * Math.PI / 180;
-    const iT = getIncAtMD(traj, mdT) * Math.PI / 180;
-    const iA = (iB + iT) / 2;
-    const dI = Math.abs(iB - iT);
-    const w = wpmAt((mdB + mdT) / 2) * GRAVITY * buoyancyFactor;
-    const sW = w * segLen;
-    const wAx = sW * Math.cos(iA);
-    const wN = Math.abs(sW * Math.sin(iA));
-
-    const cR = Math.abs(rihF[i] * dI);
-    rihF[i - 1] = rihF[i] + wAx - frictionCoeff * Math.sqrt(cR * cR + wN * wN) * TORTUOSITY_FACTOR;
-
-    const cP = Math.abs(poohF[i] * dI);
-    poohF[i - 1] = poohF[i] + wAx + frictionCoeff * Math.sqrt(cP * cP + wN * wN) * TORTUOSITY_FACTOR;
-  }
-
-  for (let s = 0; s <= steps; s++) {
-    const depth = depths[s];
-    const tvd = getTVDatMD(traj, depth);
-    const zenith = getIncAtMD(traj, depth);
-    const incRad = (zenith * Math.PI) / 180;
-    const buoyedWPM = wpmAt(depth) * GRAVITY * buoyancyFactor;
-    const sinBuckle = radialClearance > 0
-      ? -2 * Math.sqrt(E * 1e6 * momentOfInertia * buoyedWPM * Math.sin(Math.max(incRad, 0.01)) / radialClearance) / 1000
-      : 0;
-    const helBuckle = sinBuckle * 1.41;
-
-    points.push({
-      depth: Math.round(depth),
-      tvd: Math.round(tvd * 10) / 10,
-      axialRIH: Math.round(rihF[s] / 1000 * 10) / 10,
-      axialPOOH: Math.round(poohF[s] / 1000 * 10) / 10,
-      bucklingLimit: Math.round(sinBuckle * 10) / 10,
-      helicalLimit: Math.round(helBuckle * 10) / 10,
+  const { model, maxD } = forceSetup(ct, well, fluid, tools, frictionCoeff, sections, opts);
+  const prof = model.profile(atDepth && atDepth > 0 ? Math.min(atDepth, maxD) : maxD);
+  const n = prof.st.length - 1;
+  const every = Math.max(1, Math.floor(n / steps));
+  const out: DepthForcePoint[] = [];
+  for (let i = 0; i <= n; i += every) {
+    const fin = (x: number) => (Number.isFinite(x) && Math.abs(x) < 1e9 ? Math.round(x / 100) / 10 : (null as unknown as number));
+    out.push({
+      depth: Math.round(prof.st[i].md), tvd: Math.round(prof.st[i].tvd * 10) / 10,
+      axialRIH: prof.rih.diverged && prof.st[i].md <= prof.rih.divergedAt ? (null as unknown as number) : fin(prof.rih.F[i]),
+      axialPOOH: fin(prof.pooh.F[i]), axialStatic: fin(prof.stat.F[i]),
+      bucklingLimit: Number.isFinite(prof.rih.fSin[i]) ? -Math.round(prof.rih.fSin[i] / 100) / 10 : (null as unknown as number),
+      helicalLimit: Number.isFinite(prof.rih.fHel[i]) ? -Math.round(prof.rih.fHel[i] / 100) / 10 : (null as unknown as number),
+      buckleRIH: prof.rih.buckle[i],
     });
+    if (i + every > n && i !== n) i = n - every;
   }
-
-  return points;
+  return out;
 }
 
-// ─── Module 2: CoilLIMIT ───
+// ─── Module 2: CoilLIMIT (API RP 5C7) ───
 
 export interface LimitResult {
   burstPressure: number;
   collapsePressure: number;
   collapseWithOvality: number;
+  /** смятие с овальностью при заданной осевой нагрузке (растяжение снижает), МПа */
+  collapseAtLoad: number;
   yieldTension: number;
   yieldCompression: number;
   vonMisesRatio: number;
   maxWorkingPressure: number;
   maxWorkingTension: number;
+  /** минимальная толщина стенки с учётом износа, мм */
+  minWall: number;
+  /** коэффициент снижения предела текучести по температуре */
+  tempDerate: number;
+  collapseRegime: string;
 }
 
 export function calculateLimits(
   ct: CTStringData,
   internalPressure: number = 0,
   externalPressure: number = 0,
-  axialLoad: number = 0
+  axialLoad: number = 0,
+  opts: { wallLossPct?: number; tempC?: number } = {},
 ): LimitResult {
-  const yieldStrength = GRADE_YIELD[ct.grade] || 552;
-  const od = ct.od;
-  const wall = ct.wall;
-
-  const burstPressure = (2 * yieldStrength * wall) / od;
-
-  const dOverT = od / wall;
-  let collapsePressure: number;
-  if (dOverT < 15) {
-    collapsePressure = 2 * yieldStrength * ((dOverT - 1) / (dOverT * dOverT));
-  } else {
-    collapsePressure = yieldStrength * (1 / dOverT) * 2;
-  }
-
-  const ovalityFraction = ct.ovality / 100;
-  const collapseWithOvality = Math.max(0, collapsePressure * (1 - 3 * ovalityFraction * (dOverT - 1)));
-
-  const steelAreaM2 = ctCrossSectionArea(od, wall);
-  const yieldTension = yieldStrength * steelAreaM2 * 1000;
-  const yieldCompression = yieldTension;
-
-  const axialStress = (axialLoad * 1000) / steelAreaM2 / 1e6;
-  const deltaPressure = internalPressure - externalPressure;
-  const hoopStress = (deltaPressure * od) / (2 * wall);
-  const radialStress = -(internalPressure + externalPressure) / 2;
-
-  const vonMises = Math.sqrt(
-    0.5 * (
-      Math.pow(axialStress - hoopStress, 2) +
-      Math.pow(hoopStress - radialStress, 2) +
-      Math.pow(radialStress - axialStress, 2)
-    )
-  );
-  const vonMisesRatio = vonMises / yieldStrength;
-
+  const derate = opts.tempC !== undefined ? tempDeratingFactor(opts.tempC) : 1;
+  const s = strengthOf(ct.od, ct.wall, ct.grade, ct.ovality, opts.wallLossPct ?? 0, derate);
+  const cAx = collapseWithAxial(ct.od, ct.wall, ct.grade, ct.ovality, Math.max(0, axialLoad), opts.wallLossPct ?? 0, derate);
+  const vm = vonMisesLame(ct.od, s.tMin, Math.max(0, internalPressure), Math.max(0, externalPressure), axialLoad);
+  const regime = s.collapseYield < s.collapseElastic * 0.5 ? "пластическое (по пределу текучести)" : s.collapseElastic < s.collapseYield * 0.5 ? "упругое" : "переходное (упругопластическое)";
   return {
-    burstPressure: Math.round(burstPressure * 100) / 100,
-    collapsePressure: Math.round(collapsePressure * 100) / 100,
-    collapseWithOvality: Math.round(Math.max(0, collapseWithOvality) * 100) / 100,
-    yieldTension: Math.round(yieldTension * 100) / 100,
-    yieldCompression: Math.round(yieldCompression * 100) / 100,
-    vonMisesRatio: Math.round(vonMisesRatio * 1000) / 1000,
-    maxWorkingPressure: Math.round(burstPressure * 0.8 * 100) / 100,
-    maxWorkingTension: Math.round(yieldTension * 0.8 * 100) / 100,
+    burstPressure: Math.round(s.burst * 100) / 100,
+    collapsePressure: Math.round(s.collapse * 100) / 100,
+    collapseWithOvality: Math.round(s.collapseOval * 100) / 100,
+    collapseAtLoad: Math.round(cAx * 100) / 100,
+    yieldTension: Math.round(s.yieldTensionKN * 100) / 100,
+    yieldCompression: Math.round(s.yieldTensionKN * 100) / 100,
+    vonMisesRatio: Math.round((vm / s.yieldMPa) * 1000) / 1000,
+    maxWorkingPressure: Math.round(s.burst * 0.8 * 100) / 100,
+    maxWorkingTension: Math.round(s.yieldTensionKN * 0.8 * 100) / 100,
+    minWall: Math.round(s.tMin * 100) / 100,
+    tempDerate: Math.round(derate * 1000) / 1000,
+    collapseRegime: regime,
   };
 }
 
-/** Generate pressure-load envelope for chart */
-export interface EnvelopePoint {
-  pressure: number;
-  axialLoad: number;
-  type: string;
+export type { EnvelopeRow };
+
+/** Диаграмма допустимых нагрузок (CoilLIMIT): предел (Мизес 100%) и рабочая (80%). */
+export function generatePressureLoadEnvelope(ct: CTStringData, opts: { wallLossPct?: number; tempC?: number } = {}): EnvelopeRow[] {
+  const derate = opts.tempC !== undefined ? tempDeratingFactor(opts.tempC) : 1;
+  return workingEnvelope(ct.od, ct.wall, ct.grade, ct.ovality, opts.wallLossPct ?? 0, derate);
 }
 
-export function generatePressureLoadEnvelope(ct: CTStringData): EnvelopePoint[] {
-  const yieldStrength = GRADE_YIELD[ct.grade] || 552;
-  const od = ct.od;
-  const wall = ct.wall;
-  const steelAreaM2 = ctCrossSectionArea(od, wall);
+export interface OperatingPathPoint { axialLoad: number; dp: number; md: number; label?: string }
 
-  const burstP = (2 * yieldStrength * wall) / od;
-  const dOverT = od / wall;
-  let collapseP = dOverT < 15
-    ? 2 * yieldStrength * ((dOverT - 1) / (dOverT * dOverT))
-    : yieldStrength * (1 / dOverT) * 2;
-  const tensionKN = yieldStrength * steelAreaM2 * 1000;
-  const compressionKN = tensionKN;
-
-  const points: EnvelopePoint[] = [];
-  const steps = 20;
-
-  for (let i = 0; i <= steps; i++) {
-    const ratio = i / steps;
-    const axial = tensionKN * (1 - ratio);
-    const axialStress = (axial * 1000) / steelAreaM2 / 1e6;
-    const remaining = Math.sqrt(Math.max(0, yieldStrength * yieldStrength - axialStress * axialStress));
-    const pMax = remaining * 2 * wall / od;
-    points.push({ pressure: Math.round(pMax * 10) / 10, axialLoad: Math.round(axial * 10) / 10, type: "burst" });
-  }
-
-  for (let i = steps; i >= 0; i--) {
-    const ratio = i / steps;
-    const axial = tensionKN * (1 - ratio);
-    const axialStress = (axial * 1000) / steelAreaM2 / 1e6;
-    const remaining = Math.sqrt(Math.max(0, yieldStrength * yieldStrength - axialStress * axialStress));
-    const pMin = -(remaining * 2 * wall / od) * (collapseP / burstP);
-    points.push({ pressure: Math.round(pMin * 10) / 10, axialLoad: Math.round(axial * 10) / 10, type: "collapse" });
-  }
-
-  for (let i = 0; i <= steps; i++) {
-    const ratio = i / steps;
-    const axial = -compressionKN * ratio;
-    const axialStress = (axial * 1000) / steelAreaM2 / 1e6;
-    const remaining = Math.sqrt(Math.max(0, yieldStrength * yieldStrength - axialStress * axialStress));
-    const pMin = -(remaining * 2 * wall / od) * (collapseP / burstP);
-    points.push({ pressure: Math.round(pMin * 10) / 10, axialLoad: Math.round(axial * 10) / 10, type: "collapse" });
-  }
-
-  for (let i = steps; i >= 0; i--) {
-    const ratio = i / steps;
-    const axial = -compressionKN * ratio;
-    const axialStress = (axial * 1000) / steelAreaM2 / 1e6;
-    const remaining = Math.sqrt(Math.max(0, yieldStrength * yieldStrength - axialStress * axialStress));
-    const pMax = remaining * 2 * wall / od;
-    points.push({ pressure: Math.round(pMax * 10) / 10, axialLoad: Math.round(axial * 10) / 10, type: "burst" });
-  }
-
-  return points;
+/**
+ * Путь нагрузок на диаграмме пределов: истинная осевая сила и перепад давления (внутр. − наруж.) по стволу
+ * при КНБК на полной глубине и циркуляции; первая точка — труба на барабане / над уплотнителем.
+ */
+export function generateOperatingPath(
+  ct: CTStringData, well: WellGeometry, fluid: FluidData, tools: ToolsData, frictionCoeff: number,
+  sections: CTSection[] | undefined, hyd: Pick<HydraulicsResult, "pumpPressure" | "dpReel" | "dpLines" | "dpCTDeployed" | "dpAnnulus">, opts: CTSurfaceOptions = {},
+  atDepth?: number,
+): { rih: OperatingPathPoint[]; pooh: OperatingPathPoint[] } {
+  const pumpPressure = hyd.pumpPressure, dpInsideDeployed = hyd.dpCTDeployed, dpAnn = hyd.dpAnnulus;
+  const { o, model, maxD: fullD } = forceSetup(ct, well, fluid, tools, frictionCoeff, sections, opts);
+  const maxD = atDepth && atDepth > 0 ? Math.min(atDepth, fullD) : fullD;
+  const prof = model.profile(maxD);
+  const n = prof.st.length - 1;
+  const rho = fluid.density * 1000;
+  // давление внутри ГНКТ на устье = давление насоса − потери в линиях и в навитой на барабан части
+  const pIn0 = pumpPressure - hyd.dpReel - hyd.dpLines;
+  const mk = (F: number[], dir: number): OperatingPathPoint[] => {
+    const out: OperatingPathPoint[] = [];
+    const surf = F[0];
+    const wiTop = surf - model.pressureForceN + dir * model.stripperN;
+    out.push({ axialLoad: Math.round((wiTop + o.reelBackTensionKN * 1000) / 100) / 10, dp: Math.round(pumpPressure * 10) / 10, md: 0, label: "барабан" });
+    const every = Math.max(1, Math.floor(n / 40));
+    for (let i = 0; i <= n; i += every) {
+      const s = prof.st[i], p = prof.pipes[i];
+      const pi = pIn0 + (rho * GRAVITY * s.tvd) / 1e6 - dpInsideDeployed * (s.md / Math.max(1, maxD));
+      const po = well.wellheadPressure + (rho * GRAVITY * s.tvd) / 1e6 + dpAnn * (1 - s.md / Math.max(1, maxD));
+      const Ftrue = F[i] - po * 1e6 * p.ao + pi * 1e6 * p.ai;
+      if (!Number.isFinite(Ftrue) || Math.abs(Ftrue) > 1e9) continue;
+      out.push({ axialLoad: Math.round(Ftrue / 100) / 10, dp: Math.round((pi - po) * 10) / 10, md: Math.round(s.md) });
+    }
+    return out;
+  };
+  return { rih: mk(prof.rih.F, -1), pooh: mk(prof.pooh.F, 1) };
 }
 
 // ─── Module 3: Hydraulics ───
 
 export interface HydraulicsResult {
+  /** потери внутри ГНКТ: спущенная часть + навитая на барабане + линии, МПа */
   dpInsideCT: number;
+  dpCTDeployed: number;
+  dpReel: number;
+  dpLines: number;
   dpAnnulus: number;
   dpNozzle: number;
+  /** сумма потерь на трение (без устьевого давления), МПа */
   dpTotal: number;
+  /** давление насоса = P устья + все потери, МПа */
+  pumpPressure: number;
   hydrostaticInside: number;
   hydrostaticAnnulus: number;
   bhCircPressure: number;
@@ -716,19 +531,26 @@ export interface HydraulicsResult {
   reynoldsAnnulus: number;
   flowRegimeCT: string;
   flowRegimeAnnulus: string;
+  /** эквивалентная циркуляционная плотность (без устьевого давления), г/см³ */
   ecdAtTD: number;
   minTransportVelocity: number;
   transportOk: boolean;
   fracPressureAtTD: number;
   fracSafetyFactor: number;
+  rheologyModel: string;
+  reelLengthM: number;
+  annulusSegments: { from: number; to: number; holeIdMm: number; velocity: number; regime: string; dp: number }[];
+  warnings: string[];
 }
 
 export interface HydraulicsChartPoint {
   flowRate: number;
   dpCT: number;
+  dpReel: number;
   dpAnn: number;
   dpNozzle: number;
   dpTotal: number;
+  pumpPressure: number;
 }
 
 export function calculateHydraulics(
@@ -736,113 +558,65 @@ export function calculateHydraulics(
   well: WellGeometry,
   fluid: FluidData,
   pump: PumpData,
-  tools: ToolsData
+  tools: ToolsData,
+  sections?: CTSection[],
+  opts: CTSurfaceOptions = {},
 ): HydraulicsResult {
-  // flowRate is in l/s → convert to m³/s
-  const Q = pump.flowRate / 1000;
-  const idCT = ctID(ct.od, ct.wall) / 1000;
-  const odCT = ct.od / 1000;
-  const idCasing = (well.tubingID > 0 ? well.tubingID : well.casingID) / 1000;
-
-  const areaCT = (Math.PI / 4) * idCT * idCT;
-  const areaAnnulus = (Math.PI / 4) * (idCasing * idCasing - odCT * odCT);
-
-  const velCT = areaCT > 0 ? Q / areaCT : 0;
-  const velAnn = areaAnnulus > 0 ? Q / areaAnnulus : 0;
-
-  const rho = fluid.density * 1000;
-  const mu = fluid.pv / 1000;
-
-  const ReCT = mu > 0 ? (rho * velCT * idCT) / mu : 0;
-  const dhAnn = idCasing - odCT;
-  const ReAnn = mu > 0 && dhAnn > 0 ? (rho * velAnn * dhAnn) / mu : 0;
-
-  const getRegime = (Re: number) => Re < 2100 ? "Ламинарный" : Re < 3000 ? "Переходный" : "Турбулентный";
-
-  const fanningF = (Re: number) => {
-    if (Re <= 0) return 0;
-    if (Re < 2100) return 16 / Re;
-    return 0.079 / Math.pow(Re, 0.25);
-  };
-
-  const fCT = fanningF(ReCT);
-  const fAnn = fanningF(ReAnn);
-
-  const ctLength = Math.min(ct.length, well.md);
-  const dpCT = idCT > 0 ? (4 * fCT * ctLength * rho * velCT * velCT) / (2 * idCT) / 1e6 : 0;
-  const dpAnn = dhAnn > 0 ? (4 * fAnn * ctLength * rho * velAnn * velAnn) / (2 * dhAnn) / 1e6 : 0;
-
-  let dpNozzle = 0;
-  if (tools.nozzleDiam > 0 && tools.nozzleCount > 0) {
-    const nozzleArea = tools.nozzleCount * (Math.PI / 4) * Math.pow(tools.nozzleDiam / 1000, 2);
-    const velNozzle = Q / nozzleArea;
-    const Cd = 0.95;
-    dpNozzle = (rho * velNozzle * velNozzle) / (2 * Cd * Cd) / 1e6;
-  }
-
-  // *** TVD-based hydrostatics ***
-  const tvd = well.tvd;
-  const hydroIn = rho * GRAVITY * tvd / 1e6;
-  const hydroAnn = hydroIn;
-
-  const bhCircPressure = hydroAnn + dpAnn + well.wellheadPressure;
-  const dpTotal = dpCT + dpAnn + dpNozzle;
-
-  // ECD at TVD
-  const ecdAtTD = tvd > 0 ? bhCircPressure / (GRAVITY * tvd / 1e6) / 1000 : fluid.density;
-
-  // Frac pressure at TVD
-  const fracPressureAtTD = well.fracGradient * tvd;
-  const fracSafetyFactor = fracPressureAtTD > 0 ? bhCircPressure / fracPressureAtTD : 0;
-
-  // Solids transport
-  const avgZenith = well.trajectory.length > 1 ? well.trajectory[well.trajectory.length - 1].zenith : 0;
-  const incFactor = 1 + Math.sin((avgZenith * Math.PI) / 180) * 0.6;
+  const h = ctHydraulics(ct, sections, well, fluid, pump.flowRate, { d: tools.nozzleDiam, n: tools.nozzleCount }, opts);
+  const traj = well.trajectory.length > 1 ? well.trajectory : buildSyntheticTrajectory(well.md, well.tvd);
+  const maxInc = Math.max(...traj.map((t) => t.zenith));
+  const incFactor = 1 + Math.sin((Math.min(maxInc, 90) * Math.PI) / 180) * 0.6;
   const minTransportVelocity = 0.5 * incFactor;
-  const transportOk = velAnn >= minTransportVelocity;
-
+  const tvd = getTVDatMD(traj, h.deployedM);
+  const fracPressureAtTD = well.fracGradient * tvd;
+  const r2 = (x: number) => Math.round(x * 100) / 100;
+  const widest = h.annSegs.reduce((a, b) => (b.flow.v < (a?.flow.v ?? Infinity) ? b : a), h.annSegs[0]);
   return {
-    dpInsideCT: Math.round(dpCT * 100) / 100,
-    dpAnnulus: Math.round(dpAnn * 100) / 100,
-    dpNozzle: Math.round(dpNozzle * 100) / 100,
-    dpTotal: Math.round(dpTotal * 100) / 100,
-    hydrostaticInside: Math.round(hydroIn * 100) / 100,
-    hydrostaticAnnulus: Math.round(hydroAnn * 100) / 100,
-    bhCircPressure: Math.round(bhCircPressure * 100) / 100,
-    velocityInCT: Math.round(velCT * 100) / 100,
-    velocityAnnulus: Math.round(velAnn * 100) / 100,
-    reynoldsInCT: Math.round(ReCT),
-    reynoldsAnnulus: Math.round(ReAnn),
-    flowRegimeCT: getRegime(ReCT),
-    flowRegimeAnnulus: getRegime(ReAnn),
-    ecdAtTD: Math.round(ecdAtTD * 1000) / 1000,
-    minTransportVelocity: Math.round(minTransportVelocity * 100) / 100,
-    transportOk,
-    fracPressureAtTD: Math.round(fracPressureAtTD * 100) / 100,
-    fracSafetyFactor: Math.round(fracSafetyFactor * 100) / 100,
+    dpInsideCT: r2(h.dpDeployed + h.dpReel + h.dpLines),
+    dpCTDeployed: r2(h.dpDeployed),
+    dpReel: r2(h.dpReel),
+    dpLines: r2(h.dpLines),
+    dpAnnulus: r2(h.dpAnn),
+    dpNozzle: r2(h.dpNozzle),
+    dpTotal: r2(h.dpDeployed + h.dpReel + h.dpLines + h.dpAnn + h.dpNozzle),
+    pumpPressure: r2(h.pumpPressure),
+    hydrostaticInside: r2(h.hydro),
+    hydrostaticAnnulus: r2(h.hydro),
+    bhCircPressure: r2(h.bhp),
+    velocityInCT: r2(h.ctFlow.v),
+    velocityAnnulus: r2(h.minAnnVel),
+    reynoldsInCT: Math.round(h.ctFlow.Re),
+    reynoldsAnnulus: Math.round(widest?.flow.Re ?? 0),
+    flowRegimeCT: h.ctFlow.regime,
+    flowRegimeAnnulus: widest?.flow.regime ?? "—",
+    ecdAtTD: Math.round(h.ecd * 1000) / 1000,
+    minTransportVelocity: r2(minTransportVelocity),
+    transportOk: h.minAnnVel >= minTransportVelocity,
+    fracPressureAtTD: r2(fracPressureAtTD),
+    fracSafetyFactor: fracPressureAtTD > 0 ? r2(h.bhp / fracPressureAtTD) : 0,
+    rheologyModel: h.rheo.model,
+    reelLengthM: Math.round(h.reelM),
+    annulusSegments: h.annSegs.map((s) => ({ from: Math.round(s.from), to: Math.round(s.to), holeIdMm: s.holeIdMm, velocity: r2(s.flow.v), regime: s.flow.regime, dp: r2((s.flow.gradPaM * (s.to - s.from)) / 1e6) })),
+    warnings: h.warnings,
   };
 }
 
-/** Generate flow rate vs pressure drop curve for chart (flowRate in l/s) */
+/** Потери давления и давление насоса в зависимости от расхода (л/с) */
 export function generateHydraulicsCurve(
   ct: CTStringData,
   well: WellGeometry,
   fluid: FluidData,
   tools: ToolsData,
   maxFlowRate: number = 10,
-  steps: number = 30
+  steps: number = 30,
+  sections?: CTSection[],
+  opts: CTSurfaceOptions = {},
 ): HydraulicsChartPoint[] {
   const points: HydraulicsChartPoint[] = [];
   for (let i = 1; i <= steps; i++) {
     const fr = (maxFlowRate / steps) * i;
-    const r = calculateHydraulics(ct, well, fluid, { flowRate: fr, surfacePressure: 0 }, tools);
-    points.push({
-      flowRate: Math.round(fr * 100) / 100,
-      dpCT: r.dpInsideCT,
-      dpAnn: r.dpAnnulus,
-      dpNozzle: r.dpNozzle,
-      dpTotal: r.dpTotal,
-    });
+    const r = calculateHydraulics(ct, well, fluid, { flowRate: fr, surfacePressure: 0 }, tools, sections, opts);
+    points.push({ flowRate: Math.round(fr * 100) / 100, dpCT: r.dpCTDeployed, dpReel: Math.round((r.dpReel + r.dpLines) * 100) / 100, dpAnn: r.dpAnnulus, dpNozzle: r.dpNozzle, dpTotal: r.dpTotal, pumpPressure: r.pumpPressure });
   }
   return points;
 }
@@ -1025,10 +799,8 @@ export function calculateTempering(
   const od = ct.od;
   const wall = ct.wall;
   const burstNominal = (2 * yieldNominal * wall) / od;
-  const dOverT = od / wall;
-  const collapseNominal = dOverT < 15
-    ? 2 * yieldNominal * ((dOverT - 1) / (dOverT * dOverT))
-    : yieldNominal * (1 / dOverT) * 2;
+  // смятие по API RP 5C7 (Тимошенко) с овальностью
+  const collapseNominal = strengthOf(od, wall, ct.grade, ct.ovality).collapseOval;
 
   const traj = well.trajectory.length > 1 ? well.trajectory
     : buildSyntheticTrajectory(well.md, well.tvd);
@@ -1080,7 +852,7 @@ export function calculateTempering(
     const derating = tempDeratingFactor(pipeTemp);
     const effYield = yieldNominal * derating;
     const burstD = burstNominal * derating;
-    const collapseD = collapseNominal * derating;
+    const collapseD = strengthOf(od, wall, ct.grade, ct.ovality, 0, derating).collapseOval;
 
     if (pipeTemp > maxPipeTemp) {
       maxPipeTemp = pipeTemp;
@@ -1135,17 +907,25 @@ export function assessRisks(
   const risks: RiskItem[] = [];
 
   if (forces.lockUpDepth > 0) {
-    risks.push({ level: "critical", emoji: "🔒", message: `Запирание ГНКТ на глубине ${forces.lockUpDepth.toFixed(0)} м — невозможно продвижение` });
+    risks.push({ level: "critical", emoji: "🔒", message: forces.lockUpReason === "injector"
+      ? `Спуск ограничен инжектором на ${forces.lockUpDepth.toFixed(0)} м: требуемое проталкивание больше ${forces.injectorSnubKN.toFixed(0)} кН`
+      : `Запирание ГНКТ на ${forces.lockUpDepth.toFixed(0)} м: спиральный изгиб, усилие с устья не передаётся вниз` });
   }
-  if (forces.surfaceLoadRIH < 0) {
-    risks.push({ level: "critical", emoji: "⚠️", message: "Колтюбинг в сжатии на устье — риск спирального изгиба" });
+  if (forces.pipeLightDepth > 0) {
+    risks.push({ level: "info", emoji: "⬇️", message: `Давление на устье выталкивает трубу: до ${forces.pipeLightDepth.toFixed(0)} м спуск с проталкиванием инжектором (до ${forces.maxSnubRequired.toFixed(1)} кН)` });
+  }
+  if (forces.helicalZone && forces.lockUpDepth === 0) {
+    risks.push({ level: "warning", emoji: "🌀", message: `Спиральный изгиб при спуске в интервале ${forces.helicalZone[0]}–${forces.helicalZone[1]} м — повышенное трение, износ трубы` });
+  }
+  if (forces.maxPullRequired > forces.injectorPullKN * 0.9) {
+    risks.push({ level: "critical", emoji: "🏋️", message: `Требуемое тяговое усилие при подъёме ${forces.maxPullRequired.toFixed(0)} кН > 90% тяги инжектора (${forces.injectorPullKN.toFixed(0)} кН)` });
   }
   if (forces.surfaceLoadPOOH > limits.maxWorkingTension) {
-    risks.push({ level: "critical", emoji: "💥", message: "Нагрузка при подъёме превышает рабочий предел натяжения" });
+    risks.push({ level: "critical", emoji: "💥", message: "Нагрузка при подъёме превышает рабочий предел натяжения (80% текучести)" });
   }
 
-  if (hydraulics.dpTotal > limits.maxWorkingPressure) {
-    risks.push({ level: "critical", emoji: "🔴", message: `Давление циркуляции (${hydraulics.dpTotal.toFixed(1)} МПа) > макс. рабочее (${limits.maxWorkingPressure.toFixed(1)} МПа)` });
+  if (hydraulics.pumpPressure > limits.maxWorkingPressure) {
+    risks.push({ level: "critical", emoji: "🔴", message: `Давление насоса (${hydraulics.pumpPressure.toFixed(1)} МПа) > макс. рабочего давления ГНКТ (${limits.maxWorkingPressure.toFixed(1)} МПа)` });
   }
   if (limits.vonMisesRatio >= 1.0) {
     risks.push({ level: "critical", emoji: "⛔", message: "Критерий Мизеса превышен — деформация неизбежна!" });
@@ -1153,8 +933,8 @@ export function assessRisks(
     risks.push({ level: "warning", emoji: "🟡", message: `Коэффициент Мизеса ${limits.vonMisesRatio.toFixed(3)} — близко к пределу` });
   }
 
-  if (limits.collapseWithOvality < well.wellheadPressure) {
-    risks.push({ level: "warning", emoji: "📉", message: "Давление смятия ниже устьевого давления" });
+  if (limits.collapseWithOvality * 0.8 < well.wellheadPressure) {
+    risks.push({ level: limits.collapseWithOvality < well.wellheadPressure ? "critical" : "warning", emoji: "📉", message: `Давление на устье ${well.wellheadPressure.toFixed(1)} МПа близко к давлению смятия с овальностью (${limits.collapseWithOvality.toFixed(1)} МПа) — не стравливать давление в ГНКТ` });
   }
 
   // Frac check
@@ -1204,12 +984,12 @@ export const FLUID_PRESETS: { label: string; data: FluidData }[] = [
   { label: "Вода", data: { name: "Вода", density: 1.0, pv: 1, yp: 0, nIndex: 1, kIndex: 0.001 } },
   { label: "Солевой раствор (NaCl)", data: { name: "Солевой раствор NaCl", density: 1.05, pv: 1.5, yp: 0, nIndex: 1, kIndex: 0.0015 } },
   { label: "Солевой раствор (CaCl₂)", data: { name: "Солевой раствор CaCl₂", density: 1.20, pv: 2.0, yp: 0, nIndex: 1, kIndex: 0.002 } },
-  { label: "КМЦ раствор", data: { name: "КМЦ раствор", density: 1.02, pv: 15, yp: 5, nIndex: 0.6, kIndex: 0.5 } },
+  { label: "КМЦ раствор", data: { name: "КМЦ раствор", density: 1.02, pv: 15, yp: 5, nIndex: 0.6, kIndex: 0.25 } },
   { label: "Кислота 15% HCl", data: { name: "HCl 15%", density: 1.07, pv: 1.2, yp: 0, nIndex: 1, kIndex: 0.0012 } },
   { label: "Кислота 28% HCl", data: { name: "HCl 28%", density: 1.14, pv: 1.8, yp: 0, nIndex: 1, kIndex: 0.0018 } },
   { label: "Глинокислота", data: { name: "Глинокислота (HCl+HF)", density: 1.08, pv: 1.3, yp: 0, nIndex: 1, kIndex: 0.0013 } },
-  { label: "Гель (ГПГ)", data: { name: "Гуаровый гель", density: 1.01, pv: 25, yp: 10, nIndex: 0.45, kIndex: 2.0 } },
-  { label: "Биополимер (ксантан)", data: { name: "Биополимерный раствор", density: 1.01, pv: 20, yp: 8, nIndex: 0.5, kIndex: 1.5 } },
+  { label: "Гель (ГПГ)", data: { name: "Гуаровый гель (линейный, 3.6 кг/м³)", density: 1.01, pv: 25, yp: 10, nIndex: 0.5, kIndex: 0.35 } },
+  { label: "Биополимер (ксантан)", data: { name: "Биополимерный раствор", density: 1.01, pv: 20, yp: 8, nIndex: 0.4, kIndex: 0.6 } },
   { label: "Нефть (0.85)", data: { name: "Нефть", density: 0.85, pv: 5, yp: 0, nIndex: 1, kIndex: 0.005 } },
   { label: "Азот (газ)", data: { name: "Азот", density: 0.15, pv: 0.02, yp: 0, nIndex: 1, kIndex: 0.00002 } },
 ];

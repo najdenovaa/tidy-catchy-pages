@@ -152,11 +152,11 @@ export default function CTOperationSummary({
             />
             <SummaryKPI
               label="POOH нагрузка"
-              value={forces ? `${(forces.surfaceLoadPOOH / 1000).toFixed(1)} тс` : "—"}
+              value={forces ? `${(forces.surfaceLoadPOOH / 9.81).toFixed(1)} тс` : "—"}
             />
             <SummaryKPI
               label="RIH нагрузка"
-              value={forces ? `${(forces.surfaceLoadRIH / 1000).toFixed(1)} тс` : "—"}
+              value={forces ? (forces.rihLocked ? "запирание" : `${(forces.surfaceLoadRIH / 9.81).toFixed(1)} тс`) : "—"}
             />
             <SummaryKPI
               label="Общий статус"

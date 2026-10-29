@@ -80,6 +80,7 @@ export default function CTAcidStimTab({ ct, well, pump, operationType }: Props) 
     volumePerMeter: volumePerM,
     pumpRate, whTemp: well.whTemp, bhct: well.bhct,
     ctID: ct.od - 2 * ct.wall,
+    reelLengthM: Math.max(0, ct.length - well.md),
     pipeFrictionFactor: fricFactor,
     preflushVolume: preflush,
     overflushVolume: overflush,

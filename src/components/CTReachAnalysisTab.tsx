@@ -13,7 +13,7 @@ import { analyzeReach } from "@/lib/ct-reach-analysis";
 import type {
   CTStringData, WellGeometry, FluidData, ToolsData,
 } from "@/lib/coiled-tubing-calculations";
-import type { CTSection } from "@/lib/coiled-tubing-calculations";
+import type { CTSection, CTSurfaceOptions } from "@/lib/coiled-tubing-calculations";
 
 interface Props {
   ct: CTStringData;
@@ -21,11 +21,12 @@ interface Props {
   fluid: FluidData;
   tools: ToolsData;
   sections?: CTSection[];
+  surface?: CTSurfaceOptions;
   baselineFriction: number;
 }
 
 export default function CTReachAnalysisTab({
-  ct, well, fluid, tools, sections, baselineFriction,
+  ct, well, fluid, tools, sections, surface, baselineFriction,
 }: Props) {
   const [target, setTarget] = useState<number>(Math.round(well.md * 0.95));
   const [muMin, setMuMin] = useState(0.15);
@@ -34,14 +35,14 @@ export default function CTReachAnalysisTab({
   const result = useMemo(
     () =>
       analyzeReach({
-        ct, well, fluid, tools, sections,
+        ct, well, fluid, tools, sections, surface,
         targetDepthMD: target,
         baselineFriction,
         frictionMin: muMin,
         frictionMax: muMax,
         step: 0.025,
       }),
-    [ct, well, fluid, tools, sections, target, baselineFriction, muMin, muMax],
+    [ct, well, fluid, tools, sections, surface, target, baselineFriction, muMin, muMax],
   );
 
   const chartData = result.sensitivity.map(s => ({

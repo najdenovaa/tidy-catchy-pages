@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import TermsFooter from "@/components/TermsFooter";
 import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
 import { Badge } from "@/components/ui/badge";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, AreaChart, Area, ReferenceLine, ScatterChart, Scatter, ZAxis } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Area, ComposedChart, ReferenceLine, ScatterChart, Scatter, ZAxis } from "recharts";
 import { BlurInput } from "@/components/BlurInput";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import {
@@ -24,6 +24,7 @@ import {
   generateTempProfile,
   assessRisks, RiskItem,
   calculateTVDFromSurvey, type TrajectoryPoint,
+  generateOperatingPath, CT_SURFACE_DEFAULTS, REEL_DIAMETERS, type CTSurfaceOptions,
 } from "@/lib/coiled-tubing-calculations";
 import { generateHookLoadProfile, type HookLoadPoint, type CTSection } from "@/lib/coiled-tubing-calculations";
 import CTWell3D from "@/components/CTWell3D";
@@ -55,6 +56,7 @@ interface CTSession {
   prevTrips: number;
   trajPoints: TrajectoryPoint[];
   ctSections: CTSection[];
+  surface: CTSurfaceOptions;
 }
 
 const defaultCT: CTStringData = { od: 50.8, wall: 3.96, grade: "CT-80", length: 3000, ovality: 1 };
@@ -87,10 +89,11 @@ function loadSession(): CTSession {
         prevTrips: p.prevTrips ?? 0,
         trajPoints: Array.isArray(p.trajPoints) ? p.trajPoints : defaultTraj,
         ctSections: Array.isArray(p.ctSections) ? p.ctSections : defaultSections,
+        surface: p.surface && typeof p.surface === "object" ? p.surface : {},
       };
     }
   } catch {}
-  return { ct: defaultCT, well: defaultWell, fluid: defaultFluid, pump: defaultPump, tools: defaultTools, friction: 0.25, reelSize: "medium", prevTrips: 0, trajPoints: defaultTraj, ctSections: defaultSections };
+  return { ct: defaultCT, well: defaultWell, fluid: defaultFluid, pump: defaultPump, tools: defaultTools, friction: 0.25, reelSize: "medium", prevTrips: 0, trajPoints: defaultTraj, ctSections: defaultSections, surface: {} };
 }
 
 function num(v: string): number {
@@ -149,6 +152,8 @@ export default function CoiledTubing() {
   const [trajPoints, setTrajPoints] = useState<TrajectoryPoint[]>(initial.trajPoints);
   const [tab, setTab] = useState("forces");
   const [ctSections, setCtSections] = useState<CTSection[]>(initial.ctSections);
+  const [surface, setSurface] = useState<CTSurfaceOptions>(initial.surface);
+  const surfaceOpts = useMemo<CTSurfaceOptions>(() => ({ ...surface, reelCoreD: REEL_DIAMETERS[reelSize] }), [surface, reelSize]);
   const [calculated, setCalculated] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -156,7 +161,7 @@ export default function CoiledTubing() {
 
   // Collapsible sections
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    ct: false, well: false, fluid: false, pump: false, fatigue: false,
+    ct: false, well: false, fluid: false, pump: false, surface: false, fatigue: false,
   });
   const toggle = (k: string) => setOpenSections(s => ({ ...s, [k]: !s[k] }));
 
@@ -186,11 +191,11 @@ export default function CoiledTubing() {
   useEffect(() => {
     const timer = setTimeout(() => {
       try {
-        sessionStorage.setItem(CT_SESSION_KEY, JSON.stringify({ ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections }));
+        sessionStorage.setItem(CT_SESSION_KEY, JSON.stringify({ ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface }));
       } catch {}
     }, 500);
     return () => clearTimeout(timer);
-  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections]);
+  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface]);
 
   const markDirty = useCallback(() => setCalculated(false), []);
 
@@ -267,13 +272,14 @@ export default function CoiledTubing() {
     };
     const secs = ctSections.length > 0 ? ctSections : undefined;
 
-    const f = calculateTubingForces(ct, wellWithTraj, fluid, tools, friction, secs);
-    const l = calculateLimits(ct, pump.surfacePressure || 0, wellWithTraj.wellheadPressure, f.surfaceLoadPOOH);
-    const h = calculateHydraulics(ct, wellWithTraj, fluid, pump, tools);
-    const ft = calculateFatigue(ct, reelSize, pump.surfacePressure || h.dpTotal, prevTrips);
-    const r = assessRisks(f, l, h, ft, wellWithTraj);
+    const f = calculateTubingForces(ct, wellWithTraj, fluid, tools, friction, secs, surfaceOpts);
+    const h = calculateHydraulics(ct, wellWithTraj, fluid, pump, tools, secs, surfaceOpts);
     const tp = calculateTempering(ct, wellWithTraj, fluid, pump);
-    const hl = generateHookLoadProfile(ct, wellWithTraj, fluid, tools, friction, secs);
+    // проверка прочности на устье (наиболее нагруженное место): давление насоса внутри, давление устья снаружи, натяжение подъёма
+    const l = calculateLimits(ct, h.pumpPressure, wellWithTraj.wellheadPressure, f.surfaceLoadPOOH, { wallLossPct: surface.wallLossPct ?? 0 });
+    const ft = calculateFatigue(ct, reelSize, h.pumpPressure, prevTrips);
+    const r = assessRisks(f, l, h, ft, wellWithTraj);
+    const hl = generateHookLoadProfile(ct, wellWithTraj, fluid, tools, friction, secs, 50, surfaceOpts);
 
     setForces(f);
     setLimits(l);
@@ -289,7 +295,7 @@ export default function CoiledTubing() {
     }).catch(() => {});
 
     toast.success("Расчёт выполнен ✅");
-  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections]);
+  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface, surfaceOpts]);
 
   const handleReset = useCallback(() => {
     setCT(defaultCT); setWell(defaultWell); setFluid(defaultFluid);
@@ -297,6 +303,7 @@ export default function CoiledTubing() {
     setReelSize("medium"); setPrevTrips(0); setCalculated(false);
     setTrajPoints(defaultTraj);
     setCtSections(defaultSections);
+    setSurface({});
     setHookLoadData([]);
     setForces(null); setLimits(null); setHydraulics(null); setFatigue(null);
     setTempering(null);
@@ -309,10 +316,10 @@ export default function CoiledTubing() {
   const buildCTPayload = useCallback((): SaveCalcPayload => ({
     module: "coiled-tubing",
     title: `ГНКТ ${ct.od}мм ${ct.grade} — MD ${well.md}м`,
-    well_data: { ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints },
+    well_data: { ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, surface },
     calc_params: { forces, limits, hydraulics, fatigue, risks, ctSections },
     results: { forces, limits, hydraulics, fatigue },
-  }), [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, forces, limits, hydraulics, fatigue, risks, ctSections]);
+  }), [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, forces, limits, hydraulics, fatigue, risks, ctSections, surface]);
 
   // Save to database (opens dialog)
   const handleSave = useCallback(async () => {
@@ -387,10 +394,14 @@ export default function CoiledTubing() {
     trajectory: trajPoints.length > 1 ? trajPoints : well.trajectory,
   }), [well, trajPoints]);
 
-  const forceProfile = useMemo(() => calculated ? generateForceDepthProfile(ct, wellWithTraj, fluid, tools, friction, 80, ctSections.length > 0 ? ctSections : undefined) : [], [calculated, ct, wellWithTraj, fluid, tools, friction, ctSections]);
-  const hydraulicsCurve = useMemo(() => calculated ? generateHydraulicsCurve(ct, wellWithTraj, fluid, tools) : [], [calculated, ct, wellWithTraj, fluid, tools]);
-  const fatigueCurve = useMemo(() => calculated ? generateFatigueCurve(ct, reelSize, pump.surfacePressure || (hydraulics?.dpTotal ?? 0)) : [], [calculated, ct, reelSize, pump.surfacePressure, hydraulics?.dpTotal]);
-  const pressureEnvelope = useMemo(() => calculated ? generatePressureLoadEnvelope(ct) : [], [calculated, ct]);
+  const forceProfile = useMemo(() => calculated ? generateForceDepthProfile(ct, wellWithTraj, fluid, tools, friction, 80, ctSections.length > 0 ? ctSections : undefined, surfaceOpts, forces && forces.lockUpDepth > 0 ? forces.lockUpDepth * 0.97 : undefined) : [], [calculated, ct, wellWithTraj, fluid, tools, friction, ctSections, surfaceOpts, forces]);
+  const hydraulicsCurve = useMemo(() => calculated ? generateHydraulicsCurve(ct, wellWithTraj, fluid, tools, Math.max(6, Math.ceil(pump.flowRate * 2)), 30, ctSections.length > 0 ? ctSections : undefined, surfaceOpts) : [], [calculated, ct, wellWithTraj, fluid, tools, pump.flowRate, ctSections, surfaceOpts]);
+  const fatigueCurve = useMemo(() => calculated ? generateFatigueCurve(ct, reelSize, hydraulics?.pumpPressure ?? 0) : [], [calculated, ct, reelSize, hydraulics?.pumpPressure]);
+  const pressureEnvelope = useMemo(() => calculated ? generatePressureLoadEnvelope(ct, { wallLossPct: surface.wallLossPct ?? 0 }) : [], [calculated, ct, surface.wallLossPct]);
+  const operatingPath = useMemo(() => calculated && hydraulics ? generateOperatingPath(ct, wellWithTraj, fluid, tools, friction, ctSections.length > 0 ? ctSections : undefined, hydraulics, surfaceOpts, forces && forces.lockUpDepth > 0 ? forces.lockUpDepth * 0.97 : undefined) : null, [calculated, hydraulics, ct, wellWithTraj, fluid, tools, friction, ctSections, surfaceOpts, forces]);
+  const envelopeChart = useMemo(() => [
+    ...pressureEnvelope.map((r) => ({ axialLoad: r.axialLoad, burstLimit: r.burstLimit, burstWork: r.burstWork, collapseLimit: r.collapseLimit, collapseWork: r.collapseWork })),
+  ], [pressureEnvelope]);
   const tempProfile = useMemo(() => calculated ? generateTempProfile(wellWithTraj) : [], [calculated, wellWithTraj]);
 
   const linWeight = ctWeightPerMeter(ct.od, ct.wall);
@@ -724,6 +735,42 @@ export default function CoiledTubing() {
             </Card>
           </Collapsible>
 
+          {/* 🏗 Surface equipment */}
+          <Collapsible open={openSections.surface} onOpenChange={() => toggle("surface")}>
+            <Card>
+              <CollapsibleTrigger className="w-full">
+                <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
+                  <CardTitle className="text-sm">🏗 Наземное оборудование и условия</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px]">инжектор {surface.injectorPullKN ?? CT_SURFACE_DEFAULTS.injectorPullKN}/{surface.injectorSnubKN ?? CT_SURFACE_DEFAULTS.injectorSnubKN} кН</Badge>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${openSections.surface ? "rotate-180" : ""}`} />
+                  </div>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent className="pt-0 space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {([
+                      ["injectorPullKN", "Тяга инжектора (подъём)", "кН", "Максимальное тяговое усилие инжектора. Типично 180–360 кН (40–80 тыс. фунтов)"],
+                      ["injectorSnubKN", "Усилие проталкивания", "кН", "Максимальное усилие, с которым инжектор толкает трубу вниз (снаббинг). Обычно ~50% от тяги"],
+                      ["stripperFrictionKN", "Трение в уплотнителе", "кН", "Трение трубы в уплотнителе (стриппере). 0 — авто: 2 кН + 15% силы давления устья"],
+                      ["reelBackTensionKN", "Натяжение барабана", "кН", "Натяжение трубы со стороны барабана — добавляется к требуемой тяге инжектора. Типично 2–9 кН"],
+                      ["tubingShoeMD", "Башмак НКТ (MD)", "м", "Глубина башмака НКТ. Ниже — затрубье по эксплуатационной колонне. 0 — НКТ на всю глубину"],
+                      ["frictionReducerPct", "Снижатель трения", "%", "Снижение турбулентного трения жидкости в ГНКТ добавкой (ПАА и т.п.). Типично 50–70%; в навитой части эффект ~на 30% меньше"],
+                      ["surfaceLineM", "Наземные линии", "м", "Длина нагнетательных линий от насоса до барабана"],
+                      ["wallLossPct", "Износ стенки", "%", "Утонение стенки (износ, коррозия, минусовой допуск) — снижает давления разрыва и смятия и предел текучести на растяжение"],
+                    ] as [keyof CTSurfaceOptions, string, string, string][]).map(([k, label, unit, hint]) => (
+                      <Field key={k} label={label} unit={unit} hint={hint}
+                        value={(surface[k] as number | undefined) ?? ((CT_SURFACE_DEFAULTS as Record<string, number>)[k] ?? 0)}
+                        onChange={(v) => { const x = v.trim() === "" ? undefined : num(v); setSurface((o) => ({ ...o, [k]: x })); markDirty(); }} />
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Давление на устье берётся из «Данных скважины»: оно выталкивает трубу с силой P·A наружн. и учитывается в индикаторе веса. Диаметр барабана — из настроек усталости.</p>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+
           {/* 🔄 Fatigue settings */}
           <Collapsible open={openSections.fatigue} onOpenChange={() => toggle("fatigue")}>
             <Card>
@@ -798,75 +845,121 @@ export default function CoiledTubing() {
                     <CopyImageButton targetRef={hookLoadChartRef} label="📋" />
                   </CardHeader>
                   <CardContent className="px-4 pb-4 space-y-1">
-                    <Num label="Вес в воздухе" value={forces.weightInAir.toFixed(1)} unit="кН" />
-                    <Num label="Коэффициент плавучести" value={forces.buoyancyFactor.toFixed(3)} />
-                    <Num label="Вес в жидкости" value={forces.weightInFluid.toFixed(1)} unit="кН" />
+                    <div className="grid gap-x-6 sm:grid-cols-2">
+                      <div>
+                        <Num label="Вес в воздухе (ГНКТ + КНБК)" value={forces.weightInAir.toFixed(1)} unit="кН" />
+                        <Num label="Вес в жидкости" value={forces.weightInFluid.toFixed(1)} unit="кН" />
+                        <Num label="Выталкивание давлением устья (P·A)" value={`−${forces.pressureAreaForce.toFixed(1)}`} unit="кН" />
+                        <Num label="Трение в уплотнителе" value={`±${forces.stripperFriction.toFixed(1)}`} unit="кН" />
+                        <Num label="Сила трения в стволе (спуск / подъём)" value={`${forces.dragForceRIH.toFixed(1)} / ${forces.dragForcePOOH.toFixed(1)}`} unit="кН" />
+                      </div>
+                      <div>
+                        <Num label="Индикатор веса на забое — спуск" value={forces.rihLocked ? "запирание" : forces.surfaceLoadRIH.toFixed(1)} unit={forces.rihLocked ? "" : "кН"} warn={forces.rihLocked || forces.surfaceLoadRIH < 0} />
+                        <Num label="Индикатор веса на забое — подъём" value={forces.surfaceLoadPOOH.toFixed(1)} unit="кН" warn={forces.maxPullRequired > forces.injectorPullKN * 0.9} />
+                        <Num label="Индикатор веса — без движения" value={forces.surfaceLoadStatic.toFixed(1)} unit="кН" />
+                        <Num label="Проталкивание: макс. требуемое / инжектор" value={`${forces.maxSnubRequired.toFixed(1)} / ${forces.injectorSnubKN.toFixed(0)}`} unit="кН" warn={forces.maxSnubRequired > forces.injectorSnubKN} />
+                        <Num label="Тяга: макс. требуемая / инжектор" value={`${forces.maxPullRequired.toFixed(1)} / ${forces.injectorPullKN.toFixed(0)}`} unit="кН" warn={forces.maxPullRequired > forces.injectorPullKN * 0.9} />
+                      </div>
+                    </div>
                     <div className="border-t border-border my-2" />
-                    <Num label="Сила трения (СПО ↓)" value={forces.dragForceRIH.toFixed(1)} unit="кН" />
-                    <Num label="Сила трения (СПО ↑)" value={forces.dragForcePOOH.toFixed(1)} unit="кН" />
-                    <div className="border-t border-border my-2" />
-                    <Num label="Нагрузка на устье (СПО ↓)" value={forces.surfaceLoadRIH.toFixed(1)} unit="кН" warn={forces.surfaceLoadRIH < 0} />
-                    <Num label="Нагрузка на устье (СПО ↑)" value={forces.surfaceLoadPOOH.toFixed(1)} unit="кН" />
-                    <div className="border-t border-border my-2" />
-                    <Num label="Синус. потеря устойчивости" value={forces.sinusoidalBucklingLoad.toFixed(1)} unit="кН" />
-                    <Num label="Спиральный изгиб" value={forces.helicalBucklingLoad.toFixed(1)} unit="кН" />
-                    <Num label="Глубина lock-up" value={forces.lockUpDepth > 0 ? forces.lockUpDepth.toFixed(0) : "—"} unit={forces.lockUpDepth > 0 ? "м" : ""} warn={forces.lockUpDepth > 0} />
+                    <div className="grid gap-x-6 sm:grid-cols-2">
+                      <div>
+                        <Num label="Глубина запирания" value={forces.lockUpDepth > 0 ? `${forces.lockUpDepth.toFixed(0)} м · ${forces.lockUpReason === "injector" ? "не хватает проталкивания" : "спиральный изгиб"}` : "нет — доходит"} warn={forces.lockUpDepth > 0} />
+                        <Num label="Глубина равновесия (выше — проталкивание)" value={forces.pipeLightDepth > 0 ? forces.pipeLightDepth.toFixed(0) : "—"} unit={forces.pipeLightDepth > 0 ? "м" : ""} />
+                        <Num label="Спиральный изгиб при спуске" value={forces.helicalZone ? `${forces.helicalZone[0]}–${forces.helicalZone[1]} м` : "нет"} warn={!!forces.helicalZone} />
+                      </div>
+                      <div>
+                        <Num label="Нагрузка на забой: макс. (полное проталкивание)" value={forces.wobMaxAtTD.toFixed(1)} unit="кН" />
+                        <Num label="Нагрузка на забой без проталкивания" value={forces.wobNoSnubAtTD.toFixed(1)} unit="кН" />
+                        <Num label="Пределы изгиба на забое: синус. / спир." value={`${forces.sinusoidalBucklingLoad.toFixed(1)} / ${forces.helicalBucklingLoad.toFixed(1)}`} unit="кН" />
+                      </div>
+                    </div>
 
-                    {/* Hook Load Chart (CoilPRO style: depth on Y, weight on X) */}
+                    {/* Weight indicator vs depth */}
                     <div ref={hookLoadChartRef} className="mt-4 bg-card rounded-lg p-2">
-                      <p className="text-xs font-semibold text-center mb-2">📊 График дохождения — Вес на крюке vs Глубина КНБК</p>
-                      <p className="text-[10px] text-muted-foreground text-center mb-1">Коэфф. трения = {friction}</p>
+                      <p className="text-xs font-semibold text-center mb-1">📊 Индикатор веса при спуске и подъёме vs глубина КНБК</p>
+                      <p className="text-[10px] text-muted-foreground text-center mb-1">μ = {friction} · давление устья {well.wellheadPressure} МПа · отрицательные значения — труба проталкивается инжектором</p>
                       <div className="overflow-x-auto -mx-2 px-2">
-                        <div className="min-w-[600px]">
+                        <div className="min-w-[560px]">
                           <ResponsiveContainer width="100%" height={420}>
-                            <LineChart layout="vertical" data={hookLoadData} margin={{ top: 20, right: 20, bottom: 5, left: 20 }}>
+                            <LineChart layout="vertical" data={hookLoadData.map((p) => ({ ...p, hookRIH: p.hookRIH_kN, hookPOOH: p.hookPOOH_kN, hookStatic: p.hookStatic_kN, snub: -forces.injectorSnubKN, pull: forces.injectorPullKN }))} margin={{ top: 20, right: 20, bottom: 5, left: 20 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                              <YAxis dataKey="depth" type="number" reversed
-                                label={{ value: "Глубина, м", angle: -90, position: "insideLeft", offset: -5, style: { fontSize: 10 } }}
+                              <YAxis dataKey="depth" type="number" domain={[0, "dataMax"]}
+                                label={{ value: "Глубина КНБК, м", angle: -90, position: "insideLeft", offset: -5, style: { fontSize: 10 } }}
                                 tick={{ fontSize: 10 }} />
-                              <XAxis type="number" orientation="top"
-                                label={{ value: "Вес, кгс", position: "insideTop", offset: -18, style: { fontSize: 10 } }}
+                              <XAxis type="number" orientation="top" domain={[(min: number) => Math.floor(Math.min(min, -forces.injectorSnubKN * 1.05) / 20) * 20, (max: number) => Math.ceil(max * 1.1 / 20) * 20]} allowDataOverflow tickCount={8}
+                                label={{ value: "Индикатор веса, кН", position: "insideTop", offset: -18, style: { fontSize: 10 } }}
                                 tick={{ fontSize: 10 }} />
-                              <Tooltip contentStyle={{ fontSize: 11 }} />
+                              <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v: number) => (v === null || v === undefined ? "—" : `${Number(v).toFixed(1)} кН`)} labelFormatter={(d) => `КНБК на ${d} м`} />
                               <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Line type="monotone" dataKey="hookPOOH_kgf" name="Подъём" stroke="#ef4444" strokeWidth={2.5} dot={false} />
-                              <Line type="monotone" dataKey="hookRIH_kgf" name="Спуск" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
-                              <Line type="monotone" dataKey="yieldLimit80_kgf" name="Предел текучести 80%" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
+                              <Line type="monotone" dataKey="hookPOOH" name="Подъём" stroke="#ef4444" strokeWidth={2.5} dot={false} />
+                              <Line type="monotone" dataKey="hookRIH" name="Спуск" stroke="#3b82f6" strokeWidth={2.5} dot={false} connectNulls={false} />
+                              <Line type="monotone" dataKey="hookStatic" name="Без движения" stroke="#64748b" strokeWidth={1.2} strokeDasharray="4 3" dot={false} />
+                              <Line type="monotone" dataKey="snub" name={`Проталкивание инжектора (−${forces.injectorSnubKN} кН)`} stroke="#a855f7" strokeWidth={1.2} strokeDasharray="7 4" dot={false} />
                               <ReferenceLine x={0} stroke="hsl(var(--foreground))" strokeWidth={1} />
+                              {forces.lockUpDepth > 0 && <ReferenceLine y={forces.lockUpDepth} stroke="#dc2626" strokeDasharray="6 3" label={{ value: `запирание ${forces.lockUpDepth} м`, position: "insideBottomRight", style: { fontSize: 10, fill: "#dc2626" } }} />}
+                              {forces.pipeLightDepth > 0 && <ReferenceLine y={forces.pipeLightDepth} stroke="#a855f7" strokeDasharray="3 3" label={{ value: `равновесие ${forces.pipeLightDepth} м`, position: "insideTopRight", style: { fontSize: 10, fill: "#a855f7" } }} />}
                             </LineChart>
                           </ResponsiveContainer>
                           <p className="text-[10px] text-muted-foreground text-center mt-1 italic">
-                            {forces.lockUpDepth > 0 ? `🔒 Запирание на ${forces.lockUpDepth} м` : "✅ Запирание не обнаружено"}
+                            {forces.lockUpDepth > 0 ? `🔒 Спуск невозможен ниже ${forces.lockUpDepth} м` : "✅ ГНКТ доходит до полной глубины"} · индикатор веса = вес в жидкости ± трение − давление устья × площадь ± трение в уплотнителе
                           </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Available WOB */}
+                    <div className="mt-4 bg-card rounded-lg p-2">
+                      <p className="text-xs font-semibold text-center mb-1">🎯 Доступная нагрузка на забой (фрезерование, посадка, разгрузка) vs глубина</p>
+                      <div className="overflow-x-auto -mx-2 px-2">
+                        <div className="min-w-[560px]">
+                          <ResponsiveContainer width="100%" height={260}>
+                            <LineChart data={hookLoadData} margin={{ top: 10, right: 20, bottom: 22, left: 10 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                              <XAxis dataKey="depth" type="number" tick={{ fontSize: 10 }} label={{ value: "Глубина КНБК, м", position: "insideBottom", offset: -4, style: { fontSize: 10 } }} />
+                              <YAxis tick={{ fontSize: 10 }} label={{ value: "кН", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
+                              <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v: number) => `${Number(v).toFixed(1)} кН`} labelFormatter={(d) => `${d} м`} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Line type="monotone" dataKey="wobMax_kN" name={`При полном проталкивании (${forces.injectorSnubKN} кН)`} stroke="#16a34a" strokeWidth={2} dot={false} />
+                              <Line type="monotone" dataKey="wobNoSnub_kN" name="Без проталкивания (разгрузка веса)" stroke="#0ea5e9" strokeWidth={2} strokeDasharray="5 3" dot={false} />
+                            </LineChart>
+                          </ResponsiveContainer>
                         </div>
                       </div>
                     </div>
 
                     {/* Axial load distribution (internal profile) */}
                     <div ref={forcesChartRef} className="mt-4 bg-card rounded-lg p-2">
-                      <p className="text-xs font-semibold text-center mb-2">📊 Распределение осевой нагрузки в колонне</p>
+                      <p className="text-xs font-semibold text-center mb-1">📊 Эффективная осевая сила по стволу (КНБК на {forces.lockUpDepth > 0 ? `${Math.round(forces.lockUpDepth * 0.97)} м, перед запиранием` : "полной глубине"})</p>
+                      <p className="text-[10px] text-muted-foreground text-center mb-1">Сжатие левее пунктира синусоидального изгиба — труба изогнута синусоидой; левее спирального — спиралью, прижатие к стенке и трение быстро растут</p>
                       <div className="overflow-x-auto -mx-2 px-2">
-                        <div className="min-w-[600px]">
-                          <ResponsiveContainer width="100%" height={300}>
+                        <div className="min-w-[560px]">
+                          <ResponsiveContainer width="100%" height={340}>
                             <LineChart layout="vertical" data={forceProfile} margin={{ top: 20, right: 20, bottom: 5, left: 20 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                              <YAxis dataKey="depth" type="number" reversed
+                              <YAxis dataKey="depth" type="number" domain={[0, "dataMax"]}
                                 label={{ value: "Глубина, м", angle: -90, position: "insideLeft", offset: -5, style: { fontSize: 10 } }}
                                 tick={{ fontSize: 10 }} />
-                              <XAxis type="number" orientation="top"
-                                label={{ value: "кН", position: "insideTop", offset: -18, style: { fontSize: 10 } }}
+                              <XAxis type="number" orientation="top" domain={[(min: number) => Math.floor(Math.max(min, -forces.injectorSnubKN * 1.5) / 20) * 20, (max: number) => Math.ceil(max / 20) * 20]} allowDataOverflow tickCount={8}
+                                label={{ value: "кН (+ растяжение, − сжатие)", position: "insideTop", offset: -18, style: { fontSize: 10 } }}
                                 tick={{ fontSize: 10 }} />
-                              <Tooltip contentStyle={{ fontSize: 11 }} />
+                              <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v: number) => (v === null || v === undefined ? "—" : `${Number(v).toFixed(1)} кН`)} />
                               <Legend wrapperStyle={{ fontSize: 10 }} />
                               <Line type="monotone" dataKey="axialPOOH" name="Подъём" stroke="#ef4444" strokeWidth={2} dot={false} />
                               <Line type="monotone" dataKey="axialRIH" name="Спуск" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                              <Line type="monotone" dataKey="bucklingLimit" name="Синус. изгиб" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
+                              <Line type="monotone" dataKey="bucklingLimit" name="Синусоидальный изгиб" stroke="#f59e0b" strokeWidth={1.3} strokeDasharray="6 3" dot={false} />
+                              <Line type="monotone" dataKey="helicalLimit" name="Спиральный изгиб" stroke="#dc2626" strokeWidth={1.3} strokeDasharray="3 3" dot={false} />
                               <ReferenceLine x={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
                       </div>
                     </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Модель: «мягкая нить» в эффективных силах с кривизной ствола по зениту и азимуту; при сжатии выше критических сил (Досон–Паслей, Лубинский, Чен–Чиатем)
+                      учитывается дополнительное прижатие изогнутой трубы к стенке (Митчелл). Индикатор веса включает выталкивание давлением устья и трение в уплотнителе.
+                      Коэффициент трения калибруйте по фактическим показаниям индикатора веса.
+                    </p>
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -875,7 +968,8 @@ export default function CoiledTubing() {
               <TabsContent value="reach" forceMount className={tab !== "reach" ? "hidden" : ""}>
                 <CTReachAnalysisTab
                   ct={ct}
-                  well={well}
+                  well={wellWithTraj}
+                  surface={surfaceOpts}
                   fluid={fluid}
                   tools={tools}
                   sections={ctSections}
@@ -892,6 +986,8 @@ export default function CoiledTubing() {
                     totalDepthMD={well.md}
                     lockUpDepth={forces.lockUpDepth ?? 0}
                     helicalBucklingLoad={forces.helicalBucklingLoad ?? 0}
+                    injectorPullCapacity={forces.injectorPullKN}
+                    injectorSnubCapacity={forces.injectorSnubKN}
                   />
                 ) : (
                   <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Запустите расчёт, чтобы построить симулятор СПО.</CardContent></Card>
@@ -921,40 +1017,57 @@ export default function CoiledTubing() {
                     <CopyImageButton targetRef={limitsChartRef} label="📋" />
                   </CardHeader>
                   <CardContent className="px-4 pb-4 space-y-1">
-                    <Num label="Давление разрыва (Barlow)" value={limits.burstPressure.toFixed(1)} unit="МПа" />
-                    <Num label="Макс. рабочее давление (80%)" value={limits.maxWorkingPressure.toFixed(1)} unit="МПа" />
-                    <div className="border-t border-border my-2" />
-                    <Num label="Давление смятия" value={limits.collapsePressure.toFixed(1)} unit="МПа" />
-                    <Num label="Смятие с овальностью" value={limits.collapseWithOvality.toFixed(1)} unit="МПа" warn={limits.collapseWithOvality < well.wellheadPressure} />
-                    <div className="border-t border-border my-2" />
-                    <Num label="Предел текучести (растяж.)" value={limits.yieldTension.toFixed(1)} unit="кН" />
-                    <Num label="Макс. раб. натяжение (80%)" value={limits.maxWorkingTension.toFixed(1)} unit="кН" />
-                    <div className="border-t border-border my-2" />
-                    <Num label="Коэфф. Мизеса (σ_vm / σ_y)" value={limits.vonMisesRatio.toFixed(3)} warn={limits.vonMisesRatio >= 0.8} />
+                    <div className="grid gap-x-6 sm:grid-cols-2">
+                      <div>
+                        <Num label="Мин. толщина стенки (с износом)" value={limits.minWall.toFixed(2)} unit="мм" />
+                        <Num label="Давление разрыва (API RP 5C7)" value={limits.burstPressure.toFixed(1)} unit="МПа" />
+                        <Num label="Макс. рабочее давление (80%)" value={limits.maxWorkingPressure.toFixed(1)} unit="МПа" warn={hydraulics.pumpPressure > limits.maxWorkingPressure} />
+                        <Num label="Давление насоса при работе" value={hydraulics.pumpPressure.toFixed(1)} unit="МПа" warn={hydraulics.pumpPressure > limits.maxWorkingPressure} />
+                        <Num label="Предел текучести (растяжение)" value={limits.yieldTension.toFixed(1)} unit="кН" />
+                        <Num label="Макс. раб. натяжение (80%)" value={limits.maxWorkingTension.toFixed(1)} unit="кН" />
+                      </div>
+                      <div>
+                        <Num label="Смятие круглой трубы" value={limits.collapsePressure.toFixed(1)} unit="МПа" />
+                        <Num label={`Смятие с овальностью ${ct.ovality}% (Тимошенко)`} value={limits.collapseWithOvality.toFixed(1)} unit="МПа" warn={limits.collapseWithOvality < well.wellheadPressure * 1.25} />
+                        <Num label="То же при натяжении подъёма" value={limits.collapseAtLoad.toFixed(1)} unit="МПа" warn={limits.collapseAtLoad < well.wellheadPressure * 1.25} />
+                        <Num label="Характер смятия" value={limits.collapseRegime} />
+                        <Num label="Мизес на устье (σ_экв / σ_т)" value={limits.vonMisesRatio.toFixed(3)} warn={limits.vonMisesRatio >= 0.8} />
+                      </div>
+                    </div>
 
                     <div ref={limitsChartRef} className="mt-4 bg-card rounded-lg p-2">
-                      <p className="text-xs font-semibold text-center mb-2">📊 Диаграмма пределов (Давление vs Нагрузка)</p>
+                      <p className="text-xs font-semibold text-center mb-1">📊 Диаграмма допустимых нагрузок: перепад давления × осевая сила</p>
+                      <p className="text-[10px] text-muted-foreground text-center mb-1">Сплошные — предел (Мизес 100%, смятие с овальностью), пунктир — рабочий предел 80%. Линии спуска и подъёма — фактические нагрузки по стволу при циркуляции; ★ — труба на барабане.</p>
                       <div className="overflow-x-auto -mx-2 px-2">
-                        <div className="min-w-[600px]">
-                          <ResponsiveContainer width="100%" height={350}>
-                            <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 10 }}>
+                        <div className="min-w-[560px]">
+                          <ResponsiveContainer width="100%" height={380}>
+                            <ScatterChart margin={{ top: 10, right: 20, bottom: 18, left: 10 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                              <XAxis type="number" dataKey="axialLoad" name="Нагрузка" unit=" кН" tick={{ fontSize: 10 }}
-                                label={{ value: "Осевая нагрузка, кН", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} />
-                              <YAxis type="number" dataKey="pressure" name="Давление" unit=" МПа" tick={{ fontSize: 10 }}
-                                label={{ value: "Давление, МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
-                              <Tooltip contentStyle={{ fontSize: 11 }} />
-                              <Scatter name="Предельная оболочка" data={pressureEnvelope} fill="#3b82f6" line={{ stroke: "#3b82f6", strokeWidth: 2 }} shape="circle" legendType="line" />
-                              <Scatter name="Рабочая точка" data={[{ axialLoad: forces.surfaceLoadPOOH, pressure: hydraulics.dpTotal }]} fill="#ef4444" shape="star" legendType="star" />
-                              <ZAxis range={[15, 15]} />
+                              <XAxis type="number" dataKey="x" name="Осевая сила" unit=" кН" tick={{ fontSize: 10 }} domain={["dataMin", "dataMax"]}
+                                label={{ value: "Осевая сила, кН (+ растяжение)", position: "insideBottom", offset: -10, style: { fontSize: 10 } }} />
+                              <YAxis type="number" dataKey="y" name="Перепад" unit=" МПа" tick={{ fontSize: 10 }}
+                                label={{ value: "Перепад давления (внутр. − наруж.), МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
+                              <ZAxis range={[10, 10]} />
+                              <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v: number) => Number(v).toFixed(1)} />
+                              <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
+                              <Scatter name="Разрыв (предел)" data={envelopeChart.map((r) => ({ x: r.axialLoad, y: r.burstLimit }))} fill="#2563eb" line={{ stroke: "#2563eb", strokeWidth: 2 }} shape={() => null} legendType="line" />
+                              <Scatter name="Смятие (предел)" data={envelopeChart.map((r) => ({ x: r.axialLoad, y: r.collapseLimit }))} fill="#7c3aed" line={{ stroke: "#7c3aed", strokeWidth: 2 }} shape={() => null} legendType="line" />
+                              <Scatter name="Рабочий предел 80%" data={envelopeChart.map((r) => ({ x: r.axialLoad, y: r.burstWork }))} fill="#94a3b8" line={{ stroke: "#94a3b8", strokeWidth: 1.2, strokeDasharray: "5 4" }} shape={() => null} legendType="plainline" />
+                              <Scatter name="" data={envelopeChart.map((r) => ({ x: r.axialLoad, y: r.collapseWork }))} fill="#94a3b8" line={{ stroke: "#94a3b8", strokeWidth: 1.2, strokeDasharray: "5 4" }} shape={() => null} legendType="none" />
+                              {operatingPath && <Scatter name="Спуск (по стволу)" data={operatingPath.rih.map((p) => ({ x: p.axialLoad, y: p.dp, md: p.md }))} fill="#0ea5e9" line={{ stroke: "#0ea5e9", strokeWidth: 2 }} shape="circle" legendType="line" />}
+                              {operatingPath && <Scatter name="Подъём (по стволу)" data={operatingPath.pooh.map((p) => ({ x: p.axialLoad, y: p.dp, md: p.md }))} fill="#ef4444" line={{ stroke: "#ef4444", strokeWidth: 2 }} shape="circle" legendType="line" />}
+                              {operatingPath && <Scatter name="На барабане" data={[{ x: operatingPath.pooh[0].axialLoad, y: operatingPath.pooh[0].dp }]} fill="#f59e0b" shape="star" legendType="star" />}
                               <ReferenceLine y={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
                               <ReferenceLine x={0} stroke="hsl(var(--foreground))" strokeWidth={0.5} />
                             </ScatterChart>
                           </ResponsiveContainer>
                         </div>
                       </div>
-                      <p className="text-[10px] text-muted-foreground text-center mt-1">⭐ Красная звезда = текущая рабочая точка</p>
                     </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      API RP 5C7: разрыв — по Барлоу с минимальной толщиной стенки; смятие — по Тимошенко с учётом овальности (упругая и пластическая составляющие),
+                      осевое натяжение снижает сопротивление смятию (API 5C3); эквивалентные напряжения — по Мизесу с распределением по Ламе. Температурное снижение прочности — на вкладке «Темперирование».
+                    </p>
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -967,53 +1080,76 @@ export default function CoiledTubing() {
                     <CopyImageButton targetRef={hydraulicsChartRef} label="📋" />
                   </CardHeader>
                   <CardContent className="px-4 pb-4 space-y-1">
-                    <Num label="Скорость в ГНКТ" value={hydraulics.velocityInCT.toFixed(2)} unit="м/с" />
-                    <Num label="Скорость в затрубье" value={hydraulics.velocityAnnulus.toFixed(2)} unit="м/с" />
-                    <Num label="Мин. скорость транспорта" value={hydraulics.minTransportVelocity.toFixed(2)} unit="м/с" />
-                    <Num label="Транспорт шлама" value={hydraulics.transportOk ? "✅ Достаточно" : "⚠ Недостаточно"} warn={!hydraulics.transportOk} />
-                    <div className="border-t border-border my-2" />
-                    <Num label="Re в ГНКТ" value={hydraulics.reynoldsInCT} />
-                    <Num label="Режим в ГНКТ" value={hydraulics.flowRegimeCT} />
-                    <Num label="Re в затрубье" value={hydraulics.reynoldsAnnulus} />
-                    <Num label="Режим в затрубье" value={hydraulics.flowRegimeAnnulus} />
-                    <div className="border-t border-border my-2" />
-                    <Num label="ΔP внутри ГНКТ" value={hydraulics.dpInsideCT.toFixed(2)} unit="МПа" />
-                    <Num label="ΔP в затрубье" value={hydraulics.dpAnnulus.toFixed(2)} unit="МПа" />
-                    <Num label="ΔP на насадках" value={hydraulics.dpNozzle.toFixed(2)} unit="МПа" />
-                    <Num label="Общее ΔP" value={hydraulics.dpTotal.toFixed(2)} unit="МПа" warn={hydraulics.dpTotal > limits.maxWorkingPressure} />
-                    <div className="border-t border-border my-2" />
-                    <Num label="ECD на забое (TVD)" value={hydraulics.ecdAtTD.toFixed(3)} unit="г/см³" />
-                    <Num label="BHP (цирк., TVD)" value={hydraulics.bhCircPressure.toFixed(2)} unit="МПа" />
-                    <Num label="Давление ГРП (TVD)" value={hydraulics.fracPressureAtTD.toFixed(2)} unit="МПа" />
-                    <Num label="BHP / P_грп" value={hydraulics.fracSafetyFactor.toFixed(2)} warn={hydraulics.fracSafetyFactor >= 0.85} />
+                    <p className="text-[11px] text-muted-foreground px-2">Реология: {hydraulics.rheologyModel}{(surface.frictionReducerPct ?? 0) > 0 ? ` · снижатель трения ${surface.frictionReducerPct}%` : ""}</p>
+                    {hydraulics.warnings.map((w) => <p key={w} className="text-[11px] text-amber-600 px-2">⚠ {w}</p>)}
+                    <div className="grid gap-x-6 sm:grid-cols-2">
+                      <div>
+                        <Num label="Давление насоса" value={hydraulics.pumpPressure.toFixed(2)} unit="МПа" warn={hydraulics.pumpPressure > limits.maxWorkingPressure} />
+                        <Num label="ΔP в спущенной части ГНКТ" value={hydraulics.dpCTDeployed.toFixed(2)} unit="МПа" />
+                        <Num label={`ΔP на барабане (${hydraulics.reelLengthM} м навито) + линии`} value={(hydraulics.dpReel + hydraulics.dpLines).toFixed(2)} unit="МПа" />
+                        <Num label="ΔP на насадках" value={hydraulics.dpNozzle.toFixed(2)} unit="МПа" />
+                        <Num label="ΔP в затрубье" value={hydraulics.dpAnnulus.toFixed(2)} unit="МПа" />
+                        <Num label="Устьевое давление" value={well.wellheadPressure.toFixed(2)} unit="МПа" />
+                      </div>
+                      <div>
+                        <Num label="Скорость в ГНКТ / режим" value={`${hydraulics.velocityInCT.toFixed(2)} м/с · ${hydraulics.flowRegimeCT}`} />
+                        <Num label="Re в ГНКТ (обобщённое)" value={hydraulics.reynoldsInCT} />
+                        <Num label="Мин. скорость в затрубье / нужно" value={`${hydraulics.velocityAnnulus.toFixed(2)} / ${hydraulics.minTransportVelocity.toFixed(2)}`} unit="м/с" warn={!hydraulics.transportOk} />
+                        <Num label="ЭЦП на забое (без устьевого)" value={hydraulics.ecdAtTD.toFixed(3)} unit="г/см³" />
+                        <Num label="Забойное давление при циркуляции" value={hydraulics.bhCircPressure.toFixed(2)} unit="МПа" />
+                        <Num label="P заб / P ГРП" value={`${hydraulics.fracSafetyFactor.toFixed(2)} (ГРП ${hydraulics.fracPressureAtTD.toFixed(1)} МПа)`} warn={hydraulics.fracSafetyFactor >= 0.85} />
+                      </div>
+                    </div>
+                    {hydraulics.annulusSegments.length > 0 && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[11px] mt-2">
+                          <thead className="bg-muted/50"><tr><th className="p-1 text-left">Затрубье, интервал</th><th className="p-1 text-right">Ø ствола, мм</th><th className="p-1 text-right">Скорость, м/с</th><th className="p-1 text-right">Режим</th><th className="p-1 text-right">ΔP, МПа</th></tr></thead>
+                          <tbody>
+                            {hydraulics.annulusSegments.map((sg) => (
+                              <tr key={sg.from} className="border-t border-border/40">
+                                <td className="p-1">{sg.from}–{sg.to} м · {well.tubingID > 0 && sg.holeIdMm === well.tubingID ? "НКТ" : "колонна"}</td>
+                                <td className="p-1 text-right">{sg.holeIdMm}</td>
+                                <td className={`p-1 text-right ${sg.velocity < hydraulics.minTransportVelocity ? "text-destructive font-semibold" : ""}`}>{sg.velocity.toFixed(2)}</td>
+                                <td className="p-1 text-right">{sg.regime}</td>
+                                <td className="p-1 text-right">{sg.dp.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
 
                     <div ref={hydraulicsChartRef} className="mt-4 bg-card rounded-lg p-2">
-                      <p className="text-xs font-semibold text-center mb-2">📊 Потери давления vs Расход</p>
+                      <p className="text-xs font-semibold text-center mb-2">📊 Потери давления и давление насоса vs расход</p>
                       <div className="overflow-x-auto -mx-2 px-2">
                         <div className="min-w-[600px]">
                           <ResponsiveContainer width="100%" height={300}>
-                            <AreaChart data={hydraulicsCurve} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                            <ComposedChart data={hydraulicsCurve} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                               <XAxis dataKey="flowRate" label={{ value: "Расход, л/с", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
                               <YAxis label={{ value: "МПа", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
                               <Tooltip contentStyle={{ fontSize: 11 }} />
                               <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Area type="monotone" dataKey="dpCT" name="ΔP ГНКТ" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
+                              <Area type="monotone" dataKey="dpCT" name="ΔP ГНКТ (в скважине)" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} />
+                              <Area type="monotone" dataKey="dpReel" name="ΔP на барабане и в линиях" stackId="1" stroke="#6366f1" fill="#6366f1" fillOpacity={0.5} />
                               <Area type="monotone" dataKey="dpAnn" name="ΔP Затрубье" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
                               <Area type="monotone" dataKey="dpNozzle" name="ΔP Насадки" stackId="1" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.6} />
-                              <Line type="monotone" dataKey="dpTotal" name="Общее ΔP" stroke="#ef4444" strokeWidth={2} dot={false} />
+                              <Line type="monotone" dataKey="pumpPressure" name="Давление насоса (с устьевым)" stroke="#ef4444" strokeWidth={2} dot={false} />
+                              <ReferenceLine x={pump.flowRate} stroke="hsl(var(--foreground))" strokeDasharray="3 3" />
                               <ReferenceLine y={limits.maxWorkingPressure} stroke="#dc2626" strokeDasharray="6 3" label={{ value: `Макс. ${limits.maxWorkingPressure.toFixed(0)} МПа`, position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
-                            </AreaChart>
+                            </ComposedChart>
                           </ResponsiveContainer>
 
-                          <p className="text-xs font-semibold text-center mt-4 mb-2">Распределение ΔP при Q={pump.flowRate} л/с</p>
+                          <p className="text-xs font-semibold text-center mt-4 mb-2">Из чего складывается давление насоса при Q={pump.flowRate} л/с</p>
                           <ResponsiveContainer width="100%" height={120}>
-                            <BarChart data={[{ name: "ΔP", ct: hydraulics.dpInsideCT, ann: hydraulics.dpAnnulus, nozzle: hydraulics.dpNozzle }]} layout="vertical" margin={{ left: 10, right: 20 }}>
+                            <BarChart data={[{ name: "ΔP", whp: well.wellheadPressure, ct: hydraulics.dpCTDeployed, reel: Math.round((hydraulics.dpReel + hydraulics.dpLines) * 100) / 100, ann: hydraulics.dpAnnulus, nozzle: hydraulics.dpNozzle }]} layout="vertical" margin={{ left: 10, right: 20 }}>
                               <XAxis type="number" tick={{ fontSize: 10 }} />
                               <YAxis type="category" dataKey="name" hide />
                               <Tooltip contentStyle={{ fontSize: 11 }} />
                               <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Bar dataKey="ct" name="ГНКТ" stackId="a" fill="#3b82f6" />
+                              <Bar dataKey="whp" name="Устьевое" stackId="a" fill="#94a3b8" />
+                              <Bar dataKey="ct" name="ГНКТ в скважине" stackId="a" fill="#3b82f6" />
+                              <Bar dataKey="reel" name="Барабан + линии" stackId="a" fill="#6366f1" />
                               <Bar dataKey="ann" name="Затрубье" stackId="a" fill="#10b981" />
                               <Bar dataKey="nozzle" name="Насадки" stackId="a" fill="#f59e0b" />
                             </BarChart>
@@ -1022,11 +1158,11 @@ export default function CoiledTubing() {
                           {/* Temperature profile */}
                           {tempProfile.length > 0 && (
                             <div ref={tempProfileChartRef}>
-                              <p className="text-xs font-semibold text-center mt-4 mb-2">🌡 Температурный профиль по глубине (TVD)</p>
+                              <p className="text-xs font-semibold text-center mt-4 mb-2">🌡 Температурный профиль по стволу</p>
                               <ResponsiveContainer width="100%" height={250}>
                                 <LineChart data={tempProfile} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                                  <XAxis dataKey="tvd" label={{ value: "TVD, м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
+                                  <XAxis dataKey="depth" type="number" domain={[0, "dataMax"]} label={{ value: "Глубина по стволу (MD), м", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
                                   <YAxis label={{ value: "°C", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
                                   <Tooltip contentStyle={{ fontSize: 11 }} />
                                   <Legend wrapperStyle={{ fontSize: 10 }} />

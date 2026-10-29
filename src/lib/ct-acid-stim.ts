@@ -13,6 +13,7 @@
 //   - Объём CO₂ выделившегося газа (нм³)
 // ============================================================
 
+import { pipeFlow } from "./ct-engine";
 import {
   AcidComposition, DEFAULT_ACID_COMPOSITION, calculateDissolvingPower,
 } from "./acid-chemistry";
@@ -56,6 +57,8 @@ export interface AcidStimInputs {
   preflushVolume: number;  // м³ HCl 7.5% предпоток (для песчаника)
   overflushVolume: number; // м³ продавки
   surfacePressure: number; // MPa — макс. рабочее давление насоса (для проверки)
+  /** Длина ГНКТ, остающаяся на барабане (потери в навитой части), м */
+  reelLengthM?: number;
   /** Опциональный пользовательский состав. Если не задан — берётся пресет по acidSystem. */
   composition?: AcidComposition;
 }
@@ -97,28 +100,21 @@ export interface AcidStimResult {
   sensitivity: { rate: number; bhp: number; surfaceP: number; status: "ok" | "frac" | "pump" }[];
 }
 
-// Потери давления на трение по ГНКТ (упрощённо: Hazen-Williams-like для воды-кислоты)
-function frictionLossMPa(qLpm: number, length_m: number, ctID_mm: number, density: number, scale: number): number {
-  // V = Q / A, м/с
-  const A = Math.PI * Math.pow(ctID_mm / 2000, 2);
-  const Q_m3s = qLpm / 60000;
-  const V = Q_m3s / Math.max(1e-6, A);
-  // Упрощённый Fanning: f ≈ 0.046/Re^0.2 (турбулентный)
-  // Re ≈ ρ·V·D/μ, μ ≈ 0.001 Па·с для кислотных растворов
-  const mu = 0.0012;
-  const D = ctID_mm / 1000;
-  const Re = Math.max(2100, (density * 1000 * V * D) / mu);
-  const f = 0.046 / Math.pow(Re, 0.2);
-  // ΔP = 2·f·ρ·V²·L/D (Па)
-  const dP_Pa = (2 * f * density * 1000 * V * V * length_m) / D;
-  return (dP_Pa / 1e6) * scale;
+// Потери давления на трение по ГНКТ — общий гидравлический расчёт ГНКТ (ct-engine):
+// спущенная часть — прямая труба, навитая на барабан — с поправкой на кривизну; кислоты ~ ньютоновские (μ ≈ 1.2 мПа·с).
+function frictionLossMPa(qLpm: number, length_m: number, ctID_mm: number, density: number, scale: number, reelM = 0, reelCoreD = 1.83): number {
+  const q = qLpm / 60000, d = ctID_mm / 1000, rho = density * 1000;
+  const rh = { n: 1, K: 0.0012, model: "ньютоновская" };
+  const straight = pipeFlow(q, d, rho, rh).gradPaM * length_m;
+  const coiled = reelM > 0 ? pipeFlow(q, d, rho, rh, reelCoreD * 1.25).gradPaM * reelM : 0;
+  return ((straight + coiled) / 1e6) * scale;
 }
 
 function calcBHP(inp: AcidStimInputs, qLpm: number, density: number): {
   hydro: number; friction: number; bhp: number; surface: number;
 } {
   const hydro = (density * 1000 * G * inp.tvd) / 1e6;          // MPa
-  const fric = frictionLossMPa(qLpm, inp.md, inp.ctID, density, inp.pipeFrictionFactor);
+  const fric = frictionLossMPa(qLpm, inp.md, inp.ctID, density, inp.pipeFrictionFactor, inp.reelLengthM ?? 0);
   // BHP при закачке = Pуст + Hydro - Fric_по_ГНКТ (трение крадёт давление при подаче)
   // Нагнетание: Pуст = BHP - Hydro + Fric  →  BHP = Pуст + Hydro - Fric (для исходящего потока)
   // Для расчёта макс. Q: оцениваем Pуст по доступному запасу
@@ -149,7 +145,7 @@ export function calculateAcidStim(inp: AcidStimInputs): AcidStimResult {
     let lo = 1, hi = 5000;
     for (let i = 0; i < 40; i++) {
       const mid = (lo + hi) / 2;
-      const f = frictionLossMPa(mid, inp.md, inp.ctID, density, inp.pipeFrictionFactor);
+      const f = frictionLossMPa(mid, inp.md, inp.ctID, density, inp.pipeFrictionFactor, inp.reelLengthM ?? 0);
       if (f < fricBudget) lo = mid; else hi = mid;
     }
     maxRate = +lo.toFixed(0);
