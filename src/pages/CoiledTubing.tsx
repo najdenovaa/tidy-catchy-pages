@@ -41,6 +41,8 @@ import { toast } from "sonner";
 import CopyImageButton from "@/components/CopyImageButton";
 import CTStringLifeCard from "@/components/CTStringLifeCard";
 import CTActualMatchTab from "@/components/CTActualMatchTab";
+import CTBuckling3D from "@/components/CTBuckling3D";
+import { buildCTProgram } from "@/lib/ct-program";
 import type { ActualPoint } from "@/lib/ct-actual-match";
 import { analyzeStringLife, defaultPassport, type CTStringPassport } from "@/lib/ct-string-life";
 import * as XLSX from "xlsx";
@@ -185,6 +187,8 @@ export default function CoiledTubing() {
   const temperingDegradationRef = useRef<HTMLDivElement>(null);
   const tempProfileChartRef = useRef<HTMLDivElement>(null);
   const well3dRef = useRef<HTMLDivElement>(null);
+  const buckOverviewRef = useRef<HTMLDivElement>(null);
+  const buckCloseupRef = useRef<HTMLDivElement>(null);
 
   // Auth check
   useEffect(() => {
@@ -385,6 +389,8 @@ export default function CoiledTubing() {
     toast.info("Формирование документа...");
 
     // Capture 3D canvas separately (WebGL)
+    const canvasImg = (r: React.RefObject<HTMLDivElement | null>) => { const c = r.current?.querySelector("canvas"); try { return c ? c.toDataURL("image/png") : undefined; } catch { return undefined; } };
+    const buck3dImg = canvasImg(buckOverviewRef), buckCloseImg = canvasImg(buckCloseupRef);
     let well3dImg: string | undefined;
     if (well3dRef.current) {
       const canvas = well3dRef.current.querySelector("canvas");
@@ -413,11 +419,12 @@ export default function CoiledTubing() {
       forceProfile: forceProfile.length > 0 ? forceProfile : undefined,
       tempProfile: tempProfile.length > 0 ? tempProfile : undefined,
       hydraulicsCurve: hydraulicsCurve.length > 0 ? hydraulicsCurve : undefined,
+      program: buildCTProgram({ ct, well: wellWithTraj, fluid, pump, opts: surfaceOpts, friction, forces, limits, hydraulics, fatigue, hookLoad: hookLoadData, life: lifeAnalysis, operationType }),
       stringLife: stringPassport.journal.length > 0 ? { serial: stringPassport.serial, analysis: analyzeStringLife(stringPassport, ct.od, ct.wall, ct.grade, { depthM: Math.min(well.md, ct.length), pressureMPa: hydraulics.pumpPressure, env: "normal" }, Math.min(well.md, ct.length) + 150) } : undefined,
       chartImages: {
         forces: forcesImg, hookLoad: hookLoadImg, limits: limitsImg,
         hydraulics: hydraulicsImg, fatigue: fatigueImg, tempering: temperingImg,
-        temperingDegradation: temperingDegImg, tempProfile: tempProfileImg,
+        temperingDegradation: temperingDegImg, tempProfile: tempProfileImg, buckling3d: buck3dImg, bucklingCloseup: buckCloseImg,
         well3d: well3dImg,
       },
     };
@@ -426,7 +433,7 @@ export default function CoiledTubing() {
 
     toast.success("DOCX сформирован 📄");
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calculated, forces, limits, hydraulics, fatigue, tempering, risks, ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, hookLoadData]);
+  }, [calculated, forces, limits, hydraulics, fatigue, tempering, risks, ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, hookLoadData, operationType, stringPassport, surfaceOpts]);
 
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
@@ -444,6 +451,16 @@ export default function CoiledTubing() {
   const hydraulicsCurve = useMemo(() => calculated ? generateHydraulicsCurve(ct, wellWithTraj, fluid, tools, Math.max(6, Math.ceil(pump.flowRate * 2)), 30, ctSections.length > 0 ? ctSections : undefined, surfaceOpts) : [], [calculated, ct, wellWithTraj, fluid, tools, pump.flowRate, ctSections, surfaceOpts]);
   const pressureEnvelope = useMemo(() => calculated ? generatePressureLoadEnvelope(ct, { wallLossPct: surface.wallLossPct ?? 0 }) : [], [calculated, ct, surface.wallLossPct]);
   const operatingPath = useMemo(() => calculated && hydraulics ? generateOperatingPath(ct, wellWithTraj, fluid, tools, friction, ctSections.length > 0 ? ctSections : undefined, hydraulics, surfaceOpts, forces && forces.lockUpDepth > 0 ? forces.lockUpDepth * 0.97 : undefined) : null, [calculated, hydraulics, ct, wellWithTraj, fluid, tools, friction, ctSections, surfaceOpts, forces]);
+  const lifeAnalysis = useMemo(() => {
+    if (!calculated || !hydraulics || stringPassport.journal.length === 0) return null;
+    const dep = Math.min(well.md, ct.length);
+    return analyzeStringLife(stringPassport, ct.od, ct.wall, ct.grade, { depthM: dep, pressureMPa: hydraulics.pumpPressure, env: "normal" }, dep + 150);
+  }, [calculated, hydraulics, stringPassport, well.md, ct]);
+  const lifeHot = useMemo<[number, number] | null>(() => {
+    if (!lifeAnalysis) return null;
+    const h = lifeAnalysis.profile.filter((x) => x.damagePct >= stringPassport.retireAtPct * 0.6);
+    return h.length ? [h[0].pos, h[h.length - 1].pos] : null;
+  }, [lifeAnalysis, stringPassport.retireAtPct]);
   const envelopeChart = useMemo(() => [
     ...pressureEnvelope.map((r) => ({ axialLoad: r.axialLoad, burstLimit: r.burstLimit, burstWork: r.burstWork, collapseLimit: r.collapseLimit, collapseWork: r.collapseWork })),
   ], [pressureEnvelope]);
@@ -1322,6 +1339,15 @@ export default function CoiledTubing() {
 
               {/* 3D Well Profile */}
               <TabsContent value="3d" forceMount className={tab !== "3d" ? "hidden" : ""}>
+                {tab === "3d" && (
+                  <Card className="mb-4">
+                    <CardHeader className="py-3 px-4"><CardTitle className="text-sm">🌀 3D: изгиб ГНКТ в стволе и зоны риска</CardTitle></CardHeader>
+                    <CardContent className="px-4 pb-4">
+                      <CTBuckling3D ct={ct} well={wellWithTraj} fluid={fluid} tools={tools} sections={ctSections.length > 0 ? ctSections : undefined} opts={surfaceOpts}
+                        friction={friction} forces={forces} fatigueHot={lifeHot} overviewRef={buckOverviewRef} closeupRef={buckCloseupRef} />
+                    </CardContent>
+                  </Card>
+                )}
                 <Card>
                   <CardHeader className="py-3 px-4">
                     <CardTitle className="text-sm">🌐 3D Профиль скважины</CardTitle>

@@ -3,6 +3,7 @@
  * Professional styling with cover page, all input/output data, tabular profiles, charts.
  */
 import type { LifeAnalysis } from "./ct-string-life";
+import type { CTProgram } from "./ct-program";
 import {
   Document, Packer, Paragraph, Table, TableRow, TableCell,
   TextRun, AlignmentType, WidthType,
@@ -178,11 +179,12 @@ export interface CTDocxInput {
   hydraulicsCurve?: HydraulicsChartPoint[];
   fatigueCurve?: FatigueChartPoint[];
   stringLife?: { serial: string; analysis: LifeAnalysis };
+  program?: CTProgram;
   chartImages?: {
     forces?: string; hookLoad?: string; limits?: string;
     hydraulics?: string; fatigue?: string;
     tempering?: string; temperingDegradation?: string;
-    tempProfile?: string; well3d?: string;
+    tempProfile?: string; well3d?: string; buckling3d?: string; bucklingCloseup?: string;
   };
 }
 
@@ -192,7 +194,7 @@ export async function exportCTDocx(input: CTDocxInput, options?: { returnBlob?: 
   const {
     ct, well, fluid, pump, tools, friction, forces, limits, hydraulics, fatigue, tempering,
     risks, trajPoints, ctSections, hookLoadData, forceProfile, tempProfile,
-    hydraulicsCurve, chartImages, stringLife,
+    hydraulicsCurve, chartImages, stringLife, program,
   } = input;
 
   const children: (Paragraph | Table)[] = [];
@@ -744,6 +746,35 @@ export async function exportCTDocx(input: CTDocxInput, options?: { returnBlob?: 
     }
   } else {
     children.push(infoLine("✅ Все параметры в допустимых пределах.", { color: GREEN, bold: true }));
+  }
+
+  // ══════════════════════════════════════
+  // ═══ 4. PROGRAM ═══
+  // ══════════════════════════════════════
+  if (program) {
+    children.push(pageBreak());
+    children.push(new Paragraph({
+      spacing: { after: 200 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 3, color: NAVY, space: 4 } },
+      children: [new TextRun({ text: `РАЗДЕЛ 4 — ${program.title.toUpperCase()}`, bold: true, size: 28, font: "Calibri", color: NAVY })],
+    }));
+    children.push(subTitle("Ограничения и ключевые параметры"));
+    children.push(paramTable(program.limitsTable));
+    for (const sec of program.sections) {
+      children.push(sectionTitle(sec.title));
+      for (const it of sec.items) children.push(new Paragraph({ spacing: { after: 70 }, indent: { left: 240, hanging: 200 }, children: [new TextRun({ text: `•  ${it}`, size: 20, font: "Calibri" })] }));
+      if (sec.title.startsWith("3.") && program.checkpoints.length) {
+        children.push(subTitle("Контрольные точки индикатора веса"));
+        children.push(dataTable(["Глубина КНБК, м", "Спуск, кН", "Подъём, кН", "Допуск, кН", "Примечание"], program.checkpoints.map((c) => [`${c.md}`, c.rih, c.pooh, c.tol, c.note])));
+        if (chartImages?.hookLoad) children.push(chartImage(chartImages.hookLoad, 540, 380, "program-hookload"));
+      }
+    }
+    if (chartImages?.buckling3d || chartImages?.bucklingCloseup) {
+      children.push(subTitle("3D: состояние ГНКТ в стволе и вид участка изгиба"));
+      if (chartImages.buckling3d) children.push(chartImage(chartImages.buckling3d, 480, 360, "buckling-3d"));
+      if (chartImages.bucklingCloseup) children.push(chartImage(chartImages.bucklingCloseup, 480, 360, "buckling-closeup"));
+    }
+    children.push(new Paragraph({ spacing: { before: 300 }, children: [new TextRun({ text: "Составил: ____________________     Согласовано: ____________________     Утверждаю: ____________________", size: 20, font: "Calibri" })] }));
   }
 
   // ══════════════════════════════════════
