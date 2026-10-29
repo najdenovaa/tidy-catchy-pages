@@ -968,7 +968,7 @@ export default function InputSection(props: Props) {
                 + Добавить раствор
               </button>
             </div>
-            <p className="text-xs text-muted-foreground italic">Порядок: первый = у устья (верхний), последний = у забоя. В закачке: последний качается первым.</p>
+            <p className="text-xs text-muted-foreground italic">Порядок: первый = у устья (верхний), последний = у забоя (у башмака). В закачке: первым качается верхний (первый в списке), последним — нижний.</p>
 
             {slurries.map((s, idx) => {
               const height = getSlurryHeight(slurries, idx, wellData.casingDepthMD);

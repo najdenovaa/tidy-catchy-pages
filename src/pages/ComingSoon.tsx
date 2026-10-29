@@ -22,7 +22,7 @@ export default function ComingSoon() {
             </p>
           </Link>
           <a
-            href="https://t.me/deallbiz_support"
+            href="https://t.me/deall_support"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm"
@@ -38,7 +38,7 @@ export default function ComingSoon() {
         <p className="text-sm sm:text-base text-muted-foreground max-w-md">
           Извините, мы работаем над данным программным обеспечением. По вопросам обращайтесь в{" "}
           <a
-            href="https://t.me/deallbiz_support"
+            href="https://t.me/deall_support"
             target="_blank"
             rel="noopener noreferrer"
             className="text-primary underline hover:text-primary/80"

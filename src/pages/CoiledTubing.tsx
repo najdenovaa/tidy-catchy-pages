@@ -66,9 +66,9 @@ interface CTSession {
   actualData: ActualPoint[];
 }
 
-const defaultCT: CTStringData = { od: 50.8, wall: 3.96, grade: "CT-80", length: 3000, ovality: 1 };
+const defaultCT: CTStringData = { od: 38.1, wall: 3.18, grade: "CT-80", length: 3200, ovality: 1 };
 const defaultWell: WellGeometry = {
-  md: 3000, tvd: 2800, casingID: 168.3, tubingID: 62, wellheadPressure: 5,
+  md: 3000, tvd: 2800, casingID: 150.4, tubingID: 62, wellheadPressure: 5,
   bhst: 80, bhct: 65, whTemp: 20, fracGradient: 0.017,
   trajectory: [{ md: 0, azimuth: 0, zenith: 0, tvd: 0 }],
 };
@@ -96,13 +96,13 @@ function loadSession(): CTSession {
         prevTrips: p.prevTrips ?? 0,
         trajPoints: Array.isArray(p.trajPoints) ? p.trajPoints : defaultTraj,
         ctSections: Array.isArray(p.ctSections) ? p.ctSections : defaultSections,
-        surface: p.surface && typeof p.surface === "object" ? p.surface : {},
+        surface: p.surface && typeof p.surface === "object" ? p.surface : { tubingShoeMD: 2700 },
         stringPassport: p.stringPassport && Array.isArray(p.stringPassport.journal) ? p.stringPassport : null,
         actualData: Array.isArray(p.actualData) ? p.actualData : [],
       };
     }
   } catch {}
-  return { ct: defaultCT, well: defaultWell, fluid: defaultFluid, pump: defaultPump, tools: defaultTools, friction: 0.25, reelSize: "medium", prevTrips: 0, trajPoints: defaultTraj, ctSections: defaultSections, surface: {}, stringPassport: null, actualData: [] };
+  return { ct: defaultCT, well: defaultWell, fluid: defaultFluid, pump: defaultPump, tools: defaultTools, friction: 0.25, reelSize: "medium", prevTrips: 0, trajPoints: defaultTraj, ctSections: defaultSections, surface: { tubingShoeMD: 2700 }, stringPassport: null, actualData: [] };
 }
 
 function num(v: string): number {
@@ -353,7 +353,7 @@ export default function CoiledTubing() {
     setReelSize("medium"); setPrevTrips(0); setCalculated(false);
     setTrajPoints(defaultTraj);
     setCtSections(defaultSections);
-    setSurface({});
+    setSurface({ tubingShoeMD: 2700 });
     setHookLoadData([]);
     setForces(null); setLimits(null); setHydraulics(null); setFatigue(null);
     setTempering(null);
