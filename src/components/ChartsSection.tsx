@@ -1,7 +1,8 @@
 import { useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea } from "recharts";
-import type { PressurePoint, StageBoundary } from "@/lib/cementing-calculations";
+import type { PressurePoint, StageBoundary, DepthEnvelopePoint, ReservoirLayer } from "@/lib/cementing-calculations";
+import DepthPressureCharts from "./DepthPressureCharts";
 import CopyImageButton from "./CopyImageButton";
 
 function ScrollableChart({ children, chartRef, height }: { children: React.ReactNode; chartRef: React.RefObject<HTMLDivElement>; height: string }) {
@@ -21,11 +22,15 @@ interface Props {
   stopTime: number;
   stageBoundaries: StageBoundary[];
   equilibriumTimeMin: number;
+  envelope?: DepthEnvelopePoint[];
+  prevShoeMD?: number;
+  casingDepthMD?: number;
+  layers?: ReservoirLayer[];
 }
 
 const STAGE_COLORS = ["hsl(200, 50%, 55%)", "hsl(120, 40%, 45%)", "hsl(35, 70%, 50%)", "hsl(280, 50%, 55%)", "hsl(340, 50%, 50%)"];
 
-export default function ChartsSection({ pressureData, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin }: Props) {
+export default function ChartsSection({ pressureData, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, envelope, prevShoeMD = 0, casingDepthMD = 0, layers }: Props) {
   const chartRef1 = useRef<HTMLDivElement>(null);
   const chartRef2 = useRef<HTMLDivElement>(null);
   const chartRef3 = useRef<HTMLDivElement>(null);
@@ -146,11 +151,15 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
         </CardContent>
       </Card>
 
+      {envelope && envelope.length > 1 && (
+        <DepthPressureCharts envelope={envelope} prevShoeMD={prevShoeMD} casingDepthMD={casingDepthMD || envelope[envelope.length - 1].md} layers={layers} />
+      )}
+
       {/* ЭЦП — Эквивалентная циркуляционная плотность */}
       <Card>
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">ЭЦП — Эквивалентная циркуляционная плотность (ECD)</CardTitle>
+            <CardTitle className="text-lg">ЭЦП во времени — на забое и на башмаке предыдущей колонны</CardTitle>
             <CopyImageButton targetRef={chartRefECD} />
           </div>
         </CardHeader>

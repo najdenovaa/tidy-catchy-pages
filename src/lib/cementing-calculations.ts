@@ -1213,7 +1213,28 @@ export interface ZoneCheck {
   minPressureMPa: number;
 }
 
+/** Огибающая давления в затрубье на глубине за всю операцию */
+export interface DepthEnvelopePoint {
+  md: number; tvd: number;
+  /** максимальное давление (с трением) за операцию, МПа */
+  maxPressureMPa: number;
+  /** минимальное давление при циркуляции (с трением), МПа */
+  minPressureMPa: number;
+  /** минимальное гидростатическое давление за операцию (без трения), МПа */
+  minHydrostaticMPa: number;
+  /** гидростатика после продавки при потере гидростатики цементом в ОЗЦ (цемент — столб воды затворения), МПа */
+  wocHydrostaticMPa: number;
+  /** пластовое давление задано пластом (иначе — нормальное 10 кПа/м в открытом стволе) */
+  poreFromLayer: boolean;
+  maxAtStage: string;
+  porePressureMPa: number | null;
+  /** давление ГРП / поглощения (открытый ствол и пласты), МПа */
+  fracPressureMPa: number | null;
+}
+
 export interface PressureProfileResult {
+  /** огибающие давления по глубине (пусто в быстром режиме) */
+  envelope: DepthEnvelopePoint[];
   zoneChecks: ZoneCheck[];
   points: PressurePoint[];
   safeWorkingTimeMin: number;
@@ -1620,7 +1641,7 @@ export function calculatePressureProfile(
   const upperVPMhydro = annAreaUpper > 0 ? annAreaUpper : annVPM;
 
   // Гидростатика затрубья ДО заданной глубины targetMD (для расчёта ЭЦП в произвольной точке)
-  function calcAnnularHydrostaticAtDepth(targetMD: number): number {
+  function calcAnnularHydrostaticAtDepth(targetMD: number, cementAsWater = false): number {
     if (targetMD <= 0) return 0;
     let pressure = 0;
     const exitBatches: FluidBatch[] = [];
@@ -1630,7 +1651,7 @@ export function calculatePressureProfile(
     for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
       if (pumpHistory[i].fluidType === 'displacement') continue;
       const take = Math.min(pumpHistory[i].volumeM3, pumpedExited);
-      if (take > 0) exitBatches.push({ densityGcm3: pumpHistory[i].densityGcm3, volumeM3: take, fluidType: pumpHistory[i].fluidType });
+      if (take > 0) exitBatches.push({ densityGcm3: cementAsWater && pumpHistory[i].fluidType === "cement" ? 1.0 : pumpHistory[i].densityGcm3, volumeM3: take, fluidType: pumpHistory[i].fluidType });
       pumpedExited -= take;
     }
     const effectiveBottomMD = Math.min(targetMD, wellData.casingDepthMD);
@@ -1811,6 +1832,98 @@ export function calculatePressureProfile(
       if (pStatic < c.minP) c.minP = pStatic;
     }
   }
+  /** Столб жидкостей в затрубье (интервалы сверху вниз не упорядочены): заполнение от забоя вверх по объёмам. */
+  function annColumn(cementAsWater = false): { top: number; bot: number; rho: number }[] {
+    const batches: { rho: number; vol: number }[] = [];
+    const mudExited = Math.min(totalPumped, pipeCapacity);
+    if (mudExited > 0) batches.push({ rho: mudDensityGcm3, vol: mudExited });
+    let left = Math.max(0, totalPumped - pipeCapacity);
+    for (let i = 0; i < pumpHistory.length && left > 0; i++) {
+      if (pumpHistory[i].fluidType === "displacement") continue;
+      const take = Math.min(pumpHistory[i].volumeM3, left);
+      if (take > 0) batches.push({ rho: cementAsWater && pumpHistory[i].fluidType === "cement" ? 1.0 : pumpHistory[i].densityGcm3, vol: take });
+      left -= take;
+    }
+    const out: { top: number; bot: number; rho: number }[] = [];
+    let bot = wellData.casingDepthMD;
+    for (let i = batches.length - 1; i >= 0 && bot > 0; i--) {
+      let v = batches[i].vol;
+      while (v > 1e-9 && bot > 0) {
+        const lower = bot > prevShoe + 1e-6;
+        const vpm = lower ? lowerVPMhydro : upperVPMhydro;
+        const limitTop = lower ? Math.max(prevShoe, 0) : 0;
+        if (vpm <= 0) break;
+        const len = Math.min(v / vpm, bot - limitTop);
+        const top = bot - len;
+        out.push({ top, bot, rho: batches[i].rho });
+        v -= len * vpm; bot = top;
+        if (len <= 1e-9) break;
+      }
+    }
+    if (bot > 0) out.push({ top: 0, bot, rho: mudDensityGcm3 });
+    return out;
+  }
+  function hydroFromColumn(col: { top: number; bot: number; rho: number }[], md: number): number {
+    let p = 0;
+    for (const c of col) {
+      if (c.top >= md) continue;
+      const b = Math.min(c.bot, md);
+      p += c.rho * Math.max(0, interpolateTVD(b, traj) - interpolateTVD(c.top, traj)) * 0.00981;
+    }
+    return p;
+  }
+
+  // ═══ Огибающие давления по глубине за всю операцию (макс./мин. давление в затрубье, мин. гидростатика) ═══
+  const ENV_N = opts.fast ? 0 : 80;
+  // сетка глубин + границы пластов и башмак предыдущей колонны (чтобы интервалы отображались точно)
+  const envMD = (() => {
+    if (!ENV_N) return [0];
+    const set = new Set<number>(Array.from({ length: ENV_N + 1 }, (_, i) => Math.round((wellData.casingDepthMD * i) / ENV_N * 10) / 10));
+    const add = (d: number) => { if (d > 0 && d < wellData.casingDepthMD) { set.add(Math.round(d * 10) / 10); set.add(Math.round((d - 0.5) * 10) / 10); set.add(Math.round((d + 0.5) * 10) / 10); } };
+    add(prevShoe);
+    (wellData.reservoirLayers ?? []).forEach((l) => { add(l.topMD); add(l.bottomMD); });
+    return [...set].sort((a, b) => a - b);
+  })();
+  const ENV_LEN = envMD.length;
+  const envMax = envMD.map(() => -Infinity), envMin = envMD.map(() => Infinity), envMinStatic = envMD.map(() => Infinity);
+  const envMaxStage = envMD.map(() => "");
+  const envWoc = envMD.map(() => 0);
+  /** Трение в затрубье на интервале [fromMD, toMD] при заданном расходе, МПа */
+  function annFrictionBetween(rateM3min: number, fromMD: number, toMD: number, segs: AnnSeg[]): number {
+    if (rateM3min <= 0 || toMD <= fromMD) return 0;
+    let p = 0;
+    for (const sg of segs) {
+      const top = Math.max(sg.topMD, fromMD), bot = Math.min(sg.bottomMD, toMD);
+      if (bot <= top) continue;
+      let z = bot;
+      while (z > top + 1e-6) {
+        const zTop = Math.max(top, z - SUBSTEP_M, z > prevShoe ? prevShoe : 0);
+        const len = z - zTop;
+        const lower = (z + zTop) / 2 > prevShoe;
+        const dh = lower ? dHydAnnLower : dHydAnnUpper;
+        const area = lower ? annAreaLower : annAreaUpper;
+        const outer = lower ? wellData.holeDiameter : prevID;
+        const r = frictionLossWithRegime(rateM3min, len, dh, sg.pv, sg.yp, area, sg.density, "annulus", sg.hb);
+        p += r.pressureMPa * eccentricityFrictionFactor(standoffAt((z + zTop) / 2), wellData.casingOD / outer, sg.pv, sg.yp, r.regime, sg.hb);
+        z = zTop;
+      }
+    }
+    return p * kFriction;
+  }
+  function trackEnvelope(rateM3min: number, segs: AnnSeg[], stage: string) {
+    if (!ENV_N) return;
+    let fr = 0;
+    const col = annColumn();
+    for (let i = 0; i < ENV_LEN; i++) {
+      if (i > 0) fr += annFrictionBetween(rateM3min, envMD[i - 1], envMD[i], segs);
+      const st = hydroFromColumn(col, envMD[i]);
+      const pr = st + fr;
+      if (pr > envMax[i]) { envMax[i] = pr; envMaxStage[i] = stage; }
+      if (rateM3min > 0 && pr < envMin[i]) envMin[i] = pr;
+      if (st < envMinStatic[i]) envMinStatic[i] = st;
+    }
+  }
+
   /** Максимальный расход, при котором давление во всех точках проверки ниже допустимого, л/с. */
   function maxSafeRateNow(segs: AnnSeg[]): number {
     const ok = (q: number) => checks.every((c) => pressureAt(c.md, q, segs) <= c.limit);
@@ -2119,6 +2232,7 @@ export function calculatePressureProfile(
       points.push({ stage: s.name, time: tNow, surfaceStaticMPa: Math.max(0, annHydro - pipeHydro), surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: opts.fast ? 0 : maxSafeRateNow(segsNow), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps, ecdAtBottomGcm3: ecdBottom, ecdStaticAtBottomGcm3: ecdStaticBottom, ecdAtPrevShoeGcm3: ecdPrevShoe, fracGradEcdGcm3, porePressureEcdGcm3 });
 
       trackZones(actualFlowRateM3min, segsNow, s.name, tNow);
+      trackEnvelope(actualFlowRateM3min, segsNow, s.name);
 
       if (plugLanded) break;
     }
@@ -2206,12 +2320,45 @@ export function calculatePressureProfile(
   // Минимальное требуемое время загустевания цемента (ПБНГП п.405): рабочее время / 0.75
   const safeWorkingTimeMin = Math.round(cementToStop * 100 / 75);
 
+  // начальное (раствор в стволе) и конечное статическое состояние; мин. гидростатика — при потере гидростатики цементом в ОЗЦ
+  let envelope: DepthEnvelopePoint[] = [];
+  if (ENV_N) {
+    const colEnd = annColumn(), colWoc = annColumn(true);
+    for (let i = 0; i < ENV_LEN; i++) {
+      const tvd = interpolateTVD(envMD[i], traj);
+      const pMud = mudDensityGcm3 * 0.00981 * tvd;
+      const pEnd = hydroFromColumn(colEnd, envMD[i]);
+      envWoc[i] = hydroFromColumn(colWoc, envMD[i]);
+      envMax[i] = Math.max(envMax[i], pMud, pEnd);
+      if (!Number.isFinite(envMin[i])) envMin[i] = Math.min(pMud, pEnd);
+      envMinStatic[i] = Math.min(envMinStatic[i], pMud, pEnd);
+    }
+    const layers = wellData.reservoirLayers ?? [];
+    envelope = envMD.map((md, i) => {
+      const tvd = interpolateTVD(md, traj);
+      const L = layers.filter((l) => md >= l.topMD - 1e-6 && md <= l.bottomMD + 1e-6);
+      // пластовое давление: в заданных пластах — по их градиенту, в остальном открытом стволе — нормальное (10 кПа/м)
+      const poreLayer = L.length ? Math.max(...L.map((l) => (l.porePressureGrad > 0 ? (l.porePressureGrad * tvd) / 1000 : 0))) : 0;
+      const pore = poreLayer > 0 ? poreLayer : md >= prevShoe - 1e-6 && prevShoe > 0 ? (10.0 * tvd) / 1000 : 0;
+      // ГРП: в открытом стволе (ниже башмака предыдущей колонны) — общий градиент, в пластах — меньшее из ГРП и поглощения
+      let frac = md >= prevShoe - 1e-6 && fractureGradient > 0 ? (fractureGradient * tvd) / 1000 : 0;
+      for (const l of L) {
+        const lim = Math.min(l.fracGrad > 0 ? (l.fracGrad * tvd) / 1000 : Infinity, l.absorbGrad > 0 ? (l.absorbGrad * tvd) / 1000 : Infinity);
+        if (Number.isFinite(lim)) frac = frac > 0 ? Math.min(frac, lim) : lim;
+      }
+      return {
+        md, tvd, maxPressureMPa: envMax[i], minPressureMPa: envMin[i], minHydrostaticMPa: envMinStatic[i], wocHydrostaticMPa: envWoc[i], maxAtStage: envMaxStage[i], poreFromLayer: poreLayer > 0,
+        porePressureMPa: pore > 0 ? pore : null, fracPressureMPa: frac > 0 ? frac : null,
+      };
+    });
+  }
+
   const zoneChecks: ZoneCheck[] = checks.map((c) => ({
     name: c.name, depthMD: c.md, depthTVD: c.tvd, limitMPa: c.limit, limitKind: c.kind,
     maxPressureMPa: c.maxP, maxAtStage: c.maxStage, maxAtTimeMin: c.maxT, marginMPa: c.limit - c.maxP,
     porePressureMPa: c.pore, minPressureMPa: Number.isFinite(c.minP) ? c.minP : 0,
   }));
-  return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks };
+  return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope };
 }
 
 // Потери давления на трение с учётом режима потока (ламинарный / переходный / турбулентный)

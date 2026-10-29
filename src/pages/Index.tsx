@@ -824,7 +824,8 @@ export default function Index() {
             <TabsContent value="charts" forceMount>
               <div data-tab-content="charts">
                 {calcSnapshot && pressureResult ? (
-                  <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin} />
+                  <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin}
+                    envelope={pressureResult.envelope} prevShoeMD={snapWellData?.prevCasingDepth ?? 0} casingDepthMD={snapWellData?.casingDepthMD ?? 0} layers={snapWellData?.reservoirLayers} />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
                 )}
