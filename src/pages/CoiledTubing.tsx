@@ -489,7 +489,7 @@ export default function CoiledTubing() {
               <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
                 <Home className="w-4 h-4" /> <span>Главная</span>
               </Link>
-              <HelpLink />
+              <HelpLink compact />
               <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
                 <LayoutDashboard className="w-4 h-4" /> <span>Кабинет</span>
               </Link>

@@ -469,10 +469,10 @@ export default function Workover() {
           <Link to="/" className="flex items-center gap-3">
             <img src={deallsoftLogo} alt="DeAllsoft" className="h-10 sm:h-14 object-cover" />
             <p className="text-sm sm:text-lg font-normal tracking-tight uppercase text-foreground">
-              КРС — Капитальный ремонт скважин
+              КРС<span className="hidden sm:inline"> — Капитальный ремонт скважин</span>
             </p>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={openReport}>
               <FileDown className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Отчёт PDF</span>
             </Button>
@@ -485,7 +485,7 @@ export default function Workover() {
             <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground text-xs">
               <Home className="w-4 h-4" /> <span className="hidden sm:inline">Главная</span>
             </Link>
-              <HelpLink compact />
+            <HelpLink compact />
           </div>
         </div>
       </header>
