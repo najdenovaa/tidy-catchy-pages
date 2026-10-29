@@ -50,6 +50,7 @@ import AbandonmentDesignCard from "@/components/AbandonmentDesignCard";
 import PlugSedimentationCard from "@/components/PlugSedimentationCard";
 import PlugCyclicIntegrityCard from "@/components/PlugCyclicIntegrityCard";
 import PlugOptimizerCard from "@/components/PlugOptimizerCard";
+import HelpLink from "@/components/HelpLink";
 import { SharedWellCard } from "@/components/SharedWellCard";
 
 const SESSION_KEY = "cement_plug_session_v2";
@@ -758,6 +759,7 @@ export default function CementPlug() {
               <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
                 <Home className="w-4 h-4" /> <span className="hidden sm:inline">Главная</span>
               </Link>
+              <HelpLink compact />
               <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
                 <LayoutDashboard className="w-4 h-4" /> <span className="hidden sm:inline">Кабинет</span>
               </Link>
@@ -1758,10 +1760,11 @@ export default function CementPlug() {
                       <ResultRow label="Итого время операции" value={results.totalOperationTimeMin.toFixed(1)} unit="мин" raw highlight />
                       <ResultRow label="Загустевание (50Bc)" value={results.thickeningTimeMin} unit="мин" />
                       <ResultRow label="Безопасное время (0.75×50Bc)" value={results.safeTimeMin.toFixed(0)} unit="мин" raw highlight />
+                      <ResultRow label="Работа с цементом (закачка + буфер + продавка)" value={results.cementContactTimeMin.toFixed(1)} unit="мин" raw highlight />
                       <div className={`col-span-full text-xs font-bold mt-1 ${results.isTimeSafe ? 'text-green-400' : 'text-destructive'}`}>
                         {results.isTimeSafe 
-                          ? `✅ Запас: ${(results.safeTimeMin - results.totalOperationTimeMin).toFixed(1)} мин` 
-                          : `⛔ Превышение на ${(results.totalOperationTimeMin - results.safeTimeMin).toFixed(1)} мин! Увеличьте производительность или время загустевания`}
+                          ? `✅ Запас по безопасному времени: ${(results.safeTimeMin - results.cementContactTimeMin).toFixed(1)} мин (подъём труб и промывка в него не входят)` 
+                          : `⛔ Превышение на ${(results.cementContactTimeMin - results.safeTimeMin).toFixed(1)} мин! Увеличьте производительность или время загустевания`}
                       </div>
                       <Separator className="col-span-full my-1" />
                       <ResultRow label="Время ОЗЦ" value={wocTimeHours} unit="ч" highlight />

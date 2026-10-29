@@ -52,6 +52,7 @@ import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCa
 import { supabase } from "@/integrations/supabase/client";
 import { Save } from "lucide-react";
 import * as XLSX from "xlsx";
+import HelpLink from "@/components/HelpLink";
 import { Plus, Trash2 } from "lucide-react";
 
 const REAGENT_COLOR_MAP: Record<string, "acid" | "foam" | "solvent" | "nitrogen" | "combo"> = {
@@ -633,9 +634,12 @@ export default function Stimulation() {
             <ArrowLeft className="w-4 h-4" /> На главную
           </Link>
           <h1 className="text-base sm:text-lg font-semibold text-foreground">Интенсификация добычи (ОПЗ)</h1>
-          <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setSaveOpen(true)}>
-            <Save className="w-3.5 h-3.5" /> <span className="hidden sm:inline">В кабинет</span>
-          </Button>
+          <div className="flex items-center gap-3">
+            <HelpLink compact />
+            <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setSaveOpen(true)}>
+              <Save className="w-3.5 h-3.5" /> <span className="hidden sm:inline">В кабинет</span>
+            </Button>
+          </div>
         </div>
       </header>
 

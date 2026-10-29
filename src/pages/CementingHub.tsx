@@ -2,6 +2,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { FlaskConical, Shield, Cpu, Home, ArrowLeft, LayoutDashboard, LogOut, Send } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import { supabase } from "@/integrations/supabase/client";
+import HelpLink from "@/components/HelpLink";
 import WellBatchExportCard from "@/components/WellBatchExportCard";
 
 const subModules = [
@@ -46,6 +47,7 @@ export default function CementingHub() {
             <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
               <Home className="w-4 h-4" /> <span className="hidden sm:inline">Главная</span>
             </Link>
+              <HelpLink compact />
             <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
               <LayoutDashboard className="w-4 h-4" /> <span className="hidden sm:inline">Кабинет</span>
             </Link>

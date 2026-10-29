@@ -420,12 +420,13 @@ export async function exportCementPlugToDocx(data: CementPlugExportData, options
     kvRow("ИТОГО", fmt(results.totalOperationTimeMin, 1)),
     kvRow("Загустевание (50Bc)", fmt(results.thickeningTimeMin, 0)),
     kvRow("Безопасное время (0.75×50Bc)", fmt(results.safeTimeMin, 0)),
+    kvRow("Работа с цементом (закачка + буфер + продавка)", fmt(results.cementContactTimeMin, 1)),
   );
   children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: timingRows }));
   children.push(textP(
     results.isTimeSafe
-      ? `✅ Запас времени: ${fmt(results.safeTimeMin - results.totalOperationTimeMin, 1)} мин`
-      : `⛔ Превышение безопасного времени на ${fmt(results.totalOperationTimeMin - results.safeTimeMin, 1)} мин!`,
+      ? `✅ Запас по безопасному времени: ${fmt(results.safeTimeMin - results.cementContactTimeMin, 1)} мин (подъём труб и промывка в него не входят)`
+      : `⛔ Превышение безопасного времени на ${fmt(results.cementContactTimeMin - results.safeTimeMin, 1)} мин!`,
     { bold: true }
   ));
   children.push(textP(`Время ОЗЦ: ${data.wocTimeHours} ч`, { bold: true }));

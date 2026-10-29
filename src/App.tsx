@@ -24,6 +24,7 @@ import Stimulation from "./pages/Stimulation";
 import WOCSimulator from "./pages/WOCSimulator";
 import Workover from "./pages/Workover";
 import NotFound from "./pages/NotFound";
+import Help from "./pages/Help";
 
 const queryClient = new QueryClient();
 
@@ -55,6 +56,7 @@ const App = () => (
           <Route path="/well-treatment/foam-opz" element={<FoamTreatment />} />
           <Route path="/stimulation" element={<Stimulation />} />
           <Route path="/terms" element={<Terms />} />
+          <Route path="/help" element={<Help />} />
           <Route path="/workover" element={<Workover />} />
           {/* Legacy routes */}
           <Route path="/cement-plug" element={<CementPlug />} />

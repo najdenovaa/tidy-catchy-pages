@@ -34,6 +34,7 @@ import {
   type KillSalt, type KillInterval,
 } from "@/lib/workover-calculations";
 import { Trash2, Plus, Waves, Layers, Save, FileDown } from "lucide-react";
+import HelpLink from "@/components/HelpLink";
 import {
   calculateCleanout, checkCasing, calculateSwab, calculateBlockingPill, selectFishingTools, calculateBackOff,
   type CleanoutInput, type CasingCheckInput, type SwabInput, type BlockingPillInput, type FishingToolInput,
@@ -174,7 +175,7 @@ export default function Workover() {
   // ──── Kill ────
   const [kill, setKill] = useState<KillInput>({
     method: "wait_weight",
-    formationPressureMPa: 28, reservoirDepthTVD: 2200, fracturePressureMPa: 42,
+    formationPressureMPa: 26, reservoirDepthTVD: 2030, fracturePressureMPa: 39,
     currentMudDensity: 1.10,
     wellDepthMD: 2500, casingID_mm: 152, tubingOD_mm: 73, tubingID_mm: 62,
     killFluidPV_cP: 20, killFluidYP_Pa: 6, pumpRateLs: 8, safetyMarginPct: 5, marginMode: "pb",
@@ -484,6 +485,7 @@ export default function Workover() {
             <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground text-xs">
               <Home className="w-4 h-4" /> <span className="hidden sm:inline">Главная</span>
             </Link>
+              <HelpLink compact />
           </div>
         </div>
       </header>

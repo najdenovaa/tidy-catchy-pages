@@ -45,6 +45,7 @@ import CTBuckling3D from "@/components/CTBuckling3D";
 import { buildCTProgram } from "@/lib/ct-program";
 import type { ActualPoint } from "@/lib/ct-actual-match";
 import { analyzeStringLife, defaultPassport, type CTStringPassport } from "@/lib/ct-string-life";
+import HelpLink from "@/components/HelpLink";
 import * as XLSX from "xlsx";
 
 // ─── Session ───
@@ -488,6 +489,7 @@ export default function CoiledTubing() {
               <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
                 <Home className="w-4 h-4" /> <span>Главная</span>
               </Link>
+              <HelpLink />
               <Link to="/dashboard" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs">
                 <LayoutDashboard className="w-4 h-4" /> <span>Кабинет</span>
               </Link>

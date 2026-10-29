@@ -38,6 +38,7 @@ import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
+import { getCementingExample } from "@/lib/cementing-example";
 import { FileDown, Loader2, Send, Home, RotateCcw, Save, LogOut, LayoutDashboard } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
@@ -45,6 +46,7 @@ import drillingBanner from "@/assets/drilling-banner.jpg";
 import { useCementingSession } from "@/hooks/use-cementing-session";
 import { normalizeCementingSnapshot, type CementingSnapshot } from "@/lib/cementing-normalizers";
 import TermsFooter from "@/components/TermsFooter";
+import HelpLink from "@/components/HelpLink";
 import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
 
 type CalcSnapshot = CementingSnapshot;
@@ -488,6 +490,22 @@ export default function Index() {
     };
   }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3]);
 
+  const handleLoadExample = useCallback(() => {
+    const hasData = slurries.length > 0 || wellData.wellDepthMD > 0;
+    if (hasData && !window.confirm("Заменить текущие данные примером из руководства?")) return;
+    const ex = getCementingExample();
+    setWellData(ex.wellData);
+    setDrillingFluid(ex.drillingFluid);
+    setSlurries(ex.slurries);
+    setBuffers(ex.buffers);
+    setDisplacementFluids(ex.displacementFluids);
+    setFractureGradient(ex.fractureGradient);
+    setFlushTimeMin(ex.flushTimeMin);
+    setFlushVolumeM3(ex.flushVolumeM3);
+    setCalcSnapshot(null);
+    setCentralizationResults(null);
+  }, [slurries.length, wellData.wellDepthMD, setWellData, setDrillingFluid, setSlurries, setBuffers, setDisplacementFluids, setFractureGradient, setFlushTimeMin, setFlushVolumeM3]);
+
   const handleSaveToAccount = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -540,6 +558,7 @@ export default function Index() {
                 <Home className="w-4 h-4" />
                 <span>Главная</span>
               </Link>
+              <HelpLink />
               {fromDashboard && (
                 <>
                   <Link
@@ -657,6 +676,7 @@ export default function Index() {
                 onFlushVolumeM3Change={setFlushVolumeM3}
                 dynamicBHPMap={dynamicBHPMap}
                 onCalculate={handleCalculate}
+                onLoadExample={handleLoadExample}
               />
             </div>
           </TabsContent>

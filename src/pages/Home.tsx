@@ -6,6 +6,7 @@ import geoladLogo from "@/assets/geolad-logo.png";
 import nefteservisLogo from "@/assets/nefteservis-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
+import HelpLink from "@/components/HelpLink";
 import { supabase } from "@/integrations/supabase/client";
 
 const AppleIcon = ({ className }: { className?: string }) => (
@@ -87,6 +88,7 @@ export default function Home() {
               </div>
             </div>
             <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
+              <HelpLink />
               <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
                 <Send className="w-4 h-4" /><span>Поддержка</span>

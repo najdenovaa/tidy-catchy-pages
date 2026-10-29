@@ -256,6 +256,8 @@ export interface PlugResults {
   tripTimeMin: number;
   washTimeMin: number;
   totalOperationTimeMin: number;
+  /** Время работы с цементом, ограниченное безопасным временем: закачка цемента + верхний буфер + продавка, мин */
+  cementContactTimeMin: number;
   isTimeSafe: boolean;
 
   // Stability analysis
@@ -928,6 +930,7 @@ export function calculateBalancedPlug(input: PlugInputs): PlugResults {
     tripTimeMin: Math.round(tripTimeMin * 10) / 10,
     washTimeMin: Math.round(washTimeMin * 10) / 10,
     totalOperationTimeMin: Math.round(totalOperationTimeMin * 10) / 10,
+    cementContactTimeMin: Math.round(cementContactTimeMin * 10) / 10,
     isTimeSafe,
     stability,
     pipeSectionsUsed: effectiveSections,

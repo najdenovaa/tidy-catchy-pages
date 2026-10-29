@@ -31,6 +31,8 @@ interface Props {
   displacementVolume?: number;
   dynamicBHPMap?: Record<string, { bhp: number; fracP: number }>; // ключ = "stageName|rateLps"
   onCalculate?: () => void;
+  /** Загрузить пример из руководства */
+  onLoadExample?: () => void;
 }
 
 type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers' | 'standoffProfile' | 'casingType' | 'frictionCalibration'>;
@@ -490,7 +492,24 @@ export default function InputSection(props: Props) {
   return (
     <div className="space-y-4">
       {/* Upload hint */}
-      <div className="flex items-center justify-end">
+      {props.onLoadExample && props.slurries.length === 0 && !props.wellData.wellDepthMD && (
+        <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+          <div className="text-sm">
+            <p className="font-semibold text-foreground">Впервые здесь? Начните с примера</p>
+            <p className="text-muted-foreground text-xs mt-0.5">Загрузим скважину из руководства «Быстрый старт» — останется нажать «РАСЧЁТ» и посмотреть результаты.</p>
+          </div>
+          <button type="button" onClick={props.onLoadExample} className="shrink-0 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
+            Загрузить пример
+          </button>
+        </div>
+      )}
+      <div className="flex items-center justify-end gap-4 flex-wrap">
+        {props.onLoadExample && (
+          <button type="button" onClick={props.onLoadExample} className="inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors">
+            <span>🧪</span>
+            <span className="underline underline-offset-2">Загрузить пример из руководства</span>
+          </button>
+        )}
         <Link
           to="/cementing/analysis"
           className="inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
