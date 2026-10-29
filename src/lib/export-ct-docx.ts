@@ -2,6 +2,7 @@
  * Comprehensive Coiled Tubing (ГНКТ) DOCX Report
  * Professional styling with cover page, all input/output data, tabular profiles, charts.
  */
+import type { LifeAnalysis } from "./ct-string-life";
 import {
   Document, Packer, Paragraph, Table, TableRow, TableCell,
   TextRun, AlignmentType, WidthType,
@@ -176,6 +177,7 @@ export interface CTDocxInput {
   tempProfile?: TempProfilePoint[];
   hydraulicsCurve?: HydraulicsChartPoint[];
   fatigueCurve?: FatigueChartPoint[];
+  stringLife?: { serial: string; analysis: LifeAnalysis };
   chartImages?: {
     forces?: string; hookLoad?: string; limits?: string;
     hydraulics?: string; fatigue?: string;
@@ -190,7 +192,7 @@ export async function exportCTDocx(input: CTDocxInput, options?: { returnBlob?: 
   const {
     ct, well, fluid, pump, tools, friction, forces, limits, hydraulics, fatigue, tempering,
     risks, trajPoints, ctSections, hookLoadData, forceProfile, tempProfile,
-    hydraulicsCurve, fatigueCurve, chartImages,
+    hydraulicsCurve, chartImages, stringLife,
   } = input;
 
   const children: (Paragraph | Table)[] = [];
@@ -683,30 +685,33 @@ export async function exportCTDocx(input: CTDocxInput, options?: { returnBlob?: 
   const fatigueNum = tempering ? "2.6" : "2.5";
   children.push(sectionTitle(`${fatigueNum}  CoilLIFE — Ресурс усталости`));
   children.push(paramTable([
-    ["Деформация на барабане", `${fmt(fatigue.bendingStrainReel, 3)}%`],
-    ["Деформация на направл. арке", `${fmt(fatigue.bendingStrainGuideArch, 3)}%`],
-    ["Суммарная деформация за рейс", `${fmt(fatigue.totalStrainPerTrip, 3)}%`],
-    ["Расчётный ресурс", `${fatigue.estimatedCycles} рейсов`],
-    ["Безопасный ресурс (SF=2)", `${fatigue.maxSafeTrips} рейсов`],
-    ["Использовано ресурса", `${fmt(fatigue.fatigueLifeUsed, 1)}%`, fatigue.fatigueLifeUsed > 60],
-    ["Снижение давления разрыва", `${fmt(fatigue.pressureDerate, 1)}%`, fatigue.pressureDerate > 15],
+    ["Деформация на барабане (внутр. слой)", `${fmt(fatigue.bendingStrainReel, 2)}%`],
+    ["Деформация на гусаке", `${fmt(fatigue.bendingStrainGuideArch, 2)}%`],
+    ["Рейсов до разрушения при рабочем давлении (худший участок)", `${fatigue.estimatedCycles}`],
+    ["Израсходовано ресурса", `${fmt(fatigue.fatigueLifeUsed, 1)}%`, fatigue.fatigueLifeUsed > 60],
+    [stringLife ? "Работ до отбраковки (по журналу трубы)" : "Рейсов до отбраковки (80%)", `${fatigue.maxSafeTrips}`],
   ]));
 
-  if (chartImages?.fatigue) children.push(chartImage(chartImages.fatigue, 540, 280, "fatigue-chart"));
-
-  // 2.6.1 Fatigue Curve Table
-  if (fatigueCurve && fatigueCurve.length > 0) {
-    children.push(subTitle("Кривая ресурса усталости"));
-    const step = Math.max(1, Math.floor(fatigueCurve.length / 15));
-    const sampled = fatigueCurve.filter((_, i) => i === 0 || i === fatigueCurve.length - 1 || i % step === 0);
+  if (stringLife) {
+    children.push(subTitle(`Журнал трубы${stringLife.serial ? ` ${stringLife.serial}` : ""}: ресурс по длине`));
+    children.push(paramTable([
+      ["Длина сейчас / обрезано", `${fmt(stringLife.analysis.currentLengthM, 0)} / ${fmt(stringLife.analysis.removedM, 0)} м`],
+      ["Рейсов в журнале", `${stringLife.analysis.tripsCount}`],
+      ["Макс. израсходованный ресурс", `${fmt(stringLife.analysis.maxDamagePct, 1)}% на ${fmt(stringLife.analysis.maxAtPos, 0)} м от нижнего конца`, stringLife.analysis.status !== "ok"],
+      ["Рекомендуемая обрезка нижнего конца", stringLife.analysis.recommendedCutM > 0 ? `${stringLife.analysis.recommendedCutM} м` : "не требуется"],
+    ]));
+    for (const r of stringLife.analysis.recommendations) children.push(new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: `• ${r}`, size: 20, font: "Calibri" })] }));
+    const pr = stringLife.analysis.profile;
+    const step = Math.max(1, Math.floor(pr.length / 15));
+    const sampled = pr.filter((_, i) => i === 0 || i === pr.length - 1 || i % step === 0);
     children.push(dataTable(
-      ["Рейсы", "Ресурс, %", "Снижение P разрыва, %", "Эфф. P разрыва, МПа"],
-      sampled.map(p => [
-        `${p.trips}`, fmt(p.lifeUsed, 1), fmt(p.burstDerate, 1), fmt(p.effectiveBurst, 1),
-      ]),
-      { warn: (ri) => sampled[ri].lifeUsed > 80 },
+      ["От нижнего конца, м", "Израсходовано, %", "После планируемой работы, %", "Деформация на барабане, %"],
+      sampled.map((x) => [`${x.pos}`, fmt(x.damagePct, 1), fmt(x.afterJobPct, 1), fmt(x.reelStrainPct, 2)]),
+      { warn: (ri) => sampled[ri].damagePct > 60 },
     ));
   }
+
+  if (chartImages?.fatigue) children.push(chartImage(chartImages.fatigue, 540, 280, "fatigue-chart"));
 
   children.push(pageBreak());
 

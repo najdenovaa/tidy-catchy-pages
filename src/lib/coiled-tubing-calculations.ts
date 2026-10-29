@@ -8,6 +8,7 @@
  */
 
 import { calculateTVDFromSurvey, interpolateTVD, type TrajectoryPoint } from "./cementing-calculations";
+import { cyclesToFailure } from "./ct-string-life";
 import {
   CT_SURFACE_DEFAULTS, forceModel, scanReach, stringLength, pipeFromBottom, ctHydraulics,
   strengthOf, collapseWithAxial, vonMisesLame, workingEnvelope, type CTSurfaceOptions, type EnvelopeRow,
@@ -90,6 +91,7 @@ export const REEL_DIAMETERS: Record<string, number> = {
   medium: 1.83,
   large: 2.44,
 };
+/** Радиус направляющей дуги (гусака), м — 72″ */
 export const GUIDE_ARCH_DIAMETER = 1.83;
 
 
@@ -646,36 +648,24 @@ export function calculateFatigue(
   operatingPressure: number = 0,
   previousTrips: number = 0
 ): FatigueResult {
-  const odM = ct.od / 1000;
-  const reelDiam = REEL_DIAMETERS[reelSize];
-  const guideArchDiam = GUIDE_ARCH_DIAMETER;
-
-  const strainReel = (odM / reelDiam) * 100;
-  const strainGuideArch = (odM / guideArchDiam) * 100;
-  const totalStrainPerTrip = 2 * strainReel + 2 * strainGuideArch;
-
-  const yieldStr = GRADE_YIELD[ct.grade] || 552;
-  const strainAmplitude = totalStrainPerTrip / 4;
-
-  const pressureRatio = operatingPressure / ((2 * yieldStr * ct.wall) / ct.od);
-  const pressureFactor = Math.max(0.2, 1 - pressureRatio * 0.6);
-
-  const C = 0.6;
-  const b = 2.0;
-  const baseCycles = strainAmplitude > 0 ? C / Math.pow(strainAmplitude, b) * 1000 : 99999;
-  const adjustedCycles = Math.round(baseCycles * pressureFactor);
-
-  const fatigueUsed = previousTrips > 0 ? (previousTrips / adjustedCycles) * 100 : 0;
-  const pressureDerate = Math.min(30, fatigueUsed * 0.5);
-
+  // та же модель, что и в учёте ресурса по длине трубы (ct-string-life): худший участок — внутренний слой барабана
+  const od = ct.od / 1000;
+  const reelD = REEL_DIAMETERS[reelSize] + od;
+  const gnR = GUIDE_ARCH_DIAMETER; // радиус гусака 72″
+  const epsReel = od / reelD, epsGn = od / (2 * gnR);
+  const Y = GRADE_YIELD[ct.grade] || 552;
+  const pb = (2 * Y * ct.wall) / ct.od;
+  const perTrip = 1 / cyclesToFailure(epsReel, operatingPressure, pb, Y) + 2 / cyclesToFailure(epsGn, operatingPressure, pb, Y);
+  const tripsToFailure = perTrip > 0 ? Math.floor(1 / perTrip) : 99999;
+  const used = previousTrips * perTrip * 100;
   return {
-    bendingStrainReel: Math.round(strainReel * 1000) / 1000,
-    bendingStrainGuideArch: Math.round(strainGuideArch * 1000) / 1000,
-    totalStrainPerTrip: Math.round(totalStrainPerTrip * 1000) / 1000,
-    estimatedCycles: adjustedCycles,
-    fatigueLifeUsed: Math.round(fatigueUsed * 10) / 10,
-    pressureDerate: Math.round(pressureDerate * 10) / 10,
-    maxSafeTrips: Math.round(adjustedCycles / 2),
+    bendingStrainReel: Math.round(epsReel * 100 * 1000) / 1000,
+    bendingStrainGuideArch: Math.round(epsGn * 100 * 1000) / 1000,
+    totalStrainPerTrip: Math.round((epsReel + 2 * epsGn) * 2 * 100 * 1000) / 1000,
+    estimatedCycles: tripsToFailure,
+    fatigueLifeUsed: Math.round(used * 10) / 10,
+    pressureDerate: 0,
+    maxSafeTrips: Math.floor(tripsToFailure * 0.8),
   };
 }
 

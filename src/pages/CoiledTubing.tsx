@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Send, Gauge, Shield, Droplets, Activity, ChevronDown, ChevronRight, Calculator, Save, RotateCcw, FileDown, LogOut, User, Plus, Trash2, Home, Thermometer, LayoutDashboard } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -20,7 +20,7 @@ import {
   calculateTempering,
   CT_PRESETS, FLUID_PRESETS, ctWeightPerMeter,
   ForceResult, LimitResult, HydraulicsResult, FatigueResult, TemperingResult,
-  generateForceDepthProfile, generateHydraulicsCurve, generateFatigueCurve, generatePressureLoadEnvelope,
+  generateForceDepthProfile, generateHydraulicsCurve, generatePressureLoadEnvelope,
   generateTempProfile,
   assessRisks, RiskItem,
   calculateTVDFromSurvey, type TrajectoryPoint,
@@ -39,7 +39,8 @@ import CTOperationSummary from "@/components/CTOperationSummary";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import CopyImageButton from "@/components/CopyImageButton";
-import CTFatigueAdvancedCard from "@/components/CTFatigueAdvancedCard";
+import CTStringLifeCard from "@/components/CTStringLifeCard";
+import { analyzeStringLife, defaultPassport, type CTStringPassport } from "@/lib/ct-string-life";
 import * as XLSX from "xlsx";
 
 // ─── Session ───
@@ -57,6 +58,7 @@ interface CTSession {
   trajPoints: TrajectoryPoint[];
   ctSections: CTSection[];
   surface: CTSurfaceOptions;
+  stringPassport: CTStringPassport | null;
 }
 
 const defaultCT: CTStringData = { od: 50.8, wall: 3.96, grade: "CT-80", length: 3000, ovality: 1 };
@@ -90,10 +92,11 @@ function loadSession(): CTSession {
         trajPoints: Array.isArray(p.trajPoints) ? p.trajPoints : defaultTraj,
         ctSections: Array.isArray(p.ctSections) ? p.ctSections : defaultSections,
         surface: p.surface && typeof p.surface === "object" ? p.surface : {},
+        stringPassport: p.stringPassport && Array.isArray(p.stringPassport.journal) ? p.stringPassport : null,
       };
     }
   } catch {}
-  return { ct: defaultCT, well: defaultWell, fluid: defaultFluid, pump: defaultPump, tools: defaultTools, friction: 0.25, reelSize: "medium", prevTrips: 0, trajPoints: defaultTraj, ctSections: defaultSections, surface: {} };
+  return { ct: defaultCT, well: defaultWell, fluid: defaultFluid, pump: defaultPump, tools: defaultTools, friction: 0.25, reelSize: "medium", prevTrips: 0, trajPoints: defaultTraj, ctSections: defaultSections, surface: {}, stringPassport: null };
 }
 
 function num(v: string): number {
@@ -153,6 +156,8 @@ export default function CoiledTubing() {
   const [tab, setTab] = useState("forces");
   const [ctSections, setCtSections] = useState<CTSection[]>(initial.ctSections);
   const [surface, setSurface] = useState<CTSurfaceOptions>(initial.surface);
+  const [stringPassport, setStringPassport] = useState<CTStringPassport>(() => initial.stringPassport ?? defaultPassport(initial.ct.length, REEL_DIAMETERS[initial.reelSize] ?? 1.83));
+  const [searchParams] = useSearchParams();
   const surfaceOpts = useMemo<CTSurfaceOptions>(() => ({ ...surface, reelCoreD: REEL_DIAMETERS[reelSize] }), [surface, reelSize]);
   const [calculated, setCalculated] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -191,11 +196,40 @@ export default function CoiledTubing() {
   useEffect(() => {
     const timer = setTimeout(() => {
       try {
-        sessionStorage.setItem(CT_SESSION_KEY, JSON.stringify({ ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface }));
+        sessionStorage.setItem(CT_SESSION_KEY, JSON.stringify({ ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface, stringPassport }));
       } catch {}
     }, 500);
     return () => clearTimeout(timer);
-  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface]);
+  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface, stringPassport]);
+
+  // Открытие сохранённого расчёта из кабинета (?calc=…)
+  useEffect(() => {
+    const calcId = searchParams.get("calc");
+    if (!calcId) return;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const { data, error } = await supabase.from("saved_calculations").select("*").eq("id", calcId).eq("user_id", session.user.id).single();
+      if (error || !data) { toast.error("Не удалось загрузить расчёт"); return; }
+      const wd = (data.well_data ?? {}) as Record<string, any>;
+      const cp = (data.calc_params ?? {}) as Record<string, any>;
+      if (wd.ct) setCT({ ...defaultCT, ...wd.ct });
+      if (wd.well) setWell({ ...defaultWell, ...wd.well });
+      if (wd.fluid) setFluid({ ...defaultFluid, ...wd.fluid });
+      if (wd.pump) setPump({ ...defaultPump, ...wd.pump });
+      if (wd.tools) setTools({ ...defaultTools, ...wd.tools });
+      if (typeof wd.friction === "number") setFriction(wd.friction);
+      if (wd.reelSize) setReelSize(wd.reelSize);
+      if (typeof wd.prevTrips === "number") setPrevTrips(wd.prevTrips);
+      if (Array.isArray(wd.trajPoints)) setTrajPoints(wd.trajPoints);
+      if (wd.surface) setSurface(wd.surface);
+      if (wd.stringPassport && Array.isArray(wd.stringPassport.journal)) setStringPassport(wd.stringPassport);
+      if (Array.isArray(cp.ctSections)) setCtSections(cp.ctSections);
+      setCalculated(false);
+      toast.success(`Загружен расчёт: ${data.title}. Нажмите «Расчёт».`);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const markDirty = useCallback(() => setCalculated(false), []);
 
@@ -277,7 +311,13 @@ export default function CoiledTubing() {
     const tp = calculateTempering(ct, wellWithTraj, fluid, pump);
     // проверка прочности на устье (наиболее нагруженное место): давление насоса внутри, давление устья снаружи, натяжение подъёма
     const l = calculateLimits(ct, h.pumpPressure, wellWithTraj.wellheadPressure, f.surfaceLoadPOOH, { wallLossPct: surface.wallLossPct ?? 0 });
-    const ft = calculateFatigue(ct, reelSize, h.pumpPressure, prevTrips);
+    let ft = calculateFatigue(ct, reelSize, h.pumpPressure, prevTrips);
+    if (stringPassport.journal.length > 0) {
+      // ведётся журнал трубы — ресурс по наиболее изношенному участку
+      const dep = Math.min(wellWithTraj.md, ct.length);
+      const la = analyzeStringLife(stringPassport, ct.od, ct.wall, ct.grade, { depthM: dep, pressureMPa: h.pumpPressure, env: "normal" }, dep + 150);
+      ft = { ...ft, fatigueLifeUsed: Math.round(la.maxDamagePct * 10) / 10, maxSafeTrips: Number.isFinite(la.jobsToRetire) ? Math.floor(la.jobsToRetire) : ft.maxSafeTrips };
+    }
     const r = assessRisks(f, l, h, ft, wellWithTraj);
     const hl = generateHookLoadProfile(ct, wellWithTraj, fluid, tools, friction, secs, 50, surfaceOpts);
 
@@ -295,7 +335,7 @@ export default function CoiledTubing() {
     }).catch(() => {});
 
     toast.success("Расчёт выполнен ✅");
-  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface, surfaceOpts]);
+  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface, surfaceOpts, stringPassport]);
 
   const handleReset = useCallback(() => {
     setCT(defaultCT); setWell(defaultWell); setFluid(defaultFluid);
@@ -316,10 +356,10 @@ export default function CoiledTubing() {
   const buildCTPayload = useCallback((): SaveCalcPayload => ({
     module: "coiled-tubing",
     title: `ГНКТ ${ct.od}мм ${ct.grade} — MD ${well.md}м`,
-    well_data: { ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, surface },
+    well_data: { ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, surface, stringPassport },
     calc_params: { forces, limits, hydraulics, fatigue, risks, ctSections },
     results: { forces, limits, hydraulics, fatigue },
-  }), [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, forces, limits, hydraulics, fatigue, risks, ctSections, surface]);
+  }), [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, forces, limits, hydraulics, fatigue, risks, ctSections, surface, stringPassport]);
 
   // Save to database (opens dialog)
   const handleSave = useCallback(async () => {
@@ -367,7 +407,7 @@ export default function CoiledTubing() {
       forceProfile: forceProfile.length > 0 ? forceProfile : undefined,
       tempProfile: tempProfile.length > 0 ? tempProfile : undefined,
       hydraulicsCurve: hydraulicsCurve.length > 0 ? hydraulicsCurve : undefined,
-      fatigueCurve: fatigueCurve.length > 0 ? fatigueCurve : undefined,
+      stringLife: stringPassport.journal.length > 0 ? { serial: stringPassport.serial, analysis: analyzeStringLife(stringPassport, ct.od, ct.wall, ct.grade, { depthM: Math.min(well.md, ct.length), pressureMPa: hydraulics.pumpPressure, env: "normal" }, Math.min(well.md, ct.length) + 150) } : undefined,
       chartImages: {
         forces: forcesImg, hookLoad: hookLoadImg, limits: limitsImg,
         hydraulics: hydraulicsImg, fatigue: fatigueImg, tempering: temperingImg,
@@ -396,7 +436,6 @@ export default function CoiledTubing() {
 
   const forceProfile = useMemo(() => calculated ? generateForceDepthProfile(ct, wellWithTraj, fluid, tools, friction, 80, ctSections.length > 0 ? ctSections : undefined, surfaceOpts, forces && forces.lockUpDepth > 0 ? forces.lockUpDepth * 0.97 : undefined) : [], [calculated, ct, wellWithTraj, fluid, tools, friction, ctSections, surfaceOpts, forces]);
   const hydraulicsCurve = useMemo(() => calculated ? generateHydraulicsCurve(ct, wellWithTraj, fluid, tools, Math.max(6, Math.ceil(pump.flowRate * 2)), 30, ctSections.length > 0 ? ctSections : undefined, surfaceOpts) : [], [calculated, ct, wellWithTraj, fluid, tools, pump.flowRate, ctSections, surfaceOpts]);
-  const fatigueCurve = useMemo(() => calculated ? generateFatigueCurve(ct, reelSize, hydraulics?.pumpPressure ?? 0) : [], [calculated, ct, reelSize, hydraulics?.pumpPressure]);
   const pressureEnvelope = useMemo(() => calculated ? generatePressureLoadEnvelope(ct, { wallLossPct: surface.wallLossPct ?? 0 }) : [], [calculated, ct, surface.wallLossPct]);
   const operatingPath = useMemo(() => calculated && hydraulics ? generateOperatingPath(ct, wellWithTraj, fluid, tools, friction, ctSections.length > 0 ? ctSections : undefined, hydraulics, surfaceOpts, forces && forces.lockUpDepth > 0 ? forces.lockUpDepth * 0.97 : undefined) : null, [calculated, hydraulics, ct, wellWithTraj, fluid, tools, friction, ctSections, surfaceOpts, forces]);
   const envelopeChart = useMemo(() => [
@@ -794,7 +833,7 @@ export default function CoiledTubing() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <Field label="Выполнено рейсов" value={prevTrips} onChange={v => { setPrevTrips(num(v)); markDirty(); }} unit="" />
+                    <Field label="Выполнено рейсов" value={prevTrips} onChange={v => { setPrevTrips(num(v)); markDirty(); }} unit="" hint="Если журнал трубы не ведётся. Подробный учёт по длине трубы — вкладка «Усталость»" />
                   </div>
                 </CardContent>
               </CollapsibleContent>
@@ -1277,56 +1316,31 @@ export default function CoiledTubing() {
 
               {/* Fatigue */}
               <TabsContent value="fatigue" forceMount className={tab !== "fatigue" ? "hidden" : ""}>
-                <Card>
-                  <CardHeader className="py-3 px-4 flex-row items-center justify-between">
-                    <CardTitle className="text-sm">🔄 CoilLIFE — Ресурс усталости</CardTitle>
-                    <CopyImageButton targetRef={fatigueChartRef} label="📋" />
-                  </CardHeader>
-                  <CardContent className="px-4 pb-4 space-y-1">
-                    <Num label="Деформация на барабане" value={fatigue.bendingStrainReel.toFixed(3)} unit="%" />
-                    <Num label="Деформация на направл. арке" value={fatigue.bendingStrainGuideArch.toFixed(3)} unit="%" />
-                    <Num label="Суммарная деформация за рейс" value={fatigue.totalStrainPerTrip.toFixed(3)} unit="%" />
-                    <div className="border-t border-border my-2" />
-                    <Num label="Расчётный ресурс" value={fatigue.estimatedCycles} unit="рейсов" />
-                    <Num label="Безопасный ресурс (SF=2)" value={fatigue.maxSafeTrips} unit="рейсов" />
-                    <Num label="Использовано ресурса" value={fatigue.fatigueLifeUsed.toFixed(1)} unit="%" warn={fatigue.fatigueLifeUsed > 60} />
-                    <Num label="Снижение давления разрыва" value={fatigue.pressureDerate.toFixed(1)} unit="%" warn={fatigue.pressureDerate > 15} />
-                    {fatigue.fatigueLifeUsed > 80 && <p className="text-xs text-destructive mt-2">💀 Ресурс ГНКТ критически исчерпан!</p>}
-
-                    <div ref={fatigueChartRef} className="mt-4 bg-card rounded-lg p-2">
-                      <p className="text-xs font-semibold text-center mb-2">📊 Кривая ресурса усталости</p>
-                      <div className="overflow-x-auto -mx-2 px-2">
-                        <div className="min-w-[600px]">
-                          <ResponsiveContainer width="100%" height={300}>
-                            <LineChart data={fatigueCurve} margin={{ top: 5, right: 30, bottom: 5, left: 10 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                              <XAxis dataKey="trips" label={{ value: "Рейсы", position: "insideBottom", offset: -2, style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                              <YAxis yAxisId="left" label={{ value: "Ресурс, %", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} domain={[0, 120]} />
-                              <YAxis yAxisId="right" orientation="right" label={{ value: "МПа", angle: 90, position: "insideRight", style: { fontSize: 10 } }} tick={{ fontSize: 10 }} />
-                              <Tooltip contentStyle={{ fontSize: 11 }} />
-                              <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Line yAxisId="left" type="monotone" dataKey="lifeUsed" name="Ресурс, %" stroke="#ef4444" strokeWidth={2} dot={false} />
-                              <Line yAxisId="right" type="monotone" dataKey="effectiveBurst" name="Эфф. P разрыва, МПа" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                              <ReferenceLine yAxisId="left" y={100} stroke="#dc2626" strokeDasharray="6 3" label={{ value: "100%", position: "top", style: { fontSize: 9, fill: "#dc2626" } }} />
-                              <ReferenceLine yAxisId="left" y={50} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "50%", position: "right", style: { fontSize: 9, fill: "#d97706" } }} />
-                              {prevTrips > 0 && <ReferenceLine x={prevTrips} stroke="#a855f7" strokeWidth={2} label={{ value: `Сейчас: ${prevTrips}`, position: "top", style: { fontSize: 9, fill: "#7c3aed" } }} />}
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
+                <Card className="mb-4">
+                  <CardHeader className="py-3 px-4"><CardTitle className="text-sm">🔄 CoilLIFE — ресурс за рейс при текущих условиях</CardTitle></CardHeader>
+                  <CardContent className="px-4 pb-4 grid gap-x-6 sm:grid-cols-2">
+                    <div>
+                      <Num label="Деформация на барабане (внутр. слой)" value={fatigue.bendingStrainReel.toFixed(2)} unit="%" />
+                      <Num label="Деформация на гусаке" value={fatigue.bendingStrainGuideArch.toFixed(2)} unit="%" />
+                      <Num label="Давление в трубе при работе" value={hydraulics.pumpPressure.toFixed(1)} unit="МПа" />
+                    </div>
+                    <div>
+                      <Num label="Рейсов до разрушения (худший участок)" value={fatigue.estimatedCycles} />
+                      <Num label="Израсходовано ресурса" value={fatigue.fatigueLifeUsed.toFixed(1)} unit="%" warn={fatigue.fatigueLifeUsed > 60} />
+                      <Num label={stringPassport.journal.length ? "Работ до отбраковки (по журналу)" : "Рейсов до отбраковки (80%)"} value={fatigue.maxSafeTrips} />
                     </div>
                   </CardContent>
                 </Card>
-
-                <div className="mt-4">
-                  <CTFatigueAdvancedCard
-                    ct={ct}
-                    reelSize={reelSize}
-                    totalLengthM={ct.length}
-                    currentDepthM={well.md}
-                    currentPressureMPa={pump.surfacePressure || (hydraulics?.dpTotal ?? 0)}
-                  />
-                </div>
+                <CTStringLifeCard
+                  passport={stringPassport}
+                  onChange={(np) => { setStringPassport(np); }}
+                  ct={ct}
+                  currentDepthM={Math.min(well.md, ct.length)}
+                  currentPressureMPa={hydraulics.pumpPressure}
+                  wellLabel={`MD ${well.md} м`}
+                  userId={userId}
+                  chartRef={fatigueChartRef}
+                />
               </TabsContent>
             </Tabs>
           )}
