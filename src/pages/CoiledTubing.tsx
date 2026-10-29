@@ -40,6 +40,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import CopyImageButton from "@/components/CopyImageButton";
 import CTStringLifeCard from "@/components/CTStringLifeCard";
+import CTActualMatchTab from "@/components/CTActualMatchTab";
+import type { ActualPoint } from "@/lib/ct-actual-match";
 import { analyzeStringLife, defaultPassport, type CTStringPassport } from "@/lib/ct-string-life";
 import * as XLSX from "xlsx";
 
@@ -59,6 +61,7 @@ interface CTSession {
   ctSections: CTSection[];
   surface: CTSurfaceOptions;
   stringPassport: CTStringPassport | null;
+  actualData: ActualPoint[];
 }
 
 const defaultCT: CTStringData = { od: 50.8, wall: 3.96, grade: "CT-80", length: 3000, ovality: 1 };
@@ -93,10 +96,11 @@ function loadSession(): CTSession {
         ctSections: Array.isArray(p.ctSections) ? p.ctSections : defaultSections,
         surface: p.surface && typeof p.surface === "object" ? p.surface : {},
         stringPassport: p.stringPassport && Array.isArray(p.stringPassport.journal) ? p.stringPassport : null,
+        actualData: Array.isArray(p.actualData) ? p.actualData : [],
       };
     }
   } catch {}
-  return { ct: defaultCT, well: defaultWell, fluid: defaultFluid, pump: defaultPump, tools: defaultTools, friction: 0.25, reelSize: "medium", prevTrips: 0, trajPoints: defaultTraj, ctSections: defaultSections, surface: {}, stringPassport: null };
+  return { ct: defaultCT, well: defaultWell, fluid: defaultFluid, pump: defaultPump, tools: defaultTools, friction: 0.25, reelSize: "medium", prevTrips: 0, trajPoints: defaultTraj, ctSections: defaultSections, surface: {}, stringPassport: null, actualData: [] };
 }
 
 function num(v: string): number {
@@ -158,6 +162,7 @@ export default function CoiledTubing() {
   const [surface, setSurface] = useState<CTSurfaceOptions>(initial.surface);
   const [stringPassport, setStringPassport] = useState<CTStringPassport>(() => initial.stringPassport ?? defaultPassport(initial.ct.length, REEL_DIAMETERS[initial.reelSize] ?? 1.83));
   const [searchParams] = useSearchParams();
+  const [actualData, setActualData] = useState<ActualPoint[]>(initial.actualData);
   const surfaceOpts = useMemo<CTSurfaceOptions>(() => ({ ...surface, reelCoreD: REEL_DIAMETERS[reelSize] }), [surface, reelSize]);
   const [calculated, setCalculated] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -196,11 +201,11 @@ export default function CoiledTubing() {
   useEffect(() => {
     const timer = setTimeout(() => {
       try {
-        sessionStorage.setItem(CT_SESSION_KEY, JSON.stringify({ ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface, stringPassport }));
+        sessionStorage.setItem(CT_SESSION_KEY, JSON.stringify({ ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface, stringPassport, actualData }));
       } catch {}
     }, 500);
     return () => clearTimeout(timer);
-  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface, stringPassport]);
+  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface, stringPassport, actualData]);
 
   // Открытие сохранённого расчёта из кабинета (?calc=…)
   useEffect(() => {
@@ -224,6 +229,7 @@ export default function CoiledTubing() {
       if (Array.isArray(wd.trajPoints)) setTrajPoints(wd.trajPoints);
       if (wd.surface) setSurface(wd.surface);
       if (wd.stringPassport && Array.isArray(wd.stringPassport.journal)) setStringPassport(wd.stringPassport);
+      if (Array.isArray(wd.actualData)) setActualData(wd.actualData);
       if (Array.isArray(cp.ctSections)) setCtSections(cp.ctSections);
       setCalculated(false);
       toast.success(`Загружен расчёт: ${data.title}. Нажмите «Расчёт».`);
@@ -356,10 +362,10 @@ export default function CoiledTubing() {
   const buildCTPayload = useCallback((): SaveCalcPayload => ({
     module: "coiled-tubing",
     title: `ГНКТ ${ct.od}мм ${ct.grade} — MD ${well.md}м`,
-    well_data: { ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, surface, stringPassport },
+    well_data: { ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, surface, stringPassport, actualData },
     calc_params: { forces, limits, hydraulics, fatigue, risks, ctSections },
     results: { forces, limits, hydraulics, fatigue },
-  }), [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, forces, limits, hydraulics, fatigue, risks, ctSections, surface, stringPassport]);
+  }), [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, forces, limits, hydraulics, fatigue, risks, ctSections, surface, stringPassport, actualData]);
 
   // Save to database (opens dialog)
   const handleSave = useCallback(async () => {
@@ -798,6 +804,7 @@ export default function CoiledTubing() {
                       ["frictionReducerPct", "Снижатель трения", "%", "Снижение турбулентного трения жидкости в ГНКТ добавкой (ПАА и т.п.). Типично 50–70%; в навитой части эффект ~на 30% меньше"],
                       ["surfaceLineM", "Наземные линии", "м", "Длина нагнетательных линий от насоса до барабана"],
                       ["wallLossPct", "Износ стенки", "%", "Утонение стенки (износ, коррозия, минусовой допуск) — снижает давления разрыва и смятия и предел текучести на растяжение"],
+                      ["hydFrictionFactor", "Поправка потерь давления", "×", "Множитель потерь на трение по калибровке с фактом (вкладка «Факт»). 1 — без поправки"],
                     ] as [keyof CTSurfaceOptions, string, string, string][]).map(([k, label, unit, hint]) => (
                       <Field key={k} label={label} unit={unit} hint={hint}
                         value={(surface[k] as number | undefined) ?? ((CT_SURFACE_DEFAULTS as Record<string, number>)[k] ?? 0)}
@@ -852,11 +859,12 @@ export default function CoiledTubing() {
           ) : forces && limits && hydraulics && fatigue && (
             <Tabs value={tab} onValueChange={setTab}>
               <div className="overflow-x-auto scrollbar-hide mb-3">
-                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-11">
+                <TabsList className="inline-flex min-w-max w-full sm:w-full sm:grid sm:grid-cols-[repeat(13,minmax(0,1fr))]">
                   <TabsTrigger value="summary" className="gap-1 text-xs whitespace-nowrap">📋 Сводка</TabsTrigger>
                   <TabsTrigger value="forces" className="gap-1 text-xs whitespace-nowrap">⚡ Дохождение</TabsTrigger>
                   <TabsTrigger value="reach" className="gap-1 text-xs whitespace-nowrap">🎯 Reach</TabsTrigger>
                   <TabsTrigger value="trip" className="gap-1 text-xs whitespace-nowrap">🎬 СПО</TabsTrigger>
+                  <TabsTrigger value="actual" className="gap-1 text-xs whitespace-nowrap">📈 Факт</TabsTrigger>
                   <TabsTrigger value="cleanout" className="gap-1 text-xs whitespace-nowrap">🧹 Промывка</TabsTrigger>
                   <TabsTrigger value="n2" className="gap-1 text-xs whitespace-nowrap">💨 N₂ Освоение</TabsTrigger>
                   <TabsTrigger value="acid" className="gap-1 text-xs whitespace-nowrap">🧪 Кислота</TabsTrigger>
@@ -1030,6 +1038,19 @@ export default function CoiledTubing() {
                   />
                 ) : (
                   <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Запустите расчёт, чтобы построить симулятор СПО.</CardContent></Card>
+                )}
+              </TabsContent>
+
+              {/* Actual vs model */}
+              <TabsContent value="actual" forceMount className={tab !== "actual" ? "hidden" : ""}>
+                {tab === "actual" && (
+                  <CTActualMatchTab
+                    ct={ct} well={wellWithTraj} fluid={fluid} tools={tools}
+                    sections={ctSections.length > 0 ? ctSections : undefined} opts={surfaceOpts}
+                    friction={friction} data={actualData} onData={setActualData}
+                    onApplyFriction={(mu) => { setFriction(mu); markDirty(); }}
+                    onApplyHydFactor={(k) => { setSurface((o) => ({ ...o, hydFrictionFactor: k })); markDirty(); }}
+                  />
                 )}
               </TabsContent>
 

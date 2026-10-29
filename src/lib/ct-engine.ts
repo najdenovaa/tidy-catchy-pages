@@ -47,6 +47,8 @@ export interface CTSurfaceOptions {
   wallLossPct?: number;
   /** Диаметр сердечника барабана, м (для гидравлики навитой части) */
   reelCoreD?: number;
+  /** Поправочный множитель потерь на трение (калибровка по фактическому давлению), 1 — без поправки */
+  hydFrictionFactor?: number;
 }
 
 export const CT_SURFACE_DEFAULTS: Required<Omit<CTSurfaceOptions, "stripperFrictionKN" | "tubingShoeMD">> = {
@@ -57,6 +59,7 @@ export const CT_SURFACE_DEFAULTS: Required<Omit<CTSurfaceOptions, "stripperFrict
   surfaceLineM: 30,
   wallLossPct: 0,
   reelCoreD: 1.83,
+  hydFrictionFactor: 1,
 };
 
 // ════════════════════════ Геометрия ════════════════════════
@@ -519,14 +522,17 @@ export function ctHydraulics(ct: CTStringData, sections: CTSection[] | undefined
   }
   const tvd = stationsFor(well, deployed, Math.max(5, deployed / 200)).slice(-1)[0]?.tvd ?? well.tvd;
   const hydro = rho * G * tvd;
+  const kf = Math.max(0.1, opts.hydFrictionFactor || 1);
+  dpDeployed *= kf; dpReel *= kf; dpAnn *= kf;
+  const dpLinesK = dpLines * kf;
   const toMPa = (x: number) => x / 1e6;
-  const pumpPressure = well.wellheadPressure + toMPa(dpDeployed + dpReel + dpLines + dpAnn + dpNozzle);
+  const pumpPressure = well.wellheadPressure + toMPa(dpDeployed + dpReel + dpLinesK + dpAnn + dpNozzle);
   const bhp = well.wellheadPressure + toMPa(hydro + dpAnn);
   const ecd = tvd > 0 ? (hydro + dpAnn) / (G * tvd) / 1000 : fluid.density;
   const minAnnVel = annSegs.length ? Math.min(...annSegs.map((s) => s.flow.v)) : 0;
   return {
     rheo: rh, deployedM: deployed, reelM,
-    dpDeployed: toMPa(dpDeployed), dpReel: toMPa(dpReel), dpLines: toMPa(dpLines), dpAnn: toMPa(dpAnn), dpNozzle: toMPa(dpNozzle),
+    dpDeployed: toMPa(dpDeployed), dpReel: toMPa(dpReel), dpLines: toMPa(dpLinesK), dpAnn: toMPa(dpAnn), dpNozzle: toMPa(dpNozzle),
     pumpPressure, bhp, hydro: toMPa(hydro), ecd, ctFlow, reelFlow, annSegs, minAnnVel, warnings,
   };
 }
