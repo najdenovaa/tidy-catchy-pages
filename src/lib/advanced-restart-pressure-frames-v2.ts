@@ -33,9 +33,11 @@ export function buildRestartPressureFramesV2(
  const restarts=events.map(e=>{
   if(!Number.isInteger(e.stageIndex)||e.stageIndex<1||e.stageIndex>=stages.length)
    throw Error("Invalid restart stage");
-  const prev=schedule.intervals.filter(x=>x.name==="Pump stop")[e.stageIndex-1];
+  if(!(stages[e.stageIndex-1].pauseAfterMin!>0))throw Error("Restart needs preceding pump stop");
+  const pumpStages=schedule.intervals.filter(x=>x.rateLps>0);
+  const resumed=pumpStages[e.stageIndex];
+  const prev=schedule.intervals.find(x=>x.endMin===resumed.startMin&&x.rateLps===0);
   if(!prev)throw Error("Restart needs preceding pump stop");
-  const resumed=schedule.intervals.find(x=>x.startMin===prev.endMin&&x.rateLps>0);
   if(!resumed)throw Error("Missing restart");
   return {...e,startMin:resumed.startMin,stopMin:prev.startMin,startVolumeM3:resumed.startVolumeM3};
  });
