@@ -1,3 +1,4 @@
+import { summarizeV2FormationChecks } from "./advanced-v2-formation-summary";
 import { buildRestartPressureFramesV2, type RestartEventV2 } from "./advanced-restart-pressure-frames-v2";
 import type { PumpIntervalV2 } from "./advanced-pump-timeline-v2";
 import { calculateSafeAnnularRateV2 } from "./advanced-safe-rate-v2";
@@ -78,6 +79,7 @@ export function simulateCoupledHydraulicsV2(input:{
    pipeFrictionMPa,annulusHydrostaticMPa:a.hydrostaticMPa,annulusFrictionMPa:a.frictionMPa,
    shoePressureMPa,surfacePressureMPa,profile};
  });
+ const formationSummary=summarizeV2FormationChecks(frames,checks);
  const pressureEnvelope=grid.map(md=>{const samples=frames.map(f=>f.profile.find(p=>Math.abs(p.md-md)<1e-7));
   if(samples.some(p=>!p))throw Error("Missing shared grid pressure value");
   const vals=samples.map(p=>p!.pressureMPa);
@@ -90,6 +92,6 @@ export function simulateCoupledHydraulicsV2(input:{
   input.restartTimeline.stages,frames.map(f=>({pumpedM3:f.pumpedM3,
    surfacePressureMPa:f.surfacePressureMPa,shoePressureMPa:f.shoePressureMPa})),
   input.restartTimeline.events,input.restartTimeline.timesMin):null;
- return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,pressureEnvelope,restartPressureFrames,
+ return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,formationSummary,pressureEnvelope,restartPressureFrames,
   method:"coupled-quasi-steady-incompressible" as const};
 }
