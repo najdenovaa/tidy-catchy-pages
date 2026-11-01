@@ -1,3 +1,5 @@
+import { buildRestartPressureFramesV2, type RestartEventV2 } from "./advanced-restart-pressure-frames-v2";
+import type { PumpIntervalV2 } from "./advanced-pump-timeline-v2";
 import { calculateSafeAnnularRateV2 } from "./advanced-safe-rate-v2";
 import { simulatePipePressureTimelineV2 } from "./advanced-pipe-timeline-v2";
 import { calculateAnnulusV2, type AnnulusGeometryV2, type AnnulusFluidV2 } from "./advanced-annulus-v2";
@@ -12,6 +14,7 @@ export function simulateCoupledHydraulicsV2(input:{
  initialPipe:AnnulusFluidV2; initialAnnulus:AnnulusFluidV2;
  stages:PumpStageV2[]; timesMin:number[]; formations?:FormationCheckV2[];
  returnPressureMPa?:number; profileStepM?:number; safeRateCeilingLps?:number;
+ restartTimeline?:{stages:PumpIntervalV2[];events:RestartEventV2[];timesMin:number[]};
 }){
  const {pipe,annulus,trajectory,stages}=input;
  if(pipe.fromMD!==annulus.topMD||pipe.toMD!==annulus.shoeMD)throw Error("Pipe and annulus geometry not connected");
@@ -83,6 +86,10 @@ export function simulateCoupledHydraulicsV2(input:{
   return {md,tvd:interpolateTVD(md,trajectory),maxPressureMPa:max,minPressureMPa:min,
    maxAtTimeMin:frames[atIndex].timeMin};
  });
- return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,pressureEnvelope,
+ const restartPressureFrames=input.restartTimeline?buildRestartPressureFramesV2(
+  input.restartTimeline.stages,frames.map(f=>({pumpedM3:f.pumpedM3,
+   surfacePressureMPa:f.surfacePressureMPa,shoePressureMPa:f.shoePressureMPa})),
+  input.restartTimeline.events,input.restartTimeline.timesMin):null;
+ return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,pressureEnvelope,restartPressureFrames,
   method:"coupled-quasi-steady-incompressible" as const};
 }
