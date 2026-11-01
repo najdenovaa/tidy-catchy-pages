@@ -7,17 +7,31 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-async function resolveLocation(ip: string): Promise<string | null> {
-  if (!ip || ip === "unknown") return null;
+/** Approximate public IP network details; not visitor's address or employer. */
+async function resolveNetwork(ip: string): Promise<{location:string|null;metadata:Record<string,unknown>|null}> {
+  if (!ip || ip === "unknown" || !/^[a-fA-F0-9:.]+$/.test(ip)) return {location:null,metadata:null};
   try {
-    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city&lang=ru`);
-    const data = await res.json();
-    if (data.status === "success") {
-      const parts = [data.city, data.regionName, data.country].filter(Boolean);
-      return parts.join(", ") || null;
-    }
-  } catch {}
-  return null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1800);
+    let response: Response;
+    try { response = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, {signal:controller.signal}); }
+    finally { clearTimeout(timeout); }
+    if (!response.ok) return {location:null,metadata:null};
+    const d = await response.json();
+    if (!d.success) return {location:null,metadata:null};
+    const c = d.connection || {};
+    const metadata:Record<string,unknown> = {
+      country: d.country || null, region: d.region || null, city: d.city || null,
+      countryCode: d.country_code || null, continent: d.continent || null,
+      postalCode: d.postal || null, timezone: d.timezone?.id || null,
+      asn: c.asn || null, isp: c.isp || null, organization: c.org || null,
+      networkDomain: c.domain || null, source: "ipwho.is",
+      accuracy: "network-estimate-not-street-address",
+    };
+    return {location:[d.city,d.region,d.country].filter(Boolean).join(", ") || null,metadata};
+  } catch {
+    return {location:null,metadata:null};
+  }
 }
 
 serve(async (req) => {
@@ -29,13 +43,13 @@ serve(async (req) => {
     const { type, module, well_data, calc_params, page_url } = await req.json();
 
     const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       req.headers.get("cf-connecting-ip") ||
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       req.headers.get("x-real-ip") ||
       "unknown";
 
     const userAgent = req.headers.get("user-agent") || "unknown";
-    const location = await resolveLocation(ip);
+    const { location, metadata } = await resolveNetwork(ip);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -48,6 +62,7 @@ serve(async (req) => {
         user_agent: userAgent,
         page_url: page_url || null,
         location,
+        ip_metadata: metadata,
       });
     } else if (type === "calculation") {
       await supabase.from("calculation_logs").insert({
