@@ -144,7 +144,9 @@ const NetworkInfo = ({ metadata }: { metadata: any | null }) => {
       <div><b>Организация IP:</b> {show(m.organization)}</div>
       <div><b>ASN:</b> {show(m.asn)}</div>
       <div><b>Домен сети:</b> {show(m.networkDomain)}</div>
-      <div><b>Тип/часовой пояс:</b> {show(m.timezone)}</div>
+      <div><b>Обратный DNS / сервер:</b> {show(m.reverseDns)}</div>
+      <div><b>Тип сети:</b> {show(m.networkType)}</div>
+      <div><b>Часовой пояс:</b> {show(m.timezone)}</div>
       {m.postalCode ? <div><b>Индекс региона:</b> {show(m.postalCode)}</div> : null}
       <div className="text-muted-foreground">Геолокация приблизительная, не адрес посетителя</div>
     </div>
