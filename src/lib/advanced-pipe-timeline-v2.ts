@@ -18,8 +18,9 @@ export function simulatePipePressureTimelineV2(
   const result=simulatePipeAdvectionV2(geometry,initial,stages,sampleTimesMin);
   let elapsed=0;
   const stageWindows=stages.map(s=>{
-    const start=elapsed;elapsed+=s.volumeM3/(s.rateLps*0.06)+(s.pauseAfterMin??0);
-    return {start,end:elapsed,rateLps:s.rateLps};
+    const start=elapsed;const end=start+s.volumeM3/(s.rateLps*0.06);
+    elapsed=end+(s.pauseAfterMin??0);
+    return {start,end,rateLps:s.rateLps};
   });
   return {pipeCapacityM3:result.pipeCapacityM3,frames:result.frames.map(frame=>{
     const at=stageWindows.find(s=>frame.timeMin>=s.start&&frame.timeMin<s.end);
