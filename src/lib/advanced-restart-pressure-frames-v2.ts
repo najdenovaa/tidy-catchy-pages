@@ -23,7 +23,8 @@ export function buildRestartPressureFramesV2(
  const sorted=[...samples].sort((a,b)=>a.pumpedM3-b.pumpedM3);
  const sample=(v:number)=>{
   const pair=sorted.findIndex(s=>s.pumpedM3>=v-1e-9);
-  if(pair<=0)return sorted[0];
+  if(pair<0)return sorted[sorted.length-1];
+  if(pair===0)return sorted[0];
   const a=sorted[pair-1],b=sorted[pair];
   const w=Math.max(0,Math.min(1,(v-a.pumpedM3)/(b.pumpedM3-a.pumpedM3)));
   return {pumpedM3:v,surfacePressureMPa:a.surfacePressureMPa+(b.surfacePressureMPa-a.surfacePressureMPa)*w,
