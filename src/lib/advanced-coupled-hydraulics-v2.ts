@@ -32,7 +32,17 @@ export function simulateCoupledHydraulicsV2(input:{
  checks.forEach(z=>{if(!z.name.trim()||!Number.isFinite(z.md)||z.md<annulus.topMD||z.md>annulus.shoeMD||
  (z.fractureMPa!==undefined&&(!Number.isFinite(z.fractureMPa)||z.fractureMPa<=0))||
  (z.poreMPa!==undefined&&(!Number.isFinite(z.poreMPa)||z.poreMPa<0)))throw Error("Invalid formation");});
- const pipeRun=simulatePipePressureTimelineV2(pipe,input.initialPipe,stages,trajectory,input.timesMin);
+ if(input.restartTimeline){
+  const planned=input.restartTimeline.stages;
+  if(planned.length!==stages.length||planned.some((x,i)=>
+   x.name!==stages[i].name||x.rateLps!==stages[i].rateLps||
+   x.volumeM3!==stages[i].volumeM3||(x.pauseAfterMin??0)!==(stages[i].pauseAfterMin??0)))
+   throw Error("Restart programme must match hydraulic fluid programme exactly");
+ }
+ const sampleTimes=input.restartTimeline
+  ?[...new Set([...input.timesMin,...input.restartTimeline.timesMin])].sort((a,b)=>a-b)
+  :input.timesMin;
+ const pipeRun=simulatePipePressureTimelineV2(pipe,input.initialPipe,stages,trajectory,sampleTimes);
  const initialOut:PumpStageV2={...input.initialPipe,rateLps:1,volumeM3:pipeRun.pipeCapacityM3};
  const shoeStream=[initialOut,...stages];
  let time=0;
