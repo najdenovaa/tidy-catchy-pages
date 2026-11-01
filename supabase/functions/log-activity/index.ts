@@ -7,6 +7,22 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+async function reverseDns(ip: string): Promise<string | null> {
+  const parts = ip.split(".");
+  if (parts.length !== 4 || parts.some(x => !/^\\d{1,3}$/.test(x) || Number(x) > 255)) return null;
+  const reverse = [...parts].reverse().join(".") + ".in-addr.arpa";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 900);
+  try {
+    const response = await fetch(`https://dns.google/resolve?name=${reverse}&type=PTR`, { signal: controller.signal });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const name = data.Answer?.find((row: {type:number;data?:string}) => row.type === 12)?.data;
+    return typeof name === "string" ? name.replace(/\\.$/, "") : null;
+  } catch { return null; }
+  finally { clearTimeout(timeout); }
+}
+
 /** Approximate public IP network details; not visitor's address or employer. */
 async function resolveNetwork(ip: string): Promise<{location:string|null;metadata:Record<string,unknown>|null}> {
   if (!ip || ip === "unknown" || !/^[a-fA-F0-9:.]+$/.test(ip)) return {location:null,metadata:null};
@@ -25,7 +41,8 @@ async function resolveNetwork(ip: string): Promise<{location:string|null;metadat
       countryCode: d.country_code || null, continent: d.continent || null,
       postalCode: d.postal || null, timezone: d.timezone?.id || null,
       asn: c.asn || null, isp: c.isp || null, organization: c.org || null,
-      networkDomain: c.domain || null, source: "ipwho.is",
+      networkDomain: c.domain || null, networkType: c.type || null,
+      reverseDns: await reverseDns(ip), source: "ipwho.is + public PTR",
       accuracy: "network-estimate-not-street-address",
     };
     return {location:[d.city,d.region,d.country].filter(Boolean).join(", ") || null,metadata};
@@ -56,7 +73,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     if (type === "visit") {
-      await supabase.from("visit_logs").insert({
+      const { error } = await supabase.from("visit_logs").insert({
         module: module || "cementing",
         ip_address: ip,
         user_agent: userAgent,
@@ -64,8 +81,9 @@ serve(async (req) => {
         location,
         ip_metadata: metadata,
       });
+      if (error) throw error;
     } else if (type === "calculation") {
-      await supabase.from("calculation_logs").insert({
+      const { error } = await supabase.from("calculation_logs").insert({
         module: module || "cementing",
         well_data: well_data || null,
         calc_params: calc_params || null,
@@ -73,7 +91,9 @@ serve(async (req) => {
         user_agent: userAgent,
         page_url: page_url || null,
         location,
+        ip_metadata: metadata,
       });
+      if (error) throw error;
     }
 
     return new Response(JSON.stringify({ ok: true }), {
