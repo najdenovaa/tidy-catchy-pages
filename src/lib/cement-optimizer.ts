@@ -6,11 +6,12 @@
  * в момент, когда буфер и цемент идут по затрубью.
  */
 import {
-  calculatePressureProfile, calculateVolumes, getEffectiveTrajectory, interpolateTVD, annularVolumeForInterval,
+  calculateVolumes, getEffectiveTrajectory, interpolateTVD, annularVolumeForInterval,
   annularFrictionMPa, hbOf, getCavernCoeffAtDepth, type Rheology,
   type WellData, type DrillingFluid, type BufferFluid, type SlurryInput, type DisplacementFluid, type FlowRateStep,
   type PressureProfileResult, type VolumeResults,
 } from "./cementing-calculations";
+import { calculatePressureProfile } from "./cementing-engine";
 import { buildLabProgram } from "./cement-program";
 import {
   autoPlaceCentralizers, calculateCentralization, centralizerPresets,

@@ -35,8 +35,9 @@ import SkcControlSection from "@/components/SkcControlSection";
 import { applyVariant, type ProgramVariant, type CentralizerPlan } from "@/lib/cement-optimizer";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
-import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
+import { calculateVolumes, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
+import { calculatePressureProfile, getRestartChartFrames } from "@/lib/cementing-engine";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
 import { getCementingExample } from "@/lib/cementing-example";
 import { FileDown, Loader2, Send, Home, RotateCcw, Save, LogOut, LayoutDashboard } from "lucide-react";
@@ -844,7 +845,7 @@ export default function Index() {
             <TabsContent value="charts" forceMount>
               <div data-tab-content="charts">
                 {calcSnapshot && pressureResult ? (
-                  <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin}
+                  <ChartsSection pressureData={pressureResult.points} restartChartFrames={getRestartChartFrames(pressureResult)} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin}
                     envelope={pressureResult.envelope} prevShoeMD={snapWellData?.prevCasingDepth ?? 0} casingDepthMD={snapWellData?.casingDepthMD ?? 0} layers={snapWellData?.reservoirLayers} />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
