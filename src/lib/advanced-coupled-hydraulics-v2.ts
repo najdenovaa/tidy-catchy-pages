@@ -61,7 +61,7 @@ export function simulateCoupledHydraulicsV2(input:{
   const newFluidInAnnulus=Math.min(Math.max(0,p.pumpedM3-pipeRun.pipeCapacityM3),annulusCapacityM3);
   const newFluidReturned=Math.max(0,p.pumpedM3-pipeRun.pipeCapacityM3-annulusCapacityM3);
   const balanceErrorM3=p.pumpedM3-newFluidInPipe-newFluidInAnnulus-newFluidReturned;
-  return {timeMin:p.timeMin,pumpedM3:p.pumpedM3,shoeExitedM3:a.enteredM3,returnedM3:p.pumpedM3,returnedNewFluidM3:a.returnedM3,
+  return {timeMin:p.timeMin,pumpedM3:p.pumpedM3,shoeExitedM3:a.enteredM3,returnedM3:p.pumpedM3,returnedNewFluidM3:newFluidReturned,
    balanceErrorM3,rateLps,pipeHydrostaticMPa:p.pressure.bottomHydrostaticMPa,
    pipeFrictionMPa,annulusHydrostaticMPa:a.hydrostaticMPa,annulusFrictionMPa:a.frictionMPa,
    shoePressureMPa,surfacePressureMPa,profile};
