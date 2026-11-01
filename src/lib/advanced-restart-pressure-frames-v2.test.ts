@@ -23,3 +23,13 @@ it("restart requires a corresponding stop",()=>{
  [{name:"No stop",rateLps:10,volumeM3:6},{name:"Next",rateLps:10,volumeM3:6}],
  samples,events,[11])).toThrow();
 });
+
+it("maps restart to paused preceding stage, even when earlier stages had no pauses",()=>{
+ const ss=[{name:"A",rateLps:10,volumeM3:6},{name:"B",rateLps:10,volumeM3:6,pauseAfterMin:4},{name:"C",rateLps:10,volumeM3:6}];
+ const ps=[...samples,{pumpedM3:18,surfacePressureMPa:6,shoePressureMPa:15}];
+ const e=[{...events[0],stageIndex:2}];
+ const frames=buildRestartPressureFramesV2(ss,ps,e,[23,24,25]);
+ expect(frames[0].phase).toBe("stopped");
+ expect(frames[1].gelRestartExcessMPa).toBeCloseTo(0.8,8);
+ expect(frames[2].gelRestartExcessMPa).toBeLessThan(0.8);
+});
