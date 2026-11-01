@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea } from "recharts";
 import type { PressurePoint, StageBoundary, DepthEnvelopePoint, ReservoirLayer } from "@/lib/cementing-calculations";
 import DepthPressureCharts from "./DepthPressureCharts";
+import type { RestartChartFrameV2 } from "@/lib/advanced-v2-chart-data";
 import CopyImageButton from "./CopyImageButton";
 
 function ScrollableChart({ children, chartRef, height }: { children: React.ReactNode; chartRef: React.RefObject<HTMLDivElement>; height: string }) {
@@ -17,6 +18,8 @@ function ScrollableChart({ children, chartRef, height }: { children: React.React
 
 interface Props {
   pressureData: PressurePoint[];
+  /** V2-only overlay: never synthesized from V1 pressure points. */
+  restartChartFrames?: RestartChartFrameV2[];
   safeTime: number;
   cementStartTime: number;
   stopTime: number;
@@ -30,7 +33,7 @@ interface Props {
 
 const STAGE_COLORS = ["hsl(200, 50%, 55%)", "hsl(120, 40%, 45%)", "hsl(35, 70%, 50%)", "hsl(280, 50%, 55%)", "hsl(340, 50%, 50%)"];
 
-export default function ChartsSection({ pressureData, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, envelope, prevShoeMD = 0, casingDepthMD = 0, layers }: Props) {
+export default function ChartsSection({ pressureData, restartChartFrames, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, envelope, prevShoeMD = 0, casingDepthMD = 0, layers }: Props) {
   const chartRef1 = useRef<HTMLDivElement>(null);
   const chartRef2 = useRef<HTMLDivElement>(null);
   const chartRef3 = useRef<HTMLDivElement>(null);
@@ -125,6 +128,31 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
           </ScrollableChart>
         </CardContent>
       </Card>
+
+      {restartChartFrames && restartChartFrames.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-lg">V2 — остановка насосов и давление страгивания (СНС)</CardTitle></CardHeader>
+          <CardContent>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Давление страгивания зависит от заданной СНС; дополнительная нагрузка показана отдельно от забойного давления.
+            </p>
+            <ResponsiveContainer width="100%" height={340}>
+              <LineChart data={restartChartFrames}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="timeMin" type="number" domain={["dataMin","dataMax"]} label={{ value:"Время, мин", position:"insideBottom", offset:-5 }} />
+                <YAxis yAxisId="pressure" label={{ value:"МПа", angle:-90, position:"insideLeft" }} />
+                <YAxis yAxisId="flow" orientation="right" label={{ value:"л/с", angle:90, position:"insideRight" }} />
+                <Tooltip />
+                <Legend />
+                <Line yAxisId="pressure" type="linear" dataKey="surfacePressureMPa" name="Давление на насосе с СНС" dot={false} stroke="hsl(160, 60%, 40%)" />
+                <Line yAxisId="pressure" type="linear" dataKey="baseSurfacePressureMPa" name="Базовое давление" dot={false} stroke="hsl(215, 70%, 45%)" />
+                <Line yAxisId="pressure" type="linear" dataKey="gelRestartExcessMPa" name="Добавка СНС" dot={false} stroke="hsl(10, 80%, 50%)" />
+                <Line yAxisId="flow" type="stepAfter" dataKey="rateLps" name="Расход" dot={false} stroke="hsl(280, 60%, 55%)" />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Давление на забое vs ГРП */}
       <Card>
