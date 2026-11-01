@@ -53,6 +53,18 @@ describe("coupled hydraulics V2: analytical and volume benchmarks",()=>{
   });
   expect(result.formations[0].maxPressureMPa).toBeGreaterThan(0);
  });
+ it("builds one pressure envelope from the same depth nodes as every simulation frame",()=>{
+  const v=c*1.2;
+  const r=simulateCoupledHydraulicsV2({...common,stages:[{...water,rateLps:10,volumeM3:v}],
+    timesMin:[0,v/1.2,v/.6],profileStepM:100});
+  expect(r.pressureEnvelope.map(p=>p.md)).toEqual(Array.from({length:11},(_,i)=>i*100));
+  for(const envelope of r.pressureEnvelope){
+    const observed=r.frames.map(f=>f.profile.find(p=>p.md===envelope.md)!.pressureMPa);
+    expect(envelope.maxPressureMPa).toBeCloseTo(Math.max(...observed),9);
+    expect(envelope.minPressureMPa).toBeCloseTo(Math.min(...observed),9);
+    expect(envelope.minPressureMPa).toBeLessThanOrEqual(envelope.maxPressureMPa);
+  }
+ });
  it("pressure decreases with TVD in inclined geometries at fixed fluid density",()=>{
   const tr=[{md:0,tvd:0,zenith:0,azimuth:0},{md:1000,tvd:600,zenith:0,azimuth:0}];
   const r=simulateCoupledHydraulicsV2({...common,trajectory:tr,stages:[],timesMin:[0]});
