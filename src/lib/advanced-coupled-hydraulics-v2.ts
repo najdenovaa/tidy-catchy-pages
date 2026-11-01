@@ -1,3 +1,4 @@
+import { calculateSafeAnnularRateV2 } from "./advanced-safe-rate-v2";
 import { simulatePipePressureTimelineV2 } from "./advanced-pipe-timeline-v2";
 import { calculateAnnulusV2, type AnnulusGeometryV2, type AnnulusFluidV2 } from "./advanced-annulus-v2";
 import { annularFrictionMPa, interpolateTVD, type TrajectoryPoint } from "./cementing-calculations";
@@ -10,7 +11,7 @@ export function simulateCoupledHydraulicsV2(input:{
  pipe:Pipe; annulus:AnnulusGeometryV2; trajectory:TrajectoryPoint[];
  initialPipe:AnnulusFluidV2; initialAnnulus:AnnulusFluidV2;
  stages:PumpStageV2[]; timesMin:number[]; formations?:FormationCheckV2[];
- returnPressureMPa?:number; profileStepM?:number;
+ returnPressureMPa?:number; profileStepM?:number; safeRateCeilingLps?:number;
 }){
  const {pipe,annulus,trajectory,stages}=input;
  if(pipe.fromMD!==annulus.topMD||pipe.toMD!==annulus.shoeMD)throw Error("Pipe and annulus geometry not connected");
@@ -64,7 +65,12 @@ export function simulateCoupledHydraulicsV2(input:{
   const newFluidInAnnulus=Math.min(Math.max(0,p.pumpedM3-pipeRun.pipeCapacityM3),annulusCapacityM3);
   const newFluidReturned=Math.max(0,p.pumpedM3-pipeRun.pipeCapacityM3-annulusCapacityM3);
   const balanceErrorM3=p.pumpedM3-newFluidInPipe-newFluidInAnnulus-newFluidReturned;
+  const limited=checks.filter(z=>z.fractureMPa!==undefined).map(z=>({name:z.name,md:z.md,pressureLimitMPa:z.fractureMPa!}));
+  const safeRate=limited.length?calculateSafeAnnularRateV2({annulus,initialAnnulus:input.initialAnnulus,
+   shoeStream,shoeExitedM3:p.pumpedM3,trajectory,zones:limited,maxRateLps:input.safeRateCeilingLps??50,
+   returnPressureMPa:bp}):null;
   return {timeMin:p.timeMin,pumpedM3:p.pumpedM3,shoeExitedM3:a.enteredM3,returnedM3:p.pumpedM3,returnedNewFluidM3:newFluidReturned,
+   maxSafeRateLps:safeRate?.maxSafeRateLps??null,staticFormationOverpressure:safeRate?.staticViolation??false,
    balanceErrorM3,rateLps,pipeHydrostaticMPa:p.pressure.bottomHydrostaticMPa,
    pipeFrictionMPa,annulusHydrostaticMPa:a.hydrostaticMPa,annulusFrictionMPa:a.frictionMPa,
    shoePressureMPa,surfacePressureMPa,profile};
