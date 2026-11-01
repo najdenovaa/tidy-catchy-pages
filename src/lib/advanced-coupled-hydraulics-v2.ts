@@ -34,7 +34,7 @@ export function simulateCoupledHydraulicsV2(input:{
  const initialOut:PumpStageV2={...input.initialPipe,rateLps:1,volumeM3:pipeRun.pipeCapacityM3};
  const shoeStream=[initialOut,...stages];
  let time=0;
- const schedule=stages.map(s=>{const start=time;time+=s.volumeM3/(s.rateLps*0.06);return {start,end:time,q:s.rateLps};});
+ const schedule=stages.map(s=>{const start=time;const end=start+s.volumeM3/(s.rateLps*0.06);time=end+(s.pauseAfterMin??0);return {start,end,q:s.rateLps};});
  const annulusCapacityM3=calculateAnnulusV2(annulus,input.initialAnnulus,shoeStream,0,0,trajectory).capacityM3;
  const envelopes=checks.map(z=>({...z,minPressureMPa:Infinity,maxPressureMPa:-Infinity,minFracMarginMPa:Infinity,minPoreMarginMPa:Infinity}));
  const frames=pipeRun.frames.map(p=>{
