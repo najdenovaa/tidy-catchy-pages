@@ -1,3 +1,4 @@
+import { calculateWocHydrostaticProfileV2, type WocDensityScenarioV2 } from "./advanced-v2-woc-hydrostatics";
 import { assessStaticStopV2 } from "./advanced-stop-diagnostics-v2";
 import { assessV2RestartPumpSafety } from "./advanced-v2-pump-pressure-safety";
 import { calculateV2StageMetadata } from "./advanced-v2-stage-metadata";
@@ -21,6 +22,7 @@ export function simulateCoupledHydraulicsV2(input:{
  restartTimeline?:{stages:PumpIntervalV2[];events:RestartEventV2[];timesMin:number[]};
  cementStageIndices?:number[];
  maxPumpPressureMPa?:number;
+ wocScenario?:WocDensityScenarioV2;
 }){
  const {pipe,annulus,trajectory,stages}=input;
  if(pipe.fromMD!==annulus.topMD||pipe.toMD!==annulus.shoeMD)throw Error("Pipe and annulus geometry not connected");
@@ -107,6 +109,9 @@ export function simulateCoupledHydraulicsV2(input:{
   return {md,tvd:interpolateTVD(md,trajectory),maxPressureMPa:max,minPressureMPa:min,
    maxAtTimeMin:frames[atIndex].timeMin};
  });
+ const wocProfile=input.wocScenario?calculateWocHydrostaticProfileV2(
+  frames[frames.length-1].annularFluids,trajectory,grid,{...input.wocScenario,
+   returnPressureMPa:input.wocScenario.returnPressureMPa??bp}):null;
  const stageMetadata=calculateV2StageMetadata(stages,input.cementStageIndices??[]);
  const restartPressureFrames=input.restartTimeline?buildRestartPressureFramesV2(
   input.restartTimeline.stages,frames.map(f=>({timeMin:f.timeMin,pumpedM3:f.pumpedM3,
@@ -114,6 +119,6 @@ export function simulateCoupledHydraulicsV2(input:{
   input.restartTimeline.events,input.restartTimeline.timesMin):null;
  const restartPumpSafety=input.maxPumpPressureMPa!==undefined
   ?assessV2RestartPumpSafety(restartPressureFrames??[],input.maxPumpPressureMPa):null;
- return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,formationSummary,pressureEnvelope,restartPressureFrames,restartPumpSafety,stageMetadata,
+ return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,formationSummary,pressureEnvelope,wocProfile,restartPressureFrames,restartPumpSafety,stageMetadata,
   method:"coupled-quasi-steady-incompressible" as const};
 }
