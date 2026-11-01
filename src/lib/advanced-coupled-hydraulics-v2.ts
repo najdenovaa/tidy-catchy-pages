@@ -1,3 +1,4 @@
+import { assessV2RestartPumpSafety } from "./advanced-v2-pump-pressure-safety";
 import { calculateV2StageMetadata } from "./advanced-v2-stage-metadata";
 import { summarizeV2FormationChecks } from "./advanced-v2-formation-summary";
 import { buildRestartPressureFramesV2, type RestartEventV2 } from "./advanced-restart-pressure-frames-v2";
@@ -18,6 +19,7 @@ export function simulateCoupledHydraulicsV2(input:{
  returnPressureMPa?:number; profileStepM?:number; safeRateCeilingLps?:number;
  restartTimeline?:{stages:PumpIntervalV2[];events:RestartEventV2[];timesMin:number[]};
  cementStageIndices?:number[];
+ maxPumpPressureMPa?:number;
 }){
  const {pipe,annulus,trajectory,stages}=input;
  if(pipe.fromMD!==annulus.topMD||pipe.toMD!==annulus.shoeMD)throw Error("Pipe and annulus geometry not connected");
@@ -95,6 +97,8 @@ export function simulateCoupledHydraulicsV2(input:{
   input.restartTimeline.stages,frames.map(f=>({pumpedM3:f.pumpedM3,
    surfacePressureMPa:f.surfacePressureMPa,shoePressureMPa:f.shoePressureMPa})),
   input.restartTimeline.events,input.restartTimeline.timesMin):null;
- return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,formationSummary,pressureEnvelope,restartPressureFrames,stageMetadata,
+ const restartPumpSafety=input.maxPumpPressureMPa!==undefined
+  ?assessV2RestartPumpSafety(restartPressureFrames??[],input.maxPumpPressureMPa):null;
+ return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,formationSummary,pressureEnvelope,restartPressureFrames,restartPumpSafety,stageMetadata,
   method:"coupled-quasi-steady-incompressible" as const};
 }
