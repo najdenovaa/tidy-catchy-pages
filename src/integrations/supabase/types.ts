@@ -103,6 +103,7 @@ export type Database = {
           calc_params: Json | null
           created_at: string
           id: string
+          ip_metadata: Json | null
           ip_address: string | null
           location: string | null
           module: string
@@ -502,6 +503,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          ip_metadata: Json | null
           ip_address: string | null
           location: string | null
           module: string
