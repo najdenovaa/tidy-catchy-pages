@@ -136,6 +136,8 @@ const getDeviceFromUA = (ua: string | null): string => {
 
 export default function AdminPanel() {
   const [calcLogs, setCalcLogs] = useState<CalcLog[]>([]);
+  const [totalVisits, setTotalVisits] = useState(0);
+  const [totalCalculations, setTotalCalculations] = useState(0);
   const [visitLogs, setVisitLogs] = useState<VisitLog[]>([]);
   const [analysisLogs, setAnalysisLogs] = useState<AnalysisLog[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -164,7 +166,9 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     setLoading(true);
-    const [calcRes, visitRes, profilesRes, analysisRes, creditsRes, fleetRes] = await Promise.all([
+    const [calcCount, visitCount, calcRes, visitRes, profilesRes, analysisRes, creditsRes, fleetRes] = await Promise.all([
+      supabase.from("calculation_logs").select("id", { count: "exact", head: true }),
+      supabase.from("visit_logs").select("id", { count: "exact", head: true }),
       supabase.from("calculation_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("visit_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
@@ -172,6 +176,9 @@ export default function AdminPanel() {
       supabase.from("user_credits").select("*"),
       supabase.from("fleet_configs").select("*").order("fleet_number"),
     ]);
+    if (calcCount.error || visitCount.error) toast({ title: "Ошибка загрузки счётчиков", description: calcCount.error?.message || visitCount.error?.message, variant: "destructive" });
+    if (calcCount.count !== null) setTotalCalculations(calcCount.count);
+    if (visitCount.count !== null) setTotalVisits(visitCount.count);
     if (calcRes.data) setCalcLogs(calcRes.data as CalcLog[]);
     if (visitRes.data) setVisitLogs(visitRes.data as VisitLog[]);
     if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
@@ -274,7 +281,7 @@ export default function AdminPanel() {
         {/* Общая статистика */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">📊 Всего расчётов</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{calcLogs.length}</p></CardContent></Card>
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">👁️ Всего посещений</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{visitLogs.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">👁️ Всего посещений</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{totalVisits}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">👤 Пользователей</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{profiles.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🌐 Уникальных IP</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{new Set([...calcLogs, ...visitLogs].map(l => l.ip_address).filter(Boolean)).size}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🔬 Анализы (всего)</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{analysisLogs.length}</p></CardContent></Card>
@@ -359,8 +366,8 @@ export default function AdminPanel() {
         <Tabs defaultValue="visits">
           <div className="overflow-x-auto pb-2">
             <TabsList className="inline-flex min-w-max flex-nowrap">
-              <TabsTrigger value="visits">👁️ Визиты ({visitLogs.length})</TabsTrigger>
-              <TabsTrigger value="calculations">📊 Расчёты ({calcLogs.length})</TabsTrigger>
+              <TabsTrigger value="visits">👁️ Визиты ({totalVisits})</TabsTrigger>
+              <TabsTrigger value="calculations">📊 Расчёты ({totalCalculations})</TabsTrigger>
               <TabsTrigger value="users">👤 Пользователи ({profiles.length})</TabsTrigger>
               <TabsTrigger value="analyses">🔬 Анализы ({analysisLogs.length})</TabsTrigger>
               <TabsTrigger value="lookup">🔍 Поиск</TabsTrigger>
