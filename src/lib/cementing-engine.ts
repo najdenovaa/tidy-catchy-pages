@@ -13,3 +13,13 @@ export {
   type ZoneCheck,
   type DepthEnvelopePoint,
 } from "./cementing-calculations";
+
+/** Charts can only receive restart frames carried by the canonical engine result.
+ * V1 intentionally has no V2 overlay: no parallel simulation or mixed provenance.
+ */
+import type { PressureProfileResult } from "./cementing-calculations";
+import { toRestartChartDataV2, type RestartChartFrameV2 } from "./advanced-v2-chart-data";
+export function getRestartChartFrames(result:PressureProfileResult):RestartChartFrameV2[]|undefined {
+ const frames=(result as PressureProfileResult & {restartPressureFrames?:RestartChartFrameV2[]}).restartPressureFrames;
+ return frames ? toRestartChartDataV2(frames) : undefined;
+}
