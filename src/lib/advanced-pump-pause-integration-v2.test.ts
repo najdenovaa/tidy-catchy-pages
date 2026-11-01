@@ -14,7 +14,7 @@ describe("integrated pump pause and restart",()=>{
    {...water,rateLps:10,volumeM3:6,pauseAfterMin:5},
    {...mud,rateLps:10,volumeM3:6}
   ],timesMin:[9,10,12,15,16,25]});
-  expect(r.frames.map(f=>f.pumpedM3)).toEqual([5.4,6,6,6,6.6,12]);
+  [5.4,6,6,6,6.6,12].forEach((v,i)=>expect(r.frames[i].pumpedM3).toBeCloseTo(v,9));
   expect(r.frames[2].rateLps).toBe(0);
   expect(r.frames[3].rateLps).toBe(10);
   expect(r.frames[2].annulusFrictionMPa).toBe(0);
