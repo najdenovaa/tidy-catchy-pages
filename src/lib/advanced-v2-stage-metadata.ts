@@ -3,7 +3,7 @@ import {buildPumpTimelineV2,type PumpIntervalV2} from "./advanced-pump-timeline-
 export interface V2StageBoundary { time:number;label:string }
 export function calculateV2StageMetadata(stages:PumpIntervalV2[],cementStageIndices:number[]){
  const schedule=buildPumpTimelineV2(stages);
- if(!stages.length)throw Error("Missing pumping programme");
+ if(!stages.length)return {stageBoundaries:[] as V2StageBoundary[],cementStartTime:null,stopTime:0,pumpedVolumeM3:0};
  if(cementStageIndices.some(i=>!Number.isInteger(i)||i<0||i>=stages.length))
   throw Error("Invalid cement stage index");
  const boundaries:V2StageBoundary[]=[];
