@@ -9,6 +9,7 @@ export interface PumpStageV2 {
   rheology: Rheology;
   rateLps: number;
   volumeM3: number;
+  pauseAfterMin?: number;
 }
 export interface AdvectionFrameV2 {
   timeMin: number;
@@ -67,12 +68,12 @@ export function simulatePipeAdvectionV2(
   const pipe=capacity(geometry);
   let t=0,v=0;
   const batch=stages.map(s=>{
-    if (!s.name.trim() || ![s.densityKgM3,s.rheology.pv,s.rheology.yp,s.rateLps,s.volumeM3].every(Number.isFinite) ||
-      s.densityKgM3<=0 || s.rheology.pv<0 || s.rheology.yp<0 || s.rateLps<=0 || s.volumeM3<=0)
+    if (!s.name.trim() || ![s.densityKgM3,s.rheology.pv,s.rheology.yp,s.rateLps,s.volumeM3,s.pauseAfterMin??0].every(Number.isFinite) ||
+      s.densityKgM3<=0 || s.rheology.pv<0 || s.rheology.yp<0 || s.rateLps<=0 || s.volumeM3<=0 || (s.pauseAfterMin??0)<0)
       throw new Error("Invalid pumping stage");
     const duration=s.volumeM3/(s.rateLps*0.06);
     const b={...s,startTime:t,endTime:t+duration,startV:v,endV:v+s.volumeM3};
-    t+=duration;v+=s.volumeM3;return b;
+    t+=duration+(s.pauseAfterMin??0);v+=s.volumeM3;return b;
   });
   const pumpedAt=(time:number)=>{
     let result=0;
@@ -95,8 +96,8 @@ export function simulatePipeAdvectionV2(
     plugs.sort((a,b)=>a.fromV-b.fromV);
     const inside=plugs.map(p=>({fromMD:pipe.depthAtVolume(p.fromV),toMD:pipe.depthAtVolume(p.toV),
       name:p.name,densityKgM3:p.densityKgM3,rheology:p.rheology}));
-    const current= batch.find(b=>time>=b.startTime&&time<b.endTime)??batch[batch.length-1];
-    const rate= time===0||!current?0:current.rateLps;
+    const current=batch.find(b=>time>=b.startTime&&time<b.endTime);
+    const rate=time<=0?0:(current?.rateLps??0);
     const frictionMPa=calculateMultiFluidPipeFrictionV2({...geometry,flowRateLps:rate},inside.length?inside:[
       {...initial,fromMD:geometry.fromMD,toMD:geometry.toMD}
     ]).pressureLossMPa;
