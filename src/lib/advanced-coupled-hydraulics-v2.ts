@@ -79,7 +79,8 @@ export function simulateCoupledHydraulicsV2(input:{
    returnPressureMPa:bp}):null;
   return {timeMin:p.timeMin,pumpedM3:p.pumpedM3,shoeExitedM3:a.enteredM3,returnedM3:p.pumpedM3,returnedNewFluidM3:newFluidReturned,
    maxSafeRateLps:safeRate?.maxSafeRateLps??null,staticFormationOverpressure:safeRate?.staticViolation??false,
-   balanceErrorM3,rateLps,pipeHydrostaticMPa:p.pressure.bottomHydrostaticMPa,
+   balanceErrorM3,rateLps,pipeFluids:p.fluids,annularFluids:a.fluids,
+   pipeHydrostaticMPa:p.pressure.bottomHydrostaticMPa,
    pipeFrictionMPa,annulusHydrostaticMPa:a.hydrostaticMPa,annulusFrictionMPa:a.frictionMPa,
    shoePressureMPa,surfacePressureMPa,profile};
  });
