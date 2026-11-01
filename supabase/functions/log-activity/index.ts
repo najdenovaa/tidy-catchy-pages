@@ -9,7 +9,7 @@ const corsHeaders = {
 
 async function reverseDns(ip: string): Promise<string | null> {
   const parts = ip.split(".");
-  if (parts.length !== 4 || parts.some(x => !/^\\d{1,3}$/.test(x) || Number(x) > 255)) return null;
+  if (parts.length !== 4 || parts.some(x => !/^\d{1,3}$/.test(x) || Number(x) > 255)) return null;
   const reverse = [...parts].reverse().join(".") + ".in-addr.arpa";
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 900);
@@ -18,7 +18,7 @@ async function reverseDns(ip: string): Promise<string | null> {
     if (!response.ok) return null;
     const data = await response.json();
     const name = data.Answer?.find((row: {type:number;data?:string}) => row.type === 12)?.data;
-    return typeof name === "string" ? name.replace(/\\.$/, "") : null;
+    return typeof name === "string" ? name.replace(/\.$/, "") : null;
   } catch { return null; }
   finally { clearTimeout(timeout); }
 }
