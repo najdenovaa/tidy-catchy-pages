@@ -20,7 +20,7 @@ jobs:
           cache: npm
       - run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: Run V2 and hydraulics regression tests
-        run: npx vitest run src/lib/advanced-pipe-hydraulics-v2.test.ts src/lib/advanced-multifluid-pipe-v2.test.ts src/lib/advanced-pipe-advection-v2.test.ts src/lib/advanced-pipe-pressure-v2.test.ts src/lib/advanced-pipe-timeline-v2.test.ts src/lib/advanced-annulus-v2.test.ts src/lib/advanced-hydraulics-analytical.test.ts src/lib/cementing-hydraulics.test.ts src/lib/cement-program.test.ts src/lib/advanced-coupled-hydraulics-v2.test.ts src/lib/advanced-annular-geometry-v2.test.ts
+        run: npx vitest run src/lib/advanced-pipe-hydraulics-v2.test.ts src/lib/advanced-multifluid-pipe-v2.test.ts src/lib/advanced-pipe-advection-v2.test.ts src/lib/advanced-pipe-pressure-v2.test.ts src/lib/advanced-pipe-timeline-v2.test.ts src/lib/advanced-annulus-v2.test.ts src/lib/advanced-hydraulics-analytical.test.ts src/lib/cementing-hydraulics.test.ts src/lib/cement-program.test.ts src/lib/advanced-coupled-hydraulics-v2.test.ts src/lib/advanced-annular-geometry-v2.test.ts src/lib/cementing-engine-integration.test.ts
       - name: Type check
         run: npx tsc --noEmit -p tsconfig.app.json
       - name: Production build verification (without deployment)
