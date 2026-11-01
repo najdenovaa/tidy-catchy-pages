@@ -10,12 +10,15 @@ export function simulateCoupledHydraulicsV2(input:{
  pipe:Pipe; annulus:AnnulusGeometryV2; trajectory:TrajectoryPoint[];
  initialPipe:AnnulusFluidV2; initialAnnulus:AnnulusFluidV2;
  stages:PumpStageV2[]; timesMin:number[]; formations?:FormationCheckV2[];
- returnPressureMPa?:number;
+ returnPressureMPa?:number; profileStepM?:number;
 }){
  const {pipe,annulus,trajectory,stages}=input;
  if(pipe.fromMD!==annulus.topMD||pipe.toMD!==annulus.shoeMD)throw Error("Pipe and annulus geometry not connected");
  const bp=input.returnPressureMPa??0;
  if(!Number.isFinite(bp)||bp<0)throw Error("Invalid return pressure");
+ const step=input.profileStepM??50;
+ if(!Number.isFinite(step)||step<=0||step>annulus.shoeMD-annulus.topMD)throw Error("Invalid profile grid spacing");
+ const grid=Array.from({length:Math.ceil((annulus.shoeMD-annulus.topMD)/step)+1},(_,i)=>Math.min(annulus.shoeMD,annulus.topMD+i*step));
  const checks=input.formations??[];
  checks.forEach(z=>{if(!z.name.trim()||!Number.isFinite(z.md)||z.md<annulus.topMD||z.md>annulus.shoeMD||
  (z.fractureMPa!==undefined&&(!Number.isFinite(z.fractureMPa)||z.fractureMPa<=0))||
@@ -34,7 +37,7 @@ export function simulateCoupledHydraulicsV2(input:{
   const shoePressureMPa=bp+a.bottomPressureRelativeToReturnMPa;
   const pipeFrictionMPa=rateLps>0?p.pressure.bottomFrictionMPa:0;
   const surfacePressureMPa=shoePressureMPa-p.pressure.bottomHydrostaticMPa+pipeFrictionMPa;
-  const xs=[...new Set([annulus.topMD,annulus.shoeMD,annulus.previousShoeMD,...trajectory.map(x=>x.md),
+  const xs=[...new Set([annulus.topMD,annulus.shoeMD,annulus.previousShoeMD,...grid,...trajectory.map(x=>x.md),
    ...a.fluids.flatMap(x=>[x.fromMD,x.toMD]),...checks.map(x=>x.md)]
    .filter(d=>d>=annulus.topMD&&d<=annulus.shoeMD))].sort((x,y)=>x-y);
   let hydro=0,loss=0;
@@ -66,6 +69,14 @@ export function simulateCoupledHydraulicsV2(input:{
    pipeFrictionMPa,annulusHydrostaticMPa:a.hydrostaticMPa,annulusFrictionMPa:a.frictionMPa,
    shoePressureMPa,surfacePressureMPa,profile};
  });
- return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,
+ const pressureEnvelope=grid.map(md=>{const samples=frames.map(f=>f.profile.find(p=>Math.abs(p.md-md)<1e-7));
+  if(samples.some(p=>!p))throw Error("Missing shared grid pressure value");
+  const vals=samples.map(p=>p!.pressureMPa);
+  const max=Math.max(...vals), min=Math.min(...vals);
+  const atIndex=vals.indexOf(max);
+  return {md,tvd:interpolateTVD(md,trajectory),maxPressureMPa:max,minPressureMPa:min,
+   maxAtTimeMin:frames[atIndex].timeMin};
+ });
+ return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,pressureEnvelope,
   method:"coupled-quasi-steady-incompressible" as const};
 }
