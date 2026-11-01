@@ -17,7 +17,7 @@ interface CalcLog {
 }
 interface VisitLog {
   id: string; created_at: string; module: string;
-  ip_address: string | null; user_agent: string | null; page_url: string | null; location: string | null;
+  ip_address: string | null; user_agent: string | null; page_url: string | null; location: string | null; ip_metadata: any | null;
 }
 interface Profile {
   user_id: string; email: string; display_name: string | null; created_at: string;
@@ -593,7 +593,6 @@ export default function AdminPanel() {
                       </TableCell>
                       <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
                       <TableCell className="text-xs">{log.location || "—"}</TableCell>
-                      <TableCell><NetworkInfo metadata={log.ip_metadata} /></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
