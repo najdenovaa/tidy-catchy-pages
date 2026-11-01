@@ -6,6 +6,8 @@ import type { simulateCoupledHydraulicsV2 } from "./advanced-coupled-hydraulics-
 type CoupledV2=ReturnType<typeof simulateCoupledHydraulicsV2>;
 export interface V2CorePressurePoint {
  time:number; cumulativeVolume:number; pumpRateLps:number;
+ stage:string|null; densityGcm3:number|null;
+ surfaceStaticMPa:number;
  surfacePressure:number; bottomholePressure:number;
  annularReturnVolumeM3:number; returnedNewFluidM3:number;
  maxSafeRateLps:number|null;
@@ -25,6 +27,9 @@ export function projectV2CorePressurePoints(
   const gel=result.restartPressureFrames?.find(f=>Math.abs(f.timeMin-frame.timeMin)<1e-7);
   const record:V2CorePressurePoint={
    time:frame.timeMin,cumulativeVolume:frame.pumpedM3,pumpRateLps:frame.rateLps,
+   stage:(()=>{const boundaries=result.stageMetadata.stageBoundaries.filter(b=>b.time<=frame.timeMin+1e-8);return boundaries.length?boundaries[boundaries.length-1].label:null;})(),
+   densityGcm3:frame.rateLps>0?(frame.pipeFluids.find(x=>Math.abs(x.fromMD-result.frames[0].pipeFluids[0].fromMD)<1e-7)?.densityKgM3??null)/1000:null,
+   surfaceStaticMPa:frame.shoePressureMPa-frame.annulusFrictionMPa-frame.pipeHydrostaticMPa,
    surfacePressure:frame.surfacePressureMPa,bottomholePressure:frame.shoePressureMPa,
    annularReturnVolumeM3:frame.returnedM3,returnedNewFluidM3:frame.returnedNewFluidM3,
    maxSafeRateLps:frame.maxSafeRateLps,ecdAtBottomGcm3:bottom.ecdGcm3,
