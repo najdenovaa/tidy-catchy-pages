@@ -170,6 +170,7 @@ export default function Home() {
             </div>
           </div>
           <img src={drillingBanner} alt="Буровые установки" className="w-full h-20 sm:h-28 object-cover object-center opacity-30" />
+          <div className="bg-card py-2 text-center text-xs text-muted-foreground">Все права защищены</div>
         </footer>
       </div>
     </div>
