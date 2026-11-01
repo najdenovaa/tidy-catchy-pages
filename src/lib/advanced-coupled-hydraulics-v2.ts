@@ -109,7 +109,7 @@ export function simulateCoupledHydraulicsV2(input:{
  });
  const stageMetadata=calculateV2StageMetadata(stages,input.cementStageIndices??[]);
  const restartPressureFrames=input.restartTimeline?buildRestartPressureFramesV2(
-  input.restartTimeline.stages,frames.map(f=>({pumpedM3:f.pumpedM3,
+  input.restartTimeline.stages,frames.map(f=>({timeMin:f.timeMin,pumpedM3:f.pumpedM3,
    surfacePressureMPa:f.surfacePressureMPa,shoePressureMPa:f.shoePressureMPa})),
   input.restartTimeline.events,input.restartTimeline.timesMin):null;
  const restartPumpSafety=input.maxPumpPressureMPa!==undefined
