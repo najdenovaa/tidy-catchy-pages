@@ -26,6 +26,19 @@ describe("Advanced pipe hydraulics V2 (isolated)", () => {
     expect(r.segments.map(x => x.insideDiameterMm)).toEqual([150.5, 144.3, 150.5]);
   });
 
+  it("matches an independently computed laminar Bingham reference in MPa", () => {
+    // Q=0.015 m3/s, rho=1200 kg/m3, PV=0.030 Pa*s, YP=7 Pa.
+    // For D=150.5 mm: Re≈639, ΔP≈0.283799716506 MPa per 1000 m.
+    // For D=144.3 mm: Re≈744, ΔP≈0.301007298701 MPa per 1000 m.
+    const r = calculateSectionalPipeFrictionV2({
+      ...base, sections: [{ fromMD: 500, toMD: 1500, wallThickness: 12 }],
+    });
+    expect(r.totalPressureLossMPa).toBeCloseTo(0.5848070152075, 9);
+    expect(r.segments[0].pressureLossMPa + r.segments[2].pressureLossMPa).toBeCloseTo(0.2837997165062, 9);
+    expect(r.segments[1].pressureLossMPa).toBeCloseTo(0.3010072987013, 9);
+    expect(r.segments.every(x => x.regime === 0)).toBe(true);
+  });
+
   it("uses default thickness in gaps and clips sections at range boundaries", () => {
     const r = calculateSectionalPipeFrictionV2({
       ...base, fromMD: 600, toMD: 1300,
