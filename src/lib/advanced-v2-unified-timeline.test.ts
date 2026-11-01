@@ -23,3 +23,17 @@ it("rejects an independently defined restart schedule",()=>{
  expect(()=>simulateCoupledHydraulicsV2({...config,restartTimeline:{
   stages:[{...stage,rateLps:12},next],timesMin:[15],events:[]}})).toThrow();
 });
+
+it("uses exact coupled time instead of an ambiguous equal-volume stop snapshot",()=>{
+ const result=simulateCoupledHydraulicsV2({...config,restartTimeline:{
+  stages:[stage,next],timesMin:[10,12,15],events:[]}});
+ const chart=result.restartPressureFrames!;
+ for(const row of chart){
+  const hydraulic=result.frames.find(f=>f.timeMin===row.timeMin)!;
+  expect(row.baseSurfacePressureMPa).toBe(hydraulic.surfacePressureMPa);
+  expect(row.shoePressureMPa).toBe(hydraulic.shoePressureMPa);
+ }
+ expect(chart[0].rateLps).toBe(0);
+ expect(chart[1].rateLps).toBe(0);
+ expect(chart[2].rateLps).toBe(10);
+});
