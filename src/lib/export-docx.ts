@@ -15,9 +15,10 @@ import type {
   WellData, SlurryInput, BufferFluid, DrillingFluid, DisplacementFluid,
   VolumeResults, MaterialSummary, PressurePoint, StageBoundary, PressureProfileResult,
 } from "./cementing-calculations";
+import { calculatePressureProfile } from "./cementing-engine";
 import {
   calculateVolumes, calculateHydraulics, calculateSafeTime, calculateBHCT,
-  calculateMaterials, calculatePressureProfile,
+  calculateMaterials,
   getSlurryHeight, getCasingID, interpolateTVD, getFlowRateLps, getEffectiveTrajectory,
   annularVolumePerMeter, pipeVolumePerMeter, buildDisplacementSchedule,
 } from "./cementing-calculations";
