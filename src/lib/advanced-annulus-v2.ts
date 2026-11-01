@@ -78,7 +78,7 @@ export function calculateAnnulusV2(
   if(e<capacityM3)atBottom.push({lo:e,hi:capacityM3,fluid:initial});
   const fluids:AnnulusSegmentV2[]=[];
   for(const b of atBottom){
-    const bounds=[b.lo,b.hi,...geom.flatMap(x=>[x.start,x.end].filter(v=>v>b.lo&&v<b.hi))].sort((a,c)=>a-c);
+    const bounds=[...new Set([b.lo,b.hi,...geom.flatMap(x=>[x.start,x.end].filter(v=>v>b.lo&&v<b.hi))])].sort((a,c)=>a-c);
     for(let i=1;i<bounds.length;i++){
       const fromMD=depthAt(bounds[i]),toMD=depthAt(bounds[i-1]);
       fluids.push({...b.fluid,fromMD,toMD});
