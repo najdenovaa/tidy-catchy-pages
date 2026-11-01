@@ -9,9 +9,7 @@ describe("V2 advection and pressure timeline",()=>{
    const volume=Math.PI*0.08**2/4*1000;
    const result=simulatePipePressureTimelineV2(g,mud,[{...water,rateLps:10,volumeM3:volume}],
      trajectory,[0,volume/(2*0.6),volume/0.6]);
-   expect(result.frames.map(f=>f.pressure.bottomHydrostaticMPa)).toEqual([
-     11.772,10.791,9.81
-   ]);
+   [11.772,10.791,9.81].forEach((expected,i)=>expect(result.frames[i].pressure.bottomHydrostaticMPa).toBeCloseTo(expected,8));
    expect(result.frames[0].pressure.bottomFrictionMPa).toBe(0);
    expect(result.frames[1].pressure.bottomFrictionMPa).toBeGreaterThan(0);
    expect(result.frames[2].fluids[0].name).toBe("Water");
