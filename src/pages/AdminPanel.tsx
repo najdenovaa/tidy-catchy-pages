@@ -13,7 +13,7 @@ import FleetConfigPanel from "@/components/FleetConfigPanel";
 
 interface CalcLog {
   id: string; created_at: string; module: string; well_data: any; calc_params: any;
-  ip_address: string | null; user_agent: string | null; page_url: string | null; location: string | null;
+  ip_address: string | null; user_agent: string | null; page_url: string | null; location: string | null; ip_metadata: any | null;
 }
 interface VisitLog {
   id: string; created_at: string; module: string;
@@ -134,6 +134,23 @@ const getDeviceFromUA = (ua: string | null): string => {
   return "💻";
 };
 
+const NetworkInfo = ({ metadata }: { metadata: any | null }) => {
+  if (!metadata || typeof metadata !== "object") return <span className="text-muted-foreground">Нет сетевых данных</span>;
+  const m = metadata as Record<string, unknown>;
+  const show = (v: unknown) => typeof v === "string" || typeof v === "number" ? String(v) : "—";
+  return (
+    <div className="text-xs min-w-[165px] space-y-0.5" title="Данные относятся к сети IP, не обязательно к компании или физическому адресу посетителя">
+      <div><b>Провайдер:</b> {show(m.isp)}</div>
+      <div><b>Организация IP:</b> {show(m.organization)}</div>
+      <div><b>ASN:</b> {show(m.asn)}</div>
+      <div><b>Домен сети:</b> {show(m.networkDomain)}</div>
+      <div><b>Тип/часовой пояс:</b> {show(m.timezone)}</div>
+      {m.postalCode ? <div><b>Индекс региона:</b> {show(m.postalCode)}</div> : null}
+      <div className="text-muted-foreground">Геолокация приблизительная, не адрес посетителя</div>
+    </div>
+  );
+};
+
 export default function AdminPanel() {
   const [calcLogs, setCalcLogs] = useState<CalcLog[]>([]);
   const [totalVisits, setTotalVisits] = useState(0);
@@ -179,6 +196,7 @@ export default function AdminPanel() {
     if (calcCount.error || visitCount.error) toast({ title: "Ошибка загрузки счётчиков", description: calcCount.error?.message || visitCount.error?.message, variant: "destructive" });
     if (calcCount.count !== null) setTotalCalculations(calcCount.count);
     if (visitCount.count !== null) setTotalVisits(visitCount.count);
+    if (calcRes.error || visitRes.error) toast({ title: "Ошибка журнала", description: calcRes.error?.message || visitRes.error?.message, variant: "destructive" });
     if (calcRes.data) setCalcLogs(calcRes.data as CalcLog[]);
     if (visitRes.data) setVisitLogs(visitRes.data as VisitLog[]);
     if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
@@ -376,6 +394,7 @@ export default function AdminPanel() {
 
           {/* ВИЗИТЫ */}
           <TabsContent value="visits">
+            <p className="text-xs text-muted-foreground mb-2">Всего: {totalVisits}. Ниже показаны последние {visitLogs.length} записей, доступных через лимит выдачи сервера.</p>
             <Card><CardContent className="p-0 overflow-x-auto">
               <Table>
                 <TableHeader><TableRow>
@@ -384,10 +403,11 @@ export default function AdminPanel() {
                   <TableHead>Устройство</TableHead>
                   <TableHead>IP</TableHead>
                   <TableHead><MapPin className="w-3 h-3 inline mr-1"/>Регион</TableHead>
+                  <TableHead>Сеть / провайдер</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {visitLogs.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
                   ) : visitLogs.map(log => (
                     <TableRow key={log.id}>
                       <TableCell className="whitespace-nowrap text-xs">{formatShortDate(log.created_at)}</TableCell>
@@ -402,6 +422,7 @@ export default function AdminPanel() {
                       </TableCell>
                       <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
                       <TableCell className="text-xs">{log.location || "—"}</TableCell>
+                      <TableCell><NetworkInfo metadata={log.ip_metadata} /></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -411,6 +432,7 @@ export default function AdminPanel() {
 
           {/* РАСЧЁТЫ */}
           <TabsContent value="calculations">
+            <p className="text-xs text-muted-foreground mb-2">Всего: {totalCalculations}. Ниже показаны последние {calcLogs.length} записей, доступных через лимит выдачи сервера.</p>
             <Card><CardContent className="p-0 overflow-x-auto">
               <Table>
                 <TableHeader><TableRow>
@@ -424,7 +446,7 @@ export default function AdminPanel() {
                 </TableRow></TableHeader>
                 <TableBody>
                   {calcLogs.length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
                   ) : calcLogs.map(log => (
                     <TableRow key={log.id}>
                       <TableCell className="whitespace-nowrap text-xs">{formatShortDate(log.created_at)}</TableCell>
@@ -439,6 +461,7 @@ export default function AdminPanel() {
                       </TableCell>
                       <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
                       <TableCell className="text-xs">{log.location || "—"}</TableCell>
+                      <TableCell><NetworkInfo metadata={log.ip_metadata} /></TableCell>
                       <TableCell className="text-xs space-x-1">
                         <Link to={`/admin/calc/${log.id}`}>
                           <Button variant="ghost" size="sm" className="h-6 text-xs px-2">
@@ -570,6 +593,7 @@ export default function AdminPanel() {
                       </TableCell>
                       <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
                       <TableCell className="text-xs">{log.location || "—"}</TableCell>
+                      <TableCell><NetworkInfo metadata={log.ip_metadata} /></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
