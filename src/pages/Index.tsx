@@ -35,8 +35,9 @@ import SkcControlSection from "@/components/SkcControlSection";
 import { applyVariant, type ProgramVariant, type CentralizerPlan } from "@/lib/cement-optimizer";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
-import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
+import { calculateVolumes, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
+import { calculatePressureProfile } from "@/lib/cementing-engine";
 import { captureElementAsDataUrl } from "@/lib/capture-image";
 import { getCementingExample } from "@/lib/cementing-example";
 import { FileDown, Loader2, Send, Home, RotateCcw, Save, LogOut, LayoutDashboard } from "lucide-react";
