@@ -44,7 +44,10 @@ export function calculatePipePressureProfileV2(
     ...extraNodesMD];
   if (extraNodesMD.some(d=>!Number.isFinite(d)||d<geometry.fromMD||d>geometry.toMD))
     throw new Error("Extra profile nodes outside geometry");
-  const xs=[...new Set(bounds.filter(d=>d>=geometry.fromMD&&d<=geometry.toMD))].sort((a,b)=>a-b);
+  // Collapse floating-point micro-segments at moving plug boundaries (< 1e-7 m).
+  // Real gaps are still rejected by calculateMultiFluidPipeFrictionV2 above.
+  const sortedBounds=[...new Set(bounds.filter(d=>d>=geometry.fromMD&&d<=geometry.toMD))].sort((a,b)=>a-b);
+  const xs=sortedBounds.filter((d,i)=>i===0 || d-sortedBounds[i-1]>1e-7);
   let hydro=0,friction=0;
   const nodes:PipePressureNodeV2[]=[{
     md:geometry.fromMD,tvd:interpolateTVD(geometry.fromMD,trajectory),
