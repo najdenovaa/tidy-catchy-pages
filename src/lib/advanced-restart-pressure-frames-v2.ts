@@ -6,7 +6,7 @@ import { buildPumpTimelineV2, type PumpIntervalV2 } from "./advanced-pump-timeli
 import { calculateRestartGelV2, type GelIntervalV2 } from "./advanced-restart-gel-v2";
 
 export interface CoupledPressureSampleV2 {
- pumpedM3:number; surfacePressureMPa:number; shoePressureMPa:number;
+ pumpedM3:number; surfacePressureMPa:number; shoePressureMPa:number; timeMin?:number;
 }
 export interface RestartEventV2 {
  stageIndex:number; gelIntervals:GelIntervalV2[]; breakdownVolumeM3:number;
@@ -21,7 +21,10 @@ export function buildRestartPressureFramesV2(
  if(!samples.length||samples.some(s=>![s.pumpedM3,s.surfacePressureMPa,s.shoePressureMPa].every(Number.isFinite)))
   throw Error("Invalid coupled pressure samples");
  const sorted=[...samples].sort((a,b)=>a.pumpedM3-b.pumpedM3);
- const sample=(v:number)=>{
+ const sample=(v:number,t:number)=>{
+  const exact=samples.find(x=>x.timeMin!==undefined&&Math.abs(x.timeMin-t)<1e-8);
+  if(exact)return exact;
+  if(samples.some(x=>x.timeMin!==undefined))throw Error("Missing canonical pressure snapshot at restart chart time");
   const pair=sorted.findIndex(s=>s.pumpedM3>=v-1e-9);
   if(pair<0)return sorted[sorted.length-1];
   if(pair===0)return sorted[0];
@@ -42,7 +45,7 @@ export function buildRestartPressureFramesV2(
   return {...e,startMin:resumed.startMin,stopMin:prev.startMin,startVolumeM3:resumed.startVolumeM3};
  });
  return timesMin.map(timeMin=>{
-  const state=schedule.at(timeMin),base=sample(state.pumpedM3);
+  const state=schedule.at(timeMin),base=sample(state.pumpedM3,timeMin);
   let excess=0;
   const contributions=restarts.filter(e=>timeMin>=e.startMin).map(e=>{
    const delta=Math.max(0,state.pumpedM3-e.startVolumeM3);
