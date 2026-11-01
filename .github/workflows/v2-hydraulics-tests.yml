@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-      - run: npm ci --legacy-peer-deps
+      - run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: Run V2 and hydraulics regression tests
         run: npx vitest run src/lib/advanced-pipe-hydraulics-v2.test.ts src/lib/advanced-hydraulics-analytical.test.ts src/lib/cementing-hydraulics.test.ts src/lib/cement-program.test.ts
       - name: Type check
