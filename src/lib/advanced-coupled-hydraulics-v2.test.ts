@@ -32,6 +32,24 @@ describe("coupled hydraulics V2: analytical and volume benchmarks",()=>{
   expect(r.formations[0].maxPressureMPa).toBeGreaterThan(0);
   expect(r.formations[0].minFracMarginMPa).toBeLessThan(8);
  });
+ it("tracks multiple fluid stages and preserves volume through full circulation",()=>{
+  const buffer={name:"Buffer",densityKgM3:1050,rheology:{pv:12,yp:3}};
+  const cement={name:"Cement",densityKgM3:1850,rheology:{pv:65,yp:9}};
+  const cap=500*Math.PI*(200**2-100**2)/4e6+500*Math.PI*(150**2-100**2)/4e6;
+  const stages=[{...buffer,rateLps:10,volumeM3:c},{...cement,rateLps:10,volumeM3:cap+2}];
+  const times=[0,c/.6,(c+cap+2)/.6];
+  const result=simulateCoupledHydraulicsV2({...common,stages,timesMin:times,
+    formations:[{name:"Zone",md:750,fractureMPa:16,poreMPa:6}]});
+  expect(result.frames[1].shoeExitedM3).toBeCloseTo(c,8);
+  expect(result.frames[2].returnedM3).toBeCloseTo(c+2,8);
+  result.frames.forEach(f=>{
+    expect(f.balanceErrorM3).toBeCloseTo(0,8);
+    expect(f.shoePressureMPa).toBeCloseTo(f.annulusHydrostaticMPa+f.annulusFrictionMPa,8);
+    expect(f.surfacePressureMPa).toBeCloseTo(f.shoePressureMPa-f.pipeHydrostaticMPa+f.pipeFrictionMPa,8);
+    expect(f.profile[f.profile.length-1].pressureMPa).toBeCloseTo(f.shoePressureMPa,8);
+  });
+  expect(result.formations[0].maxPressureMPa).toBeGreaterThan(0);
+ });
  it("pressure decreases with TVD in inclined geometries at fixed fluid density",()=>{
   const tr=[{md:0,tvd:0,zenith:0,azimuth:0},{md:1000,tvd:600,zenith:0,azimuth:0}];
   const r=simulateCoupledHydraulicsV2({...common,trajectory:tr,stages:[],timesMin:[0]});
