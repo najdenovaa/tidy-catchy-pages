@@ -18,7 +18,8 @@ describe("coupled hydraulics V2: analytical and volume benchmarks",()=>{
  it("the initial pipe fluid exits shoe immediately, with strict volume balance",()=>{
   const r=simulateCoupledHydraulicsV2({...common,stages:[{...water,rateLps:10,volumeM3:c*1.1}],timesMin:[0,c/(2*.6),c*1.1/.6]});
   expect(r.frames[1].shoeExitedM3).toBeCloseTo(c/2,9);
-  expect(r.frames[1].returnedM3).toBe(0);
+  expect(r.frames[1].returnedM3).toBeCloseTo(c/2,9);
+  expect(r.frames[1].returnedNewFluidM3).toBe(0);
   expect(r.frames[2].shoeExitedM3).toBeCloseTo(c*1.1,9);
   r.frames.forEach(f=>expect(Math.abs(f.balanceErrorM3)).toBeLessThan(1e-8));
  });
@@ -28,7 +29,8 @@ describe("coupled hydraulics V2: analytical and volume benchmarks",()=>{
   const r=simulateCoupledHydraulicsV2({...common,stages:[{...water,rateLps:10,volumeM3:volume}],
     timesMin:[0,volume/.6],formations:[{name:"Weak",md:750,fractureMPa:8,poreMPa:5}]});
   expect(r.annulusCapacityM3).toBeCloseTo(ac,9);
-  expect(r.frames[1].returnedM3).toBeCloseTo(volume-ac,8);
+  expect(r.frames[1].returnedM3).toBeCloseTo(volume,8);
+  expect(r.frames[1].returnedNewFluidM3).toBeCloseTo(volume-c-ac,8);
   expect(r.formations[0].maxPressureMPa).toBeGreaterThan(0);
   expect(r.formations[0].minFracMarginMPa).toBeLessThan(8);
  });
@@ -41,7 +43,8 @@ describe("coupled hydraulics V2: analytical and volume benchmarks",()=>{
   const result=simulateCoupledHydraulicsV2({...common,stages,timesMin:times,
     formations:[{name:"Zone",md:750,fractureMPa:16,poreMPa:6}]});
   expect(result.frames[1].shoeExitedM3).toBeCloseTo(c,8);
-  expect(result.frames[2].returnedM3).toBeCloseTo(c+2,8);
+  expect(result.frames[2].returnedM3).toBeCloseTo(c+cap+2,8);
+  expect(result.frames[2].returnedNewFluidM3).toBeCloseTo(2,8);
   result.frames.forEach(f=>{
     expect(f.balanceErrorM3).toBeCloseTo(0,8);
     expect(f.shoePressureMPa).toBeCloseTo(f.annulusHydrostaticMPa+f.annulusFrictionMPa,8);
