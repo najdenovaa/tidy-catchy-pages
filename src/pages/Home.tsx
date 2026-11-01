@@ -148,10 +148,6 @@ export default function Home() {
           <div className="bg-card border-t border-border py-6">
             <div className="max-w-5xl mx-auto px-4 text-center space-y-3">
               <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-                <a href="https://t.me/deallbiz_bot" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">🧪 Бот химической продукции DeAll</a>
-                <span className="text-border">|</span>
-                <a href="https://t.me/deallbiz" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">📢 Новостной канал DeAll</a>
-                <span className="text-border">|</span>
                 <a href="https://apps.apple.com/ru/app/deallsoft/id6793684019" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
                   <AppleIcon className="w-3.5 h-3.5" />
                   Приложение в App Store
