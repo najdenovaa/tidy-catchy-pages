@@ -1,3 +1,4 @@
+import { assessStaticStopV2 } from "./advanced-stop-diagnostics-v2";
 import { assessV2RestartPumpSafety } from "./advanced-v2-pump-pressure-safety";
 import { calculateV2StageMetadata } from "./advanced-v2-stage-metadata";
 import { summarizeV2FormationChecks } from "./advanced-v2-formation-summary";
@@ -84,12 +85,15 @@ export function simulateCoupledHydraulicsV2(input:{
   const newFluidReturned=Math.max(0,p.pumpedM3-pipeRun.pipeCapacityM3-annulusCapacityM3);
   const balanceErrorM3=p.pumpedM3-newFluidInPipe-newFluidInAnnulus-newFluidReturned;
   const limited=checks.filter(z=>z.fractureMPa!==undefined).map(z=>({name:z.name,md:z.md,pressureLimitMPa:z.fractureMPa!}));
+  const stopDiagnostics=rateLps===0?assessStaticStopV2({pipe,pipeFluids:p.fluids,annulus,
+   initialAnnulus:input.initialAnnulus,shoeStream,shoeExitedM3:p.pumpedM3,
+   trajectory,returnPressureMPa:bp}):null;
   const safeRate=limited.length?calculateSafeAnnularRateV2({annulus,initialAnnulus:input.initialAnnulus,
    shoeStream,shoeExitedM3:p.pumpedM3,trajectory,zones:limited,maxRateLps:input.safeRateCeilingLps??50,
    returnPressureMPa:bp}):null;
   return {timeMin:p.timeMin,pumpedM3:p.pumpedM3,shoeExitedM3:a.enteredM3,returnedM3:p.pumpedM3,returnedNewFluidM3:newFluidReturned,
    maxSafeRateLps:safeRate?.maxSafeRateLps??null,staticFormationOverpressure:safeRate?.staticViolation??false,
-   balanceErrorM3,rateLps,pipeFluids:p.fluids,annularFluids:a.fluids,
+   balanceErrorM3,rateLps,stopDiagnostics,pipeFluids:p.fluids,annularFluids:a.fluids,
    pipeHydrostaticMPa:p.pressure.bottomHydrostaticMPa,
    pipeFrictionMPa,annulusHydrostaticMPa:a.hydrostaticMPa,annulusFrictionMPa:a.frictionMPa,
    shoePressureMPa,surfacePressureMPa,profile};
