@@ -73,7 +73,7 @@ export function simulateCoupledHydraulicsV2(input:{
      fluid.densityKgM3,annulus.standoffPct??100).pressureMPa;
    }
    const tvd=interpolateTVD(md,trajectory),pressureMPa=bp+hydro+loss;
-   return {md,tvd,pressureMPa,ecdGcm3:tvd>0?pressureMPa/(0.00981*tvd):null};
+   return {md,tvd,pressureMPa,hydrostaticPressureMPa:bp+hydro,frictionPressureMPa:loss,ecdGcm3:tvd>0?pressureMPa/(0.00981*tvd):null};
   });
   envelopes.forEach(z=>{const n=profile.find(n=>Math.abs(n.md-z.md)<1e-7);
    if(!n)throw Error("Missing formation point");
@@ -106,12 +106,17 @@ export function simulateCoupledHydraulicsV2(input:{
   const vals=samples.map(p=>p!.pressureMPa);
   const max=Math.max(...vals), min=Math.min(...vals);
   const atIndex=vals.indexOf(max);
+  const hydroVals=samples.map(p=>p!.hydrostaticPressureMPa);
   return {md,tvd:interpolateTVD(md,trajectory),maxPressureMPa:max,minPressureMPa:min,
-   maxAtTimeMin:frames[atIndex].timeMin};
+   minHydrostaticMPa:Math.min(...hydroVals),maxAtTimeMin:frames[atIndex].timeMin};
  });
  const wocProfile=input.wocScenario?calculateWocHydrostaticProfileV2(
   frames[frames.length-1].annularFluids,trajectory,grid,{...input.wocScenario,
    returnPressureMPa:input.wocScenario.returnPressureMPa??bp}):null;
+ const depthEnvelope=pressureEnvelope.map(p=>{
+  const woc=wocProfile?.find(w=>Math.abs(w.md-p.md)<1e-7);
+  return {...p,wocHydrostaticMPa:woc?.wocHydrostaticMPa??null};
+ });
  const stageMetadata=calculateV2StageMetadata(stages,input.cementStageIndices??[]);
  const restartPressureFrames=input.restartTimeline?buildRestartPressureFramesV2(
   input.restartTimeline.stages,frames.map(f=>({timeMin:f.timeMin,pumpedM3:f.pumpedM3,
@@ -119,6 +124,6 @@ export function simulateCoupledHydraulicsV2(input:{
   input.restartTimeline.events,input.restartTimeline.timesMin):null;
  const restartPumpSafety=input.maxPumpPressureMPa!==undefined
   ?assessV2RestartPumpSafety(restartPressureFrames??[],input.maxPumpPressureMPa):null;
- return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,formationSummary,pressureEnvelope,wocProfile,restartPressureFrames,restartPumpSafety,stageMetadata,
+ return {pipeCapacityM3:pipeRun.pipeCapacityM3,annulusCapacityM3,frames,formations:envelopes,formationSummary,pressureEnvelope,depthEnvelope,wocProfile,restartPressureFrames,restartPumpSafety,stageMetadata,
   method:"coupled-quasi-steady-incompressible" as const};
 }
