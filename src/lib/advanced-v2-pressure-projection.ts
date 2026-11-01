@@ -28,7 +28,7 @@ export function projectV2CorePressurePoints(
   const record:V2CorePressurePoint={
    time:frame.timeMin,cumulativeVolume:frame.pumpedM3,pumpRateLps:frame.rateLps,
    stage:(()=>{const boundaries=result.stageMetadata.stageBoundaries.filter(b=>b.time<=frame.timeMin+1e-8);return boundaries.length?boundaries[boundaries.length-1].label:null;})(),
-   densityGcm3:frame.rateLps>0?(frame.pipeFluids.find(x=>Math.abs(x.fromMD-result.frames[0].pipeFluids[0].fromMD)<1e-7)?.densityKgM3??null)/1000:null,
+   densityGcm3:frame.rateLps>0?(frame.pipeFluids[0]?.densityKgM3??0)/1000:null,
    surfaceStaticMPa:frame.shoePressureMPa-frame.annulusFrictionMPa-frame.pipeHydrostaticMPa,
    surfacePressure:frame.surfacePressureMPa,bottomholePressure:frame.shoePressureMPa,
    annularReturnVolumeM3:frame.returnedM3,returnedNewFluidM3:frame.returnedNewFluidM3,
