@@ -35,7 +35,7 @@ describe("V2 volume-based plug advection",()=>{
     expect(r.frames[0].inside[0].name).toBe("Water");
     expect(r.frames[1].inside.map(x=>x.name)).toEqual(["Cement","Water"]);
     expect(r.frames[1].exitedM3).toBeCloseTo(cap/2,9);
-    expect(r.frames[1].inside[0].toMD).toBeCloseTo(500,7);
+    expect(r.frames[1].inside[0].toMD).toBeCloseTo((cap/2)/area80,7);
   });
   it("rejects missing data and sample times outside operation",()=>{
     expect(()=>simulatePipeAdvectionV2(geom,mud,[{...water,rateLps:0,volumeM3:1}],[0])).toThrow();
