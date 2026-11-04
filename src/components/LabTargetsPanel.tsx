@@ -7,6 +7,7 @@ import { conditionsAll, type ProtocolInput } from "@/lib/lab-protocol";
 import { designToTargets, defaultTargets, applyDesignToSlurry, BASE_CEMENTS, type LabTargets, type TargetDesignResult } from "@/lib/cement-recipe-designer";
 import type { SlurryInput } from "@/lib/cementing-calculations";
 import RecipeDoseTable from "./RecipeDoseTable";
+import ReadyCementAlternatives from "./ReadyCementAlternatives";
 
 interface Props {
   input: ProtocolInput;
@@ -195,6 +196,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
               </div>
             )}
             {d.warnings.map((w) => <div key={w} className="text-xs text-amber-700 dark:text-amber-500">⚠ {w}</div>)}
+            <ReadyCementAlternatives densityGcm3={s.density} temperatureC={conditions[i].bhctC} />
           </div>
         );
       })}
