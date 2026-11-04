@@ -98,6 +98,7 @@ function SqueezeAnimation({ p, hasTool, spot, toolLabel }: { p: SqueezePoint; ha
   const hold = p.stage.startsWith("Выдержка") || p.stage.startsWith("Посадка") || p.stage.includes("Подъём НКТ") || p.stage.includes("ПВО");
   const squeeze = !circ && !hold && p.qLs > 0;
   const compIn = p.compTop >= 0;
+  const bopClosed = !hasTool && !/Начало|Закачка цемента|Продавка и размещение|Подъём НКТ/.test(p.stage);
   const belowH = yBot - yTool;
   const compBelowH = belowH * Math.min(1, p.belowComp);
   // состав под инструментом: сверху (подходит), а после выхода в канал — снизу (продавлен водой)
@@ -136,6 +137,10 @@ function SqueezeAnimation({ p, hasTool, spot, toolLabel }: { p: SqueezePoint; ha
       {/* инструмент */}
       {hasTool && <rect x={cx - cw / 2} y={yTool - 6} width={cw} height={8} fill="#111827" />}
       {hasTool && <text x={cx - cw / 2 - 8} y={yTool} textAnchor="end" fontSize={9} className="fill-foreground">{toolLabel}</text>}
+      {bopClosed && <g>
+        <rect x={cx-tw/2-14} y={yTop-15} width={tw+28} height={7} rx={2} fill="#b91c1c"/>
+        <text x={cx+tw/2+20} y={yTop-16} fontSize={9} className="fill-foreground">ПВО закрыто</text>
+      </g>}
       {/* стрелки потоков */}
       {(circ || squeeze) && <text x={cx} y={yTop - 14} textAnchor="middle" fontSize={14} className="fill-primary">▼</text>}
       {circ && <><text x={cx - cw / 2 + 14} y={yTop + 40} textAnchor="middle" fontSize={13} className="fill-sky-700">▲</text><text x={cx + cw / 2 - 14} y={yTop + 40} textAnchor="middle" fontSize={13} className="fill-sky-700">▲</text></>}
