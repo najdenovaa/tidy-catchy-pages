@@ -12,6 +12,7 @@ import { protocolToHtml } from "@/lib/lab-protocol";
 import { exportLabProtocolDocx } from "@/lib/export-lab-protocol-docx";
 import type { PillDesign } from "@/lib/cement-plug-pill";
 import RecipeDoseTable from "./RecipeDoseTable";
+import ReadyCementAlternatives from "./ReadyCementAlternatives";
 
 interface Props {
   inputs: PlugInputs;
@@ -136,6 +137,7 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
         </div>
         {res.actions.length > 0 && <p className="text-muted-foreground">Корректировка: {res.actions.join("; ")}.</p>}
         {d.warnings.map((w) => <p key={w} className="text-amber-600">⚠ {w}</p>)}
+        <ReadyCementAlternatives densityGcm3={d.densityGcm3} temperatureC={t.bhctC} />
         <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => { onApply(d); setMsg("Рецептура записана в раствор моста: добавки, В/С, выход, реология, время загустевания. Нажмите «Расчёт» для пересчёта."); }}>
             <ArrowRightLeft className="w-4 h-4 mr-1" />Записать в раствор моста
