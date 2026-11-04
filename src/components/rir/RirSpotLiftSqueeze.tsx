@@ -15,7 +15,7 @@ function getInitial(base:RirInputs):SpotSqueezeInput {
   return {...DEFAULT_SPOT_SQUEEZE,casingIdMm,tubingOdMm:base.tubing.odMm,tubingIdMm,
     leakTopMD,leakBottomMD,wellBottomMD:base.wellDepthMD,
     initialShoeMD,slurryBottomMD,liftedShoeMD:Math.max(0,shoeLift),
-    slurryDensityGcm3:base.compositionDensity||1.85,wellFluidDensityGcm3:base.wellFluidDensity,
+    slurryDensityGcm3:base.compositionDensity||1.65,wellFluidDensityGcm3:base.wellFluidDensity,
     fracGradientMPaM:base.fracGradientMPaM,
     zonePressureMPa:base.zonePressureMPa||base.wellFluidDensity*9.81*((leakTopMD+leakBottomMD)/2)/1000,
     leakTVD:(leakTopMD+leakBottomMD)/2,
