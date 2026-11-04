@@ -23,12 +23,17 @@ import RirChannelCard from "./RirChannelCard";
 import RirLeak3D from "./RirLeak3D";
 import { planRir, applyVariant } from "@/lib/rir-autodesign";
 import RirAutoDesignCard from "./RirAutoDesignCard";
+import RirSpotLiftSqueeze from "./RirSpotLiftSqueeze";
 
 const KEY = "rir_inputs_v1";
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
 function load(): RirInputs {
-  try { const raw = localStorage.getItem(KEY); return raw ? { ...DEFAULT_RIR, ...JSON.parse(raw) } : DEFAULT_RIR; } catch { return DEFAULT_RIR; }
+  try {
+    const raw = localStorage.getItem(KEY);
+    const next: RirInputs = raw ? { ...DEFAULT_RIR, ...JSON.parse(raw) } : DEFAULT_RIR;
+    return next.tool.kind === "bradenhead" ? { ...next, tool: { ...next.tool, kind: "retainer" } } : next;
+  } catch { return DEFAULT_RIR; }
 }
 
 function Num({ label, unit, value, onChange, step }: { label: string; unit?: string; value: number; onChange: (v: number) => void; step?: number }) {
@@ -72,7 +77,7 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
 const GRADE_OPTIONS = Object.fromEntries(Object.keys(STEEL_GRADES).map((k) => [k, `${k} — ${STEEL_GRADES[k]} МПа`]));
 
 /** РИР: ликвидация негерметичности колонны и заколонных / межколонных перетоков (этап 1). */
-export default function RirModule({ trajectory }: { trajectory?: RirInputs["trajectory"] }) {
+function RirLegacyModule({ trajectory }: { trajectory?: RirInputs["trajectory"] }) {
   const [inp, setInp] = useState<RirInputs>(load);
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(inp)); } catch { /* недоступно */ } }, [inp]);
   const full = useMemo(() => ({ ...inp, trajectory: trajectory && trajectory.length > 1 ? trajectory : inp.trajectory }), [inp, trajectory]);
@@ -181,7 +186,7 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
               <Num label="Кровля нарушения" unit="м" value={inp.leak.topMD} onChange={(v) => setLeak({ topMD: v })} />
               <Num label="Подошва нарушения" unit="м" value={inp.leak.bottomMD} onChange={(v) => setLeak({ bottomMD: v })} />
               <Num label="Межколонное давление" unit="МПа" value={inp.leak.annulusPressureMPa} onChange={(v) => setLeak({ annulusPressureMPa: v })} />
-              <div className="col-span-2 sm:col-span-3"><Sel label="Способ задавливания" value={inp.tool.kind} options={TOOL_LABEL} onChange={(v) => setTool({ kind: v as ToolKind })} /></div>
+              <div className="col-span-2 sm:col-span-3"><Sel label="Способ задавливания" value={inp.tool.kind} options={{ retainer: TOOL_LABEL.retainer, packer: TOOL_LABEL.packer }} onChange={(v) => setTool({ kind: v as ToolKind })} /></div>
               {inp.tool.kind !== "bradenhead" && <Num label="Глубина установки" unit="м" value={inp.tool.setDepthMD} onChange={(v) => setTool({ setDepthMD: v })} />}
               {inp.tool.kind !== "bradenhead" && <Num label="Рабочий перепад" unit="МПа" value={inp.tool.ratingMPa} onChange={(v) => setTool({ ratingMPa: v })} />}
               {inp.tool.kind !== "bradenhead" && <Num label="Противодавление в затрубье" unit="МПа" value={inp.annulusBackPressureMPa} onChange={(v) => up({ annulusBackPressureMPa: v })} />}
@@ -320,6 +325,38 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
           </ol>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/** Keep packer pressure physics isolated from open-tubing placement and squeeze. */
+export default function RirModule({ trajectory }: { trajectory?: RirInputs["trajectory"] }) {
+  const [technology, setTechnology] = useState<"packer" | "spot">(() => {
+    try { return localStorage.getItem("rir_technology_v2") === "spot" ? "spot" : "packer"; }
+    catch { return "packer"; }
+  });
+  const select = (value: "packer" | "spot") => {
+    setTechnology(value);
+    try { localStorage.setItem("rir_technology_v2", value); } catch { /* optional */ }
+  };
+  const base = load();
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-border bg-card p-3 space-y-2">
+        <p className="text-sm font-semibold">Технология ремонтно-изоляционных работ</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => select("packer")} aria-pressed={technology === "packer"}
+            className={technology === "packer" ? "rounded-md px-3 py-2 text-xs font-medium border bg-primary text-primary-foreground border-primary" : "rounded-md px-3 py-2 text-xs font-medium border border-border hover:bg-muted"}>
+            Через пакер / ретейнер
+          </button>
+          <button type="button" onClick={() => select("spot")} aria-pressed={technology === "spot"}
+            className={technology === "spot" ? "rounded-md px-3 py-2 text-xs font-medium border bg-primary text-primary-foreground border-primary" : "rounded-md px-3 py-2 text-xs font-medium border border-border hover:bg-muted"}>
+            Без пакера: разместить смесь, поднять НКТ, задавить
+          </button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Расчётные модели разделены. Переключение сохраняет введённые данные каждого способа.</p>
+      </div>
+      {technology === "spot" ? <RirSpotLiftSqueeze base={base} /> : <RirLegacyModule trajectory={trajectory} />}
     </div>
   );
 }
