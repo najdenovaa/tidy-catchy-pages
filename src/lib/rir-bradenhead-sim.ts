@@ -14,21 +14,22 @@ export function simulateBradenhead(inp:RirInputs,res:RirResult,design:Compositio
  if(!spot) throw new Error("Для режима без пакера требуется расчёт размещения цемента");
  const cap=Math.min(res.maxSurfaceMPa,spot.conservativeSurfaceLimitMPa);
  const placed=spot.placedM3;
- const rho=design?.densityGcm3 ?? res.compositionDensity;
  const hyd=spot.liquidHydroMPa;
- const g=9.81;
- const fracLimit=spot.fractureLimitBhpMPa;
  const workingLife=design?.workLifeAtBhctMin ?? 240;
  const qSet=Math.max(0.01,inp.pumpRateLs)/1000*60; // m3 / min
  const j=Math.max(0,inp.injectivity.length&&res.fit?res.fit.J:0);
  const pOpen=res.fit?.openingBhpMPa ?? spot.estimatedMinBhpMPa;
  let t=0, vPump=0, vChannel=0, vCement=0,pSurface=0;
+ let cementFed=0, displacementFed=0, cementInCasing=0;
+ const tubingCapacity=Math.max(0.001,spot.tubingCapacityBeforeM3);
  const point=(name:string,q=0)=>{
-   const remaining=Math.max(0,placed-vCement);
-   const belowFrac=placed>0?(t <= placed/qSet + 0.001 ? Math.min(1,vPump/placed) : remaining/placed):0;
+   const belowFrac=placed>0?Math.max(0,Math.min(1,cementInCasing/placed-vCement/placed)):0;
+   const inTubing=cementFed>0&&displacementFed<tubingCapacity;
+   const compTop=inTubing?Math.max(0,Math.min(1,displacementFed/tubingCapacity)):-1;
+   const compBottom=inTubing?Math.max(compTop,Math.min(1,(displacementFed+cementFed)/tubingCapacity)):-1;
    const allowance=Math.max(0,cap);
    points.push({t:Math.round(t*100)/100,stage:name,qLs:q,surfaceMPa:pSurface,bhpMPa:pSurface+hyd,
-    vPumped:vPump,vChannel,vCompChannel:vCement,compTop:-1,compBottom:-1,belowComp:Math.min(1,belowFrac),
+    vPumped:vPump,vChannel,vCompChannel:vCement,compTop,compBottom,belowComp:belowFrac,
     channelFill:spot.plannedSqueezeM3>0?vCement/spot.plannedSqueezeM3:0,
     mobility:Math.max(0.001,1-vCement/Math.max(0.01,placed))*Math.max(.05,1-t/Math.max(1,workingLife)),
     allowSurfaceMPa:allowance});
@@ -47,7 +48,12 @@ export function simulateBradenhead(inp:RirInputs,res:RirResult,design:Compositio
      outcomeText:"Окно задавливания не подтверждено. Проверить геометрию, ПВО, колонну, гидростатику и приёмистость.",
      finalSurfaceMPa:0,compInChannelM3:0,totalTimeMin:t,workLifeUsedPct:0,warnings};
  }
- phase("Размещение цементной пачки",Math.max(1,placed/qSet),"pump",dt=>{vPump=Math.min(placed,vPump+qSet*dt);});
+ phase("Закачка цемента в НКТ",Math.max(.1,placed/qSet),"pump",dt=>{const dv=Math.min(Math.max(0,placed-cementFed),qSet*dt);cementFed+=dv;vPump+=dv;});
+ phase("Продавка и размещение цемента напротив нарушения",tubingCapacity/qSet,"pump",dt=>{
+   const dv=Math.min(Math.max(0,tubingCapacity-displacementFed),qSet*dt);
+   displacementFed+=dv;vPump+=dv;
+   cementInCasing=Math.min(placed,Math.max(0,displacementFed-(tubingCapacity-placed)));
+ });
  phase("Подъём НКТ выше пачки",5,"hold");
  phase("Закрытие и проверка ПВО",3,"hold");
  const n=Math.max(1,Math.min(30,Math.round(inp.hesitationStages)));
