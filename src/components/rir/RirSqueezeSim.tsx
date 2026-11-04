@@ -94,7 +94,7 @@ function SqueezeAnimation({ p, hasTool, spot, toolLabel }: { p: SqueezePoint; ha
   const cx = 120, cw = 90, tw = 26; // колонна и НКТ
   const yTop = 40, yTool = 300, yBot = 385, yLeak0 = 345, yLeak1 = 362;
   const tubH = yTool - yTop;
-  const circ = /Буфер|Состав$|Продавка|Доводка|Размещение цементной пачки/.test(p.stage);
+  const circ = /Буфер|Состав$|Продавка|Доводка|Размещение цементной пачки|Закачка цемента в НКТ|Продавка и размещение/.test(p.stage);
   const hold = p.stage.startsWith("Выдержка") || p.stage.startsWith("Посадка") || p.stage.includes("Подъём НКТ") || p.stage.includes("ПВО");
   const squeeze = !circ && !hold && p.qLs > 0;
   const compIn = p.compTop >= 0;
