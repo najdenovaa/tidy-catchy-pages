@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Send, Mail, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench } from "lucide-react";
+import { Send, Mail, Phone, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import geoladLogo from "@/assets/geolad-logo.png";
 import nefteservisLogo from "@/assets/nefteservis-logo.png";
@@ -98,6 +98,11 @@ export default function Home() {
                 aria-label="Написать в поддержку DeAllsoft на najdenovaa@gmail.com"
                 className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
                 <Mail className="w-4 h-4" /><span>Почта</span>
+              </a>
+              <a href="tel:+79227740775"
+                aria-label="Позвонить в поддержку DeAllsoft: +7 922 774-07-75"
+                className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
+                <Phone className="w-4 h-4" /><span>Звонок</span>
               </a>
               <Link to="/auth" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
                 <UserCircle className="w-4 h-4" /><span>Кабинет</span>
