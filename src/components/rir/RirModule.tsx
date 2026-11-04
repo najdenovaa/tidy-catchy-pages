@@ -336,8 +336,8 @@ function RirLegacyModule({ trajectory, technology }: { trajectory?: RirInputs["t
       <Card>
         <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm flex items-center gap-2 flex-wrap"><ListChecks className="w-4 h-4" />Ход работ <Badge variant="outline" className="text-[10px]">формируется по расчёту</Badge>
           <span className="ml-auto flex gap-2">
-            <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={exporting} onClick={() => exportProgram("print")}><Printer className="w-3.5 h-3.5 mr-1" />Печать</Button>
-            <Button size="sm" className="h-7 text-[11px]" disabled={exporting} onClick={() => exportProgram("docx")} data-testid="rir-program-docx"><FileText className="w-3.5 h-3.5 mr-1" />{exporting ? "Формирую…" : "План работ (Word)"}</Button>
+            <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={exporting || (technology === "spot" && !res.spotResult?.ok)} onClick={() => exportProgram("print")}><Printer className="w-3.5 h-3.5 mr-1" />Печать</Button>
+            <Button size="sm" className="h-7 text-[11px]" disabled={exporting || (technology === "spot" && !res.spotResult?.ok)} onClick={() => exportProgram("docx")} data-testid="rir-program-docx"><FileText className="w-3.5 h-3.5 mr-1" />{exporting ? "Формирую…" : "План работ (Word)"}</Button>
           </span></CardTitle></CardHeader>
         <CardContent className="pt-0">
           <ol className="space-y-2">
