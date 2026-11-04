@@ -1,0 +1,28 @@
+name: Validate ready cement systems
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/components/ReadyCementAlternatives.tsx"
+      - "src/components/LabTargetsPanel.tsx"
+      - "src/components/PlugRecipeCard.tsx"
+      - "src/test/nefteservis-systems.test.ts"
+      - ".github/workflows/validate-ready-cement.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.app.json
+      - name: Catalog tests
+        run: npx vitest run src/test/nefteservis-systems.test.ts
+      - name: Production build
+        run: npm run build
