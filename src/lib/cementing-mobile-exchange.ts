@@ -135,7 +135,7 @@ export function importMobileCementingText(text: string, current: CementingSnapsh
   const buffers = Array.from({length:maxSpacer},(_,i) => ({
     name:m[`spacer${i+1}.label`]||`Буфер ${i+1}`,density:webDensity(requiredNumber(m,`spacer${i+1}.densityGcm3`,0.5,3.5)),
     volume:requiredNumber(m,`spacer${i+1}.volumeM3`,0,100000),
-    rheology:{pv:num(m.bufferPV,0),yp:num(m.bufferYP,0)},additives:[],flowRateSteps:[{rateLps:num(m["bufferStep1.rateLps"],0),volumeM3:num(m[`spacer${i+1}.volumeM3`,0)}],
+    rheology:{pv:num(m.bufferPV,0),yp:num(m.bufferYP,0)},additives:[],flowRateSteps:[{rateLps:num(m["bufferStep1.rateLps"],0),volumeM3:num(m[`spacer${i+1}.volumeM3`],0)}],
   }));
   const mudDensity = webDensity(requiredNumber(m,"mudDensity",0.5,3.5));
   const displacementDensity = webDensity(num(m.dispDensity,mudDensity/1000));
