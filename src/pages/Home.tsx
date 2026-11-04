@@ -1,12 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Send, Mail, Phone, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench } from "lucide-react";
+import { Send, Mail, Phone, ChevronDown, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import geoladLogo from "@/assets/geolad-logo.png";
 import nefteservisLogo from "@/assets/nefteservis-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
 import HelpLink from "@/components/HelpLink";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
 
 const AppleIcon = ({ className }: { className?: string }) => (
@@ -89,21 +90,36 @@ export default function Home() {
             </div>
             <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
               <HelpLink />
-              <a href="https://t.me/anton_nyug" target="_blank" rel="noopener noreferrer"
-                aria-label="Поддержка DeAllsoft в Telegram: @anton_nyug"
-                className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
-                <Send className="w-4 h-4" /><span>Поддержка TG</span>
-              </a>
-              <a href="mailto:najdenovaa@gmail.com"
-                aria-label="Написать в поддержку DeAllsoft на najdenovaa@gmail.com"
-                className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
-                <Mail className="w-4 h-4" /><span>Почта</span>
-              </a>
-              <a href="tel:+79227740775"
-                aria-label="Позвонить в поддержку DeAllsoft: +7 922 774-07-75"
-                className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
-                <Phone className="w-4 h-4" /><span>Звонок</span>
-              </a>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="Открыть способы связи с поддержкой DeAllsoft"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Поддержка</span>
+                  <ChevronDown className="w-3 h-3" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 max-w-[calc(100vw-2rem)]">
+                  <DropdownMenuItem asChild>
+                    <a href="https://t.me/anton_nyug" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 cursor-pointer">
+                      <Send className="w-4 h-4" />
+                      <span>Telegram · @anton_nyug</span>
+                    </a>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <a href="mailto:najdenovaa@gmail.com" className="flex items-center gap-2 cursor-pointer">
+                      <Mail className="w-4 h-4" />
+                      <span>najdenovaa@gmail.com</span>
+                    </a>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <a href="tel:+79227740775" className="flex items-center gap-2 cursor-pointer">
+                      <Phone className="w-4 h-4" />
+                      <span>+7 922 774-07-75</span>
+                    </a>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Link to="/auth" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
                 <UserCircle className="w-4 h-4" /><span>Кабинет</span>
               </Link>
