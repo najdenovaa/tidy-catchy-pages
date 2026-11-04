@@ -5,6 +5,7 @@
  */
 import type { CementingSnapshot } from "./cementing-normalizers";
 import { normalizeCementingSnapshot } from "./cementing-normalizers";
+import { calculateVolumes } from "./cementing-calculations";
 
 const FIELD_RE = /\[([A-Za-z0-9_.]+)\]\s*:\s*(.*)$/;
 const num = (v: string | undefined, fallback = 0) => {
@@ -79,7 +80,16 @@ export function exportCementingToMobileText(input: CementingSnapshot): string {
       line(`Буфер ${n}, объём, м3`, `spacer${n}.volumeM3`, v.volume),
       line(`Буфер ${n}, плотность, г/см3`, `spacer${n}.densityGcm3`, mobileDensity(v.density)));
   });
+  const bufferSteps = s.buffers.flatMap(v => v.flowRateSteps.length ? v.flowRateSteps : [{rateLps:0,volumeM3:v.volume}]);
+  bufferSteps.forEach((step,i) => {
+    rows.push(line(`Буфер, расход ${i+1}, л/с`,`bufferStep${i+1}.rateLps`,step.rateLps));
+    rows.push(line(`Буфер, объём ${i+1}, м3`,`bufferStep${i+1}.volumeM3`,step.volumeM3));
+  });
   const disp = s.displacementFluids[0];
+  (disp?.flowRateSteps ?? []).forEach((step,i) => {
+    rows.push(line(`Продавка, расход ${i+1}, л/с`,`dispStep${i+1}.rateLps`,step.rateLps));
+    rows.push(line(`Продавка, объём ${i+1}, м3`,`dispStep${i+1}.volumeM3`,step.volumeM3));
+  });
   rows.push(line("Продавочная жидкость, г/см3", "dispDensity", mobileDensity(disp?.density ?? s.drillingFluid.density)),
     line("Сжимаемость", "compressionCoeff", disp?.compressionCoeff ?? 1),
     line("Градиент ГРП, г/см3", "fracGradientGcm3", s.fractureGradient / 9.81),
@@ -135,7 +145,7 @@ export function importMobileCementingText(text: string, current: CementingSnapsh
   const buffers = Array.from({length:maxSpacer},(_,i) => ({
     name:m[`spacer${i+1}.label`]||`Буфер ${i+1}`,density:webDensity(requiredNumber(m,`spacer${i+1}.densityGcm3`,0.5,3.5)),
     volume:requiredNumber(m,`spacer${i+1}.volumeM3`,0,100000),
-    rheology:{pv:num(m.bufferPV,0),yp:num(m.bufferYP,0)},additives:[],flowRateSteps:[{rateLps:num(m["bufferStep1.rateLps"],0),volumeM3:num(m[`spacer${i+1}.volumeM3`],0)}],
+    rheology:{pv:num(m.bufferPV,0),yp:num(m.bufferYP,0)},additives:[],flowRateSteps:[{rateLps:num(m["bufferStep1.rateLps"],num(m["stage1.rateLps"],0)),volumeM3:num(m[`spacer${i+1}.volumeM3`],0)}],
   }));
   const mudDensity = webDensity(requiredNumber(m,"mudDensity",0.5,3.5));
   const displacementDensity = webDensity(num(m.dispDensity,mudDensity/1000));
@@ -159,5 +169,18 @@ export function importMobileCementingText(text: string, current: CementingSnapsh
     fractureGradient:num(m.fracGradientGcm3,0)*9.81,
     flushTimeMin:0,flushVolumeM3:0,
   });
+  // Reconstruct stage pumping volumes using the web engine's geometry, because
+  // the mobile text format records rate and interval but not per-stage volume.
+  const volumes = calculateVolumes(next.wellData, next.slurries, next.displacementFluids[0]?.compressionCoeff ?? 1);
+  next.slurries = next.slurries.map((slurry, i) => ({
+    ...slurry, flowRateSteps: slurry.flowRateSteps.map((step, j) => ({
+      ...step, volumeM3: j === 0 ? (volumes.slurryVolumes[i]?.slurryVolumeM3 ?? 0) : step.volumeM3,
+    })),
+  }));
+  next.displacementFluids = next.displacementFluids.map((fluid, i) => ({
+    ...fluid, flowRateSteps: fluid.flowRateSteps.map((step, j) => ({
+      ...step, volumeM3: i === 0 && j === 0 ? volumes.displacementVolume : step.volumeM3,
+    })),
+  }));
   return next;
 }
