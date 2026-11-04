@@ -289,6 +289,8 @@ export function calculateRir(inp: RirInputs): RirResult {
     // Вся колонна от устья под давлением: ограничение на устье — по разрыву у устья (внешнее ≈ 0)
     const lim = casingBurst / inp.sfBurst;
     constraints.push({ name: "Разрыв колонны у устья (вся колонна под давлением)", atDepthMD: 0, limitBhpMPa: lim + hydroComp, limitSurfaceMPa: lim, note: "без пакера давление передаётся на всю колонну" });
+    const bopLimit = inp.spot?.bopWorkingMPa ?? 21;
+    constraints.push({ name: "ПВО на закрытых плашках", atDepthMD: 0, limitBhpMPa: bopLimit + hydroComp, limitSurfaceMPa: bopLimit, note: "Проверить паспорт и акт опрессовки ПВО" });
   } else {
     // Перепад на пакере: под пакером Pбз(на глубине пакера) − над пакером (жидкость + противодавление)
     const above = rhoW * G * toolTVD / 1000 + inp.annulusBackPressureMPa;
@@ -310,7 +312,7 @@ export function calculateRir(inp: RirInputs): RirResult {
   }
   const gov = constraints.reduce((m, c) => (c.limitBhpMPa < m.limitBhpMPa ? c : m), constraints[0]);
   const maxBhp = gov.limitBhpMPa;
-  const maxSurf = Math.max(0, toSurf(maxBhp));
+  let maxSurf = Math.max(0, toSurf(maxBhp));
   if (hydroComp >= maxBhp) warnings.push(`Гидростатика столба состава ${rhoC.toFixed(2)} г/см³ (${hydroComp.toFixed(1)} МПа) уже не меньше допустимого давления на глубине нарушения (${maxBhp.toFixed(1)} МПа) — снизьте плотность состава или закачивайте под пакер с минимальным столбом.`);
   if (fit && maxBhp <= fit.openingBhpMPa) warnings.push(`Допустимое давление (${maxBhp.toFixed(1)} МПа) ниже давления начала приёмистости (${fit.openingBhpMPa.toFixed(1)} МПа) — задавить состав в окне давлений нельзя. Рассмотрите смолу (вязкость близка к воде), снижение плотности состава или противодавление над пакером.`);
   const maxSurfW = Math.max(0, Math.min(maxBhp - 1.0 * G * leakTVD / 1000, ...constraints.filter((c) => c.atDepthMD === 0).map((c) => c.limitSurfaceMPa)));
@@ -338,9 +340,7 @@ export function calculateRir(inp: RirInputs): RirResult {
   const spotResult = spotInput ? calculateSpotSqueeze(spotInput) : undefined;
   if (spotResult) {
     warnings.push(...spotResult.errors.map(e=>"Bradenhead: "+e),...spotResult.warnings);
-    constraints.push({name:"Рабочее давление ПВО",atDepthMD:0,
-      limitBhpMPa:(spotInput!.bopWorkingMPa+hydroComp),limitSurfaceMPa:spotInput!.bopWorkingMPa,
-      note:"По паспорту и акту опрессовки ПВО"});
+    maxSurf = spotResult.ok ? Math.min(maxSurf,spotResult.conservativeSurfaceLimitMPa) : 0;
   }
   const tubingM3 = toolDepth > 0 ? area(tubingID) * toolDepth : 0;
   const belowFrom = isBradenhead ? (spotResult?.slurryTopAfterLiftMD ?? Math.max(0, inp.leak.topMD - 50)) : inp.tool.setDepthMD;
