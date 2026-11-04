@@ -5,9 +5,10 @@ const COMP_COLOR: Record<string, string> = { cement: "#94a3b8", microcement: "#6
 /** Схема скважины для РИР: колонны, цемент, НКТ, ретейнер, интервал нарушения и путь состава. */
 export default function RirWellSchematic({ inp, res }: { inp: RirInputs; res: RirResult }) {
   const W = 420, H = 460, top = 24, bot = H - 20;
-  const zMax = Math.max(inp.leak.bottomMD + 120, inp.tool.setDepthMD + 150);
+  const shoeMD = inp.tool.kind === "bradenhead" ? (inp.spot?.liftedShoeMD ?? inp.leak.topMD-100) : inp.tool.setDepthMD;
+  const zMax = Math.max(inp.leak.bottomMD + 120, shoeMD + 150);
   // нелинейная шкала: верх ствола сжат, интервал работ растянут
-  const focus0 = Math.max(0, Math.min(inp.tool.setDepthMD, inp.leak.topMD) - 80);
+  const focus0 = Math.max(0, Math.min(shoeMD, inp.leak.topMD) - 80);
   const y = (md: number) => {
     const f = focus0 / zMax;
     const split = top + (bot - top) * 0.25;
@@ -17,16 +18,17 @@ export default function RirWellSchematic({ inp, res }: { inp: RirInputs; res: Ri
   const cx = 120;
   const rOuter = 62, rInner = 40, rHole = 52, rTub = 14;
   const color = COMP_COLOR[res.composition] ?? "#60a5fa";
-  const toolY = y(inp.tool.setDepthMD);
+  const toolY = y(shoeMD);
   const leakY0 = y(inp.leak.topMD), leakY1 = y(inp.leak.bottomMD);
   const hasTool = inp.tool.kind !== "bradenhead";
-  const belowFrom = hasTool ? inp.tool.setDepthMD : Math.max(0, inp.leak.topMD - 50);
+  const belowFrom = hasTool ? inp.tool.setDepthMD : (res.spotResult?.slurryTopAfterLiftMD ?? Math.max(0, inp.leak.topMD-50));
   const outerShoe = inp.outerCasing?.shoeMD ?? 0;
   const labels: { y: number; text: string; cls: string }[] = [];
   const addL = (yy: number, text: string, cls = "fill-foreground") => labels.push({ y: yy, text, cls });
   if (outerShoe > 0) addL(y(outerShoe), `башмак ${inp.outerCasing!.odMm} — ${outerShoe.toFixed(0)} м`, "fill-muted-foreground");
   addL(y(inp.casing.cementTopMD), `цемент от ${inp.casing.cementTopMD.toFixed(0)} м`, "fill-muted-foreground");
   if (hasTool) addL(toolY, `${inp.tool.kind === "retainer" ? "ретейнер" : "пакер"} ${inp.tool.setDepthMD.toFixed(0)} м`, "fill-foreground");
+  else addL(toolY, `открытый конец НКТ ${shoeMD.toFixed(0)} м`, "fill-foreground");
   addL((leakY0 + leakY1) / 2, `нарушение ${inp.leak.topMD.toFixed(0)}–${inp.leak.bottomMD.toFixed(0)} м`, "fill-red-600");
   // разнести подписи
   labels.sort((a, b) => a.y - b.y);
@@ -57,7 +59,7 @@ export default function RirWellSchematic({ inp, res }: { inp: RirInputs; res: Ri
       {/* скважинная жидкость в колонне */}
       <rect x={cx - rInner} y={top} width={2 * rInner} height={bot - top} className="fill-sky-200/40 dark:fill-sky-900/40" />
       {/* состав под инструментом до нарушения */}
-      <rect x={cx - rInner} y={y(belowFrom)} width={2 * rInner} height={y(inp.leak.bottomMD + 5) - y(belowFrom)} fill={color} opacity={0.75} />
+      <rect x={cx - rInner} y={y(belowFrom)} width={2 * rInner} height={Math.max(0,y(inp.tool.kind === "bradenhead" ? (inp.spot?.slurryBottomMD ?? inp.leak.bottomMD+15) : inp.leak.bottomMD + 5) - y(belowFrom))} fill={color} opacity={0.75} />
       {/* эксплуатационная колонна */}
       <g className="stroke-slate-700 dark:stroke-slate-300" strokeWidth={3}>
         <line x1={cx - rInner} x2={cx - rInner} y1={top} y2={bot} />
@@ -85,7 +87,19 @@ export default function RirWellSchematic({ inp, res }: { inp: RirInputs; res: Ri
           <line x1={cx} x2={cx} y1={top + 14} y2={toolY - 12} stroke={color} strokeWidth={2} strokeDasharray="6 4" markerEnd="url(#rir-arrow)" />
         </g>
       )}
-      {!hasTool && <line x1={cx} x2={cx} y1={top + 14} y2={y(belowFrom) - 6} stroke={color} strokeWidth={2} strokeDasharray="6 4" markerEnd="url(#rir-arrow)" />}
+      {!hasTool && (
+        <g>
+          <rect x={cx-rTub} y={top} width={2*rTub} height={Math.max(0,toolY-top)} className="fill-sky-100/50 dark:fill-sky-950/40" />
+          <g className="stroke-slate-600 dark:stroke-slate-400" strokeWidth={2}>
+            <line x1={cx-rTub} x2={cx-rTub} y1={top} y2={toolY}/>
+            <line x1={cx+rTub} x2={cx+rTub} y1={top} y2={toolY}/>
+            <line x1={cx-rTub} x2={cx+rTub} y1={toolY} y2={toolY}/>
+          </g>
+          <line x1={cx} x2={cx} y1={top+12} y2={Math.max(top+14,toolY-5)} stroke={color} strokeWidth={2} strokeDasharray="6 4" markerEnd="url(#rir-arrow)"/>
+          <rect x={cx-rOuter-6} y={top-13} width={2*(rOuter+6)} height={4} fill="#dc2626"/>
+          <text x={cx-rOuter} y={top-15} fontSize={9} className="fill-foreground">ПВО закрыто на НКТ</text>
+        </g>
+      )}
       {/* устье */}
       <rect x={cx - rOuter - 6} y={top - 10} width={2 * (rOuter + 6)} height={10} className="fill-slate-500" />
       {/* подписи */}
