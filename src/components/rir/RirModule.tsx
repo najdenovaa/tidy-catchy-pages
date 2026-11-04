@@ -23,7 +23,7 @@ import RirChannelCard from "./RirChannelCard";
 import RirLeak3D from "./RirLeak3D";
 import { planRir, applyVariant } from "@/lib/rir-autodesign";
 import RirAutoDesignCard from "./RirAutoDesignCard";
-import RirSpotLiftSqueeze from "./RirSpotLiftSqueeze";
+
 
 const KEY = "rir_inputs_v1";
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "—");
@@ -77,8 +77,12 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
 const GRADE_OPTIONS = Object.fromEntries(Object.keys(STEEL_GRADES).map((k) => [k, `${k} — ${STEEL_GRADES[k]} МПа`]));
 
 /** РИР: ликвидация негерметичности колонны и заколонных / межколонных перетоков (этап 1). */
-function RirLegacyModule({ trajectory }: { trajectory?: RirInputs["trajectory"] }) {
-  const [inp, setInp] = useState<RirInputs>(load);
+function RirLegacyModule({ trajectory, technology }: { trajectory?: RirInputs["trajectory"]; technology: "packer" | "spot" }) {
+  const [inp, setInp] = useState<RirInputs>(() => {
+    const saved=load();
+    return technology === "spot" ? { ...saved, tool: {...saved.tool, kind:"bradenhead"} } : saved;
+  });
+  useEffect(() => { setInp(prev => ({...prev,tool:{...prev.tool,kind:technology === "spot" ? "bradenhead" : prev.tool.kind === "bradenhead" ? "retainer" : prev.tool.kind}})); },[technology]);
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(inp)); } catch { /* недоступно */ } }, [inp]);
   const full = useMemo(() => ({ ...inp, trajectory: trajectory && trajectory.length > 1 ? trajectory : inp.trajectory }), [inp, trajectory]);
   const res = useMemo(() => calculateRir(full), [full]);
@@ -120,6 +124,7 @@ function RirLegacyModule({ trajectory }: { trajectory?: RirInputs["trajectory"] 
   const setCasing = (p: Partial<RirInputs["casing"]>) => setInp((s) => ({ ...s, casing: { ...s.casing, ...p } }));
   const setLeak = (p: Partial<RirInputs["leak"]>) => setInp((s) => ({ ...s, leak: { ...s.leak, ...p } }));
   const setTool = (p: Partial<RirInputs["tool"]>) => setInp((s) => ({ ...s, tool: { ...s.tool, ...p } }));
+  const setSpot = (key: keyof NonNullable<RirInputs["spot"]>,value:number) => setInp(s=>({...s,spot:{...s.spot,[key]:value}}));
   const setTub = (p: Partial<RirInputs["tubing"]>) => setInp((s) => ({ ...s, tubing: { ...s.tubing, ...p } }));
   const setOuter = (p: Partial<NonNullable<RirInputs["outerCasing"]>>) => setInp((s) => ({ ...s, outerCasing: { ...(s.outerCasing ?? { odMm: 244.5, wallMm: 8.9, shoeMD: 0 }), ...p } }));
 
@@ -186,7 +191,7 @@ function RirLegacyModule({ trajectory }: { trajectory?: RirInputs["trajectory"] 
               <Num label="Кровля нарушения" unit="м" value={inp.leak.topMD} onChange={(v) => setLeak({ topMD: v })} />
               <Num label="Подошва нарушения" unit="м" value={inp.leak.bottomMD} onChange={(v) => setLeak({ bottomMD: v })} />
               <Num label="Межколонное давление" unit="МПа" value={inp.leak.annulusPressureMPa} onChange={(v) => setLeak({ annulusPressureMPa: v })} />
-              <div className="col-span-2 sm:col-span-3"><Sel label="Способ задавливания" value={inp.tool.kind} options={{ retainer: TOOL_LABEL.retainer, packer: TOOL_LABEL.packer }} onChange={(v) => setTool({ kind: v as ToolKind })} /></div>
+              <div className="col-span-2 sm:col-span-3"><Sel label="Способ задавливания" value={inp.tool.kind} options={technology === "spot" ? {bradenhead: "Без пакера - размещение и задавливание с ПВО"} : { retainer: TOOL_LABEL.retainer, packer: TOOL_LABEL.packer }} onChange={(v) => setTool({ kind: v as ToolKind })} /></div>
               {inp.tool.kind !== "bradenhead" && <Num label="Глубина установки" unit="м" value={inp.tool.setDepthMD} onChange={(v) => setTool({ setDepthMD: v })} />}
               {inp.tool.kind !== "bradenhead" && <Num label="Рабочий перепад" unit="МПа" value={inp.tool.ratingMPa} onChange={(v) => setTool({ ratingMPa: v })} />}
               {inp.tool.kind !== "bradenhead" && <Num label="Противодавление в затрубье" unit="МПа" value={inp.annulusBackPressureMPa} onChange={(v) => up({ annulusBackPressureMPa: v })} />}
@@ -197,6 +202,26 @@ function RirLegacyModule({ trajectory }: { trajectory?: RirInputs["trajectory"] 
               <Num label="Ступеней задавливания" value={inp.hesitationStages} onChange={(v) => up({ hesitationStages: Math.max(1, Math.round(v)) })} />
               <Num label="Выдержка на ступени" unit="мин" value={inp.hesitationHoldMin} onChange={(v) => up({ hesitationHoldMin: v })} />
             </div>
+            {technology === "spot" && (
+              <div className="rounded-lg border border-primary/30 bg-primary/[0.03] p-3 space-y-2" data-testid="rir-open-tubing-geometry">
+                <p className="text-xs font-semibold">Размещение смеси и подъём НКТ до закрытия ПВО</p>
+                <p className="text-[11px] text-muted-foreground">Конец НКТ при размещении - в интервале работ или ниже. После размещения трубы поднимаются выше кровли смеси, затем герметизируется устье. Пакер отсутствует, а давление передаётся всей колонне.</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <Num label="Конец НКТ при размещении" unit="м" value={inp.spot?.initialShoeMD ?? inp.leak.bottomMD+15} onChange={v=>setSpot("initialShoeMD",v)}/>
+                  <Num label="Нижняя граница цемента" unit="м" value={inp.spot?.slurryBottomMD ?? inp.leak.bottomMD+15} onChange={v=>setSpot("slurryBottomMD",v)}/>
+                  <Num label="Конец НКТ после подъёма" unit="м" value={inp.spot?.liftedShoeMD ?? Math.max(0,inp.leak.topMD-100)} onChange={v=>setSpot("liftedShoeMD",v)}/>
+                  <Num label="Объём размещённого состава" unit="м³" value={inp.spot?.slurryVolumeM3 ?? 1} onChange={v=>setSpot("slurryVolumeM3",v)}/>
+                  <Num label="Плановое задавливание" unit="м³" value={inp.spot?.plannedSqueezeM3 ?? 0.3} onChange={v=>setSpot("plannedSqueezeM3",v)}/>
+                  <Num label="Рабочее давление ПВО" unit="МПа" value={inp.spot?.bopWorkingMPa ?? 21} onChange={v=>setSpot("bopWorkingMPa",v)}/>
+                </div>
+                {res.spotResult && <div className="rounded-md border border-border bg-background p-2 grid grid-cols-2 gap-2 text-[11px]">
+                   <span>Кровля смеси до подъёма: <b>{f(res.spotResult.slurryTopBeforeMD,1)} м</b></span>
+                   <span>Кровля смеси после подъёма: <b>{f(res.spotResult.slurryTopAfterLiftMD,1)} м</b></span>
+                   <span>Остаток после задавливания: <b>{f(res.spotResult.residualM3,2)} м³</b></span>
+                   <span>Потолок давления на устье: <b>{res.spotResult.ok ? f(res.maxSurfaceMPa,1)+" МПа" : "не определён"}</b></span>
+                </div>}
+              </div>
+            )}
             <div className="rounded-md border border-border p-2 space-y-1.5">
               <p className="text-[11px] font-semibold">Приёмистость (закачка технической воды)</p>
               {inp.injectivity.map((p, i) => (
@@ -254,7 +279,7 @@ function RirLegacyModule({ trajectory }: { trajectory?: RirInputs["trajectory"] 
         <Card>
           <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm flex items-center gap-2"><Gauge className="w-4 h-4" />Окно давлений по глубине</CardTitle></CardHeader>
           <CardContent className="pt-0">
-            <div data-docimg="window"><PressureWindowChart res={res} leakTopMD={inp.leak.topMD} leakBottomMD={inp.leak.bottomMD} toolMD={inp.tool.kind === "bradenhead" ? 0 : inp.tool.setDepthMD} /></div>
+            <div data-docimg="window"><PressureWindowChart res={res} leakTopMD={inp.leak.topMD} leakBottomMD={inp.leak.bottomMD} toolMD={inp.tool.kind === "bradenhead" ? (inp.spot?.liftedShoeMD ?? Math.max(0,inp.leak.topMD-100)) : inp.tool.setDepthMD} /></div>
             <table className="w-full text-[11px] mt-2">
               <thead className="bg-muted/50"><tr><th className="p-1 text-left">Ограничение</th><th className="p-1 text-right">На глубине нарушения</th><th className="p-1 text-right">На устье</th></tr></thead>
               <tbody>
@@ -277,11 +302,11 @@ function RirLegacyModule({ trajectory }: { trajectory?: RirInputs["trajectory"] 
               <thead className="bg-muted/50"><tr><th className="p-1 text-left">Объёмы</th><th className="p-1 text-right">м³</th></tr></thead>
               <tbody>
                 {[
-                  ["Состав в колонне под инструментом (до подошвы + 5 м)", res.volumes.belowToolM3],
+                  [technology === "spot" ? "Остаток смеси в колонне" : "Состав в колонне под инструментом (до подошвы + 5 м)", res.volumes.belowToolM3],
                   ["Задавливание в канал", res.volumes.squeezeM3],
                   ["Запас (линии, смешение)", res.volumes.reserveM3],
                   ["ИТОГО состава", res.volumes.totalM3],
-                  ["Продавка (объём НКТ до инструмента)", res.volumes.displacementM3],
+                  [technology === "spot" ? "Вместимость НКТ при размещении (справочно)" : "Продавка (объём НКТ до инструмента)", res.volumes.displacementM3],
                   ["Обратная промывка", res.volumes.reverseOutM3],
                 ].map(([n, v]) => <tr key={n as string} className="border-t border-border/40"><td className="p-1">{n}</td><td className="p-1 text-right">{f(v as number, 2)}</td></tr>)}
               </tbody>
@@ -300,7 +325,7 @@ function RirLegacyModule({ trajectory }: { trajectory?: RirInputs["trajectory"] 
       <RirCompositionCard comp={comp} totalM3={res.volumes.totalM3} bhctC={res.temps.bhctC} jobMin={sim.totalTimeMin} requiredMin={plan.requiredWorkLifeMin}
         protocol={() => buildRirProtocol(full, res, comp, mechRes, workProgram, sim)} />
 
-      <RirSqueezeSimCard sim={sim} hasTool={inp.tool.kind !== "bradenhead"} spot={inp.tool.kind === "packer"} toolLabel={inp.tool.kind === "retainer" ? "ретейнер" : "пакер"} holdMin={inp.hesitationHoldMin} />
+      <RirSqueezeSimCard sim={sim} hasTool={inp.tool.kind !== "bradenhead"} spot={inp.tool.kind === "packer"} toolLabel={inp.tool.kind === "retainer" ? "ретейнер" : inp.tool.kind === "bradenhead" ? "открытые НКТ, ПВО" : "пакер"} holdMin={inp.hesitationHoldMin} />
 
       <RirLeak3D inp={full} res={res} sim={sim} design={comp?.primary ?? null} />
 
@@ -311,8 +336,8 @@ function RirLegacyModule({ trajectory }: { trajectory?: RirInputs["trajectory"] 
       <Card>
         <CardHeader className="py-2.5 px-4"><CardTitle className="text-sm flex items-center gap-2 flex-wrap"><ListChecks className="w-4 h-4" />Ход работ <Badge variant="outline" className="text-[10px]">формируется по расчёту</Badge>
           <span className="ml-auto flex gap-2">
-            <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={exporting} onClick={() => exportProgram("print")}><Printer className="w-3.5 h-3.5 mr-1" />Печать</Button>
-            <Button size="sm" className="h-7 text-[11px]" disabled={exporting} onClick={() => exportProgram("docx")} data-testid="rir-program-docx"><FileText className="w-3.5 h-3.5 mr-1" />{exporting ? "Формирую…" : "План работ (Word)"}</Button>
+            <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={exporting || (technology === "spot" && !res.spotResult?.ok)} onClick={() => exportProgram("print")}><Printer className="w-3.5 h-3.5 mr-1" />Печать</Button>
+            <Button size="sm" className="h-7 text-[11px]" disabled={exporting || (technology === "spot" && !res.spotResult?.ok)} onClick={() => exportProgram("docx")} data-testid="rir-program-docx"><FileText className="w-3.5 h-3.5 mr-1" />{exporting ? "Формирую…" : "План работ (Word)"}</Button>
           </span></CardTitle></CardHeader>
         <CardContent className="pt-0">
           <ol className="space-y-2">
@@ -339,7 +364,6 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
     setTechnology(value);
     try { localStorage.setItem("rir_technology_v2", value); } catch { /* optional */ }
   };
-  const base = load();
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-border bg-card p-3 space-y-2">
@@ -356,7 +380,7 @@ export default function RirModule({ trajectory }: { trajectory?: RirInputs["traj
         </div>
         <p className="text-[11px] text-muted-foreground">Расчётные модели разделены. Переключение сохраняет введённые данные каждого способа.</p>
       </div>
-      {technology === "spot" ? <RirSpotLiftSqueeze base={base} /> : <RirLegacyModule trajectory={trajectory} />}
+      <RirLegacyModule key={technology} trajectory={trajectory} technology={technology} />
     </div>
   );
 }

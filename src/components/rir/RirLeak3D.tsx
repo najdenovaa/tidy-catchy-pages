@@ -201,7 +201,7 @@ function Scene({ inp, res, p, end, compColor, kind, L }: { inp: RirInputs; res: 
   const compBelowH = belowLen * Math.min(1, p.belowComp);
   const compBelowY0 = p.vCompChannel > 0 ? L.yBot : tY - compBelowH; // состав сначала сверху, после ухода в канал — снизу
   // в НКТ: видимая часть — от верха окна до инструмента; доля длины НКТ, видимая в окне
-  const toolMD = inp.tool.setDepthMD;
+  const toolMD = inp.tool.kind === "bradenhead" ? (inp.spot?.liftedShoeMD ?? inp.leak.topMD - 100) : inp.tool.setDepthMD;
   const visFrac0 = Math.max(0, (toolMD - (L.yTop - tY) / L.sy) / toolMD);
   const inTub = p.compTop >= 0 ? { a: Math.max(visFrac0, p.compTop), b: Math.min(1, p.compBottom) } : null;
   const tubY = (frac: number) => tY + (1 - frac) * toolMD * L.sy;
@@ -212,7 +212,7 @@ function Scene({ inp, res, p, end, compColor, kind, L }: { inp: RirInputs; res: 
     const r = R.rock + 0.6;
     const phL = kind === "behind_casing" || kind === "intercasing" ? cut1 + 0.4 : L.phiF;
     out.push({ pos: [r * Math.cos(phL), yl, r * Math.sin(phL)], text: kind === "behind_casing" ? "канал в камне" : kind === "coupling" ? "трещина по муфте" : "трещина", color: "#fca5a5" });
-    if (L.toolY !== null) out.push({ pos: [-(R.rock + 0.4) * Math.cos(L.camPhi), L.toolY, -(R.rock + 0.4) * Math.sin(L.camPhi)], text: inp.tool.kind === "retainer" ? "ретейнер" : "пакер", color: "#e5e7eb" });
+    if (L.toolY !== null) out.push({ pos: [-(R.rock + 0.4) * Math.cos(L.camPhi), L.toolY, -(R.rock + 0.4) * Math.sin(L.camPhi)], text: inp.tool.kind === "retainer" ? "ретейнер" : inp.tool.kind === "bradenhead" ? "НКТ (открытый конец)" : "пакер", color: "#e5e7eb" });
     return out;
   }, [L, yl, kind, inp.tool.kind, cut1]);
 
@@ -248,8 +248,8 @@ function Scene({ inp, res, p, end, compColor, kind, L }: { inp: RirInputs; res: 
       {/* инструмент и НКТ */}
       {L.toolY !== null && (
         <>
-          <mesh position={[0, L.toolY, 0]}><cylinderGeometry args={[R.cIn * 0.97, R.cIn * 0.97, 0.35, 40]} /><meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.5} /></mesh>
-          <mesh position={[0, L.toolY + 0.3, 0]}><cylinderGeometry args={[R.cIn * 0.9, R.cIn * 0.9, 0.25, 8]} /><meshStandardMaterial color="#374151" metalness={0.4} /></mesh>
+          {inp.tool.kind !== "bradenhead" && <mesh position={[0, L.toolY, 0]}><cylinderGeometry args={[R.cIn * 0.97, R.cIn * 0.97, 0.35, 40]} /><meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.5} /></mesh>}
+          {inp.tool.kind !== "bradenhead" && <mesh position={[0, L.toolY + 0.3, 0]}><cylinderGeometry args={[R.cIn * 0.9, R.cIn * 0.9, 0.25, 8]} /><meshStandardMaterial color="#374151" metalness={0.4} /></mesh>}
           <mesh position={[0, (L.toolY + L.yTop) / 2, 0]}><cylinderGeometry args={[R.tub, R.tub, L.yTop - L.toolY, 24, 1, true]} /><meshStandardMaterial color="#cbd5e1" metalness={0.7} roughness={0.3} transparent opacity={0.55} side={THREE.DoubleSide} /></mesh>
           {inTub && inTub.b > inTub.a && (() => { const ya = Math.min(L.yTop, tubY(inTub.a)), yb = Math.max(L.toolY, tubY(inTub.b)); return ya > yb ? <mesh position={[0, (ya + yb) / 2, 0]}><cylinderGeometry args={[R.tub * 0.9, R.tub * 0.9, ya - yb, 20]} /><meshStandardMaterial color={compColor} /></mesh> : null; })()}
         </>
@@ -277,15 +277,16 @@ export default function RirLeak3D({ inp, res, sim, design }: { inp: RirInputs; r
   const L = useMemo<Layout>(() => {
     const top = inp.leak.topMD, bot = Math.max(inp.leak.bottomMD, top + 0.5);
     const hasTool = inp.tool.kind !== "bradenhead";
-    const toolNear = hasTool && top - inp.tool.setDepthMD <= 40 && inp.tool.setDepthMD < top;
+    const endNkt = inp.tool.kind === "bradenhead" ? inp.spot?.liftedShoeMD ?? top - 100 : inp.tool.setDepthMD;
+    const toolNear = hasTool && top - endNkt <= 40 && endNkt < top;
     const mdTop = toolNear ? Math.min(top - 4, inp.tool.setDepthMD - 3) : top - 6;
     const mdBot = bot + 9;
     const sy = 14 / Math.max(6, mdBot - mdTop);
     const mdMid = (mdTop + mdBot) / 2;
     const y = (md: number) => -(md - mdMid) * sy;
     const camPhi = Math.atan2(9, 6);
-    return { sy, mdMid, y, yTop: y(mdTop), yBot: y(mdBot), leakY0: y(top), leakY1: y(bot), toolY: toolNear ? y(inp.tool.setDepthMD) : null,
-      toolAbove: hasTool && !toolNear ? top - inp.tool.setDepthMD : 0, phiF: camPhi - Math.PI / 2 - 0.3, camPhi };
+    return { sy, mdMid, y, yTop: y(mdTop), yBot: y(mdBot), leakY0: y(top), leakY1: y(bot), toolY: inp.tool.kind === "bradenhead" ? y(mdTop+1.5) : toolNear ? y(endNkt) : null,
+      toolAbove: !toolNear ? Math.max(0,top - endNkt) : 0, phiF: camPhi - Math.PI / 2 - 0.3, camPhi };
   }, [inp]);
   const p = pts[Math.min(idx, pts.length - 1)];
   const end = pts[pts.length - 1];
@@ -316,7 +317,7 @@ export default function RirLeak3D({ inp, res, sim, design }: { inp: RirInputs; r
           <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/55 px-2 py-1.5 text-[11px] text-slate-100 space-y-0.5">
             <p className="font-semibold">{inp.leak.topMD.toFixed(0)}–{inp.leak.bottomMD.toFixed(0)} м · {kind === "coupling" ? "негерметичная муфта" : kind === "perforation" ? "интервал перфорации" : kind === "behind_casing" ? "заколонный переток" : kind === "intercasing" ? "межколонный переток" : "трещина в теле колонны"}</p>
             <p>Q {p.qLs.toFixed(2)} л/с · подвижность канала {(p.mobility * 100).toFixed(p.mobility < 0.1 ? 2 : 0)}% от воды</p>
-            {L.toolAbove > 0 && <p>инструмент выше на {L.toolAbove.toFixed(0)} м (вне кадра)</p>}
+            {L.toolAbove > 0 && <p>{inp.tool.kind === "bradenhead" ? "конец НКТ выше нарушения" : "инструмент выше"} на {L.toolAbove.toFixed(0)} м (показан схематично)</p>}
           </div>
           <div className="pointer-events-none absolute right-3 bottom-3 rounded bg-black/55 px-2 py-1.5 text-[10px] text-slate-100 space-y-0.5">
             {[[compColor, design?.title ?? "состав"], [COL.water, "вода / жидкость впереди состава"], [COL.crack, "пустая трещина"], [COL.cement, "цементный камень"], ["#8b7355", "порода"]].map(([c, t]) => (

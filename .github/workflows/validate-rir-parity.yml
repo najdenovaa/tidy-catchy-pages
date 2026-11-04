@@ -1,0 +1,25 @@
+name: Validate RIR full module parity
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/lib/rir-*"
+      - "src/components/rir/**"
+      - ".github/workflows/validate-rir-parity.yml"
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Dependencies
+        run: npm install --legacy-peer-deps
+      - name: TypeScript
+        run: npx tsc --noEmit -p tsconfig.app.json
+      - name: RIR tests
+        run: npx vitest run src/lib/rir.test.ts src/lib/rir-spot-squeeze.test.ts src/lib/rir-bradenhead-parity.test.ts
+      - name: Build
+        run: npm run build

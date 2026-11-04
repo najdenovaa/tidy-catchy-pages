@@ -7,6 +7,7 @@
  */
 import { interpolateTVD, pipeFrictionMPa, type TrajectoryPoint } from "./cementing-calculations";
 import { bhctKutasovTarghi } from "./cement-program";
+import { calculateSpotSqueeze, type SpotSqueezeInput, type SpotSqueezeResult } from "./rir-spot-squeeze";
 
 const G = 9.81;
 
@@ -98,6 +99,8 @@ export interface RirInputs {
   wellFluidDensity: number;
   injectivity: InjectivityPoint[];
   tool: { kind: ToolKind; setDepthMD: number; ratingMPa: number };
+  /** Open-tubing Bradenhead workstring position and spot/squeeze material balance. */
+  spot?: Partial<Pick<SpotSqueezeInput,"initialShoeMD"|"liftedShoeMD"|"slurryBottomMD"|"slurryVolumeM3"|"plannedSqueezeM3"|"bopWorkingMPa">>;
   composition: CompositionKind | "auto";
   /** Плотность состава, г/см³ (0 — типовая для выбранного состава) */
   compositionDensity: number;
@@ -178,6 +181,7 @@ export interface RirResult {
   profile: PressureProfilePoint[];
   hesitation: HesitationPoint[];
   workProgram: WorkStep[];
+  spotResult?: SpotSqueezeResult;
   warnings: string[];
 }
 
@@ -189,7 +193,8 @@ export function calculateRir(inp: RirInputs): RirResult {
   const tvd = (md: number) => interpolateTVD(Math.max(0, Math.min(inp.wellDepthMD, md)), traj);
   const leakMid = (inp.leak.topMD + inp.leak.bottomMD) / 2;
   const leakTVD = tvd(leakMid);
-  const toolDepth = inp.tool.kind === "bradenhead" ? 0 : inp.tool.setDepthMD;
+  const isBradenhead = inp.tool.kind === "bradenhead";
+  const toolDepth = isBradenhead ? (inp.spot?.liftedShoeMD ?? Math.max(0, inp.leak.topMD - 100)) : inp.tool.setDepthMD;
   const toolTVD = tvd(toolDepth);
   const casingID = inp.casing.odMm - 2 * inp.casing.wallMm;
   const tubingID = inp.tubing.odMm - 2 * inp.tubing.wallMm;
@@ -284,6 +289,8 @@ export function calculateRir(inp: RirInputs): RirResult {
     // Вся колонна от устья под давлением: ограничение на устье — по разрыву у устья (внешнее ≈ 0)
     const lim = casingBurst / inp.sfBurst;
     constraints.push({ name: "Разрыв колонны у устья (вся колонна под давлением)", atDepthMD: 0, limitBhpMPa: lim + hydroComp, limitSurfaceMPa: lim, note: "без пакера давление передаётся на всю колонну" });
+    const bopLimit = inp.spot?.bopWorkingMPa ?? 21;
+    constraints.push({ name: "ПВО на закрытых плашках", atDepthMD: 0, limitBhpMPa: bopLimit + hydroComp, limitSurfaceMPa: bopLimit, note: "Проверить паспорт и акт опрессовки ПВО" });
   } else {
     // Перепад на пакере: под пакером Pбз(на глубине пакера) − над пакером (жидкость + противодавление)
     const above = rhoW * G * toolTVD / 1000 + inp.annulusBackPressureMPa;
@@ -297,9 +304,15 @@ export function calculateRir(inp: RirInputs): RirResult {
     // Смятие НКТ противодавлением
     if (inp.annulusBackPressureMPa > tubingCollapse.pMPa / inp.sfCollapse) warnings.push("Противодавление в затрубье опасно по смятию НКТ при сбросе давления в НКТ.");
   }
+  // The entire unisolated casing is exposed to pressure in Bradenhead mode.
+  // The tubing burst limit must also hold at the surface, not just for the packer modes.
+  if (isBradenhead) {
+    const tubLimit = tubingBurst / inp.sfBurst;
+    constraints.push({name:"Разрыв НКТ на устье (без пакера)",atDepthMD:0,limitBhpMPa:tubLimit+hydroComp,limitSurfaceMPa:tubLimit,note:"НКТ под давлением, затрубье герметизировано ПВО"});
+  }
   const gov = constraints.reduce((m, c) => (c.limitBhpMPa < m.limitBhpMPa ? c : m), constraints[0]);
   const maxBhp = gov.limitBhpMPa;
-  const maxSurf = Math.max(0, toSurf(maxBhp));
+  let maxSurf = Math.max(0, toSurf(maxBhp));
   if (hydroComp >= maxBhp) warnings.push(`Гидростатика столба состава ${rhoC.toFixed(2)} г/см³ (${hydroComp.toFixed(1)} МПа) уже не меньше допустимого давления на глубине нарушения (${maxBhp.toFixed(1)} МПа) — снизьте плотность состава или закачивайте под пакер с минимальным столбом.`);
   if (fit && maxBhp <= fit.openingBhpMPa) warnings.push(`Допустимое давление (${maxBhp.toFixed(1)} МПа) ниже давления начала приёмистости (${fit.openingBhpMPa.toFixed(1)} МПа) — задавить состав в окне давлений нельзя. Рассмотрите смолу (вязкость близка к воде), снижение плотности состава или противодавление над пакером.`);
   const maxSurfW = Math.max(0, Math.min(maxBhp - 1.0 * G * leakTVD / 1000, ...constraints.filter((c) => c.atDepthMD === 0).map((c) => c.limitSurfaceMPa)));
@@ -309,21 +322,41 @@ export function calculateRir(inp: RirInputs): RirResult {
   if (extAtLeak > collapseMargin) warnings.push(`Внешнее давление ${extAtLeak.toFixed(1)} МПа больше допустимого по смятию колонны ${collapseMargin.toFixed(1)} МПа при опорожнении.`);
 
   // ── Объёмы ──
+  const spotInput: SpotSqueezeInput | null = isBradenhead ? {
+    casingIdMm:casingID,tubingOdMm:inp.tubing.odMm,tubingIdMm:tubingID,
+    leakTopMD:inp.leak.topMD,leakBottomMD:inp.leak.bottomMD,wellBottomMD:inp.wellDepthMD,
+    initialShoeMD:inp.spot?.initialShoeMD ?? inp.leak.bottomMD + 15,
+    liftedShoeMD:toolDepth,
+    slurryBottomMD:inp.spot?.slurryBottomMD ?? inp.leak.bottomMD + 15,
+    slurryVolumeM3:inp.spot?.slurryVolumeM3 ?? 1,
+    plannedSqueezeM3:inp.spot?.plannedSqueezeM3 ?? 0.3,
+    slurryDensityGcm3:rhoC,wellFluidDensityGcm3:rhoW,
+    casingAllowableSurfaceMPa:casingBurst / inp.sfBurst,
+    tubingAllowableSurfaceMPa:tubingBurst / inp.sfBurst,
+    bopWorkingMPa:inp.spot?.bopWorkingMPa ?? 21,
+    fracGradientMPaM:inp.fracGradientMPaM,leakTVD,
+    zonePressureMPa:zoneP,injectivityM3hMPa:fit?.J ?? 0,pumpRateLs:inp.pumpRateLs,
+  } : null;
+  const spotResult = spotInput ? calculateSpotSqueeze(spotInput) : undefined;
+  if (spotResult) {
+    warnings.push(...spotResult.errors.map(e=>"Bradenhead: "+e),...spotResult.warnings);
+    maxSurf = spotResult.ok ? Math.min(maxSurf,spotResult.conservativeSurfaceLimitMPa) : 0;
+  }
   const tubingM3 = toolDepth > 0 ? area(tubingID) * toolDepth : 0;
-  const belowFrom = inp.tool.kind === "bradenhead" ? Math.max(0, inp.leak.topMD - 50) : inp.tool.setDepthMD;
-  const belowToolM3 = area(casingID) * Math.max(0, inp.leak.bottomMD + 5 - belowFrom);
+  const belowFrom = isBradenhead ? (spotResult?.slurryTopAfterLiftMD ?? Math.max(0, inp.leak.topMD - 50)) : inp.tool.setDepthMD;
+  const belowToolM3 = isBradenhead ? Math.max(0,spotResult?.residualM3 ?? 0) : area(casingID) * Math.max(0, inp.leak.bottomMD + 5 - belowFrom);
   // Объём задавливания — по расходу САМОГО состава при допустимом давлении (вязкость выше воды в μ раз)
   const caps: Record<CompositionKind, [number, number]> = { cement: [0.2, 3], microcement: [0.05, 2], resin: [0.02, 0.6], resin_micro: [0.05, 1.5] };
   const [vMin, vMax] = caps[comp];
   const qComp = qMax / MU_REL[comp]; // м³/ч
-  const squeezeM3 = Math.min(vMax, Math.max(vMin, qComp * 1.0)); // ~1 ч задавливания составом на допустимом давлении
+  const squeezeM3 = isBradenhead ? (spotInput?.plannedSqueezeM3 ?? 0) : Math.min(vMax, Math.max(vMin, qComp * 1.0)); // ~1 ч задавливания составом на допустимом давлении
   if (fit && qComp > 0 && vMin / qComp > 2) warnings.push(`Канал плотный для выбранного состава: при допустимом давлении состав пойдёт с расходом ~${(qComp * 1000).toFixed(0)} л/ч — даже минимальный объём ${vMin} м³ займёт ${(vMin / qComp).toFixed(1)} ч. Нужен состав меньшей вязкости (смола ≤ 100 мПа·с) или больше окно давлений.`);
-  const reserveM3 = comp === "resin" ? 0.05 : 0.2;
+  const reserveM3 = isBradenhead ? 0 : comp === "resin" ? 0.05 : 0.2;
   if ((comp === "resin" || comp === "resin_micro") && belowToolM3 > 0.2) warnings.push(`Под инструментом ${belowToolM3.toFixed(2)} м³ — для смолы дорого: установите ретейнер ближе к нарушению (5–10 м) или заполните колонну ниже нарушения песчаной/вязкой пачкой.`);
-  const totalM3 = belowToolM3 + squeezeM3 + reserveM3;
+  const totalM3 = isBradenhead ? (spotInput?.slurryVolumeM3 ?? 0) : belowToolM3 + squeezeM3 + reserveM3;
   // Продавка: состав доводится до ретейнера, в НКТ остаётся объём на ступенчатое задавливание
-  const displacementM3 = Math.max(0, tubingM3 - squeezeM3);
-  const reverseOutM3 = tubingM3 * 1.5;
+  const displacementM3 = isBradenhead ? area(tubingID) * (spotInput?.initialShoeMD ?? 0) : Math.max(0, tubingM3 - squeezeM3);
+  const reverseOutM3 = isBradenhead ? Math.max(0,tubingM3) : tubingM3 * 1.5;
 
   // ── Время ──
   const q = Math.max(0.3, inp.pumpRateLs);
@@ -370,9 +403,18 @@ export function calculateRir(inp: RirInputs): RirResult {
   }
   W.push({ title: "Определение приёмистости", text: `Закачка технической воды на 2–3 режимах (расход / давление). ${fit ? `Расчётный индекс приёмистости ${f1(fit.J, 2)} м³/(ч·МПа), давление начала приёмистости на глубине нарушения ${f1(fit.openingBhpMPa, 1)} МПа.` : ""} Допустимое давление на устье при закачке воды — не более ${f1(maxSurfW, 1)} МПа (ограничение: ${gov.name}).` });
   W.push({ title: "Приготовление состава", text: `${COMPOSITION_LABEL[comp]}, плотность ${f1(rhoC, 2)} г/см³, объём ${f1(totalM3, 2)} м³ (под ${toolName || "интервал"} ${f1(belowToolM3, 2)}, задавливание ${f1(squeezeM3, 2)}, запас ${f1(reserveM3, 2)}). Время жизни / загустевания при ${f1(bhct, 0)} °C — не менее ${requiredWorkLifeMin} мин.`, volumeM3: totalM3 });
-  if (inp.tool.kind === "packer") W.push({ title: "Закачка и доводка состава до нарушения", text: `Пакер не посажен (циркуляция через низ НКТ в затрубье): буфер (техническая вода 0,5 м³), состав ${f1(totalM3, 2)} м³ при ${f1(q, 1)} л/с, продавка до выхода состава под глубину установки пакера и до подошвы нарушения. Посадить пакер, закрыть затрубье — в НКТ над пакером остаётся состав на ступенчатое задавливание.`, volumeM3: totalM3, timeMin: pumpMin + displaceMin });
+  if (isBradenhead && spotInput && spotResult) {
+    W.push({title:"Размещение цементной пачки через открытые НКТ",
+      text:`НКТ на ${f1(spotInput.initialShoeMD,0)} м. Разместить состав ${f1(totalM3,2)} м³ до расчётной кровли ${f1(spotResult.slurryTopBeforeMD,1)} м (под НКТ и в затрубье).`,
+      volumeM3:totalM3,timeMin:pumpMin});
+    W.push({title:"Подъём НКТ выше цемента",
+      text:`Поднять конец НКТ с ${f1(spotInput.initialShoeMD,0)} до ${f1(spotInput.liftedShoeMD,0)} м. После перераспределения кровля цемента оценивается на ${f1(spotResult.slurryTopAfterLiftMD,1)} м; подтвердить глубины и объёмы промысловым замером.`});
+    W.push({title:"Герметизация устья и ПВО",
+      text:`Закрыть соответствующие плашки ПВО на НКТ по утверждённой схеме. Подтвердить герметичность колонны, труб и обвязки. Рабочий предел ПВО по введённым данным: ${f1(spotInput.bopWorkingMPa,1)} МПа; ориентировочный консервативный предел устья: ${f1(spotResult.conservativeSurfaceLimitMPa,1)} МПа.`});
+  } else if (inp.tool.kind === "packer") W.push({ title: "Закачка и доводка состава до нарушения", text: `Пакер не посажен (циркуляция через низ НКТ в затрубье): буфер (техническая вода 0,5 м³), состав ${f1(totalM3, 2)} м³ при ${f1(q, 1)} л/с, продавка до выхода состава под глубину установки пакера и до подошвы нарушения. Посадить пакер, закрыть затрубье — в НКТ над пакером остаётся состав на ступенчатое задавливание.`, volumeM3: totalM3, timeMin: pumpMin + displaceMin });
   else W.push({ title: "Закачка и продавка", text: `Буфер (техническая вода 0,5 м³), состав ${f1(totalM3, 2)} м³ при ${f1(q, 1)} л/с, продавка ${f1(displacementM3, 2)} м³${inp.tool.kind === "retainer" ? " (стыковочный узел в ретейнере)" : ""} — в НКТ над ${toolName || "интервалом"} остаётся ${f1(squeezeM3, 2)} м³ состава на ступенчатое задавливание.`, volumeM3: displacementM3, timeMin: pumpMin + displaceMin });
   W.push({ title: "Ступенчатое задавливание", text: `${inp.hesitationStages} ступеней по ~${f1(perStage, 2)} м³ с выдержкой ${inp.hesitationHoldMin} мин; давление на устье не выше допустимого по столбу в НКТ: ${f1(maxSurf, 1)} МПа при НКТ, заполненных составом, до ${f1(maxSurfW, 1)} МПа при продавочной воде в НКТ (по забою ${f1(maxBhp, 1)} МПа). Критерий окончания: давление держится на выдержке (падение ≤ 10%).`, timeMin: hesitationMin });
+  if (isBradenhead) W.push({title:"Контроль окончания задавливания",text:"Зафиксировать фактические объёмы, расход, давление и приёмистость. Не считать снижение давления или остановку приёмистости автоматическим подтверждением герметичности. После утверждённого контроля выполнить промывку остатка состава и ОЗЦ."});
   if (inp.tool.kind === "retainer") W.push({ title: "Расстыковка и обратная промывка", text: `Снять стыковочный узел с ретейнера (обратный клапан закрывается), приподнять на 5–10 м, обратная промывка ${f1(reverseOutM3, 2)} м³ для вымыва излишков состава из НКТ.`, volumeM3: reverseOutM3, timeMin: reverseMin });
   else if (inp.tool.kind === "packer") W.push({ title: "Срыв пакера и промывка", text: `Сорвать пакер, поднять на 20–30 м выше кровли состава, обратная промывка ${f1(reverseOutM3, 2)} м³.`, volumeM3: reverseOutM3 });
   W.push({ title: comp === "resin" ? "Отверждение смолы" : "ОЗЦ", text: comp === "resin" ? `Выдержка на отверждение при ${f1(bhst, 0)} °C по паспорту состава (обычно 12–24 ч).` : `ОЗЦ при ${f1(bhst, 0)} °C — по лабораторной кривой прочности (обычно 24–48 ч).` });
@@ -386,6 +428,6 @@ export function calculateRir(inp: RirInputs): RirResult {
     constraints, maxBhpMPa: maxBhp, maxSurfaceMPa: maxSurf, maxSurfaceWaterMPa: maxSurfW, governing: gov.name, squeezeRateAtMaxM3h: qMax, compositionRateAtMaxM3h: qComp,
     volumes: { tubingM3, belowToolM3, squeezeM3, reserveM3, totalM3, displacementM3, reverseOutM3 },
     timing: { pumpMin, displaceMin, hesitationMin, reverseMin, jobMin, requiredWorkLifeMin },
-    profile, hesitation: hes, workProgram: W, warnings,
+    profile, hesitation: hes, workProgram: W, spotResult, warnings,
   };
 }
