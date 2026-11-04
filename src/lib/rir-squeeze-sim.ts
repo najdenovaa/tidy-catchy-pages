@@ -167,7 +167,7 @@ export function simulateSqueeze(inp: RirInputs, res: RirResult, design: Composit
     }
     stagesOut.push({ name, t0, t1: t, kind: "pump" });
   };
-  const hasTool = inp.tool.kind !== "bradenhead";
+  const hasTool = true; // Bradenhead branch is handled above; only packer/retainer remain.
   circ("Буфер", "buf", bufV);
   const pathV = spot ? tubV + belowV : tubV;
   const compInPhaseA = Math.min(compV, pathV);
