@@ -87,9 +87,9 @@ export function autoDesignRir(base: RirInputs): RirAutoResult {
     return ap >= 3 * D95_UM[k];
   });
   if (ap !== null) notes.push(`Раскрытие канала ~${ap.toFixed(0)} мкм: допустимы ${comps.map((k) => COMPOSITION_LABEL[k].split(" (")[0]).join(", ")}.`);
-  const tools: ToolKind[] = base.tool.kind === "bradenhead" ? ["bradenhead", "retainer", "packer"] : ["retainer", "packer"];
+  const tools: ToolKind[] = base.tool.kind === "bradenhead" ? ["bradenhead"] : ["retainer", "packer"];
   const top = base.leak.topMD;
-  const depthsFor = (t: ToolKind) => t === "bradenhead" ? [0]
+  const depthsFor = (t: ToolKind) => t === "bradenhead" ? [base.spot?.liftedShoeMD ?? Math.max(0,top - 100)]
     : [...new Set([base.tool.setDepthMD, top - 10, top - 30].filter((d) => d > 50 && d <= top - 5).map((d) => Math.round(d)))];
   const stagesSet = [2, 3, 4, 6];
   const holdSet = [5, 10, 15];
@@ -141,5 +141,6 @@ export function applyVariant(inp: RirInputs, v: RirVariant): RirInputs {
   return {
     ...inp, composition: v.composition, hesitationStages: v.stages, hesitationHoldMin: v.holdMin,
     tool: { ...inp.tool, kind: v.tool, setDepthMD: v.tool === "bradenhead" ? inp.tool.setDepthMD : v.toolDepthMD },
+    spot: v.tool === "bradenhead" ? { ...inp.spot, liftedShoeMD:v.toolDepthMD } : inp.spot,
   };
 }
