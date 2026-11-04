@@ -94,8 +94,8 @@ function SqueezeAnimation({ p, hasTool, spot, toolLabel }: { p: SqueezePoint; ha
   const cx = 120, cw = 90, tw = 26; // колонна и НКТ
   const yTop = 40, yTool = 300, yBot = 385, yLeak0 = 345, yLeak1 = 362;
   const tubH = yTool - yTop;
-  const circ = /Буфер|Состав$|Продавка|Доводка/.test(p.stage);
-  const hold = p.stage.startsWith("Выдержка") || p.stage.startsWith("Посадка");
+  const circ = /Буфер|Состав$|Продавка|Доводка|Размещение цементной пачки/.test(p.stage);
+  const hold = p.stage.startsWith("Выдержка") || p.stage.startsWith("Посадка") || p.stage.includes("Подъём НКТ") || p.stage.includes("ПВО");
   const squeeze = !circ && !hold && p.qLs > 0;
   const compIn = p.compTop >= 0;
   const belowH = yBot - yTool;
@@ -114,6 +114,9 @@ function SqueezeAnimation({ p, hasTool, spot, toolLabel }: { p: SqueezePoint; ha
       <rect x={cx - cw / 2 - 30} y={yTop - 10} width={cw + 60 + 80} height={H - yTop} fill="url(#rock)" opacity={0.6} />
       {/* затрубье колонна-НКТ */}
       <rect x={cx - cw / 2} y={yTop - 10} width={cw} height={yBot - yTop + 10} fill={WELL} opacity={0.6} />
+      {/* cement sheath behind casing - fracture passes through a defect in this cement */}
+      <rect x={cx - cw/2 - 19} y={yTop - 10} width={14} height={yBot-yTop+12} fill="#c7c0ae" opacity={0.68}/>
+      <rect x={cx + cw/2 + 5} y={yTop - 10} width={14} height={yBot-yTop+12} fill="#c7c0ae" opacity={0.68}/>
       {/* стенки колонны */}
       <rect x={cx - cw / 2 - 5} y={yTop - 10} width={5} height={yBot - yTop + 12} fill="#475569" />
       <rect x={cx + cw / 2} y={yTop - 10} width={5} height={yLeak0 - yTop + 10} fill="#475569" />
