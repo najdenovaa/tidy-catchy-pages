@@ -34,7 +34,7 @@ export const DEFAULT_SPOT_SQUEEZE: SpotSqueezeInput = {
   leakTopMD: 1850, leakBottomMD: 1855, wellBottomMD: 2100,
   initialShoeMD: 1870, liftedShoeMD: 1750, slurryBottomMD: 1870,
   slurryVolumeM3: 1.0, plannedSqueezeM3: 0.35,
-  slurryDensityGcm3: 1.85, wellFluidDensityGcm3: 1.1,
+  slurryDensityGcm3: 1.65, wellFluidDensityGcm3: 1.1,
   casingAllowableSurfaceMPa: 20, tubingAllowableSurfaceMPa: 30,
   bopWorkingMPa: 21, fracGradientMPaM: 0.019,
   leakTVD: 1852.5, zonePressureMPa: 18,
