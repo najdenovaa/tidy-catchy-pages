@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Send, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench } from "lucide-react";
+import { Send, Mail, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import geoladLogo from "@/assets/geolad-logo.png";
 import nefteservisLogo from "@/assets/nefteservis-logo.png";
@@ -89,9 +89,15 @@ export default function Home() {
             </div>
             <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
               <HelpLink />
-              <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer"
+              <a href="https://t.me/anton_nyug" target="_blank" rel="noopener noreferrer"
+                aria-label="Поддержка DeAllsoft в Telegram: @anton_nyug"
                 className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
-                <Send className="w-4 h-4" /><span>Поддержка</span>
+                <Send className="w-4 h-4" /><span>Поддержка TG</span>
+              </a>
+              <a href="mailto:najdenovaa@gmail.com"
+                aria-label="Написать в поддержку DeAllsoft на najdenovaa@gmail.com"
+                className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
+                <Mail className="w-4 h-4" /><span>Почта</span>
               </a>
               <Link to="/auth" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
                 <UserCircle className="w-4 h-4" /><span>Кабинет</span>
