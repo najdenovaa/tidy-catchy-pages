@@ -25,7 +25,7 @@ export function simulateBradenhead(inp:RirInputs,res:RirResult,design:Compositio
  let t=0, vPump=0, vChannel=0, vCement=0,pSurface=0;
  const point=(name:string,q=0)=>{
    const remaining=Math.max(0,placed-vCement);
-   const belowFrac=placed>0?remaining/placed:0;
+   const belowFrac=placed>0?(t <= placed/qSet + 0.001 ? Math.min(1,vPump/placed) : remaining/placed):0;
    const allowance=Math.max(0,cap);
    points.push({t:Math.round(t*100)/100,stage:name,qLs:q,surfaceMPa:pSurface,bhpMPa:pSurface+hyd,
     vPumped:vPump,vChannel,vCompChannel:vCement,compTop:-1,compBottom:-1,belowComp:Math.min(1,belowFrac),
