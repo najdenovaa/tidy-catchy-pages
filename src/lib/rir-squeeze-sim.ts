@@ -15,6 +15,7 @@
 import type { RirInputs, RirResult } from "./rir-calculations";
 import type { CompositionDesign } from "./rir-compositions";
 import { pipeFrictionMPa } from "./cementing-calculations";
+import { simulateBradenhead } from "./rir-bradenhead-sim";
 
 export interface SqueezePoint {
   t: number;
@@ -52,6 +53,7 @@ export interface SqueezeSimResult {
 }
 
 export function simulateSqueeze(inp: RirInputs, res: RirResult, design: CompositionDesign | null): SqueezeSimResult {
+  if (inp.tool.kind === "bradenhead") return simulateBradenhead(inp, res, design);
   const warnings: string[] = [];
   const dt = 0.25; // мин
   const qSet = Math.max(0.2, inp.pumpRateLs) / 1000; // м³/с
