@@ -48,6 +48,7 @@ import { normalizeCementingSnapshot, type CementingSnapshot } from "@/lib/cement
 import TermsFooter from "@/components/TermsFooter";
 import HelpLink from "@/components/HelpLink";
 import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
+import CementingMobileExchange from "@/components/CementingMobileExchange";
 
 type CalcSnapshot = CementingSnapshot;
 
@@ -596,6 +597,22 @@ export default function Index() {
                 <RotateCcw className="w-3.5 h-3.5 shrink-0" />
                 <span className="hidden sm:inline">Обнулить</span>
               </button>
+              <CementingMobileExchange
+                snapshot={{ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 }}
+                onImport={(loaded) => {
+                  setWellData(loaded.wellData);
+                  setDrillingFluid(loaded.drillingFluid);
+                  setSlurries(loaded.slurries);
+                  setBuffers(loaded.buffers);
+                  setDisplacementFluids(loaded.displacementFluids);
+                  setFractureGradient(loaded.fractureGradient);
+                  setFlushTimeMin(loaded.flushTimeMin);
+                  setFlushVolumeM3(loaded.flushVolumeM3);
+                  setCalcSnapshot(null);
+                  setCentralizationResults(null);
+                  setActiveTab("input");
+                }}
+              />
               <button
                 onClick={handleSaveToAccount}
                 disabled={saving}
