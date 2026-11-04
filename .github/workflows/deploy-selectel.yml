@@ -52,4 +52,4 @@ jobs:
             dist/ "${DEPLOY_USER}@${DEPLOY_HOST}:/var/www/deallsoft/dist/"
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            'find /var/www/deallsoft/dist -type d -exec chmod 2750 {} +; find /var/www/deallsoft/dist -type f -exec chmod 640 {} +'
+            'find /var/www/deallsoft/dist -type d -exec chmod 755 {} +; find /var/www/deallsoft/dist -type f -exec chmod 644 {} +'
