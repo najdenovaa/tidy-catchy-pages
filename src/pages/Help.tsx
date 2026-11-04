@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import { ArrowLeft, Home, FileDown, Send, FlaskConical, Shield, Cable, Droplets, Wrench, BookOpen } from "lucide-react";
+import { ArrowLeft, Home, FileDown, Send, Mail, Phone, ChevronDown, FlaskConical, Shield, Cable, Droplets, Wrench, BookOpen } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const PDF_URL = "/docs/deallsoft-quick-start.pdf";
 
@@ -144,9 +145,36 @@ export default function Help() {
             <p className="font-semibold text-foreground">Не нашли ответ или нашли ошибку?</p>
             <p className="text-sm text-muted-foreground">Напишите в поддержку — разбираем каждое обращение.</p>
           </div>
-          <a href="https://t.me/deall_support" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
-            <Send className="w-4 h-4" /> Поддержка в Telegram
-          </a>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="Открыть способы связи с поддержкой DeAllsoft"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Send className="w-4 h-4" />
+              Поддержка
+              <ChevronDown className="w-4 h-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64 max-w-[calc(100vw-2rem)]">
+              <DropdownMenuItem asChild>
+                <a href="https://t.me/anton_nyug" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 cursor-pointer">
+                  <Send className="w-4 h-4" />
+                  <span>Telegram · @anton_nyug</span>
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href="mailto:najdenovaa@gmail.com" className="flex items-center gap-2 cursor-pointer">
+                  <Mail className="w-4 h-4" />
+                  <span>najdenovaa@gmail.com</span>
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a href="tel:+79227740775" className="flex items-center gap-2 cursor-pointer">
+                  <Phone className="w-4 h-4" />
+                  <span>+7 922 774-07-75</span>
+                </a>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </section>
       </main>
     </div>
