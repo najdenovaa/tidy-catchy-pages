@@ -483,6 +483,7 @@ export function simulateSqueeze(
           ? `Состав у нарушения, но канал его почти не принимает (ушло ${(vCompCh * 1000).toFixed(0)} л из ${(res.volumes.squeezeM3 * 1000).toFixed(0)} л): давление держится за счёт вязкости, а не изоляции. Нужен состав меньшей вязкости (разбавитель) или большее допустимое давление; иначе изоляция только входа в канал.`
           : `Полного задавливания по расчёту нет: после ${holds.length} ступеней давление на выдержке падает на ${holds[holds.length - 1]?.decayPct.toFixed(0) ?? "—"}%. Добавьте ступени / объём или увеличьте выдержку (состав набирает структуру).`;
   return {
+    workLifeKnown: !!design && Number.isFinite(design.workLifeAtBhctMin),
     points,
     stages: stagesOut,
     holds,

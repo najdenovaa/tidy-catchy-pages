@@ -11,6 +11,7 @@
  * результат (задавлено / частично / нет) ≫ запас времени жизни > время операции >
  * стоимость материалов и операций (разбуривание ретейнера, риск прихвата пакера).
  */
+import { withRirLab } from "./rir-laboratory";
 import {
   calculateRir,
   D95_UM,
@@ -37,7 +38,7 @@ export interface RirPlan {
 }
 
 function design(inp: RirInputs, res: RirResult, requiredMin: number) {
-  return designRirComposition(
+  return withRirLab(designRirComposition(
     res.composition,
     {
       bhctC: res.temps.bhctC,
@@ -50,7 +51,7 @@ function design(inp: RirInputs, res: RirResult, requiredMin: number) {
       maxViscosityMPas: resinViscosityTarget(res.apertureUm),
     },
     res.volumes.squeezeM3,
-  );
+  ), inp, { bhctC: res.temps.bhctC, bhstC: res.temps.bhstC, requiredMin });
 }
 
 export function planRir(inp: RirInputs, res: RirResult): RirPlan {
@@ -73,7 +74,7 @@ export function planRir(inp: RirInputs, res: RirResult): RirPlan {
       }
     }
   }
-  if (!comp && !sim.blocked)
+  if ((!comp || comp.primary.workLifeSource === "unknown") && !sim.blocked)
     required = Math.max(required, Math.ceil(sim.totalTimeMin / 0.7));
   return {
     comp,
