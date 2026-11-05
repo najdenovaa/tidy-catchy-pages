@@ -39,3 +39,20 @@ describe("Авторасстановка центраторов", () => {
     expect(at.centralizersPerJoint).toBeLessThanOrEqual(0.1);
   });
 });
+
+describe('Целевой Standoff с паспортным центратором ПЦ',()=>{
+ it('подбирает минимум по полной модели и увеличивает число при целях 40/60/80%',async()=>{
+  const {pcCentralizers}=await import('./pc-centralizers');
+  const device=pcCentralizers.find(p=>p.spec.passport?.model==='ПЦ-168/216-245')!.spec;
+  const counts:number[]=[];
+  for(const target of [40,60,80]){
+   const placement=autoPlaceCentralizers(well,device,12,target,1180);
+   counts.push(placement.reduce((n,p)=>n+p.totalCentralizers,0));
+   expect(placement.every(p=>p.standoffAchieved>=target-.1)).toBe(true);
+   const actual=calculateCentralization(well,placement.map((p,i)=>({id:String(i),fromMD:p.fromMD,toMD:p.toMD,centralizersPerJoint:p.centralizersPerJoint,jointLength:12,spec:device})),1180);
+   expect(Math.min(...actual.map(p=>p.standoff))).toBeGreaterThanOrEqual(target-.2);
+  }
+  console.log('ПЦ, цели 40/60/80%, количество:',counts.join('/'));
+  expect(counts[1]).toBeGreaterThan(counts[0]);expect(counts[2]).toBeGreaterThan(counts[1]);
+ });
+});

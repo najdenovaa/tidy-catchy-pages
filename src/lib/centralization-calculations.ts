@@ -1,4 +1,4 @@
-import { centralizerCalibration, centralizerDeflection, centralizerModelNotes } from "./centralizer-response";
+import { centralizerDeflection, centralizerModelNotes } from "./centralizer-response";
 // Centralization / eccentricity calculation engine
 import type { WellData, TrajectoryPoint } from "./cementing-calculations";
 import { getCasingID } from "./cementing-calculations";
@@ -497,18 +497,6 @@ export function autoPlaceCentralizers(
 
   if (rc_mm <= 0 || EI <= 0) return [];
 
-  const targetEcc = 1 - targetStandoff / 100;
-  const F_max_N = (spec.passport ? centralizerCalibration(spec).forceKN : spec.restoringForce) * 1000;
-  const testFraction = spec.passport ? Math.max(.01, 1-centralizerCalibration(spec).standoff/100) : 1;
-  const k_spring = F_max_N / (rc_m * testFraction);
-
-  // Геометрический потолок по высоте планки отключён — алгоритм опирается
-  // только на структурный прогиб и пружинную жёсткость.
-  const eccFloorGeom = 0;
-  const maxAchievableStandoff = 100;
-
-
-  // Максимум центраторов на трубу — допускаем 3-4-5+ если нужно для цели.
   const MAX_CPJ = 8.0;
 
   const wellheadDepth = options.wellheadDepth ?? 50;
@@ -577,101 +565,7 @@ export function autoPlaceCentralizers(
     return "vertical";
   }
 
-  // Эксцентричность для заданного CPJ с учётом изгиба, пружинной жёсткости
-  // и геометрического потолка по высоте планки.
-  function eccForCPJ(zenith: number, cpj: number): number {
-    if (cpj <= 0) return 1;
-    const L = jointLength / cpj;
-    const lateralF = lateralForcePerMeter(wpm, bf, zenith);
-    const sag_free = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
-    const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
-    const sag = sag_free / (1 + springFactor);
-    const eccStructural = Math.min(1, sag / rc_m);
-    return Math.max(eccFloorGeom, eccStructural, 0.02);
-  }
-
-  // Подбор минимального CPJ, дающего ecc ≤ targetEcc/boost.
-  // Если даже MAX_CPJ не хватает — возвращает MAX_CPJ и blocked=true.
-  function physicsCPJ(
-    zenith: number,
-    boostFactor: number = 1,
-    minCPJ: number = 0,
-  ): { cpj: number; standoff: number; blocked: boolean } {
-    const targetEffEcc = Math.max(0, targetEcc / boostFactor);
-    const blockedByBlade = eccFloorGeom > targetEcc + 1e-4;
-
-    if (zenith < 0.1) {
-      const ecc = Math.max(eccFloorGeom, 0.02);
-      return {
-        cpj: Math.max(sparseCPJ, minCPJ),
-        standoff: Math.round((1 - ecc) * 1000) / 10,
-        blocked: false,
-      };
-    }
-
-    // Низкий зенит и без центраторов цель уже достигается — редкая расстановка
-    if (zenith < 3 && minCPJ === 0) {
-      const ecc_free = eccForCPJ(zenith, 1 / jointLength);
-      if (ecc_free <= targetEffEcc) {
-        return {
-          cpj: sparseCPJ,
-          standoff: Math.round((1 - Math.max(0.02, ecc_free)) * 1000) / 10,
-          blocked: false,
-        };
-      }
-    }
-
-    let lo = 0.05, hi = MAX_CPJ, bestCPJ = MAX_CPJ;
-    for (let iter = 0; iter < 60; iter++) {
-      const mid = (lo + hi) / 2;
-      const ecc = eccForCPJ(zenith, mid);
-      if (ecc <= targetEffEcc) { bestCPJ = mid; hi = mid; } else { lo = mid; }
-    }
-    bestCPJ = Math.max(minCPJ, Math.ceil(bestCPJ * 10) / 10);
-    bestCPJ = Math.min(MAX_CPJ, bestCPJ);
-
-    // Если не дотягиваем до цели — добиваем CPJ шагом 0.1 до MAX_CPJ.
-    let ecc = eccForCPJ(zenith, bestCPJ);
-    while (ecc > targetEcc && bestCPJ < MAX_CPJ) {
-      bestCPJ = Math.round((bestCPJ + 0.1) * 10) / 10;
-      ecc = eccForCPJ(zenith, bestCPJ);
-    }
-
-    const standoff = Math.round((1 - ecc) * 1000) / 10;
-    return { cpj: bestCPJ, standoff, blocked: blockedByBlade && standoff < targetStandoff - 0.5 };
-  }
-
-  function solveForZone(seg: RawSeg, zone: PlacementZone): { cpj: number; standoff: number } {
-    switch (zone) {
-      case "vertical": {
-        const r = physicsCPJ(seg.maxZenith);
-        return { cpj: sparseCPJ, standoff: Math.max(r.standoff, 95) };
-      }
-      case "wellhead": {
-        const r = physicsCPJ(seg.maxZenith, 1.0, 1.0);
-        return { cpj: r.cpj, standoff: r.standoff };
-      }
-      case "pump": {
-        // Зона ГНО — критичная: +15% запас и минимум 1/трубу
-        const r = physicsCPJ(seg.maxZenith, 1.15, 1.0);
-        return { cpj: r.cpj, standoff: r.standoff };
-      }
-      case "build": {
-        // Набор / угол: +20% запас, минимум 1/трубу
-        const r = physicsCPJ(seg.maxZenith, 1.2, 1.0);
-        return { cpj: r.cpj, standoff: r.standoff };
-      }
-      case "horizontal":
-      case "tangent":
-      default:
-        return physicsCPJ(seg.maxZenith);
-    }
-  }
-
-  // Проверка и доводка по полной модели центрирования (calculateCentralization): она учитывает не только
-  // вес колонны, но и прижатие натяжением на участках кривизны. Упрощённая оценка выше этого не видит и на
-  // участках набора угла может давать «1 центратор на 10 труб» там, где колонна фактически лежит на стенке.
-  const CPJ_LADDER = [0.07, 0.1, 0.2, 0.25, 0.34, 0.5, 0.75, 1, 1.5, 2, 3, 4];
+  // Optimise against the same model as the final profile, including curvature, contact and span sag.
   const verifiedStandoff = (seg: RawSeg, cpj: number): number => {
     const prof = calculateCentralization(
       wellData,
@@ -683,18 +577,19 @@ export function autoPlaceCentralizers(
 
   const computed = rawSegments.map(seg => {
     const zone = classify(seg);
-    const first = solveForZone(seg, zone);
-    let cpj = first.cpj;
-    let standoff = verifiedStandoff(seg, cpj);
-    if (standoff < targetStandoff) {
-      for (const c of CPJ_LADDER) {
-        if (c <= cpj) continue;
-        const so = verifiedStandoff(seg, c);
-        cpj = c; standoff = so;
-        if (so >= targetStandoff) break;
+    const floor = zone === 'wellhead' || zone === 'build' || zone === 'pump' ? 1 : sparseCPJ;
+    const boost = zone === 'build' ? 1.2 : zone === 'pump' ? 1.15 : 1;
+    const required = 100 - (100 - targetStandoff) / boost;
+    let lo = floor, hi = MAX_CPJ;
+    if (verifiedStandoff(seg, floor) >= required) hi = floor;
+    else if (verifiedStandoff(seg, hi) >= required) {
+      for (let i=0;i<14;i++) {
+        const mid=(lo+hi)/2;
+        if (verifiedStandoff(seg,mid)>=required) hi=mid; else lo=mid;
       }
     }
-    return { ...seg, zone, cpj, standoff: Math.round(standoff * 10) / 10 };
+    const cpj = Math.min(MAX_CPJ, Math.ceil(hi*100)/100);
+    return { ...seg, zone, cpj, standoff: verifiedStandoff(seg,cpj) };
   });
 
   const merged: AutoPlacementInterval[] = [];
