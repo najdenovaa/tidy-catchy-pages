@@ -283,6 +283,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
 
   // Auto mode state
   const [targetStandoff, setTargetStandoff] = useState(67);
+  const [calculatedTarget, setCalculatedTarget] = useState<number | null>(null);
   const [autoJointLength, setAutoJointLength] = useState(12);
   const [autoSpecType, setAutoSpecType] = useState<CentralizerType>("rigid");
   const [autoSpec, setAutoSpec] = useState<CentralizerSpec>({
@@ -405,6 +406,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
       pumpZoneBottom: wellData.pumpZoneBottom,
     });
     setAutoResults(placement);
+    setCalculatedTarget(targetStandoff);
 
     const autoIntervals: CentralizerInterval[] = placement.map(p => ({
       id: makeId(),
@@ -424,6 +426,12 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
       setSelectedMD(worst.md);
     }
   }, [wellData, autoSpec, autoJointLength, targetStandoff, mudDensity, turbPoints, onResultsChange, onIntervalsChange]);
+
+  useEffect(() => {
+    if (mode !== 'auto' || calculatedTarget === null || calculatedTarget === targetStandoff || targetStandoff < 10 || targetStandoff > 99) return;
+    const timer = setTimeout(handleCalculateAuto, 250);
+    return () => clearTimeout(timer);
+  }, [mode, calculatedTarget, targetStandoff, handleCalculateAuto]);
 
   const selectedResult = useMemo(() => {
     if (results && selectedMD !== null) {
@@ -746,8 +754,8 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div>
-                <label className="text-[10px] text-muted-foreground">Целевой Standoff, %</label>
-                <Input type="number" min={10} max={99} step={1} value={targetStandoff} onChange={e => setTargetStandoff(+e.target.value)} className="h-8 text-xs" />
+                <label className="text-[10px] text-muted-foreground" htmlFor="centralizer-target">Целевой Standoff, %</label>
+                <Input type="number" id="centralizer-target" min={10} max={99} step={1} value={targetStandoff} onChange={e => setTargetStandoff(+e.target.value)} className="h-8 text-xs" />
               </div>
               <div>
                 <label className="text-[10px] text-muted-foreground">Длина трубы, м</label>
@@ -766,10 +774,12 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
               </div>
             </div>
 
+            <p className="text-xs text-muted-foreground">Цель расстановки: {targetStandoff}%. После первого расчёта изменение цели автоматически обновляет количество и результаты. Опорная точка испытания усилия задаёт жёсткость и является отдельным параметром.</p>
+            {calculatedTarget !== null && calculatedTarget !== targetStandoff && <p role="status" className="text-sm">Пересчитываем расстановку для цели {targetStandoff}%…</p>}
             <CentralizerPassportFields spec={autoSpec} casingOD={wellData.casingOD} onChange={spec => { setResults(null); setAutoResults(null); onResultsChange?.(null); setAutoSpec(spec); setAutoSpecType(spec.type); }} />
 
             {autoSpec.passport && (!autoSpec.passport.restoringForceKgf || !autoSpec.passport.restoringStandoff) && <CentralizerCatalogPreview spec={autoSpec} wellData={wellData} toMD={wellData.casingDepthMD} />}
-            <Button disabled={passportWarnings(autoSpec, wellData.casingOD).length > 0} onClick={handleCalculateAuto} className="w-full gap-2">
+            <Button disabled={passportWarnings(autoSpec, wellData.casingOD).length > 0 || !Number.isFinite(targetStandoff) || targetStandoff < 10 || targetStandoff > 99} onClick={handleCalculateAuto} className="w-full gap-2">
               <Target className="w-4 h-4" /> Рассчитать расстановку
             </Button>
           </CardContent>
@@ -780,8 +790,9 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
       {autoResults && autoResults.length > 0 && mode === "auto" && (
         <Card>
           <CardHeader className="pb-2">
+            {autoResults.some(r => r.standoffAchieved < (calculatedTarget ?? targetStandoff)) && <p role="alert" className="text-sm text-destructive">На части интервалов цель не достигается даже при предельной плотности установки. Проверьте достигнутый Standoff в таблице.</p>}
             <CardTitle className="text-sm flex items-center justify-between">
-              <span>Расстановка центраторов по интервалам</span>
+              <span>Расстановка центраторов · цель {calculatedTarget}%</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-normal text-muted-foreground">
                   Всего: <span className="text-foreground font-medium">{totalCentralizers} шт.</span>
@@ -872,7 +883,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             const cased = selectedResult.md <= (wellData.prevCasingDepth || 0) && wellData.prevCasingID > 0;
             const currentIntervals = autoResults ? autoResults.map((iv, i) => ({ id: String(i), fromMD: iv.fromMD, toMD: iv.toMD, jointLength: autoJointLength, centralizersPerJoint: iv.centralizersPerJoint, spec: autoSpec })) : intervals;
             const currentResult = calculateCentralization(wellData, currentIntervals, mudDensity, undefined, undefined, {fromMD:selectedResult.md, toMD:selectedResult.md})[0];
-            return spec && currentResult ? <div className="space-y-2"><label className="text-sm">Выберите глубину для 3D<select aria-label="Глубина 3D" className="block bg-background border border-input rounded p-2" value={selectedResult.md} onChange={e => setSelectedMD(+e.target.value)}>{results.map(r => <option key={r.md} value={r.md}>{r.md} м MD</option>)}</select></label><Centralizer3DInspector spec={spec} result={currentResult} azimuth={trajectoryAzimuth(wellData.trajectory, currentResult.md)} casingID={casingID} casingOD={wellData.casingOD} boreDiameter={cased ? wellData.prevCasingID : wellData.holeDiameter} cased={cased} /></div> : null;
+            return spec && currentResult ? <div className="space-y-2"><label className="text-sm">Выберите глубину для 3D<select aria-label="Глубина 3D" className="block bg-background border border-input rounded p-2" value={selectedResult.md} onChange={e => setSelectedMD(+e.target.value)}>{results.map(r => <option key={r.md} value={r.md}>{r.md} м MD</option>)}</select></label><Centralizer3DInspector targetStandoff={mode === 'auto' ? calculatedTarget ?? undefined : undefined} spec={spec} result={currentResult} azimuth={trajectoryAzimuth(wellData.trajectory, currentResult.md)} casingID={casingID} casingOD={wellData.casingOD} boreDiameter={cased ? wellData.prevCasingID : wellData.holeDiameter} cased={cased} /></div> : null;
           })()}
           {/* Cross-section preview */}
           <Card>

@@ -33,7 +33,7 @@ export function centralizerDeflection(spec:CentralizerSpec,casingOD:number,bore:
 export function centralizerModelNotes(spec:CentralizerSpec):string[] {
  if(!spec.passport||spec.type!=='spring')return [];
  const c=centralizerCalibration(spec),notes:string[]=[];
- if(c.assumedStandoff)notes.push('Степень центрирования испытания не указана: для оценочной модели принято 67%.');
+ if(c.assumedStandoff)notes.push('Опорная точка жёсткости принята при 67% (допущение для испытания). Это не целевой и не достигнутый Standoff.');
  if(c.assumedForce)notes.push(`Усилие не указано: принято модельное ${c.forceKN.toFixed(2)} кН, это допущение программы, не характеристика изделия.`);
  if(spec.passport.forceLimitAmbiguous)notes.push('Предел усилия в источнике неоднозначен; используется табличное значение для оценочного расчёта.');
  return notes;

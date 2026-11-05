@@ -23,6 +23,11 @@ it('оставляет кнопки расчёта активными для П�
   await choose('ПЦ-2-168/222');expect(button('Рассчитать расстановку').disabled).toBe(false);
   await act(async()=>button('Рассчитать расстановку').click());
   expect(computed.mock.lastCall?.[0]?.length).toBeGreaterThan(0);
+  const target=host.querySelector<HTMLInputElement>('#centralizer-target')!;
+  const setValue=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!;
+  await act(async()=>{setValue.call(target,'40');target.dispatchEvent(new Event('input',{bubbles:true}));});
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,350));});
+  expect(host.textContent).toContain('Расстановка центраторов · цель 40%');
   await choose('AVRORA 205 · ОК 168 · OD 254');expect(button('Рассчитать расстановку').disabled).toBe(false);
  }finally{await act(async()=>root.unmount());host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();}
 });
