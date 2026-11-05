@@ -1,3 +1,5 @@
+import { passportWarnings } from "@/lib/centralizer-passports";
+import CentralizerPassportFields from "./CentralizerPassportFields";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -352,7 +354,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
     const p = centralizerPresets[type];
     setIntervals(prev => prev.map(iv => iv.id === id ? {
       ...iv,
-      spec: { ...iv.spec, type, bladesCount: p.bladesCount!, bladeHeight: p.bladeHeight!, restoringForce: p.restoringForce!, maxAxialLoad: p.maxAxialLoad! },
+      spec: { type, bladesCount: p.bladesCount!, bladeHeight: p.bladeHeight!, restoringForce: p.restoringForce!, maxAxialLoad: p.maxAxialLoad! },
     } : iv));
   }, []);
 
@@ -584,26 +586,12 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                     <label className="text-[10px] text-muted-foreground">Длина трубы, м</label>
                     <Input type="number" value={iv.jointLength || ""} onChange={e => updateInterval(iv.id, { jointLength: +e.target.value })} className="h-8 text-xs" />
                   </div>
-                  <div>
-                    <label className="text-[10px] text-muted-foreground">Кол-во планок</label>
-                    <Input type="number" value={iv.spec.bladesCount || ""} onChange={e => updateSpec(iv.id, { bladesCount: +e.target.value })} className="h-8 text-xs" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-muted-foreground">Вылет планки, мм</label>
-                    <Input type="number" value={iv.spec.bladeHeight || ""} onChange={e => updateSpec(iv.id, { bladeHeight: +e.target.value })} className="h-8 text-xs" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-muted-foreground">Восст. сила, кН</label>
-                    <Input type="number" step={0.1} value={iv.spec.restoringForce || ""} onChange={e => updateSpec(iv.id, { restoringForce: +e.target.value })} className="h-8 text-xs" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-muted-foreground">Макс. осев. нагр., кН</label>
-                    <Input type="number" value={iv.spec.maxAxialLoad || ""} onChange={e => updateSpec(iv.id, { maxAxialLoad: +e.target.value })} className="h-8 text-xs" />
-                  </div>
+
                 </div>
+                <CentralizerPassportFields spec={iv.spec} casingOD={wellData.casingOD} onChange={spec => updateInterval(iv.id, { spec })} />
               </div>
             ))}
-            <Button onClick={handleCalculateManual} className="w-full gap-2">
+            <Button disabled={intervals.some(iv => passportWarnings(iv.spec, wellData.casingOD).length > 0)} onClick={handleCalculateManual} className="w-full gap-2">
               <Calculator className="w-4 h-4" /> Рассчитать центрирование
             </Button>
           </CardContent>
@@ -629,6 +617,12 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
+          <div className="rounded border border-border p-3 space-y-2">
+            <p className="text-xs">Из руководства ЦТГП-178/216: 4 лопасти, угол 55°, наружный диаметр не более 210 мм. Высота лопасти вычисляется как (210 − OD трубы) / 2. Обозначение «216» не является наружным диаметром. Эмпирический множитель потока не является паспортной характеристикой.</p>
+            <Button variant="outline" onClick={() => { setTurbBladesCount(4); setTurbBladeAngle(55); setTurbBladeHeight(Math.max(0, (210 - wellData.casingOD) / 2)); }}>Внести ЦТГП-178/216 для новых точек</Button>
+            {Math.abs(wellData.casingOD - 178) > 1 && <p className="text-xs text-destructive">ЦТГП из паспорта рассчитан на колонну 178 мм. Проверьте выбранную колонну.</p>}
+            <p className="text-xs text-muted-foreground">Если изделие уже учтено в интервалах центрирования, не добавляйте его второй раз как отдельное изделие для оценки сопротивления спуску. Для HIGH SLICK 560 угол в паспорте не указан - запросите чертёж или данные изготовителя.</p>
+          </div>
           {/* Auto-placement params */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div>
@@ -698,7 +692,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                     <TableHead className="text-[10px] px-2">Лопасти</TableHead>
                     <TableHead className="text-[10px] px-2">Угол, °</TableHead>
                     <TableHead className="text-[10px] px-2">Высота, мм</TableHead>
-                    <TableHead className="text-[10px] px-2">Расч. множ.</TableHead>
+                    <TableHead className="text-[10px] px-2">Модельный множ.</TableHead>
                     <TableHead className="text-[10px] px-2 w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -766,27 +760,9 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
               </div>
             </div>
 
-            {/* Spec details */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div>
-                <label className="text-[10px] text-muted-foreground">Кол-во планок</label>
-                <Input type="number" value={autoSpec.bladesCount} onChange={e => setAutoSpec(s => ({ ...s, bladesCount: +e.target.value }))} className="h-8 text-xs" />
-              </div>
-              <div>
-                <label className="text-[10px] text-muted-foreground">Вылет планки, мм</label>
-                <Input type="number" value={autoSpec.bladeHeight} onChange={e => setAutoSpec(s => ({ ...s, bladeHeight: +e.target.value }))} className="h-8 text-xs" />
-              </div>
-              <div>
-                <label className="text-[10px] text-muted-foreground">Восст. сила, кН</label>
-                <Input type="number" step={0.1} value={autoSpec.restoringForce} onChange={e => setAutoSpec(s => ({ ...s, restoringForce: +e.target.value }))} className="h-8 text-xs" />
-              </div>
-              <div>
-                <label className="text-[10px] text-muted-foreground">Макс. осев. нагр., кН</label>
-                <Input type="number" value={autoSpec.maxAxialLoad} onChange={e => setAutoSpec(s => ({ ...s, maxAxialLoad: +e.target.value }))} className="h-8 text-xs" />
-              </div>
-            </div>
+            <CentralizerPassportFields spec={autoSpec} casingOD={wellData.casingOD} onChange={spec => { setAutoSpec(spec); setAutoSpecType(spec.type); }} />
 
-            <Button onClick={handleCalculateAuto} className="w-full gap-2">
+            <Button disabled={passportWarnings(autoSpec, wellData.casingOD).length > 0} onClick={handleCalculateAuto} className="w-full gap-2">
               <Target className="w-4 h-4" /> Рассчитать расстановку
             </Button>
           </CardContent>

@@ -6,6 +6,7 @@ import { getCasingID } from "./cementing-calculations";
 export type CentralizerType = "rigid" | "spring" | "solid";
 
 export interface CentralizerSpec {
+  passport?: import("./centralizer-passports").CentralizerPassport;
   type: CentralizerType;
   bladesCount: number;     // количество планок
   bladeHeight: number;     // высота (вылет) планки, мм
@@ -369,7 +370,9 @@ export function calculateCentralization(
     } else if (hasCentralizer && EI > 0) {
       const L = spanLength;
       const sag_free_m = (5 * lateralF * Math.pow(L, 4)) / (384 * EI);
-      const k_spring = centralizerMaxForce_N / rc_m_local;
+      const referenceCompression = interval?.spec.passport?.restoringStandoff;
+      const testFraction = referenceCompression ? Math.max(0.01, 1 - referenceCompression / 100) : 1;
+      const k_spring = centralizerMaxForce_N / (rc_m_local * testFraction);
       const springFactor = (k_spring * Math.pow(L, 3)) / (48 * EI);
       const sag_with_spring_m = sag_free_m / (1 + springFactor);
       eccentricity = Math.min(1, Math.max(0, sag_with_spring_m / rc_m_local));
@@ -386,6 +389,11 @@ export function calculateCentralization(
       }
     }
 
+    if (hasCentralizer && interval?.spec.passport?.outerDiameter) {
+      const od = interval.spec.passport.outerDiameter;
+      const geometricStandoff = Math.max(0, Math.min(1, (od - wellData.casingOD) / (boreDia_mm - wellData.casingOD)));
+      eccentricity = Math.max(eccentricity, 1 - geometricStandoff);
+    }
     const standoff = (1 - eccentricity) * 100;
 
     results.push({
@@ -476,7 +484,8 @@ export function autoPlaceCentralizers(
 
   const targetEcc = 1 - targetStandoff / 100;
   const F_max_N = spec.restoringForce * 1000;
-  const k_spring = F_max_N / rc_m;
+  const testFraction = spec.passport?.restoringStandoff ? Math.max(0.01, 1 - spec.passport.restoringStandoff / 100) : 1;
+  const k_spring = F_max_N / (rc_m * testFraction);
 
   // Геометрический потолок по высоте планки отключён — алгоритм опирается
   // только на структурный прогиб и пружинную жёсткость.
