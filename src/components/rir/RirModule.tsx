@@ -749,7 +749,7 @@ function RirLegacyModule({
                       <b>{f(res.spotResult.slurryTopAfterLiftMD, 1)} м</b>
                     </span>
                     <span>
-                      Остаток после задавливания:{" "}
+                      Плановый остаток (без упругого объёма):{" "}
                       <b>{f(res.spotResult.residualM3, 2)} м³</b>
                     </span>
                     <span>
@@ -896,7 +896,7 @@ function RirLegacyModule({
         <Kpi
           label="Объём состава"
           value={`${f(res.volumes.totalM3, 2)} м³`}
-          sub={`задавливание ${f(res.volumes.squeezeM3, 2)} м³`}
+          sub={`план подачи ${f(res.volumes.squeezeM3, 2)} м³`}
         />
         <Kpi
           label="Время жизни состава"
@@ -1145,6 +1145,15 @@ function RirLegacyModule({
         }
       />
 
+      {!sim.blocked && res.spotResult && (
+        <p className="text-xs text-muted-foreground">
+          Остаток состава по моделированию:{" "}
+          {(res.spotResult.placedM3 - sim.compInChannelM3).toFixed(3)} м³;
+          плановый остаток без учёта упругого накопления:{" "}
+          {res.spotResult.residualM3.toFixed(3)} м³. Разница не считается
+          составом, ушедшим в нарушение.
+        </p>
+      )}
       <RirSqueezeSimCard
         cursorIndex={cursorIndex}
         onCursorChange={setCursorIndex}

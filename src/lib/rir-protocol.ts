@@ -198,7 +198,7 @@ export function buildRirProtocol(
           ],
           [
             "Требуемое время жизни / загустевания состава, мин",
-            `≥ ${res.timing.requiredWorkLifeMin}`,
+            `≥ ${Math.max(res.timing.requiredWorkLifeMin, sim && !sim.blocked ? Math.ceil(sim.totalTimeMin / 0.7) : 0)}`,
           ],
         ],
       },

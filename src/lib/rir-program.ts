@@ -303,7 +303,7 @@ export function buildRirProgram(
                   `${f(res.spotResult.slurryTopBeforeMD, 1)} / ${f(res.spotResult.slurryTopAfterLiftMD, 1)}`,
                 ],
                 [
-                  "Размещено / плановое задавливание / остаток смеси, м³",
+                  "Размещено / план подачи / плановый остаток, м³",
                   `${f(res.spotResult.placedM3, 2)} / ${f(res.spotResult.plannedSqueezeM3, 2)} / ${f(res.spotResult.residualM3, 2)}`,
                 ],
                 [
