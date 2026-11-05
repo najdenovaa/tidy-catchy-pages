@@ -1,3 +1,4 @@
+import { displacementReportKey, type DisplacementReportData, type DisplacementReportSettings } from "@/lib/cementing-report-data";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,25 +48,34 @@ function ProfileChart({ res, designTop }: { res: D2Result; designTop: number }) 
 export default function Displacement2DSection(p: {
   wellData: WellData; slurries: SlurryInput[]; buffers: BufferFluid[]; drillingFluid: DrillingFluid;
   displacementFluids: DisplacementFluid[]; volumes: VolumeResults;
+  initialReport?: DisplacementReportData | null;
+  initialSettings?: DisplacementReportSettings;
+  onSettingsChange?: (settings: DisplacementReportSettings) => void;
+  onReportChange?: (data: DisplacementReportData) => void;
 }) {
-  const [run, setRun] = useState<Run | null>(null);
+  const [run, setRun] = useState<Run | null>(() => p.initialReport ? { result: p.initialReport.result, meta: p.initialReport.meta, stages: p.initialReport.stages } : null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [snap, setSnap] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [cut, setCut] = useState(true);
-  const [fine, setFine] = useState(false);
-  const [rpm, setRpm] = useState(0);
-  const [settle, setSettle] = useState(30);
+  const [fine, setFine] = useState(p.initialSettings?.fine ?? p.initialReport?.settings.fine ?? false);
+  const [rpm, setRpm] = useState(p.initialSettings?.rotationRpm ?? p.initialReport?.settings.rotationRpm ?? 0);
+  const [settle, setSettle] = useState(p.initialSettings?.settleMin ?? p.initialReport?.settings.settleMin ?? 30);
   const worker = useRef<Worker | null>(null);
   const reqId = useRef(0);
   const trajectory: TrajectoryPoint[] = useMemo(() => getEffectiveTrajectory(p.wellData), [p.wellData]);
 
   // Входные данные изменились — результат устарел
-  const inputKey = useMemo(() => JSON.stringify([p.wellData.casingDepthMD, p.wellData.standoffProfile?.length, p.slurries.map((s) => [s.density, s.topDepthMD, s.rheology]), p.buffers.map((b) => [b.volume, b.density, b.rheology]), p.drillingFluid.density, p.drillingFluid.rheology]), [p]);
-  const [runKey, setRunKey] = useState<string | null>(null);
-  const stale = run && runKey !== `${inputKey}|${rpm}|${settle}`;
+  useEffect(() => { p.onSettingsChange?.({ rotationRpm: rpm, settleMin: settle, fine }); }, [rpm, settle, fine, p.onSettingsChange]);
+  const inputKey = displacementReportKey(p, { rotationRpm: rpm, settleMin: settle, fine });
+  const [runKey, setRunKey] = useState<string | null>(p.initialReport?.inputKey ?? null);
+  const stale = run && runKey !== inputKey;
+  useEffect(() => {
+    if (run && !stale && runKey) p.onReportChange?.({ ...run, inputKey: runKey, settings: { rotationRpm: rpm, settleMin: settle, fine } });
+  }, [run, runKey, stale, rpm, settle, fine, p.onReportChange]);
+
 
   useEffect(() => () => worker.current?.terminate(), []);
   const start = () => {
@@ -81,7 +91,7 @@ export default function Displacement2DSection(p: {
       setBusy(false);
       if (m.error) { setErr(m.error); return; }
       setRun({ result: m.result, meta: m.meta, stages: m.stages });
-      setRunKey(`${inputKey}|${rpm}|${settle}`);
+      setRunKey(inputKey);
       setSnap(m.result.snapshots.length - 1);
       w.terminate(); worker.current = null;
     };

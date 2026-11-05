@@ -1,3 +1,4 @@
+import { buildCentralizerJointSchedule, type CentralizationReportData } from "@/lib/cementing-report-data";
 import CentralizerCatalogPreview from "./CentralizerCatalogPreview";
 import { trajectoryAzimuth } from "@/lib/centralizer-mesh";
 import Centralizer3DInspector from "./Centralizer3DInspector";
@@ -36,6 +37,7 @@ import TriaxialCasingCard from "@/components/TriaxialCasingCard";
 import { Wrench } from "lucide-react";
 
 interface Props {
+  onReportChange?: (data: CentralizationReportData) => void;
   wellData: WellData;
   mudDensity: number;
   fluidPV?: number;
@@ -274,7 +276,7 @@ function standoffBg(standoff: number): string {
 }
 
 // ─── Main component ─────────────────────────────────────────────
-export default function CentralizationSection({ wellData, mudDensity, fluidPV = 25, fluidYP = 25, flowRateLps = 10, pipeWeightKgPerM, frictionCased = 0.25, frictionOpenhole = 0.35, onResultsChange, onIntervalsChange, externalIntervals }: Props) {
+export default function CentralizationSection({ wellData, mudDensity, fluidPV = 25, fluidYP = 25, flowRateLps = 10, pipeWeightKgPerM, frictionCased = 0.25, frictionOpenhole = 0.35, onResultsChange, onIntervalsChange, externalIntervals, onReportChange }: Props) {
   const [mode, setMode] = useState<CalcMode>("manual");
   const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => [newInterval(wellData.casingDepthMD)]);
   const [results, setResults] = useState<CentralizationResult[] | null>(null);
@@ -471,57 +473,16 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
         }))
       : intervals;
 
-    // Build joint-by-joint list from surface (0) down to casing shoe
-    const schedule: { jointNum: number; topMD: number; bottomMD: number; hasCentralizer: boolean; centralizerDepths: number[] }[] = [];
-    
-    let currentMD = 0;
-    let jointNum = 1;
-    const totalDepth = wellData.casingDepthMD;
-
-    while (currentMD < totalDepth) {
-      // Find which interval this joint falls into
-      const midMD = currentMD;
-      const interval = activeIntervals.find(iv => midMD >= iv.fromMD && midMD < iv.toMD);
-      const jl = interval?.jointLength ?? 12;
-      const bottomMD = Math.min(currentMD + jl, totalDepth);
-
-      let hasCent = false;
-      const centDepths: number[] = [];
-
-      if (interval && interval.centralizersPerJoint > 0) {
-        const cpj = interval.centralizersPerJoint;
-        if (cpj >= 1) {
-          // ≥1 centralizer per joint: place evenly along the joint
-          const count = Math.floor(cpj);
-          const spacing = jl / (count + 1);
-          for (let c = 1; c <= count; c++) {
-            centDepths.push(Math.round(currentMD + spacing * c));
-          }
-          hasCent = true;
-        } else {
-          // <1 centralizer per joint (e.g. 0.5 = every 2nd joint, 0.3 = every ~3rd)
-          const everyNth = Math.round(1 / cpj);
-          if ((jointNum - 1) % everyNth === 0) {
-            centDepths.push(Math.round(currentMD + jl / 2));
-            hasCent = true;
-          }
-        }
-      }
-
-      schedule.push({
-        jointNum,
-        topMD: Math.round(currentMD),
-        bottomMD: Math.round(bottomMD),
-        hasCentralizer: hasCent,
-        centralizerDepths: centDepths,
-      });
-
-      currentMD = bottomMD;
-      jointNum++;
-    }
-
-    return schedule;
+    return buildCentralizerJointSchedule(wellData.casingDepthMD, activeIntervals).map(row => ({ ...row, hasCentralizer: row.centralizerDepths.length > 0 }));
   }, [results, intervals, autoResults, autoJointLength, autoSpec, wellData.casingDepthMD]);
+  useEffect(() => {
+    onReportChange?.({
+      mode, targetStandoff: mode === "auto" ? targetStandoff : undefined, autoSpec, jointLength: autoJointLength,
+      intervals, results: results ?? [], turbPoints, autoResults: autoResults ?? undefined,
+      selectedMD: selectedMD ?? undefined, calculated: !!results?.length, joints: jointSchedule ?? undefined,
+    });
+  }, [onReportChange, mode, targetStandoff, autoSpec, autoJointLength, intervals, results, turbPoints, autoResults, selectedMD, jointSchedule]);
+
 
   return (
     <div className="space-y-4">
