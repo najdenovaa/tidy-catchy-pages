@@ -1,3 +1,6 @@
+import { resolveCentralizationReport, displacementReportKey, runDisplacementForReport, type CentralizationReportData, type DisplacementReportData, type DisplacementReportSettings, type CementingReportExtras } from "@/lib/cementing-report-data";
+import { buildCementingReportSvgs, buildHydraulicReportSvgs, buildWellReportSvgs, rasterizeReportSvgs } from "@/lib/cementing-report-figures";
+import { collectCementingReportSupplements } from "@/lib/cementing-report-dom";
 import type { FoamReportBundle } from '@/lib/foam-cement-types';
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { Link, useSearchParams, useLocation } from "react-router-dom";
@@ -38,7 +41,6 @@ import { applyVariant, type ProgramVariant, type CentralizerPlan } from "@/lib/c
 import type { CentralizationResult } from "@/lib/centralization-calculations";
 import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
-import { captureElementAsDataUrl } from "@/lib/capture-image";
 import { getCementingExample } from "@/lib/cementing-example";
 import { FileDown, Loader2, Send, Home, RotateCcw, Save, LogOut, LayoutDashboard } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -78,6 +80,13 @@ export default function Index() {
 
   const [activeTab, setActiveTab] = useState("input");
   const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportFile, setExportFile] = useState<{ url: string; name: string } | null>(null);
+  useEffect(() => () => { if (exportFile) URL.revokeObjectURL(exportFile.url); }, [exportFile]);
+  const [centralizationReport, setCentralizationReport] = useState<CentralizationReportData | null>(null);
+  const [displacementReport, setDisplacementReport] = useState<DisplacementReportData | null>(null);
+  const [displacementReportSettings, setDisplacementReportSettings] = useState<DisplacementReportSettings>({ fine: false, rotationRpm: 0, settleMin: 30 });
   const [foamReport, setFoamReport] = useState<FoamReportBundle | null>(null);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
   const [centralizerIntervals, setCentralizerIntervals] = useState<import("@/lib/centralization-calculations").CentralizerInterval[]>([]);
@@ -342,131 +351,55 @@ export default function Index() {
   };
 
   const handleExportDocx = useCallback(async () => {
-    setExporting(true);
+    setExporting(true); setExportError(null); setExportFile(null); setExportStatus("Пересчёт текущих данных");
     try {
       const { exportToDocx } = await import("@/lib/export-docx");
-      const snap = calcSnapshot ?? normalizeCementingSnapshot({ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 });
-
-      // Capture chart images from the DOM
-      const chartImages: Record<string, string> = {};
-      const chartSelectors = [
-        { key: "combined", index: 1 },
-        { key: "bhpVsFrac", index: 2 },
-        { key: "volVsPressure", index: 3 },
-        { key: "pumpPlan", index: 4 },
-        { key: "flowRegime", index: 5 },
-      ];
-      const chartsTab = document.querySelector('[data-tab-content="charts"]');
-      if (chartsTab) {
-        const cards = chartsTab.querySelectorAll('.recharts-responsive-container');
-        for (const { key, index } of chartSelectors) {
-          const container = cards[index - 1]?.parentElement;
-          if (container instanceof HTMLElement) {
-            try {
-              chartImages[key] = await captureElementAsDataUrl(container);
-            } catch {}
-          }
-        }
-      }
-
-      // Capture visual images
-      const visualImages: Record<string, string> = {};
-      const visualTab = document.querySelector('[data-tab-content="visual"]');
-      if (visualTab) {
-        // 3D canvas
-        const canvas3d = visualTab.querySelector('canvas');
-        if (canvas3d) {
-          try {
-            visualImages.well3d = canvas3d.toDataURL('image/png');
-          } catch {}
-        }
-        // Cross-section SVG — serialize to data URL directly
-        const svgEls = visualTab.querySelectorAll('svg');
-        if (svgEls[0]) {
-          try {
-            const svgEl = svgEls[0] as SVGSVGElement;
-            // Get dimensions from viewBox, attributes, or fallback
-            const vb = svgEl.viewBox?.baseVal;
-            const svgW = (vb && vb.width > 0) ? vb.width : (svgEl.clientWidth || parseInt(svgEl.getAttribute('width') || '800') || 800);
-            const svgH = (vb && vb.height > 0) ? vb.height : (svgEl.clientHeight || parseInt(svgEl.getAttribute('height') || '1000') || 1000);
-
-            // Clone SVG and ensure it has proper attributes for rendering
-            const clonedSvg = svgEl.cloneNode(true) as SVGSVGElement;
-            clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-            if (!clonedSvg.getAttribute('width')) clonedSvg.setAttribute('width', String(svgW));
-            if (!clonedSvg.getAttribute('height')) clonedSvg.setAttribute('height', String(svgH));
-            if (!clonedSvg.getAttribute('viewBox')) clonedSvg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
-
-            const serializer = new XMLSerializer();
-            const svgStr = serializer.serializeToString(clonedSvg);
-            const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-            const url = URL.createObjectURL(svgBlob);
-            const img = new Image();
-            const canvasW = svgW * 2;
-            const canvasH = svgH * 2;
-            await new Promise<void>((resolve, reject) => {
-              img.onload = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = canvasW;
-                canvas.height = canvasH;
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                  ctx.fillStyle = '#1a1a2e';
-                  ctx.fillRect(0, 0, canvasW, canvasH);
-                  ctx.drawImage(img, 0, 0, canvasW, canvasH);
-                  visualImages.crossSection = canvas.toDataURL('image/png');
-                }
-                URL.revokeObjectURL(url);
-                resolve();
-              };
-              img.onerror = () => { URL.revokeObjectURL(url); reject(); };
-              img.src = url;
-            });
-          } catch {}
-        }
-        // Displacement efficiency canvas (second canvas after 3D)
-        const allCanvases = visualTab.querySelectorAll('canvas');
-        if (allCanvases.length > 1) {
-          try {
-            visualImages.displacementEfficiency = allCanvases[1].toDataURL('image/png');
-          } catch {}
-        }
-      }
-
-      // Capture centralization images
-      const centralizationImages: Record<string, string> = {};
-      const centTab = document.querySelector('[data-tab-content="centralization"]');
-      if (centTab) {
-        const cards = centTab.querySelectorAll('[class*="Card"], .rounded-lg');
-        // Cross-section card
-        const crossSectionEl = centTab.querySelector('[class*="flex-col"][class*="sm\\:flex-row"]')?.parentElement;
-        if (crossSectionEl instanceof HTMLElement) {
-          try { centralizationImages.crossSection = await captureElementAsDataUrl(crossSectionEl); } catch {}
-        }
-        // Standoff profile - bar chart container
-        const barChartEl = centTab.querySelector('.h-40');
-        if (barChartEl?.parentElement instanceof HTMLElement) {
-          try { centralizationImages.standoffProfile = await captureElementAsDataUrl(barChartEl.parentElement as HTMLElement); } catch {}
-        }
-        // No longer capturing table as image - passing data directly
-      }
-
-      const images = (Object.keys(chartImages).length > 0 || Object.keys(visualImages).length > 0 || Object.keys(centralizationImages).length > 0)
-        ? { chartImages, visualImages, centralizationImages } : undefined;
-
-      await exportToDocx(snap.wellData, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient, images, centralizationResults ?? undefined, {
-        volumes: volumes ?? undefined,
-        pressureResult: pressureResult ?? undefined,
-        materials: materials ?? undefined,
-        flushTimeMin: snap.flushTimeMin,
-        flushVolumeM3: snap.flushVolumeM3,
-      }, { foam: foamReport && JSON.stringify(foamReport.simulation.input.wellData) === JSON.stringify(snap.wellData) ? foamReport : undefined });
-    } catch (e) {
-      console.error("DOCX export error:", e);
-    } finally {
-      setExporting(false);
-    }
-  }, [calcSnapshot, wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, foamReport]);
+      const snap = normalizeCementingSnapshot({ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 });
+      const cent = resolveCentralizationReport(centralizationReport, snap.wellData, snap.drillingFluid.density);
+      const profile = cent?.results.map(r => ({ md: r.md, standoffPct: r.standoff }));
+      const reportWell = { ...snap.wellData, standoffProfile: profile,
+        annularStandoffPct: profile?.length ? profile.reduce((s, x) => s + x.standoffPct, 0) / profile.length : snap.wellData.annularStandoffPct ?? 67 };
+      const vol = calculateVolumes(reportWell, snap.slurries, snap.displacementFluids?.[0]?.compressionCoeff ?? 1);
+      const pressure = calculatePressureProfile(reportWell, snap.slurries, snap.buffers, snap.drillingFluid, snap.displacementFluids,
+        snap.fractureGradient, vol.displacementVolumeWithCompression, snap.flushTimeMin, snap.flushVolumeM3);
+      const mats = calculateMaterials(snap.slurries, snap.buffers, reportWell);
+      setCalcSnapshot(snap);
+      if (cent) setCentralizationResults(cent.results);
+      const extras: CementingReportExtras = { centralization: cent, warnings: [] };
+      setExportStatus("Расчёт замещения");
+      const data = { wellData: reportWell, slurries: snap.slurries, buffers: snap.buffers,
+        drillingFluid: snap.drillingFluid, displacementFluids: snap.displacementFluids, volumes: vol };
+      const settings = displacementReportSettings;
+      try {
+        const d = displacementReport?.inputKey === displacementReportKey(data, settings) ? displacementReport : await runDisplacementForReport(data, settings);
+        extras.displacement = d; setDisplacementReport(d);
+      } catch (err) { extras.warnings!.push("Замещение не рассчитано: " + (err instanceof Error ? err.message : String(err))); }
+      // Give the mounted engineering tabs a render with the same fresh snapshot before collecting supplementary tables.
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      extras.supplements = collectCementingReportSupplements();
+      setExportStatus("Подготовка схем и 3D-кадров");
+      try { extras.figures = await rasterizeReportSvgs([...buildHydraulicReportSvgs(pressure.points), ...buildWellReportSvgs(reportWell, snap.slurries), ...buildCementingReportSvgs(reportWell, extras)]); }
+      catch (err) { extras.warnings!.push("Часть изображений недоступна: " + (err instanceof Error ? err.message : String(err))); }
+      const foam = foamReport &&
+        JSON.stringify(foamReport.simulation.input.wellData) === JSON.stringify(snap.wellData) &&
+        Math.abs(foamReport.simulation.input.mudDensity - (snap.drillingFluid.density > 100 ? snap.drillingFluid.density / 1000 : snap.drillingFluid.density)) < 1e-8
+          ? foamReport : undefined;
+      if (foamReport && !foam) extras.warnings!.push("Пеноцементирование: исходные данные изменены; устаревший расчёт не включён.");
+      setExportStatus("Формирование Word");
+      const blob = await exportToDocx(reportWell, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient,
+        undefined, cent?.results, { volumes: vol, pressureResult: pressure, materials: mats,
+          flushTimeMin: snap.flushTimeMin, flushVolumeM3: snap.flushVolumeM3 }, { foam, extras, returnBlob: true });
+      if (!blob) throw new Error("Документ не создан");
+      const file = { url: URL.createObjectURL(blob), name: "Программа-цементирования.docx" };
+      setExportFile(file);
+      // A visible link also gives mobile browsers a fresh user gesture after the calculation.
+      const link = document.createElement("a");
+      link.href = file.url; link.download = file.name; document.body.appendChild(link);
+      link.click(); link.remove();
+    } catch (err) {
+      setExportError("Не удалось сформировать отчёт: " + (err instanceof Error ? err.message : String(err)));
+    } finally { setExporting(false); setExportStatus(""); }
+  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3, centralizationReport, displacementReport, displacementReportSettings, foamReport]);
 
   const buildSavePayload = useCallback((): SaveCalcPayload => {
     const freshSnapshot = normalizeCementingSnapshot({
@@ -642,6 +575,9 @@ export default function Index() {
         </div>
       </header>
 
+      {exporting && <p role="status" className="mx-4 my-2 text-sm">{exportStatus}…</p>}
+      {exportFile && !exporting && <p className="mx-4 my-2 text-sm">Отчёт готов. <a className="text-primary underline" href={exportFile.url} download={exportFile.name}>Скачать DOCX</a></p>}
+      {exportError && <p role="alert" className="mx-4 my-2 text-sm text-destructive">{exportError}</p>}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabbedNavigation
           activeTab={activeTab}
@@ -904,6 +840,10 @@ export default function Index() {
               <div data-tab-content="displace3d">
                 {calcSnapshot && volumes && snapWellData ? (
                   <Displacement2DSection
+                    initialReport={displacementReport}
+                    initialSettings={displacementReportSettings}
+                    onSettingsChange={setDisplacementReportSettings}
+                    onReportChange={setDisplacementReport}
                     wellData={snapWellData}
                     slurries={calcSnapshot.slurries}
                     buffers={calcSnapshot.buffers}
@@ -1001,6 +941,7 @@ export default function Index() {
             <TabsContent value="centralization" forceMount>
               <div data-tab-content="centralization">
                 <CentralizationSection
+                  onReportChange={setCentralizationReport}
                   wellData={wellData}
                   mudDensity={drillingFluid.density}
                   fluidPV={drillingFluid.rheology?.pv || 25}

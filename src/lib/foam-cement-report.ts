@@ -1,3 +1,4 @@
+import { reportDataTable, reportPageProperties } from "./report-layout";
 import {
   Document,
   Packer,
@@ -11,24 +12,7 @@ import {
 import { saveAs } from "file-saver";
 import type { FoamReportBundle } from "./foam-cement-types";
 const p = (s: string) => new Paragraph({ text: s, spacing: { after: 100 } });
-const table = (rows: (string | number)[][]) =>
-  new Table({
-    rows: rows.map(
-      (row, i) =>
-        new TableRow({
-          children: row.map(
-            (v) =>
-              new TableCell({
-                children: [
-                  new Paragraph({
-                    children: [new TextRun({ text: String(v), bold: i === 0 })],
-                  }),
-                ],
-              }),
-          ),
-        }),
-    ),
-  });
+const table = (rows: (string | number)[][]) => reportDataTable(rows[0].map(String), rows.slice(1));
 export function foamReportChildren(bundle: FoamReportBundle) {
   const { simulation: r, planFact: fact } = bundle,
     s = r.input.settings;
@@ -118,7 +102,7 @@ export function foamReportChildren(bundle: FoamReportBundle) {
 export async function exportFoamReport(bundle: FoamReportBundle) {
   saveAs(
     await Packer.toBlob(
-      new Document({ sections: [{ children: foamReportChildren(bundle) }] }),
+      new Document({ sections: [{ properties: reportPageProperties(), children: foamReportChildren(bundle) }] }),
     ),
     "foam-cement-program.docx",
   );

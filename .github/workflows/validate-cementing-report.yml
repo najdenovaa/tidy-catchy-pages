@@ -1,0 +1,81 @@
+name: Validate complete cementing report
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/*report*'
+      - 'src/lib/export-docx.ts'
+      - 'src/lib/__tests__/cementing-complete-report.test.ts'
+      - 'src/lib/displacement-geometry.ts'
+      - 'src/components/displacement/**'
+      - 'src/components/CentralizationSection.tsx'
+      - 'src/pages/Index.tsx'
+      - '.github/workflows/validate-cementing-report.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      REPORT_QA_DIR: /tmp/cementing-report-qa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --legacy-peer-deps
+      - run: npx tsc --noEmit -p tsconfig.app.json
+      - run: npx vitest run
+      - run: npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install independent document renderer
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libreoffice-writer fonts-dejavu-core
+          python3 -m venv /tmp/cementing-report-venv
+          /tmp/cementing-report-venv/bin/pip -q install cairosvg pymupdf pillow
+      - name: Rasterize actual model figures and regenerate DOCX
+        run: |
+          /tmp/cementing-report-venv/bin/python - <<'PY'
+          import pathlib, os, cairosvg
+          d = pathlib.Path(os.environ["REPORT_QA_DIR"])
+          for f in d.glob("figure-*.svg"):
+              cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
+          PY
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts
+      - name: Verify rendered page geometry and model pages
+        run: |
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
+          /tmp/cementing-report-venv/bin/python - <<'PY'
+          import pathlib, os, base64, fitz
+          from PIL import Image
+          d = pathlib.Path(os.environ["REPORT_QA_DIR"])
+          doc = fitz.open(d / "cementing-report.pdf")
+          title = doc[0]
+          text = title.get_text()
+          assert "СОГЛАСОВАНО" in text and "УТВЕРЖДАЮ" in text and "ПРОГРАММА ЦЕМЕНТИРОВАНИЯ" in text, text
+          left = title.search_for("СОГЛАСОВАНО")[0]
+          right = title.search_for("УТВЕРЖДАЮ")[0]
+          assert right.x0 - left.x0 > 180 and abs(left.y0 - right.y0) < 4, (left, right)
+          assert abs(title.rect.width - 595.3) < 2, title.rect
+          model = next((p for p in doc if "Замещение: 3D-кадр t=" in p.get_text() and p.get_image_info()), None)
+          assert model is not None, "Missing rendered displacement model page"
+          print("Rendered", len(doc), "A4 pages; approval-column separation", round(right.x0 - left.x0), "pt; model page", model.number + 1)
+          preview = Image.new("RGB", (1000, 710), "white")
+          for i, page in enumerate([title, model]):
+              pix = page.get_pixmap(matrix=fitz.Matrix(.83, .83), alpha=False)
+              im = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+              preview.paste(im, (i * 500, 0))
+          out = d / "report-preview.png"
+          preview.save(out, optimize=True)
+          print("REPORT_QA_PNG=" + base64.b64encode(out.read_bytes()).decode())
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cementing-report-layout
+          path: |
+            /tmp/cementing-report-qa/cementing-report.docx
+            /tmp/cementing-report-qa/cementing-report.pdf
+            /tmp/cementing-report-qa/report-preview.png
