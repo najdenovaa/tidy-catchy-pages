@@ -1,587 +1,1445 @@
-import { useState, useMemo, useRef } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, ReferenceArea, ReferenceLine, AreaChart, Area, ComposedChart,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
 } from "recharts";
+import type {
+  WellData,
+  SlurryInput,
+  BufferFluid,
+} from "@/lib/cementing-calculations";
+import type {
+  FoamSettings,
+  FoamJobInput,
+  FoamSimulation,
+  FoamCandidate,
+  FoamObservation,
+  FoamReportBundle,
+} from "@/lib/foam-cement-types";
 import {
-  calculateFoamCement, calculateFoamPressureProfile,
-  FOAM_CEMENT_RECIPES,
-  type FoamCementInput, type FoamPumpingInput, type FoamQualityZone, type FoamCementRecipe,
-} from "@/lib/foam-cement-calculations";
-import type { WellData, SlurryInput, BufferFluid } from "@/lib/cementing-calculations";
-import { Button } from "@/components/ui/button";
-import { Plus, Trash2 } from "lucide-react";
-import FoamCementSchematic from "./FoamCementSchematic";
+  defaultFoamSettings,
+  validateFoamJob,
+  FOAM_MODEL_VERSION,
+} from "@/lib/foam-cement-engine";
+import { FOAM_CEMENT_RECIPES } from "@/lib/foam-cement-catalog";
+import {
+  importLab,
+  importObservations,
+  compareFoamFact,
+  readFoamProject,
+  csv,
+  LAB_HEADERS,
+  FACT_HEADERS,
+} from "@/lib/foam-cement-data";
+import { Button } from "./ui/button";
 import FoamCement3D from "./FoamCement3D";
-import CopyImageButton from "./CopyImageButton";
-
 interface Props {
   wellData: WellData;
   slurries: SlurryInput[];
   buffers?: BufferFluid[];
-  mudDensity: number; // kg/m³
+  mudDensity: number;
   pumpRateLps?: number;
-  fractureGradient?: number; // kPa/m
+  fractureGradient?: number;
+  scope?: string;
+  active?: boolean;
+  onReportChange?: (report: FoamReportBundle | null) => void;
 }
-
-const fmt = (v: number, dec = 2) => (Number.isFinite(v) ? v.toFixed(dec) : "—");
-
-function ScrollableChart({ children, chartRef, height }: { children: React.ReactNode; chartRef: React.RefObject<HTMLDivElement>; height: string }) {
+const fmt = (v: number | null | undefined, n = 2) =>
+  v === null || v === undefined || !Number.isFinite(v) ? "—" : v.toFixed(n);
+const inputClass = "w-full rounded-lg border bg-background p-2 mt-1 min-h-11";
+function download(name: string, text: string, type = "text/plain") {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function Field({
+  label,
+  value,
+  onChange,
+  step = "any",
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  step?: string;
+}) {
   return (
-    <div className="overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
-      <div ref={chartRef} className={`${height} min-w-[700px]`}>
-        {children}
-      </div>
+    <label className="text-sm block">
+      {label}
+      <input
+        className={inputClass}
+        type="number"
+        step={step}
+        value={Number.isFinite(value) ? value : ""}
+        onChange={(e) =>
+          onChange(e.target.value === "" ? NaN : +e.target.value)
+        }
+      />
+    </label>
+  );
+}
+function Plot({
+  data,
+  series,
+  x = "time",
+  label,
+}: {
+  data: Record<string, unknown>[];
+  series: { key: string; name: string; color: string }[];
+  x?: string;
+  label: string;
+}) {
+  return (
+    <div className="h-72 min-w-0">
+      <p className="text-sm font-medium mb-2">{label}</p>
+      <ResponsiveContainer width="100%" height="90%">
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis
+            dataKey={x}
+            type="number"
+            domain={["dataMin", "dataMax"]}
+            tickFormatter={(v) => fmt(v, 0)}
+          />
+          <YAxis width={50} />
+          <Tooltip />
+          <Legend />
+          {series.map((s) => (
+            <Line
+              key={s.key}
+              type="linear"
+              dataKey={s.key}
+              name={s.name}
+              stroke={s.color}
+              dot={false}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
-
-const tooltipStyle = {
-  backgroundColor: "hsl(var(--card))",
-  border: "1px solid hsl(var(--border))",
-  borderRadius: "8px",
-  fontSize: "12px",
-};
-
-export default function FoamCementSection({ wellData, slurries, buffers, mudDensity, pumpRateLps, fractureGradient }: Props) {
-  const [recipeId, setRecipeId] = useState<string>("custom");
-  const [targetQuality, setTargetQuality] = useState(35);
-  const [backPressure, setBackPressure] = useState(0.5);
-  const [surfaceTemp, setSurfaceTemp] = useState(20);
-  const [pumpingTime, setPumpingTime] = useState<number | "">("");
-  const [baseDensity, setBaseDensity] = useState(() => {
-    const s = slurries[0];
-    return s ? (s.density >= 100 ? s.density / 1000 : s.density) : 1.85;
-  });
-  const [pumpRate, setPumpRate] = useState<number>(pumpRateLps && pumpRateLps > 0 ? pumpRateLps : 15);
-  const [fqZones, setFqZones] = useState<FoamQualityZone[]>([]);
-
-  const activeRecipe: FoamCementRecipe | null = recipeId === "custom"
-    ? null
-    : FOAM_CEMENT_RECIPES.find(r => r.id === recipeId) ?? null;
-
-  const applyRecipe = (id: string) => {
-    setRecipeId(id);
-    if (id === "custom") return;
-    const r = FOAM_CEMENT_RECIPES.find(x => x.id === id);
-    if (!r) return;
-    setBaseDensity(r.baseDensity);
-    // suggest mid of recommended FQ
-    setTargetQuality(Math.round((r.recommendedFQ[0] + r.recommendedFQ[1]) / 2));
-  };
-
-  const addZone = () => {
-    const last = fqZones[fqZones.length - 1];
-    const top = last ? last.bottomMD : cementTopMD;
-    setFqZones([...fqZones, { topMD: top, bottomMD: cementBottomMD, targetFQ: targetQuality }]);
-  };
-  const updateZone = (i: number, patch: Partial<FoamQualityZone>) => {
-    setFqZones(fqZones.map((z, idx) => idx === i ? { ...z, ...patch } : z));
-  };
-  const removeZone = (i: number) => setFqZones(fqZones.filter((_, idx) => idx !== i));
-
-
-  const refs = Array.from({ length: 10 }, () => useRef<HTMLDivElement>(null));
-
-  const cementTopMD = slurries.length > 0 ? Math.min(...slurries.map(s => s.topDepthMD)) : wellData.cementRiseHeight;
-  const cementBottomMD = wellData.casingDepthMD;
-
-  const bufferDensity = useMemo(() => {
-    const b = buffers?.[0];
-    if (!b) return 1.10;
-    return b.density >= 100 ? b.density / 1000 : b.density;
-  }, [buffers]);
-  const bufferVolume = useMemo(() => buffers?.[0]?.volume ?? 3, [buffers]);
-  const fracGrad = fractureGradient && fractureGradient > 0 ? fractureGradient : 18; // kPa/m default
-
-  const staticResult = useMemo(() => {
-    if (cementBottomMD <= cementTopMD) return null;
-    const input: FoamCementInput = {
-      baseDensity, targetFoamQuality: targetQuality, backPressure,
-      surfaceTemperature: surfaceTemp, bottomTemperature: wellData.bottomTempStatic,
-      wellDepthMD: wellData.wellDepthMD, casingDepthMD: wellData.casingDepthMD,
-      holeDiameter: wellData.holeDiameter, casingOD: wellData.casingOD,
-      cementTopMD, cementBottomMD, trajectory: wellData.trajectory,
-      mudDensity: mudDensity / 1000, cavernCoeff: wellData.cavernCoeff,
-      pumpingTimeMin: typeof pumpingTime === "number" && pumpingTime > 0 ? pumpingTime : undefined,
-      pumpRateLps: pumpRate,
-      foamQualityZones: fqZones.length > 0 ? fqZones : undefined,
-      recipeId: recipeId !== "custom" ? recipeId : undefined,
-    };
-    return calculateFoamCement(input);
-  }, [baseDensity, targetQuality, backPressure, surfaceTemp, pumpingTime, wellData, cementTopMD, cementBottomMD, mudDensity, pumpRate, fqZones, recipeId]);
-
-
-  const dynamicResult = useMemo(() => {
-    if (cementBottomMD <= cementTopMD) return null;
-    const input: FoamPumpingInput = {
-      wellData, trajectory: wellData.trajectory,
-      mudDensity: mudDensity / 1000,
-      baseDensity, targetFoamQuality: targetQuality,
-      backPressure, surfaceTemperature: surfaceTemp, bottomTemperature: wellData.bottomTempStatic,
-      bufferVolume, bufferDensity,
-      pumpRateLps: pumpRate, cementTopMD, cementBottomMD,
-      fractureGradient: fracGrad, cavernCoeff: wellData.cavernCoeff || 1,
-    };
-    return calculateFoamPressureProfile(input);
-  }, [wellData, mudDensity, baseDensity, targetQuality, backPressure, surfaceTemp, bufferVolume, bufferDensity, pumpRate, cementTopMD, cementBottomMD, fracGrad]);
-
-  if (!staticResult || !dynamicResult) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center text-muted-foreground">
-          Заполните данные скважины и растворы для расчёта пеноцементирования
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const staticData = staticResult.points.map(pt => ({
-    md: pt.md, foamQuality: pt.foamQuality, foamDensity: pt.foamDensity,
-    pressure: pt.pressure, n2Ratio: pt.n2VolumeRatio * 100,
-    temperature: pt.temperature, zFactor: pt.zFactor,
-    compression: 1 / Math.max(0.0001, pt.compressionFactor),
-  }));
-
-  const dynData = dynamicResult.points.map(pt => ({
-    time: +pt.time.toFixed(2),
-    surfP: pt.surfacePressure, bhp: pt.bottomholePressure, fracP: pt.fracturePressure,
-    pumpRate: pt.pumpRateLps, n2Rate: pt.n2RateStdM3min,
-    cumN2: pt.cumulativeN2StdM3, cumVol: pt.cumulativeVolume,
-    fqSurface: pt.foamQualitySurface, fqBottom: pt.foamQualityBottom,
-    densSurface: pt.foamDensitySurface, densBottom: pt.foamDensityBottom,
-    ecd: pt.ecdAtBottom, fracEcd: pt.fracGradEcd,
-    annVel: pt.annularVelocityMps,
-    mudH: pt.annMudHeightM, bufferH: pt.annBufferHeightM, foamH: pt.annFoamHeightM,
-    foamTopMD: pt.foamTopMD,
-  }));
-
-  const qualityOk = staticResult.minFoamQuality >= 20 && staticResult.maxFoamQuality <= 80;
-  const bottomFQwarn = (dynamicResult.points.at(-1)?.foamQualityBottom ?? 100) < 20;
-  const fracReserve = dynamicResult.points[0]?.fracGradEcd - dynamicResult.maxECD;
-
+function Panel({
+  title,
+  children,
+  open = false,
+}: {
+  title: string;
+  children: React.ReactNode;
+  open?: boolean;
+}) {
   return (
-    <div className="space-y-6">
-      {/* Recipe library */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">🧪 База рецептур пеноцемента</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="sm:col-span-2">
-              <label className="text-xs text-muted-foreground">Тип базового раствора</label>
-              <select
-                value={recipeId}
-                onChange={e => applyRecipe(e.target.value)}
-                className="w-full border border-border rounded px-2 py-2 text-sm bg-background"
-              >
-                <option value="custom">— Своя рецептура (ручной ввод) —</option>
-                {FOAM_CEMENT_RECIPES.map(r => (
-                  <option key={r.id} value={r.id}>
-                    {r.nameRu} • ρ={r.baseDensity} • FQ {r.recommendedFQ[0]}–{r.recommendedFQ[1]}%
-                  </option>
-                ))}
-              </select>
-            </div>
-            {activeRecipe && (
-              <div className="text-[11px] text-muted-foreground leading-relaxed border border-border rounded p-2 bg-muted/30">
-                <div><b>В/Ц:</b> {activeRecipe.waterCementRatio}, <b>Выход:</b> {activeRecipe.yieldM3PerTon} м³/т</div>
-                <div><b>PV/YP:</b> {activeRecipe.pvCp} сПз / {activeRecipe.ypPa} Па</div>
-                <div><b>Загуст. 30 Bc:</b> {activeRecipe.thickeningTime30Bc} мин, <b>T<sub>max</sub>:</b> {activeRecipe.maxTemp} °C</div>
-                <div><b>Стабилизатор:</b> {activeRecipe.foamStabilizerType} ({activeRecipe.foamStabilizerConc}%)</div>
-              </div>
-            )}
-          </div>
-          {activeRecipe && (
-            <div className="mt-2 text-xs text-muted-foreground">{activeRecipe.description}</div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Inputs */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">🫧 Параметры пеноцементирования</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <Input label="Базовая плотность, г/см³" value={baseDensity} step={0.01} min={1} max={2.5} onChange={setBaseDensity} />
-            <Input label="Целевое качество пены, %" value={targetQuality} step={5} min={10} max={85} onChange={setTargetQuality} hint={activeRecipe ? `реком. ${activeRecipe.recommendedFQ[0]}–${activeRecipe.recommendedFQ[1]}%` : "20–80%"} />
-            <Input label="Обратное давление, МПа" value={backPressure} step={0.1} min={0} max={10} onChange={setBackPressure} />
-            <Input label="Температура устья, °C" value={surfaceTemp} step={1} min={-30} max={60} onChange={setSurfaceTemp} />
-            <Input label="Расход суспензии, л/с" value={pumpRate} step={0.5} min={1} max={60} onChange={setPumpRate} />
-            <div>
-              <label className="text-xs text-muted-foreground">Время закачки, мин (опц.)</label>
-              <input type="number" step="1" min="0" value={pumpingTime}
-                placeholder="из расхода"
-                onChange={e => setPumpingTime(e.target.value === "" ? "" : +e.target.value)}
-                className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
-              <div className="text-[10px] text-muted-foreground mt-0.5">Принято: {fmt(dynamicResult.pumpingTimeMin, 1)} мин</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Multi-zone FQ */}
-      <Card>
-        <CardHeader className="pb-4 flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">🎯 Поинтервальный FQ (зоны качества пены)</CardTitle>
-          <Button size="sm" variant="outline" onClick={addZone}>
-            <Plus className="h-4 w-4 mr-1" /> Добавить зону
+    <details className="rounded-xl border bg-card p-4" open={open || undefined}>
+      <summary className="cursor-pointer text-lg font-semibold">
+        {title}
+      </summary>
+      <div className="mt-4 space-y-4">{children}</div>
+    </details>
+  );
+}
+export default function FoamCementSection({
+  wellData,
+  slurries,
+  buffers,
+  mudDensity,
+  pumpRateLps,
+  fractureGradient,
+  scope = "unsaved",
+  active = true,
+  onReportChange,
+}: Props) {
+  const storageKey = `deall-foam-v2:${scope}`;
+  const initial = () => {
+    const base = slurries[0]?.density ?? 1880;
+    return defaultFoamSettings({
+      wellData,
+      baseDensity: base > 100 ? base / 1000 : base,
+      rate: pumpRateLps && pumpRateLps > 0 ? pumpRateLps : 10,
+      fractureGradient,
+    });
+  };
+  const [s, setS] = useState<FoamSettings>(initial),
+    [result, setResult] = useState<FoamSimulation | null>(null),
+    [busy, setBusy] = useState(""),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
+    [frameIndex, setFrameIndex] = useState(0),
+    [playing, setPlaying] = useState(false),
+    [candidates, setCandidates] = useState<FoamCandidate[]>([]),
+    [objective, setObjective] = useState<"nitrogen" | "time">("nitrogen"),
+    [observations, setObservations] = useState<FoamObservation[]>([]),
+    [offset, setOffset] = useState(0),
+    [sensitivity, setSensitivity] = useState<
+      {
+        label: string;
+        n2: number;
+        pressure: number;
+        ecd: number;
+        toc: number | null;
+      }[]
+    >([]);
+  const worker = useRef<Worker | null>(null),
+    request = useRef(0),
+    loadedKey = useRef("");
+  const input: FoamJobInput = useMemo(
+    () => ({
+      wellData,
+      mudDensity: mudDensity > 100 ? mudDensity / 1000 : mudDensity,
+      settings: s,
+    }),
+    [wellData, mudDensity, s],
+  );
+  const errors = useMemo(() => validateFoamJob(input), [input]);
+  const stale =
+    !!result && JSON.stringify(input) !== JSON.stringify(result.input);
+  const fact = useMemo(
+    () =>
+      result && observations.length
+        ? compareFoamFact(result, observations, offset)
+        : undefined,
+    [result, observations, offset],
+  );
+  useEffect(() => {
+    onReportChange?.(
+      result && !stale
+        ? { simulation: result, observations, planFact: fact }
+        : null,
+    );
+  }, [result, stale, observations, fact, onReportChange]);
+  useEffect(() => {
+    worker.current?.terminate();
+    setBusy("");
+    setPlaying(false);
+    setResult(null);
+    setCandidates([]);
+    setSensitivity([]);
+    setObservations([]);
+    setOffset(0);
+    let value = initial();
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const raw = JSON.parse(stored);
+        const candidate = { ...input, settings: raw };
+        if (!validateFoamJob(candidate).length) {
+          value = raw;
+          setNotice(
+            "Восстановлен черновик этого расчёта. Проверьте геометрию и запустите расчёт.",
+          );
+        }
+      }
+    } catch {
+      setNotice("Черновик не удалось прочитать; загружены исходные параметры.");
+    }
+    setS(value);
+    loadedKey.current = storageKey;
+    return () => worker.current?.terminate();
+  }, [storageKey]);
+  useEffect(() => {
+    if (loadedKey.current !== storageKey || errors.length) return;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(s));
+    } catch {
+      setNotice("Браузер не сохранил черновик. Скачайте проект JSON.");
+    }
+  }, [s, storageKey, errors.length]);
+  useEffect(() => {
+    if (!playing || !result || !active) return;
+    const timer = setInterval(
+      () =>
+        setFrameIndex((i) => {
+          if (i >= result.frames.length - 1) {
+            setPlaying(false);
+            return i;
+          }
+          return i + 1;
+        }),
+      180,
+    );
+    return () => clearInterval(timer);
+  }, [playing, result, active]);
+  function update<K extends keyof FoamSettings>(
+    key: K,
+    value: FoamSettings[K],
+  ) {
+    setS((prev) => ({ ...prev, [key]: value }));
+    setCandidates([]);
+    setSensitivity([]);
+  }
+  function run(
+    task: "simulate" | "optimise" | "sensitivity" | "size" = "simulate",
+    job = input,
+  ) {
+    const messages = validateFoamJob(job);
+    setPlaying(false);
+    if (messages.length) {
+      setError(messages.join("\n"));
+      return;
+    }
+    worker.current?.terminate();
+    const id = ++request.current;
+    const w = new Worker(
+      new URL("../lib/foam-cement.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    worker.current = w;
+    setBusy(task);
+    setError("");
+    w.onmessage = (e) => {
+      if (e.data.id !== request.current) return;
+      setBusy("");
+      if (e.data.error) {
+        setError(e.data.error);
+      } else if (task === "simulate" || task === "size") {
+        if (task === "size") setS(e.data.result.input.settings);
+        setResult(e.data.result);
+        setFrameIndex(e.data.result.frames.length - 1);
+      } else if (task === "optimise") {
+        setCandidates(e.data.result);
+      } else setSensitivity(e.data.result);
+      w.terminate();
+    };
+    w.onerror = (e) => {
+      setBusy("");
+      setError(`Расчёт прерван: ${e.message}`);
+      w.terminate();
+    };
+    w.postMessage({ id, task, input: job, objective });
+  }
+  async function readFile(
+    file: File | undefined,
+    kind: "lab" | "fact" | "project",
+  ) {
+    if (!file) return;
+    setError("");
+    try {
+      const text = await file.text();
+      if (kind === "lab") {
+        const rows = importLab(text);
+        update("lab", rows);
+        setNotice(`Загружено лабораторных строк: ${rows.length}.`);
+      } else if (kind === "fact") {
+        setObservations(importObservations(text));
+      } else {
+        const imported = readFoamProject(text, input);
+        setS(imported.settings);
+        const restored = JSON.parse(text);
+        setObservations(
+          Array.isArray(restored.observations)
+            ? importObservations(JSON.stringify(restored.observations))
+            : [],
+        );
+        setOffset(Number.isFinite(restored.offset) ? restored.offset : 0);
+        setNotice(
+          "Параметры загружены. Конструкция и буровой раствор взяты из текущего проекта. Запустите новый расчёт.",
+        );
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+  const numeric = (key: keyof FoamSettings, label: string) => (
+    <Field
+      key={key}
+      label={label}
+      value={s[key] as number}
+      onChange={(v) => update(key, v as never)}
+    />
+  );
+  const frame =
+    result?.frames[Math.min(frameIndex, (result?.frames.length ?? 1) - 1)];
+  return (
+    <div className="space-y-5 pb-8" data-foam-version={FOAM_MODEL_VERSION}>
+      <div className="rounded-xl bg-card border p-5 space-y-3">
+        <h2 className="text-2xl font-bold">
+          Пеноцементирование · инженерная программа
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Сжимаемая смесь, программа азота, размещение, давления и проверка
+          ограничений. Модель совместного движения фаз; устойчивость и качество
+          цементного камня требуют испытаний.
+        </p>
+        <p className="text-sm">
+          Конструкция из проекта: MD {wellData.casingDepthMD} м · OD{" "}
+          {wellData.casingOD} мм · ствол {wellData.holeDiameter} мм · предыдущая
+          колонна до {wellData.prevCasingDepth} м. Учтены интервалы
+          кавернозности и толщины стенки.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => run("size")}
+            disabled={!!busy}
+          >
+            Подобрать объём до кровли
           </Button>
-        </CardHeader>
-        <CardContent>
-          {fqZones.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              Зоны не заданы — используется единое целевое FQ {targetQuality}% по всей длине пеноцемента.
-              Добавьте зоны, чтобы задать разные значения FQ по интервалам глубины (например, верх 40%, низ 25%).
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="grid grid-cols-12 gap-2 text-[11px] text-muted-foreground font-medium px-1">
-                <div className="col-span-3">От, м (MD)</div>
-                <div className="col-span-3">До, м (MD)</div>
-                <div className="col-span-4">Целевое FQ (устье), %</div>
-                <div className="col-span-2"></div>
-              </div>
-              {fqZones.map((z, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                  <input type="number" value={z.topMD} step={10}
-                    onChange={e => updateZone(i, { topMD: +e.target.value })}
-                    className="col-span-3 min-w-[100px] border border-border rounded px-2 py-1.5 text-sm bg-background" />
-                  <input type="number" value={z.bottomMD} step={10}
-                    onChange={e => updateZone(i, { bottomMD: +e.target.value })}
-                    className="col-span-3 min-w-[100px] border border-border rounded px-2 py-1.5 text-sm bg-background" />
-                  <input type="number" value={z.targetFQ} step={1} min={5} max={85}
-                    onChange={e => updateZone(i, { targetFQ: +e.target.value })}
-                    className="col-span-4 min-w-[100px] border border-border rounded px-2 py-1.5 text-sm bg-background" />
-                  <Button size="sm" variant="ghost" className="col-span-2" onClick={() => removeZone(i)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-              <div className="text-[11px] text-muted-foreground mt-2">
-                ℹ Зоны применяются к статическому профилю по глубине. Динамическая симуляция использует единое целевое FQ устья.
-              </div>
-            </div>
+          <Button onClick={() => run()} disabled={!!busy}>
+            {busy === "simulate" ? "Считаем…" : "Рассчитать программу"}
+          </Button>
+          {busy && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                request.current++;
+                worker.current?.terminate();
+                setBusy("");
+              }}
+            >
+              Остановить
+            </Button>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Summary */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">📊 Сводная карточка результатов</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-            <div className="space-y-1">
-              <div className="text-xs uppercase text-muted-foreground mt-2 mb-1">Плотности</div>
-              <Row label="Базовая суспензия" value={`${fmt(baseDensity, 2)} г/см³`} />
-              <Row label="Пеноцемент устье" value={`${fmt(staticResult.points[0]?.foamDensity ?? 0, 3)} г/см³`} />
-              <Row label="Пеноцемент забой" value={`${fmt(staticResult.points.at(-1)?.foamDensity ?? 0, 3)} г/см³`} />
-              <Row label="Средняя в затрубье" value={`${fmt(dynamicResult.avgFoamDensityAnn, 3)} г/см³`} />
-
-              <div className="text-xs uppercase text-muted-foreground mt-3 mb-1">Качество пены (FQ)</div>
-              <Row label="Целевое (устье)" value={fqZones.length > 0 ? `зональный (${fqZones.length} зон)` : `${fmt(targetQuality, 0)}%`} />
-              <Row label="FQ забой / устье / среднее" value={`${fmt(staticResult.points.at(-1)?.foamQuality ?? 0, 1)} / ${fmt(staticResult.points[0]?.foamQuality ?? 0, 1)} / ${fmt(staticResult.avgFoamQuality, 1)} %`} />
-              <Row label="FQ min / max" value={`${fmt(staticResult.minFoamQuality, 1)} / ${fmt(staticResult.maxFoamQuality, 1)} %`} />
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs uppercase text-muted-foreground mt-2 mb-1">Объёмы и азот</div>
-              <Row label="Базовая суспензия" value={`${fmt(dynamicResult.totalBaseSlurryM3, 2)} м³`} />
-              <Row label="Пеноцемент на устье" value={`${fmt(dynamicResult.totalFoamVolumeAtSurfaceM3, 2)} м³`} />
-              <Row label="N₂ (стд. условия)" value={`${fmt(dynamicResult.totalN2StdM3, 1)} м³`} />
-              <Row label="Пиковый расход N₂" value={`${fmt(dynamicResult.peakN2RateStdM3min, 2)} м³/мин`} />
-              <Row label="Z-фактор на забое" value={fmt(staticResult.points.at(-1)?.zFactor ?? 1, 3)} />
-
-              <div className="text-xs uppercase text-muted-foreground mt-3 mb-1">Давление и время</div>
-              <Row label="Макс. ЭЦП на забое" value={`${fmt(dynamicResult.maxECD, 3)} г/см³`} />
-              <Row label="ЭЦП ГРП" value={`${fmt(dynamicResult.points[0]?.fracGradEcd ?? 0, 3)} г/см³`} />
-              <Row label="Запас до ГРП" value={`${fmt(fracReserve, 3)} г/см³ ${fracReserve > 0 ? "✓" : "⚠"}`} />
-              <Row label="Время: буф / пена / прод" value={`${fmt(dynamicResult.bufferTimeMin, 1)} / ${fmt(dynamicResult.foamTimeMin, 1)} / ${fmt(dynamicResult.displacementTimeMin, 1)} мин`} />
-              <Row label="ВСЕГО" value={`${fmt(dynamicResult.pumpingTimeMin, 1)} мин`} />
-            </div>
+          <Button
+            variant="outline"
+            onClick={() =>
+              download(
+                "foam-project.json",
+                JSON.stringify(
+                  {
+                    modelVersion: FOAM_MODEL_VERSION,
+                    input,
+                    observations,
+                    offset,
+                  },
+                  null,
+                  2,
+                ),
+                "application/json",
+              )
+            }
+          >
+            Сохранить проект JSON
+          </Button>
+          <label className="border rounded-md p-2 text-sm cursor-pointer">
+            Загрузить проект
+            <input
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={(e) => {
+                void readFile(e.target.files?.[0], "project");
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </div>
+        {notice && (
+          <p role="status" className="text-sm text-blue-600">
+            {notice}
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="whitespace-pre-line text-red-600">
+            {error}
+          </p>
+        )}
+        {errors.length > 0 && (
+          <p className="whitespace-pre-line text-amber-700 text-sm">
+            {errors.join("\n")}
+          </p>
+        )}
+        {stale && (
+          <p className="bg-amber-100 text-amber-900 p-3 rounded">
+            Исходные данные изменились. Ниже показан предыдущий расчёт; обновите
+            программу.
+          </p>
+        )}
+      </div>
+      <Panel title="1. Раствор, газосодержание и температурный режим" open>
+        <label className="text-sm block">
+          Рецептура (примеры, не подтверждённые протоколы)
+          <select
+            className={inputClass}
+            value={s.recipeId}
+            onChange={(e) => {
+              const r = FOAM_CEMENT_RECIPES.find(
+                (r) => r.id === e.target.value,
+              );
+              setS((prev) =>
+                r
+                  ? {
+                      ...prev,
+                      recipeId: r.id,
+                      baseDensity: r.baseDensity,
+                      waterCementRatio: r.waterCementRatio,
+                      yieldM3PerTon: r.yieldM3PerTon,
+                      liquidPV: r.pvCp,
+                      liquidYP: r.ypPa,
+                      foamerPctBWOC: r.foamStabilizerConc,
+                    }
+                  : { ...prev, recipeId: "custom" },
+              );
+            }}
+          >
+            <option value="custom">Своя рецептура</option>
+            {FOAM_CEMENT_RECIPES.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.nameRu}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="grid sm:grid-cols-3 gap-3">
+          {numeric("baseDensity", "Плотность базы, г/см³")}
+          {numeric("liquidPV", "PV базы, сП")}
+          {numeric("liquidYP", "YP базы, Па")}
+          {numeric("waterCementRatio", "В/Ц, т/т")}
+          {numeric("yieldM3PerTon", "Выход базы, м³/т цемента")}
+          {numeric("foamerPctBWOC", "Пенообразователь, % BWOC")}
+          {numeric("cementTopMD", "Плановая кровля, м MD")}
+          {numeric("foamVolumeMultiplier", "Множитель объёма базы, 0,2-5")}
+          {numeric("pumpRateLps", "Расход жидкой фазы, л/с")}
+          {numeric("backPressure", "Противодавление, МПа изб.")}
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <label className="text-sm">
+            Управление программой
+            <select
+              className={inputClass}
+              value={s.controlMode}
+              onChange={(e) =>
+                update(
+                  "controlMode",
+                  e.target.value as FoamSettings["controlMode"],
+                )
+              }
+            >
+              <option value="reference-quality">FQ в опорной точке</option>
+              <option value="constant-density">
+                Постоянная проектная плотность по глубине
+              </option>
+            </select>
+          </label>
+          {s.controlMode === "reference-quality"
+            ? numeric("targetFoamQuality", "Целевое FQ, % объёма газа")
+            : numeric("targetDensity", "Плотность пены, г/см³")}
+          <label className="text-sm">
+            Опорная точка FQ
+            <select
+              className={inputClass}
+              value={s.referenceMode}
+              onChange={(e) =>
+                update(
+                  "referenceMode",
+                  e.target.value as FoamSettings["referenceMode"],
+                )
+              }
+            >
+              <option value="depth">На глубине при расчётных P/T</option>
+              <option value="generator">На генераторе при заданных P/T</option>
+            </select>
+          </label>
+          {s.referenceMode === "depth" ? (
+            numeric("referenceMD", "Опорная глубина FQ, м MD")
+          ) : (
+            <>
+              {numeric("referencePressureMPa", "Давление генератора, МПа изб.")}
+              {numeric("referenceTemperatureC", "Температура генератора, °C")}
+            </>
+          )}
+          <label className="text-sm">
+            Стандартные условия азота
+            <select
+              className={inputClass}
+              value={s.standardTemperatureC}
+              onChange={(e) => update("standardTemperatureC", +e.target.value)}
+            >
+              <option value="20">20 °C, 0,101325 МПа абс.</option>
+              <option value="0">0 °C, 0,101325 МПа абс.</option>
+            </select>
+          </label>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          FQ в генераторе и в скважине различается. Расход N₂ указан в
+          стандартных м³/мин; расход жидкой фазы не включает газ. Модель
+          реологии без протокола эмпирическая.
+        </p>
+        <div className="grid sm:grid-cols-3 gap-3">
+          {numeric("surfaceTemperature", "Температура устья, °C")}
+          {numeric("bottomTemperature", "Забойная температура профиля, °C")}
+          <label className="text-sm">
+            Температурный профиль
+            <select
+              className={inputClass}
+              value={s.temperatureMode}
+              onChange={(e) =>
+                update(
+                  "temperatureMode",
+                  e.target.value as FoamSettings["temperatureMode"],
+                )
+              }
+            >
+              <option value="static">Заданный постоянный</option>
+              <option value="circulating">Переход BHST к заданной BHCT</option>
+            </select>
+          </label>
+          {s.temperatureMode === "circulating" &&
+            numeric("thermalResponseMin", "Время температурного отклика, мин")}
+          {numeric("pauseAfterFoamMin", "Пауза после пены, мин")}
+          {numeric("finalHoldMin", "Остановка после продавки, мин")}
+        </div>
+      </Panel>
+      <Panel title="2. Буферы и зоны газосодержания">
+        <p className="text-sm">
+          Буферы закачиваются в порядке таблицы. Зоны относятся к конечному
+          статическому проекту; первая порция пены предназначена для верхней
+          зоны.
+        </p>
+        {s.buffers.map((b, i) => (
+          <div key={i} className="grid sm:grid-cols-6 gap-2 items-end">
+            <label className="text-sm">
+              Название
+              <input
+                className={inputClass}
+                value={b.name}
+                onChange={(e) =>
+                  update(
+                    "buffers",
+                    s.buffers.map((x, j) =>
+                      j === i ? { ...x, name: e.target.value } : x,
+                    ),
+                  )
+                }
+              />
+            </label>
+            {(["volumeM3", "density", "pvCp", "ypPa"] as const).map((k, j) => (
+              <Field
+                key={k}
+                label={["Объём, м³", "ρ, г/см³", "PV, сП", "YP, Па"][j]}
+                value={b[k]}
+                onChange={(v) =>
+                  update(
+                    "buffers",
+                    s.buffers.map((x, j) => (j === i ? { ...x, [k]: v } : x)),
+                  )
+                }
+              />
+            ))}
+            <Button
+              variant="outline"
+              onClick={() =>
+                update(
+                  "buffers",
+                  s.buffers.filter((_, j) => j !== i),
+                )
+              }
+            >
+              Удалить
+            </Button>
           </div>
-
-          {/* Warnings */}
-          <div className="mt-4 space-y-2">
-            <div className={`p-3 rounded-lg text-sm font-medium ${qualityOk ? "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"}`}>
-              {qualityOk
-                ? "✓ Качество пены в допустимом диапазоне 20–80% по всей глубине"
-                : `⚠ FQ выходит за диапазон 20–80% (min ${fmt(staticResult.minFoamQuality, 1)}%, max ${fmt(staticResult.maxFoamQuality, 1)}%) — скорректируйте параметры или зоны`}
-            </div>
-            {bottomFQwarn && (
-              <div className="p-3 rounded-lg text-sm bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                ⚠ FQ на забое ниже 20% — возможна потеря стабильности пены. Увеличьте целевой FQ до 45–50% или примените стабилизатор.
-              </div>
-            )}
-            {fracReserve <= 0 && (
-              <div className="p-3 rounded-lg text-sm bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200">
-                ⚠ ЭЦП превышает градиент ГРП — риск поглощения. Снизьте плотность базы, увеличьте FQ или уменьшите расход.
-              </div>
-            )}
-            {activeRecipe && wellData.bottomTempStatic > activeRecipe.maxTemp && (
-              <div className="p-3 rounded-lg text-sm bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200">
-                ⚠ Температура забоя ({wellData.bottomTempStatic} °C) превышает T<sub>max</sub> рецептуры «{activeRecipe.nameRu}» ({activeRecipe.maxTemp} °C). Выберите более термостойкий рецепт.
-              </div>
-            )}
-            {activeRecipe && (targetQuality < activeRecipe.recommendedFQ[0] || targetQuality > activeRecipe.recommendedFQ[1]) && (
-              <div className="p-3 rounded-lg text-sm bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                ⚠ Целевое FQ {targetQuality}% вне рекомендуемого диапазона рецептуры {activeRecipe.recommendedFQ[0]}–{activeRecipe.recommendedFQ[1]}%.
-              </div>
-            )}
+        ))}
+        <Button
+          variant="outline"
+          onClick={() =>
+            update("buffers", [
+              ...s.buffers,
+              {
+                name: `Буфер ${s.buffers.length + 1}`,
+                volumeM3: 3,
+                density: 1.1,
+                pvCp: 10,
+                ypPa: 2,
+              },
+            ])
+          }
+        >
+          Добавить буфер
+        </Button>
+        {buffers?.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Буферы общего проекта не переносятся автоматически: задайте состав и
+            реологию для этой программы.
+          </p>
+        )}
+        {s.zones.map((z, i) => (
+          <div key={i} className="grid sm:grid-cols-4 gap-2">
+            {(["topMD", "bottomMD", "targetFQ"] as const).map((k, j) => (
+              <Field
+                key={k}
+                label={["Верх, м MD", "Низ, м MD", "FQ в опорной точке, %"][j]}
+                value={z[k]}
+                onChange={(v) =>
+                  update(
+                    "zones",
+                    s.zones.map((x, j) => (j === i ? { ...x, [k]: v } : x)),
+                  )
+                }
+              />
+            ))}
+            <Button
+              variant="outline"
+              onClick={() =>
+                update(
+                  "zones",
+                  s.zones.filter((_, j) => j !== i),
+                )
+              }
+            >
+              Удалить зону
+            </Button>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Equipment schematic */}
-      <FoamCementSchematic
-        baseSlurryRateLps={pumpRate}
-        n2RateStdM3Min={dynamicResult.peakN2RateStdM3min}
-        surfacePressureMPa={dynamicResult.points.reduce((m, pt) => Math.max(m, pt.surfacePressure), 0)}
-        backPressureMPa={backPressure}
-        baseSlurryVolumeM3={dynamicResult.totalBaseSlurryM3}
-        n2VolumeStdM3={dynamicResult.totalN2StdM3}
-        baseDensity={baseDensity}
-        foamDensitySurface={staticResult.points[0]?.foamDensity ?? baseDensity}
-        targetFQ={targetQuality}
-      />
-
-      {/* 3D foam-cement fill animation */}
-      <FoamCement3D
-        points={staticResult.points}
-        totalDepthMD={wellData.casingDepthMD}
-        holeDiameterMm={wellData.holeDiameter}
-        casingODmm={wellData.casingOD}
-        baseDensity={baseDensity}
-      />
-
-
-      {/* Chart 1: Combined cementing diagram */}
-      <ChartCard title="📊 Совмещённый график пеноцементирования" refEl={refs[0]}>
-        <ScrollableChart chartRef={refs[0]} height="h-[440px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={dynData} margin={{ top: 10, right: 60, bottom: 30, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="time" type="number" label={{ value: 'Время, мин', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="p" orientation="left" label={{ value: 'P, МПа', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="q" orientation="right" domain={[0, 30]} label={{ value: 'Q, л/с', angle: 90, position: 'insideRight' }} tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Legend />
-              {dynamicResult.stageBoundaries.slice(1, -1).map((b, i) => (
-                <ReferenceLine key={i} yAxisId="p" x={b.time} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" label={{ value: b.label, fontSize: 10, position: 'top' }} />
+        ))}
+        <Button
+          variant="outline"
+          disabled={s.controlMode === "constant-density"}
+          onClick={() =>
+            update("zones", [
+              ...s.zones,
+              {
+                topMD: s.cementTopMD,
+                bottomMD: wellData.casingDepthMD,
+                targetFQ: s.targetFoamQuality,
+              },
+            ])
+          }
+        >
+          Добавить зону FQ
+        </Button>
+        {s.controlMode === "constant-density" && (
+          <p className="text-sm">
+            В режиме постоянной плотности зоны FQ не используются.
+          </p>
+        )}
+      </Panel>
+      <Panel title="3. Окно давлений, оборудование и точность">
+        <label className="text-sm block">
+          Источник границ и ограничений
+          <input
+            className={inputClass}
+            value={s.limitsSource}
+            onChange={(e) => update("limitsSource", e.target.value)}
+          />
+        </label>
+        <div className="grid sm:grid-cols-3 gap-3">
+          {numeric("fractureGradient", "Градиент ГРП, кПа/м TVD")}
+          <label className="text-sm">
+            Пластовый градиент, кПа/м (необязательно)
+            <input
+              className={inputClass}
+              type="number"
+              value={s.poreGradient ?? ""}
+              onChange={(e) =>
+                update(
+                  "poreGradient",
+                  e.target.value === "" ? null : +e.target.value,
+                )
+              }
+            />
+          </label>
+          {numeric("maxPumpPressureMPa", "Предел давления насоса, МПа")}
+          {numeric("maxN2RateStdM3Min", "Предел расхода N₂, м³ст/мин")}
+          {numeric("maxN2PressureMPa", "Предел давления N₂, МПа")}
+          {numeric("maxSlurryRateLps", "Предел расхода жидкости, л/с")}
+          {numeric("n2AvailableStdM3", "Запас N₂, м³ст")}
+          {numeric("mudPV", "PV бурового / продавки, сП")}
+          {numeric("mudYP", "YP бурового / продавки, Па")}
+          {numeric("frictionMultiplier", "Множитель потерь на трение")}
+          {numeric("roughnessMm", "Шероховатость, мм")}
+          {numeric("spatialCells", "Ячеек на ветвь, 16-120")}
+          {numeric("timeStepMin", "Шаг времени, мин (0,1-2)")}
+        </div>
+        {s.formations.map((f, i) => (
+          <div key={i} className="grid sm:grid-cols-4 gap-2">
+            <Field
+              label="Контрольный пласт, м MD"
+              value={f.md}
+              onChange={(v) =>
+                update(
+                  "formations",
+                  s.formations.map((x, j) => (j === i ? { ...x, md: v } : x)),
+                )
+              }
+            />
+            {(["poreMPa", "fractureMPa"] as const).map((k) => (
+              <label key={k} className="text-sm">
+                {k === "poreMPa" ? "Пластовое" : "ГРП"}, МПа изб.
+                <input
+                  className={inputClass}
+                  type="number"
+                  value={f[k] ?? ""}
+                  onChange={(e) =>
+                    update(
+                      "formations",
+                      s.formations.map((x, j) =>
+                        j === i
+                          ? {
+                              ...x,
+                              [k]:
+                                e.target.value === ""
+                                  ? undefined
+                                  : +e.target.value,
+                            }
+                          : x,
+                      ),
+                    )
+                  }
+                />
+              </label>
+            ))}
+            <Button
+              variant="outline"
+              onClick={() =>
+                update(
+                  "formations",
+                  s.formations.filter((_, j) => i !== j),
+                )
+              }
+            >
+              Удалить пласт
+            </Button>
+          </div>
+        ))}
+        <Button
+          variant="outline"
+          onClick={() =>
+            update("formations", [
+              ...s.formations,
+              {
+                name: `Контроль ${s.formations.length + 1}`,
+                md: wellData.casingDepthMD,
+              },
+            ])
+          }
+        >
+          Добавить контрольный пласт
+        </Button>
+        <p className="text-sm text-muted-foreground">
+          Проверка ГРП выполняется по всему открытому стволу, включая начальное
+          состояние. Запас давления подачи N₂ принят 1 МПа сверх давления насоса
+          и требует сверки с обвязкой.
+        </p>
+      </Panel>
+      <Panel title={`4. Лаборатория · ${s.lab.length} протоколов`}>
+        <p className="text-sm">
+          CSV или JSON. Давление только абсолютное, МПа. preparation:
+          pressurized / atmospheric / unknown. Реология подставляется из
+          ближайшего протокола под давлением в пределах ±10 °C, ±5 п.п. FQ и
+          ±max(1 МПа, 20% P). Испытание стабильности не экстраполируется.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              download("foam-lab-template.csv", LAB_HEADERS + "\n")
+            }
+          >
+            Шаблон CSV
+          </Button>
+          <label className="border rounded p-2 cursor-pointer text-sm">
+            Загрузить протоколы
+            <input
+              type="file"
+              accept=".csv,.json"
+              className="hidden"
+              onChange={(e) => {
+                void readFile(e.target.files?.[0], "lab");
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <Button
+            variant="outline"
+            onClick={() =>
+              download("foam-lab.json", JSON.stringify(s.lab, null, 2))
+            }
+          >
+            Скачать базу
+          </Button>
+          <Button variant="outline" onClick={() => update("lab", [])}>
+            Очистить протоколы
+          </Button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                {[
+                  "Источник",
+                  "Подготовка",
+                  "Pабс, МПа",
+                  "T, °C",
+                  "FQ, %",
+                  "PV, сП",
+                  "YP, Па",
+                  "Стабильность, мин",
+                ].map((h) => (
+                  <th key={h} className="p-2 text-left">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {s.lab.map((r, i) => (
+                <tr key={i} className="border-t">
+                  {[
+                    r.source,
+                    r.preparation,
+                    r.pressureMPaAbs,
+                    r.temperatureC,
+                    r.qualityPct,
+                    r.pvCp,
+                    r.ypPa,
+                    r.stabilityMin ?? "Нет данных",
+                  ].map((v, j) => (
+                    <td key={j} className="p-2">
+                      {v}
+                    </td>
+                  ))}
+                </tr>
               ))}
-              <Line yAxisId="p" dataKey="surfP" name="P насос, МПа" stroke="hsl(0, 70%, 50%)" dot={false} strokeWidth={2} />
-              <Line yAxisId="p" dataKey="bhp" name="P забой, МПа" stroke="hsl(220, 70%, 50%)" dot={false} strokeWidth={2} />
-              <Line yAxisId="p" dataKey="fracP" name="P ГРП, МПа" stroke="hsl(30, 90%, 50%)" strokeDasharray="6 4" dot={false} strokeWidth={2} />
-              <Line yAxisId="q" dataKey="pumpRate" name="Q сусп., л/с" stroke="hsl(160, 60%, 45%)" dot={false} strokeWidth={2} />
-              <Line yAxisId="q" dataKey="n2Rate" name="Q N₂ (стд), м³/мин" stroke="hsl(280, 60%, 55%)" dot={false} strokeWidth={2} />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </ScrollableChart>
-      </ChartCard>
-
-      {/* Chart 2: BHP vs Frac */}
-      <ChartCard title="📈 Давление на забое vs ГРП" refEl={refs[1]}>
-        <ScrollableChart chartRef={refs[1]} height="h-[360px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={dynData} margin={{ top: 10, right: 30, bottom: 30, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="time" type="number" label={{ value: 'Время, мин', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-              <YAxis label={{ value: 'P, МПа', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Legend />
-              <Line dataKey="bhp" name="P забой" stroke="hsl(220, 70%, 50%)" dot={false} strokeWidth={2} />
-              <Line dataKey="fracP" name="P ГРП" stroke="hsl(0, 80%, 50%)" strokeDasharray="6 4" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ScrollableChart>
-      </ChartCard>
-
-      {/* Chart 3: ECD vs time + velocity */}
-      <ChartCard title="📈 ЭЦП и скорость в затрубье по времени" refEl={refs[2]}>
-        <ScrollableChart chartRef={refs[2]} height="h-[360px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={dynData} margin={{ top: 10, right: 60, bottom: 30, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="time" type="number" label={{ value: 'Время, мин', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="ecd" orientation="left" label={{ value: 'ЭЦП, г/см³', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="v" orientation="right" label={{ value: 'v, м/с', angle: 90, position: 'insideRight' }} tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Legend />
-              <Line yAxisId="ecd" dataKey="ecd" name="ЭЦП забой" stroke="hsl(220, 70%, 50%)" dot={false} strokeWidth={2} />
-              <Line yAxisId="ecd" dataKey="fracEcd" name="ЭЦП ГРП" stroke="hsl(0, 80%, 50%)" strokeDasharray="6 4" dot={false} strokeWidth={2} />
-              <Line yAxisId="v" dataKey="annVel" name="v затруб., м/с" stroke="hsl(160, 60%, 45%)" dot={false} strokeWidth={2} />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </ScrollableChart>
-      </ChartCard>
-
-      {/* Chart 4: FQ & density by depth */}
-      <ChartCard title="📈 Качество пены и плотность по глубине" refEl={refs[3]}>
-        <ScrollableChart chartRef={refs[3]} height="h-[400px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={staticData} layout="vertical" margin={{ top: 5, right: 60, bottom: 5, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-              <XAxis xAxisId="quality" type="number" domain={[0, 100]} orientation="bottom" label={{ value: 'FQ, %', position: 'insideBottom', offset: -2 }} tick={{ fontSize: 11 }} />
-              <XAxis xAxisId="density" type="number" domain={['auto', 'auto']} orientation="top" label={{ value: 'ρ, г/см³', position: 'insideTop', offset: -2 }} tick={{ fontSize: 11 }} />
-              <ReferenceArea xAxisId="quality" x1={20} x2={80} fill="hsl(var(--primary))" fillOpacity={0.04} />
-              <ReferenceArea xAxisId="quality" x1={0} x2={20} fill="hsl(var(--destructive))" fillOpacity={0.06} />
-              <ReferenceArea xAxisId="quality" x1={80} x2={100} fill="hsl(var(--destructive))" fillOpacity={0.06} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Legend />
-              <Line xAxisId="quality" dataKey="foamQuality" name="FQ, %" stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
-              <Line xAxisId="density" dataKey="foamDensity" name="ρ, г/см³" stroke="hsl(35, 80%, 50%)" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ScrollableChart>
-      </ChartCard>
-
-      {/* Chart 5: FQ surface vs bottom by time */}
-      <ChartCard title="📈 Качество пены: устье vs забой (по времени)" refEl={refs[4]}>
-        <ScrollableChart chartRef={refs[4]} height="h-[340px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={dynData} margin={{ top: 10, right: 30, bottom: 30, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="time" type="number" label={{ value: 'Время, мин', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-              <YAxis domain={[0, 100]} label={{ value: 'FQ, %', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-              <ReferenceArea y1={20} y2={80} fill="hsl(var(--primary))" fillOpacity={0.06} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Legend />
-              <Line dataKey="fqSurface" name="FQ устье" stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
-              <Line dataKey="fqBottom" name="FQ забой" stroke="hsl(15, 80%, 50%)" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ScrollableChart>
-      </ChartCard>
-
-      {/* Chart 6: N₂ rate & cumulative */}
-      <ChartCard title="📈 Расход и объём N₂ (по времени)" refEl={refs[5]}>
-        <ScrollableChart chartRef={refs[5]} height="h-[340px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={dynData} margin={{ top: 10, right: 60, bottom: 30, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="time" type="number" label={{ value: 'Время, мин', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="r" orientation="left" label={{ value: 'Q N₂, м³/мин', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="c" orientation="right" label={{ value: 'V N₂, м³', angle: 90, position: 'insideRight' }} tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Legend />
-              <Line yAxisId="r" dataKey="n2Rate" name="Q N₂ (стд)" stroke="hsl(280, 60%, 55%)" dot={false} strokeWidth={2} />
-              <Line yAxisId="c" dataKey="cumN2" name="ΣN₂ (стд)" stroke="hsl(160, 60%, 40%)" dot={false} strokeWidth={2} />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </ScrollableChart>
-      </ChartCard>
-
-      {/* Chart 7: Z-factor & compression by depth */}
-      <ChartCard title="📈 Z-фактор и сжатие газа по глубине" refEl={refs[6]}>
-        <ScrollableChart chartRef={refs[6]} height="h-[360px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={staticData} layout="vertical" margin={{ top: 5, right: 60, bottom: 5, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <YAxis dataKey="md" type="number" reversed domain={[0, 'dataMax']} label={{ value: 'MD, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-              <XAxis xAxisId="z" type="number" domain={['auto', 'auto']} orientation="bottom" label={{ value: 'Z', position: 'insideBottom', offset: -2 }} tick={{ fontSize: 11 }} />
-              <XAxis xAxisId="comp" type="number" domain={['auto', 'auto']} orientation="top" label={{ value: 'V_depth/V_std', position: 'insideTop', offset: -2 }} tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Legend />
-              <Line xAxisId="z" dataKey="zFactor" name="Z-фактор" stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
-              <Line xAxisId="comp" dataKey="compression" name="Сжатие" stroke="hsl(280, 60%, 55%)" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ScrollableChart>
-      </ChartCard>
-
-      {/* Chart 8: Annulus composition (stacked area) */}
-      <ChartCard title="📈 Состав затрубья по времени" refEl={refs[7]}>
-        <ScrollableChart chartRef={refs[7]} height="h-[360px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={dynData} margin={{ top: 10, right: 30, bottom: 30, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="time" type="number" label={{ value: 'Время, мин', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-              <YAxis label={{ value: 'Высота, м', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Legend />
-              <Area type="stepAfter" dataKey="bufferH" name="Буфер" stackId="1" stroke="hsl(45, 90%, 50%)" fill="hsl(45, 90%, 50%)" fillOpacity={0.6} />
-              <Area type="stepAfter" dataKey="foamH" name="Пеноцемент" stackId="1" stroke="hsl(200, 70%, 50%)" fill="hsl(200, 70%, 50%)" fillOpacity={0.6} />
-              <Area type="stepAfter" dataKey="mudH" name="Буровой раствор" stackId="1" stroke="hsl(30, 40%, 40%)" fill="hsl(30, 40%, 40%)" fillOpacity={0.5} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ScrollableChart>
-      </ChartCard>
-
-      {/* Static profile table */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg">📋 Профиль пеноцемента по глубине</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-card z-10">
-                <tr className="border-b border-border">
-                  <th className="py-2 px-1 text-left text-muted-foreground">MD, м</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">TVD, м</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">P, МПа</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">T, °C</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">Z</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">FQ, %</th>
-                  <th className="py-2 px-1 text-right text-muted-foreground">ρ, г/см³</th>
+            </tbody>
+          </table>
+        </div>
+        {!s.lab.length && (
+          <p className="text-amber-700">
+            Лабораторных данных нет. Программа считает по доступным исходным
+            данным, но устойчивость, прочность и газопроницаемость не
+            подтверждены.
+          </p>
+        )}
+      </Panel>
+      <Panel title="5. Подбор режима и чувствительность">
+        <p className="text-sm">
+          Перебор до 9 вариантов: расходы 70/100/130% исходного и
+          противодавление +0/+1/+2 МПа. Это поиск среди заданных вариантов, не
+          глобальный оптимум. Кандидаты считаются на укрупнённой сетке;
+          выбранный режим пересчитывается на исходной.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <select
+            className="border rounded bg-background p-2"
+            value={objective}
+            onChange={(e) => setObjective(e.target.value as typeof objective)}
+          >
+            <option value="nitrogen">Минимум азота</option>
+            <option value="time">Минимум времени</option>
+          </select>
+          <Button
+            variant="outline"
+            disabled={!!busy}
+            onClick={() => run("optimise")}
+          >
+            Подобрать режим
+          </Button>
+          <Button
+            variant="outline"
+            disabled={!!busy}
+            onClick={() => run("sensitivity")}
+          >
+            Чувствительность T ±10 °C, PV ±20%
+          </Button>
+        </div>
+        {busy && <p role="status">Расчёт выполняется в отдельном потоке…</p>}
+        {candidates.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  {[
+                    "Q, л/с",
+                    "Pу, МПа",
+                    "N₂, м³ст",
+                    "Время, мин",
+                    "Проверки",
+                    "",
+                  ].map((h, i) => (
+                    <th key={i} className="p-2 text-left">
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {staticResult.points.filter((_, i) => i % 5 === 0 || i === staticResult.points.length - 1).map((pt, i) => (
-                  <tr key={i} className="border-b border-border/50 hover:bg-muted/50">
-                    <td className="py-1.5 px-1">{fmt(pt.md, 0)}</td>
-                    <td className="py-1.5 px-1 text-right">{fmt(pt.tvd, 0)}</td>
-                    <td className="py-1.5 px-1 text-right">{fmt(pt.pressure, 2)}</td>
-                    <td className="py-1.5 px-1 text-right">{fmt(pt.temperature, 1)}</td>
-                    <td className="py-1.5 px-1 text-right">{fmt(pt.zFactor, 3)}</td>
-                    <td className="py-1.5 px-1 text-right">{fmt(pt.foamQuality, 1)}</td>
-                    <td className="py-1.5 px-1 text-right">{fmt(pt.foamDensity, 3)}</td>
+                {candidates.map((c, i) => (
+                  <tr className="border-t" key={i}>
+                    <td className="p-2">{fmt(c.input.settings.pumpRateLps)}</td>
+                    <td>{fmt(c.input.settings.backPressure)}</td>
+                    <td>{fmt(c.n2StdM3, 0)}</td>
+                    <td>{fmt(c.durationMin, 1)}</td>
+                    <td
+                      className={
+                        c.feasible ? "text-emerald-700" : "text-amber-700"
+                      }
+                    >
+                      {c.feasible
+                        ? "В пределах заданных ограничений"
+                        : c.reasons.join("; ")}
+                    </td>
+                    <td>
+                      <Button
+                        variant="outline"
+                        disabled={!!busy}
+                        onClick={() => {
+                          const settings = {
+                            ...s,
+                            pumpRateLps: c.input.settings.pumpRateLps,
+                            backPressure: c.input.settings.backPressure,
+                          };
+                          setS(settings);
+                          run("simulate", { ...input, settings });
+                        }}
+                      >
+                        Пересчитать
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </CardContent>
-      </Card>
+        )}
+        {sensitivity.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="text-sm w-full">
+              <thead>
+                <tr>
+                  {[
+                    "Сценарий",
+                    "N₂, м³ст",
+                    "Pмакс, МПа",
+                    "ECDмакс, г/см³",
+                    "Кровля, MD",
+                  ].map((h) => (
+                    <th key={h} className="p-2 text-left">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sensitivity.map((r) => (
+                  <tr className="border-t" key={r.label}>
+                    {[
+                      r.label,
+                      fmt(r.n2, 0),
+                      fmt(r.pressure),
+                      fmt(r.ecd, 3),
+                      fmt(r.toc, 0),
+                    ].map((v, i) => (
+                      <td className="p-2" key={i}>
+                        {v}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-xs text-muted-foreground">
+              Варианты относительно параметров на момент запуска. Сетка до 32
+              ячеек на ветвь, шаг не менее 0,8 мин. Это детерминированные
+              сценарии, не вероятность успеха.
+            </p>
+          </div>
+        )}
+      </Panel>
+      {result && frame && (
+        <>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              ["База, м³", fmt(result.design.baseSlurryM3)],
+              ["Азот, м³ст", fmt(result.design.n2StdM3, 0)],
+              [
+                "Максимум давления, МПа",
+                fmt(result.summary.maxPumpPressureMPa),
+              ],
+              ["Конечная кровля, м MD", fmt(result.summary.finalTOCMD, 0)],
+              ["Цемент, т", fmt(result.design.cementTonnes)],
+              ["Вода, м³", fmt(result.design.waterM3)],
+              ["Пенообразователь, кг", fmt(result.design.foamerKg)],
+              ["Время операции, мин", fmt(result.summary.durationMin, 1)],
+            ].map(([label, value]) => (
+              <div className="border bg-card rounded-xl p-4" key={label}>
+                <p className="text-sm text-muted-foreground">{label}</p>
+                <p className="text-2xl font-semibold">{value}</p>
+              </div>
+            ))}
+          </div>
+          <Panel title="Результаты проверки ограничений" open>
+            {result.constraints.some((c) => !c.pass) && (
+              <p
+                role="alert"
+                className="rounded-lg bg-red-100 text-red-900 p-3 font-semibold"
+              >
+                Есть нарушения ограничений или выход за область модели.
+                Программу нельзя считать подтверждённой по этому расчёту;
+                проверьте перечисленные причины.
+              </p>
+            )}
+            <p className="text-sm">
+              FQ в опорной точке: {fmt(result.design.reference.qualityPct, 1)}%
+              · Pабс {fmt(result.design.reference.pressureMPaAbs)} МПа · T{" "}
+              {fmt(result.design.reference.temperatureC, 1)} °C. Плановая кровля{" "}
+              {result.input.settings.cementTopMD} м MD; динамическая конечная{" "}
+              {fmt(result.summary.finalTOCMD, 1)} м MD.
+            </p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              {result.constraints.map((c) => (
+                <div
+                  className={`rounded p-3 text-sm ${c.pass ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-900"}`}
+                  key={c.label}
+                >
+                  {c.pass ? "В пределах" : "НАРУШЕНО"}: {c.label} ·{" "}
+                  {fmt(c.actual)} / {fmt(c.limit)} {c.unit}
+                </div>
+              ))}
+            </div>
+            <p className="text-sm">
+              Невязка базы:{" "}
+              {result.summary.maxBaseBalanceErrorPct.toExponential(2)}%; азота:{" "}
+              {result.summary.maxGasBalanceErrorPct.toExponential(2)}%.
+              Несошедшихся кадров: {result.summary.nonConvergedFrames}; кадров
+              вне модели полного заполнения: {result.summary.freeFallFrames}.
+            </p>
+            <p className="text-sm text-amber-700">
+              Выполнение заданных ограничений не подтверждает устойчивость пены
+              и пригодность рецептуры. Источник границ:{" "}
+              {result.input.settings.limitsSource}.
+            </p>
+          </Panel>
+          <Panel title="Программа закачки и выгрузка" open>
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  download(
+                    "foam-stages.csv",
+                    csv(
+                      result.design.stages.map((x) => ({
+                        ...x,
+                        n2RateStdM3Min:
+                          x.gasStdPerBase * x.liquidRateLps * 0.06,
+                      })),
+                    ),
+                  )
+                }
+              >
+                Стадии CSV
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  download(
+                    "foam-history.csv",
+                    csv(
+                      result.frames.map(
+                        ({ cells, formationMargins, ...f }) => ({
+                          ...f,
+                          margins: JSON.stringify(formationMargins),
+                        }),
+                      ),
+                    ),
+                  )
+                }
+              >
+                История CSV
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  download(
+                    "foam-result.json",
+                    JSON.stringify({
+                      modelVersion: FOAM_MODEL_VERSION,
+                      input: result.input,
+                      simulation: result,
+                      offset,
+                      observations,
+                      planFact: fact,
+                    }),
+                  )
+                }
+              >
+                Полный результат JSON
+              </Button>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const { exportFoamReport } =
+                      await import("@/lib/foam-cement-report");
+                    await exportFoamReport({
+                      simulation: result,
+                      observations,
+                      planFact: fact,
+                    });
+                  } catch (e) {
+                    setError(`Отчёт не создан: ${String(e)}`);
+                  }
+                }}
+              >
+                Программа DOCX
+              </Button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="text-sm w-full">
+                <thead>
+                  <tr>
+                    {[
+                      "Стадия",
+                      "Жидкость, м³",
+                      "Qж, л/с",
+                      "N₂, м³ст/мин",
+                      "Время, мин",
+                    ].map((h) => (
+                      <th className="p-2 text-left" key={h}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.design.stages.map((x) => (
+                    <tr className="border-t" key={x.id}>
+                      {[
+                        x.name,
+                        fmt(x.liquidVolumeM3),
+                        fmt(x.liquidRateLps),
+                        fmt(x.gasStdPerBase * x.liquidRateLps * 0.06),
+                        fmt(x.durationMin),
+                      ].map((v, i) => (
+                        <td className="p-2" key={i}>
+                          {v}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Продавка до башмака без цементного стакана. Объём пены зависит от
+              P/T и не равен объёму базы. Расхождение массового состава
+              рецептуры: {fmt(result.design.recipeMassMismatchPct, 1)}%.
+            </p>
+          </Panel>
+          <div className="rounded-xl border p-4 bg-card space-y-4">
+            <h3 className="text-xl font-semibold">Единая шкала времени</h3>
+            <div className="flex gap-3 items-center">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (frameIndex === result.frames.length - 1) setFrameIndex(0);
+                  setPlaying(!playing);
+                }}
+              >
+                {playing ? "Пауза" : "Воспроизвести"}
+              </Button>
+              <span>
+                {fmt(frame.time, 1)} / {fmt(result.summary.durationMin, 1)} мин
+              </span>
+            </div>
+            <input
+              aria-label="Время операции"
+              type="range"
+              className="w-full"
+              min="0"
+              max={result.frames.length - 1}
+              value={frameIndex}
+              onChange={(e) => {
+                setPlaying(false);
+                setFrameIndex(+e.target.value);
+              }}
+            />
+            <p>
+              {frame.stage} · Qж {fmt(frame.liquidRateLps)} л/с · N₂{" "}
+              {fmt(frame.n2RateStdM3Min)} м³ст/мин
+            </p>
+            <div className="grid lg:grid-cols-2 gap-5">
+              <FoamCement3D frame={frame} wellData={result.input.wellData} />
+              <div className="space-y-5">
+                <Plot
+                  label="Профиль давления выбранного кадра: MD, м / МПа абсолютного"
+                  data={frame.cells
+                    .filter((c) => c.leg === "annulus")
+                    .sort((a, b) => a.md - b.md)
+                    .map((c) => ({ md: c.md, pressure: c.pressureMPaAbs }))}
+                  x="md"
+                  series={[{ key: "pressure", name: "Pабс", color: "#2563eb" }]}
+                />
+                <Plot
+                  label="FQ выбранного кадра: MD, м / % газа"
+                  data={frame.cells
+                    .filter((c) => c.leg === "annulus")
+                    .map((c) => ({ md: c.md, fq: c.qualityPct }))
+                    .sort((a, b) => a.md - b.md)}
+                  x="md"
+                  series={[{ key: "fq", name: "FQ, %", color: "#d97706" }]}
+                />
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-2 text-sm">
+              <p>Пена в затрубье: {fmt(frame.foamInAnnulusM3)} м³</p>
+              <p>Удержано N₂: {fmt(frame.retainedN2StdM3)} м³ст</p>
+              <p>Возвращено N₂: {fmt(frame.returnedN2StdM3)} м³ст</p>
+            </div>
+          </div>
+          <div className="grid lg:grid-cols-2 gap-6 rounded-xl border bg-card p-4">
+            <Plot
+              label="Давления по времени: мин / МПа избыточного"
+              data={result.frames as unknown as Record<string, unknown>[]}
+              series={[
+                { key: "pumpPressureMPa", name: "Насос", color: "#2563eb" },
+                {
+                  key: "annulusBHPMPa",
+                  name: "Забой динамика",
+                  color: "#dc2626",
+                },
+                {
+                  key: "staticBHPMPa",
+                  name: "Забой гидростатика",
+                  color: "#16a34a",
+                },
+              ]}
+            />
+            <Plot
+              label="Эквивалентная плотность: мин / г/см³"
+              data={result.frames as unknown as Record<string, unknown>[]}
+              series={[
+                {
+                  key: "dynamicECD",
+                  name: "ECD динамическая",
+                  color: "#dc2626",
+                },
+                { key: "staticECD", name: "Статическая", color: "#16a34a" },
+              ]}
+            />
+            <Plot
+              label="Азот: мин / м³ст/мин"
+              data={result.frames as unknown as Record<string, unknown>[]}
+              series={[
+                { key: "n2RateStdM3Min", name: "Подача N₂", color: "#7c3aed" },
+              ]}
+            />
+            <Plot
+              label="Материальный баланс: мин / м³ст N₂"
+              data={result.frames as unknown as Record<string, unknown>[]}
+              series={[
+                {
+                  key: "cumulativeN2StdM3",
+                  name: "Закачано",
+                  color: "#2563eb",
+                },
+                {
+                  key: "retainedN2StdM3",
+                  name: "В скважине",
+                  color: "#d97706",
+                },
+                { key: "returnedN2StdM3", name: "Возврат", color: "#16a34a" },
+              ]}
+            />
+          </div>
+          <Panel title="План-факт и калибровка">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  download("foam-fact-template.csv", FACT_HEADERS + "\n")
+                }
+              >
+                Шаблон факта CSV
+              </Button>
+              <label className="border rounded p-2 text-sm cursor-pointer">
+                Загрузить факт
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".csv,.json"
+                  onChange={(e) => {
+                    void readFile(e.target.files?.[0], "fact");
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              <Button variant="outline" onClick={() => setObservations([])}>
+                Очистить факт
+              </Button>
+            </div>
+            <p className="text-sm">
+              Единицы: timeMin - мин; pumpPressureMPa - МПа изб.; slurryRateLps
+              - л/с; n2RateStdM3Min - м³ст/мин при стандартных условиях проекта;
+              density - г/см³.
+            </p>
+            <Field
+              label="Начало операции по часам факта, мин"
+              value={offset}
+              onChange={setOffset}
+            />
+            {fact && (
+              <>
+                <p>
+                  Измерений в пределах операции: {fact.samples.length}. RMSE
+                  давления {fmt(fact.pressureRMSE, 3)} МПа, смещение{" "}
+                  {fmt(fact.pressureBias, 3)} МПа. Покрытие расхода N₂{" "}
+                  {fmt(fact.coveragePct, 1)}% времени; факт{" "}
+                  {fmt(fact.measuredN2StdM3)} / план{" "}
+                  {fmt(fact.plannedN2SamePeriodStdM3)} м³ст на том же интервале.
+                </p>
+                <Plot
+                  label="План-факт давления: мин / МПа изб."
+                  data={fact.samples as unknown as Record<string, unknown>[]}
+                  x="timeMin"
+                  series={[
+                    { key: "observedPressure", name: "Факт", color: "#dc2626" },
+                    { key: "plannedPressure", name: "План", color: "#2563eb" },
+                  ]}
+                />
+                {fact.suggestedFrictionMultiplier !== null && (
+                  <div className="space-y-2">
+                    <p>
+                      Подобран множитель трения{" "}
+                      {fmt(fact.suggestedFrictionMultiplier, 3)}; RMSE линейной
+                      оценки {fmt(fact.fittedRMSE, 3)} МПа.
+                    </p>
+                    <Button
+                      variant="outline"
+                      disabled={!!busy}
+                      onClick={() => {
+                        const settings = {
+                          ...s,
+                          frictionMultiplier: fact.suggestedFrictionMultiplier!,
+                        };
+                        setS(settings);
+                        run("simulate", { ...input, settings });
+                      }}
+                    >
+                      Применить трение и пересчитать
+                    </Button>
+                  </div>
+                )}
+                {fact.warnings.map((x) => (
+                  <p className="text-sm text-amber-700" key={x}>
+                    {x}
+                  </p>
+                ))}
+              </>
+            )}
+          </Panel>
+          <Panel title="Область применимости и допущения" open>
+            {result.warnings.map((x) => (
+              <p className="text-sm text-amber-800 dark:text-amber-300" key={x}>
+                {x}
+              </p>
+            ))}
+            <p className="text-sm">
+              Версия {result.modelVersion}. Расчёт{" "}
+              {new Date(result.createdAt).toLocaleString("ru-RU")}. Промысловая
+              верификация, миграция газа после схватывания, гидратация и
+              механика цементного камня этим расчётом не подтверждаются.
+            </p>
+          </Panel>
+        </>
+      )}
     </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between py-2 border-b border-border last:border-0">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-sm font-semibold">{value}</span>
-    </div>
-  );
-}
-
-function Input({ label, value, step, min, max, onChange, hint }: { label: string; value: number; step: number; min: number; max: number; onChange: (v: number) => void; hint?: string }) {
-  return (
-    <div>
-      <label className="text-xs text-muted-foreground">{label}</label>
-      <input type="number" step={step} min={min} max={max} value={value}
-        onChange={e => onChange(+e.target.value)}
-        className="w-full border border-border rounded px-2 py-1.5 text-sm bg-background" />
-      {hint && <div className="text-[10px] text-muted-foreground mt-0.5">{hint}</div>}
-    </div>
-  );
-}
-
-function ChartCard({ title, refEl, children }: { title: string; refEl: React.RefObject<HTMLDivElement>; children: React.ReactNode }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2 flex flex-row items-center justify-between">
-        <CardTitle className="text-lg">{title}</CardTitle>
-        <CopyImageButton targetRef={refEl} />
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
   );
 }
