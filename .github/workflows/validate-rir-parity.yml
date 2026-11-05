@@ -5,6 +5,9 @@ on:
     paths:
       - "src/lib/rir-*"
       - "src/components/rir/**"
+      - "src/hooks/use-rir-cursor*"
+      - "src/pages/CementPlug.tsx"
+      - "src/test/fixtures/rir-screenshot.ts"
       - ".github/workflows/validate-rir-parity.yml"
   workflow_dispatch:
 jobs:
@@ -20,6 +23,6 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit -p tsconfig.app.json
       - name: RIR tests
-        run: npx vitest run src/lib/rir.test.ts src/lib/rir-spot-squeeze.test.ts src/lib/rir-bradenhead-parity.test.ts
+        run: npx vitest run src/lib/rir.test.ts src/lib/rir-spot-squeeze.test.ts src/lib/rir-bradenhead-parity.test.ts src/lib/rir-user-case.test.ts src/components/rir/RirModule.test.tsx src/hooks/use-rir-cursor.test.tsx src/components/rir/RirLeak3D.test.tsx
       - name: Build
         run: npm run build

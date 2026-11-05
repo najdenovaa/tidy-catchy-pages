@@ -101,7 +101,7 @@ export default function RirSpotLiftSqueeze({base}:{base:RirInputs}){
   <div className="grid gap-3 lg:grid-cols-2">
    {schema.map((group,idx)=><div key={idx} className="rounded-xl border border-border p-3 space-y-3">
       <h4 className="font-semibold text-sm">{sections[idx]}</h4>
-      <div className="grid grid-cols-2 gap-2">{group.map(p=><NumberControl key={p.key} p={p} value={input[p.key]} onChange={v=>patch(p.key,v)} />)}</div>
+      <div className="grid grid-cols-2 gap-2">{group.map(p=><NumberControl key={p.key} p={p} value={input[p.key] as number} onChange={v=>patch(p.key,v)} />)}</div>
    </div>)}
   </div>
   {calculated.errors.length>0&&<div role="alert" className="rounded-lg border border-destructive/60 p-3 space-y-1 text-sm text-destructive">

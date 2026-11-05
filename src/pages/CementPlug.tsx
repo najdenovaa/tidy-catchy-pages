@@ -34,7 +34,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import TermsFooter from "@/components/TermsFooter";
 import PlugRecipeCard from "@/components/PlugRecipeCard";
-import RirModule from "@/components/rir/RirModule";
+import RirModule, {type RirModuleHandle} from "@/components/rir/RirModule";
 import PlugPlanFactBar from "@/components/PlugPlanFactBar";
 import PlugPillCard, { type PillSettings } from "@/components/PlugPillCard";
 import { designPill, requiredPillGelPa, type PillDesign } from "@/lib/cement-plug-pill";
@@ -138,6 +138,7 @@ export default function CementPlug() {
   }, []);
 
   const saved = useMemo(() => loadSession(), []);
+  const rirHandle=useRef<RirModuleHandle|null>(null);
   const vizRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -434,6 +435,7 @@ export default function CementPlug() {
   useEffect(() => { if (recalcTick > 0) calculate(); }, [recalcTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const calculate = () => {
+    if(placementMode==="rir"){const errors=rirHandle.current?.validationErrors();if(!errors){toast.error("Модуль РИР ещё не готов.");}else if(errors.length){toast.error(errors.join(" "));}else{toast.success("РИР пересчитан по текущим полям; смотрите результаты и ограничения ниже.");}return;}
     const inputs = buildInputs();
     const res = calculateBalancedPlug(inputs);
     setResults(res);
@@ -636,6 +638,7 @@ export default function CementPlug() {
   };
 
   const handleExportDocx = async () => {
+    if(placementMode==="rir"){try{if(!rirHandle.current)throw new Error("Модуль РИР ещё не готов.");await rirHandle.current.exportDocx();toast.success("Программа РИР сохранена");}catch(e){toast.error(e instanceof Error?e.message:"Не удалось сформировать программу РИР");}return;}
     if (!results) return;
     try {
       toast.info("Формирование документа...");
@@ -771,8 +774,8 @@ export default function CementPlug() {
               </button>
             </div>
             <div className="flex items-center gap-1.5 sm:gap-3 flex-1 sm:flex-none justify-end flex-wrap">
-              <button onClick={resetSession} title="Обнулить все данные сессии" className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors shadow-sm flex items-center gap-1">
-                <RotateCcw className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">Обнулить</span>
+              <button onClick={()=>{if(placementMode==="rir")rirHandle.current?.resetInputs();else resetSession();}} title={placementMode==="rir"?"Сбросить параметры РИР к начальным":"Обнулить все данные сессии"} className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors shadow-sm flex items-center gap-1">
+                <RotateCcw className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">{placementMode==="rir"?"Сброс РИР":"Обнулить"}</span>
               </button>
               {fromDashboard && (
                 <button onClick={handleSaveToAccount} disabled={saving} className="px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border border-border text-muted-foreground font-semibold text-[10px] sm:text-sm hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-colors shadow-sm flex items-center gap-1 disabled:opacity-50">
@@ -780,7 +783,7 @@ export default function CementPlug() {
                   <span className="hidden sm:inline">Сохранить</span>
                 </button>
               )}
-              {results && (
+              {(results || placementMode === "rir") && (
                 <button onClick={handleExportDocx} className="px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-[10px] sm:text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-1">
                   <FileDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> DOCX
                 </button>
@@ -829,7 +832,7 @@ export default function CementPlug() {
             </Card>
 
         </div>
-        {placementMode === "rir" && <RirModule trajectory={trajPoints.length > 1 ? trajPoints : undefined} />}
+        {placementMode === "rir" && <RirModule handleRef={rirHandle} trajectory={trajPoints.length > 1 ? trajPoints : undefined} />}
         <div className={placementMode === "rir" ? "hidden" : "space-y-4"}>
           {/* Inputs & results */}
           <div className="space-y-3">

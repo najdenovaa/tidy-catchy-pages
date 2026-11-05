@@ -3,7 +3,7 @@ import type { RirInputs, RirResult } from "@/lib/rir-calculations";
 const COMP_COLOR: Record<string, string> = { cement: "#94a3b8", microcement: "#60a5fa", resin: "#f59e0b", resin_micro: "#a78bfa" };
 
 /** Схема скважины для РИР: колонны, цемент, НКТ, ретейнер, интервал нарушения и путь состава. */
-export default function RirWellSchematic({ inp, res }: { inp: RirInputs; res: RirResult }) {
+export default function RirWellSchematic({ inp, res,frame }: { inp: RirInputs; res: RirResult;frame?:import("@/lib/rir-squeeze-sim").SqueezePoint }) {
   const W = 420, H = 460, top = 24, bot = H - 20;
   const shoeMD = inp.tool.kind === "bradenhead" ? (inp.spot?.liftedShoeMD ?? inp.leak.topMD-100) : inp.tool.setDepthMD;
   const zMax = Math.max(inp.leak.bottomMD + 120, shoeMD + 150);
@@ -97,7 +97,7 @@ export default function RirWellSchematic({ inp, res }: { inp: RirInputs; res: Ri
           </g>
           <line x1={cx} x2={cx} y1={top+12} y2={Math.max(top+14,toolY-5)} stroke={color} strokeWidth={2} strokeDasharray="6 4" markerEnd="url(#rir-arrow)"/>
           <rect x={cx-rOuter-6} y={top-13} width={2*(rOuter+6)} height={4} fill="#dc2626"/>
-          <text x={cx-rOuter} y={top-15} fontSize={9} className="fill-foreground">ПВО закрыто на НКТ</text>
+          <text x={cx-rOuter} y={top-15} fontSize={9} className="fill-foreground">{frame?frame.openTubing?.bopClosed?"ПВО закрыто на НКТ":"ПВО открыто":"ПВО: закрытие перед задавливанием"}</text>
         </g>
       )}
       {/* устье */}
