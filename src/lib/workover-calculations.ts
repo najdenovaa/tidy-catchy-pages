@@ -1,3 +1,4 @@
+import { validateWorkoverPart } from "./workover-validation";
 /**
  * Workover (КРС) calculations — full physics.
  * Blocks: 0 well data, 1 packers, 2 drag & lubricants, 3 stuck pipe, 4 fishing, 5 rig capacity.
@@ -473,6 +474,7 @@ export interface KillInput {
 }
 
 export interface KillResult {
+  valid?: boolean;
   /** Применённый запас: % от Pпл и МПа */
   appliedMarginPct: number;
   appliedMarginMPa: number;
@@ -550,6 +552,15 @@ export function killMargin(
 }
 
 export function calculateKill(input: KillInput): KillResult {
+  const errors=validateWorkoverPart('kill',input);
+  if(errors.length) return {
+    valid:false,appliedMarginPct:0,appliedMarginMPa:0,marginRule:'Расчёт заблокирован',killDensity:0,balanceDensity:0,
+    bottomholePressureMPa:0,killVolumeM3:0,tubingVolumeM3:0,annulusVolumeM3:0,sidppMPa:0,circPressureCurrentMPa:0,
+    initialCircPressureMPa:0,finalCircPressureMPa:0,tubingFrictionMPa:0,annulusFrictionMPa:0,tubingTurbulent:false,
+    annulusTurbulent:false,tubingVelocityMs:0,annulusVelocityMs:0,bullheadSurfacePressureMPa:0,bullheadEndPressureMPa:0,
+    bullheadMaxSurfaceMPa:0,exceedsFracture:false,frictionLossMPa:0,selectedFluid:'Не определена',
+    warnings:errors.map(e=>'🔴 '+e),recommendation:'Исправьте исходные данные. Расчёт не выполнен.'
+  };
   const tvd = Math.max(1, input.reservoirDepthTVD);
   const md = Math.max(1, input.wellDepthMD);
 

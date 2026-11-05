@@ -1,3 +1,4 @@
+import { validateWorkoverPart } from "./workover-validation";
 /**
  * КРС — операционные расчёты:
  *   • промывка песчаных пробок (скорость осаждения, вынос, расход, время)
@@ -71,6 +72,11 @@ export function settlingVelocity(d_mm: number, rhoFluid_gcm3: number, mu_cP: num
 }
 
 export function calculateCleanout(input: CleanoutInput, well: WorkoverWellData): CleanoutResult {
+  const errors=[...validateWorkoverPart('well',well),...validateWorkoverPart('cleanout',input,well)];
+  if(input.plugBottomMD<=input.plugTopMD) errors.push('Подошва пробки должна быть ниже кровли');
+  if(errors.length) return {settlingVelocityMs:0,settlingRegime:'Стокс',upflowVelocityMs:0,upflowArea:input.method==='direct'?'затрубье':'НКТ',
+    transportRatio:0,minRateLs:0,liftTimeMin:0,sandMassKg:0,sandVolumeM3:0,sandConcentrationPct:0,washTimeH:0,
+    pumpPressureMPa:0,bottomholeExtraMPa:0,avgZenithDeg:0,ok:false,warnings:errors.map(e=>'🔴 '+e)};
   const top = Math.max(1, Math.min(input.plugTopMD, well.wellDepthMD));
   const bottom = Math.max(top, Math.min(input.plugBottomMD, well.wellDepthMD));
   const st = settlingVelocity(input.grainDiameter_mm, well.fluidDensity_gcm3, well.fluidPV_cP);
@@ -229,6 +235,10 @@ export interface CasingCheckResult {
 }
 
 export function checkCasing(input: CasingCheckInput, well: WorkoverWellData): CasingCheckResult {
+  const errors=[...validateWorkoverPart('well',well),...validateWorkoverPart('casing',input,well)];
+  if(errors.length) return {burstRatingMPa:0,collapseRatingMPa:0,collapseRegime:'текучесть',dt:0,maxBurstLoadMPa:0,
+    maxBurstAtMD:0,maxCollapseLoadMPa:0,maxCollapseAtMD:0,burstAllowableMPa:0,collapseAllowableMPa:0,maxTestPressureMPa:0,
+    maxLevelMD:0,burstOk:false,collapseOk:false,profile:[],warnings:errors.map(e=>'🔴 '+e)};
   const t = input.casingWall_mm * (1 - Math.min(90, Math.max(0, input.wearPct)) / 100);
   const burst = apiBurstMPa(input.casingOD_mm, t, input.casingYieldMPa);
   const col = apiCollapse(input.casingOD_mm, t, input.casingYieldMPa);

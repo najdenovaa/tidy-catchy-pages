@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, memo, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import SaveToCabinetDialog, { type SaveCalcPayload } from "@/components/SaveToCabinetDialog";
@@ -37,18 +37,39 @@ import { Trash2, Plus, Waves, Layers, Save, FileDown } from "lucide-react";
 import HelpLink from "@/components/HelpLink";
 import {
   calculateCleanout, checkCasing, calculateSwab, calculateBlockingPill, selectFishingTools, calculateBackOff,
-  type CleanoutInput, type CasingCheckInput, type SwabInput, type BlockingPillInput, type FishingToolInput,
+  mdAtTVD, type CleanoutInput, type CasingCheckInput, type SwabInput, type BlockingPillInput, type FishingToolInput,
 } from "@/lib/workover-operations";
 
+import { useWorkoverDraft } from '@/hooks/use-workover-draft';
+import { validateWorkoverPart } from '@/lib/workover-validation';
+import { buildKillSchedule } from '@/lib/workover-kill-schedule';
+
+const OperationValidity = createContext(true);
+const OPERATIONS = {kill:'Глушение',packer:'Пакеры',drag:'Затяжки / T&D',stuck:'Прихваты',fishing:'Ловильные',cleanout:'Промывка',casing:'Колонна / освоение',rig:'Подъёмник'};
+type Operation = keyof typeof OPERATIONS;
+function CheckedSection({errors,children}:{errors:string[];children:React.ReactNode}){
+ return <OperationValidity.Provider value={!errors.length}><div className={errors.length?'workover-invalid space-y-3':'space-y-3'}>
+  {errors.length>0 && <Alert variant="destructive"><AlertDescription>Расчёт заблокирован: {errors.join('; ')}. Исправьте исходные данные.</AlertDescription></Alert>}
+  {children}
+ </div></OperationValidity.Provider>;
+}
 const num = (v: string) => (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
 
 const NumberField = memo(function NumberField({ label, value, onChange, unit, hint, step = "any" }: {
   label: string; value: number; onChange: (v: number) => void; unit?: string; hint?: string; step?: string;
 }) {
+  const [draft,setDraft]=useState(String(value));
+  useEffect(()=>setDraft(String(value)),[value]);
+  const commit=()=>{
+    const next=Number(draft.replace(',','.'));
+    if(!draft.trim() || !Number.isFinite(next)) toast.error(`${label}: введите число`);
+    else onChange(next);
+    setDraft(String(value));
+  };
   return (
     <div className="space-y-1">
       <Label className="text-xs">{label}{unit && <span className="text-muted-foreground/70"> ({unit})</span>}</Label>
-      <BlurInput type="number" step={step} value={value} onValueCommit={(v) => onChange(num(v))} className="h-9" />
+      <Input inputMode="decimal" step={step} value={draft} onChange={e=>setDraft(e.target.value)} onBlur={commit} onKeyDown={e=>{if(e.key==='Enter') e.currentTarget.blur();}} className="h-9" />
       {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
     </div>
   );
@@ -78,7 +99,19 @@ const DEFAULT_WELL: WorkoverWellData = {
 };
 
 export default function Workover() {
-  const [well, setWell] = useState<WorkoverWellData>(DEFAULT_WELL);
+ const [params]=useSearchParams();
+ const scope=params.get('calc') ? `calc:${params.get('calc')}` : params.get('well') ? `well:${params.get('well')}` : 'new';
+ return <WorkoverEditor key={scope} scope={scope}/>;
+}
+function WorkoverEditor({scope}:{scope:string}) {
+  const restoredCabinetDraft=useRef((()=>{try{return localStorage.getItem(`workover_draft_v2:${scope}:cabinetLoaded`)==='true' && localStorage.getItem(`workover_draft_v2:${scope}:well`)!==null;}catch{return false;}})());
+  const [casing, setCasing] = useWorkoverDraft<CasingCheckInput & { casingGrade: string }>(scope, 'casing', {
+    casingOD_mm: 168, casingWall_mm: 8.0, casingGrade: "Д", casingYieldMPa: STEEL_GRADES["Д"], wearPct: 10,
+    bottomMD: 2500, testPressureMPa: 15, insideDensity: 1.0, outsideDensity: 1.05, levelMD: 0, sfBurst: 1.15, sfCollapse: 1.1,
+  });
+  const [wellDraft, setWellDraft] = useWorkoverDraft<WorkoverWellData>(scope, 'well', DEFAULT_WELL);
+  const well=useMemo(()=>({...wellDraft,casingID_mm:casing.casingOD_mm-2*casing.casingWall_mm}),[wellDraft,casing.casingOD_mm,casing.casingWall_mm]);
+  const setWell:React.Dispatch<React.SetStateAction<WorkoverWellData>>=action=>setWellDraft(prev=>({... (typeof action==='function'?action(prev):action),casingID_mm:well.casingID_mm}));
   const updateWell = <K extends keyof WorkoverWellData>(k: K, v: WorkoverWellData[K]) =>
     setWell((w) => ({ ...w, [k]: v }));
 
@@ -123,12 +156,12 @@ export default function Workover() {
   const pipeBody = useMemo(() => pipeBodyYieldKN(well), [well]);
 
   // ──── Drag + lubricant ────
-  const [drag, setDrag] = useState<DragInput>({ operation: "pull_out", frictionCoeff: 0.30 });
-  const [lube, setLube] = useState<LubricantInput>({
+  const [drag, setDrag] = useWorkoverDraft<DragInput>(scope, 'drag', { operation: "pull_out", frictionCoeff: 0.30 });
+  const [lube, setLube] = useWorkoverDraft<LubricantInput>(scope, 'lube', {
     name: "DeAll Slip-X", concentration: 2, baseFrictionCoeff: 0.34,
     lubricatedFrictionCoeff: 0.12, penetrationIndex: 7,
   });
-  const [useLube, setUseLube] = useState(false);
+  const [useLube, setUseLube] = useWorkoverDraft(scope, 'useLube', false);
   const dragNoLube = useMemo(() => calculateDrag({ ...drag, lubricant: undefined }, well), [drag, well]);
   const dragLube = useMemo(() => calculateDrag({ ...drag, lubricant: lube }, well), [drag, well, lube]);
   const activeDrag = useLube ? dragLube : dragNoLube;
@@ -138,7 +171,7 @@ export default function Workover() {
   const pullOutFull = useMemo(() => pullOutLoadTo(well.wellDepthMD), [well, drag.frictionCoeff]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ──── Rig (used by summary) ────
-  const [rig, setRig] = useState<RigInput>({
+  const [rig, setRig] = useWorkoverDraft<RigInput>(scope, 'rig', {
     rigCapacityKN: 1000, derrickCapacityKN: 1250, safetyFactor: 1.5, currentHookLoadKN: 0,
   });
   const rigHookAuto = rig.currentHookLoadKN <= 0;
@@ -149,7 +182,7 @@ export default function Workover() {
   const rigResult = useMemo(() => calculateRigCapacity(rigEffective), [rigEffective]);
 
   // ──── Packer ────
-  const [packer, setPacker] = useState<PackerInput>({
+  const [packer, setPacker] = useWorkoverDraft<PackerInput>(scope, 'packer', {
     type: "hydraulic", setDepthMD: 2200, sealBoreID_mm: 80, ratingDiffMPa: 35, ratingLoadKN: 300,
     connection: "free", sealStrokeMM: 1500,
     tubingSurfaceMPa0: 0, annulusSurfaceMPa0: 0, tubingFluidDensity0: 1.10, annulusFluidDensity: 1.10,
@@ -158,7 +191,7 @@ export default function Workover() {
   const packerResult = useMemo(() => calculatePacker(packer, well), [packer, well]);
 
   // ──── Packer RELEASE ────
-  const [releaseExtra, setReleaseExtra] = useState({
+  const [releaseExtra, setReleaseExtra] = useWorkoverDraft(scope, 'releaseExtra', {
     releaseShearKN: 90, extraStuckKN: 0, pipeWeightAboveKN: 0,
   });
   const weightAbovePackerAuto = useMemo(() => pullOutLoadTo(packer.setDepthMD), [well, drag.frictionCoeff, packer.setDepthMD]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -173,13 +206,15 @@ export default function Workover() {
   } as PackerReleaseInput), [packer.type, releaseExtra, weightAbovePacker, pipeYield, rigResult.allowableLoadKN]);
 
   // ──── Kill ────
-  const [kill, setKill] = useState<KillInput>({
+  const [killParams, setKill] = useWorkoverDraft<KillInput & {reservoirMD:number}>(scope, 'kill', {
+    reservoirMD:2300,
     method: "wait_weight",
     formationPressureMPa: 26, reservoirDepthTVD: 2030, fracturePressureMPa: 39,
     currentMudDensity: 1.10,
     wellDepthMD: 2500, casingID_mm: 152, tubingOD_mm: 73, tubingID_mm: 62,
     killFluidPV_cP: 20, killFluidYP_Pa: 6, pumpRateLs: 8, safetyMarginPct: 5, marginMode: "pb",
   });
+  const kill={...killParams,wellDepthMD:well.wellDepthMD,casingID_mm:well.casingID_mm,tubingOD_mm:well.pipeOD_mm,tubingID_mm:well.pipeID_mm,currentMudDensity:well.fluidDensity_gcm3,reservoirDepthTVD:tvdAtMD(killParams.reservoirMD,well.trajectory)};
   // Геометрия и текущая жидкость — из общих данных скважины
   const killInput = useMemo<KillInput>(() => ({
     ...kill,
@@ -189,30 +224,14 @@ export default function Workover() {
     currentFluidPV_cP: well.fluidPV_cP, currentFluidYP_Pa: well.fluidYP_Pa,
   }), [kill, well]);
   const killResult = useMemo(() => calculateKill(killInput), [killInput]);
-  const killChart = useMemo(() => {
-    // Ожидание/бурильщик: ICP → FCP, пока жидкость глушения заполняет НКТ, далее FCP.
-    // Задавка: начальное → конечное устьевое давление по объёму НКТ.
-    const isBull = kill.method === "bullhead";
-    const p0 = isBull ? killResult.bullheadSurfacePressureMPa : killResult.initialCircPressureMPa;
-    const p1 = isBull ? killResult.bullheadEndPressureMPa : killResult.finalCircPressureMPa;
-    const vt = killResult.tubingVolumeM3;
-    const vTotal = isBull ? vt : killResult.killVolumeM3;
-    const steps = 30;
-    const out: { v: number; p: number }[] = [];
-    for (let i = 0; i <= steps; i++) {
-      const v = (vTotal * i) / steps;
-      const f = Math.min(1, v / Math.max(1e-6, vt));
-      out.push({ v: +v.toFixed(2), p: +(p0 + (p1 - p0) * f).toFixed(2) });
-    }
-    return out;
-  }, [killResult, kill.method]);
+  const killChart=useMemo(()=>buildKillSchedule(killInput,killResult),[killInput,killResult]);
 
   // ──── Рецептура жидкости глушения ────
-  const [brineSaltId, setBrineSaltId] = useState<string>("auto");
-  const [brineTargetDensity, setBrineTargetDensity] = useState<number>(0); // 0 = из killResult
-  const [brineVolumeM3, setBrineVolumeM3] = useState<number>(0);            // 0 = из killResult
-  const [brineMixing, setBrineMixing] = useState<"low" | "medium" | "high">("medium");
-  const [brineTempC, setBrineTempC] = useState<number>(20);
+  const [brineSaltId, setBrineSaltId] = useWorkoverDraft<string>(scope, 'brineSaltId', "auto");
+  const [brineTargetDensity, setBrineTargetDensity] = useWorkoverDraft<number>(scope, 'brineTargetDensity', 0); // 0 = из killResult
+  const [brineVolumeM3, setBrineVolumeM3] = useWorkoverDraft<number>(scope, 'brineVolumeM3', 0);            // 0 = из killResult
+  const [brineMixing, setBrineMixing] = useWorkoverDraft<"low" | "medium" | "high">(scope, 'brineMixing', "medium");
+  const [brineTempC, setBrineTempC] = useWorkoverDraft<number>(scope, 'brineTempC', 20);
   const effectiveBrineDensity = brineTargetDensity > 0 ? brineTargetDensity : killResult.killDensity;
   const effectiveBrineVolume = brineVolumeM3 > 0 ? brineVolumeM3 : killResult.killVolumeM3;
   const selectedSalt: KillSalt | null = brineSaltId === "auto"
@@ -224,19 +243,17 @@ export default function Workover() {
   }, [selectedSalt, effectiveBrineDensity, effectiveBrineVolume, brineMixing, brineTempC]);
 
   // ──── Многоинтервальное глушение ────
-  const [killIntervals, setKillIntervals] = useState<KillInterval[]>([
-    { topMD: 1900, bottomMD: 1950, topTVD: 1750, bottomTVD: 1790, formationPressureMPa: 19, fracturePressureMPa: 30, intervalType: "kick_zone", requiredKillDensity: 0 },
-    { topMD: 2300, bottomMD: 2400, topTVD: 2050, bottomTVD: 2125, formationPressureMPa: 24, fracturePressureMPa: 36, intervalType: "kill_zone", requiredKillDensity: 0 },
-  ]);
+  const [intervalDraft, setKillIntervals] = useWorkoverDraft<KillInterval[]>(scope, 'killIntervals', []);
+  const killIntervals=useMemo(()=>intervalDraft.map(iv=>({...iv,topTVD:tvdAtMD(iv.topMD,well.trajectory),bottomTVD:tvdAtMD(iv.bottomMD,well.trajectory)})),[intervalDraft,well.trajectory]);
   const multiIntervalPlan = useMemo(() => {
     if (!selectedSalt || killIntervals.length === 0) return null;
     return planMultiIntervalKill(killIntervals, selectedSalt, Math.max(0.1, effectiveBrineVolume), brineMixing, kill.safetyMarginPct, brineTempC, kill.marginMode ?? "manual");
   }, [killIntervals, selectedSalt, effectiveBrineVolume, brineMixing, kill.safetyMarginPct, brineTempC, kill.marginMode]);
 
   // ──── Stuck pipe ────
-  const [fp, setFp] = useState<FreePointInput>({ pulledForceKN: 196, measuredStretchM: 1.5 });
+  const [fp, setFp] = useWorkoverDraft<FreePointInput>(scope, 'fp', { pulledForceKN: 196, measuredStretchM: 1.5 });
   const fpResult = useMemo(() => calculateFreePoint(fp, well, drag.frictionCoeff), [fp, well, drag.frictionCoeff]);
-  const [symptoms, setSymptoms] = useState<StuckSymptoms>({
+  const [symptoms, setSymptoms] = useWorkoverDraft<StuckSymptoms>(scope, 'symptoms', {
     canRotate: true, canMoveDown: false, canMoveUp: false,
     stuckDepthMD: 1800, circulation: "restricted", onset: "gradual",
     packerInString: false, sandProduction: true, deposits: false, afterCementing: false,
@@ -256,7 +273,7 @@ export default function Workover() {
   );
 
   // ──── Fishing ────
-  const [fish, setFish] = useState<FishingInput>({
+  const [fish, setFish] = useWorkoverDraft<FishingInput>(scope, 'fish', {
     fishTopMD: 1600, fishWeightKN: 120, overpullKN: 150, jarType: "hydraulic",
     collarLengthM: 0, collarOD_mm: 95, collarID_mm: 38,
   });
@@ -266,11 +283,11 @@ export default function Workover() {
   );
 
   // ──── Ловильный инструмент и отворот ────
-  const [fishTool, setFishTool] = useState<FishingToolInput>({
+  const [fishTool, setFishTool] = useWorkoverDraft<FishingToolInput>(scope, 'fishTool', {
     fishOD_mm: 88.9, fishID_mm: 62, headDamaged: false, minClearance_mm: 6, externalBodyWall_mm: 10,
   });
   const fishTools = useMemo(() => selectFishingTools(fishTool, well), [fishTool, well]);
-  const [backOff, setBackOff] = useState({ backOffMD: 0, breakoutTorqueKNm: 2.0 });
+  const [backOff, setBackOff] = useWorkoverDraft(scope, 'backOff', { backOffMD: 0, breakoutTorqueKNm: 2.0 });
   const backOffDepth = backOff.backOffMD > 0 ? backOff.backOffMD : fpResult.backOffMD;
   const backOffResult = useMemo(
     () => calculateBackOff({ backOffMD: backOffDepth, breakoutTorqueKNm: backOff.breakoutTorqueKNm, frictionCoeff: drag.frictionCoeff }, well),
@@ -278,23 +295,19 @@ export default function Workover() {
   );
 
   // ──── Промывка пробки ────
-  const [cleanout, setCleanout] = useState<CleanoutInput>({
+  const [cleanout, setCleanout] = useWorkoverDraft<CleanoutInput>(scope, 'cleanout', {
     plugTopMD: 2350, plugBottomMD: 2450, method: "direct", rateLs: 8, grainDiameter_mm: 0.25, feedRate_mh: 6, plugPorosity: 0.4,
   });
   const cleanoutResult = useMemo(() => calculateCleanout(cleanout, well), [cleanout, well]);
 
   // ──── Освоение ────
-  const [swab, setSwab] = useState<SwabInput>({
+  const [swab, setSwab] = useWorkoverDraft<SwabInput>(scope, 'swab', {
     reservoirMD: 2300, reservoirPressureMPa: 18, targetDrawdownMPa: 5, fluidDensity: 1.0,
     packerInstalled: true, swabSubmergenceM: 200, swabEfficiency: 0.8, swabSpeedMs: 2,
   });
   const swabResult = useMemo(() => calculateSwab(swab, well), [swab, well]);
 
   // ──── Колонна: опрессовка и смятие ────
-  const [casing, setCasing] = useState<CasingCheckInput & { casingGrade: string }>({
-    casingOD_mm: 168.3, casingWall_mm: 8.0, casingGrade: "Д", casingYieldMPa: STEEL_GRADES["Д"], wearPct: 10,
-    bottomMD: 2500, testPressureMPa: 15, insideDensity: 1.0, outsideDensity: 1.05, levelMD: 0, sfBurst: 1.15, sfCollapse: 1.1,
-  });
   const casingLevel = casing.levelMD > 0 ? casing.levelMD : swabResult.requiredLevelMD;
   const casingResult = useMemo(
     () => checkCasing({ ...casing, levelMD: casingLevel, bottomMD: Math.min(casing.bottomMD, well.wellDepthMD) }, well),
@@ -302,7 +315,8 @@ export default function Workover() {
   );
 
   // ──── Блокирующая пачка ────
-  const [pill, setPill] = useState<BlockingPillInput>({
+  const [usePill,setUsePill]=useWorkoverDraft(scope,'usePill',false);
+  const [pill, setPill] = useWorkoverDraft<BlockingPillInput>(scope, 'pill', {
     perfTopMD: 2300, perfBottomMD: 2320, porosityPct: 18, penetrationRadiusM: 0.5, coverAboveM: 30, excessPct: 15, tubingShoeMD: 2200,
   });
   const pillResult = useMemo(() => calculateBlockingPill(pill, well), [pill, well]);
@@ -311,6 +325,16 @@ export default function Workover() {
   const [searchParams] = useSearchParams();
   const calcId = searchParams.get("calc");
   const selectedWellId = searchParams.get("well");
+  const [selectedOperations,setSelectedOperations]=useWorkoverDraft<Operation[]>(scope,'selectedOperations',[]);
+  const [activeOperation,setActiveOperation]=useState<Operation>('packer');
+  const operationErrors:Record<Operation,string[]>={
+   kill:[...validateWorkoverPart('kill',killInput),...validateWorkoverPart('reservoir',{reservoirMD:killParams.reservoirMD},well),...validateWorkoverPart('intervals',killIntervals,well),...(usePill?validateWorkoverPart('pill',pill,well):[])],
+   packer:validateWorkoverPart('packer',packer,well),drag:validateWorkoverPart('drag',drag,well),
+   stuck:validateWorkoverPart('symptoms',symptoms,well),fishing:[...validateWorkoverPart('fish',fish,well),...validateWorkoverPart('backOff',backOff,well),...validateWorkoverPart('fishTool',fishTool,well)],
+   cleanout:validateWorkoverPart('cleanout',cleanout,well),casing:[...validateWorkoverPart('casing',casing,well),...validateWorkoverPart('swab',swab,well)],rig:validateWorkoverPart('rig',rig),
+  };
+  const wellErrors=validateWorkoverPart('well',well);
+  const reportBlocked=!selectedOperations.length || wellErrors.length>0 || selectedOperations.some(op=>operationErrors[op]?.length);
   const [saveOpen, setSaveOpen] = useState(false);
 
   const buildPayload = (): SaveCalcPayload => ({
@@ -318,20 +342,20 @@ export default function Workover() {
     title: `КРС ${new Date().toLocaleDateString("ru-RU")}`,
     well_data: well,
     calc_params: {
-      rig, packer, releaseExtra, kill, brineSaltId, brineTargetDensity, brineVolumeM3, brineMixing, brineTempC,
-      killIntervals, drag, lube, useLube, fp, symptoms, fish, fishTool, backOff, cleanout, swab, casing, pill,
+      rig, packer, releaseExtra, kill: {...kill,reservoirMD:killParams.reservoirMD}, brineSaltId, brineTargetDensity, brineVolumeM3, brineMixing, brineTempC,
+      killIntervals, drag, lube, useLube, fp, symptoms, fish, fishTool, backOff, cleanout, swab, casing, pill, usePill, selectedOperations,
     },
-    results: {
+    results: reportBlocked ? {status:"draft",validationErrors:[...wellErrors,...selectedOperations.flatMap(op=>operationErrors[op])]} : {
       hookLoadPullOutKN: pullOutFull, pipeAllowableKN: pipeYield,
       killDensity: killResult.killDensity, icp: killResult.initialCircPressureMPa, fcp: killResult.finalCircPressureMPa,
       packerMovementMM: packerResult.dLTotalMM, freePointMD: fpResult.freePointMD, stuckType: stuckDiag.type,
       cleanoutMinRateLs: cleanoutResult.minRateLs, maxTestPressureMPa: casingResult.maxTestPressureMPa,
-      maxLevelMD: casingResult.maxLevelMD, pillVolumeM3: pillResult.pillVolumeM3,
+      maxLevelMD: casingResult.maxLevelMD, pillVolumeM3: usePill ? pillResult.pillVolumeM3 : undefined,
     },
   });
 
   useEffect(() => {
-    if (!calcId) return;
+    if (!calcId || restoredCabinetDraft.current) return;
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { toast.error("Войдите в кабинет, чтобы открыть расчёт"); return; }
@@ -339,11 +363,16 @@ export default function Workover() {
       if (error || !data || data.user_id !== session.user.id) { toast.error("Не удалось загрузить расчёт"); return; }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = (data.calc_params ?? {}) as any;
-      if (data.well_data) setWell({ ...DEFAULT_WELL, ...(data.well_data as Partial<WorkoverWellData>) });
+      const loadedWell={...DEFAULT_WELL,...data.well_data as Partial<WorkoverWellData>};
+      const loadErrors=[...validateWorkoverPart('well',loadedWell),...Object.entries(p).flatMap(([part,value])=>validateWorkoverPart(part,value))];
+      if(loadErrors.length){toast.error(`Сохранённый расчёт содержит недопустимые данные: ${loadErrors[0]}`);return;}
+      if (data.well_data) setWellDraft({ ...DEFAULT_WELL, ...(data.well_data as Partial<WorkoverWellData>) });
       if (p.rig) setRig(p.rig);
       if (p.packer) setPacker((x) => ({ ...x, ...p.packer }));
       if (p.releaseExtra) setReleaseExtra((x) => ({ ...x, ...p.releaseExtra }));
-      if (p.kill) setKill((x) => ({ ...x, ...p.kill }));
+      if (p.kill) setKill((x) => ({ ...x, ...p.kill, reservoirMD:p.kill.reservoirMD ?? mdAtTVD(p.kill.reservoirDepthTVD,{...DEFAULT_WELL,...data.well_data as object}) }));
+      if(Array.isArray(p.selectedOperations)) setSelectedOperations(p.selectedOperations.filter((op:string)=>op in OPERATIONS));
+      if(!p.casing && data.well_data) setCasing(x=>({...x,casingOD_mm:(data.well_data as unknown as WorkoverWellData).casingID_mm+2*x.casingWall_mm}));
       if (typeof p.brineSaltId === "string") setBrineSaltId(p.brineSaltId);
       if (typeof p.brineTargetDensity === "number") setBrineTargetDensity(p.brineTargetDensity);
       if (typeof p.brineVolumeM3 === "number") setBrineVolumeM3(p.brineVolumeM3);
@@ -361,13 +390,16 @@ export default function Workover() {
       if (p.cleanout) setCleanout((x) => ({ ...x, ...p.cleanout }));
       if (p.swab) setSwab((x) => ({ ...x, ...p.swab }));
       if (p.casing) setCasing((x) => ({ ...x, ...p.casing }));
+      if(typeof p.usePill==='boolean') setUsePill(p.usePill);
       if (p.pill) setPill((x) => ({ ...x, ...p.pill }));
+      try{localStorage.setItem(`workover_draft_v2:${scope}:cabinetLoaded`,'true');}catch{/* draft hook reports unavailable storage */}
       toast.success(`Расчёт «${data.title}» загружен`);
     })();
   }, [calcId]);
 
   const f1 = (x: number, d = 1) => (Number.isFinite(x) ? x.toFixed(d) : "—");
   const openReport = () => {
+    if(reportBlocked){toast.error("Выберите операции и исправьте исходные данные");return;}
     const sections: ReportSection[] = [
       { title: "Скважина и колонна НКТ", rows: [
         ["Глубина MD / TVD забоя", `${well.wellDepthMD} / ${f1(tvdAtMD(well.wellDepthMD, well.trajectory), 0)} м`],
@@ -396,12 +428,15 @@ export default function Workover() {
         ["Плотность глушения", `${f1(killResult.killDensity, 3)} г/см³`],
         ["Объём скважины", `${f1(killResult.killVolumeM3, 2)} м³`],
         ["Трение НКТ / затрубье", `${f1(killResult.tubingFrictionMPa, 2)} / ${f1(killResult.annulusFrictionMPa, 2)} МПа`],
-        ["ICP / FCP", `${f1(killResult.initialCircPressureMPa, 2)} / ${f1(killResult.finalCircPressureMPa, 2)} МПа`],
+        ["Метод", {driller:'Бурильщика: два цикла',wait_weight:'Ожидания: один цикл',bullhead:'Задавка без модели приёмистости',volumetric:'Объёмный: программа стравливания не рассчитана'}[kill.method]],
+        ...(kill.method==='driller'||kill.method==='wait_weight' ? [["ICP / FCP (расчётный ориентир)", `${f1(killResult.initialCircPressureMPa, 2)} / ${f1(killResult.finalCircPressureMPa, 2)} МПа`] as [string,string]] : []),
+        ...(kill.method==='bullhead' ? [["Задавка: давление в начале / конце", `${f1(killResult.bullheadSurfacePressureMPa,2)} / ${f1(killResult.bullheadEndPressureMPa,2)} МПа`] as [string,string]] : []),
+        ["Границы расчёта", 'Пределы ПВО и обвязки не проверены; динамика газа и приёмистость не моделируются.'],
         ...(brineRecipe ? [
           ["Рецептура", `${brineRecipe.salt.name}: ${f1(brineRecipe.productMassKg, 0)} кг товарного + ${f1(brineRecipe.waterVolumeL, 0)} л воды`] as [string, string],
           ["Температура кристаллизации", brineRecipe.crystallizationC === null ? "нет данных" : `${f1(brineRecipe.crystallizationC, 0)} °C`] as [string, string],
         ] : []),
-        ["Блокирующая пачка / продавка", `${f1(pillResult.pillVolumeM3, 2)} / ${f1(pillResult.displacementVolumeM3, 2)} м³`],
+        ...(usePill ? [["Блокирующая пачка / продавка", `${f1(pillResult.pillVolumeM3, 2)} / ${f1(pillResult.displacementVolumeM3, 2)} м³`] as [string,string]] : []),
       ], warnings: [...killResult.warnings, ...(brineRecipe?.warnings ?? []), ...(multiIntervalPlan?.warnings ?? [])] },
       { title: "Затяжки и момент", rows: [
         ["Коэффициент трения", `${drag.frictionCoeff}`],
@@ -412,7 +447,7 @@ export default function Workover() {
         ["Натяжка / удлинение", `${fp.pulledForceKN} кН / ${fp.measuredStretchM} м`],
         ["Точка прихвата (по Гуку / с трением)", `${f1(fpResult.idealFreePointMD, 0)} / ${f1(fpResult.freePointMD, 0)} м`],
         ["Глубина отворота", `≈ ${f1(fpResult.backOffMD, 0)} м`],
-        ["Вероятный вид прихвата", `${STUCK_LABELS[stuckDiag.type]} (${f1(stuckDiag.probability * 100, 0)}%)`],
+        ["Соответствие признакам прихвата", `${STUCK_LABELS[stuckDiag.type]} (${f1(stuckDiag.probability * 100, 0)}% от суммы баллов)`],
         ["Рекомендация", stuckDiag.recommendation],
       ] },
       { title: "Ловильные работы", rows: [
@@ -435,7 +470,9 @@ export default function Workover() {
         ["Освоение: уровень для депрессии", `${f1(swabResult.requiredLevelMD, 0)} м, ${swabResult.runs} рейсов сваба, ${f1(swabResult.timeH)} ч`],
       ], warnings: [...casingResult.warnings, ...swabResult.warnings] },
     ];
-    if (!openWorkoverReport("Расчёт КРС", sections)) toast.error("Браузер заблокировал окно отчёта — разрешите всплывающие окна для сайта");
+    const sectionIndices:Record<Operation,number>={rig:1,packer:2,kill:3,drag:4,stuck:5,fishing:6,cleanout:7,casing:8};
+    const chosen=[sections[0],{title:'Последовательность выбранных операций',rows:selectedOperations.map((op,i)=>[String(i+1),OPERATIONS[op]] as [string,string])},...selectedOperations.map(op=>sections[sectionIndices[op]])];
+    if (!openWorkoverReport("Расчёт выбранных операций КРС", chosen)) toast.error("Браузер заблокировал окно отчёта — разрешите всплывающие окна для сайта");
   };
 
   // ──── Drag chart ────
@@ -463,7 +500,7 @@ export default function Workover() {
 
   // ────────── render ──────────
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <OperationValidity.Provider value={!wellErrors.length}><div className="min-h-screen bg-background flex flex-col">
       <header className="border-b border-border bg-card">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
@@ -473,7 +510,7 @@ export default function Workover() {
             </p>
           </Link>
           <div className="flex items-center gap-2 sm:gap-3">
-            <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={openReport}>
+            <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={openReport} disabled={reportBlocked}>
               <FileDown className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Отчёт PDF</span>
             </Button>
             <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setSaveOpen(true)}>
@@ -498,7 +535,8 @@ export default function Workover() {
           </CardHeader>
           <CardContent className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
             <NumberField label="Глубина MD" unit="м" value={well.wellDepthMD} onChange={(v) => updateWell("wellDepthMD", v)} />
-            <NumberField label="ID обсадной" unit="мм" value={well.casingID_mm} onChange={(v) => updateWell("casingID_mm", v)} />
+            <NumberField label="OD обсадной" unit="мм" value={casing.casingOD_mm} onChange={v=>setCasing({...casing,casingOD_mm:v})}/>
+            <NumberField label="Стенка обсадной" unit="мм" value={casing.casingWall_mm} onChange={v=>setCasing({...casing,casingWall_mm:v})} hint={`ID по конструкции: ${well.casingID_mm.toFixed(1)} мм`}/>
             <div className="space-y-1">
               <Label className="text-xs">НКТ по ГОСТ 633-80</Label>
               <Select value={GOST_TUBING_SIZES.find((t) => Math.abs(t.od - well.pipeOD_mm) < 0.5 && Math.abs(t.od - 2 * t.wall - well.pipeID_mm) < 0.5)?.label ?? "custom"}
@@ -632,7 +670,14 @@ export default function Workover() {
           </CardContent>
         </Card>
 
-        <Tabs defaultValue="packer" className="w-full">
+        <Card><CardHeader><CardTitle className="text-sm">План КРС и состав отчёта</CardTitle></CardHeader><CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">Отметьте нужные операции и задайте их порядок. В отчёт входят только выбранные разделы. Ввод автоматически сохраняется в этом браузере отдельно для каждой скважины или расчёта.</p>
+          <div className="flex flex-wrap gap-3">{Object.entries(OPERATIONS).map(([op,label])=><label key={op} className="text-xs flex gap-1 items-center"><input type="checkbox" checked={selectedOperations.includes(op as Operation)} onChange={e=>setSelectedOperations(prev=>e.target.checked?[...prev,op as Operation]:prev.filter(x=>x!==op))}/>{label}</label>)}</div>
+          <ol className="space-y-2">{selectedOperations.map((op,i)=><li key={op} className="flex items-center gap-2 text-sm"><span>{i+1}. {OPERATIONS[op]}</span><Badge variant={operationErrors[op].length?'destructive':'outline'}>{operationErrors[op].length?'Проверить ввод':'Включено'}</Badge><Button variant="ghost" size="sm" onClick={()=>setActiveOperation(op)}>Открыть</Button><Button variant="ghost" size="sm" disabled={i===0} onClick={()=>setSelectedOperations(prev=>{const next=[...prev];[next[i-1],next[i]]=[next[i],next[i-1]];return next;})}>Выше</Button><Button variant="ghost" size="sm" disabled={i===selectedOperations.length-1} onClick={()=>setSelectedOperations(prev=>{const next=[...prev];[next[i+1],next[i]]=[next[i],next[i+1]];return next;})}>Ниже</Button></li>)}</ol>
+        </CardContent></Card>
+        {wellErrors.length>0 && <Alert variant="destructive"><AlertDescription>{wellErrors.join('; ')}</AlertDescription></Alert>}
+        <style>{`.workover-invalid .recharts-responsive-container,.workover-invalid .bg-green-600{display:none}`}</style>
+        <Tabs value={activeOperation} onValueChange={v=>setActiveOperation(v as Operation)} className="w-full">
           <TabsList className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 w-full h-auto">
             <TabsTrigger value="packer" className="text-xs gap-1"><Anchor className="w-3.5 h-3.5" /> Пакеры</TabsTrigger>
             <TabsTrigger value="kill" className="text-xs gap-1"><Droplets className="w-3.5 h-3.5" /> Глушение</TabsTrigger>
@@ -646,7 +691,7 @@ export default function Workover() {
 
 
           {/* ──────────────── PACKER ──────────────── */}
-          <TabsContent value="packer" className="space-y-4">
+          <TabsContent value="packer" className="space-y-4"><CheckedSection errors={[...wellErrors,...operationErrors.packer]}>
             <div className="grid lg:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Пакер и паспортные данные</CardTitle></CardHeader>
@@ -793,10 +838,10 @@ export default function Workover() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
+          </CheckedSection></TabsContent>
 
           {/* ──────────────── KILL ──────────────── */}
-          <TabsContent value="kill" className="space-y-4">
+          <TabsContent value="kill" className="space-y-4"><CheckedSection errors={[...wellErrors,...operationErrors.kill]}>
             <div className="grid lg:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Метод и параметры глушения</CardTitle></CardHeader>
@@ -815,8 +860,8 @@ export default function Workover() {
                   </div>
                   <NumberField label="Pпл" unit="МПа" value={kill.formationPressureMPa}
                     onChange={(v) => setKill({ ...kill, formationPressureMPa: v })} />
-                  <NumberField label="TVD пласта" unit="м" value={kill.reservoirDepthTVD}
-                    onChange={(v) => setKill({ ...kill, reservoirDepthTVD: v })} hint={`TVD забоя по траектории: ${tvdAtMD(well.wellDepthMD, well.trajectory).toFixed(0)} м`} />
+                  <NumberField label="MD пласта" unit="м" value={killParams.reservoirMD}
+                    onChange={(v) => setKill({ ...killParams, reservoirMD: v })} hint={`TVD пласта по траектории: ${kill.reservoirDepthTVD.toFixed(1)} м`} />
                   <NumberField label="Pгрп (предел)" unit="МПа" value={kill.fracturePressureMPa}
                     onChange={(v) => setKill({ ...kill, fracturePressureMPa: v })} />
                   <div className="space-y-1">
@@ -855,7 +900,7 @@ export default function Workover() {
                   <Row k="Плотность глушения"
                     v={<strong>{killResult.killDensity.toFixed(3)} г/см³</strong>} />
                   <Row k="Подбор жидкости" v={<Badge variant="secondary">{killResult.selectedFluid}</Badge>} />
-                  <Row k="Забойное (после глушения)" v={`${killResult.bottomholePressureMPa.toFixed(2)} МПа`}
+                  <Row k="Статическое забойное при расчётной плотности" v={`${killResult.bottomholePressureMPa.toFixed(2)} МПа`}
                     tone={killResult.exceedsFracture ? "danger" : "ok"} />
                   <Row k="Pгрп" v={`${kill.fracturePressureMPa.toFixed(2)} МПа`} />
                   <Row k="Объём скважины (НКТ + затрубье)"
@@ -883,9 +928,10 @@ export default function Workover() {
                   <div className="pt-1">
                     {killResult.exceedsFracture || killResult.warnings.some((w) => w.startsWith("🔴"))
                       ? <Badge variant="destructive">🔴 Превышение ГРП</Badge>
-                      : <Badge className="bg-green-600">🟢 В безопасном окне</Badge>}
+                      : <Badge variant="outline">Предел ГРП по модели не превышен</Badge>}
                   </div>
                   <Alert className="py-2"><AlertDescription className="text-xs">{killResult.recommendation}</AlertDescription></Alert>
+                  <p className="text-xs text-muted-foreground">Проверка ГРП не подтверждает допустимость операции по оборудованию. Паспортные пределы ПВО и обвязки здесь не проверяются. График - ориентировочная схема при постоянном расходе, без динамики газа; задавка - без прогноза приёмистости.</p>
                   {killResult.warnings.map((w, i) => (
                     <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
                   ))}
@@ -893,12 +939,13 @@ export default function Workover() {
               </Card>
             </div>
 
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Давление циркуляции vs объём прокачки</CardTitle></CardHeader>
+            {kill.method==='volumetric' ? <Alert><AlertDescription>Объёмный метод: циркуляция не моделируется. Расчёт плотности приведён справочно для последующего замещения. Для расчёта стравливания нужны фактические давления, объём и положение газа, ёмкость затрубья и допустимый диапазон давления; готовая программа стравливания по этим данным не формируется.</AlertDescription></Alert> : <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Расчётный график выбранного метода</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={260}>
                   <LineChart data={killChart}>
                     <CartesianGrid strokeDasharray="3 3" />
+                    {kill.method==='driller' && <ReferenceLine x={killResult.killVolumeM3} stroke="#a855f7" label="Начало 2-го цикла"/>}
                     <XAxis dataKey="v" type="number" domain={[0, "dataMax"]} tickFormatter={(x: number) => x.toFixed(0)} label={{ value: "Объём, м³", position: "insideBottom", offset: -5 }} />
                     <YAxis label={{ value: "Давление, МПа", angle: -90, position: "insideLeft" }} />
                     <Tooltip />
@@ -906,11 +953,11 @@ export default function Workover() {
                     {kill.method === "bullhead" && (
                       <ReferenceLine y={killResult.bullheadMaxSurfaceMPa} stroke="#f59e0b" strokeDasharray="4 4" label="Предел на устье" />
                     )}
-                    <Line type="linear" dataKey="p" name="Давление на устье (насос)" stroke="#0ea5e9" dot={false} />
+                    <Line type="linear" dataKey="p" name="Ориентир давления насоса" stroke="#0ea5e9" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>
-            </Card>
+            </Card>}
 
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm">Каталог жидкостей глушения</CardTitle></CardHeader>
@@ -1040,8 +1087,8 @@ export default function Workover() {
 
             {/* ─── Блокирующая пачка ─── */}
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Блокирующая пачка (поглощающий пласт)</CardTitle></CardHeader>
-              <CardContent className="grid lg:grid-cols-2 gap-4">
+              <CardHeader className="pb-2"><CardTitle className="text-sm"><label className="flex gap-2 items-center"><input type="checkbox" checked={usePill} onChange={e=>setUsePill(e.target.checked)}/>Блокирующая пачка (добавить в расчёт)</label></CardTitle></CardHeader>
+              {usePill && <CardContent className="grid lg:grid-cols-2 gap-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <NumberField label="Перфорация, верх" unit="м" value={pill.perfTopMD} onChange={(v) => setPill({ ...pill, perfTopMD: v })} />
                   <NumberField label="Перфорация, низ" unit="м" value={pill.perfBottomMD} onChange={(v) => setPill({ ...pill, perfBottomMD: v })} />
@@ -1060,7 +1107,7 @@ export default function Workover() {
                     <Alert key={i} className="py-2"><AlertDescription className="text-xs">{w}</AlertDescription></Alert>
                   ))}
                 </div>
-              </CardContent>
+              </CardContent>}
             </Card>
 
             {/* ─── Интервалы глушения ─── */}
@@ -1069,8 +1116,8 @@ export default function Workover() {
                 <CardTitle className="text-sm">Интервалы глушения / проявления</CardTitle>
                 <Button size="sm" variant="outline" className="h-7 text-xs"
                   onClick={() => setKillIntervals([...killIntervals, {
-                    topMD: 0, bottomMD: 0, topTVD: 0, bottomTVD: 0,
-                    formationPressureMPa: 0, fracturePressureMPa: 0, intervalType: "kill_zone", requiredKillDensity: 0,
+                    topMD: Math.max(0,killParams.reservoirMD-10), bottomMD: killParams.reservoirMD, topTVD: tvdAtMD(Math.max(0,killParams.reservoirMD-10),well.trajectory), bottomTVD: kill.reservoirDepthTVD,
+                    formationPressureMPa: kill.formationPressureMPa, fracturePressureMPa: kill.fracturePressureMPa, intervalType: "kill_zone", requiredKillDensity: 0,
                   }])}>
                   <Plus className="w-3 h-3 mr-1" />Интервал
                 </Button>
@@ -1092,16 +1139,11 @@ export default function Workover() {
                   <TableBody>
                     {killIntervals.map((iv, idx) => (
                       <TableRow key={idx} className={multiIntervalPlan?.governingInterval === idx ? "bg-amber-500/10" : ""}>
-                        <TableCell><Input type="number" value={iv.topMD} className="h-7 text-xs w-20"
-                          onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, topMD: num(e.target.value) }; setKillIntervals(a); }} /></TableCell>
-                        <TableCell><Input type="number" value={iv.bottomMD} className="h-7 text-xs w-20"
-                          onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, bottomMD: num(e.target.value) }; setKillIntervals(a); }} /></TableCell>
-                        <TableCell><Input type="number" value={iv.bottomTVD} className="h-7 text-xs w-20"
-                          onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, bottomTVD: num(e.target.value), topTVD: iv.topTVD || num(e.target.value) - (iv.bottomMD - iv.topMD) }; setKillIntervals(a); }} /></TableCell>
-                        <TableCell><Input type="number" value={iv.formationPressureMPa} className="h-7 text-xs w-20"
-                          onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, formationPressureMPa: num(e.target.value) }; setKillIntervals(a); }} /></TableCell>
-                        <TableCell><Input type="number" value={iv.fracturePressureMPa ?? 0} className="h-7 text-xs w-20"
-                          onChange={(e) => { const a = [...killIntervals]; a[idx] = { ...iv, fracturePressureMPa: num(e.target.value) }; setKillIntervals(a); }} /></TableCell>
+                        <TableCell><NumberField label="MD верх" value={iv.topMD} onChange={v=>{const a=[...killIntervals];a[idx]={...iv,topMD:v};setKillIntervals(a);}}/></TableCell>
+                        <TableCell><NumberField label="MD низ" value={iv.bottomMD} onChange={v=>{const a=[...killIntervals];a[idx]={...iv,bottomMD:v};setKillIntervals(a);}}/></TableCell>
+                        <TableCell><span className="text-xs">{iv.bottomTVD.toFixed(1)} м (из траектории)</span></TableCell>
+                        <TableCell><NumberField label="Pпл" value={iv.formationPressureMPa} onChange={v=>{const a=[...killIntervals];a[idx]={...iv,formationPressureMPa:v};setKillIntervals(a);}}/></TableCell>
+                        <TableCell><NumberField label="Pгрп" value={iv.fracturePressureMPa} onChange={v=>{const a=[...killIntervals];a[idx]={...iv,fracturePressureMPa:v};setKillIntervals(a);}}/></TableCell>
                         <TableCell>
                           <Select value={iv.intervalType} onValueChange={(v) => { const a = [...killIntervals]; a[idx] = { ...iv, intervalType: v as KillInterval["intervalType"] }; setKillIntervals(a); }}>
                             <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
@@ -1140,11 +1182,11 @@ export default function Workover() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
+          </CheckedSection></TabsContent>
 
 
           {/* ──────────────── DRAG / LUBE ──────────────── */}
-          <TabsContent value="drag" className="space-y-4">
+          <TabsContent value="drag" className="space-y-4"><CheckedSection errors={[...wellErrors,...operationErrors.drag]}>
             <div className="grid lg:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Операция и трение</CardTitle></CardHeader>
@@ -1248,10 +1290,10 @@ export default function Workover() {
                 </CardContent>
               </Card>
             )}
-          </TabsContent>
+          </CheckedSection></TabsContent>
 
           {/* ──────────────── STUCK ──────────────── */}
-          <TabsContent value="stuck" className="space-y-4">
+          <TabsContent value="stuck" className="space-y-4"><CheckedSection errors={[...wellErrors,...operationErrors.stuck]}>
             <div className="grid lg:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Точка прихвата (растяжение с учётом трения)</CardTitle></CardHeader>
@@ -1333,14 +1375,14 @@ export default function Workover() {
             </div>
 
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Диагностика: вероятный вид прихвата</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Диагностика: соответствие признакам</CardTitle></CardHeader>
               <CardContent className="grid lg:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   {stuckDiag.ranking.map((r, i) => (
                     <div key={r.type} className="space-y-0.5">
                       <div className="flex justify-between text-xs">
                         <span className={i === 0 ? "font-semibold" : "text-muted-foreground"}>{STUCK_LABELS[r.type]}</span>
-                        <span className={i === 0 ? "font-semibold" : "text-muted-foreground"}>{(r.probability * 100).toFixed(0)}%</span>
+                        <span className={i === 0 ? "font-semibold" : "text-muted-foreground"}>{(r.probability * 100).toFixed(0)}% баллов</span>
                       </div>
                       <div className="h-1.5 rounded bg-muted overflow-hidden">
                         <div className={`h-full ${i === 0 ? "bg-primary" : "bg-muted-foreground/40"}`} style={{ width: `${r.probability * 100}%` }} />
@@ -1350,7 +1392,7 @@ export default function Workover() {
                       )}
                     </div>
                   ))}
-                  <p className="text-[10px] text-muted-foreground pt-1">Экспертная балльная оценка по признакам, не замена исследованию (печать, ПГИ, прихватоопределитель).</p>
+                  <p className="text-[10px] text-muted-foreground pt-1">Доля баллов по признакам, не статистическая вероятность. Не заменяет исследование (печать, ПГИ, прихватоопределитель).</p>
                 </div>
                 <div className="space-y-2 text-sm">
                   <Row k="Вероятный вид" v={<Badge>{STUCK_LABELS[stuckDiag.type]}</Badge>} />
@@ -1362,7 +1404,7 @@ export default function Workover() {
                       <NumberField label="μ корки" value={symptoms.mudcakeFriction ?? 0.25} onChange={(v) => setSymptoms({ ...symptoms, mudcakeFriction: v })} hint="0.15–0.35" />
                     </div>
                   )}
-                  {stuckDiag.freeingForceKN > 0 && (
+                  {selectedOperations.includes("stuck") && stuckDiag.freeingForceKN > 0 && (
                     <>
                       <Row k="Усилие освобождения (μ·ΔP·A)" v={`${stuckDiag.freeingForceKN.toFixed(0)} кН`} />
                       <Row k="Требуемая нагрузка на крюке" v={<strong>{stuckDiag.requiredHookLoadKN.toFixed(0)} кН</strong>} />
@@ -1378,10 +1420,10 @@ export default function Workover() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
+          </CheckedSection></TabsContent>
 
           {/* ──────────────── FISHING ──────────────── */}
-          <TabsContent value="fishing" className="space-y-4">
+          <TabsContent value="fishing" className="space-y-4"><CheckedSection errors={[...wellErrors,...operationErrors.fishing]}>
             <div className="grid lg:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Параметры ловильной операции</CardTitle></CardHeader>
@@ -1478,10 +1520,10 @@ export default function Workover() {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
+          </CheckedSection></TabsContent>
 
           {/* ──────────────── CLEANOUT ──────────────── */}
-          <TabsContent value="cleanout" className="space-y-4">
+          <TabsContent value="cleanout" className="space-y-4"><CheckedSection errors={[...wellErrors,...operationErrors.cleanout]}>
             <div className="grid lg:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Промывка песчаной пробки</CardTitle></CardHeader>
@@ -1532,10 +1574,10 @@ export default function Workover() {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
+          </CheckedSection></TabsContent>
 
           {/* ──────────────── CASING / SWAB ──────────────── */}
-          <TabsContent value="casing" className="space-y-4">
+          <TabsContent value="casing" className="space-y-4"><CheckedSection errors={[...wellErrors,...operationErrors.casing]}>
             <div className="grid lg:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Освоение снижением уровня (свабирование)</CardTitle></CardHeader>
@@ -1625,10 +1667,10 @@ export default function Workover() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
-          </TabsContent>
+          </CheckedSection></TabsContent>
 
           {/* ──────────────── RIG ──────────────── */}
-          <TabsContent value="rig" className="space-y-4">
+          <TabsContent value="rig" className="space-y-4"><CheckedSection errors={[...wellErrors,...operationErrors.rig]}>
             <div className="grid lg:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Параметры подъёмника</CardTitle></CardHeader>
@@ -1691,16 +1733,16 @@ export default function Workover() {
                   <TableBody>
                     <ScenarioRow label="Подъём колонны (без смазки)" need={pullOutFull} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
                     <ScenarioRow label="Подъём со смазкой" need={calculateDrag({ operation: "pull_out", frictionCoeff: drag.frictionCoeff, lubricant: lube }, well).maxHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
-                    <ScenarioRow label="Срыв пакера" need={releaseResult.totalPullRequiredKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
-                    {stuckDiag.freeingForceKN > 0 && (
+                    {selectedOperations.includes("packer") && <ScenarioRow label="Срыв пакера" need={releaseResult.totalPullRequiredKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />}
+                    {selectedOperations.includes("stuck") && stuckDiag.freeingForceKN > 0 && (
                       <ScenarioRow label="Освобождение прихвата" need={stuckDiag.requiredHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
                     )}
-                    <ScenarioRow label="Ловильная операция" need={fishResult.requiredHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />
+                    {selectedOperations.includes("fishing") && <ScenarioRow label="Ловильная операция" need={fishResult.requiredHookLoadKN} allow={rigResult.allowableLoadKN} pipe={pipeYield} />}
                   </TableBody>
                 </Table>
               </CardContent>
             </Card>
-          </TabsContent>
+          </CheckedSection></TabsContent>
         </Tabs>
       </main>
 
@@ -1713,13 +1755,15 @@ export default function Workover() {
         calcId={calcId}
         buildPayload={buildPayload}
       />
-    </div>
+    </div></OperationValidity.Provider>
   );
 }
 
 // ───── small helpers ─────
 
 function Stat({ label, v, tone }: { label: string; v: React.ReactNode; tone?: "ok" | "warn" | "danger" }) {
+  const valid=useContext(OperationValidity);
+  if(!valid){v='Проверьте конструкцию';tone='danger';}
   const color =
     tone === "danger" ? "text-red-600" : tone === "warn" ? "text-amber-600" : tone === "ok" ? "text-green-600" : "";
   return (
@@ -1731,6 +1775,8 @@ function Stat({ label, v, tone }: { label: string; v: React.ReactNode; tone?: "o
 }
 
 function Row({ k, v, tone }: { k: string; v: React.ReactNode; tone?: "ok" | "warn" | "danger" }) {
+  const valid=useContext(OperationValidity);
+  if(!valid) {v='Расчёт заблокирован';tone='danger';}
   const color =
     tone === "danger" ? "text-red-600" : tone === "warn" ? "text-amber-600" : tone === "ok" ? "text-green-600" : "";
   return (
@@ -1742,6 +1788,8 @@ function Row({ k, v, tone }: { k: string; v: React.ReactNode; tone?: "ok" | "war
 }
 
 function ScenarioRow({ label, need, allow, pipe }: { label: string; need: number; allow: number; pipe: number }) {
+  const valid=useContext(OperationValidity);
+  if(!valid) return <TableRow><TableCell>{label}</TableCell><TableCell colSpan={4}>Расчёт заблокирован</TableCell></TableRow>;
   const ok = need <= Math.min(allow, pipe);
   const overRig = need > allow;
   const overPipe = need > pipe;
