@@ -18,6 +18,8 @@ function MiniChart({ data, xLabel, yLabel, vx, hy, dot, log, color = "hsl(var(--
   data: { x: number; y: number }[]; xLabel: string; yLabel: string; vx?: { v: number; label: string }; hy?: { v: number; label: string }; dot?: { x: number; y: number }; log?: boolean; color?: string;
 }) {
   const [ref, w] = useMeasuredWidth<HTMLDivElement>();
+  if (data.length === 1) return <p className="text-xs py-4">Измеренная точка: {data[0].x} ({xLabel}), {data[0].y} ({yLabel}). Кривая по одной точке не строится.</p>;
+  if (!data.length) return <p className="text-xs text-muted-foreground py-4">Кривая не задана. Единичный результат испытания не заменяет измеренную кривую.</p>;
   return (
     <div ref={ref} className="h-52">
       <LineChart width={w || 300} height={208} data={data} margin={{ top: 8, right: 12, bottom: 18, left: 4 }}>
@@ -56,19 +58,20 @@ function DesignBlock({ d, volumeM3, bhctC, jobMin, requiredMin }: { d: Compositi
     <div className="space-y-3 rounded-lg border border-border/70 p-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div><p className="font-semibold text-sm">{d.title}</p><p className="text-[11px] text-muted-foreground">{d.system} · объём {f(volumeM3, 2)} м³</p></div>
-        <Badge variant={ok ? "default" : "destructive"} className="text-[10px]">{ok ? "требования выполнены (прогноз)" : "есть невыполненные требования"}</Badge>
+        <Badge variant={ok ? "outline" : "destructive"} className="text-[10px]">{d.workLifeSource === "laboratory" ? "Применены измеренные свойства" : ok ? "Требуется лабораторная проверка" : "Есть замечания к расчётной пробе"}</Badge>
       </div>
+      <p className="text-xs text-muted-foreground">{d.workLifeSource === "laboratory" ? "Применены измеренные свойства лабораторной пробы." : "Расчётные ориентиры. Лабораторный факт вводится в отдельном блоке РИР."}</p>
       <MassBar d={d} />
       <div className="grid gap-3 lg:grid-cols-2">
-        <table className="w-full text-[11px]">
+        <table className="w-full table-fixed break-words text-[11px]">
           <thead className="bg-muted/50"><tr><th className="p-1 text-left">Компонент</th><th className="p-1 text-right">Дозировка</th><th className="p-1 text-right">кг/м³</th><th className="p-1 text-right">На операцию (+5%)</th></tr></thead>
           <tbody>
             {d.components.map((c) => (
               <tr key={c.name} className="border-t border-border/40 align-top">
                 <td className="p-1">{c.name}<div className="text-[10px] text-muted-foreground">{c.purpose}</div></td>
-                <td className="p-1 text-right whitespace-nowrap">{f(c.dose, c.dose < 10 ? 2 : 0)} {c.doseUnit}</td>
+                <td className="p-1 text-right break-words">{f(c.dose, c.dose < 10 ? 2 : 0)} {c.doseUnit}</td>
                 <td className="p-1 text-right">{f(c.kgPerM3, c.kgPerM3 < 10 ? 1 : 0)}</td>
-                <td className="p-1 text-right whitespace-nowrap">{c.kgPerM3 * volumeM3 * reserve >= 1000 ? `${f((c.kgPerM3 * volumeM3 * reserve) / 1000, 2)} т` : `${f(c.kgPerM3 * volumeM3 * reserve, 0)} кг`}</td>
+                <td className="p-1 text-right break-words">{c.kgPerM3 * volumeM3 * reserve >= 1000 ? `${f((c.kgPerM3 * volumeM3 * reserve) / 1000, 2)} т` : `${f(c.kgPerM3 * volumeM3 * reserve, 0)} кг`}</td>
               </tr>
             ))}
             {d.waterLPerM3 > 0 && <tr className="border-t border-border/40"><td className="p-1">Вода затворения (пресная)</td><td /><td className="p-1 text-right">{d.waterLPerM3} л</td><td className="p-1 text-right">{f((d.waterLPerM3 * volumeM3 * reserve) / 1000, 2)} м³</td></tr>}
@@ -116,7 +119,7 @@ export default function RirCompositionCard({ comp, totalM3, bhctC, jobMin, requi
     <Card data-testid="rir-composition">
       <CardHeader className="py-2.5 px-4">
         <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
-          <FlaskConical className="w-4 h-4" /> Рецептура состава для задавливания
+          <FlaskConical className="w-4 h-4" /> Стартовая рецептура и расчётные ориентиры РИР
           {comp && (
             <span className="ml-auto flex gap-2">
               <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={print}><Printer className="w-3.5 h-3.5 mr-1" />Протокол — печать</Button>
@@ -126,7 +129,7 @@ export default function RirCompositionCard({ comp, totalM3, bhctC, jobMin, requi
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0 space-y-3 text-xs">
-        {!comp && <p className="text-muted-foreground">Для обычного тампонажного цемента рецептура подбирается в режимах «Открытый ствол / В колонне» (блок «Рецептура раствора для моста») по тем же условиям. Выберите микроцемент или смолу, если канал узкий.</p>}
+        {!comp && <p className="text-muted-foreground">Рецептура РИР не рассчитана: проверьте исходные данные.</p>}
         {comp && <DesignBlock d={comp.primary} volumeM3={comp.split ? comp.split.primaryM3 : totalM3} bhctC={bhctC} jobMin={jobMin} requiredMin={requiredMin} />}
         {comp?.secondary && comp.split && (
           <>

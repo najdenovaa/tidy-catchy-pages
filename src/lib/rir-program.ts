@@ -1,3 +1,4 @@
+import { rirLabSection } from "./rir-laboratory";
 /**
  * Полная программа РИР для Word: исходные данные, обоснование технологии, окно давлений,
  * расчёт НКТ, рецептура, моделирование, регламент закачки, оборудование и материалы,
@@ -66,6 +67,10 @@ function ozcHours(comp: RirCompositionResult | null): {
       hours: 24,
       text: "ОЗЦ не менее 24 ч (тампонажный цемент; уточнить по лабораторной кривой прочности).",
     };
+  if (!d.strengthCurve.length) return {
+    hours: 24,
+    text: "Срок ОЗЦ назначить по фактическому испытанию прочности при BHST. Расчётная кривая отсутствует; 24 ч используется только для планирования времени.",
+  };
   const need = d.kind === "resin" ? 10 : 3.5;
   const pt = d.strengthCurve.find((p) => p.y >= need);
   const base = pt ? pt.x : 24;
@@ -650,6 +655,10 @@ export function buildRirProgram(
       "Отходы состава и промывочные жидкости собрать в ёмкости и вывезти на утилизацию; не допускать разлива на грунт.",
     ],
   });
+  const laboratory = inp.laboratory?.[res.composition];
+  if (laboratory) S.push(rirLabSection(laboratory, {
+    bhctC: res.temps.bhctC, bhstC: res.temps.bhstC, requiredMin: requiredWorkLifeMin,
+  }, res.volumes.totalM3));
   return {
     version: 1,
     createdAt: now.toISOString(),

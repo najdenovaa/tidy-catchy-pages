@@ -34,6 +34,7 @@ import {
 import RirWellSchematic from "./RirWellSchematic";
 import RirTubingCard from "./RirTubingCard";
 import RirCompositionCard from "./RirCompositionCard";
+import RirLaboratoryCard from "./RirLaboratoryCard";
 import { buildRirProtocol } from "@/lib/rir-protocol";
 import {
   analyseTubing,
@@ -867,7 +868,7 @@ function RirLegacyModule({
         data-testid="rir-kpi"
       >
         <Kpi
-          label="Рекомендуемый состав"
+          label={inp.composition === "auto" ? "Состав для расчётного сценария" : "Выбранный состав"}
           value={COMPOSITION_LABEL[res.composition].split(" (")[0]}
           sub={`${f(res.compositionDensity, 2)} г/см³`}
         />
@@ -1134,6 +1135,17 @@ function RirLegacyModule({
         </Card>
       </div>
 
+      {comp && <RirLaboratoryCard
+        kind={res.composition}
+        design={comp.primary}
+        draft={inp.laboratory?.[res.composition]}
+        context={{ bhctC: res.temps.bhctC, bhstC: res.temps.bhstC, requiredMin: plan.requiredWorkLifeMin }}
+        totalM3={res.volumes.totalM3}
+        onChange={(draft) => setInp(s => ({
+          ...s, composition: res.composition,
+          laboratory: { ...s.laboratory, [res.composition]: draft },
+        }))}
+      />}
       <RirCompositionCard
         comp={comp}
         totalM3={res.volumes.totalM3}

@@ -38,7 +38,8 @@ export interface CompComponent { name: string; role: string; purpose: string; /*
 export interface CurvePoint { x: number; y: number }
 
 export interface CompositionDesign {
-  kind: "microcement" | "resin";
+  kind: "cement" | "microcement" | "resin";
+  workLifeSource?: "estimate" | "laboratory" | "unknown";
   title: string;
   system: string;
   components: CompComponent[];
@@ -275,7 +276,54 @@ export function designResin(c: CompositionConditions): CompositionDesign {
 export interface RirCompositionResult { primary: CompositionDesign; secondary?: CompositionDesign; split?: { primaryM3: number; secondaryM3: number } }
 
 /** Состав(ы) под выбранный тип: для «смола + микроцемент» — смола в «голову» (~30% объёма задавливания) и микроцемент. */
+
+/** Starting RIR formulation by absolute volumes, not a cement-bridge strength design. */
+export function designPortlandRir(c: CompositionConditions): CompositionDesign {
+  const rho = c.targetDensity > 1 && c.targetDensity < 3 ? c.targetDensity : 1.85;
+  const additives = [
+    { name: "Диспергатор (подбор марки в лаборатории)", role: "dispersant", pct: 0.5, sg: 1.35 },
+    { name: "Понизитель водоотдачи (подбор марки в лаборатории)", role: "fla", pct: 0.6, sg: 1.3 },
+    { name: "Пеногаситель", role: "defoamer", pct: 0.2, sg: 1 },
+  ];
+  const dryMass = 1 + additives.reduce((s, x) => s + x.pct / 100, 0);
+  const dryVol = 1 / 3.15 + additives.reduce((s, x) => s + x.pct / 100 / x.sg, 0);
+  const wc = (dryMass - rho * dryVol) / (rho - 1);
+  const kg = 1000 / (dryVol + wc);
+  return {
+    kind: "cement", title: "Цементный состав для РИР (ПЦТ класса G)",
+    system: "ПЦТ + диспергатор + понизитель водоотдачи + пеногаситель; стартовая проба",
+    components: [
+      { name: "ПЦТ класса G (указать производителя и партию)", role: "binder", purpose: "Вяжущее для изоляции", dose: 100, doseUnit: "%", kgPerM3: kg, sg: 3.15 },
+      ...additives.map(x => ({ name: x.name, role: x.role, purpose: "Стартовая дозировка, уточнить испытаниями",
+        dose: x.pct, doseUnit: "% bwoc", kgPerM3: kg * x.pct / 100, sg: x.sg })),
+    ],
+    waterLPerM3: kg * wc, densityGcm3: rho,
+    props: [
+      { label: "Плотность по абсолютным объёмам, г/см³", value: rho.toFixed(2) },
+      { label: "В/Ц", value: wc.toFixed(3) },
+      { label: "ПВ (оценка для сценария), мПа·с", value: "40" },
+      { label: "Время загустевания", value: "Не измерено", target: "≥ " + c.requiredWorkLifeMin + " мин" },
+      { label: "Прочность / водоотдача / свободная вода", value: "Не измерены" },
+    ],
+    workLifeAtBhctMin: Infinity, workLifeSource: "unknown",
+    workLifeCurve: [], thickeningCurve: [], thickeningUnit: "Bc", strengthCurve: [],
+    procedure: [
+      "Зафиксировать производителя, марки и партии цемента, добавок и воды.",
+      "Приготовить лабораторную пробу по массовым частям, записать режим и длительность перемешивания.",
+      "Измерить плотность, реологию, время загустевания, водоотдачу и стабильность при условиях РИР.",
+      "Испытать проходимость в щели и совместимость с фактическими скважинными жидкостями.",
+      "Замедлитель, ускоритель и их дозировки определить серией лабораторных проб.",
+    ],
+    warnings: ["Стартовые дозировки не являются подтверждённой рецептурой. Время загустевания и прочность без испытаний не прогнозируются.",
+      ...(wc < 0.35 || wc > 0.8 ? ["В/Ц вне обычного диапазона стартовой пробы: проверить стабильность и прокачиваемость."] : [])],
+    notes: ["Назначение РИР: проникновение и изоляция; расчёт не использует рецептуру цементного моста.",
+      "40 мПа·с - сценарная оценка, заменяется введённым измерением после явного применения протокола."],
+    penetrationUm: 270,
+  };
+}
+
 export function designRirComposition(kind: "cement" | "microcement" | "resin" | "resin_micro", c: CompositionConditions, squeezeM3: number): RirCompositionResult | null {
+  if (kind === "cement") return { primary: designPortlandRir(c) };
   if (kind === "microcement") return { primary: designMicrocement(c) };
   if (kind === "resin") return { primary: designResin({ ...c, targetDensity: c.targetDensity > 0 && c.targetDensity < 1.3 ? c.targetDensity : 0 }) };
   if (kind === "resin_micro") {
@@ -286,7 +334,7 @@ export function designRirComposition(kind: "cement" | "microcement" | "resin" | 
       split: { primaryM3: head, secondaryM3: Math.max(0, c.volumeM3 - head) },
     };
   }
-  return null; // обычный цемент — рецептура в модуле мостов/цементирования
+  return null;
 }
 
 /** Целевая вязкость смолы при BHCT по раскрытию канала (мПа·с): чем уже канал, тем жиже. */

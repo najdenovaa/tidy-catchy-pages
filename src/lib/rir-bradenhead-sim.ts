@@ -80,7 +80,7 @@ export function simulateBradenhead(
   const mobility = () => {
     const share = Math.min(1, vCement / Math.max(0.05, planned));
     let age = 1;
-    if (design) {
+    if (design && Number.isFinite(design.workLifeAtBhctMin)) {
       const x = t / Math.max(1, design.workLifeAtBhctMin);
       age = Math.max(0.02, 1 - 0.85 * x * x);
     }
@@ -343,7 +343,7 @@ export function simulateBradenhead(
     warnings.push(
       "Достигнуто 75% времени жизни состава по используемой оценке: дальнейшая закачка остановлена.",
     );
-  if (!design)
+  if (!design || !Number.isFinite(design.workLifeAtBhctMin))
     warnings.push(
       "Лабораторное время загустевания и реология состава не заданы: загустевание не прогнозируется, относительная вязкость является сценарной оценкой.",
     );
@@ -361,7 +361,7 @@ export function simulateBradenhead(
     holds,
     outcome,
     blocked: false,
-    workLifeKnown: !!design,
+    workLifeKnown: !!design && Number.isFinite(design.workLifeAtBhctMin),
     blockReasons: [],
     outcomeText:
       vCement > 1e-9

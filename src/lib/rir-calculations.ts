@@ -1,3 +1,4 @@
+import { effectiveRirLab, type RirLabStore } from "./rir-laboratory";
 /**
  * Ремонтно-изоляционные работы (РИР): ликвидация негерметичности колонны и заколонных /
  * межколонных перетоков задавливанием состава через пакер-ретейнер (или пакер / с устья).
@@ -132,6 +133,8 @@ export interface InjectivityPoint {
 }
 
 export interface RirInputs {
+  /** Independent RIR recipes and laboratory measurements, persisted with this technology. */
+  laboratory?: RirLabStore;
   wellDepthMD: number;
   trajectory: TrajectoryPoint[];
   surfaceTempC: number;
@@ -533,8 +536,9 @@ export function calculateRir(inp: RirInputs): RirResult {
     resin: 1.1,
     resin_micro: 1.45,
   };
-  const rhoC =
-    inp.compositionDensity > 0 ? inp.compositionDensity : TYPICAL_RHO[comp];
+  const measured = effectiveRirLab(inp, bhct, bhst);
+  const rhoC = measured?.facts.density ??
+    (inp.compositionDensity > 0 ? inp.compositionDensity : TYPICAL_RHO[comp]);
   const hydroComp = (rhoC * G * leakTVD) / 1000;
   const fracAtLeak = inp.fracGradientMPaM * leakTVD;
   const extAtLeak = Math.max(zoneP, (1.0 * G * leakTVD) / 1000); // давление за колонной
@@ -795,7 +799,7 @@ export function calculateRir(inp: RirInputs): RirResult {
     resin_micro: [0.05, 1.5],
   };
   const [vMin, vMax] = caps[comp];
-  const qComp = qMax / MU_REL[comp]; // м³/ч
+  const qComp = qMax / Math.max(1, measured?.facts.pv ?? MU_REL[comp]); // м³/ч
   const squeezeM3 = isBradenhead
     ? (spotInput?.plannedSqueezeM3 ?? 0)
     : Math.min(vMax, Math.max(vMin, qComp * 1.0)); // ~1 ч задавливания составом на допустимом давлении

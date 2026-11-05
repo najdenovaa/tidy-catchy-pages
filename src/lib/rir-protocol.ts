@@ -1,4 +1,5 @@
 /** Расчётный протокол РИР: условия, окно давлений, рецептура состава, свойства (прогноз / факт), ход работ. */
+import { rirLabSection } from "./rir-laboratory";
 import type { LabProtocol, ProtocolSection } from "./lab-protocol";
 import {
   COMPOSITION_LABEL,
@@ -224,6 +225,11 @@ export function buildRirProtocol(
         ),
       );
   }
+  const laboratory = inp.laboratory?.[res.composition];
+  if (laboratory) sections.push(rirLabSection(laboratory, {
+    bhctC: res.temps.bhctC, bhstC: res.temps.bhstC,
+    requiredMin: Math.max(res.timing.requiredWorkLifeMin, sim && !sim.blocked ? Math.ceil(sim.totalTimeMin / 0.7) : 0),
+  }, res.volumes.totalM3));
   if (sim)
     sections.push({
       id: "sim",
@@ -232,7 +238,7 @@ export function buildRirProtocol(
         `Итог: ${sim.outcomeText}`,
         sim.blocked
           ? "Моделирование заблокировано: " + (sim.blockReasons ?? []).join(" ")
-          : `Время операции ${f(sim.totalTimeMin, 0)} мин; использовано ${f(sim.workLifeUsedPct, 0)}% времени жизни состава; давление в конце ${f(sim.finalSurfaceMPa, 1)} МПа на устье.`,
+          : `Время операции ${f(sim.totalTimeMin, 0)} мин; время жизни ${sim.workLifeKnown === false ? "не измерено" : "использовано " + f(sim.workLifeUsedPct, 0) + "%"}; давление в конце ${f(sim.finalSurfaceMPa, 1)} МПа на устье.`,
       ],
       tables: [
         {
