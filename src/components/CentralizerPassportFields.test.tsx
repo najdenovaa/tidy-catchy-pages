@@ -30,5 +30,11 @@ it('выбирает паспорт и переносит исходные ед�
     expect(spec.restoringForce).toBe(0);
     expect(host.textContent).toContain('силовой расчёт рессор недоступен');
     expect(host.querySelector('optgroup')?.label).toContain('178');
+    const item = Array.from(select.options).find(o => o.text === 'ПЦ-2-178/216')!;
+    await act(async () => { select.value=item.value; select.dispatchEvent(new Event('change', {bubbles:true})); });
+    expect(spec.passport?.series).toBe('ПЦ-2');
+    expect(spec.passport?.restoringForceSourceKN).toBe(4.626);
+    expect(spec.passport?.restoringStandoff).toBeUndefined();
+    expect(host.textContent).toContain('Восстанавливающее усилие по таблице, кгс');
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
