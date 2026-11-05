@@ -8,11 +8,11 @@ export function trajectoryAzimuth(trajectory:{md:number;azimuth:number}[],md:num
  for(let i=1;i<trajectory.length;i++)if(md<=trajectory[i].md){const a=trajectory[i-1],b=trajectory[i];const delta=((b.azimuth-a.azimuth+540)%360)-180;return (a.azimuth+delta*(md-a.md)/(b.md-a.md)+360)%360;}
  return trajectory[trajectory.length-1].azimuth;
 }
-/** Rotate physical local axis to survey zenith/azimuth before applying camera orbit. */
+/** Local +X is the gravity low side; +Z points uphole. Camera orbit must not reverse this basis. */
 export function surveyTransform([x,y,z]:Vec3,zenith:number,azimuth:number):Vec3 {
  const t=zenith*Math.PI/180,a=azimuth*Math.PI/180;
- const u=x*Math.cos(t)-z*Math.sin(t);
- return [u*Math.cos(a)-y*Math.sin(a),u*Math.sin(a)+y*Math.cos(a),x*Math.sin(t)+z*Math.cos(t)];
+ const u=-x*Math.cos(t)-z*Math.sin(t);
+ return [u*Math.cos(a)+y*Math.sin(a),u*Math.sin(a)-y*Math.cos(a),-x*Math.sin(t)+z*Math.cos(t)].map(v=>Math.abs(v)<1e-12?0:v) as Vec3;
 }
 export function centralizerMesh(spec:CentralizerSpec,casingOD:number,casingID:number,bore:number,ecc:number,selected:number):Face[] {
  const g=inspectCentralizer(spec,casingOD,bore,ecc);if(!g)return [];
