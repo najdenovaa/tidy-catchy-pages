@@ -21,6 +21,10 @@ export function simulateBradenhead(inp:RirInputs,res:RirResult,design:Compositio
  const pOpen=res.fit?.openingBhpMPa ?? spot.estimatedMinBhpMPa;
  let t=0, vPump=0, vChannel=0, vCement=0,pSurface=0;
  let cementFed=0, displacementFed=0, cementInCasing=0;
+ const initialShoeMD=inp.spot?.initialShoeMD ?? inp.leak.bottomMD+15;
+ const liftedShoeMD=inp.spot?.liftedShoeMD ?? Math.max(0,inp.leak.topMD-100);
+ const slurryBottomMD=inp.spot?.slurryBottomMD ?? inp.leak.bottomMD+15;
+ let shoeMD=initialShoeMD, bopClosed=false;
  const tubingCapacity=Math.max(0.001,spot.tubingCapacityBeforeM3);
  const point=(name:string,q=0)=>{
    const belowFrac=placed>0?Math.max(0,Math.min(1,cementInCasing/placed-vCement/placed)):0;
@@ -28,7 +32,13 @@ export function simulateBradenhead(inp:RirInputs,res:RirResult,design:Compositio
    const compTop=inTubing?Math.max(0,Math.min(1,displacementFed/tubingCapacity)):-1;
    const compBottom=inTubing?Math.max(compTop,Math.min(1,(displacementFed+cementFed)/tubingCapacity)):-1;
    const allowance=Math.max(0,cap);
-   points.push({t:Math.round(t*100)/100,stage:name,qLs:q,surfaceMPa:pSurface,bhpMPa:pSurface+hyd,
+   const slurryM3=Math.max(0,cementInCasing-vCement);
+   const belowShoe=spot.casingAreaM2*Math.max(0,slurryBottomMD-shoeMD);
+   const slurryTopMD=slurryM3<=belowShoe
+     ? slurryBottomMD-slurryM3/Math.max(1e-12,spot.casingAreaM2)
+     : shoeMD-(slurryM3-belowShoe)/Math.max(1e-12,spot.annularAreaM2);
+   points.push({openTubing:{shoeMD,initialShoeMD,liftedShoeMD,leakTopMD:inp.leak.topMD,leakBottomMD:inp.leak.bottomMD,slurryTopMD,slurryBottomMD,slurryM3,bopClosed},
+    t:Math.round(t*100)/100,stage:name,qLs:q,surfaceMPa:pSurface,bhpMPa:pSurface+hyd,
     vPumped:vPump,vChannel,vCompChannel:vCement,compTop,compBottom,belowComp:belowFrac,
     channelFill:spot.plannedSqueezeM3>0?vCement/spot.plannedSqueezeM3:0,
     mobility:Math.max(0.001,1-vCement/Math.max(0.01,placed))*Math.max(.05,1-t/Math.max(1,workingLife)),
@@ -48,13 +58,15 @@ export function simulateBradenhead(inp:RirInputs,res:RirResult,design:Compositio
      outcomeText:"Окно задавливания не подтверждено. Проверить геометрию, ПВО, колонну, гидростатику и приёмистость.",
      finalSurfaceMPa:0,compInChannelM3:0,totalTimeMin:t,workLifeUsedPct:0,warnings};
  }
- phase("Закачка цемента в НКТ",Math.max(.1,placed/qSet),"pump",dt=>{const dv=Math.min(Math.max(0,placed-cementFed),qSet*dt);cementFed+=dv;vPump+=dv;});
+ phase("Закачка цемента в НКТ",Math.max(.1,placed/qSet),"pump",dt=>{const dv=Math.min(Math.max(0,placed-cementFed),qSet*dt);cementFed+=dv;vPump+=dv;cementInCasing=Math.max(0,cementFed-tubingCapacity);});
  phase("Продавка и размещение цемента напротив нарушения",tubingCapacity/qSet,"pump",dt=>{
    const dv=Math.min(Math.max(0,tubingCapacity-displacementFed),qSet*dt);
-   displacementFed+=dv;vPump+=dv;
+   displacementFed+=dv;vPump+=dv;cementInCasing=Math.max(0,cementFed-tubingCapacity);
    cementInCasing=Math.min(placed,Math.max(0,displacementFed-(tubingCapacity-placed)));
  });
- phase("Подъём НКТ выше пачки",5,"hold");
+ phase("Подъём НКТ выше пачки",5,"hold",dt=>{shoeMD=Math.max(liftedShoeMD,shoeMD-(initialShoeMD-liftedShoeMD)*dt/5);});
+ shoeMD=liftedShoeMD;
+ bopClosed=true;
  phase("Закрытие и проверка ПВО",3,"hold");
  const n=Math.max(1,Math.min(30,Math.round(inp.hesitationStages)));
  let noFlow=false;

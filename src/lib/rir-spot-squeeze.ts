@@ -67,7 +67,9 @@ export function calculateSpotSqueeze(i: SpotSqueezeInput): SpotSqueezeResult {
   const annularAreaM2 = Math.max(0,casingAreaM2 - area(Math.max(0,i.tubingOdMm)));
   const capacityBelowShoe = casingAreaM2 * Math.max(0, i.slurryBottomMD - i.initialShoeMD);
   const aboveShoeVolume = Math.max(0,i.slurryVolumeM3 - capacityBelowShoe);
-  const slurryTopBeforeMD = i.initialShoeMD - aboveShoeVolume / Math.max(1e-12,annularAreaM2);
+  const slurryTopBeforeMD = i.slurryVolumeM3 <= capacityBelowShoe
+    ? i.slurryBottomMD - i.slurryVolumeM3 / Math.max(1e-12,casingAreaM2)
+    : i.initialShoeMD - aboveShoeVolume / Math.max(1e-12,annularAreaM2);
   const slurryTopAfterLiftMD = i.slurryBottomMD - i.slurryVolumeM3 / Math.max(1e-12,casingAreaM2);
   const residualM3 = Math.max(0,i.slurryVolumeM3 - i.plannedSqueezeM3);
   const estimatedSlurryTopAfterSqueezeMD = i.slurryBottomMD - residualM3 / Math.max(1e-12,casingAreaM2);
