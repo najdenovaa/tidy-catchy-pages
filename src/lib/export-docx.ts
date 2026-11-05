@@ -1,3 +1,5 @@
+import { foamReportChildren } from './foam-cement-report';
+import type { FoamReportBundle } from './foam-cement-types';
 import { buildLabProgram, buildRecipe } from "./cement-program";
 import { checkNorms, inferCasingType, CASING_TYPE_LABEL } from "./cement-norms";
 import { planLogistics } from "./cement-logistics";
@@ -988,7 +990,7 @@ export async function exportToDocx(
     flushTimeMin?: number;
     flushVolumeM3?: number;
   },
-  options?: { returnBlob?: boolean; filename?: string },
+  options?: { returnBlob?: boolean; filename?: string; foam?: FoamReportBundle },
 ): Promise<Blob | void> {
   const volumes = preComputed?.volumes ?? calculateVolumes(wellData, slurries, displacementFluids?.[0]?.compressionCoeff ?? 1.0);
   const pressureResult = preComputed?.pressureResult ?? calculatePressureProfile(wellData, slurries, buffers, drillingFluid, displacementFluids, fractureGradient, volumes.displacementVolumeWithCompression, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
@@ -1200,6 +1202,7 @@ export async function exportToDocx(
         },
         children: buildWOCPage(wellData, slurries),
       },
+      ...(options?.foam ? [{properties:{},children:foamReportChildren(options.foam)}] : []),
     ],
   });
 

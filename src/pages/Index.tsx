@@ -1,3 +1,4 @@
+import type { FoamReportBundle } from '@/lib/foam-cement-types';
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -77,6 +78,7 @@ export default function Index() {
 
   const [activeTab, setActiveTab] = useState("input");
   const [exporting, setExporting] = useState(false);
+  const [foamReport, setFoamReport] = useState<FoamReportBundle | null>(null);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
   const [centralizerIntervals, setCentralizerIntervals] = useState<import("@/lib/centralization-calculations").CentralizerInterval[]>([]);
   const [saving, setSaving] = useState(false);
@@ -458,13 +460,13 @@ export default function Index() {
         materials: materials ?? undefined,
         flushTimeMin: snap.flushTimeMin,
         flushVolumeM3: snap.flushVolumeM3,
-      });
+      }, { foam: foamReport && JSON.stringify(foamReport.simulation.input.wellData) === JSON.stringify(snap.wellData) ? foamReport : undefined });
     } catch (e) {
       console.error("DOCX export error:", e);
     } finally {
       setExporting(false);
     }
-  }, [calcSnapshot, wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient]);
+  }, [calcSnapshot, wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, foamReport]);
 
   const buildSavePayload = useCallback((): SaveCalcPayload => {
     const freshSnapshot = normalizeCementingSnapshot({
@@ -1044,6 +1046,10 @@ export default function Index() {
             <TabsContent value="foam" forceMount>
               <div data-tab-content="foam">
                 <FoamCementSection
+                  onReportChange={setFoamReport}
+                  key={`foam-${calcId ?? selectedWellId ?? "unsaved"}`}
+                  scope={calcId ?? selectedWellId ?? "unsaved"}
+                  active={activeTab === "foam"}
                   wellData={wellData}
                   slurries={slurries}
                   buffers={buffers}

@@ -1,280 +1,273 @@
-import { useRef, useState, useMemo, useEffect, Suspense } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Html } from "@react-three/drei";
-import * as THREE from "three";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
-import { Play, Pause, RotateCcw } from "lucide-react";
-import type { FoamCementPoint } from "@/lib/foam-cement-calculations";
-
-interface Props {
-  points: FoamCementPoint[];          // top → bottom (md ascending)
-  totalDepthMD: number;
-  holeDiameterMm: number;
-  casingODmm: number;
-  baseDensity: number;                // g/cm³
-}
-
-/* ───── Color ramp by foam density (light-blue → dark-gray) ───── */
-function densityColor(density: number, minD: number, maxD: number): THREE.Color {
-  const t = Math.max(0, Math.min(1, (density - minD) / Math.max(1e-6, maxD - minD)));
-  // light cyan (low ρ, high FQ) → mid gray → dark gray (high ρ, low FQ)
-  const light = new THREE.Color("#bfe6ff");
-  const mid   = new THREE.Color("#8a99a3");
-  const dark  = new THREE.Color("#2f363b");
-  if (t < 0.5) return light.clone().lerp(mid, t * 2);
-  return mid.clone().lerp(dark, (t - 0.5) * 2);
-}
-
-/* ───── One annular slice (ring) ───── */
-function Slice({
-  y, height, innerR, outerR, color, visible,
-}: { y: number; height: number; innerR: number; outerR: number; color: THREE.Color; visible: boolean }) {
-  const matRef = useRef<THREE.MeshStandardMaterial>(null);
-  useFrame(() => {
-    if (!matRef.current) return;
-    const target = visible ? 0.92 : 0.0;
-    matRef.current.opacity += (target - matRef.current.opacity) * 0.18;
-  });
-  return (
-    <mesh position={[0, y, 0]}>
-      <cylinderGeometry args={[outerR, outerR, height, 48, 1, true]} />
-      <meshStandardMaterial
-        ref={matRef}
-        color={color}
-        roughness={0.55}
-        metalness={0.05}
-        side={THREE.DoubleSide}
-        transparent
-        opacity={0}
-      />
-      {/* inner hole (casing) — cuts via a second mesh */}
-      <mesh>
-        <cylinderGeometry args={[innerR, innerR, height + 0.001, 48, 1, true]} />
-        <meshStandardMaterial color="#1a1f24" side={THREE.BackSide} />
-      </mesh>
-    </mesh>
-  );
-}
-
-/* ───── Casing pipe (inner) ───── */
-function CasingPipe({ height, radius }: { height: number; radius: number }) {
-  return (
-    <mesh position={[0, height / 2, 0]}>
-      <cylinderGeometry args={[radius, radius, height, 48]} />
-      <meshStandardMaterial color="#3f4a55" metalness={0.7} roughness={0.35} />
-    </mesh>
-  );
-}
-
-/* ───── Hole wall (outer, wireframe-ish) ───── */
-function HoleWall({ height, radius }: { height: number; radius: number }) {
-  return (
-    <mesh position={[0, height / 2, 0]}>
-      <cylinderGeometry args={[radius, radius, height, 48, 1, true]} />
-      <meshStandardMaterial color="#6b4d2b" roughness={0.95} side={THREE.BackSide} wireframe={false} transparent opacity={0.25} />
-    </mesh>
-  );
-}
-
-/* ───── Depth ruler ───── */
-function DepthRuler({ height, totalDepth, radius }: { height: number; totalDepth: number; radius: number }) {
-  const ticks = [];
-  const stepCount = 5;
-  for (let i = 0; i <= stepCount; i++) {
-    const frac = i / stepCount;
-    const y = height - frac * height;
-    const md = frac * totalDepth;
-    ticks.push(
-      <Html key={i} position={[radius + 0.25, y, 0]} center distanceFactor={8}>
-        <div style={{
-          color: "#cbd5e1",
-          fontSize: "9px",
-          fontFamily: "monospace",
-          background: "rgba(15,23,42,0.7)",
-          padding: "1px 4px",
-          borderRadius: "2px",
-          whiteSpace: "nowrap",
-        }}>
-          {md.toFixed(0)} м
-        </div>
-      </Html>,
-    );
+import { useState, useId, useEffect, lazy, Suspense, Component } from "react";
+import type { FoamFrame, FoamFluidKind } from "@/lib/foam-cement-types";
+import type { WellData } from "@/lib/cementing-calculations";
+const ThreeScene = lazy(() => import("./FoamCementScene"));
+class SceneBoundary extends Component<
+  { children: React.ReactNode; fallback: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
   }
-  return <>{ticks}</>;
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
 }
-
-/* ───── Scene ───── */
-function Scene({ points, totalDepthMD, holeDiameterMm, casingODmm, fillProgress }: Props & { fillProgress: number }) {
-  // Scale: total height = 6 units in 3D
-  const H = 6;
-  const radiusScale = 1 / 80; // mm → units
-  const outerR = (holeDiameterMm / 2) * radiusScale;
-  const innerR = (casingODmm / 2) * radiusScale;
-
-  // Quantize points into N slices top→bottom (md ascending → y descending)
-  const SLICES = 48;
-  const sliceH = H / SLICES;
-  const { slices, minD, maxD } = useMemo(() => {
-    if (!points.length) return { slices: [], minD: 1, maxD: 2 };
-    let mn = Infinity, mx = -Infinity;
-    for (const p of points) { mn = Math.min(mn, p.foamDensity); mx = Math.max(mx, p.foamDensity); }
-    const sl: { y: number; density: number; md: number }[] = [];
-    for (let i = 0; i < SLICES; i++) {
-      const frac = (i + 0.5) / SLICES;     // 0 (top) → 1 (bottom)
-      const md = frac * totalDepthMD;
-      // find nearest point by md
-      let best = points[0]; let bd = Math.abs(points[0].md - md);
-      for (const p of points) { const d = Math.abs(p.md - md); if (d < bd) { bd = d; best = p; } }
-      const y = H - frac * H - sliceH / 2;   // y descends as md grows
-      sl.push({ y, density: best.foamDensity, md });
+const colors: Record<FoamFluidKind, string> = {
+  mud: "#8b7355",
+  buffer: "#38bdf8",
+  foam: "#e7bd54",
+  displacement: "#a78bfa",
+};
+export default function FoamCement3D({
+  frame,
+  wellData,
+}: {
+  frame: FoamFrame;
+  wellData: WellData;
+}) {
+  const [supported, setSupported] = useState(false),
+    [use3D, setUse3D] = useState(true);
+  useEffect(() => {
+    if (typeof window.WebGLRenderingContext === "undefined") return;
+    try {
+      const canvas = document.createElement("canvas"),
+        context = canvas.getContext("webgl2") || canvas.getContext("webgl");
+      setSupported(!!context);
+      context?.getExtension("WEBGL_lose_context")?.loseContext();
+    } catch {
+      setSupported(false);
     }
-    return { slices: sl, minD: mn, maxD: mx };
-  }, [points, totalDepthMD]);
-
-  // Filling rises bottom→top. fillProgress ∈ [0..1].
-  // A slice is visible when its normalized depth (1 - frac_from_top) ≤ fillProgress.
-  // slice i has frac_from_top = (i+0.5)/SLICES, so bottom-up fill ratio = 1 - frac_from_top.
-  return (
-    <>
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[5, 6, 4]} intensity={0.9} />
-      <directionalLight position={[-4, 3, -3]} intensity={0.35} />
-
-      <group position={[0, -H / 2, 0]}>
-        <HoleWall height={H} radius={outerR} />
-        <CasingPipe height={H} radius={innerR} />
-        {slices.map((s, i) => {
-          const fracFromTop = (i + 0.5) / SLICES;
-          const bottomFill = 1 - fracFromTop;
-          const visible = bottomFill <= fillProgress;
+  }, []);
+  const [angle, setAngle] = useState(30),
+    [zoom, setZoom] = useState(1);
+  const id = useId().replace(/:/g, "");
+  const depth = wellData.casingDepthMD,
+    rotation = (angle * Math.PI) / 180;
+  const position = (md: number) => {
+    let x = 0,
+      y = 0,
+      z = 0;
+    const t = wellData.trajectory;
+    for (let i = 1; i < t.length; i++) {
+      const a = t[i - 1],
+        b = t[i],
+        length = Math.max(0, Math.min(md, b.md) - a.md);
+      if (!length) continue;
+      const zen = (((a.zenith + b.zenith) / 2) * Math.PI) / 180,
+        az = (((a.azimuth + b.azimuth) / 2) * Math.PI) / 180;
+      x += length * Math.sin(zen) * Math.cos(az);
+      y += length * Math.sin(zen) * Math.sin(az);
+      z += length * Math.cos(zen);
+    }
+    return {
+      x: ((x * Math.cos(rotation) + y * Math.sin(rotation)) / depth) * 400,
+      y:
+        ((z * 0.85 + (y * Math.cos(rotation) - x * Math.sin(rotation)) * 0.25) /
+          depth) *
+        400,
+    };
+  };
+  const p0 = position(0),
+    p1 = position(depth),
+    center = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+  const project = (md: number) => {
+    const p = position(md);
+    return {
+      x: 340 + (p.x - center.x) * zoom,
+      y: 265 + (p.y - center.y) * zoom,
+    };
+  };
+  const ann = frame.cells.filter((c) => c.leg === "annulus");
+  const projection = (
+    <div className="rounded-xl bg-slate-950 text-slate-100 p-4 space-y-3">
+      <div className="flex justify-between flex-wrap gap-2">
+        <strong>Размещение по траектории · {frame.time.toFixed(1)} мин</strong>
+        <span className="text-sm text-slate-300">{frame.stage}</span>
+      </div>
+      <svg
+        viewBox="0 0 680 530"
+        role="img"
+        aria-label="Объёмный вид распределения жидкостей по траектории скважины"
+        className="w-full max-h-[600px]"
+      >
+        <defs>
+          <linearGradient id={id}>
+            <stop stopColor="#d8e1ec" stopOpacity=".65" />
+            <stop offset=".5" stopColor="#475569" stopOpacity=".15" />
+            <stop offset="1" stopColor="#e2e8f0" stopOpacity=".45" />
+          </linearGradient>
+        </defs>
+        {ann.map((c, i) => {
+          const a = project(c.mdTop),
+            b = project(c.mdBottom),
+            kind = (Object.keys(colors) as FoamFluidKind[]).reduce(
+              (k, next) => (c.fractions[next] > c.fractions[k] ? next : k),
+              "mud",
+            );
           return (
-            <Slice
-              key={i}
-              y={s.y}
-              height={sliceH * 0.98}
-              innerR={innerR}
-              outerR={outerR}
-              color={densityColor(s.density, minD, maxD)}
-              visible={visible}
-            />
+            <g key={i}>
+              <title>
+                MD {c.mdTop.toFixed(0)}-{c.mdBottom.toFixed(0)} м;{" "}
+                {c.pressureMPaAbs.toFixed(2)} МПа абс.; FQ{" "}
+                {c.qualityPct.toFixed(1)}%; ρ {c.density.toFixed(3)} г/см³
+              </title>
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={colors[kind]}
+                strokeWidth={46}
+                opacity=".7"
+              />
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={`url(#${id})`}
+                strokeWidth={48}
+              />
+            </g>
           );
         })}
-        <DepthRuler height={H} totalDepth={totalDepthMD} radius={outerR} />
-
-        {/* Surface line */}
-        <mesh position={[0, H, 0]} rotation={[Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[innerR * 0.98, outerR * 1.05, 48]} />
-          <meshBasicMaterial color="#475569" side={THREE.DoubleSide} />
-        </mesh>
-      </group>
-    </>
+        {frame.cells
+          .filter((c) => c.leg === "pipe")
+          .map((c, i) => {
+            const a = project(c.mdTop),
+              b = project(c.mdBottom),
+              kind = (Object.keys(colors) as FoamFluidKind[]).reduce(
+                (k, next) => (c.fractions[next] > c.fractions[k] ? next : k),
+                "mud",
+              );
+            return (
+              <g key={i}>
+                <title>
+                  Колонна MD {c.md.toFixed(0)} м; FQ {c.qualityPct.toFixed(1)}%;{" "}
+                  {c.density.toFixed(3)} г/см³
+                </title>
+                <line
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  stroke="#cbd5e1"
+                  strokeWidth="23"
+                />
+                <line
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  stroke={colors[kind]}
+                  strokeWidth="17"
+                />
+              </g>
+            );
+          })}
+        {[0, 0.25, 0.5, 0.75, 1].map((k) => {
+          const p = project(k * depth);
+          return (
+            <text key={k} x={p.x + 40} y={p.y + 5} fill="#cbd5e1" fontSize="13">
+              {(k * depth).toFixed(0)} м MD
+            </text>
+          );
+        })}
+        <text x="20" y="510" fill="#94a3b8" fontSize="12">
+          Поперечный масштаб увеличен. Цвет ячейки - преобладающая жидкость.
+        </text>
+      </svg>
+      <div className="flex flex-wrap gap-4 text-sm">
+        {Object.entries(colors).map(([k, v]) => (
+          <span key={k}>
+            <i
+              style={{ background: v }}
+              className="inline-block h-3 w-3 rounded mr-1"
+            />
+            {
+              {
+                mud: "Буровой",
+                buffer: "Буфер",
+                foam: "Пеноцемент",
+                displacement: "Продавка",
+              }[k]
+            }
+          </span>
+        ))}
+      </div>
+      <label className="block text-sm">
+        Обход {angle}°
+        <input
+          aria-label="Обход траектории"
+          type="range"
+          min="-180"
+          max="180"
+          value={angle}
+          onChange={(e) => setAngle(+e.target.value)}
+          className="w-full"
+        />
+      </label>
+      <label className="block text-sm">
+        Приближение ×{zoom.toFixed(1)}
+        <input
+          aria-label="Приближение"
+          type="range"
+          min=".5"
+          max="1.5"
+          step=".1"
+          value={zoom}
+          onChange={(e) => setZoom(+e.target.value)}
+          className="w-full"
+        />
+      </label>
+      <p className="text-xs text-slate-400">
+        Проекция объёмной траектории без WebGL. Центры траектории интегрированы
+        по инклинометрии; фронт смешанной ячейки приближён сеткой. Положение и
+        состав взяты из выбранного расчётного кадра.
+      </p>
+    </div>
   );
-}
-
-/* ───── Public component ───── */
-export default function FoamCement3D(props: Props) {
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0); // 0..1 — fill ratio bottom→top
-  const [speed, setSpeed] = useState(0.25);    // per second
-  const last = useRef<number | null>(null);
-
-  // Animation loop driven by rAF (works even when canvas is idle)
-  useEffect(() => {
-    if (!playing) { last.current = null; return; }
-    let raf = 0;
-    const tick = (t: number) => {
-      if (last.current == null) last.current = t;
-      const dt = (t - last.current) / 1000;
-      last.current = t;
-      setProgress(p => {
-        const next = p + dt * speed;
-        if (next >= 1) { setPlaying(false); return 1; }
-        return next;
-      });
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, speed]);
-
-  const minD = useMemo(() => props.points.reduce((m, p) => Math.min(m, p.foamDensity), Infinity), [props.points]);
-  const maxD = useMemo(() => props.points.reduce((m, p) => Math.max(m, p.foamDensity), -Infinity), [props.points]);
-  const fillMD = props.totalDepthMD * (1 - progress); // top of foam column inside well
-  const filledFromBottom = props.totalDepthMD - fillMD;
-
+  if (!supported || !use3D)
+    return (
+      <div>
+        {supported && (
+          <button
+            className="text-sm underline p-2"
+            onClick={() => setUse3D(true)}
+          >
+            Открыть 3D-разрез
+          </button>
+        )}
+        {projection}
+      </div>
+    );
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-lg">🌀 3D-анимация заполнения затрубья пеноцементом</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_260px] gap-4">
-          <div className="h-[460px] rounded-lg border border-border bg-gradient-to-b from-slate-900 to-slate-950 overflow-hidden">
-            <Canvas camera={{ position: [4.5, 2.5, 5.5], fov: 38 }} dpr={[1, 2]}>
-              <Suspense fallback={null}>
-                <Scene {...props} fillProgress={progress} />
-                <OrbitControls enablePan={false} minDistance={4} maxDistance={14} target={[0, 0, 0]} />
-              </Suspense>
-            </Canvas>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            <div className="flex items-center gap-1">
-              <Button size="sm" onClick={() => setPlaying(p => !p)}>
-                {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => { setProgress(0); setPlaying(false); }}>
-                <RotateCcw className="w-4 h-4" />
-              </Button>
-              <select
-                value={speed}
-                onChange={e => setSpeed(+e.target.value)}
-                className="px-2 py-1 rounded bg-background border border-border ml-auto"
-              >
-                <option value={0.1}>0.5×</option>
-                <option value={0.25}>1×</option>
-                <option value={0.5}>2×</option>
-                <option value={1}>4×</option>
-              </select>
-            </div>
-
-            <div>
-              <div className="text-muted-foreground mb-1">Прогресс закачки</div>
-              <Slider min={0} max={1} step={0.01} value={[progress]} onValueChange={v => setProgress(v[0])} />
-              <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-                <span>0%</span>
-                <span className="font-mono text-foreground">{(progress * 100).toFixed(0)}%</span>
-                <span>100%</span>
-              </div>
-            </div>
-
-            <div className="rounded-md border border-border bg-muted/10 p-2 space-y-1.5">
-              <div className="flex justify-between"><span className="text-muted-foreground">Заполнено снизу</span><span className="font-mono">{filledFromBottom.toFixed(0)} м</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Верх столба</span><span className="font-mono">{fillMD.toFixed(0)} м MD</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">ρ база</span><span className="font-mono">{props.baseDensity.toFixed(2)} г/см³</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">ρ пены диапазон</span><span className="font-mono">{Number.isFinite(minD) ? minD.toFixed(2) : "—"} … {Number.isFinite(maxD) ? maxD.toFixed(2) : "—"}</span></div>
-            </div>
-
-            {/* Density legend */}
-            <div className="rounded-md border border-border p-2">
-              <div className="text-muted-foreground mb-1.5">Цвет = плотность / FQ</div>
-              <div className="h-3 rounded" style={{
-                background: "linear-gradient(to right, #bfe6ff 0%, #8a99a3 50%, #2f363b 100%)",
-              }} />
-              <div className="flex justify-between text-[10px] mt-1 text-muted-foreground">
-                <span>лёгкий (выс. FQ)</span>
-                <span>плотный (низ. FQ)</span>
-              </div>
-            </div>
-
-            <div className="text-[10px] text-muted-foreground leading-relaxed">
-              Заполнение снизу вверх отражает технологию: пеноцемент сначала достигает забоя, затем поднимается по затрубью. Тёмный оттенок внизу — газ сжат, FQ ниже, плотность выше.
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <SceneBoundary fallback={projection}>
+      <div className="rounded-xl bg-slate-950 p-4 text-slate-100">
+        <strong>
+          3D-разрез · {frame.time.toFixed(1)} мин · {frame.stage}
+        </strong>
+        <Suspense fallback={<p>Подготовка 3D…</p>}>
+          <ThreeScene frame={frame} wellData={wellData} />
+        </Suspense>
+        <p className="text-sm">
+          Вращайте и приближайте мышью или касанием. Буровой - коричневый; буфер
+          - голубой; пена - золотой; продавка - фиолетовая.
+        </p>
+        <p className="text-xs text-slate-400">
+          Поперечный масштаб усилен. Цвет - преобладающая жидкость ячейки;
+          числовые профили и положение взяты из выбранного кадра. Устойчивость
+          структуры пены не визуализируется.
+        </p>
+        <button
+          className="text-sm underline p-2"
+          onClick={() => setUse3D(false)}
+        >
+          Упрощённая проекция без WebGL
+        </button>
+      </div>
+    </SceneBoundary>
   );
 }

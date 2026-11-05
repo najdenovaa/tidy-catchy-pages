@@ -1,0 +1,24 @@
+name: Validate foam cement engineering
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/foam-cement*'
+      - 'src/lib/__tests__/foam-cement*'
+      - 'src/components/FoamCement*'
+      - 'src/pages/Index.tsx'
+      - 'src/lib/export-docx.ts'
+      - '.github/workflows/validate-foam.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --legacy-peer-deps
+      - run: npx tsc --noEmit -p tsconfig.app.json
+      - run: npx vitest run src/lib/__tests__/foam-cement-engine.test.ts src/lib/__tests__/foam-cement-data.test.ts src/lib/__tests__/foam-cement-report.test.ts src/components/FoamCementSection.test.tsx
+      - run: npm run build
