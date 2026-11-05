@@ -28,9 +28,9 @@ import RirAutoDesignCard from "./RirAutoDesignCard";
 const KEY = "rir_inputs_v1";
 const f = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
-function load(): RirInputs {
+function load(technology: "packer" | "spot"): RirInputs {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(`${KEY}_${technology}`) ?? localStorage.getItem(KEY);
     const next: RirInputs = raw ? { ...DEFAULT_RIR, ...JSON.parse(raw) } : DEFAULT_RIR;
     return next.tool.kind === "bradenhead" ? { ...next, tool: { ...next.tool, kind: "retainer" } } : next;
   } catch { return DEFAULT_RIR; }
@@ -79,11 +79,11 @@ const GRADE_OPTIONS = Object.fromEntries(Object.keys(STEEL_GRADES).map((k) => [k
 /** РИР: ликвидация негерметичности колонны и заколонных / межколонных перетоков (этап 1). */
 function RirLegacyModule({ trajectory, technology }: { trajectory?: RirInputs["trajectory"]; technology: "packer" | "spot" }) {
   const [inp, setInp] = useState<RirInputs>(() => {
-    const saved=load();
+    const saved=load(technology);
     return technology === "spot" ? { ...saved, tool: {...saved.tool, kind:"bradenhead"} } : saved;
   });
   useEffect(() => { setInp(prev => ({...prev,tool:{...prev.tool,kind:technology === "spot" ? "bradenhead" : prev.tool.kind === "bradenhead" ? "retainer" : prev.tool.kind}})); },[technology]);
-  useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(inp)); } catch { /* недоступно */ } }, [inp]);
+  useEffect(() => { try { localStorage.setItem(`${KEY}_${technology}`, JSON.stringify(inp)); } catch { /* недоступно */ } }, [inp, technology]);
   const full = useMemo(() => ({ ...inp, trajectory: trajectory && trajectory.length > 1 ? trajectory : inp.trajectory }), [inp, trajectory]);
   const res = useMemo(() => calculateRir(full), [full]);
   const [mech, setMech] = useState<TubingMechInputs>(() => { try { return { ...DEFAULT_TUBING_MECH, ...JSON.parse(localStorage.getItem("rir_mech_v1") || "{}") }; } catch { return DEFAULT_TUBING_MECH; } });

@@ -37,3 +37,10 @@ describe("РИР Bradenhead: предварительное размещение
    expect(b.slurryTopAfterLiftMD).toBeGreaterThan(a.slurryTopAfterLiftMD);
  });
 });
+
+it("размещает небольшой объём целиком ниже башмака без ложной кровли у башмака",()=>{
+ const input={...DEFAULT_SPOT_SQUEEZE,slurryBottomMD:1950,slurryVolumeM3:0.2,plannedSqueezeM3:0.1};
+ const r=calculateSpotSqueeze(input);
+ expect(r.slurryTopBeforeMD).toBeGreaterThan(input.initialShoeMD);
+ expect(r.casingAreaM2*(input.slurryBottomMD-r.slurryTopBeforeMD)).toBeCloseTo(0.2,8);
+});

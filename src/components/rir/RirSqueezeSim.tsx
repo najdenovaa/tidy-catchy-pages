@@ -92,17 +92,29 @@ function PVChart({ sim }: { sim: SqueezeSimResult }) {
 function SqueezeAnimation({ p, hasTool, spot, toolLabel }: { p: SqueezePoint; hasTool: boolean; spot: boolean; toolLabel: string }) {
   const W = 300, H = 400;
   const cx = 120, cw = 90, tw = 26; // колонна и НКТ
-  const yTop = 40, yTool = 300, yBot = 385, yLeak0 = 345, yLeak1 = 362;
+  const yTop = 40, yBot = 385;
+  const g=p.openTubing;
+  const depthY=(md:number) => g ? yTop+(yBot-yTop)*md/Math.max(1,g.slurryBottomMD) : yTop;
+  // Compress the upper well consistently, retaining actual depth ordering at the slug.
+  const focusTop=g ? Math.max(0,Math.min(g.liftedShoeMD,g.leakTopMD)-20) : 0;
+  const localY=(md:number) => g ? md<focusTop
+    ? yTop+80*md/Math.max(1,focusTop)
+    : yTop+80+(yBot-yTop-80)*(md-focusTop)/Math.max(1,g.slurryBottomMD-focusTop) : depthY(md);
+  const yTool=g ? localY(g.shoeMD) : 300;
+  const yLeak0=g ? localY(g.leakTopMD) : 345;
+  const yLeak1=g ? Math.max(yLeak0+8,localY(g.leakBottomMD)) : 362;
+  const compTubY=g ? localY(g.shoeMD*Math.max(0,p.compTop)) : yTop+(yTool-yTop)*p.compTop;
+  const compTubBottom=g ? localY(g.shoeMD*Math.max(0,p.compBottom)) : yTop+(yTool-yTop)*p.compBottom;
   const tubH = yTool - yTop;
   const circ = /Буфер|Состав$|Продавка|Доводка|Размещение цементной пачки|Закачка цемента в НКТ|Продавка и размещение/.test(p.stage);
   const hold = p.stage.startsWith("Выдержка") || p.stage.startsWith("Посадка") || p.stage.includes("Подъём НКТ") || p.stage.includes("ПВО");
   const squeeze = !circ && !hold && p.qLs > 0;
   const compIn = p.compTop >= 0;
-  const bopClosed = !hasTool && !/Начало|Закачка цемента|Продавка и размещение|Подъём НКТ/.test(p.stage);
+  const bopClosed = g?.bopClosed ?? (!hasTool && !/Начало|Закачка цемента|Продавка и размещение|Подъём НКТ/.test(p.stage));
   const belowH = yBot - yTool;
-  const compBelowH = belowH * Math.min(1, p.belowComp);
+  const compBelowH = g ? Math.max(0,localY(g.slurryBottomMD)-localY(g.slurryTopMD)) : belowH * Math.min(1, p.belowComp);
   // состав под инструментом: сверху (подходит), а после выхода в канал — снизу (продавлен водой)
-  const compBelowY = p.vCompChannel > 0 ? yBot - compBelowH : yTool;
+  const compBelowY = g ? localY(g.slurryTopMD) : p.vCompChannel > 0 ? yBot - compBelowH : yTool;
   const chLen = 70 * Math.min(1, p.channelFill);
   const gauge = p.allowSurfaceMPa > 0 ? Math.min(1, p.surfaceMPa / p.allowSurfaceMPa) : 0;
   const ang = -210 + 240 * gauge;
@@ -126,14 +138,16 @@ function SqueezeAnimation({ p, hasTool, spot, toolLabel }: { p: SqueezePoint; ha
       <rect x={cx + cw / 2 + 5} y={yLeak0 + 3} width={70} height={yLeak1 - yLeak0 - 6} fill={WATER} opacity={0.5} rx={2} />
       <rect x={cx + cw / 2 + 5} y={yLeak0 + 3} width={chLen} height={yLeak1 - yLeak0 - 6} fill={COMP} rx={2} />
       <text x={cx + cw / 2 + 42} y={yLeak0 - 4} textAnchor="middle" fontSize={9} className="fill-red-600">нарушение</text>
+      {g && compBelowH > 0.5 && <rect x={cx-cw/2} y={compBelowY} width={cw} height={compBelowH} fill={COMP} />}
       {/* НКТ */}
       <rect x={cx - tw / 2 - 3} y={yTop - 10} width={3} height={yTool - yTop + 10} fill="#334155" />
       <rect x={cx + tw / 2} y={yTop - 10} width={3} height={yTool - yTop + 10} fill="#334155" />
       <rect x={cx - tw / 2} y={yTop} width={tw} height={tubH} fill={WATER} />
-      {compIn && <rect x={cx - tw / 2} y={yTop + tubH * p.compTop} width={tw} height={Math.max(1, tubH * (p.compBottom - p.compTop))} fill={COMP} />}
+      {compIn && <rect x={cx - tw / 2} y={compTubY} width={tw} height={Math.max(1, compTubBottom-compTubY)} fill={COMP} />}
       {/* под инструментом */}
-      <rect x={cx - cw / 2} y={yTool} width={cw} height={belowH} fill={spot && !hasTool ? WELL : WATER} opacity={0.7} />
-      {compBelowH > 0.5 && <rect x={cx - cw / 2} y={compBelowY} width={cw} height={compBelowH} fill={COMP} />}
+      {!g && <rect x={cx - cw / 2} y={yTool} width={cw} height={belowH} fill={spot && !hasTool ? WELL : WATER} opacity={0.7} />}
+      {!g && compBelowH > 0.5 && <rect x={cx - cw / 2} y={compBelowY} width={cw} height={compBelowH} fill={COMP} />}
+      {g && <text x={cx-tw/2-6} y={yTool-4} textAnchor="end" fontSize={9} className="fill-foreground">НКТ {f(g.shoeMD,0)} м</text>}
       {/* инструмент */}
       {hasTool && <rect x={cx - cw / 2} y={yTool - 6} width={cw} height={8} fill="#111827" />}
       {hasTool && <text x={cx - cw / 2 - 8} y={yTool} textAnchor="end" fontSize={9} className="fill-foreground">{toolLabel}</text>}

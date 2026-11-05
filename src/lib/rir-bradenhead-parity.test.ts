@@ -56,3 +56,38 @@ describe("РИР без пакера - паритет полного модул�
   expect(r.constraints.some(c=>c.name.includes("ретейнере"))).toBe(true);
  });
 });
+
+describe("Геометрия общей временной шкалы без пакера",()=>{
+ it("поднимает НКТ только после размещения, закрывает ПВО после подъёма и сохраняет объём",()=>{
+  const res=calculateRir(bradenhead);
+  const sim=simulateSqueeze(bradenhead,res,null);
+  const spot=res.spotResult!;
+  const lift=sim.points.filter(p=>p.stage.includes("Подъём НКТ"));
+  expect(lift.length).toBeGreaterThan(1);
+  expect(lift[0].openTubing!.shoeMD).toBeLessThan(1870);
+  expect(lift.at(-1)!.openTubing!.shoeMD).toBeCloseTo(1750);
+  for(const p of sim.points){
+   const g=p.openTubing!;
+   expect(g).toBeDefined();
+   expect(p.vCompChannel).toBeGreaterThanOrEqual(0);
+   if(p.stage.includes("Закачка")||p.stage.includes("Продавка")) expect(g.shoeMD).toBe(1870);
+   if(!g.bopClosed) expect(p.vCompChannel).toBe(0);
+   if(g.bopClosed) expect(g.shoeMD).toBe(1750);
+   const below=spot.casingAreaM2*Math.max(0,g.slurryBottomMD-Math.max(g.shoeMD,g.slurryTopMD));
+   const annular=spot.annularAreaM2*Math.max(0,g.shoeMD-g.slurryTopMD);
+   expect(below+annular).toBeCloseTo(g.slurryM3,8);
+   if(p.stage.includes("Подъём")||g.bopClosed) expect(g.slurryM3+p.vCompChannel).toBeCloseTo(1,8);
+  }
+  expect(lift.at(-1)!.openTubing!.slurryTopMD).toBeCloseTo(spot.slurryTopAfterLiftMD);
+ });
+ it("сохраняет цемент при пачке больше вместимости НКТ",()=>{
+  const input={...bradenhead,spot:{...bradenhead.spot,slurryVolumeM3:6,liftedShoeMD:1000}};
+  const res=calculateRir(input);
+  expect(res.spotResult!.ok).toBe(true);
+  const sim=simulateSqueeze(input,res,null);
+  const fed=sim.points.filter(p=>p.stage==="Закачка цемента в НКТ").at(-1)!;
+  expect(fed.openTubing!.slurryM3).toBeCloseTo(6-res.spotResult!.tubingCapacityBeforeM3);
+  const placed=sim.points.filter(p=>p.stage.startsWith("Продавка")).at(-1)!;
+  expect(placed.openTubing!.slurryM3).toBeCloseTo(6);
+ });
+});

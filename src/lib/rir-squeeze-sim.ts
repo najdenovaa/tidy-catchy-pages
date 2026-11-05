@@ -18,6 +18,8 @@ import { pipeFrictionMPa } from "./cementing-calculations";
 import { simulateBradenhead } from "./rir-bradenhead-sim";
 
 export interface SqueezePoint {
+  /** Actual open-tubing/slug geometry shared by 2D and 3D; absent in packer mode. */
+  openTubing?: { shoeMD: number; initialShoeMD: number; liftedShoeMD: number; leakTopMD: number; leakBottomMD: number; slurryTopMD: number; slurryBottomMD: number; slurryM3: number; bopClosed: boolean };
   t: number;
   stage: string;
   qLs: number;
