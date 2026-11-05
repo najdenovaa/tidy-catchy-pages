@@ -1,3 +1,4 @@
+import { trajectoryAzimuth } from "@/lib/centralizer-mesh";
 import Centralizer3DInspector from "./Centralizer3DInspector";
 import { passportWarnings } from "@/lib/centralizer-passports";
 import CentralizerPassportFields from "./CentralizerPassportFields";
@@ -866,7 +867,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             const cased = selectedResult.md <= (wellData.prevCasingDepth || 0) && wellData.prevCasingID > 0;
             const currentIntervals = autoResults ? autoResults.map((iv, i) => ({ id: String(i), fromMD: iv.fromMD, toMD: iv.toMD, jointLength: autoJointLength, centralizersPerJoint: iv.centralizersPerJoint, spec: autoSpec })) : intervals;
             const currentResult = calculateCentralization(wellData, currentIntervals, mudDensity, undefined, undefined, {fromMD:selectedResult.md, toMD:selectedResult.md})[0];
-            return spec && currentResult ? <div className="space-y-2"><label className="text-sm">Выберите глубину для 3D<select aria-label="Глубина 3D" className="block bg-background border border-input rounded p-2" value={selectedResult.md} onChange={e => setSelectedMD(+e.target.value)}>{results.map(r => <option key={r.md} value={r.md}>{r.md} м MD</option>)}</select></label><Centralizer3DInspector spec={spec} result={currentResult} casingOD={wellData.casingOD} boreDiameter={cased ? wellData.prevCasingID : wellData.holeDiameter} cased={cased} /></div> : null;
+            return spec && currentResult ? <div className="space-y-2"><label className="text-sm">Выберите глубину для 3D<select aria-label="Глубина 3D" className="block bg-background border border-input rounded p-2" value={selectedResult.md} onChange={e => setSelectedMD(+e.target.value)}>{results.map(r => <option key={r.md} value={r.md}>{r.md} м MD</option>)}</select></label><Centralizer3DInspector spec={spec} result={currentResult} azimuth={trajectoryAzimuth(wellData.trajectory, currentResult.md)} casingID={casingID} casingOD={wellData.casingOD} boreDiameter={cased ? wellData.prevCasingID : wellData.holeDiameter} cased={cased} /></div> : null;
           })()}
           {/* Cross-section preview */}
           <Card>
