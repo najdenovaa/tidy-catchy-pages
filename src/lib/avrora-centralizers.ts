@@ -27,7 +27,7 @@ export const avroraCentralizers: {id:string;spec:CentralizerSpec}[] = [
  ...rows200.flatMap(row=>row.outer.map(outer=>({id:`avrora200-${row.casing}-${outer}`,spec:{
   type:'spring' as const,bladesCount:row.blades,bladeHeight:Math.max(0,(outer-row.casing)/2),restoringForce:0,maxAxialLoad:0,
   passport:{model:`AVRORA 200 · ОК ${row.casing} · OD ${outer}`,source:'Предоставленная таблица AVRORA 200 (IMG_2755)',casingOD:row.casing,innerDiameter:row.inner,outerDiameter:outer,length:row.length,bladeWidth:row.width,lengthRange:row.lengthRange,bladeWidthRange:row.widthRange,
-   note:`Цельный полужёсткий центратор. Наружный диаметр указан как максимальный; ID с допуском +2 мм; длина - не более указанного значения. Размеры не связаны с конкретными исполнениями внутри диапазона: уточнить по паспорту поставки. Усилия и степень центрирования испытания отсутствуют; силовой расчёт требует подтверждённых данных.${outer<=row.inner?' В источнике OD меньше ID: вариант требует уточнения изготовителя.':''}`,
+   note:`Цельный полужёсткий центратор. Наружный диаметр указан как максимальный; ID с допуском +2 мм; длина - не более указанного значения. Размеры не связаны с конкретными исполнениями внутри диапазона: уточнить по паспорту поставки. Усилия и степень центрирования испытания отсутствуют; для оценочного расчёта используются явно показанные модельные допущения.${outer<=row.inner?' В источнике OD меньше ID: вариант требует уточнения изготовителя.':''}`,
   }
  }}))),
  ...rows205.map(row=>({id:`avrora205-${row.casing}-${row.outer}`,spec:{

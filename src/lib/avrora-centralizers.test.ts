@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import {avroraCentralizers} from './avrora-centralizers';
-import {passportExamples,passportWarnings} from './centralizer-passports';
+import {passportExamples,passportWarnings,passportAssumptions} from './centralizer-passports';
 import {inspectCentralizer} from './centralizer-clearance';
 import {centralizerMesh} from './centralizer-mesh';
 it('сохраняет все 40 исполнений и уникальные ключи',()=>{
@@ -19,7 +19,8 @@ it('не превращает диапазон или отсутствие ус�
  expect(spec.passport?.length).toBeUndefined();expect(spec.passport?.lengthRange).toContain('160-320');
  expect(spec.passport?.bladeWidth).toBeUndefined();expect(spec.passport?.bladeWidthRange).toBe('32-38');
  expect(avroraCentralizers.every(p=>!p.spec.passport?.restoringForceKgf&&p.spec.restoringForce===0)).toBe(true);
- expect(passportWarnings(spec,114).length).toBeGreaterThan(0);
+ expect(passportWarnings(spec,114)).toEqual([]);
+ expect(passportAssumptions(spec).some(w=>w.includes('5.00'))).toBe(true);
 });
 it('сохраняет ошибку источника 146/146 и блокирует силовой расчёт',()=>{
  const spec=avroraCentralizers.find(p=>p.id==='avrora200-146-146')!.spec;
