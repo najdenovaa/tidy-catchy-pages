@@ -799,7 +799,7 @@ export function calculateRir(inp: RirInputs): RirResult {
     resin_micro: [0.05, 1.5],
   };
   const [vMin, vMax] = caps[comp];
-  const qComp = qMax / MU_REL[comp]; // м³/ч
+  const qComp = qMax / Math.max(1, measured?.facts.pv ?? MU_REL[comp]); // м³/ч
   const squeezeM3 = isBradenhead
     ? (spotInput?.plannedSqueezeM3 ?? 0)
     : Math.min(vMax, Math.max(vMin, qComp * 1.0)); // ~1 ч задавливания составом на допустимом давлении

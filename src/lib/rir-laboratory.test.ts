@@ -50,6 +50,7 @@ describe("Independent RIR recipe and laboratory", () => {
     const d = tested(i), inp = { ...i, laboratory: { cement: d } };
     const r = calculateRir(inp), plan = planRir(inp, r);
     expect(r.compositionDensity).toBe(1.8);
+    expect(r.compositionRateAtMaxM3h).toBeCloseTo(r.squeezeRateAtMaxM3h / 20, 8);
     expect(plan.comp!.primary.workLifeSource).toBe("laboratory");
     expect(plan.comp!.primary.props[0].value).toContain("20");
     expect(plan.comp!.primary.workLifeAtBhctMin).toBe(600);

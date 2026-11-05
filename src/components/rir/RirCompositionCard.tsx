@@ -18,6 +18,7 @@ function MiniChart({ data, xLabel, yLabel, vx, hy, dot, log, color = "hsl(var(--
   data: { x: number; y: number }[]; xLabel: string; yLabel: string; vx?: { v: number; label: string }; hy?: { v: number; label: string }; dot?: { x: number; y: number }; log?: boolean; color?: string;
 }) {
   const [ref, w] = useMeasuredWidth<HTMLDivElement>();
+  if (data.length === 1) return <p className="text-xs py-4">Измеренная точка: {data[0].x} ({xLabel}), {data[0].y} ({yLabel}). Кривая по одной точке не строится.</p>;
   if (!data.length) return <p className="text-xs text-muted-foreground py-4">Кривая не задана. Единичный результат испытания не заменяет измеренную кривую.</p>;
   return (
     <div ref={ref} className="h-52">
@@ -57,7 +58,7 @@ function DesignBlock({ d, volumeM3, bhctC, jobMin, requiredMin }: { d: Compositi
     <div className="space-y-3 rounded-lg border border-border/70 p-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div><p className="font-semibold text-sm">{d.title}</p><p className="text-[11px] text-muted-foreground">{d.system} · объём {f(volumeM3, 2)} м³</p></div>
-        <Badge variant={ok ? "default" : "destructive"} className="text-[10px]">{ok ? "требования выполнены (прогноз)" : "есть невыполненные требования"}</Badge>
+        <Badge variant={ok ? "outline" : "destructive"} className="text-[10px]">{d.workLifeSource === "laboratory" ? "Применены измеренные свойства" : ok ? "Требуется лабораторная проверка" : "Есть замечания к расчётной пробе"}</Badge>
       </div>
       <p className="text-xs text-muted-foreground">{d.workLifeSource === "laboratory" ? "Применены измеренные свойства лабораторной пробы." : "Расчётные ориентиры. Лабораторный факт вводится в отдельном блоке РИР."}</p>
       <MassBar d={d} />

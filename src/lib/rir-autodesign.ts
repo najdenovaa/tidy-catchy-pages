@@ -74,7 +74,7 @@ export function planRir(inp: RirInputs, res: RirResult): RirPlan {
       }
     }
   }
-  if ((!comp || comp.primary.workLifeSource === "unknown") && !sim.blocked)
+  if (!sim.blocked)
     required = Math.max(required, Math.ceil(sim.totalTimeMin / 0.7));
   return {
     comp,
