@@ -23,6 +23,6 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit -p tsconfig.app.json
       - name: RIR tests
-        run: npx vitest run src/lib/rir-laboratory.test.ts src/components/rir/RirLaboratoryCard.test.tsx src/lib/rir.test.ts src/lib/rir-spot-squeeze.test.ts src/lib/rir-bradenhead-parity.test.ts src/lib/rir-user-case.test.ts src/components/rir/RirModule.test.tsx src/hooks/use-rir-cursor.test.tsx src/components/rir/RirLeak3D.test.tsx
+        run: npx vitest run
       - name: Build
         run: npm run build

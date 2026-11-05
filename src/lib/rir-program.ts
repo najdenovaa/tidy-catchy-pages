@@ -656,7 +656,7 @@ export function buildRirProgram(
     ],
   });
   const laboratory = inp.laboratory?.[res.composition];
-  if (laboratory) sections.push(rirLabSection(laboratory, {
+  if (laboratory) S.push(rirLabSection(laboratory, {
     bhctC: res.temps.bhctC, bhstC: res.temps.bhstC, requiredMin: requiredWorkLifeMin,
   }, res.volumes.totalM3));
   return {
