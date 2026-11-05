@@ -265,7 +265,7 @@ function lateralForceWithDLS(
 
 // ─── Interpolate trajectory ──────────────────────────────────────
 
-function interpolateTrajectory(trajectory: TrajectoryPoint[], md: number): { tvd: number; zenith: number } {
+export function interpolateTrajectory(trajectory: TrajectoryPoint[], md: number): { tvd: number; zenith: number } {
   if (trajectory.length === 0) return { tvd: md, zenith: 0 };
   if (md <= trajectory[0].md) return { tvd: trajectory[0].tvd, zenith: trajectory[0].zenith };
   if (md >= trajectory[trajectory.length - 1].md) {

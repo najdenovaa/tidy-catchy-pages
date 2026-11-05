@@ -24,5 +24,11 @@ it('выбирает паспорт и переносит исходные ед�
     expect(spec.restoringForce).toBe(0);
     expect(host.textContent).not.toContain('Восстанавливающее усилие, не менее, кгс');
     expect(host.textContent).toContain('35 Н·м');
+    await act(async () => { select.value='avrora205-178-240'; select.dispatchEvent(new Event('change', {bubbles:true})); });
+    expect(spec.passport?.bladeWidth).toBe(38);
+    expect(spec.passport?.springLength).toBe(400);
+    expect(spec.restoringForce).toBe(0);
+    expect(host.textContent).toContain('силовой расчёт рессор недоступен');
+    expect(host.querySelector('optgroup')?.label).toContain('178');
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
