@@ -2,7 +2,7 @@ import type { CentralizerSpec } from './centralization-calculations';
 /** Circular local section. All dimensions in mm. Eccentricity comes from the engineering model, not a caliper measurement. */
 export function inspectCentralizer(spec: CentralizerSpec, casingOD: number, boreDiameter: number, eccentricity: number) {
   const p = spec.passport;
-  if (!p?.outerDiameter || !p.length || !Number.isFinite(boreDiameter) || boreDiameter <= casingOD || casingOD <= 0 || !Number.isFinite(eccentricity)) return null;
+  if (!p?.outerDiameter || !Number.isFinite(p.outerDiameter) || p.outerDiameter <= casingOD || !p.length || !Number.isFinite(p.length) || p.length <= 0 || !Number.isFinite(boreDiameter) || boreDiameter <= casingOD || casingOD <= 0 || !Number.isFinite(eccentricity)) return null;
   const boreRadius = boreDiameter / 2;
   const pipeRadius = casingOD / 2;
   const offset = Math.max(0, Math.min(1, eccentricity)) * (boreRadius - pipeRadius);

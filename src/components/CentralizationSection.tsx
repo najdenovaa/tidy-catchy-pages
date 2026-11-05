@@ -1,3 +1,5 @@
+import CentralizerCatalogPreview from "./CentralizerCatalogPreview";
+import { trajectoryAzimuth } from "@/lib/centralizer-mesh";
 import Centralizer3DInspector from "./Centralizer3DInspector";
 import { passportWarnings } from "@/lib/centralizer-passports";
 import CentralizerPassportFields from "./CentralizerPassportFields";
@@ -344,10 +346,12 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   }, []);
 
   const updateInterval = useCallback((id: string, patch: Partial<CentralizerInterval>) => {
+    setResults(null); setAutoResults(null); onResultsChange?.(null);
     setIntervals(prev => prev.map(iv => iv.id === id ? { ...iv, ...patch } : iv));
   }, []);
 
   const updateSpec = useCallback((id: string, patch: Partial<CentralizerInterval["spec"]>) => {
+    setResults(null); setAutoResults(null); onResultsChange?.(null);
     setIntervals(prev => prev.map(iv => iv.id === id ? { ...iv, spec: { ...iv.spec, ...patch } } : iv));
   }, []);
 
@@ -590,6 +594,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
 
                 </div>
                 <CentralizerPassportFields spec={iv.spec} casingOD={wellData.casingOD} onChange={spec => updateInterval(iv.id, { spec })} />
+                {iv.spec.passport && !iv.spec.passport.restoringForceKgf && <CentralizerCatalogPreview spec={iv.spec} wellData={wellData} fromMD={iv.fromMD} toMD={iv.toMD} />}
               </div>
             ))}
             <Button disabled={intervals.some(iv => passportWarnings(iv.spec, wellData.casingOD).length > 0)} onClick={handleCalculateManual} className="w-full gap-2">
@@ -761,8 +766,9 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
               </div>
             </div>
 
-            <CentralizerPassportFields spec={autoSpec} casingOD={wellData.casingOD} onChange={spec => { setAutoSpec(spec); setAutoSpecType(spec.type); }} />
+            <CentralizerPassportFields spec={autoSpec} casingOD={wellData.casingOD} onChange={spec => { setResults(null); setAutoResults(null); onResultsChange?.(null); setAutoSpec(spec); setAutoSpecType(spec.type); }} />
 
+            {autoSpec.passport && !autoSpec.passport.restoringForceKgf && <CentralizerCatalogPreview spec={autoSpec} wellData={wellData} toMD={wellData.casingDepthMD} />}
             <Button disabled={passportWarnings(autoSpec, wellData.casingOD).length > 0} onClick={handleCalculateAuto} className="w-full gap-2">
               <Target className="w-4 h-4" /> Рассчитать расстановку
             </Button>
@@ -866,7 +872,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             const cased = selectedResult.md <= (wellData.prevCasingDepth || 0) && wellData.prevCasingID > 0;
             const currentIntervals = autoResults ? autoResults.map((iv, i) => ({ id: String(i), fromMD: iv.fromMD, toMD: iv.toMD, jointLength: autoJointLength, centralizersPerJoint: iv.centralizersPerJoint, spec: autoSpec })) : intervals;
             const currentResult = calculateCentralization(wellData, currentIntervals, mudDensity, undefined, undefined, {fromMD:selectedResult.md, toMD:selectedResult.md})[0];
-            return spec && currentResult ? <div className="space-y-2"><label className="text-sm">Выберите глубину для 3D<select aria-label="Глубина 3D" className="block bg-background border border-input rounded p-2" value={selectedResult.md} onChange={e => setSelectedMD(+e.target.value)}>{results.map(r => <option key={r.md} value={r.md}>{r.md} м MD</option>)}</select></label><Centralizer3DInspector spec={spec} result={currentResult} casingOD={wellData.casingOD} boreDiameter={cased ? wellData.prevCasingID : wellData.holeDiameter} cased={cased} /></div> : null;
+            return spec && currentResult ? <div className="space-y-2"><label className="text-sm">Выберите глубину для 3D<select aria-label="Глубина 3D" className="block bg-background border border-input rounded p-2" value={selectedResult.md} onChange={e => setSelectedMD(+e.target.value)}>{results.map(r => <option key={r.md} value={r.md}>{r.md} м MD</option>)}</select></label><Centralizer3DInspector spec={spec} result={currentResult} azimuth={trajectoryAzimuth(wellData.trajectory, currentResult.md)} casingID={casingID} casingOD={wellData.casingOD} boreDiameter={cased ? wellData.prevCasingID : wellData.holeDiameter} cased={cased} /></div> : null;
           })()}
           {/* Cross-section preview */}
           <Card>
