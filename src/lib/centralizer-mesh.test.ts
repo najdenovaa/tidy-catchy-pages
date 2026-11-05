@@ -17,3 +17,20 @@ it('строит объёмные рессоры и кольца с конечн
  expect(faces.some(f=>f.kind==='selected')).toBe(true);
  expect(faces.every(f=>f.points.every(p=>p.every(Number.isFinite)))).toBe(true);
 });
+it('направляет смещение оси к низу под действием веса при любом азимуте',()=>{
+ for(const zenith of [25,60,90])for(const azimuth of [0,113,270]){
+  const low=surveyTransform([1,0,0],zenith,azimuth),up=surveyTransform([0,0,1],zenith,azimuth);
+  expect(low[2]).toBeLessThan(0);
+  expect(low.reduce((n,v,i)=>n+v*up[i],0)).toBeCloseTo(0,10);
+  const x=low,y=surveyTransform([0,1,0],zenith,azimuth);
+  const cross=[x[1]*y[2]-x[2]*y[1],x[2]*y[0]-x[0]*y[2],x[0]*y[1]-x[1]*y[0]];
+  expect(cross.reduce((n,v,i)=>n+v*up[i],0)).toBeCloseTo(1,10);
+ }
+});
+it('связывает более сильное сжатие рессоры с физически нижней стороной',async()=>{
+ const {inspectCentralizer}=await import('./centralizer-clearance');
+ const g=inspectCentralizer(passportExamples[2].spec,178,216,.5)!;
+ expect(g.blades[0].compression).toBeGreaterThan(g.blades[3].compression);
+ const low=surveyTransform([g.offset,0,0],25,113);
+ expect(low[2]).toBeLessThan(0);
+});
