@@ -16,16 +16,19 @@ export default function CentralizerPassportFields({ spec, casingOD, onChange }: 
   const fields: [keyof CentralizerPassport, string][] = [
     ['casingOD', 'Диаметр обсадной колонны, мм'], ['boreDiameter', 'Диаметр ствола по паспорту, мм'],
     ['outerDiameter', 'Наружный диаметр по рессорам / лопастям, мм'], ['innerDiameter', 'Внутренний диаметр изделия, мм'],
-    ['length', 'Длина / высота изделия, мм'], ['springLength', 'Длина рессоры, мм'], ['bladeWidth', 'Ширина рессоры / лопасти, мм'], ['ringOD', 'Наружный диаметр по кольцам, мм'], ['ringLength', 'Длина кольца, мм'], ['materialThickness', 'Толщина рессоры, мм'], ['startingForceKgf', 'Пусковое усилие, не более, кгс'],
+    ['massKg', 'Масса по паспорту, кг'], ['length', 'Длина / высота изделия, мм'], ['springLength', 'Длина рессоры, мм'], ['bladeWidth', 'Ширина рессоры / лопасти, мм'], ['ringOD', 'Наружный диаметр по кольцам, мм'], ['ringLength', 'Длина кольца, мм'], ['materialThickness', 'Толщина рессоры, мм'], ['startingForceKgf', 'Пусковое усилие, не более, кгс'],
     ['holdingForceKN', 'Удерживающее усилие крепления, кН'], ['frictionCoefficient', 'Коэффициент трения материала'],
   ];
-  if (spec.type === 'spring') fields.push(['restoringForceKgf', 'Восстанавливающее усилие, не менее, кгс'], ['restoringStandoff', 'Степень центрирования при испытании, %']);
+  if (spec.type === 'spring') fields.push(['restoringForceKgf', p?.forceLimitAmbiguous ? 'Восстанавливающее усилие по таблице, кгс' : 'Восстанавливающее усилие, не менее, кгс'], ['restoringStandoff', 'Степень центрирования при испытании, %']);
   return <div className="space-y-3 border border-border rounded-md p-3">
     <label className="block text-xs">Выбрать из справочника оснастки
       <select aria-label="Пример паспорта" className="block w-full bg-background border border-input rounded p-2 mt-1" value="" onChange={e => {
         const example = passportExamples.find(x => x.id === e.target.value);
         if (example) onChange(structuredClone(example.spec));
-      }}><option value="">Выберите изделие или внесите свой паспорт</option>{[true, false].map(compatible => <optgroup key={String(compatible)} label={compatible ? `Для текущей колонны ${casingOD} мм` : 'Другие диаметры колонн'}>{passportExamples.filter(x => (Math.abs((x.spec.passport?.casingOD ?? 0) - casingOD) <= 1) === compatible).map(x => <option key={x.id} value={x.id}>{x.spec.passport!.model}{(x.spec.passport!.outerDiameter ?? 0) <= (x.spec.passport!.innerDiameter ?? 0) ? ' · требует уточнения' : ''}</option>)}</optgroup>)}</select>
+      }}><option value="">Выберите изделие или внесите свой паспорт</option>{[true, false].flatMap(compatible => ['ПЦ-1', 'ПЦ-2', 'Остальная оснастка'].map(series => {
+        const items = passportExamples.filter(x => ((Math.abs((x.spec.passport?.casingOD ?? 0)-casingOD)<=1)===compatible) && (x.spec.passport?.series ?? 'Остальная оснастка')===series);
+        return items.length ? <optgroup key={`${compatible}-${series}`} label={`${compatible ? `Для текущей колонны ${casingOD} мм` : 'Другие диаметры'} · ${series}`}>{items.map(x => <option key={x.id} value={x.id}>{x.spec.passport!.model}{(x.spec.passport!.outerDiameter ?? 0)<=(x.spec.passport!.innerDiameter ?? 0)?' · требует уточнения':''}</option>)}</optgroup> : null;
+      }))}</select>
     </label>
     <label className="block text-xs">Обозначение изделия из паспорта<Input value={p?.model ?? ''} onChange={e => onChange({ ...spec, passport: { ...p, model: e.target.value } })} /></label>
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -34,10 +37,12 @@ export default function CentralizerPassportFields({ spec, casingOD, onChange }: 
     </div>
     {spec.type === 'spring' && <label className="block text-xs">То же восстанавливающее усилие, кН (если паспорт использует кН)<Input type="number" min={0} step="any" value={p?.restoringForceKgf === undefined ? '' : Number(kgfToKN(p.restoringForceKgf).toFixed(5))} placeholder="Не указано" onChange={e => patch('restoringForceKgf', e.target.value === '' ? '' : String(Number(e.target.value) / 0.00980665))} /></label>}
     {(p?.lengthRange || p?.bladeWidthRange) && <p role="status" className="text-xs text-amber-500">Диапазоны из каталога: {p.lengthRange ? `длина ${p.lengthRange} мм; ` : ''}{p.bladeWidthRange ? `ширина рессоры ${p.bladeWidthRange} мм. ` : ''}Точный размер исполнения введите по паспорту поставки; диапазон не заменяется средним числом.</p>}
+    {p?.boreDiameterRange && <p className="text-xs">Диаметр ствола по обозначению: {p.boreDiameterRange} мм. Введите конкретный диаметр по паспорту исполнения.</p>}
+    {p?.restoringForceSourceKN !== undefined && <p className="text-xs">В исходной таблице: восстановление {p.restoringForceSourceKN} кН; пусковое усилие не более {p.startingForceSourceKN} кН. Исходные числа сохраняются независимо от правки расчётных полей.</p>}
     {p?.source && <p className="text-xs text-muted-foreground">Источник: {p.source}. Числа вводятся без знаков ±, «не менее» и «не более»; допуски проверяются отдельно.</p>}
     {p?.note && <p className="text-xs text-amber-500">{p.note}</p>}
     {passportWarnings(spec, casingOD).map(w => <p role="alert" key={w} className="text-xs text-destructive">{w}</p>)}
     <p className="text-xs text-muted-foreground">Для рессор используйте усилие при указанной степени центрирования (обычно 67%). 1 кгс = 0,00980665 кН. Удержание муфт, пусковое усилие и прочность материала не являются восстанавливающим усилием.</p>
-    {p ? <p className="text-xs">В расчёте: наружный диаметр ограничивает степень центрирования; {p.restoringForceKgf ? <>усилие рессор {spec.restoringForce.toFixed(3)} кН задаёт приближённую жёсткость.</> : <>восстанавливающее усилие не задано, силовой расчёт рессор недоступен.</>} Остальные паспортные данные служат для проверки выбора и монтажа; коэффициент материала не заменяет коэффициент трения всей колонны в T&amp;D. Для жёстких изделий без нагрузочной характеристики учитывается прогиб трубы между опорами без добавочной упругой жёсткости.</p> : <p className="text-xs text-amber-500">Паспорт не заполнен. Используются прежние модельные параметры, их нужно подтвердить паспортом или испытанием.</p>}
+    {p ? <p className="text-xs">В расчёте: наружный диаметр ограничивает степень центрирования; {p.restoringForceKgf && p.restoringStandoff ? <>усилие рессор {spec.restoringForce.toFixed(3)} кН задаёт приближённую жёсткость.</> : <>усилие или условия испытания не заданы полностью, силовой расчёт рессор недоступен.</>} Остальные паспортные данные служат для проверки выбора и монтажа; коэффициент материала не заменяет коэффициент трения всей колонны в T&amp;D. Для жёстких изделий без нагрузочной характеристики учитывается прогиб трубы между опорами без добавочной упругой жёсткости.</p> : <p className="text-xs text-amber-500">Паспорт не заполнен. Используются прежние модельные параметры, их нужно подтвердить паспортом или испытанием.</p>}
   </div>;
 }

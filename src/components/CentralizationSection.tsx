@@ -594,7 +594,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
 
                 </div>
                 <CentralizerPassportFields spec={iv.spec} casingOD={wellData.casingOD} onChange={spec => updateInterval(iv.id, { spec })} />
-                {iv.spec.passport && !iv.spec.passport.restoringForceKgf && <CentralizerCatalogPreview spec={iv.spec} wellData={wellData} fromMD={iv.fromMD} toMD={iv.toMD} />}
+                {iv.spec.passport && (!iv.spec.passport.restoringForceKgf || !iv.spec.passport.restoringStandoff) && <CentralizerCatalogPreview spec={iv.spec} wellData={wellData} fromMD={iv.fromMD} toMD={iv.toMD} />}
               </div>
             ))}
             <Button disabled={intervals.some(iv => passportWarnings(iv.spec, wellData.casingOD).length > 0)} onClick={handleCalculateManual} className="w-full gap-2">
@@ -768,7 +768,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
 
             <CentralizerPassportFields spec={autoSpec} casingOD={wellData.casingOD} onChange={spec => { setResults(null); setAutoResults(null); onResultsChange?.(null); setAutoSpec(spec); setAutoSpecType(spec.type); }} />
 
-            {autoSpec.passport && !autoSpec.passport.restoringForceKgf && <CentralizerCatalogPreview spec={autoSpec} wellData={wellData} toMD={wellData.casingDepthMD} />}
+            {autoSpec.passport && (!autoSpec.passport.restoringForceKgf || !autoSpec.passport.restoringStandoff) && <CentralizerCatalogPreview spec={autoSpec} wellData={wellData} toMD={wellData.casingDepthMD} />}
             <Button disabled={passportWarnings(autoSpec, wellData.casingOD).length > 0} onClick={handleCalculateAuto} className="w-full gap-2">
               <Target className="w-4 h-4" /> Рассчитать расстановку
             </Button>

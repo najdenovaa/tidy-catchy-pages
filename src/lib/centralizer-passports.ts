@@ -1,8 +1,15 @@
+import { pcCentralizers } from "./pc-centralizers";
 import { avroraCentralizers } from "./avrora-centralizers";
 import type { CentralizerSpec } from './centralization-calculations';
 
 export interface CentralizerPassport {
   model: string;
+  series?: string;
+  boreDiameterRange?: string;
+  massKg?: number;
+  restoringForceSourceKN?: number;
+  startingForceSourceKN?: number;
+  forceLimitAmbiguous?: boolean;
   lengthRange?: string;
   bladeWidthRange?: string;
   source?: string;
@@ -39,6 +46,7 @@ export const passportExamples: { id: string; spec: CentralizerSpec }[] = [
     model: 'ЦТГП-178/216', source: 'Руководство ЦТГП, пп. 1.2.2-1.2.7 и таблица 1', casingOD: 178, outerDiameter: 210, innerDiameter: 182, length: 254, frictionCoefficient: 0.2, holdingForceKN: 11.2, bladeAngle: 55,
     note: 'Обозначение 178/216 взято с обложки; размеры - из строки ЦТГП-178/216: наружный диаметр не более 210 мм, внутренний 182 мм. Прочность полимера 90 МПа на сжатие и 60 МПа на изгиб не заменяет восстанавливающее усилие. 11,2 кН - удержание крепления. Радиальная нагрузочная характеристика не указана.' } } },
   ...avroraCentralizers,
+  ...pcCentralizers,
 ];
 
 export function passportWarnings(spec: CentralizerSpec, casingOD: number): string[] {
