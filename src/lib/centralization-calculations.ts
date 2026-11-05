@@ -1,3 +1,4 @@
+import { centralizerCalibration, centralizerDeflection, centralizerModelNotes } from "./centralizer-response";
 // Centralization / eccentricity calculation engine
 import type { WellData, TrajectoryPoint } from "./cementing-calculations";
 import { getCasingID } from "./cementing-calculations";
@@ -189,6 +190,11 @@ export interface CentralizationResult {
   md: number;
   tvd: number;
   zenith: number;
+  calculationAssumptions?: string[];
+  supportEccentricity?: number;
+  lateralLoadKN?: number;
+  spanSagMM?: number;
+  supportOverloaded?: boolean;
   eccentricity: number;        // 0..1 (0 = идеально, 1 = касание стенки)
   standoff: number;            // % (100 = идеально, 0 = касается)
   hasCentralizer: boolean;
@@ -360,8 +366,12 @@ export function calculateCentralization(
     const lateralF = lateralForceWithDLS(wpm, bf, zenith, tensionN, dlsRadPerM);
 
     let eccentricity: number;
+    const support = hasCentralizer && interval?.spec.type === 'spring' && interval.spec.passport?.outerDiameter
+      ? centralizerDeflection(interval.spec, wellData.casingOD, boreDia_mm, lateralF, spanLength, EI) : null;
 
-    if (zenith < 0.5) {
+    if (support && zenith >= 0.5) {
+      eccentricity = Math.min(1, (support.supportMM + support.sagMM) / rc_mm_local);
+    } else if (zenith < 0.5) {
       // Вертикальный участок: основной источник эксцентриситета — допуски трубы (~0.5% овальности).
       const toleranceEcc = rc_mm_local > 0 ? (wellData.casingOD * 0.005) / rc_mm_local : 0.05;
       eccentricity = hasCentralizer
@@ -402,6 +412,11 @@ export function calculateCentralization(
       zenith,
       eccentricity: Math.round(eccentricity * 1000) / 1000,
       standoff: Math.round(standoff * 10) / 10,
+      calculationAssumptions: support && interval ? centralizerModelNotes(interval.spec) : undefined,
+      supportEccentricity: support ? support.supportMM / rc_mm_local : undefined,
+      lateralLoadKN: support?.loadKN,
+      spanSagMM: support?.sagMM,
+      supportOverloaded: support?.exceeded,
       hasCentralizer,
       hasTurbulizer,
       turbulenceMultiplier: turbMult,
@@ -483,8 +498,8 @@ export function autoPlaceCentralizers(
   if (rc_mm <= 0 || EI <= 0) return [];
 
   const targetEcc = 1 - targetStandoff / 100;
-  const F_max_N = spec.restoringForce * 1000;
-  const testFraction = spec.passport?.restoringStandoff ? Math.max(0.01, 1 - spec.passport.restoringStandoff / 100) : 1;
+  const F_max_N = (spec.passport ? centralizerCalibration(spec).forceKN : spec.restoringForce) * 1000;
+  const testFraction = spec.passport ? Math.max(.01, 1-centralizerCalibration(spec).standoff/100) : 1;
   const k_spring = F_max_N / (rc_m * testFraction);
 
   // Геометрический потолок по высоте планки отключён — алгоритм опирается

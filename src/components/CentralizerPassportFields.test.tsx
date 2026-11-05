@@ -28,7 +28,7 @@ it('выбирает паспорт и переносит исходные ед�
     expect(spec.passport?.bladeWidth).toBe(38);
     expect(spec.passport?.springLength).toBe(400);
     expect(spec.restoringForce).toBe(0);
-    expect(host.textContent).toContain('силовой расчёт рессор недоступен');
+    expect(host.textContent).toContain('Оценочный расчёт доступен');
     expect(host.querySelector('optgroup')?.label).toContain('178');
     const item = Array.from(select.options).find(o => o.text === 'ПЦ-2-178/216')!;
     await act(async () => { select.value=item.value; select.dispatchEvent(new Event('change', {bubbles:true})); });

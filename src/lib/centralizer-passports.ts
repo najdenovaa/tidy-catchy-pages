@@ -1,9 +1,11 @@
+import { centralizerModelNotes } from "./centralizer-response";
 import { pcCentralizers } from "./pc-centralizers";
 import { avroraCentralizers } from "./avrora-centralizers";
 import type { CentralizerSpec } from './centralization-calculations';
 
 export interface CentralizerPassport {
   model: string;
+  estimatedRestoringForceKN?: number;
   series?: string;
   boreDiameterRange?: string;
   massKg?: number;
@@ -57,10 +59,14 @@ export function passportWarnings(spec: CentralizerSpec, casingOD: number): strin
     if (typeof value === 'number' && (!Number.isFinite(value) || value < 0)) warnings.push(`Недопустимое числовое значение: ${key}.`);
   }
   if (!p.outerDiameter) warnings.push('Внесите наружный диаметр изделия из паспорта.');
-  if (spec.type === 'spring' && (!p.restoringStandoff || p.restoringStandoff >= 100)) warnings.push('Внесите степень центрирования при испытании усилия: больше 0 и меньше 100%.');
+  if (spec.type === 'spring' && p.restoringStandoff !== undefined && (p.restoringStandoff <= 0 || p.restoringStandoff >= 100)) warnings.push('Внесите степень центрирования при испытании усилия: больше 0 и меньше 100%.');
   if (p.casingOD && Math.abs(p.casingOD - casingOD) > 1) warnings.push(`Паспорт для колонны ${p.casingOD} мм, в скважине ${casingOD} мм. Проверьте совместимость.`);
   if (p.innerDiameter && p.innerDiameter <= casingOD) warnings.push('Внутренний диаметр изделия должен быть больше наружного диаметра трубы.');
   if (p.outerDiameter && p.outerDiameter <= casingOD) warnings.push('Наружный диаметр изделия должен быть больше наружного диаметра трубы.');
-  if (spec.type === 'spring' && !p.restoringForceKgf) warnings.push('Для рессорного центратора требуется восстанавливающее усилие из паспорта или испытаний.');
+
   return warnings;
+}
+
+export function passportAssumptions(spec:CentralizerSpec):string[] {
+ return centralizerModelNotes(spec);
 }

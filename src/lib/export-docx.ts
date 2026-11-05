@@ -839,6 +839,8 @@ function buildCentralizationPage(wellData: WellData, centralizationImages?: Reco
 
   // Build real table from results data
   if (centralizationResults && centralizationResults.length > 0) {
+    const assumptions = [...new Set(centralizationResults.flatMap(r => r.calculationAssumptions ?? []))];
+    if (assumptions.length) content.push(noteParagraph('Оценочный расчёт центрирования. ' + assumptions.join(' ')));
     const avgStandoff = Math.round(centralizationResults.reduce((s, r) => s + r.standoff, 0) / centralizationResults.length * 10) / 10;
     const minStandoff = Math.min(...centralizationResults.map(r => r.standoff));
 

@@ -48,7 +48,9 @@ export function centralizerMesh(spec:CentralizerSpec,casingOD:number,casingID:nu
    const a=b.angle+side*halfAngle+twist;
    const free=spec.type==='spring'?ringRadius+(b.freeRadius-ringRadius)*Math.sin(Math.PI*t):ringRadius+(b.freeRadius-ringRadius)*Math.sin(Math.PI*t)**.3;
    const wall=-g.offset*Math.cos(a)+Math.sqrt(g.boreRadius**2-g.offset**2*Math.sin(a)**2);
-   const radius=(spec.type==='spring'?Math.min(free,Math.max(g.pipeRadius+thick,wall)):free)-(inside?thick:0);
+   const compression=Math.max(0,b.freeRadius-b.loadedRadius);
+   const deformed=free-compression*16*t*t*(1-t)*(1-t);
+   const radius=(spec.type==='spring'?Math.min(deformed,Math.max(g.pipeRadius+thick,wall)):free)-(inside?thick:0);
    return [g.offset+radius*Math.cos(a),radius*Math.sin(a),(t-.5)*bowLength];
   };
   for(let j=0;j<40;j++){const t=j/40,u=(j+1)/40;for(const inside of [false,true])add([vertex(t,-1,inside),vertex(t,1,inside),vertex(u,1,inside),vertex(u,-1,inside)],inside?'edge':selected===b.index?'selected':spec.type==='spring'?'red':'steel');for(const side of [-1,1])add([vertex(t,side,false),vertex(t,side,true),vertex(u,side,true),vertex(u,side,false)],'edge');}
