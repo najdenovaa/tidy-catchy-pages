@@ -108,7 +108,7 @@ export function buildCementingReportExtras(w: WellData, extras: CementingReportE
     const scale = Math.min(620 / figure.width, 650 / figure.height);
     try {
       out.push(h(figure.title));
-      if (extras.displacement && /Замещение|Карта состава/.test(figure.title)) out.push(new Paragraph({ children: extras.displacement.result.fluids.map((fluid, i) =>
+      if (extras.displacement && /Замещение|Карта состава/.test(figure.title)) out.push(new Paragraph({ keepNext: true, children: extras.displacement.result.fluids.map((fluid, i) =>
         new TextRun({ text: "● " + fluid.name + "   ", color: (extras.displacement!.meta.colors[i] ?? "#64748b").replace("#", ""), size: 18 })) }));
       out.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({
         data: Uint8Array.from(atob(figure.dataUrl.split(",")[1]), c => c.charCodeAt(0)),

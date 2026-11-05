@@ -59,7 +59,7 @@ jobs:
           right = title.search_for("УТВЕРЖДАЮ")[0]
           assert right.x0 - left.x0 > 180 and abs(left.y0 - right.y0) < 4, (left, right)
           assert abs(title.rect.width - 595.3) < 2, title.rect
-          model = next((p for p in doc if "3D-кадр" in p.get_text() and p.get_images()), None)
+          model = next((p for p in doc if "Замещение: 3D-кадр t=" in p.get_text() and p.get_image_info()), None)
           assert model is not None, "Missing rendered displacement model page"
           print("Rendered", len(doc), "A4 pages; approval-column separation", round(right.x0 - left.x0), "pt; model page", model.number + 1)
           preview = Image.new("RGB", (1000, 710), "white")

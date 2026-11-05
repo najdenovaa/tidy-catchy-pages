@@ -1206,7 +1206,10 @@ export async function exportToDocx(
         },
         children: buildWOCPage(wellData, slurries),
       },
-      { properties: reportPageProperties(), children: buildCementingReportExtras(wellData, options?.extras) },
+      { properties: reportPageProperties(),
+        headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT,
+          children: [new TextRun({ text: "Расчётные модели и приложения", size: 16, color: "999999" })] })] }) },
+        children: buildCementingReportExtras(wellData, options?.extras) },
       ...(options?.foam ? [{properties:reportPageProperties(),children:foamReportChildren(options.foam)}] : []),
     ],
   });
