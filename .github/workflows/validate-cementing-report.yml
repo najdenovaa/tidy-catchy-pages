@@ -26,6 +26,9 @@ jobs:
       - run: npx tsc --noEmit -p tsconfig.app.json
       - run: npx vitest run
       - run: npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Install independent document renderer
         run: |
           sudo apt-get update -qq

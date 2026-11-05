@@ -62,7 +62,8 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   }
   const b = await exportToDocx(reportWell, ex.drillingFluid, slurries, buffers, ex.displacementFluids, ex.fractureGradient,
     undefined, cent.results, { volumes: volume, pressureResult: pressure }, { extras, returnBlob: true });
-  const bytes = Buffer.from(await b!.arrayBuffer()), zip = await JSZip.loadAsync(bytes);
+  if (!b) throw new Error("DOCX was not generated");
+  const bytes = Buffer.from(await b.arrayBuffer()), zip = await JSZip.loadAsync(bytes);
   const xml = await zip.file("word/document.xml")!.async("text");
   const grids = [...xml.matchAll(/<w:tblGrid>(.*?)<\/w:tblGrid>/g)];
   expect(grids.length).toBeGreaterThan(20);

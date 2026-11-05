@@ -82,6 +82,8 @@ export default function Index() {
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportFile, setExportFile] = useState<{ url: string; name: string } | null>(null);
+  useEffect(() => () => { if (exportFile) URL.revokeObjectURL(exportFile.url); }, [exportFile]);
   const [centralizationReport, setCentralizationReport] = useState<CentralizationReportData | null>(null);
   const [displacementReport, setDisplacementReport] = useState<DisplacementReportData | null>(null);
   const [displacementReportSettings, setDisplacementReportSettings] = useState<DisplacementReportSettings>({ fine: false, rotationRpm: 0, settleMin: 30 });
@@ -349,7 +351,7 @@ export default function Index() {
   };
 
   const handleExportDocx = useCallback(async () => {
-    setExporting(true); setExportError(null); setExportStatus("Пересчёт текущих данных");
+    setExporting(true); setExportError(null); setExportFile(null); setExportStatus("Пересчёт текущих данных");
     try {
       const { exportToDocx } = await import("@/lib/export-docx");
       const snap = normalizeCementingSnapshot({ wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3 });
@@ -384,9 +386,16 @@ export default function Index() {
           ? foamReport : undefined;
       if (foamReport && !foam) extras.warnings!.push("Пеноцементирование: исходные данные изменены; устаревший расчёт не включён.");
       setExportStatus("Формирование Word");
-      await exportToDocx(reportWell, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient,
+      const blob = await exportToDocx(reportWell, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient,
         undefined, cent?.results, { volumes: vol, pressureResult: pressure, materials: mats,
-          flushTimeMin: snap.flushTimeMin, flushVolumeM3: snap.flushVolumeM3 }, { foam, extras });
+          flushTimeMin: snap.flushTimeMin, flushVolumeM3: snap.flushVolumeM3 }, { foam, extras, returnBlob: true });
+      if (!blob) throw new Error("Документ не создан");
+      const file = { url: URL.createObjectURL(blob), name: "Программа-цементирования.docx" };
+      setExportFile(file);
+      // A visible link also gives mobile browsers a fresh user gesture after the calculation.
+      const link = document.createElement("a");
+      link.href = file.url; link.download = file.name; document.body.appendChild(link);
+      link.click(); link.remove();
     } catch (err) {
       setExportError("Не удалось сформировать отчёт: " + (err instanceof Error ? err.message : String(err)));
     } finally { setExporting(false); setExportStatus(""); }
@@ -567,6 +576,7 @@ export default function Index() {
       </header>
 
       {exporting && <p role="status" className="mx-4 my-2 text-sm">{exportStatus}…</p>}
+      {exportFile && !exporting && <p className="mx-4 my-2 text-sm">Отчёт готов. <a className="text-primary underline" href={exportFile.url} download={exportFile.name}>Скачать DOCX</a></p>}
       {exportError && <p role="alert" className="mx-4 my-2 text-sm text-destructive">{exportError}</p>}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabbedNavigation
