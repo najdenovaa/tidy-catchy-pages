@@ -150,6 +150,17 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
                   </select>
                 </label>
                 <label className="flex items-center justify-between gap-2 text-xs">
+                  <span>Удержание свободной воды</span>
+                  <select value={t.stabilizerChoice ?? "auto"} onChange={(e) => set({ stabilizerChoice: e.target.value === "auto" ? undefined : e.target.value as LabTargets["stabilizerChoice"] })} className="h-8 rounded border border-border bg-background px-2 text-xs" data-testid="stabilizer-choice">
+                    <option value="auto">Автоподбор</option>
+                    <option value="metasilicate">Метасиликат натрия безводный (SMS)</option>
+                    <option value="bentonite">Бентонит</option>
+                    <option value="polymer">Полимерный стабилизатор</option>
+                    <option value="none">Без стабилизатора</option>
+                  </select>
+                </label>
+                <p className="text-[10px] text-muted-foreground">SMS: ориентир 0,5-2% BWOC; дозировку можно изменить в таблице. Бентонит увеличивает водопотребность и реологию. Выбор требует лабораторного подтверждения.</p>
+                <label className="flex items-center justify-between gap-2 text-xs">
                   <span>Облегчающая добавка</span>
                   <select
                     value={t.extender ?? "auto"}

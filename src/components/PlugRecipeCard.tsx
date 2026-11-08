@@ -80,6 +80,17 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
                 {(Object.keys(BASE_CEMENTS) as (keyof typeof BASE_CEMENTS)[]).map((k) => <option key={k} value={k}>{BASE_CEMENTS[k].short} — {BASE_CEMENTS[k].note}</option>)}
               </select>
             </label>
+            <label className="flex items-center justify-between gap-2">
+              <span>Стабилизатор свободной воды</span>
+              <select value={user.stabilizerChoice ?? "auto"} onChange={(e) => set("stabilizerChoice", e.target.value === "auto" ? undefined : e.target.value)} className="h-8 rounded border border-border bg-background px-2 text-xs" data-testid="plug-stabilizer-choice">
+                <option value="auto">Автоподбор</option>
+                <option value="metasilicate">Метасиликат натрия безводный (SMS)</option>
+                <option value="bentonite">Бентонит</option>
+                <option value="polymer">Полимерный стабилизатор</option>
+                <option value="none">Без стабилизатора</option>
+              </select>
+            </label>
+            <p className="text-[10px] text-muted-foreground">SMS: 0,5-2% BWOC для лабораторного скрининга. При выборе проверять реологию, время загустевания и седиментацию.</p>
             {FIELDS.map((fd) => (
               <label key={fd.key} className="flex items-center justify-between gap-2">
                 <span>{fd.label}, {fd.unit}</span>
