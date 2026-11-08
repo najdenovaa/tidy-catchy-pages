@@ -16,5 +16,11 @@ it('разделяет цель, результат пролёта и опоры
   await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(slider,'8');slider.dispatchEvent(new Event('input',{bubbles:true}));});
   expect(host.querySelector('tbody')!.textContent).toBe(rows);
   expect(host.querySelector('polygon')!.getAttribute('points')).not.toBe(points);
+  const beforeAxial=host.querySelector('polygon')!.getAttribute('points');
+  const axial=[...host.querySelectorAll('button')].find(b=>b.textContent==='Вид вдоль оси')!;
+  await act(async()=>axial.click());
+  expect(host.querySelector('polygon')!.getAttribute('points')).not.toBe(beforeAxial);
+  expect(host.querySelector('tbody')!.textContent).toBe(rows);
+
  }finally{await act(async()=>root.unmount());host.remove();}
 });

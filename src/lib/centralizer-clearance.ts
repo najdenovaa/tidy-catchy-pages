@@ -13,7 +13,7 @@ export function inspectCentralizer(spec: CentralizerSpec, casingOD: number, bore
     const wallRadius = -offset * Math.cos(angle) + Math.sqrt(boreRadius ** 2 - offset ** 2 * Math.sin(angle) ** 2);
     const interference = Math.max(0, freeRadius - wallRadius);
     const loadedRadius = spec.type === 'spring' ? Math.max(pipeRadius, Math.min(freeRadius, wallRadius)) : freeRadius;
-    return { index:i+1, angle, wallRadius, freeRadius, loadedRadius, compression:spec.type === 'spring' ? interference : 0, gap:wallRadius-loadedRadius, interference };
+    return { index:i+1, angle, wallRadius, freeRadius, loadedRadius, mountingCompression:spec.type === 'spring' ? Math.max(0,freeRadius-boreRadius) : 0, loadCompression:spec.type === 'spring' ? interference-Math.max(0,freeRadius-boreRadius) : 0, compression:spec.type === 'spring' ? interference : 0, gap:wallRadius-loadedRadius, interference };
   });
   return { boreRadius, pipeRadius, offset, length:p.length, minPipeGap:boreRadius-pipeRadius-offset, maxPipeGap:boreRadius-pipeRadius+offset,
     annularArea:Math.PI*(boreRadius**2-pipeRadius**2), blades,

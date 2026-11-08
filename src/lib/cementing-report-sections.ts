@@ -68,8 +68,8 @@ export function buildCementingReportExtras(w: WellData, extras: CementingReportE
       out.push(h("Контрольное сечение оснастки на MD " + f(x.result.md, 1) + " м"),
         p("Номинальный проход модели центрирования. Зенит " + f(x.result.zenith, 1) + "°, азимут " + f(x.azimuth, 1) + "°. Диаметр прохода " + f(x.bore) +
           " мм; смещение на опоре " + f(g.offset) + " мм; зазор труба-стенка " + f(g.minPipeGap) + "-" + f(g.maxPipeGap) + " мм."),
-        reportDataTable(["Планка", "Радиус до сжатия, мм", "После сжатия, мм", "Сжатие, мм", "Зазор / конфликт, мм"], g.blades.map(b =>
-          [b.index, f(b.freeRadius), f(b.loadedRadius), f(b.compression), f(b.gap)])),
+        reportDataTable(["Планка", "Монтаж, мм", "От нагрузки, мм", "Сжатие, мм", "Зазор / конфликт, мм"], g.blades.map(b =>
+          [b.index, f(b.mountingCompression), f(b.loadCompression), f(b.compression), f(b.gap)])),
         p("Отрицательный зазор означает геометрический конфликт. Прогиб рессоры на опоре не включает прогиб трубы между опорами."),
         ...(x.result.calculationAssumptions ?? []).map(p));
     }
