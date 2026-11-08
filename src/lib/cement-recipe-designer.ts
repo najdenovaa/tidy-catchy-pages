@@ -247,7 +247,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   if (wc > WC_NEAT_MAX + (0.4 * silica) / 100) {
     // облегчённый: бентонит (до 14%, при выборе «только бентонит» — до 16%), далее микросферы
     const bentMax = o.extender === "bentonite" ? 16 : 14;
-    if (o.extender !== "microspheres") {
+    if (o.extender !== "microspheres" && !(stabilizerChoice === "auto" && rho <= 1.65) && !["metasilicate", "polymer", "none"].includes(stabilizerChoice)) {
       for (bent = 0.5; bent <= bentMax; bent += 0.5) { wc = solve(); if (wc <= wcMax(bent)) break; }
     } else bent = bentMax + 1;
     if (bent > bentMax && o.extender === "bentonite") {
@@ -359,7 +359,6 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   const isPolymer = chosenStabilizer === "polymer" && stabDose > 0;
   // Не приписываем SMS/полимеру гарантированное устранение свободной воды по условной корреляции.
   const stabEff = 0;
-  const needStab = false;
   if (isSMS) add({ role: "stabilizer", name: "Метасиликат натрия безводный (Na₂SiO₃, SMS)", purpose: "Стабилизация водорасширенной системы; свободную воду и седиментацию проверить лабораторно", pctBwoc: stabDose, sg: 2.61 });
   else if (isPolymer) add({ role: "stabilizer", name: "Полимерный стабилизатор (велановая камедь, марку уточнить)", purpose: "Стабилизация суспензии; свободную воду, реологию и совместимость проверить лабораторно", pctBwoc: stabDose, sg: 1.5 });
   if (isSMS) {
@@ -563,6 +562,7 @@ export function defaultTargets(c: DesignConditions): Required<Omit<LabTargets, "
     expansion: c.isTail && c.coversPay,
     fiber: c.lossMarginMPa !== null && c.lossMarginMPa < 1.5,
     extender: "auto",
+    stabilizerChoice: "auto",
   };
 }
 
