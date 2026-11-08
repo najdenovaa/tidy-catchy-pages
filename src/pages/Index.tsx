@@ -1,3 +1,5 @@
+import { centralizerInventory } from "@/lib/cementing-equipment";
+import { centralizerMaterialGeometryKey } from "@/lib/materials-equipment-inventory";
 import BasketStopCard from "@/components/BasketStopCard";
 import { resolveCentralizationReport, displacementReportKey, runDisplacementForReport, type CentralizationReportData, type DisplacementReportData, type DisplacementReportSettings, type CementingReportExtras } from "@/lib/cementing-report-data";
 import { buildBasketStopReportSvgs, buildCementingReportSvgs, buildHydraulicReportSvgs, buildWellReportSvgs, rasterizeReportSvgs } from "@/lib/cementing-report-figures";
@@ -91,6 +93,15 @@ export default function Index() {
   const [foamReport, setFoamReport] = useState<FoamReportBundle | null>(null);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
   const [centralizerIntervals, setCentralizerIntervals] = useState<import("@/lib/centralization-calculations").CentralizerInterval[]>([]);
+  const handleCentralizationReport=useCallback((data:CentralizationReportData)=>{
+    setCentralizationReport(data);
+    if(!data.calculated)return;
+    const intervals=data.mode==='auto'&&data.autoResults&&data.autoSpec?data.autoResults.map((x,i)=>({id:`materials-${i}`,fromMD:x.fromMD,toMD:x.toMD,centralizersPerJoint:x.centralizersPerJoint,jointLength:data.jointLength??12,spec:data.autoSpec!})):data.intervals;
+    setWellData(w=>{
+      const centralizerMaterials={geometryKey:centralizerMaterialGeometryKey(w),items:centralizerInventory(w.casingDepthMD,intervals)};
+      return JSON.stringify(w.centralizerMaterials)===JSON.stringify(centralizerMaterials)?w:{...w,centralizerMaterials};
+    });
+  },[setWellData]);
   const [saving, setSaving] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [loadingSavedCalc, setLoadingSavedCalc] = useState(false);
@@ -302,8 +313,8 @@ export default function Index() {
   const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.displacementFluids?.[0]?.compressionCoeff ?? 1.0) : null, [calcSnapshot]);
 
   const materials = useMemo(
-    () => calcSnapshot && volumes ? calculateMaterials(calcSnapshot.slurries, calcSnapshot.buffers, calcSnapshot.wellData) : null,
-    [calcSnapshot, volumes]
+    () => calcSnapshot && volumes ? calculateMaterials(calcSnapshot.slurries, calcSnapshot.buffers, {...calcSnapshot.wellData,equipment:wellData.equipment,centralizerMaterials:wellData.centralizerMaterials}) : null,
+    [calcSnapshot, volumes, wellData.equipment, wellData.centralizerMaterials]
   );
 
   // Профиль центрирования → гидравлика (эксцентриситет по глубине)
@@ -613,7 +624,6 @@ export default function Index() {
           <TabsContent value="input">
             <div data-tab-content="input">
               <InputSection
-                centralizerIntervals={centralizerIntervals}
                 wellData={wellData}
                 onWellDataChange={setWellData}
                 drillingFluid={drillingFluid}
@@ -790,11 +800,7 @@ export default function Index() {
 
           <TabsContent value="materials">
             <div data-tab-content="materials">
-              {materials ? (
-                <MaterialsSection materials={materials} />
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
-              )}
+              <MaterialsSection materials={materials} wellData={wellData} onWellDataChange={setWellData} />
             </div>
           </TabsContent>
 
@@ -944,13 +950,13 @@ export default function Index() {
             <TabsContent value="centralization" forceMount>
               <div data-tab-content="centralization">
                 <CentralizationSection
-                  onReportChange={setCentralizationReport}
+                  onReportChange={handleCentralizationReport}
                   wellData={wellData}
                   mudDensity={drillingFluid.density}
                   fluidPV={drillingFluid.rheology?.pv || 25}
                   fluidYP={drillingFluid.rheology?.yp || 25}
                   flowRateLps={slurries[0]?.flowRateSteps?.[0]?.rateLps || 10}
-                  onResultsChange={setCentralizationResults}
+                  onResultsChange={results=>{setCentralizationResults(results);if(!results)setWellData(w=>({...w,centralizerMaterials:undefined}));}}
                   onIntervalsChange={setCentralizerIntervals}
                   externalIntervals={externalCentralizers}
                 />

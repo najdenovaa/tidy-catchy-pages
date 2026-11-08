@@ -1,3 +1,4 @@
+import { equipmentMaterialInventory, type EquipmentMaterialItem, type CalculatedCentralizerMaterials } from "./materials-equipment-inventory";
 import { evaluateBasketStop, type BasketStopResult, type StopColumnSegment } from "./cement-basket-stop";
 import { materialLabel, type ProductIdentity } from "./cement-product-catalog";
 import type { EquipmentSelection } from "./cementing-equipment";
@@ -111,6 +112,7 @@ export interface ReservoirLayer {
 
 export interface WellData {
   equipment?: EquipmentSelection[];
+  centralizerMaterials?: CalculatedCentralizerMaterials;
   logistics?: import("./cement-logistics").LogisticsSettings;
   basketEvaluationMin?: number;
   wellDepthMD: number;
@@ -351,7 +353,7 @@ export interface SafeTimeResults {
 export interface MaterialSummary {
   cementItems: { name: string; amount: number; unit: string }[];
   bufferItems: { name: string; amount: number; unit: string }[];
-  equipmentItems: { name: string; amount: number; unit: string }[];
+  equipmentItems: EquipmentMaterialItem[];
   waterForBuffers: number; // м³
   waterForCement: number; // м³
   waterReserve: number; // м³ (10%)
@@ -1145,11 +1147,7 @@ export function calculateMaterials(
   return {
     cementItems,
     bufferItems,
-    equipmentItems: [
-      { name: "Башмак БКМ", amount: 1, unit: "шт" },
-      { name: "Клапан ЦКОД", amount: 1, unit: "шт" },
-      { name: "Пробка продавочная", amount: 1, unit: "шт" },
-    ],
+    equipmentItems: equipmentMaterialInventory(wellData),
     waterForBuffers,
     waterForCement,
     waterReserve,
