@@ -53,6 +53,7 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
     ex.fractureGradient, volume.displacementVolumeWithCompression);
   const svg = [...buildHydraulicReportSvgs(pressure.points), ...buildWellReportSvgs(reportWell, slurries), ...buildCementingReportSvgs(reportWell, extras)];
   expect(svg.some(f => f.title.includes("Сечение через вершины"))).toBe(true);
+  expect(svg.some(f => f.title.includes("Продольный профиль планки"))).toBe(true);
   expect(svg.some(f => f.title.includes("конец продавки"))).toBe(true);
   expect(svg.filter(f => f.title.startsWith("Замещение: 3D-кадр")).length).toBeGreaterThanOrEqual(2);
   for (const f of svg) expect(f.svg).not.toMatch(/NaN|Infinity/);

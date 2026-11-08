@@ -194,6 +194,7 @@ export interface CentralizationResult {
   supportEccentricity?: number;
   lateralLoadKN?: number;
   spanSagMM?: number;
+  supportSpanM?: number;
   supportOverloaded?: boolean;
   eccentricity: number;        // 0..1 (0 = идеально, 1 = касание стенки)
   standoff: number;            // % (100 = идеально, 0 = касается)
@@ -416,6 +417,7 @@ export function calculateCentralization(
       supportEccentricity: support ? support.supportMM / rc_mm_local : undefined,
       lateralLoadKN: support?.loadKN,
       spanSagMM: support?.sagMM,
+      supportSpanM: hasCentralizer ? spanLength : undefined,
       supportOverloaded: support?.exceeded,
       hasCentralizer,
       hasTurbulizer,

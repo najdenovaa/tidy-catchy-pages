@@ -1,3 +1,4 @@
+import { centralizerShape, bladeCurve, bladeSection, bladeRadius, displayCentralizerPoint } from "./centralizer-shape";
 import * as THREE from "three";
 import { centralizerMesh, surveyTransform, type Vec3 } from "./centralizer-mesh";
 import { pathPoints, frames } from "./displacement-geometry";
@@ -6,7 +7,7 @@ import { getEffectiveTrajectory, type WellData, type SlurryInput } from "./cemen
 import type { CementingReportExtras, ReportFigure } from "./cementing-report-data";
 export interface ReportSvg { title: string; svg: string; width: number; height: number; }
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-interface Polygon { v: number[][]; color: string; }
+interface Polygon { v: number[][]; color: string; opacity?: number; }
 function sceneSvg(title: string, polygons: Polygon[], width: number, height: number, lines: number[][][] = []) {
   const points = [...polygons.flatMap(x => x.v), ...lines.flat()];
   const xs = points.map(x => x[0]), ys = points.map(x => x[1]);
@@ -17,7 +18,7 @@ function sceneSvg(title: string, polygons: Polygon[], width: number, height: num
   const sorted = polygons.slice().sort((a, b) => a.v.reduce((s, v) => s + v[2], 0) / a.v.length - b.v.reduce((s, v) => s + v[2], 0) / b.v.length);
   return '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height +
     '"><rect width="100%" height="100%" fill="#101b2c"/><text x="24" y="28" fill="#e2e8f0" font-size="15" font-family="sans-serif">' + esc(title) + '</text>' +
-    sorted.map(x => '<polygon points="' + x.v.map(at).join(" ") + '" fill="' + x.color + '" stroke="' + x.color + '" stroke-width=".3"/>').join("") +
+    sorted.map(x => '<polygon points="' + x.v.map(at).join(" ") + '" fill="' + x.color + '" stroke="' + x.color + '" stroke-width=".3" opacity="' + (x.opacity ?? 1) + '"/>').join("") +
     lines.map(v => '<polyline points="' + v.map(at).join(" ") + '" fill="none" stroke="#38bdf8" stroke-width="1" stroke-dasharray="6 4"/>').join("") +
     '<text x="24" y="' + (height - 22) + '" fill="#cbd5e1" font-size="12" font-family="sans-serif">Расчётный 3D-вид; радиальные размеры увеличены для наглядности</text></svg>';
 }
@@ -25,11 +26,9 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
   const images: ReportSvg[] = [];
   if (extras.centralization) for (const s of centralizerReportSamples(w, extras.centralization)) {
     if (!s.geometry) continue;
-    const g = s.geometry, gain = 4;
+    const g = centralizerShape(s.spec,w.casingOD,s.bore,s.result.supportEccentricity ?? s.result.eccentricity)! , gain = 6;
     const camera = (v: Vec3) => {
-      const x = v[0] - g.offset, y = v[1], r = Math.hypot(x, y);
-      const rr = r <= g.pipeRadius ? r : g.pipeRadius + (r - g.pipeRadius) * gain;
-      const world = surveyTransform([g.offset * gain + (r ? x * rr / r : 0), r ? y * rr / r : 0, v[2]], s.result.zenith, s.azimuth);
+      const world = surveyTransform(displayCentralizerPoint(g,v,gain), s.result.zenith, s.azimuth);
       const a = -s.azimuth * Math.PI / 180, p = 12 * Math.PI / 180;
       const rx = world[0] * Math.cos(a) - world[1] * Math.sin(a), ry = world[0] * Math.sin(a) + world[1] * Math.cos(a);
       return [rx, world[2] * Math.cos(p) - ry * Math.sin(p), ry * Math.cos(p) + world[2] * Math.sin(p)];
@@ -39,29 +38,30 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
       const v = face.points.map(camera), a = new THREE.Vector3().fromArray(v[0]), b = new THREE.Vector3().fromArray(v[1]), c = new THREE.Vector3().fromArray(v[2]);
       const n = b.sub(a).cross(c.sub(a)).normalize(), light = Math.abs(n.dot(new THREE.Vector3(-.45, .45, .77)));
       const grey = Math.round(65 + 130 * light);
-      return { v, color: face.kind === "red" ? "rgb(" + Math.round(130 + 115 * light) + ",20,38)" :
+      return { v, opacity: face.part === "pipe" ? .18 : 1, color: face.kind === "red" ? "rgb(" + Math.round(130 + 115 * light) + ",20,38)" :
         face.kind === "edge" ? "rgb(52,66,82)" : "rgb(" + grey + "," + (grey + 5) + "," + Math.min(255, grey + 13) + ")" };
     });
-    const free = g.blades.map(b => Array.from({ length: 41 }, (_, i) => {
-      const t = i / 40, ring = (s.spec.passport?.ringOD ?? w.casingOD + 6) / 2;
-      const r = ring + (b.freeRadius - ring) * Math.sin(Math.PI * t);
-      return camera([g.offset + r * Math.cos(b.angle), r * Math.sin(b.angle), (t - .5) * (s.spec.passport?.springLength ?? g.length * .72)]);
-    }));
-    const title = "Центратор на MD " + s.result.md.toFixed(1) + " м; зенит " + s.result.zenith.toFixed(1) + "°; прогиб ×4";
+    const free = g.blades.map(b => bladeCurve(g,b,'free').map(camera));
+    const title = "Центратор на MD " + s.result.md.toFixed(1) + " м; зенит " + s.result.zenith.toFixed(1) + "°; прогиб ×6";
     images.push({ title, width: 720, height: 650, svg: sceneSvg(title, polygons, 720, 650, free) });
     const scale = 120 / g.boreRadius, cy = 175, cx = 260;
     const bladeLines = g.blades.map(b => {
-      const x = cx + (g.offset + b.loadedRadius * Math.cos(b.angle)) * scale, y = cy + b.loadedRadius * Math.sin(b.angle) * scale;
-      return '<line x1="' + (cx + (g.offset + g.pipeRadius * Math.cos(b.angle)) * scale) + '" y1="' + (cy + g.pipeRadius * Math.sin(b.angle) * scale) +
-        '" x2="' + x + '" y2="' + y + '" stroke="#df1739" stroke-width="5"/>';
+      const points=(state:'loaded'|'free')=>bladeSection(g,b,state).map(v=>(cx-v[1]*scale).toFixed(2)+','+(cy+v[0]*scale).toFixed(2)).join(' ');
+      return '<polygon points="'+points('free')+'" fill="none" stroke="#0891b2" stroke-dasharray="4 3"/>'+ '<polygon points="'+points('loaded')+'" fill="#df1739" stroke="#df1739"/>';
     }).join("");
     images.push({ title: "Сечение через вершины рессор, MD " + s.result.md.toFixed(1) + " м", width: 720, height: 390,
       svg: '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="390"><rect width="720" height="390" fill="#fff"/>' +
-        '<circle cx="' + cx + '" cy="' + cy + '" r="120" fill="#e2e8f0" stroke="#64748b"/>' + bladeLines +
-        '<circle cx="' + (cx + g.offset * scale) + '" cy="' + cy + '" r="' + (g.pipeRadius * scale) + '" fill="#334155"/>' +
+        '<circle cx="' + cx + '" cy="' + cy + '" r="120" fill="#e2e8f0" stroke="#64748b"/>' +
+        '<circle cx="' + cx + '" cy="' + (cy + g.offset * scale) + '" r="' + (g.pipeRadius * scale) + '" fill="#334155"/>' + bladeLines +
         '<text x="430" y="100" font-family="sans-serif" font-size="15">Зазоры труба-стенка:</text><text x="430" y="130" font-family="sans-serif" font-size="17">' +
         g.minPipeGap.toFixed(2) + ' / ' + g.maxPipeGap.toFixed(2) + ' мм</text><text x="430" y="175" font-family="sans-serif" font-size="15">Смещение ' + g.offset.toFixed(2) +
         ' мм</text><text x="24" y="355" font-family="sans-serif" font-size="13">Размеры сечения в одном масштабе. Значения по каждой рессоре - в таблице.</text></svg>' });
+    if(g.spring){
+      const b=g.blades.reduce((a,b)=>a.compression>b.compression?a:b);
+      const curve=(state:'free'|'installed'|'loaded')=>Array.from({length:65},(_,i)=>(40+i/64*620).toFixed(2)+','+(255-(bladeRadius(g,b,i/64,state)-g.pipeRadius)*185/Math.max(1,b.freeRadius-g.pipeRadius)).toFixed(2)).join(' ');
+      images.push({title:'Продольный профиль планки '+b.index+', MD '+s.result.md+' м',width:720,height:370,svg:'<svg xmlns="http://www.w3.org/2000/svg" width="720" height="370"><rect width="720" height="370" fill="white"/><rect x="30" y="257" width="640" height="10" fill="#64748b"/>'+ ['free','installed','loaded'].map((state,i)=>'<polyline points="'+curve(state as 'free'|'installed'|'loaded')+'" fill="none" stroke="'+['#0891b2','#94a3b8','#e11d48'][i]+'" stroke-width="3"'+(i<2?' stroke-dasharray="6 4"':'')+'/>').join('')+'<text x="30" y="28" font-size="15" font-family="sans-serif">Свободная / монтажная / нагруженная форма планки '+b.index+'</text><text x="30" y="300" font-size="13" font-family="sans-serif">Монтаж: '+b.mountingCompression.toFixed(2)+' мм; от нагрузки: '+b.loadCompression.toFixed(2)+' мм; всего: '+b.compression.toFixed(2)+' мм</text><text x="30" y="335" font-size="12" font-family="sans-serif">Осевой и поперечный масштабы различаются для наглядности.</text></svg>'});
+    }
+
   }
   const data = extras.displacement;
   if (data?.result.snapshots.length) {
