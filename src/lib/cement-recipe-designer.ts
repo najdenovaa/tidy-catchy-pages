@@ -693,5 +693,5 @@ export function designToTargets(c: DesignConditions, user?: LabTargets): TargetD
   }
   if (actions.length) design = { ...design, rationale: [...design.rationale, `Корректировка под требования технолога: ${actions.join("; ")}.`] };
   rows = complianceOf(design, t);
-  return { design, targets: t, compliance: rows, allOk: rows.every((r) => r.ok !== false), actions };
+  return { design, targets: t, compliance: rows, allOk: rows.every((r) => r.ok !== false) && !design.components.some(c => c.productId), actions };
 }

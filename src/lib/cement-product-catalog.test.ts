@@ -50,3 +50,12 @@ describe('commercial cement products', () => {
     expect(protocol).toContain('Другой изготовитель'); expect(protocol).toContain('F26');
   });
 });
+
+it('keeps fingerprints compatible with saved pre-catalog RIR laboratory results', () => {
+  const context = { bhctC: 48, bhstC: 60, requiredMin: 180 };
+  const d = createRirLab('cement', designRirComposition('cement', { ...context, requiredWorkLifeMin: 180, volumeM3: 3, targetDensity: 1.85 }, 2)!.primary, context);
+  const legacy = JSON.stringify([d.kind, d.ingredients.map(x => [x.name, x.batch, x.role, x.parts, x.sg]), d.bhctC, d.bhstC, d.pressureMPa]);
+  expect(recipeKey(d)).toBe(legacy);
+  d.ingredients[1].manufacturer = 'IG chemical / Айсберг';
+  expect(recipeKey(d)).not.toBe(legacy);
+});

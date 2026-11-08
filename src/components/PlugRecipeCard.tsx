@@ -59,7 +59,7 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
       <CardHeader className="py-3 px-4">
         <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
           <FlaskConical className="w-4 h-4" /> Рецептура раствора для моста
-          <Badge variant={res.allOk ? "default" : "destructive"} className="text-[10px]">{res.compliance.some(c => c.ok === null && c.key !== "rho") ? "Требуется лабораторная проверка" : res.allOk ? "требования выполнены (прогноз)" : `не выполнено: ${res.compliance.filter((c) => c.ok === false).length}`}</Badge>
+          <Badge variant={res.compliance.some(c => c.ok === null && c.key !== "rho") ? "outline" : res.allOk ? "default" : "destructive"} className="text-[10px]">{res.compliance.some(c => c.ok === null && c.key !== "rho") ? "Требуется лабораторная проверка" : res.allOk ? "требования выполнены (прогноз)" : `не выполнено: ${res.compliance.filter((c) => c.ok === false).length}`}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0 space-y-3 text-xs">

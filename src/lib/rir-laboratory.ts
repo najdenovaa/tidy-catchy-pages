@@ -47,7 +47,12 @@ export function recipeMass(d: RirLabDraft) {
     rows: d.ingredients.map(x => ({ ...x, kgPerM3: valid ? x.parts * 1000 / litres : NaN })) };
 }
 export function recipeKey(d: RirLabDraft): string {
-  return JSON.stringify([d.kind, d.ingredients.map(x => [x.name, x.batch, x.role, x.parts, x.sg, x.productId, x.manufacturer, x.technicalSpec, x.sourceUrl, x.sgAssumed]),
+  return JSON.stringify([d.kind, d.ingredients.map(x => {
+    const base = [x.name, x.batch, x.role, x.parts, x.sg];
+    const identity = [x.productId, x.manufacturer, x.technicalSpec, x.sourceUrl, x.sgAssumed];
+    // Preserve fingerprints of saved pre-catalog laboratory records with no product identity.
+    return identity.some(v => v !== undefined && v !== false) ? [...base, ...identity] : base;
+  }),
     d.bhctC, d.bhstC, d.pressureMPa]);
 }
 export function createRirLab(kind: CompositionKind, design: CompositionDesign, c: RirLabContext): RirLabDraft {
