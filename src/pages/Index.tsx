@@ -952,6 +952,7 @@ export default function Index() {
             <TabsContent value="centralization" forceMount>
               <div data-tab-content="centralization">
                 <CentralizationSection
+                  onWellDataChange={setWellData}
                   onReportChange={handleCentralizationReport}
                   wellData={wellData}
                   mudDensity={drillingFluid.density}

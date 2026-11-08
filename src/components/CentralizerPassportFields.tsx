@@ -16,7 +16,7 @@ export default function CentralizerPassportFields({ spec, casingOD, onChange }: 
   const fields: [keyof CentralizerPassport, string][] = [
     ['casingOD', 'Диаметр обсадной колонны, мм'], ['boreDiameter', 'Диаметр ствола по паспорту, мм'],
     ['outerDiameter', 'Наружный диаметр по рессорам / лопастям, мм'], ['innerDiameter', 'Внутренний диаметр изделия, мм'],
-    ['massKg', 'Масса по паспорту, кг'], ['length', 'Длина / высота изделия, мм'], ['springLength', 'Длина рессоры, мм'], ['bladeWidth', 'Ширина рессоры / лопасти, мм'], ['ringOD', 'Наружный диаметр по кольцам, мм'], ['ringLength', 'Длина кольца, мм'], ['materialThickness', 'Толщина рессоры, мм'], ['startingForceKgf', 'Пусковое усилие, не более, кгс'],
+    ['massKg', 'Масса по паспорту, кг'], ['length', 'Длина / высота изделия, мм'], ['springLength', 'Длина рессоры, мм'], ['bladeWidth', 'Ширина рессоры / лопасти, мм'], ['ringOD', 'Наружный диаметр по кольцам, мм'], ['ringLength', 'Длина кольца, мм'], ['materialThickness', 'Толщина рессоры, мм'], ['startingForceKgf', 'Пусковое усилие, не более, кгс'], ['runningForceKgf', 'Сопротивление движению по испытанию, кгс'],
     ['holdingForceKN', 'Удерживающее усилие крепления, кН'], ['frictionCoefficient', 'Коэффициент трения материала'],
   ];
   if (spec.type === 'spring') fields.push(['restoringForceKgf', p?.forceLimitAmbiguous ? 'Восстанавливающее усилие по таблице, кгс' : 'Восстанавливающее усилие, не менее, кгс'], ['restoringStandoff', 'Степень центрирования при испытании, %']);

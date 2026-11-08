@@ -35,6 +35,7 @@ it("uses all physical inputs to invalidate a cached displacement run", () => {
 });
 it("exports a complete report with a full-width A4 grid, actual clearances and displacement frames", async () => {
   const cent = resolveCentralizationReport({
+    running:{mudDensity:ex.drillingFluid.density,pv:25,yp:5,frictionCased:.25,frictionOpenhole:.35},
     mode: "manual", calculated: true, results: [], turbPoints: [{ id: "t1", md: 110, bladesCount: 4, bladeAngle: 45, bladeHeight: 12 }],
     intervals: [{ id: "c1", fromMD: 60, toMD: 250, jointLength: 12, centralizersPerJoint: 1, spec: {
       type: "spring", bladesCount: 6, bladeHeight: 40, restoringForce: 4, maxAxialLoad: 2,
@@ -52,6 +53,7 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   const pressure = calculatePressureProfile(reportWell, slurries, buffers, ex.drillingFluid, ex.displacementFluids,
     ex.fractureGradient, volume.displacementVolumeWithCompression);
   const svg = [...buildHydraulicReportSvgs(pressure.points), ...buildWellReportSvgs(reportWell, slurries), ...buildCementingReportSvgs(reportWell, extras)];
+  expect(svg.some(f => f.title.includes("веник по глубине башмака"))).toBe(true);
   expect(svg.some(f => f.title.includes("Сечение через вершины"))).toBe(true);
   expect(svg.some(f => f.title.includes("Продольный профиль планки"))).toBe(true);
   expect(svg.some(f => f.title.includes("конец продавки"))).toBe(true);
@@ -82,6 +84,8 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   expect(xml).toContain("Тестовый центратор 168");
   expect(xml).toContain("Зазор / конфликт, мм");
   expect(xml).toContain("Потрубная ведомость");
+  expect(xml).toContain("Спуск колонны: веник и контроль нагрузок");
+  expect(xml).toContain("Предел крюка, кН");
   expect(xml).toContain("Замещение в затрубье");
   expect(xml).toContain("Контрольный результат");
   expect(xml).toContain("AVRORA 141-SG");

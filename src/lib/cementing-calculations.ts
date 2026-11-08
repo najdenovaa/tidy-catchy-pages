@@ -111,6 +111,7 @@ export interface ReservoirLayer {
 }
 
 export interface WellData {
+  runningSettings?: import("./casing-running-analysis").CasingRunningSettings;
   equipment?: EquipmentSelection[];
   centralizerMaterials?: CalculatedCentralizerMaterials;
   logistics?: import("./cement-logistics").LogisticsSettings;

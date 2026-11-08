@@ -30,6 +30,8 @@ export interface CentralizerPassport {
   restoringForceKgf?: number;
   restoringStandoff?: number;
   startingForceKgf?: number;
+  /** Tested running force, distinct from insertion/starting and restoring forces. */
+  runningForceKgf?: number;
   holdingForceKN?: number;
   frictionCoefficient?: number;
   bladeAngle?: number;
