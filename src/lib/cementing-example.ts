@@ -126,7 +126,7 @@ const raw = {
   ],
   "slurries": [
     {
-      "name": "Облегчённый ПЦТ-III-Об",
+      "name": "Облегчённый раствор на ПЦТ I-G",
       "density": 1.45,
       "topDepthMD": 350,
       "rheology": {
@@ -147,7 +147,7 @@ const raw = {
       "washVolume": 0
     },
     {
-      "name": "ПЦТ-I-G нормальный",
+      "name": "Раствор на ПЦТ I-G",
       "density": 1.9,
       "topDepthMD": 2200,
       "rheology": {

@@ -159,6 +159,21 @@ export const BASE_CEMENTS: Record<Exclude<BaseCementKey, "auto">, BaseCementSpec
   cold: { name: "Тампонажный цемент для низких температур (быстротвердеющий, ЦТН)", short: "ЦТН (холодный)", sg: 3.05, tt: 0.6, str: 1.5, wcNeat: 0.46, tMin: -5, tMax: 25, note: "мёрзлые породы и холодные интервалы −5…25 °C" },
 };
 
+/** Factory lightweight blends are not raw binders for a component recipe.
+ * Keep their specification only for compatibility with explicitly saved jobs. */
+export const RECIPE_BASE_CEMENT_KEYS = (Object.keys(BASE_CEMENTS) as (keyof typeof BASE_CEMENTS)[])
+  .filter(key => key !== "IIIOb");
+
+/** Replace only built-in material labels; retain a technologist's custom batch name. */
+export function recipeSlurryName(s: Pick<SlurryInput, "name" | "density" | "labTargets">, baseShort?: string): string {
+  const key = s.labTargets?.baseCement;
+  const base = baseShort ?? BASE_CEMENTS[key && key !== "auto" && key in BASE_CEMENTS ? key : "G"].short;
+  const automatic = /^(?:Облегч[её]нный ПЦТ[- ]III[- ]Об|ПЦТ[- ]I[- ]G нормальный|(?:Облегч[её]нный |Утяжел[её]нный )?раствор на ПЦТ .+)$/i.test(s.name.trim());
+  if (!automatic) return s.name;
+  const rho = s.density > 20 ? s.density / 1000 : s.density;
+  return `${rho < 1.7 ? "Облегчённый раствор" : rho > 2 ? "Утяжелённый раствор" : "Раствор"} на ${base}`;
+}
+
 /** Управляемые параметры подбора (задаются требованиями технолога или итерациями подбора). */
 export interface DesignOptions {
   products?: ProductChoices;
@@ -208,6 +223,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   const rho = c.densityGcm3;
   const warnings: string[] = [];
   const rationale: string[] = [];
+  if (baseKey === "IIIOb") warnings.push("Сохранена готовая смесь ПЦТ III-Об. Для собственной рецептуры выберите базовый цемент G или ПЦТ I-50 и отдельные добавки; состав готовой смеси определяется паспортом изготовителя.");
   if (o.baseCement && o.baseCement !== "auto") {
     rationale.push(`Базовый цемент выбран технологом: ${base.short} (${base.note}).`);
     const tLo = Math.min(c.tTopC, c.bhctC), tHi = Math.max(c.tBottomC, c.bhctC);
@@ -530,6 +546,8 @@ export function applyDesignToSlurry(s: SlurryInput, d: SlurryDesign, keepMeasure
   const r = d.predicted.rheo27;
   return {
     ...s,
+    name: recipeSlurryName(s, d.baseCementShort),
+    labTargets: { ...s.labTargets, baseCement: (Object.keys(BASE_CEMENTS) as (keyof typeof BASE_CEMENTS)[]).find(key => BASE_CEMENTS[key].short === d.baseCementShort) ?? s.labTargets?.baseCement },
     additives,
     cementSG: d.cementSG,
     waterRatio: Math.round(d.waterToBlend * 1000) / 1000,

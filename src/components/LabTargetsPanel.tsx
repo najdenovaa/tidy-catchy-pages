@@ -5,10 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FlaskConical, ArrowRightLeft, RotateCcw } from "lucide-react";
 import { conditionsAll, type ProtocolInput } from "@/lib/lab-protocol";
-import { designToTargets, defaultTargets, applyDesignToSlurry, BASE_CEMENTS, type LabTargets, type TargetDesignResult } from "@/lib/cement-recipe-designer";
+import { designToTargets, defaultTargets, applyDesignToSlurry, BASE_CEMENTS, RECIPE_BASE_CEMENT_KEYS, recipeSlurryName, type LabTargets, type TargetDesignResult } from "@/lib/cement-recipe-designer";
 import type { SlurryInput } from "@/lib/cementing-calculations";
 import RecipeDoseTable from "./RecipeDoseTable";
-import ReadyCementAlternatives from "./ReadyCementAlternatives";
 
 interface Props {
   input: ProtocolInput;
@@ -109,7 +108,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
           <div key={`${s.name}-${i}`} className="rounded-lg border border-border/70 p-3 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="font-medium text-sm">
-                Раствор {i + 1} «{s.name}» · {f(s.density, 2)} г/см³ · BHCT {f(conditions[i].bhctC, 0)} °C · кровля {f(conditions[i].tTopC, 0)} °C
+                Раствор {i + 1} «{recipeSlurryName(s, d.baseCementShort)}» · основа {d.baseCementShort} · {f(s.density, 2)} г/см³ · BHCT {f(conditions[i].bhctC, 0)} °C · кровля {f(conditions[i].tTopC, 0)} °C
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant={pending || r.allOk ? "outline" : "destructive"} className={r.allOk && !pending ? "border-green-600 text-green-700" : ""}>
@@ -148,9 +147,11 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
                   <span>Тампонажный цемент</span>
                   <select value={t.baseCement ?? "auto"} onChange={(e) => set({ baseCement: e.target.value === "auto" ? undefined : (e.target.value as LabTargets["baseCement"]) })} className="h-8 max-w-[60%] rounded border border-border bg-background px-2 text-xs">
                     <option value="auto">Авто (ПЦТ I-G)</option>
-                    {(Object.keys(BASE_CEMENTS) as (keyof typeof BASE_CEMENTS)[]).map((k) => <option key={k} value={k}>{BASE_CEMENTS[k].short} — {BASE_CEMENTS[k].note}</option>)}
+                    {t.baseCement === "IIIOb" && <option value="IIIOb" disabled>ПЦТ III-Об - сохранённая готовая смесь; выберите основу</option>}
+                    {RECIPE_BASE_CEMENT_KEYS.map((k) => <option key={k} value={k}>{BASE_CEMENTS[k].short} — {BASE_CEMENTS[k].note}</option>)}
                   </select>
                 </label>
+                <p className="text-[10px] text-muted-foreground">Собственная рецептура: базовый цемент (например, G или ПЦТ I-50) и отдельные добавки. Готовые облегчённые смеси не назначаются по плотности раствора.</p>
                 <label className="flex items-center justify-between gap-2 text-xs">
                   <span>Удержание свободной воды</span>
                   <select value={t.stabilizerChoice ?? "auto"} onChange={(e) => set({ stabilizerChoice: e.target.value === "auto" ? undefined : e.target.value as LabTargets["stabilizerChoice"] })} className="h-8 rounded border border-border bg-background px-2 text-xs" data-testid="stabilizer-choice">
@@ -210,7 +211,6 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
               </div>
             )}
             {d.warnings.map((w) => <div key={w} className="text-xs text-amber-700 dark:text-amber-500">⚠ {w}</div>)}
-            <ReadyCementAlternatives densityGcm3={s.density} temperatureC={conditions[i].bhctC} />
           </div>
         );
       })}

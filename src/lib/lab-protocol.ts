@@ -9,7 +9,7 @@ import {
   type WellData, type SlurryInput, type BufferFluid, type DrillingFluid, type PressureProfileResult, type VolumeResults, type Additive,
 } from "./cementing-calculations";
 import { buildLabProgram, buildRecipe, additiveSG, type LabProgramResult } from "./cement-program";
-import { designToTargets, conditionsFor, type SlurryDesign, type DesignConditions, type TargetDesignResult } from "./cement-recipe-designer";
+import { designToTargets, conditionsFor, recipeSlurryName, applyDesignToSlurry, type SlurryDesign, type DesignConditions, type TargetDesignResult } from "./cement-recipe-designer";
 
 export interface ProtocolTable { id: string; headers: string[]; rows: string[][]; widths?: number[] }
 export interface ProtocolImage { dataUrl: string; caption: string; widthPx: number; heightPx: number }
@@ -64,6 +64,8 @@ const ROLE_ORDER = ["silica", "extender", "lightweight", "weighting", "fluidLoss
 
 export function buildLabProtocol(p: ProtocolInput, number?: string): { protocol: LabProtocol; designs: SlurryDesign[] } {
   const { lab, designs, results } = designAll(p);
+  p = { ...p, slurries: p.slurries.map((s, i) => ({ ...s, name: recipeSlurryName(s, designs[i].baseCementShort) })) };
+  lab.slurries.forEach((s, i) => { s.slurryName = p.slurries[i].name; });
   const w = p.wellData;
   const traj = getEffectiveTrajectory(w);
   const now = new Date();
@@ -281,7 +283,7 @@ export function applyProtocolToSlurries(protocol: LabProtocol, slurries: SlurryI
     const d = designs[i];
     if (!d) return s;
     const additives = additivesFromProtocol(protocol, i, designs) ?? [];
-    const draft: SlurryInput = { ...s, additives, cementSG: d.cementSG };
+    const draft: SlurryInput = { ...applyDesignToSlurry(s, d), additives };
     const r = buildRecipe(draft, 1);
     const rh = d.predicted.rheo27;
     return {
