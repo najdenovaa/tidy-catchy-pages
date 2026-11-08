@@ -11,6 +11,7 @@ export function evaluateBasketStop(w: WellData, column: StopColumnSegment[], fra
   const elapsedMin = Math.max(0, w.basketEvaluationMin ?? 5);
   const devices = (w.equipment ?? []).filter(e => e.kind === 'basket' && e.quantity > 0 && e.depthMD !== undefined && e.depthMD > 0 && e.depthMD <= w.casingDepthMD).sort((a,b) => a.depthMD! - b.depthMD!);
   const baskets: BasketLoad[] = [];
+  const supportContributions: { pieces: { top:number; bot:number; excessRho:number }[]; fraction:number }[] = [];
   let upperBoundary = 0;
   for (const e of devices) {
     const md = e.depthMD!, notes: string[] = [];
@@ -22,6 +23,7 @@ export function evaluateBasketStop(w: WellData, column: StopColumnSegment[], fra
     const fraction = active ? entered / 100 : 0;
     const carrier = e.basketCarrierDensityGcm3 && e.basketCarrierDensityGcm3 > 0 ? e.basketCarrierDensityGcm3 : 1;
     let potentialMPa = 0;
+    const pieces: {top:number;bot:number;excessRho:number}[] = [];
     // Disjoint support intervals prevent counting the same cement weight twice.
     // Only a contiguous cement interval above this basket can transfer load.
     let supportTop = md;
@@ -29,7 +31,11 @@ export function evaluateBasketStop(w: WellData, column: StopColumnSegment[], fra
       if(c.top >= supportTop || c.bot < supportTop - 1e-6) continue;
       if(c.fluidType !== 'cement') break;
       const top = Math.max(upperBoundary, c.top), bot = Math.min(md, supportTop, c.bot);
-      if(bot > top) potentialMPa += Math.max(0, c.rho-carrier)*g*Math.max(0,tvd(bot)-tvd(top));
+      if(bot > top) {
+        const excessRho=Math.max(0,c.rho-carrier);
+        potentialMPa += excessRho*g*Math.max(0,tvd(bot)-tvd(top));
+        pieces.push({top,bot,excessRho});
+      }
       supportTop = top;
       if(supportTop <= upperBoundary) break;
     }
@@ -40,6 +46,7 @@ export function evaluateBasketStop(w: WellData, column: StopColumnSegment[], fra
     const capacity = e.basketCapacityKN;
     const capMPa = capacity !== undefined && area > 0 ? capacity/(area*1000) : Infinity;
     const transferredMPa = area > 0 ? Math.min(desired,capMPa) : 0;
+    supportContributions.push({pieces,fraction:potentialMPa>0?transferredMPa/potentialMPa:0});
     if(!inCement) notes.push('На глубине корзины в конечном профиле нет цемента; передача нагрузки не начислена.');
     if(delay === undefined || e.basketSupportPct === undefined) notes.push('Время формирования перемычки или доля передачи нагрузки не заданы; разгрузка не начислена.');
     if(entered > 0 && capacity === undefined) notes.push('Несущая способность не задана; сценарная нагрузка не подтверждена паспортом.');
@@ -56,7 +63,9 @@ export function evaluateBasketStop(w: WellData, column: StopColumnSegment[], fra
   const rows=[...depths].filter(md=>md>=0&&md<=w.casingDepthMD).sort((a,b)=>a-b).map(md=>{
     let withoutMPa=0;
     for(const c of column)if(md>c.top)withoutMPa+=c.rho*g*Math.max(0,tvd(Math.min(md,c.bot))-tvd(c.top));
-    const reductionMPa=Math.min(withoutMPa,baskets.filter(e=>md>=e.md).reduce((n,e)=>n+e.transferredMPa,0));
+    // A permeable support cannot create a pressure jump. Transfer is distributed
+    // through its supported cement interval; below it the head reduction persists.
+    const reductionMPa=Math.min(withoutMPa,supportContributions.reduce((sum,support)=>sum+support.fraction*support.pieces.reduce((n,c)=>n+(md>c.top?c.excessRho*g*Math.max(0,tvd(Math.min(md,c.bot))-tvd(c.top)):0),0),0));
     const ls=(w.reservoirLayers??[]).filter(l=>md>=l.topMD&&md<=l.bottomMD);
     const pores=ls.filter(l=>l.porePressureGrad>0).map(l=>l.porePressureGrad*tvd(md)/1000);
     const limits=ls.flatMap(l=>[l.fracGrad,l.absorbGrad]).filter(n=>n>0).map(n=>n*tvd(md)/1000);
@@ -66,7 +75,7 @@ export function evaluateBasketStop(w: WellData, column: StopColumnSegment[], fra
   return {elapsedMin,rows,baskets,notes:[
     'Сразу после остановки насосов гидростатика жидкого столба сохраняется, потери на трение исчезают. Посадочное давление пробки не добавляется автоматически к давлению на пласт.',
     'Корзина пропускает жидкость. Снижение давления возможно при передаче части веса цемента на сформировавшуюся перемычку, корзину и колонну. Время и степень передачи - параметры сценария, не прогноз седиментации.',
-    'Показана оценка чувствительности: ΔP = доля передачи × g × интеграл (плотность цемента − плотность несущей жидкости) по TVD. Точный пороупругий процесс, фильтрация и обходные каналы не моделируются.',
+    'Непрерывная оценка чувствительности: доля избыточного веса передаётся твёрдым скелетом по поддерживаемому интервалу; скачка давления на проницаемой корзине нет. Ниже опоры сохраняется накопленное снижение. ΔP = доля передачи × g × интеграл (плотность цемента − плотность несущей жидкости) по TVD. Точный пороупругий процесс, фильтрация и обходные каналы не моделируются.',
     'Основная гидравлика и проверки ГРП сохраняют полный столб без зачёта разгрузки корзиной. Сценарий отдельно проверяется на недодавление относительно пластового давления; герметичный пакер этим расчётом не заменяется.',
     'Для нескольких корзин используется консервативное разбиение цемента на неперекрывающиеся интервалы. Дополнительное сопротивление лепестков при циркуляции без измеренной характеристики не моделируется.',
     'Предполагаются открытое затрубье, сохранение уровней и работоспособное поплавковое оборудование. Поглощение, приток, переток и закрытое затрубье требуют отдельной граничной модели.',

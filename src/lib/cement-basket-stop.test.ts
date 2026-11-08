@@ -16,7 +16,9 @@ describe('корзина после Стоп',()=>{
   const end=r.rows.at(-1)!;
   expect(end.withoutMPa).toBeCloseTo(18.639);
   expect(end.reductionMPa).toBeCloseTo(.5*.9*.00981*700);
-  expect(r.rows.find(x=>x.md===700-.01)!.reductionMPa).toBe(0);
+  expect(r.rows[0].reductionMPa).toBe(0);
+  expect(r.rows.find(x=>x.md===700-.01)!.reductionMPa).toBeCloseTo(.5*.9*.00981*(700-.01));
+  expect(r.rows.find(x=>x.md===700)!.scenarioMPa-r.rows.find(x=>x.md===700-.01)!.scenarioMPa).toBeGreaterThan(0);
   expect(end.scenarioMPa).toBeLessThan(end.poreMPa!);
  });
  it('does not treat a basket or quantity as a seal or multiply the column load',()=>{
