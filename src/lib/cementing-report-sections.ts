@@ -1,4 +1,3 @@
-import { centralizerInventory } from "./cementing-equipment";
 import { Paragraph, TextRun, HeadingLevel, ImageRun, AlignmentType, Table } from "docx";
 import { reportDataTable } from "./report-layout";
 import { inspectCentralizer } from "./centralizer-clearance";
@@ -47,7 +46,7 @@ export function buildCementingReportExtras(w: WellData, extras: CementingReportE
       [f(x.fromMD, 1), f(x.toMD, 1), x.spec.passport?.model || x.spec.type, f(x.centralizersPerJoint, 2), f(x.jointLength, 1)])));
     if (c.autoResults?.length) out.push(reportDataTable(["Интервал MD, м", "Шаг, м", "Количество", "Standoff, %"], c.autoResults.map(x =>
       [f(x.fromMD, 0) + "-" + f(x.toMD, 0), x.centralizersPerJoint > 0 ? f((c.jointLength ?? 12) / x.centralizersPerJoint, 2) : "-", f(x.totalCentralizers, 0), f(x.standoffAchieved, 1)])));
-    out.push(h("Сводная ведомость центраторов"), reportDataTable(["Модель", "Изготовитель", "Количество, шт."], centralizerInventory(w.casingDepthMD, c.intervals).map(x => [x.model, x.manufacturer, String(x.quantity)])));
+    out.push(p("Модели, изготовители и общее количество центраторов включены в ведомость материалов. Ниже приведены паспорта и расстановка по глубине."));
     for (const iv of c.intervals) {
       const passport = iv.spec.passport;
       out.push(h((passport?.model || iv.spec.type) + ": паспорт оснастки " + f(iv.fromMD, 0) + "-" + f(iv.toMD, 0) + " м"),

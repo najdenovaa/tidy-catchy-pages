@@ -1,3 +1,4 @@
+import { normalizeCentralizerMaterials } from "./materials-equipment-inventory";
 import { normalizeLogisticsSettings } from "./cement-logistics";
 import { recipeSlurryName } from "./cement-recipe-designer";
 import { normalizeProductIdentity } from "./cement-product-catalog";
@@ -195,6 +196,7 @@ export function normalizeWellData(value: unknown): WellData {
 
   return {
     equipment: normalizeEquipment(source.equipment),
+    ...(normalizeCentralizerMaterials(source.centralizerMaterials) ? { centralizerMaterials: normalizeCentralizerMaterials(source.centralizerMaterials) } : {}),
     ...(isRecord(source.logistics) ? { logistics: normalizeLogisticsSettings(source.logistics) } : {}),
     ...(typeof source.basketEvaluationMin === "number" && Number.isFinite(source.basketEvaluationMin) && source.basketEvaluationMin >= 0 ? { basketEvaluationMin: source.basketEvaluationMin } : {}),
     wellDepthMD: toNumber(source.wellDepthMD, defaultWellData.wellDepthMD),

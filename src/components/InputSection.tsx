@@ -1,5 +1,3 @@
-import type { CentralizerInterval } from "@/lib/centralization-calculations";
-import CementingEquipmentCard from "./CementingEquipmentCard";
 import { CementProductPicker, ProductDetails } from "./CementProductPicker";
 import { identityOf } from "@/lib/cement-product-catalog";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,7 +15,6 @@ import * as XLSX from "xlsx";
 
 interface Props {
   wellData: WellData;
-  centralizerIntervals?: CentralizerInterval[];
   onWellDataChange: (d: WellData) => void;
   drillingFluid: DrillingFluid;
   onDrillingFluidChange: (f: DrillingFluid) => void;
@@ -640,7 +637,6 @@ export default function InputSection(props: Props) {
         )}
       </Card>
 
-      <CementingEquipmentCard well={wellData} centralizers={props.centralizerIntervals} onChange={onWellDataChange} />
 
       {/* ===== 1.5. Профиль скважины ===== */}
       <Card>

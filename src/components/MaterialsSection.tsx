@@ -1,19 +1,27 @@
+import CementingEquipmentCard from "./CementingEquipmentCard";
+import type { WellData } from "@/lib/cementing-calculations";
+import { equipmentMaterialInventory, centralizerMaterialGeometryKey } from "@/lib/materials-equipment-inventory";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { MaterialSummary } from "@/lib/cementing-calculations";
 
 interface Props {
-  materials: MaterialSummary;
+  materials?: MaterialSummary | null;
+  wellData: WellData;
+  onWellDataChange: (w: WellData) => void;
 }
 
 const fmt = (v: number, dec: number = 1) => v.toFixed(dec);
 
-export default function MaterialsSection({ materials }: Props) {
+export default function MaterialsSection({ materials, wellData, onWellDataChange }: Props) {
+  const equipment = equipmentMaterialInventory(wellData);
   return (
     <div className="space-y-6">
-      <Card>
+      <CementingEquipmentCard well={wellData} onChange={onWellDataChange} />
+      {!materials && <p className="text-sm text-muted-foreground">Выберите оснастку, затем нажмите «Расчёт» для ведомости цемента, реагентов и воды.</p>}
+      {materials && <><Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg">10. Использованные материалы</CardTitle>
+          <CardTitle className="text-lg">Ведомость материалов</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Цемент */}
@@ -65,11 +73,13 @@ export default function MaterialsSection({ materials }: Props) {
           {/* Оснастка */}
           <div>
             <h3 className="text-sm font-medium mb-2">Технологическая оснастка</h3>
+            {wellData.centralizerMaterials && <p className="text-xs text-muted-foreground mb-2">{wellData.centralizerMaterials.geometryKey===centralizerMaterialGeometryKey(wellData)?'Количество центраторов взято из рассчитанной расстановки. Ручные позиции центраторов повторно не прибавляются.':'Геометрия скважины изменилась. Пересчитайте центрирование для актуального количества центраторов.'}</p>}
             <Table>
               <TableBody>
-                {materials.equipmentItems.map((item, i) => (
+                {!equipment.length && <TableRow><TableCell colSpan={3}>Оснастка не выбрана. Центраторы появятся после расчёта расстановки.</TableCell></TableRow>}
+                {equipment.map((item, i) => (
                   <TableRow key={i}>
-                    <TableCell className="text-sm">{item.name}</TableCell>
+                    <TableCell className="text-sm">{item.name}<p className="text-xs text-muted-foreground">{item.manufacturer} · {item.calculated ? "По расчёту центрирования" : "По комплектации"}</p>{item.details && <p className="text-xs text-muted-foreground">{item.details}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="text-xs underline">Источник изготовителя</a>}</TableCell>
                     <TableCell className="text-sm text-right font-medium">{item.amount}</TableCell>
                     <TableCell className="text-sm text-right text-muted-foreground">{item.unit}</TableCell>
                   </TableRow>
@@ -105,7 +115,7 @@ export default function MaterialsSection({ materials }: Props) {
             </div>
           </div>
         </CardContent>
-      </Card>
+      </Card></>}
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { equipmentMaterialInventory, centralizerMaterialGeometryKey } from "./materials-equipment-inventory";
+import { centralizerInventory } from "./cementing-equipment";
 import { FLEET_SCHEMES } from "./cement-fleet-catalog";
 import { materialLabel, cementProduct } from "./cement-product-catalog";
 import { EQUIPMENT_LABELS, equipmentDetails, equipmentWarnings } from "./cementing-equipment";
@@ -281,18 +283,6 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
     );
   }
   result.push(kvTable(fluidRows) as any);
-
-  result.push(sectionTitle("Комплектация обсадной колонны"));
-  const equipment = wellData.equipment ?? [];
-  if (equipment.length) {
-    result.push(gridTable(["Назначение / модель", "Изготовитель / шт.", "Параметры и паспорт"], equipment.map(e => [EQUIPMENT_LABELS[e.kind] + " / " + e.model, (e.manufacturer || "не задан") + " / " + e.quantity, equipmentDetails(e)])) as any);
-    equipment.forEach(e => {
-      if (e.sourceUrl) result.push(noteParagraph(e.model + ": источник " + e.sourceUrl));
-      if (e.note) result.push(noteParagraph(e.model + ": " + e.note));
-      equipmentWarnings(e, wellData).forEach(n => result.push(noteParagraph(e.model + ": " + n)));
-    });
-  } else result.push(noteParagraph("Комплектация не задана. Центраторы, количество и размещение при наличии расчёта приведены в разделе центрирования."));
-  result.push(noteParagraph("Противодавление клапана, разрыв мембраны и допустимый перепад при посадке пробки - разные параметры; не являются гидравлическими потерями или автоматически заданным давлением «Стоп»."));
 
   // Buffers
   result.push(sectionTitle("3. Буферные жидкости"));
@@ -598,7 +588,8 @@ function buildSchedulePage(buffers: BufferFluid[], slurries: SlurryInput[], annu
   ];
 }
 
-function buildMaterialsPage(materials: MaterialSummary): Paragraph[] {
+function buildMaterialsPage(materials: MaterialSummary, wellData: WellData): Paragraph[] {
+  const equipmentNotes=(wellData.equipment??[]).flatMap(e=>[...(e.sourceUrl?[noteParagraph(e.model+": источник "+e.sourceUrl)]:[]),...equipmentWarnings(e,wellData).map(n=>noteParagraph(e.model+": "+n))]);
   const matHeaders = ["Наименование", "Количество", "Ед. изм."];
   const makeMatTable = (items: { name: string; amount: number; unit: string }[]) => {
     return fixedReportTable(3, {
@@ -632,7 +623,9 @@ function buildMaterialsPage(materials: MaterialSummary): Paragraph[] {
     makeMatTable(materials.bufferItems),
     new Paragraph({ spacing: { after: 150 }, children: [] }),
     sectionTitle("11. Технологическая оснастка"),
-    makeMatTable(materials.equipmentItems),
+    gridTable(['Наименование','Изготовитель','Количество, шт.','Параметры'],materials.equipmentItems.length?materials.equipmentItems.map(e=>[e.name,e.manufacturer??'Не задан',String(e.amount),e.details??'']):[['Оснастка не выбрана','-','-','Центраторы добавляются после расчёта расстановки']]) as any,
+    ...equipmentNotes,
+    ...materials.equipmentItems.filter(e=>e.calculated&&e.sourceUrl).map(e=>noteParagraph(e.name+': источник '+e.sourceUrl)),
     new Paragraph({ spacing: { after: 150 }, children: [] }),
     sectionTitle("12. Вода для приготовления"),
     kvTable(waterRows) as any,
@@ -1025,9 +1018,11 @@ export async function exportToDocx(
   },
   options?: { returnBlob?: boolean; filename?: string; foam?: FoamReportBundle; extras?: CementingReportExtras },
 ): Promise<Blob | void> {
+  const center=options?.extras?.centralization;
+  if(center?.calculated)wellData={...wellData,centralizerMaterials:{geometryKey:centralizerMaterialGeometryKey(wellData),items:centralizerInventory(wellData.casingDepthMD,center.intervals)}};
   const volumes = preComputed?.volumes ?? calculateVolumes(wellData, slurries, displacementFluids?.[0]?.compressionCoeff ?? 1.0);
   const pressureResult = preComputed?.pressureResult ?? calculatePressureProfile(wellData, slurries, buffers, drillingFluid, displacementFluids, fractureGradient, volumes.displacementVolumeWithCompression, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
-  const materials = preComputed?.materials ?? calculateMaterials(slurries, buffers, wellData);
+  const materials = { ...(preComputed?.materials ?? calculateMaterials(slurries, buffers, wellData)), equipmentItems:equipmentMaterialInventory(wellData) };
   const workTimeWithCement = pressureResult.stopTime - pressureResult.cementStartTime;
 
   const approvalBlock = fixedReportTable(2, {
@@ -1084,7 +1079,7 @@ export async function exportToDocx(
   const inputContent = buildInputPage(wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
   const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult, buffers);
   const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolumeWithCompression, displacementFluids, wellData.casingDepthMD);
-  const materialsContent = buildMaterialsPage(materials);
+  const materialsContent = buildMaterialsPage(materials, wellData);
   const labContent = buildLabPage(wellData, slurries, volumes, pressureResult);
   const normsContent = buildNormsPage(wellData, slurries, buffers, drillingFluid, volumes, pressureResult);
   const logisticsContent = buildLogisticsPage(pressureResult, materials, slurries, wellData.logistics);

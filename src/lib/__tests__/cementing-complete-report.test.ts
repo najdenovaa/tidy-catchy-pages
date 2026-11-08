@@ -86,6 +86,9 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   expect(xml).toContain("Контрольный результат");
   expect(xml).toContain("AVRORA 141-SG");
   expect(xml).toContain("PS-QA-168");
+  expect(xml.indexOf('PS-QA-168')).toBeGreaterThan(xml.indexOf('11. Технологическая оснастка'));
+  expect((xml.match(/Центратор \/ Тестовый центратор 168/g)??[]).length).toBe(1);
+  expect(xml).not.toContain('Башмак БКМ');
   expect(xml).toContain("Изготовитель");
   expect(xml).toContain("IG Retard");
   expect(xml).toContain("IG chemical / Айсберг");
