@@ -5,7 +5,7 @@ import { resolveCentralizationReport, displacementReportKey, runDisplacementForR
 import { buildBasketStopReportSvgs, buildCementingReportSvgs, buildHydraulicReportSvgs, buildWellReportSvgs, rasterizeReportSvgs } from "@/lib/cementing-report-figures";
 import { collectCementingReportSupplements } from "@/lib/cementing-report-dom";
 import type { FoamReportBundle } from '@/lib/foam-cement-types';
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Displacement2DSection from "@/components/displacement/Displacement2DSection";
@@ -93,9 +93,11 @@ export default function Index() {
   const [foamReport, setFoamReport] = useState<FoamReportBundle | null>(null);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
   const [centralizerIntervals, setCentralizerIntervals] = useState<import("@/lib/centralization-calculations").CentralizerInterval[]>([]);
+  const appliedMaterialResults=useRef<CentralizationResult[] | null>(null);
   const handleCentralizationReport=useCallback((data:CentralizationReportData)=>{
     setCentralizationReport(data);
-    if(!data.calculated)return;
+    if(!data.calculated || appliedMaterialResults.current===data.results)return;
+    appliedMaterialResults.current=data.results;
     const intervals=data.mode==='auto'&&data.autoResults&&data.autoSpec?data.autoResults.map((x,i)=>({id:`materials-${i}`,fromMD:x.fromMD,toMD:x.toMD,centralizersPerJoint:x.centralizersPerJoint,jointLength:data.jointLength??12,spec:data.autoSpec!})):data.intervals;
     setWellData(w=>{
       const centralizerMaterials={geometryKey:centralizerMaterialGeometryKey(w),items:centralizerInventory(w.casingDepthMD,intervals)};
