@@ -188,3 +188,11 @@ export function buildWellReportSvgs(w: WellData, slurries: SlurryInput[]): Repor
       text(24, 620, "Глубины по стволу (MD). Радиальные размеры условные.")),
   ];
 }
+
+export function buildBasketStopReportSvgs(result: import('./cement-basket-stop').BasketStopResult | undefined): ReportSvg[] {
+ if(!result?.rows.length)return [];
+ const maxP=Math.max(1,...result.rows.map(r=>r.withoutMPa))*1.05,depth=Math.max(1,...result.rows.map(r=>r.md));
+ const X=(p:number)=>75+p/maxP*570,Y=(d:number)=>65+d/depth*360;
+ const line=(key:'withoutMPa'|'scenarioMPa',color:string,dash='')=>'<polyline fill="none" stroke="'+color+'" stroke-width="2" '+dash+' points="'+result.rows.map(r=>X(r[key]).toFixed(2)+','+Y(r.md).toFixed(2)).join(' ')+'"/>';
+ return [{title:'Корзина: полный столб и сценарий через '+result.elapsedMin+' мин после Стоп',width:720,height:520,svg:'<svg xmlns="http://www.w3.org/2000/svg" width="720" height="520"><rect width="720" height="520" fill="white"/><text x="24" y="25" font-family="sans-serif" font-size="15">Полная гидростатика / сценарная передача нагрузки</text><text x="24" y="48" fill="#2563eb" font-family="sans-serif" font-size="12">Синий: без разгрузки</text><text x="300" y="48" fill="#ea580c" font-family="sans-serif" font-size="12">Пунктир: сценарий после Стоп</text>'+Array.from({length:6},(_,i)=>'<line x1="75" x2="645" y1="'+Y(depth*i/5)+'" y2="'+Y(depth*i/5)+'" stroke="#dbe3ec"/><text x="15" y="'+(Y(depth*i/5)+4)+'" font-family="sans-serif" font-size="11">'+(depth*i/5).toFixed(0)+'</text><text x="'+X(maxP*i/5)+'" y="448" font-family="sans-serif" font-size="11">'+(maxP*i/5).toFixed(1)+'</text>').join('')+line('withoutMPa','#2563eb')+line('scenarioMPa','#ea580c','stroke-dasharray="6 4"')+'<text x="265" y="475" font-family="sans-serif" font-size="12">Давление, МПа; глубина MD, м</text><text x="24" y="502" font-family="sans-serif" font-size="11">Сценарий не уменьшает давление в основных проверках ГРП.</text></svg>'}];
+}

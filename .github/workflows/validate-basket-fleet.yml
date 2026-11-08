@@ -1,0 +1,62 @@
+name: Validate basket Stop and cementing fleet
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/cement-basket-stop*'
+      - 'src/lib/cement-fleet*'
+      - 'src/lib/cement-logistics.ts'
+      - 'src/lib/cementing-calculations.ts'
+      - 'src/lib/cementing-normalizers.ts'
+      - 'src/lib/cementing-equipment.ts'
+      - 'src/components/BasketStopCard.tsx'
+      - 'src/components/LogisticsSection*'
+      - 'src/components/CementingEquipmentCard.tsx'
+      - 'src/lib/__tests__/basket-fleet-report.test.ts'
+      - '.github/workflows/validate-basket-fleet.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      FLEET_QA_DIR: /tmp/basket-fleet-qa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --legacy-peer-deps
+      - run: npx tsc --noEmit -p tsconfig.app.json
+      - run: npx vitest run
+      - run: npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Render basket comparison and actual selected fleet report
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libreoffice-writer fonts-dejavu-core
+          python3 -m venv /tmp/fleet-venv
+          /tmp/fleet-venv/bin/pip -q install cairosvg pymupdf
+          /tmp/fleet-venv/bin/python - <<'PY'
+          import cairosvg, os
+          d=os.environ['FLEET_QA_DIR']
+          cairosvg.svg2png(url=d+'/basket.svg',write_to=d+'/basket.png',scale=1.5)
+          PY
+          npx vitest run src/lib/__tests__/basket-fleet-report.test.ts
+          libreoffice -env:UserInstallation=file:///tmp/fleet-lo --headless --convert-to pdf --outdir "$FLEET_QA_DIR" "$FLEET_QA_DIR/fleet-basket.docx"
+          /tmp/fleet-venv/bin/python - <<'PY'
+          import fitz, os
+          d=os.environ['FLEET_QA_DIR'];doc=fitz.open(d+'/fleet-basket.pdf')
+          text='\n'.join(p.get_text() for p in doc)
+          for token in ['Паспорт QA-26','ЦТ-25','Корзины: давление после Стоп','AVRORA 500S QA']:
+              assert token in text, token
+          for p in doc:
+              assert abs(p.rect.width-595.3)<2
+          print('Rendered',len(doc),'A4 pages with selected fleet and post-stop basket comparison')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: basket-fleet-report
+          path: /tmp/basket-fleet-qa/

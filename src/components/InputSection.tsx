@@ -532,7 +532,7 @@ export default function InputSection(props: Props) {
               {wellFields.map(({ key, label, unit }) => (
                 <div key={key} className="space-y-1">
                   <Label htmlFor={key} className="text-xs text-muted-foreground">{label}{unit && `, ${unit}`}</Label>
-                  <Input id={key} type="number" step="any" value={wellData[key] || ""} onChange={(e) => handleWellChange(key, e.target.value)} className="h-9 text-sm" />
+                  <Input id={key} type="number" step="any" value={typeof wellData[key] === "number" ? Number(wellData[key]) : ""} onChange={(e) => handleWellChange(key, e.target.value)} className="h-9 text-sm" />
                 </div>
               ))}
               <div className="space-y-1">

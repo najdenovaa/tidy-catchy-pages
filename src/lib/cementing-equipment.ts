@@ -40,6 +40,7 @@ export interface EquipmentSelection {
   id: string; productId?: string; kind: EquipmentKind; model: string; manufacturer: string; sourceUrl?: string;
   quantity: number; casingOD?: number; outerDiameter?: number; passageID?: number; thread?: string;
   depthMD?: number; maxTemperatureC?: number; backpressureMPa?: number; membraneRuptureMPa?: number;
+  basketSupportPct?: number; basketBridgeMin?: number; basketCarrierDensityGcm3?: number; basketCapacityKN?: number;
   stopPressureMPa?: number; passport?: string; note?: string;
 }
 export const equipmentProduct = (id?: string) => EQUIPMENT_PRODUCTS.find(p => p.id === id);
@@ -56,6 +57,8 @@ export function equipmentWarnings(e: EquipmentSelection, w: WellData): string[] 
   if (e.depthMD !== undefined && (e.depthMD < 0 || e.depthMD > w.casingDepthMD)) a.push('Глубина установки вне обсадной колонны.');
   if (e.maxTemperatureC && Math.max(w.bottomTempStatic, w.bottomTempCirc) > e.maxTemperatureC) a.push(`Температура превышает предел ${e.maxTemperatureC} °C. Проверьте температуру на глубине установки.`);
   if ((e.kind === 'lowerPlug' || e.kind === 'upperPlug') && !e.passageID) a.push('Проверьте диапазон рабочих ID пробки и посадочную совместимость с муфтой по паспорту.');
+  if (e.kind === 'basket' && e.basketSupportPct !== undefined && e.basketSupportPct > 100) a.push('Доля передачи нагрузки должна быть от 0 до 100%; в сценарии ограничена 100%.');
+  if (e.kind === 'basket' && e.basketCarrierDensityGcm3 !== undefined && e.basketCarrierDensityGcm3 <= 0) a.push('Плотность несущей жидкости должна быть положительной; до исправления используется сценарное значение 1 г/см³.');
   if (!e.passport) a.push('Паспорт поставки и резьбовая совместимость не подтверждены.');
   return a;
 }
@@ -67,7 +70,7 @@ export function normalizeEquipment(value: unknown): EquipmentSelection[] {
       const out: EquipmentSelection = { id: typeof x.id === 'string' ? x.id : `equipment-${i}`, kind: x.kind as EquipmentKind,
         model: typeof x.model === 'string' ? x.model : '', manufacturer: typeof x.manufacturer === 'string' ? x.manufacturer : '', quantity: typeof x.quantity === 'number' && Number.isFinite(x.quantity) ? x.quantity : 1 };
       for (const k of ['productId', 'sourceUrl', 'thread', 'passport', 'note'] as const) if (typeof x[k] === 'string') out[k] = x[k];
-      for (const k of ['casingOD', 'outerDiameter', 'passageID', 'depthMD', 'maxTemperatureC', 'backpressureMPa', 'membraneRuptureMPa', 'stopPressureMPa'] as const)
+      for (const k of ['casingOD', 'outerDiameter', 'passageID', 'depthMD', 'maxTemperatureC', 'backpressureMPa', 'membraneRuptureMPa', 'stopPressureMPa', 'basketSupportPct', 'basketBridgeMin', 'basketCarrierDensityGcm3', 'basketCapacityKN'] as const)
         if (typeof x[k] === 'number' && Number.isFinite(x[k]) && x[k] >= 0) out[k] = x[k];
       return out;
     });
@@ -76,7 +79,7 @@ export function equipmentDetails(e: EquipmentSelection): string {
   return [e.casingOD ? `ОК ${e.casingOD} мм` : 'типоразмер не задан', e.depthMD !== undefined ? `MD ${e.depthMD} м` : '',
     e.outerDiameter ? `OD ${e.outerDiameter} мм` : '', e.passageID ? `ID/проход ${e.passageID} мм` : '', e.thread ? `резьба ${e.thread}` : '',
     e.maxTemperatureC ? `Tmax ${e.maxTemperatureC} °C` : '', e.backpressureMPa ? `обратный перепад ${e.backpressureMPa} МПа` : '',
-    e.membraneRuptureMPa ? `разрыв мембраны ${e.membraneRuptureMPa} МПа` : '', e.stopPressureMPa ? `допустимая посадка ${e.stopPressureMPa} МПа` : '', e.passport ? `паспорт ${e.passport}` : 'паспорт не задан'].filter(Boolean).join('; ');
+    e.membraneRuptureMPa ? `разрыв мембраны ${e.membraneRuptureMPa} МПа` : '', e.stopPressureMPa ? `допустимая посадка ${e.stopPressureMPa} МПа` : '', e.kind === 'basket' ? `сценарий передачи ${e.basketSupportPct ?? 0}%; перемычка ${e.basketBridgeMin ?? 'не задано'} мин; несущая жидкость ${e.basketCarrierDensityGcm3 ?? 1} г/см³; несущая способность ${e.basketCapacityKN ?? 'не задана'} кН` : '', e.passport ? `паспорт ${e.passport}` : 'паспорт не задан'].filter(Boolean).join('; ');
 }
 
 /** Count the actual placement points, including partial joints and every-Nth-joint placement. */

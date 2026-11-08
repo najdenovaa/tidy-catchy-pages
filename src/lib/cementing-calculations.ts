@@ -1,3 +1,4 @@
+import { evaluateBasketStop, type BasketStopResult, type StopColumnSegment } from "./cement-basket-stop";
 import { materialLabel, type ProductIdentity } from "./cement-product-catalog";
 import type { EquipmentSelection } from "./cementing-equipment";
 // Core cementing calculation formulas
@@ -110,6 +111,8 @@ export interface ReservoirLayer {
 
 export interface WellData {
   equipment?: EquipmentSelection[];
+  logistics?: import("./cement-logistics").LogisticsSettings;
+  basketEvaluationMin?: number;
   wellDepthMD: number;
   wellDepthTVD: number;
   casingDepthMD: number;
@@ -1237,6 +1240,7 @@ export interface DepthEnvelopePoint {
 }
 
 export interface PressureProfileResult {
+  basketStop?: BasketStopResult;
   /** огибающие давления по глубине (пусто в быстром режиме) */
   envelope: DepthEnvelopePoint[];
   zoneChecks: ZoneCheck[];
@@ -1837,18 +1841,18 @@ export function calculatePressureProfile(
     }
   }
   /** Столб жидкостей в затрубье (интервалы сверху вниз не упорядочены): заполнение от забоя вверх по объёмам. */
-  function annColumn(cementAsWater = false): { top: number; bot: number; rho: number }[] {
-    const batches: { rho: number; vol: number }[] = [];
+  function annColumn(cementAsWater = false): StopColumnSegment[] {
+    const batches: { rho: number; vol: number; fluidType: string }[] = [];
     const mudExited = Math.min(totalPumped, pipeCapacity);
-    if (mudExited > 0) batches.push({ rho: mudDensityGcm3, vol: mudExited });
+    if (mudExited > 0) batches.push({ rho: mudDensityGcm3, vol: mudExited, fluidType: "mud" });
     let left = Math.max(0, totalPumped - pipeCapacity);
     for (let i = 0; i < pumpHistory.length && left > 0; i++) {
       if (pumpHistory[i].fluidType === "displacement") continue;
       const take = Math.min(pumpHistory[i].volumeM3, left);
-      if (take > 0) batches.push({ rho: cementAsWater && pumpHistory[i].fluidType === "cement" ? 1.0 : pumpHistory[i].densityGcm3, vol: take });
+      if (take > 0) batches.push({ rho: cementAsWater && pumpHistory[i].fluidType === "cement" ? 1.0 : pumpHistory[i].densityGcm3, vol: take, fluidType: pumpHistory[i].fluidType });
       left -= take;
     }
-    const out: { top: number; bot: number; rho: number }[] = [];
+    const out: StopColumnSegment[] = [];
     let bot = wellData.casingDepthMD;
     for (let i = batches.length - 1; i >= 0 && bot > 0; i--) {
       let v = batches[i].vol;
@@ -1859,12 +1863,12 @@ export function calculatePressureProfile(
         if (vpm <= 0) break;
         const len = Math.min(v / vpm, bot - limitTop);
         const top = bot - len;
-        out.push({ top, bot, rho: batches[i].rho });
+        out.push({ top, bot, rho: batches[i].rho, fluidType: batches[i].fluidType });
         v -= len * vpm; bot = top;
         if (len <= 1e-9) break;
       }
     }
-    if (bot > 0) out.push({ top: 0, bot, rho: mudDensityGcm3 });
+    if (bot > 0) out.push({ top: 0, bot, rho: mudDensityGcm3, fluidType: "mud" });
     return out;
   }
   function hydroFromColumn(col: { top: number; bot: number; rho: number }[], md: number): number {
@@ -2362,7 +2366,8 @@ export function calculatePressureProfile(
     maxPressureMPa: c.maxP, maxAtStage: c.maxStage, maxAtTimeMin: c.maxT, marginMPa: c.limit - c.maxP,
     porePressureMPa: c.pore, minPressureMPa: Number.isFinite(c.minP) ? c.minP : 0,
   }));
-  return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope };
+  return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope,
+    basketStop: wellData.equipment?.some(e => e.kind === "basket" && e.quantity > 0) ? evaluateBasketStop(wellData, annColumn(), fractureGradient) : undefined };
 }
 
 // Потери давления на трение с учётом режима потока (ламинарный / переходный / турбулентный)

@@ -1,5 +1,6 @@
+import BasketStopCard from "@/components/BasketStopCard";
 import { resolveCentralizationReport, displacementReportKey, runDisplacementForReport, type CentralizationReportData, type DisplacementReportData, type DisplacementReportSettings, type CementingReportExtras } from "@/lib/cementing-report-data";
-import { buildCementingReportSvgs, buildHydraulicReportSvgs, buildWellReportSvgs, rasterizeReportSvgs } from "@/lib/cementing-report-figures";
+import { buildBasketStopReportSvgs, buildCementingReportSvgs, buildHydraulicReportSvgs, buildWellReportSvgs, rasterizeReportSvgs } from "@/lib/cementing-report-figures";
 import { collectCementingReportSupplements } from "@/lib/cementing-report-dom";
 import type { FoamReportBundle } from '@/lib/foam-cement-types';
 import { useState, useMemo, useCallback, useEffect } from "react";
@@ -378,7 +379,7 @@ export default function Index() {
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       extras.supplements = collectCementingReportSupplements();
       setExportStatus("Подготовка схем и 3D-кадров");
-      try { extras.figures = await rasterizeReportSvgs([...buildHydraulicReportSvgs(pressure.points), ...buildWellReportSvgs(reportWell, snap.slurries), ...buildCementingReportSvgs(reportWell, extras)]); }
+      try { extras.figures = await rasterizeReportSvgs([...buildHydraulicReportSvgs(pressure.points), ...buildBasketStopReportSvgs(pressure.basketStop), ...buildWellReportSvgs(reportWell, snap.slurries), ...buildCementingReportSvgs(reportWell, extras)]); }
       catch (err) { extras.warnings!.push("Часть изображений недоступна: " + (err instanceof Error ? err.message : String(err))); }
       const foam = foamReport &&
         JSON.stringify(foamReport.simulation.input.wellData) === JSON.stringify(snap.wellData) &&
@@ -666,6 +667,7 @@ export default function Index() {
                   pressureData={pressureResult?.points}
                 />
               ) : null}
+              {calcSnapshot && pressureResult && <BasketStopCard result={pressureResult.basketStop} well={calcSnapshot.wellData} />}
               {calcSnapshot && volumes && pressureResult ? (
                 <ZoneChecksCard zoneChecks={pressureResult.zoneChecks} standoffSource={standoffProfile ? "profile" : "default"} avgStandoffPct={avgStandoffPct} />
               ) : (
@@ -699,7 +701,7 @@ export default function Index() {
           <TabsContent value="logistics">
             <div data-tab-content="logistics">
               {calcSnapshot && pressureResult && materials ? (
-                <LogisticsSection pressure={pressureResult} materials={materials} slurries={calcSnapshot.slurries} />
+                <LogisticsSection pressure={pressureResult} materials={materials} slurries={calcSnapshot.slurries} settings={wellData.logistics} onSettingsChange={logistics => setWellData(w => ({ ...w, logistics }))} />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАСЧЁТ» для получения результатов</div>
               )}
