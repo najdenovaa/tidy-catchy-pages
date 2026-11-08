@@ -221,5 +221,5 @@ describe("РИР: распределение состава в канале (2D)
     }
     expect(solid).toBeGreaterThan(0);
     expect(vSolid / vAll).toBeLessThan(0.02);
-  });
+  }, 20000); // Full 2D transport can exceed 5 s on shared CI runners.
 });

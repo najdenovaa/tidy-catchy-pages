@@ -1,3 +1,5 @@
+import { calculateCasingRunning, normalizeRunningSettings } from "./casing-running-analysis";
+import { runningBroomSVG } from "./casing-running-plot";
 import { centralizerShape, bladeCurve, bladeSection, bladeRadius, displayCentralizerPoint } from "./centralizer-shape";
 import * as THREE from "three";
 import { centralizerMesh, surveyTransform, type Vec3 } from "./centralizer-mesh";
@@ -24,6 +26,12 @@ function sceneSvg(title: string, polygons: Polygon[], width: number, height: num
 }
 export function buildCementingReportSvgs(w: WellData, extras: CementingReportExtras): ReportSvg[] {
   const images: ReportSvg[] = [];
+  const c=extras.centralization;
+  if(c?.running){
+    const settings=normalizeRunningSettings(w.runningSettings,c.running.frictionCased,c.running.frictionOpenhole);
+    const a=calculateCasingRunning({well:w,intervals:c.intervals,turbPoints:c.turbPoints,...c.running,settings});
+    if(a.valid)images.push({title:"Спуск колонны: веник по глубине башмака",svg:runningBroomSVG(a,settings),width:820,height:510});
+  }
   if (extras.centralization) for (const s of centralizerReportSamples(w, extras.centralization)) {
     if (!s.geometry) continue;
     const g = centralizerShape(s.spec,w.casingOD,s.bore,s.result.supportEccentricity ?? s.result.eccentricity)! , gain = 6;

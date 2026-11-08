@@ -10,11 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Calculator, Target, Settings2, Wind, TrendingDown } from "lucide-react";
+import { Plus, Trash2, Calculator, Target, Settings2, Wind } from "lucide-react";
 import CopyImageButton from "@/components/CopyImageButton";
 import type { WellData } from "@/lib/cementing-calculations";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
-import { calculateTDSummary, calculateTD, type TDInput, type TDSummary, type TDResult, type CentralizerDragItem } from "@/lib/torque-drag-calculations";
+import CasingRunningSection from "./CasingRunningSection";
 import {
   calculateCentralization,
   autoPlaceCentralizers,
@@ -32,11 +32,12 @@ import {
   type TurbulatorPoint,
   type AutoTurbulatorResult,
 } from "@/lib/centralization-calculations";
-import { calculateRunningForces, type RunningForceResult } from "@/lib/casing-running-forces";
+
 import TriaxialCasingCard from "@/components/TriaxialCasingCard";
-import { Wrench } from "lucide-react";
+
 
 interface Props {
+  onWellDataChange?: (data: WellData) => void;
   onReportChange?: (data: CentralizationReportData) => void;
   wellData: WellData;
   mudDensity: number;
@@ -276,7 +277,7 @@ function standoffBg(standoff: number): string {
 }
 
 // ─── Main component ─────────────────────────────────────────────
-export default function CentralizationSection({ wellData, mudDensity, fluidPV = 25, fluidYP = 25, flowRateLps = 10, pipeWeightKgPerM, frictionCased = 0.25, frictionOpenhole = 0.35, onResultsChange, onIntervalsChange, externalIntervals, onReportChange }: Props) {
+export default function CentralizationSection({ wellData, mudDensity, fluidPV = 25, fluidYP = 25, flowRateLps = 10, pipeWeightKgPerM, frictionCased = 0.25, frictionOpenhole = 0.35, onResultsChange, onIntervalsChange, externalIntervals, onReportChange, onWellDataChange }: Props) {
   const [mode, setMode] = useState<CalcMode>("manual");
   const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => [newInterval(wellData.casingDepthMD)]);
   const [results, setResults] = useState<CentralizationResult[] | null>(null);
@@ -457,6 +458,10 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
     return autoResults.reduce((s, r) => s + r.totalCentralizers, 0);
   }, [autoResults]);
 
+  const runningIntervals = useMemo(() => mode === "auto" && autoResults
+    ? autoResults.map((p,i) => ({id:"running-"+i,fromMD:p.fromMD,toMD:p.toMD,centralizersPerJoint:p.centralizersPerJoint,jointLength:autoJointLength,spec:autoSpec}))
+    : intervals, [mode,autoResults,autoJointLength,autoSpec,intervals]);
+
   // ─── Generate joint-by-joint placement schedule for field crew ───
   const jointSchedule = useMemo(() => {
     if (!results || results.length === 0) return null;
@@ -478,10 +483,11 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   useEffect(() => {
     onReportChange?.({
       mode, targetStandoff: mode === "auto" ? targetStandoff : undefined, autoSpec, jointLength: autoJointLength,
+      running: {mudDensity, pv:fluidPV, yp:fluidYP, pipeWeightKgPerM, frictionCased, frictionOpenhole},
       intervals, results: results ?? [], turbPoints, autoResults: autoResults ?? undefined,
       selectedMD: selectedMD ?? undefined, calculated: !!results?.length, joints: jointSchedule ?? undefined,
     });
-  }, [onReportChange, mode, targetStandoff, autoSpec, autoJointLength, intervals, results, turbPoints, autoResults, selectedMD, jointSchedule]);
+  }, [onReportChange, mode, targetStandoff, autoSpec, autoJointLength, intervals, results, turbPoints, autoResults, selectedMD, jointSchedule, mudDensity, fluidPV, fluidYP, pipeWeightKgPerM, frictionCased, frictionOpenhole, wellData.runningSettings]);
 
 
   return (
@@ -1007,448 +1013,22 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
 
 
           {/* ═══════ T&D CHARTS — Спуск колонны с учётом центраторов ═══════ */}
-          <TDChartsBlock
+          <CasingRunningSection
             wellData={wellData}
             mudDensity={mudDensity}
-            intervals={autoResults
-              ? autoResults.map(p => ({
-                  id: makeId(), fromMD: p.fromMD, toMD: p.toMD,
-                  centralizersPerJoint: p.centralizersPerJoint,
-                  jointLength: autoJointLength, spec: { ...autoSpec },
-                }))
-              : intervals
-            }
+            intervals={runningIntervals}
             turbPoints={turbPoints}
-            autoTurbResults={autoTurbResults}
-            turbBladeHeight={turbBladeHeight}
             pipeWeightKgPerM={pipeWeightKgPerM}
             frictionCased={frictionCased}
             frictionOpenhole={frictionOpenhole}
-            fluidPV={fluidPV}
-            fluidYP={fluidYP}
+            pv={fluidPV}
+            yp={fluidYP}
+            onSettingsChange={runningSettings => onWellDataChange?.({...wellData, runningSettings})}
           />
-
-          {results && results.length > 0 && (
-            <RunningForcesCard
-              wellData={wellData}
-              mudDensity={mudDensity}
-              frictionCoeff={frictionOpenhole}
-              centralizerIntervals={intervals}
-              centralization={results}
-            />
-          )}
 
           <TriaxialCasingCard wellData={wellData} mudDensity={mudDensity} />
         </>
       )}
-    </div>
-  );
-}
-
-// ─── T&D Charts sub-component ────────────────────────────────────
-function TDChartsBlock({
-  wellData, mudDensity, intervals, turbPoints, autoTurbResults, turbBladeHeight,
-  pipeWeightKgPerM, frictionCased, frictionOpenhole, fluidPV, fluidYP,
-}: {
-  wellData: WellData; mudDensity: number; intervals: CentralizerInterval[];
-  turbPoints?: TurbulatorPoint[]; autoTurbResults?: AutoTurbulatorResult[] | null;
-  turbBladeHeight?: number;
-  pipeWeightKgPerM?: number; frictionCased: number; frictionOpenhole: number;
-  fluidPV: number; fluidYP: number;
-}) {
-  const tdChartRef = useRef<HTMLDivElement>(null);
-
-  // Default pipe weight from casing geometry
-  const casingID = wellData.casingOD - 2 * wellData.casingWall;
-  const defaultPipeWeight = Math.PI / 4 * ((wellData.casingOD / 1000) ** 2 - (casingID / 1000) ** 2) * 7850;
-  const pipeWt = pipeWeightKgPerM ?? defaultPipeWeight;
-
-  const tdData = useMemo(() => {
-    // Build centralizer drag items from centralization intervals
-    const centDrag: CentralizerDragItem[] = intervals
-      .filter(iv => iv.centralizersPerJoint > 0)
-      .map(iv => ({
-        fromMD: iv.fromMD,
-        toMD: iv.toMD,
-        centralizersPerJoint: iv.centralizersPerJoint,
-        jointLength: iv.jointLength,
-        dragForcePerUnit: iv.spec.type === "rigid" ? 2.0 : iv.spec.type === "solid" ? 3.0 : 0.8,
-      }));
-
-    // Add turbulizer drag — turbulizers create flow restriction → additional drag during trip
-    // Drag per turbulizer ≈ 0.3–1.0 kN depending on blade height
-    const bladeH = turbBladeHeight ?? 15;
-    const annGap = (wellData.holeDiameter - wellData.casingOD) / 2;
-    const blockageRatio = Math.min(0.7, bladeH / annGap);
-    const turbDragPerUnit = 0.3 + blockageRatio * 1.5; // kN per turbulizer
-
-    // Manual turbulizer points → treat each as a drag point (small interval around it)
-    if (turbPoints && turbPoints.length > 0) {
-      for (const tp of turbPoints) {
-        if (tp.md > 0) {
-          centDrag.push({
-            fromMD: tp.md - 0.5,
-            toMD: tp.md + 0.5,
-            centralizersPerJoint: 1,
-            jointLength: 1,
-            dragForcePerUnit: turbDragPerUnit,
-          });
-        }
-      }
-    }
-    // Auto turbulizer results → intervals with spacing
-    if (autoTurbResults && autoTurbResults.length > 0) {
-      for (const at of autoTurbResults) {
-        const spacing = at.toMD - at.fromMD > 0 ? (at.toMD - at.fromMD) / Math.max(1, Math.round((at.toMD - at.fromMD) / 6)) : 6;
-        centDrag.push({
-          fromMD: at.fromMD,
-          toMD: at.toMD,
-          centralizersPerJoint: 1,
-          jointLength: spacing,
-          dragForcePerUnit: turbDragPerUnit,
-        });
-      }
-    }
-
-    const input: TDInput = {
-      trajectory: wellData.trajectory,
-      wellDepthMD: wellData.casingDepthMD,
-      casingDepthMD: wellData.casingDepthMD,
-      casingShoe: wellData.casingDepthMD,
-      holeDiameter: wellData.holeDiameter,
-      casingOD: wellData.casingOD,
-      casingID: casingID,
-      pipeWeightKgPerM: pipeWt,
-      mudDensity: mudDensity / 1000, // кг/м³ → г/см³
-      frictionCased,
-      frictionOpenhole,
-      wob: 0,
-      rpm: 0,
-      blockWeight: 50,
-      centralizerDrag: centDrag,
-      fluidSegments: [{
-        name: "Буровой раствор", density: mudDensity,
-        pv: fluidPV, yp: fluidYP,
-        topMD: 0, bottomMD: wellData.casingDepthMD,
-      }],
-      tripSpeedMps: 0.5,
-    };
-
-    const summary = calculateTDSummary(input);
-    // Additional modes
-    const pickup = calculateTD(input, 'pickup');
-    const slackoff = calculateTD(input, 'slackoff');
-
-    return { summary, pickup, slackoff };
-  }, [wellData, mudDensity, intervals, pipeWt, frictionCased, frictionOpenhole, fluidPV, fluidYP, casingID]);
-
-  const { summary, pickup, slackoff } = tdData;
-
-  // Prepare chart data
-  const chartData = useMemo(() => {
-    return summary.tripIn.points.map((pt, i) => {
-      const tripOutPt = summary.tripOut.points[i];
-      const rotatePt = summary.rotate.points[i];
-      const pickupPt = pickup.points[i];
-      const slackoffPt = slackoff.points[i];
-      return {
-        md: pt.md,
-        tripIn: +(pt.hookLoad / 9.81).toFixed(1),       // кН → тонн
-        tripOut: +(tripOutPt?.hookLoad / 9.81).toFixed(1) || 0,
-        freeWeight: +(summary.freeWeight * pt.md / summary.tripIn.points[summary.tripIn.points.length - 1].md / 9.81).toFixed(1),
-        pickup: +(pickupPt?.hookLoad / 9.81).toFixed(1) || 0,
-        slackoff: +(slackoffPt?.hookLoad / 9.81).toFixed(1) || 0,
-        torqueRot: +(rotatePt?.torque ?? 0).toFixed(2),
-        sideForce: +(pt.sideForce ?? 0).toFixed(2),
-        centDrag: +(pt.centralizerDragForce ?? 0).toFixed(2),
-        viscDrag: +(pt.viscousDrag ?? 0).toFixed(2),
-        dragForce: +(pt.dragForce ?? 0).toFixed(2),
-      };
-    });
-  }, [summary, pickup, slackoff]);
-
-  // Doliv (top-up) calculation: when pipe sinks into mud, fluid level drops in annulus
-  // Doliv volume per joint ≈ pipe displacement volume
-  const pipeDisplPerM = Math.PI / 4 * (wellData.casingOD / 1000) ** 2; // m³/m (outer volume)
-  const pipeInternalPerM = Math.PI / 4 * (casingID / 1000) ** 2;
-  const annularArea = Math.PI / 4 * ((wellData.holeDiameter / 1000) ** 2 - (wellData.casingOD / 1000) ** 2);
-
-  // Level drop per joint spud: displacement of steel + filling inside
-  const dolivPerJoint = (jointLen: number) => {
-    const steelVol = (pipeDisplPerM - pipeInternalPerM) * jointLen;
-    // Mud rises in annulus by: steel volume / annular area → that's fine
-    // But pipe internal volume needs filling → doliv needed = pipe internal volume per joint
-    return pipeInternalPerM * jointLen;
-  };
-
-  const jointLen = intervals[0]?.jointLength ?? 12;
-  const dolivM3 = dolivPerJoint(jointLen);
-  const totalDolivM3 = pipeInternalPerM * wellData.casingDepthMD;
-
-  // Max hook load and drag
-  const maxTripInHL = summary.tripIn.maxHookLoad / 9.81;
-  const maxTripOutHL = summary.tripOut.maxHookLoad / 9.81;
-  const maxTorque = summary.rotate.maxTorque;
-  const freeWtTons = summary.freeWeight / 9.81;
-  const totalCentDrag = summary.tripIn.totalCentralizerDrag ?? 0;
-  const totalViscDrag = summary.tripIn.totalViscousDrag ?? 0;
-  const overpull = maxTripOutHL - freeWtTons; // затяжка, тонн
-
-  const fmt = (v: number, d: number = 1) => v.toFixed(d);
-
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <TrendingDown className="w-4 h-4" />
-            Расчёт спуска колонны (с учётом центраторов)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {/* Summary cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-            <div className="rounded-lg border border-border p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">Свободный вес</p>
-              <p className="text-sm font-bold text-foreground">{fmt(freeWtTons, 1)} т</p>
-            </div>
-            <div className="rounded-lg border border-border p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">Вес при спуске</p>
-              <p className="text-sm font-bold text-foreground">{fmt(maxTripInHL, 1)} т</p>
-            </div>
-            <div className="rounded-lg border border-border p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">Вес при подъёме</p>
-              <p className="text-sm font-bold text-foreground">{fmt(maxTripOutHL, 1)} т</p>
-            </div>
-            <div className={`rounded-lg border p-2 text-center ${overpull > 20 ? "border-destructive" : "border-border"}`}>
-              <p className="text-[10px] text-muted-foreground">Затяжка (макс.)</p>
-              <p className={`text-sm font-bold ${overpull > 20 ? "text-destructive" : "text-foreground"}`}>{fmt(overpull, 1)} т</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-            <div className="rounded-lg border border-border p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">Макс. момент</p>
-              <p className="text-sm font-bold text-foreground">{fmt(maxTorque, 2)} кН·м</p>
-            </div>
-            <div className="rounded-lg border border-border p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">Сопр. центраторов</p>
-              <p className="text-sm font-bold text-foreground">{fmt(totalCentDrag, 1)} кН</p>
-            </div>
-            <div className="rounded-lg border border-border p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">Вязкостное сопр.</p>
-              <p className="text-sm font-bold text-foreground">{fmt(totalViscDrag, 1)} кН</p>
-            </div>
-            <div className="rounded-lg border border-border p-2 text-center">
-              <p className="text-[10px] text-muted-foreground">Долив (на трубу / всего)</p>
-              <p className="text-sm font-bold text-foreground">{fmt(dolivM3 * 1000, 0)} л / {fmt(totalDolivM3, 2)} м³</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div ref={tdChartRef}>
-        {/* Hook Load chart */}
-        <Card className="mb-4">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center justify-between">
-              <span>Вес на крюке при спуске колонны</span>
-              <CopyImageButton targetRef={tdChartRef} label="Копировать" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="md" label={{ value: "MD, м", position: "insideBottom", offset: -3, style: { fontSize: 10 } }} tick={{ fontSize: 9 }} />
-                <YAxis label={{ value: "тонн", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 9 }} />
-                <Tooltip contentStyle={{ fontSize: 11, background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
-                <Line type="monotone" dataKey="tripIn" name="Спуск" stroke="hsl(200, 70%, 50%)" dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey="tripOut" name="Подъём" stroke="hsl(0, 70%, 50%)" dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey="freeWeight" name="Своб. вес" stroke="hsl(var(--muted-foreground))" dot={false} strokeWidth={1} strokeDasharray="5 5" />
-                <Line type="monotone" dataKey="pickup" name="Расхаживание↑" stroke="hsl(45, 80%, 50%)" dot={false} strokeWidth={1.5} />
-                <Line type="monotone" dataKey="slackoff" name="Посадка↓" stroke="hsl(280, 60%, 55%)" dot={false} strokeWidth={1.5} />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Torque chart */}
-        <Card className="mb-4">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Крутящий момент (вращение)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="md" tick={{ fontSize: 9 }} />
-                <YAxis label={{ value: "кН·м", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 9 }} />
-                <Tooltip contentStyle={{ fontSize: 11, background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
-                <Line type="monotone" dataKey="torqueRot" name="Момент" stroke="hsl(30, 80%, 55%)" dot={false} strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Drag forces chart */}
-        <Card className="mb-4">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Силы сопротивления при спуске</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="md" tick={{ fontSize: 9 }} />
-                <YAxis label={{ value: "кН", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} tick={{ fontSize: 9 }} />
-                <Tooltip contentStyle={{ fontSize: 11, background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
-                <Line type="monotone" dataKey="dragForce" name="Трение" stroke="hsl(0, 60%, 50%)" dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey="centDrag" name="Центраторы" stroke="hsl(120, 50%, 50%)" dot={false} strokeWidth={1.5} />
-                <Line type="monotone" dataKey="viscDrag" name="Вязкость" stroke="hsl(200, 60%, 50%)" dot={false} strokeWidth={1.5} />
-                <Line type="monotone" dataKey="sideForce" name="Боковая сила" stroke="hsl(280, 50%, 55%)" dot={false} strokeWidth={1.5} />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-// ─── Running forces / Bending stresses card ──────────────────────
-
-function RunningForcesCard({
-  wellData,
-  mudDensity,
-  frictionCoeff,
-  centralizerIntervals,
-  centralization,
-}: {
-  wellData: WellData;
-  mudDensity: number;
-  frictionCoeff: number;
-  centralizerIntervals: CentralizerInterval[];
-  centralization: CentralizationResult[];
-}) {
-  const [grade, setGrade] = useState<"K-55" | "N-80" | "P-110">("N-80");
-
-  const res: RunningForceResult = useMemo(
-    () =>
-      calculateRunningForces({
-        wellData,
-        mudDensity,
-        frictionCoeff,
-        centralizerIntervals,
-        centralization,
-        casingGrade: grade,
-      }),
-    [wellData, mudDensity, frictionCoeff, centralizerIntervals, centralization, grade],
-  );
-
-  const utilColor =
-    res.bendingUtilization >= 0.9
-      ? "text-red-600 dark:text-red-400"
-      : res.bendingUtilization >= 0.7
-      ? "text-amber-600 dark:text-amber-400"
-      : "text-emerald-600 dark:text-emerald-400";
-
-  return (
-    <Card>
-      <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <Wrench className="h-4 w-4" />
-          Усилия установки колонны и изгибные напряжения
-        </CardTitle>
-        <div className="flex items-center gap-1.5 text-xs">
-          <span className="text-muted-foreground">Группа:</span>
-          {(["K-55", "N-80", "P-110"] as const).map((g) => (
-            <button
-              key={g}
-              type="button"
-              onClick={() => setGrade(g)}
-              className={`px-2 py-0.5 rounded text-[11px] font-mono ${
-                grade === g ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
-              }`}
-            >
-              {g}
-            </button>
-          ))}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-[11px] text-muted-foreground">
-          Soft-string модель (Johansik): осевые силы и боковая нагрузка от DLS,
-          изгиб от посадки между центраторами, сжатие bow-spring.
-        </p>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <MiniStat label="Сухой вес" value={`${res.hookloadDryKN.toFixed(0)} кН`} />
-          <MiniStat label="Вес с плавучестью" value={`${res.hookloadBuoyKN.toFixed(0)} кН`} />
-          <MiniStat
-            label="Слак-офф (спуск)"
-            value={`${res.hookloadRunningKN.toFixed(0)} кН`}
-            sub={res.willRunFreely ? "проходит свободно" : "может застрять"}
-            status={res.willRunFreely ? "ok" : "danger"}
-          />
-          <MiniStat label="Пик-ап (подъём)" value={`${res.hookloadPickupKN.toFixed(0)} кН`} />
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          <div className="rounded-lg border p-2.5">
-            <div className="text-[10px] text-muted-foreground">Макс. изгибное σ</div>
-            <div className={`text-base font-bold font-mono ${utilColor}`}>
-              {res.maxBendingStressMPa.toFixed(0)} МПа
-            </div>
-            <div className="text-[10px] text-muted-foreground">
-              {(res.bendingUtilization * 100).toFixed(0)}% от σ_T ({res.yieldStrengthMPa.toFixed(0)} МПа)
-            </div>
-          </div>
-          <div className="rounded-lg border p-2.5">
-            <div className="text-[10px] text-muted-foreground">Ср. сжатие bow-spring</div>
-            <div className="text-base font-bold font-mono">{res.avgSpringCompression.toFixed(0)}%</div>
-            <div className="text-[10px] text-muted-foreground">от свободной длины</div>
-          </div>
-          <div className="rounded-lg border p-2.5">
-            <div className="text-[10px] text-muted-foreground">Макс. сжатие bow-spring</div>
-            <div className={`text-base font-bold font-mono ${res.maxSpringCompression > 90 ? "text-red-600 dark:text-red-400" : ""}`}>
-              {res.maxSpringCompression.toFixed(0)}%
-            </div>
-            <div className="text-[10px] text-muted-foreground">{res.maxSpringCompression > 90 ? "близко к пределу" : "в норме"}</div>
-          </div>
-        </div>
-
-        <ul className="space-y-1">
-          {res.warnings.map((w, i) => (
-            <li key={i} className="text-[11px] text-muted-foreground flex gap-2">
-              <span>•</span>
-              <span>{w}</span>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
-  );
-}
-
-function MiniStat({
-  label,
-  value,
-  sub,
-  status,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  status?: "ok" | "danger";
-}) {
-  const c = status === "danger" ? "text-red-600 dark:text-red-400" : status === "ok" ? "text-emerald-600 dark:text-emerald-400" : "";
-  return (
-    <div className="rounded-lg border p-2">
-      <div className="text-[10px] text-muted-foreground">{label}</div>
-      <div className={`text-sm font-bold font-mono ${c}`}>{value}</div>
-      {sub && <div className={`text-[10px] ${c || "text-muted-foreground"}`}>{sub}</div>}
     </div>
   );
 }

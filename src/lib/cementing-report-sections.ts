@@ -1,10 +1,11 @@
+import { calculateCasingRunning, normalizeRunningSettings } from "./casing-running-analysis";
 import { Paragraph, TextRun, HeadingLevel, ImageRun, AlignmentType, Table } from "docx";
 import { reportDataTable } from "./report-layout";
 import { inspectCentralizer } from "./centralizer-clearance";
 import { type WellData } from "./cementing-calculations";
 import { trajectoryAzimuth } from "./centralizer-mesh";
 import type { CementingReportExtras, CentralizationReportData } from "./cementing-report-data";
-const PASSPORT_LABELS: Record<string, string> = {"manufacturer":"Производитель","sourceUrl":"Каталог изготовителя","model":"Обозначение изделия","series":"Серия","casingOD":"Диаметр ОК, мм","boreDiameter":"Диаметр ствола по паспорту, мм","outerDiameter":"Наружный диаметр по планкам, мм","innerDiameter":"Внутренний диаметр, мм","length":"Общая длина, мм","springLength":"Длина рессоры, мм","bladeWidth":"Ширина планки, мм","ringOD":"Наружный диаметр кольца, мм","ringLength":"Длина кольца, мм","materialThickness":"Толщина рессоры, мм","restoringForceKgf":"Восстанавливающее усилие, кгс","restoringStandoff":"Степень центрирования при испытании усилия, %","startingForceKgf":"Пусковое усилие, кгс","holdingForceKN":"Удерживающее усилие, кН","frictionCoefficient":"Коэффициент трения","bladeAngle":"Угол лопасти, °","note":"Примечание паспорта","source":"Источник","estimatedRestoringForceKN":"Оценочное восстанавливающее усилие, кН","massKg":"Масса, кг","boreDiameterRange":"Диапазон диаметров ствола, мм","restoringForceSourceKN":"Усилие в источнике, кН","startingForceSourceKN":"Пусковое усилие в источнике, кН","forceLimitAmbiguous":"Неоднозначность ограничения усилия","lengthRange":"Диапазон длины, мм","bladeWidthRange":"Диапазон ширины планки, мм"};
+const PASSPORT_LABELS: Record<string, string> = {"manufacturer":"Производитель","sourceUrl":"Каталог изготовителя","model":"Обозначение изделия","series":"Серия","casingOD":"Диаметр ОК, мм","boreDiameter":"Диаметр ствола по паспорту, мм","outerDiameter":"Наружный диаметр по планкам, мм","innerDiameter":"Внутренний диаметр, мм","length":"Общая длина, мм","springLength":"Длина рессоры, мм","bladeWidth":"Ширина планки, мм","ringOD":"Наружный диаметр кольца, мм","ringLength":"Длина кольца, мм","materialThickness":"Толщина рессоры, мм","restoringForceKgf":"Восстанавливающее усилие, кгс","restoringStandoff":"Степень центрирования при испытании усилия, %","startingForceKgf":"Пусковое усилие, кгс","runningForceKgf":"Сопротивление движению по испытанию, кгс","holdingForceKN":"Удерживающее усилие, кН","frictionCoefficient":"Коэффициент трения","bladeAngle":"Угол лопасти, °","note":"Примечание паспорта","source":"Источник","estimatedRestoringForceKN":"Оценочное восстанавливающее усилие, кН","massKg":"Масса, кг","boreDiameterRange":"Диапазон диаметров ствола, мм","restoringForceSourceKN":"Усилие в источнике, кН","startingForceSourceKN":"Пусковое усилие в источнике, кН","forceLimitAmbiguous":"Неоднозначность ограничения усилия","lengthRange":"Диапазон длины, мм","bladeWidthRange":"Диапазон ширины планки, мм"};
 const f = (v: unknown, n = 2) => typeof v === "number" && Number.isFinite(v) ? v.toFixed(n) : "не задано";
 const p = (text: string) => new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: text.replace(/[—–]/g, "-"), size: 20, font: "Calibri" })] });
 const h = (text: string) => new Paragraph({ text, heading: HeadingLevel.HEADING_2, keepNext: true, spacing: { before: 200, after: 100 } });
@@ -75,6 +76,32 @@ export function buildCementingReportExtras(w: WellData, extras: CementingReportE
     if (c.joints?.length) out.push(h("Потрубная ведомость установки оснастки"),
       reportDataTable(["№ трубы", "Кровля MD, м", "Подошва MD, м", "Глубины центраторов MD, м"], c.joints.map(x =>
         [x.jointNum, x.topMD, x.bottomMD, x.centralizerDepths.join("; ") || "-"])));
+    if (c.running) {
+      const settings=normalizeRunningSettings(w.runningSettings,c.running.frictionCased,c.running.frictionOpenhole);
+      const a=calculateCasingRunning({well:w,intervals:c.intervals,turbPoints:c.turbPoints,...c.running,settings});
+      out.push(h("Спуск колонны: веник и контроль нагрузок"),
+        p("Каждая строка веника - отдельный расчёт при текущей глубине башмака. Оснастка перемещается вместе с трубой. Нагрузки на крюке включают только явно заданный вес подвески."),
+        reportDataTable(["Параметр", "Значение"], [
+          ["Трение: предыдущая колонна / открытый ствол",f(settings.frictionCased)+" / "+f(settings.frictionOpenhole)],
+          ["Вариация трения для веника",f(settings.frictionSpread)],
+          ["Скорость движения, м/с",f(settings.speedMps)], ["Погонная масса, кг/м", settings.pipeWeightKgPerM>0?f(settings.pipeWeightKgPerM):c.running.pipeWeightKgPerM?f(c.running.pipeWeightKgPerM):"По геометрии секций"], ["Вес подвески, кН",f(settings.blockWeightKN)],
+          ["Предел крюка, кН",settings.maxHookKN>0?f(settings.maxHookKN):"Не задан"],
+          ["Добавка на центратор без испытания / турбулизатор, кН",f(settings.centralizerRunningKN)+" / "+f(settings.turbulatorRunningKN)],
+          ["ПВ, сПз / ДНС, Па",f(c.running.pv)+" / "+f(c.running.yp)],
+        ],[65,35]));
+      if (a.final) out.push(reportDataTable(["Показатель", "Значение"],[
+        ["Спуск / подъём на проектной глубине, тс",f(a.final.runIn)+" / "+f(a.final.pullOut)],
+        ["Максимум подъёма за весь спуск, тс / MD м",f(a.maxPullKN/9.80665)+" / "+f(a.maxPullMD,0)],
+        ["Первый геометрический конфликт, глубина башмака MD м",a.firstPassageConflictMD===null?"Не выявлен":f(a.firstPassageConflictMD,0)],
+        ["Первое осевое сжатие, глубина башмака MD м",a.firstCompressionMD===null?"Не выявлено":f(a.firstCompressionMD,0)],
+        ["Первое превышение крюка, MD м",settings.maxHookKN===0?"Предел не задан":a.firstCapacityMD===null?"Не выявлено":f(a.firstCapacityMD,0)],
+        ["Изгиб / осевое + изгиб, оценка МПа",f(a.maxBendingMPa)+" / "+f(a.maxCombinedMPa)],
+        ["Полная вместимость / объём стали, м³",f(a.internalVolumeM3)+" / "+f(a.steelDisplacementM3)],
+      ],[65,35]),reportDataTable(["Башмак MD, м","Спуск, тс","Подъём, тс","Без трения, тс","Без оснастки, тс","Момент, кН·м"],a.broom.map(r=>[f(r.md,0),f(r.runIn),f(r.pullOut),f(r.free),f(r.noTools),f(r.torqueKNm)])));
+      if(settings.measurements.length)out.push(reportDataTable(["Замер MD, м","Режим","Крюк, тс"],settings.measurements.map(m=>[f(m.md,0),m.mode==="runIn"?"Спуск":"Подъём",f(m.hookTF)])));
+      if(a.calibration)out.push(p(a.calibration.informative?"Подбор общей поправки трения: Δμ="+f(a.calibration.deltaMu)+"; RMSE="+f(a.calibration.rmseTF)+" тс. "+(a.calibration.atBoundary?"На границе поиска; требует проверки.":"Автоматически не применяется."):"По замерам трение не определяется: недостаточная чувствительность."));
+      out.push(...a.errors.map(p),...a.notes.map(p),p("Сжатие не означает доказанный прихват. Изгиб пролёта - оценка без контакта трубы со стенкой. Полная вместимость не является автоматическим доливом; требуется баланс фактического заполнения и возврата."));
+    }
     out.push(h("Турбулизаторы"),
       ...(c.turbPoints.length ? [reportDataTable(["MD, м", "Лопастей", "Угол, °", "Высота, мм"], c.turbPoints.map(x =>
         [f(x.md, 1), x.bladesCount, f(x.bladeAngle, 1), f(x.bladeHeight, 1)]))] : [p("Точки установки турбулизаторов не заданы.")]));

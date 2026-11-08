@@ -3,6 +3,7 @@ import { calculateCentralization, autoPlaceCentralizers, type CentralizationResu
 import type { D2Result, D2Stage } from "./displacement-2d";
 import type { D2Meta } from "./displacement-2d-input";
 export interface CentralizationReportData {
+  running?: { mudDensity:number; pv:number; yp:number; pipeWeightKgPerM?:number; frictionCased:number; frictionOpenhole:number };
   mode: "manual" | "auto"; targetStandoff?: number;
   autoSpec?: CentralizerSpec; jointLength?: number;
   intervals: CentralizerInterval[]; results: CentralizationResult[];
