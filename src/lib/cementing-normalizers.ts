@@ -1,3 +1,4 @@
+import { recipeSlurryName } from "./cement-recipe-designer";
 import { normalizeProductIdentity } from "./cement-product-catalog";
 import { normalizeEquipment } from "./cementing-equipment";
 import type {
@@ -248,7 +249,7 @@ export function normalizeSlurryInput(value: unknown, index = 0): SlurryInput {
   const fallbackRate = toNumber(source.flowRateLps, 0);
 
   return {
-    name: toString(source.name, `Раствор ${index + 1}`),
+    name: recipeSlurryName({ name: toString(source.name, `Раствор ${index + 1}`), density: toNumber(source.density, 0), labTargets: isRecord(source.labTargets) ? source.labTargets : undefined }),
     density: toNumber(source.density, 0),
     topDepthMD: toNumber(source.topDepthMD, 0),
     rheology: normalizeRheology(

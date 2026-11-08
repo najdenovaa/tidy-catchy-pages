@@ -7,13 +7,12 @@ import { FlaskConical, ArrowRightLeft, Printer, Download } from "lucide-react";
 import type { PlugInputs, PlugResults } from "@/lib/cement-plug-calculations";
 import type { LabTargets, SlurryDesign } from "@/lib/cement-recipe-designer";
 import { PLUG_PURPOSE_LABEL, type PlugPurpose } from "@/lib/cement-plug-types";
-import { BASE_CEMENTS } from "@/lib/cement-recipe-designer";
+import { BASE_CEMENTS, RECIPE_BASE_CEMENT_KEYS } from "@/lib/cement-recipe-designer";
 import { designPlugSlurry, buildPlugLabProtocol, plugJobTimeMin, plugRequiredThickeningMin } from "@/lib/cement-plug-recipe";
 import { protocolToHtml } from "@/lib/lab-protocol";
 import { exportLabProtocolDocx } from "@/lib/export-lab-protocol-docx";
 import type { PillDesign } from "@/lib/cement-plug-pill";
 import RecipeDoseTable from "./RecipeDoseTable";
-import ReadyCementAlternatives from "./ReadyCementAlternatives";
 
 interface Props {
   inputs: PlugInputs;
@@ -77,8 +76,9 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
             <label className="flex items-center justify-between gap-2">
               <span>Тампонажный цемент</span>
               <select value={user.baseCement ?? "auto"} onChange={(e) => set("baseCement", e.target.value === "auto" ? undefined : e.target.value)} className="h-8 min-w-0 max-w-[60%] rounded border border-border bg-background px-2 text-xs" data-testid="plug-base-cement">
+                {user.baseCement === "IIIOb" && <option value="IIIOb" disabled>ПЦТ III-Об - сохранённая готовая смесь; выберите основу</option>}
                 <option value="auto">Авто (ПЦТ I-G)</option>
-                {(Object.keys(BASE_CEMENTS) as (keyof typeof BASE_CEMENTS)[]).map((k) => <option key={k} value={k}>{BASE_CEMENTS[k].short} — {BASE_CEMENTS[k].note}</option>)}
+                {RECIPE_BASE_CEMENT_KEYS.map((k) => <option key={k} value={k}>{BASE_CEMENTS[k].short} — {BASE_CEMENTS[k].note}</option>)}
               </select>
             </label>
             <label className="flex items-center justify-between gap-2">
@@ -150,7 +150,6 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
         </div>
         {res.actions.length > 0 && <p className="text-muted-foreground">Корректировка: {res.actions.join("; ")}.</p>}
         {d.warnings.map((w) => <p key={w} className="text-amber-600">⚠ {w}</p>)}
-        <ReadyCementAlternatives densityGcm3={d.densityGcm3} temperatureC={t.bhctC} />
         <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => { onApply(d); setMsg("Рецептура записана в раствор моста: добавки, В/С, выход, реология, время загустевания. Нажмите «Расчёт» для пересчёта."); }}>
             <ArrowRightLeft className="w-4 h-4 mr-1" />Записать в раствор моста
