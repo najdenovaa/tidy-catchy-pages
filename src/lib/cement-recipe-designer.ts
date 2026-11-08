@@ -167,6 +167,7 @@ export interface DesignOptions {
   expansion?: boolean;
   fiber?: boolean;
   extender?: "auto" | "bentonite" | "microspheres";
+  stabilizerChoice?: StabilizerChoice;
   dispersantMin?: number;
   acceleratorPct?: number;
   /** Базовый цемент (по умолчанию — ПЦТ класса G) */
@@ -176,6 +177,8 @@ export interface DesignOptions {
 }
 
 /** Ручные дозировки добавок по роли, % от массы цемента */
+export type StabilizerChoice = "auto" | "bentonite" | "metasilicate" | "polymer" | "none";
+
 export type DoseOverrides = Partial<Record<Exclude<AdditiveRole, "base">, number>>;
 
 /** Роли добавок, доступные для ручного ввода: подпись и типовой верхний предел дозировки (% bwoc) */
@@ -188,7 +191,7 @@ export const DOSE_ROLES: Record<Exclude<AdditiveRole, "base">, { label: string; 
   fluidLoss: { label: "Понизитель водоотдачи", max: 1.5, step: 0.05 },
   dispersant: { label: "Пластификатор", max: 1.5, step: 0.05 },
   defoamer: { label: "Пеногаситель", max: 0.5, step: 0.05 },
-  stabilizer: { label: "Стабилизатор (от водоотделения)", max: 0.3, step: 0.01 },
+  stabilizer: { label: "Стабилизатор (SMS / полимер, от водоотделения)", max: 3, step: 0.05 },
   silica: { label: "Кварцевая мука", max: 40, step: 5 },
   gasBlock: { label: "Газоблокирующая добавка (латекс)", max: 15, step: 1 },
   expanding: { label: "Расширяющая добавка", max: 8, step: 0.5 },
@@ -226,6 +229,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   // ── Плотность: облегчение / утяжеление ──
   const WC_MIN = 0.35 * (base.wcNeat / 0.44), WC_NEAT_MAX = 0.46 * (base.wcNeat / 0.44);
   const wcMax = (bent: number) => WC_NEAT_MAX + 0.053 * bent + (0.4 * silica) / 100;
+  const stabilizerChoice = o.stabilizerChoice ?? "auto";
   let bent = 0, micro = 0, heavy = 0;
   let microName = "", microSG = 0.7;
   let heavyName = "Гематит (утяжелитель)", heavySG = 5.0;
@@ -251,11 +255,12 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
       warnings.push(`Плотность ${rho.toFixed(2)} г/см³ бентонитом (16%) без избытка воды не достигается — риск водоотделения и низкой прочности; рассмотрите микросферы.`);
       rationale.push(`Облегчение только бентонитом (выбрано технологом): ${bent}%.`);
     } else if (bent > bentMax) {
-      bent = 4;
+      bent = stabilizerChoice === "bentonite" ? 4 : 0;
       if (c.maxPressureMPa < 18) { microName = "Алюмосиликатные полые микросферы (АСПМ)"; microSG = 0.7; }
       else if (c.maxPressureMPa < 50) { microName = "Стеклянные полые микросферы, прочность ≥ 55 МПа"; microSG = 0.46; }
       else { microName = "Стеклянные полые микросферы, прочность ≥ 70 МПа"; microSG = 0.6; }
-      const wAllowed = wcMax(bent);
+      // Для SMS/полимера микросферы обеспечивают плотность при умеренной воде; стабилизатор не считается облегчителем.
+      const wAllowed = bent > 0 ? wcMax(bent) : WC_NEAT_MAX + 0.06;
       for (micro = 1; micro <= 90; micro++) {
         const d = dryOf(comps.concat(extra()), cementSG);
         const dens = (d.mass + wAllowed * 1000) / (d.vol + wAllowed * 1000);
@@ -263,7 +268,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
       }
       wc = solve();
       if (micro > 90) warnings.push(`Плотность ${rho.toFixed(2)} г/см³ не достигается микросферами в разумной дозировке — рассмотреть пеноцемент (модуль «Пена»).`);
-      rationale.push(`Плотность ${rho.toFixed(2)} г/см³ ниже предела бентонитового облегчения — ${microName.toLowerCase()} ${micro}% и 4% бентонита для стабильности.`);
+      rationale.push(`Облегчение: ${microName.toLowerCase()} ${micro}%${bent > 0 ? " и бентонит 4%" : "; стабилизатор подбирается отдельно от облегчителя"}. В/Ц требует лабораторного подтверждения.`);
       if (c.maxPressureMPa > 0) rationale.push(`Тип микросфер выбран по давлению на забое ${c.maxPressureMPa.toFixed(1)} МПа (разрушение сфер повышает плотность в скважине).`);
     } else {
       rationale.push(`Облегчение бентонитом ${bent}%: при В/Ц ${wc.toFixed(2)} вода удерживается (предел ${wcMax(bent).toFixed(2)} по правилу 5.3% воды на 1% бентонита).`);
@@ -283,6 +288,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   // ручные дозировки облегчения / утяжеления: плотность сохраняется, меняется вода затворения
   const mb = man("extender"), mm = man("lightweight"), mh = man("weighting");
   if (mb !== undefined) bent = mb;
+  else if (stabilizerChoice === "metasilicate" || stabilizerChoice === "polymer" || stabilizerChoice === "none") bent = 0;
   if (mm !== undefined) {
     micro = mm;
     if (micro > 0 && !microName) {
@@ -339,13 +345,30 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   if (man("dispersant") !== undefined) dDisp = man("dispersant")!;
   if (dDisp > 0) add({ role: "dispersant", name: "Пластификатор (полинафталинсульфонат, тип С-3)", purpose: "Снижение вязкости и ДНС, прокачиваемость", pctBwoc: dDisp, sg: 1.35 });
 
-  // ── Стабилизация от водоотделения ──
-  const autoStab = ((c.maxZenithDeg > 30 || c.gas) || (o.freeWaterMaxPct !== undefined && o.freeWaterMaxPct < 0.3)) && bent < 2;
-  const stabDose = man("stabilizer") ?? (autoStab ? 0.05 : 0);
-  // эффективность стабилизатора: 0.05% — полная, меньше — пропорционально
-  const stabEff = clamp(stabDose / 0.05, 0, 1);
-  const needStab = stabEff >= 0.999;
-  if (stabDose > 0) add({ role: "stabilizer", name: "Стабилизатор (биополимер, тип велановой камеди)", purpose: "Нулевое водоотделение и отсутствие седиментации в наклонном стволе", pctBwoc: stabDose, sg: 1.5 });
+  // ── Стабилизатор выбирается независимо от облегчителя ──
+  // SMS не эквивалентен понизителю API-водоотдачи; дозы только для лабораторного скрининга.
+  const lightSystem = rho < 1.75 && (micro > 0 || bent > 0 || wc > WC_NEAT_MAX);
+  const chosenStabilizer: Exclude<StabilizerChoice, "auto"> =
+    stabilizerChoice === "auto" ? (lightSystem && (micro > 0 || rho <= 1.55) ? "metasilicate" : bent > 0 ? "bentonite" : "polymer") : stabilizerChoice;
+  const autoStab = (c.maxZenithDeg > 30 || c.gas || (o.freeWaterMaxPct !== undefined && o.freeWaterMaxPct < 0.3)) && bent < 2;
+  const stabDose = man("stabilizer") ?? (
+    chosenStabilizer === "metasilicate" && lightSystem ? (rho <= 1.35 ? 2 : rho <= 1.55 ? 1 : 0.5)
+    : chosenStabilizer === "polymer" && autoStab ? 0.05 : 0
+  );
+  const isSMS = chosenStabilizer === "metasilicate" && stabDose > 0;
+  const isPolymer = chosenStabilizer === "polymer" && stabDose > 0;
+  // Не приписываем SMS/полимеру гарантированное устранение свободной воды по условной корреляции.
+  const stabEff = 0;
+  const needStab = false;
+  if (isSMS) add({ role: "stabilizer", name: "Метасиликат натрия безводный (Na₂SiO₃, SMS)", purpose: "Стабилизация водорасширенной системы; свободную воду и седиментацию проверить лабораторно", pctBwoc: stabDose, sg: 2.61 });
+  else if (isPolymer) add({ role: "stabilizer", name: "Полимерный стабилизатор (велановая камедь, марку уточнить)", purpose: "Стабилизация суспензии; свободную воду, реологию и совместимость проверить лабораторно", pctBwoc: stabDose, sg: 1.5 });
+  if (isSMS) {
+    rationale.push(`Безводный метасиликат ${stabDose.toFixed(2)}% BWOC: исходная дозировка для лабораторного подбора, не гарантированное отсутствие свободной воды.`);
+    warnings.push("SMS может менять реологию и ускорять загустевание. Проверить свободную воду, седиментацию, реологию, время загустевания и прочность; особенно совместимость с CaCl₂ и замедлителем.");
+  }
+  if (isPolymer) warnings.push("Полимерный стабилизатор: дозировка и эффект зависят от марки. Требуются испытания свободной воды, седиментации, водоотдачи и реологии.");
+  if (chosenStabilizer === "none") warnings.push("Стабилизатор исключён технологом; устойчивость облегчённой системы требуется подтвердить лабораторно.");
+  if (chosenStabilizer === "bentonite" && bent === 0 && lightSystem) warnings.push("Выбран бентонит, но его дозировка равна нулю. Введите дозировку облегчителя вручную либо выберите другой стабилизатор.");
 
   // ── Время загустевания: замедлитель / ускоритель ──
   const req = Math.max(30, o.thickeningMinMin ?? Math.max(60, c.requiredThickeningMin));
@@ -403,16 +426,17 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   const microVol = comps.filter((x) => x.role === "lightweight").reduce((t, x) => t + (x.pctBwoc * 10) / x.sg, 0);
   const phiRheo = (dry.vol - liquidVol - 0.5 * microVol) / vTot;
   const yieldM3PerT = vTot / dry.mass;
-  if (wcFinal > wcMax(bent) + 0.02 && micro === 0) warnings.push(`В/Ц ${wcFinal.toFixed(2)} выше водоудерживающей способности смеси — риск водоотделения.`);
+  if (wcFinal > wcMax(bent) + 0.02 && micro === 0 && !isSMS) warnings.push(`В/Ц ${wcFinal.toFixed(2)} выше водоудерживающей способности смеси — риск водоотделения.`);
 
   // ── Свободная вода и седиментация ──
   const excess = Math.max(0, wcFinal - wcMax(bent));
-  let freeWater = needStab || bent >= 2 ? 0 : clamp(0.3 + 8 * excess, 0, 5) * (1 - stabEff);
+  let freeWater = clamp(0.3 + 8 * excess, 0, 5) * (1 - stabEff);
   if (c.maxZenithDeg > 30 && freeWater > 0) freeWater *= 1.5;
   freeWater = Math.round(freeWater * 10) / 10;
-  const sedim = needStab || bent >= 2 ? 0.02 : 0.02 + (0.02 + excess * 0.2) * (1 - stabEff);
+  const sedim = 0.02 + (0.02 + excess * 0.2) * (1 - stabEff);
 
   // ── Реология ──
+  if (isSMS || isPolymer) warnings.push("Численные прогнозы свободной воды, седиментации, реологии и загустевания не калиброваны под выбранный стабилизатор; они не подтверждают соответствие требованиям.");
   const rheo27 = rheologyAt(phiRheo, bent, dFla, dDisp, latex, 27);
   const rheoBhct = rheologyAt(phiRheo, bent, dFla, dDisp, latex, c.bhctC);
   const spread = clamp(27 - 0.45 * rheo27.ypPa, 14, 26);
@@ -516,6 +540,7 @@ export interface LabTargets {
   expansion?: boolean;
   fiber?: boolean;
   extender?: "auto" | "bentonite" | "microspheres";
+  stabilizerChoice?: StabilizerChoice;
   /** Базовый цемент */
   baseCement?: BaseCementKey;
   /** Ручные дозировки добавок, % bwoc */
@@ -558,6 +583,7 @@ const fx = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d).replace(".",
 export function complianceOf(d: SlurryDesign, t: ReturnType<typeof defaultTargets>): ComplianceRow[] {
   const p = d.predicted;
   const rows: ComplianceRow[] = [];
+  const uncalibrated = d.components.some(x => x.role === "stabilizer" && /Метасиликат|Полимерный стабилизатор/.test(x.name));
   const min = (key: string, label: string, target: number | undefined, val: number, dec = 1) => {
     if (target === undefined) return;
     rows.push({ key, label, target: `≥ ${fx(target, dec)}`, predicted: fx(val, dec), ok: val >= target - 1e-9, deficit: Math.max(0, (target - val) / Math.max(target, 1e-6)) });
@@ -569,7 +595,8 @@ export function complianceOf(d: SlurryDesign, t: ReturnType<typeof defaultTarget
   min("tt", "Время загустевания до 30 Вс, мин", t.thickeningMinMin, p.thickening30BcMin, 0);
   max("ttMax", "Время загустевания до 30 Вс (не более), мин", t.thickeningMaxMin, p.thickening30BcMin, 0);
   max("fl", "Водоотдача, мл/30 мин", t.fluidLossMaxMl, p.fluidLossMl, 0);
-  max("fw", "Свободная вода, %", t.freeWaterMaxPct, p.freeWaterPct, 1);
+  if (uncalibrated) rows.push({ key: "fw", label: "Свободная вода, %", target: `≤ ${fx(t.freeWaterMaxPct, 1)}`, predicted: "испытать", ok: null, deficit: 0 });
+  else max("fw", "Свободная вода, %", t.freeWaterMaxPct, p.freeWaterPct, 1);
   max("yp", "ДНС при 27 °C, Па", t.yieldPointMaxPa, p.rheo27.ypPa, 1);
   min("spread", "Растекаемость, см", t.spreadMinCm, p.spreadCm, 1);
   min("s24", "Прочность 24 ч на кровле, МПа", t.strength24MinMPa, p.strength24TopMPa, 2);
@@ -598,7 +625,7 @@ export function designToTargets(c: DesignConditions, user?: LabTargets): TargetD
     thickeningMinMin: t.thickeningMinMin, thickeningMaxMin: t.thickeningMaxMin,
     fluidLossMaxMl: t.fluidLossMaxMl, freeWaterMaxPct: t.freeWaterMaxPct,
     gasTight: t.gasTight,
-    expansion: t.expansion, fiber: t.fiber, extender: t.extender, baseCement: user?.baseCement, doses: user?.doses,
+    expansion: t.expansion, fiber: t.fiber, extender: t.extender, stabilizerChoice: user?.stabilizerChoice, baseCement: user?.baseCement, doses: user?.doses,
   };
   const score = (rows: ComplianceRow[]) => rows.reduce((s, r) => s + (r.ok === false ? 1 + r.deficit : 0), 0);
   let opts = { ...base };
