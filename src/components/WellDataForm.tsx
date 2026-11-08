@@ -50,7 +50,7 @@ export default function WellDataForm({ data, onChange }: Props) {
                 id={key}
                 type="number"
                 step="any"
-                value={data[key] || ""}
+                value={typeof data[key] === "number" ? Number(data[key]) : ""}
                 onChange={(e) => handleChange(key, e.target.value)}
                 className="h-9 text-sm"
               />

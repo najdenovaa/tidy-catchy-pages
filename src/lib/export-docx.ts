@@ -1,3 +1,4 @@
+import { FLEET_SCHEMES } from "./cement-fleet-catalog";
 import { materialLabel, cementProduct } from "./cement-product-catalog";
 import { EQUIPMENT_LABELS, equipmentDetails, equipmentWarnings } from "./cementing-equipment";
 import { fixedReportTable, REPORT_TEXT_WIDTH, reportPageProperties } from "./report-layout";
@@ -7,7 +8,7 @@ import { foamReportChildren } from './foam-cement-report';
 import type { FoamReportBundle } from './foam-cement-types';
 import { buildLabProgram, buildRecipe } from "./cement-program";
 import { checkNorms, inferCasingType, CASING_TYPE_LABEL } from "./cement-norms";
-import { planLogistics } from "./cement-logistics";
+import { planLogistics, normalizeLogisticsSettings, type LogisticsSettings } from "./cement-logistics";
 import { runLossRisk, DEFAULT_RISK, type RiskResult } from "./cement-risk";
 import {
   Document, Packer, Paragraph, Table, TableRow, TableCell,
@@ -143,15 +144,26 @@ function buildNormsPage(wellData: WellData, slurries: SlurryInput[], buffers: Bu
   return out;
 }
 
-function buildLogisticsPage(pressureResult: PressureProfileResult, materials: MaterialSummary, slurries: SlurryInput[]): Paragraph[] {
-  const r = planLogistics(pressureResult, materials, slurries);
+function buildLogisticsPage(pressureResult: PressureProfileResult, materials: MaterialSummary, slurries: SlurryInput[], settings?: LogisticsSettings): Paragraph[] {
+  const config=normalizeLogisticsSettings(settings);
+  const r = planLogistics(pressureResult, materials, slurries, config);
   const hm = (m: number) => `${Math.floor(m / 60)} ч ${String(Math.round(m % 60)).padStart(2, "0")} мин`;
   const out: Paragraph[] = [sectionTitle("Техника, персонал и график работ")];
+  out.push(gridTable(['Параметр комплекса','Принято в расчёте'],[
+    ['Схема',FLEET_SCHEMES[r.scheme]],['Модель / производитель',`${config.manufacturer??''} ${config.unitName}`],
+    ['Гидравлическая мощность / макс. подача всей машины',`${config.unitPowerKW} кВт / ${config.unitMaxRateLps} л/с`],['Предел давления машины',`${config.unitMaxPressureMPa} МПа`],
+    ['Паспортная проверка',config.passportConfirmed?'Отмечена пользователем':'Не подтверждена; расчётный шаблон'],
+    ['Смешивание одной системы',`${config.mixRatePerPairLps} л/с`],
+    ...(r.scheme!=='classic'?[['ЦТ-25: объём / груз / насыпная плотность',`${config.bulkVolumeM3} м³ / ${config.bulkPayloadT} т / ${config.bulkDensityTm3} т/м³`],['Пневмоподача / входы на смеситель',`${config.bulkUnloadTmin} т/мин / ${config.maxBulkConnections}`],['Закрытая подача',config.closedMixing?'Выбрана':'Не подтверждена']]:[]),
+  ]) as any);
+  if(config.pumpCurve?.length)out.push(gridTable(['Давление рабочей точки, МПа','Подача всей машины, л/с'],config.pumpCurve.map(x=>[fmt(x.pressureMPa),fmt(x.rateLps)])) as any);
   out.push(gridTable(["Техника", "Кол-во", "Обоснование"], r.equipment.map((e) => [e.name, String(e.count), e.note])) as any);
   out.push(new Paragraph({ children: [] }));
   out.push(gridTable(["Персонал", "Кол-во, чел."], [...r.personnel.map((p) => [p.role, String(p.count)]), ["Итого", String(r.personnel.reduce((t, p) => t + p.count, 0))]]) as any);
   out.push(new Paragraph({ children: [] }));
   out.push(gridTable(["Этап", "Начало", "Длительность"], r.timeline.map((t) => [t.step, hm(t.startMin), hm(t.durationMin)])) as any);
+  out.push(noteParagraph(`Схема: ${FLEET_SCHEMES[r.scheme]}; рабочих машин ${r.unitsWorking}; насосов ${r.workingPumps}; смесительных систем ${r.mixingSystems}; выполнимость ${r.feasible?'по введённым характеристикам':'НЕ ОБЕСПЕЧЕНА'}.`));
+  out.push(noteParagraph(`Отказ одного насоса: ${r.onePumpOutRateLps.toFixed(1)} л/с в пиковой точке; ${r.onePumpOutMeetsPeak?'пиковая подача сохраняется':'пиковая подача не обеспечена'}.`));
   r.notes.forEach((n) => out.push(noteParagraph(`⚠ ${n}`)));
   return out;
 }
@@ -1075,7 +1087,16 @@ export async function exportToDocx(
   const materialsContent = buildMaterialsPage(materials);
   const labContent = buildLabPage(wellData, slurries, volumes, pressureResult);
   const normsContent = buildNormsPage(wellData, slurries, buffers, drillingFluid, volumes, pressureResult);
-  const logisticsContent = buildLogisticsPage(pressureResult, materials, slurries);
+  const logisticsContent = buildLogisticsPage(pressureResult, materials, slurries, wellData.logistics);
+  const basket=pressureResult.basketStop;
+  if(basket){
+    logisticsContent.push(sectionTitle('Корзины: давление после Стоп'),noteParagraph(`Сценарий через ${basket.elapsedMin} мин. Основная гидравлика сохраняет полный столб без разгрузки.`));
+    const depths=new Set([wellData.casingDepthMD,...basket.baskets.map(b=>b.md),...(wellData.reservoirLayers??[]).flatMap(l=>[l.topMD,l.bottomMD])]);
+    logisticsContent.push(gridTable(['MD, м','Полный столб, МПа','Сценарий, МПа','Снижение, МПа','Пластовое, МПа','ГРП / потери, МПа'],basket.rows.filter(r=>depths.has(r.md)).map(r=>[fmt(r.md,1),fmt(r.withoutMPa),fmt(r.scenarioMPa),fmt(r.reductionMPa),r.poreMPa===null?'Не задано':fmt(r.poreMPa),r.limitMPa===null?'Не задано':fmt(r.limitMPa)])) as any);
+    for(const b of basket.baskets){logisticsContent.push(noteParagraph(`${b.model}: MD ${b.md} м; передача ${fmt(b.transferPct,0)}%; ΔP ${fmt(b.transferredMPa)} МПа; реакция ${fmt(b.reactionKN)} кН; несущая способность ${b.capacityKN===undefined?'не задана':fmt(b.capacityKN)+' кН'}.`));b.notes.forEach(n=>logisticsContent.push(noteParagraph(n)));}
+    basket.notes.forEach(n=>logisticsContent.push(noteParagraph(n)));
+  }
+
   let riskContent: Paragraph[] = [];
   try {
     const risk = await runLossRisk({ wellData, drillingFluid, buffers, slurries, displacementFluids, fractureGradient, flushTimeMin: preComputed?.flushTimeMin ?? 10, flushVolumeM3: preComputed?.flushVolumeM3 ?? 0 }, { ...DEFAULT_RISK, iterations: 100 });
