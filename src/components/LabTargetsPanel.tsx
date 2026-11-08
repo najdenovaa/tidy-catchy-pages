@@ -1,3 +1,4 @@
+import { RecipeProductsPanel } from "./CementProductPicker";
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -103,6 +104,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
         };
         const d = r.design;
         const failed = r.compliance.filter((x) => x.ok === false).length;
+        const pending = r.compliance.some(c => c.ok === null && c.key !== "rho");
         return (
           <div key={`${s.name}-${i}`} className="rounded-lg border border-border/70 p-3 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -110,8 +112,8 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
                 Раствор {i + 1} «{s.name}» · {f(s.density, 2)} г/см³ · BHCT {f(conditions[i].bhctC, 0)} °C · кровля {f(conditions[i].tTopC, 0)} °C
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={r.allOk ? "outline" : "destructive"} className={r.allOk ? "border-green-600 text-green-700" : ""}>
-                  {r.allOk ? "все требования выполнены (прогноз)" : `не выполнено: ${failed}`}
+                <Badge variant={pending || r.allOk ? "outline" : "destructive"} className={r.allOk && !pending ? "border-green-600 text-green-700" : ""}>
+                  {pending ? "Требуется лабораторная проверка" : r.allOk ? "все требования выполнены (прогноз)" : `не выполнено: ${failed}`}
                 </Badge>
                 {Object.keys(t).length > 0 && (
                   <Button size="sm" variant="ghost" onClick={() => onTargetsChange(i, undefined)} title="Вернуть требования программы испытаний"><RotateCcw className="h-3.5 w-3.5 mr-1" />Сбросить</Button>
@@ -177,6 +179,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
               <div className="space-y-3">
                 <div>
                   <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Подобранная рецептура</div>
+                  <RecipeProductsPanel choices={t.products} onChange={products => set({ products })} roles={d.components.map(c => c.role)} />
                   <RecipeDoseTable d={d} doses={t.doses} onChange={(doses) => set({ doses })} textSize="text-xs" />
                   <div className="text-[11px] text-muted-foreground mt-1">
                     Плотность {f(d.densityGcm3, 3)} г/см³ · В/С {f(d.waterToBlend, 3)} · выход {f(d.yieldM3PerT, 3)} м³/т
@@ -201,7 +204,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
               </div>
             </div>
             {r.actions.length > 0 && <div className="text-xs text-muted-foreground">Корректировка под требования: {r.actions.join("; ")}.</div>}
-            {!r.allOk && (
+            {failed > 0 && (
               <div className="text-xs text-amber-700 dark:text-amber-500">
                 Часть требований недостижима одновременно в рамках корреляций (например, высокая ранняя прочность облегчённого раствора на холодной кровле). Ослабьте требование или смените тип облегчения / плотность.
               </div>

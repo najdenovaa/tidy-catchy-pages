@@ -1,3 +1,5 @@
+import { materialLabel, type ProductIdentity } from "./cement-product-catalog";
+import type { EquipmentSelection } from "./cementing-equipment";
 // Core cementing calculation formulas
 import { hbFromFann, hbFriction, flowIndexN, type FannReadings, type HBParams } from "./cement-rheology";
 
@@ -46,13 +48,14 @@ export function cementCategory(densityGcm3: number): FluidCategory {
 
 export type AdditivePercentageType = 'bwoc' | 'bwob';
 
-export interface Additive {
+export interface Additive extends ProductIdentity {
   name: string;
   percentage: number; // % от массы цемента (bwoc) или смеси (bwob)
   percentageType: AdditivePercentageType; // тип расчёта процента
   massKg: number; // кг (автовычисляемое)
   /** Удельный вес (плотность материала), г/см³ — для расчёта рецептуры по абсолютным объёмам */
   specificGravity?: number;
+  specificGravityAssumed?: boolean;
 }
 
 export interface FlowRateStep {
@@ -106,6 +109,7 @@ export interface ReservoirLayer {
 }
 
 export interface WellData {
+  equipment?: EquipmentSelection[];
   wellDepthMD: number;
   wellDepthTVD: number;
   casingDepthMD: number;
@@ -1111,7 +1115,7 @@ export function calculateMaterials(
         const computedMassKg = a.percentage > 0 ? calculateAdditiveMass(a.percentage, pctType, dryMassKg) : a.massKg;
         const label = pctType === 'bwob' ? `${a.percentage}% bwob` : `${a.percentage}% bwoc`;
         if (a.name && computedMassKg > 0) {
-          cementItems.push({ name: `  ${a.name} (${label})`, amount: computedMassKg, unit: "кг" });
+          cementItems.push({ name: `  ${materialLabel(a)} (${label})`, amount: computedMassKg, unit: "кг" });
         }
       });
     }
@@ -1124,9 +1128,9 @@ export function calculateMaterials(
     let additivesVolumeM3 = 0;
     b.additives.forEach(a => {
       const computedMassKg = a.percentage > 0 ? (a.percentage / 100) * bufferMassKg : a.massKg;
-      if (computedMassKg > 0) additivesVolumeM3 += computedMassKg / 1200;
+      if (computedMassKg > 0) additivesVolumeM3 += computedMassKg / (a.specificGravity && a.specificGravity > 0 ? a.specificGravity * 1000 : 1200);
       if (a.name && computedMassKg > 0) {
-        bufferItems.push({ name: `  ${a.name} (${a.percentage}%)`, amount: computedMassKg, unit: "кг" });
+        bufferItems.push({ name: `  ${materialLabel(a)}${a.percentage > 0 ? ` (${a.percentage}% от массы буфера)` : " (доза в кг)"}`, amount: computedMassKg, unit: "кг" });
       }
     });
     waterForBuffers += Math.max(0, b.volume - additivesVolumeM3);

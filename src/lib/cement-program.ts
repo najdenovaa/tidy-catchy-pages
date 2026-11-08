@@ -1,3 +1,4 @@
+import { materialLabel, productWarnings, cementProduct, type ProductIdentity } from "./cement-product-catalog";
 /**
  * Программа цементирования: температурный режим (BHCT), программа лабораторных испытаний
  * тампонажных растворов (API RP 10B-2 / ГОСТ 26798.1) и рецептура по абсолютным объёмам.
@@ -254,12 +255,17 @@ const DEFAULT_ADDITIVE_SG = 1.5;
 
 /** Удельный вес добавки: заданный пользователем → по названию → 1.5 (с флагом «уточнить»). */
 export function additiveSG(a: Additive): { sg: number; source: "user" | "library" | "default"; matched?: string } {
-  if (a.specificGravity && a.specificGravity > 0) return { sg: a.specificGravity, source: "user" };
+  if (a.specificGravity && a.specificGravity > 0) return { sg: a.specificGravity, source: a.specificGravityAssumed ? "default" : "user" };
+  const product = cementProduct(a.productId);
+  if (product) {
+    const assumed: Record<string, number> = { retarder: 1.3, fluidLoss: 1.3, dispersant: 1.35, defoamer: 1, microsilica: 2.2 };
+    return { sg: assumed[product.role] ?? DEFAULT_ADDITIVE_SG, source: "default", matched: "типовой SG по роли, не паспорт продукта" };
+  }
   for (const [re, sg, label] of SG_LIBRARY) if (re.test(a.name || "")) return { sg, source: "library", matched: label };
   return { sg: DEFAULT_ADDITIVE_SG, source: "default" };
 }
 
-export interface RecipeLine { name: string; kgPerM3: number; litersPerM3: number; sg: number; sgSource: "user" | "library" | "default"; totalKg: number }
+export interface RecipeLine extends ProductIdentity { name: string; kgPerM3: number; litersPerM3: number; sg: number; sgSource: "user" | "library" | "default"; totalKg: number }
 
 export interface SlurryRecipe {
   slurryName: string;
@@ -296,6 +302,13 @@ export function buildRecipe(s: SlurryInput, slurryVolumeM3: number, reservePct =
   const Vdry = Mc / cementSG + adds.reduce((t, x) => t + x.m / x.sg, 0); // л
   const rho = s.density;
   const warnings: string[] = [];
+  for (const a of s.additives) {
+    const p = cementProduct(a.productId);
+    if (p) {
+      warnings.push(...productWarnings(p, a.percentageType === 'bwoc' ? a.percentage : undefined));
+      if (!a.specificGravity || a.specificGravityAssumed) warnings.push(`${p.name}: истинная плотность партии не задана; SG в абсолютных объёмах принято по типовой модели, не из паспорта продукта.`);
+    }
+  }
 
   const MwDesign = rho > 1 ? (Mb - rho * Vdry) / (rho - 1) : 0;
   const wcForDesign = MwDesign / Mb;
@@ -319,10 +332,10 @@ export function buildRecipe(s: SlurryInput, slurryVolumeM3: number, reservePct =
   if (wcCement > 0.6 && !hasExtender && MwDesign > 0) warnings.push(`В/Ц ${wcCement.toFixed(2)} — больше ~0.6 без облегчающей добавки: высокое водоотделение и низкая прочность. Нужен бентонит/микросферы или стабилизатор.`);
   if (wcCement > 0 && wcCement < 0.35 && MwDesign > 0) warnings.push(`В/Ц ${wcCement.toFixed(2)} ниже ~0.35 — раствор плохо прокачивается без пластификатора.`);
   const defaults = adds.filter((x) => x.source === "default");
-  if (defaults.length) warnings.push(`Удельный вес не определён для: ${defaults.map((x) => x.a.name || "без названия").join(", ")} — принят 1.5 г/см³. Уточните в карточке добавки.`);
+  if (defaults.length) warnings.push(`Удельный вес принят как допущение: ${defaults.map((x) => `${x.a.name || "без названия"}: ${x.sg} г/см³`).join(", ")}. Уточните истинную плотность в карточке добавки.`);
 
   const additives: RecipeLine[] = adds.map((x) => ({
-    name: x.a.name || "Добавка", kgPerM3: x.m * k, litersPerM3: (x.m / x.sg) * k, sg: x.sg, sgSource: x.source,
+    ...x.a, name: materialLabel({ ...x.a, name: x.a.name || "Добавка" }), kgPerM3: x.m * k, litersPerM3: (x.m / x.sg) * k, sg: x.sg, sgSource: x.source,
     totalKg: x.m * k * slurryVolumeM3,
   }));
   const cementKgPerM3 = Mc * k;

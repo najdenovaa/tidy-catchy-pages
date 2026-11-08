@@ -47,14 +47,18 @@ describe("Подбор рецептуры", () => {
     expect(g.predicted.fluidLossTargetMl).toBe(50);
     expect(g.predicted.fluidLossMl).toBeLessThanOrEqual(50);
     expect(g.components.some((c) => c.role === "gasBlock")).toBe(true);
-    expect(g.predicted.freeWaterPct).toBe(0);
+    // Polymer stability is not a laboratory-confirmed zero free-water result (SMS/bentonite update).
+    expect(g.components.some(c => c.role === 'stabilizer')).toBe(true);
+    expect(g.warnings.join(' ')).toMatch(/не калиброваны/);
     const hot = designSlurry({ densityGcm3: 1.9, bhctC: 120, tTopC: 120, tBottomC: 140, bhstC: 140, maxPressureMPa: 60, requiredThickeningMin: 200, coversPay: false, gas: false, maxZenithDeg: 0, lossMarginMPa: 3, isTail: true });
     expect(hot.components.find((c) => c.role === "silica")?.pctBwoc).toBe(35);
   });
 
-  it("лёгкий раствор: бентонит, а ниже — микросферы по давлению", () => {
+  it("лёгкий раствор: SMS в автоматическом выборе, бентонит при явном выборе", () => {
     const c = { bhctC: 60, tTopC: 20, tBottomC: 70, bhstC: 80, requiredThickeningMin: 180, coversPay: false, gas: false, maxZenithDeg: 0, lossMarginMPa: 3, isTail: false };
-    expect(designSlurry({ ...c, densityGcm3: 1.55, maxPressureMPa: 30 }).components.some((x) => x.role === "extender")).toBe(true);
+    const light = { ...c, densityGcm3: 1.55, maxPressureMPa: 30 };
+    expect(designSlurry(light).components.some(x => /Метасиликат/.test(x.name))).toBe(true);
+    expect(designSlurry(light, { stabilizerChoice: 'bentonite' }).components.some(x => x.role === 'extender')).toBe(true);
     const ms = designSlurry({ ...c, densityGcm3: 1.3, maxPressureMPa: 30 });
     expect(ms.components.find((x) => x.role === "lightweight")?.name).toMatch(/Стеклянные/);
   });

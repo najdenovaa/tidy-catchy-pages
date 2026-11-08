@@ -1,3 +1,4 @@
+import { materialLabel } from "./cement-product-catalog";
 /**
  * Рецептура тампонажного раствора для цементного моста: тот же подбор, что в программе
  * цементирования (designToTargets), но условия и требования — от моста: BHCT на подошве,
@@ -90,7 +91,7 @@ export function buildPlugLabProtocol(inp: PlugInputs, r: PlugResults, res: Targe
         id: "recipe-t-0", headers: ["№", "Компонент", "Назначение", "% bwoc", "кг на 1 м³", "На мост (+5%)"], widths: [5, 28, 33, 9, 10, 15],
         rows: [
           ["1", d.baseCement, "Вяжущее", "100", f(cementKgM3, 0), f((cementKgM3 * vol * reserve) / 1000, 2) + " т"],
-          ...comps.map((c, j) => [String(j + 2), c.name, c.purpose, f(c.pctBwoc, 2), f((cementKgM3 * c.pctBwoc) / 100, 1), f((cementKgM3 * c.pctBwoc * vol * reserve) / 100, 0) + " кг"]),
+          ...comps.map((c, j) => [String(j + 2), materialLabel(c), c.purpose, f(c.pctBwoc, 2), f((cementKgM3 * c.pctBwoc) / 100, 1), f((cementKgM3 * c.pctBwoc * vol * reserve) / 100, 0) + " кг"]),
           [String(comps.length + 2), "Вода затворения (техническая, пресная)", "Затворение", f(d.waterPctBwoc, 1), f((cementKgM3 * d.waterPctBwoc) / 100, 0), f((cementKgM3 * d.waterPctBwoc * vol * reserve) / 100 / 1000, 2) + " м³"],
         ],
       },

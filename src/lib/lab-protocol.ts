@@ -1,3 +1,4 @@
+import { materialLabel } from "./cement-product-catalog";
 /**
  * Расчётный лабораторный протокол подбора рецептуры тампонажных растворов.
  * Модель — универсальный документ (шапка, разделы, таблицы, списки), который редактируется в интерфейсе,
@@ -138,7 +139,7 @@ export function buildLabProtocol(p: ProtocolInput, number?: string): { protocol:
     const comps = [...d.components].sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role));
     const recipeRows: string[][] = [
       ["1", d.baseCement, "Вяжущее", "100", f(cementKgM3, 0), f((cementKgM3 * vol * reserve) / 1000, 2) + " т"],
-      ...comps.map((c, j) => [String(j + 2), c.name, c.purpose, f(c.pctBwoc, 2), f((cementKgM3 * c.pctBwoc) / 100, 1), f((cementKgM3 * c.pctBwoc * vol * reserve) / 100, 0) + " кг"]),
+      ...comps.map((c, j) => [String(j + 2), materialLabel(c), c.purpose, f(c.pctBwoc, 2), f((cementKgM3 * c.pctBwoc) / 100, 1), f((cementKgM3 * c.pctBwoc * vol * reserve) / 100, 0) + " кг"]),
       [String(comps.length + 2), "Вода затворения (техническая, пресная)", "Затворение", f(d.waterPctBwoc, 1), f((cementKgM3 * d.waterPctBwoc) / 100, 0), f((cementKgM3 * d.waterPctBwoc * vol * reserve) / 100 / 1000, 2) + " м³"],
     ];
     const dry = comps.filter((c) => !["gasBlock", "defoamer", "retarder", "accelerator"].includes(c.role)).map((c) => c.name.split(" (")[0].toLowerCase());

@@ -1,3 +1,5 @@
+import { normalizeProductIdentity } from "./cement-product-catalog";
+import { normalizeEquipment } from "./cementing-equipment";
 import type {
   Additive,
   BufferFluid,
@@ -107,6 +109,8 @@ function normalizeRheology(value: unknown, fallback: Rheology = { pv: 0, yp: 0 }
 function normalizeAdditive(value: unknown): Additive {
   const source = isRecord(value) ? value : {};
   return {
+    ...normalizeProductIdentity(source),
+    ...(source.specificGravityAssumed === true ? { specificGravityAssumed: true } : {}),
     name: toString(source.name),
     percentage: toNumber(source.percentage, 0),
     percentageType: source.percentageType === "bwob" ? "bwob" : "bwoc",
@@ -188,6 +192,7 @@ export function normalizeWellData(value: unknown): WellData {
     : undefined;
 
   return {
+    equipment: normalizeEquipment(source.equipment),
     wellDepthMD: toNumber(source.wellDepthMD, defaultWellData.wellDepthMD),
     wellDepthTVD: toNumber(source.wellDepthTVD, defaultWellData.wellDepthTVD),
     casingDepthMD: toNumber(source.casingDepthMD, defaultWellData.casingDepthMD),
