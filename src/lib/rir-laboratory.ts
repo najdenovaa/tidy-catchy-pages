@@ -1,12 +1,13 @@
+import { materialLabel, type ProductIdentity } from "./cement-product-catalog";
 /** RIR-specific recipe and measured tests. A measured value never comes from a forecast. */
 import type { CompositionDesign, RirCompositionResult } from "./rir-compositions";
 import type { CompositionKind, RirInputs } from "./rir-calculations";
 import type { LabProtocol, ProtocolSection } from "./lab-protocol";
 
-export interface RirLabIngredient {
+export interface RirLabIngredient extends ProductIdentity {
   name: string; batch: string; role: string;
   /** Mass parts, same arbitrary basis for every ingredient, including water. */
-  parts: number; sg: number;
+  parts: number; sg: number; sgAssumed?: boolean;
 }
 export interface RirLabFacts {
   density: number | null; pv: number | null; yp: number | null;
@@ -46,7 +47,7 @@ export function recipeMass(d: RirLabDraft) {
     rows: d.ingredients.map(x => ({ ...x, kgPerM3: valid ? x.parts * 1000 / litres : NaN })) };
 }
 export function recipeKey(d: RirLabDraft): string {
-  return JSON.stringify([d.kind, d.ingredients.map(x => [x.name, x.batch, x.role, x.parts, x.sg]),
+  return JSON.stringify([d.kind, d.ingredients.map(x => [x.name, x.batch, x.role, x.parts, x.sg, x.productId, x.manufacturer, x.technicalSpec, x.sourceUrl, x.sgAssumed]),
     d.bhctC, d.bhstC, d.pressureMPa]);
 }
 export function createRirLab(kind: CompositionKind, design: CompositionDesign, c: RirLabContext): RirLabDraft {
@@ -69,7 +70,7 @@ export function evaluateRirLab(d: RirLabDraft, c: RirLabContext) {
   const bound = d.testedKey === key;
   const conditions = Math.abs(d.bhctC - c.bhctC) <= 2 && Math.abs(d.bhstC - c.bhstC) <= 2;
   const identity = !!(d.protocol.trim() && d.laboratory.trim() && d.operator.trim() && d.date
-    && d.ingredients.every(x => x.batch.trim()));
+    && d.ingredients.every(x => x.batch.trim() && !x.sgAssumed));
   const current = bound && conditions && identity;
   type Check = { label: string; status: "pass" | "fail" | "unknown"; actual: string; target: string };
   const checks: Check[] = [];
@@ -123,7 +124,7 @@ export function withRirLab(comp: RirCompositionResult | null, inp: RirInputs, c:
   const m = recipeMass(d);
   return { ...comp, primary: { ...comp.primary, title: d.title || comp.primary.title,
     components: m.rows.filter(x => x.role !== "water").map(x => ({
-      name: x.name + " [партия " + x.batch + "]", role: x.role, purpose: "Фактическая рецептура РИР",
+      name: materialLabel(x), role: x.role, purpose: "Фактическая рецептура РИР",
       dose: x.parts, doseUnit: "масс. ч.", kgPerM3: x.kgPerM3, sg: x.sg })),
     waterLPerM3: m.rows.filter(x => x.role === "water").reduce((s, x) => s + x.kgPerM3 / x.sg, 0),
     densityGcm3: d.facts.density!, workLifeAtBhctMin: d.facts.workLifeMin!,
@@ -154,7 +155,7 @@ export function rirLabSection(d: RirLabDraft, c: RirLabContext, volumeM3: number
         ["Запас приготовления, %", fmt(d.reservePct)], ["Объём лабораторной пробы, л", fmt(d.sampleVolumeL)],
       ] },
       { id: "rir-lab-recipe", headers: ["Компонент / партия", "Масс. части", "SG", "кг/м³", "На операцию с запасом, кг"],
-        rows: e.mass.rows.map(x => [x.name + " / " + x.batch, fmt(x.parts), fmt(x.sg),
+        rows: e.mass.rows.map(x => [materialLabel(x), fmt(x.parts), fmt(x.sg) + (x.sgAssumed ? " (допущение)" : ""),
           fmt(x.kgPerM3), fmt(x.kgPerM3 * factor)]) },
       { id: "rir-lab-facts", headers: ["Испытание", "Факт", "Требование", "Статус"],
         rows: e.checks.map(x => [x.label, x.actual, x.target, x.status === "pass" ? "соответствует" : x.status === "fail" ? "не соответствует" : "не оценено"]) },

@@ -35,7 +35,7 @@ export default function RecipeDoseTable({ d, doses, onChange, textSize = "text-[
             const isMan = cur[r] !== undefined;
             return (
               <tr key={c.role + c.name} className={`border-t border-border/40 ${isMan ? "bg-primary/5" : ""}`}>
-                <td className="p-1 break-words">{c.name}{isMan && <span className="ml-1 text-[9px] text-primary">(вручную)</span>}</td>
+                <td className="p-1 break-words">{c.name}{c.manufacturer && <span className="block text-[10px] text-muted-foreground">{c.manufacturer}{c.sgAssumed ? " · SG оценочное" : ""}</span>}{isMan && <span className="ml-1 text-[9px] text-primary">(вручную)</span>}</td>
                 <td className="p-1">
                   <div className="flex items-center justify-end gap-0.5">
                     <input

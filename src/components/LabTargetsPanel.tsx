@@ -1,3 +1,4 @@
+import { RecipeProductsPanel } from "./CementProductPicker";
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -111,7 +112,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant={r.allOk ? "outline" : "destructive"} className={r.allOk ? "border-green-600 text-green-700" : ""}>
-                  {r.allOk ? "все требования выполнены (прогноз)" : `не выполнено: ${failed}`}
+                  {r.compliance.some(c => c.ok === null && c.key !== "rho") ? "Требуется лабораторная проверка" : r.allOk ? "все требования выполнены (прогноз)" : `не выполнено: ${failed}`}
                 </Badge>
                 {Object.keys(t).length > 0 && (
                   <Button size="sm" variant="ghost" onClick={() => onTargetsChange(i, undefined)} title="Вернуть требования программы испытаний"><RotateCcw className="h-3.5 w-3.5 mr-1" />Сбросить</Button>
@@ -177,6 +178,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
               <div className="space-y-3">
                 <div>
                   <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Подобранная рецептура</div>
+                  <RecipeProductsPanel choices={t.products} onChange={products => set({ products })} roles={d.components.map(c => c.role)} />
                   <RecipeDoseTable d={d} doses={t.doses} onChange={(doses) => set({ doses })} textSize="text-xs" />
                   <div className="text-[11px] text-muted-foreground mt-1">
                     Плотность {f(d.densityGcm3, 3)} г/см³ · В/С {f(d.waterToBlend, 3)} · выход {f(d.yieldM3PerT, 3)} м³/т

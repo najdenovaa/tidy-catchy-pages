@@ -5,6 +5,8 @@ import type { CentralizerSpec } from './centralization-calculations';
 
 export interface CentralizerPassport {
   model: string;
+  manufacturer?: string;
+  sourceUrl?: string;
   estimatedRestoringForceKN?: number;
   series?: string;
   boreDiameterRange?: string;

@@ -612,6 +612,7 @@ export default function Index() {
           <TabsContent value="input">
             <div data-tab-content="input">
               <InputSection
+                centralizerIntervals={centralizerIntervals}
                 wellData={wellData}
                 onWellDataChange={setWellData}
                 drillingFluid={drillingFluid}

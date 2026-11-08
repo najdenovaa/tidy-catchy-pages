@@ -1,3 +1,4 @@
+import { cementProduct, identityOf, productWarnings, type ProductIdentity, type ProductChoices } from "./cement-product-catalog";
 /**
  * Подбор рецептуры тампонажного раствора под условия скважины и прогноз его свойств.
  *
@@ -37,7 +38,8 @@ export type AdditiveRole =
   | "base" | "extender" | "lightweight" | "weighting" | "retarder" | "accelerator" | "fluidLoss" | "dispersant"
   | "defoamer" | "stabilizer" | "silica" | "gasBlock" | "expanding" | "fiber";
 
-export interface DesignedComponent {
+export interface DesignedComponent extends ProductIdentity {
+  sgAssumed?: boolean;
   role: AdditiveRole;
   name: string;
   /** Назначение (для протокола) */
@@ -159,6 +161,7 @@ export const BASE_CEMENTS: Record<Exclude<BaseCementKey, "auto">, BaseCementSpec
 
 /** Управляемые параметры подбора (задаются требованиями технолога или итерациями подбора). */
 export interface DesignOptions {
+  products?: ProductChoices;
   thickeningMinMin?: number;
   thickeningMaxMin?: number;
   fluidLossMaxMl?: number;
@@ -217,7 +220,18 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   };
   const manualList = o.doses ? (Object.keys(o.doses) as Exclude<AdditiveRole, "base">[]).filter((r) => man(r) !== undefined) : [];
   const comps: DesignedComponent[] = [];
-  const add = (x: DesignedComponent) => { if (x.pctBwoc > 0) comps.push({ ...x, pctBwoc: Math.round(x.pctBwoc * 100) / 100 }); };
+  const add = (x: DesignedComponent) => {
+    if (x.pctBwoc <= 0) return;
+    const choice = o.products?.[x.role as keyof ProductChoices], p = cementProduct(choice?.id);
+    if (p && p.role === x.role) {
+      x = { ...x, ...identityOf(p), name: p.name, batch: choice?.batch,
+        sg: choice?.sg && Number.isFinite(choice.sg) && choice.sg > 0 ? choice.sg : x.sg,
+        sgAssumed: !(choice?.sg && Number.isFinite(choice.sg) && choice.sg > 0) };
+      warnings.push(...productWarnings(p, x.pctBwoc, Math.max(c.bhstC, c.bhctC)));
+      warnings.push(`${p.name}: свойства по типовой корреляции, без калибровки под марку и партию; испытать фактическую рецептуру.${x.sgAssumed ? ` SG ${x.sg} г/см³ - допущение, не паспорт продукта.` : ''}`);
+    }
+    comps.push({ ...x, pctBwoc: Math.round(x.pctBwoc * 100) / 100 });
+  };
 
   // ── Высокотемпературная стабилизация ──
   const silica = man("silica") ?? (c.bhstC > 110 ? 35 : 0);
@@ -504,10 +518,14 @@ export function conditionsFor(
   };
 }
 
+function identityOfComponent(c: DesignedComponent): ProductIdentity {
+  return { productId: c.productId, manufacturer: c.manufacturer, technicalSpec: c.technicalSpec, sourceUrl: c.sourceUrl, batch: c.batch };
+}
+
 /** Перенос подобранной рецептуры в раствор программы (добавки, В/С, выход, реология, время загустевания). */
 export function applyDesignToSlurry(s: SlurryInput, d: SlurryDesign, keepMeasured = true): SlurryInput {
   const additives: Additive[] = d.components.map((c) => ({
-    name: c.name, percentage: Math.round(c.pctBwoc * 100) / 100, percentageType: "bwoc", massKg: 0, specificGravity: c.sg,
+    ...identityOfComponent(c), name: c.name, percentage: Math.round(c.pctBwoc * 100) / 100, percentageType: "bwoc", massKg: 0, specificGravity: c.sg, specificGravityAssumed: c.sgAssumed,
   }));
   const r = d.predicted.rheo27;
   return {
@@ -526,6 +544,7 @@ export function applyDesignToSlurry(s: SlurryInput, d: SlurryDesign, keepMeasure
 
 /** Требования к раствору, задаваемые технологом (пустое поле — значение по умолчанию из программы испытаний). */
 export interface LabTargets {
+  products?: ProductChoices;
   thickeningMinMin?: number;
   thickeningMaxMin?: number;
   fluidLossMaxMl?: number;
@@ -547,7 +566,7 @@ export interface LabTargets {
 }
 
 /** Требования по умолчанию: ПБ НГП, API RP 10B-2 и типовая практика для назначения пачки. */
-export function defaultTargets(c: DesignConditions): Required<Omit<LabTargets, "thickeningMaxMin" | "sgsMaxMin" | "baseCement" | "doses">> & Pick<LabTargets, "thickeningMaxMin" | "sgsMaxMin" | "baseCement" | "doses"> {
+export function defaultTargets(c: DesignConditions): Required<Omit<LabTargets, "thickeningMaxMin" | "sgsMaxMin" | "baseCement" | "doses" | "products">> & Pick<LabTargets, "thickeningMaxMin" | "sgsMaxMin" | "baseCement" | "doses" | "products"> {
   return {
     thickeningMinMin: Math.round(Math.max(60, c.requiredThickeningMin)),
     thickeningMaxMin: undefined,
@@ -580,7 +599,7 @@ export interface ComplianceRow { key: string; label: string; target: string; pre
 
 const fx = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d).replace(".", ",") : "—");
 
-export function complianceOf(d: SlurryDesign, t: ReturnType<typeof defaultTargets>): ComplianceRow[] {
+export function complianceOf(d: SlurryDesign, t: ReturnType<typeof defaultTargets>, qualifyProducts = true): ComplianceRow[] {
   const p = d.predicted;
   const rows: ComplianceRow[] = [];
   const uncalibrated = d.components.some(x => x.role === "stabilizer" && /Метасиликат|Полимерный стабилизатор/.test(x.name));
@@ -607,6 +626,7 @@ export function complianceOf(d: SlurryDesign, t: ReturnType<typeof defaultTarget
   }
   if (t.expansion) rows.push({ key: "exp", label: "Расширение камня, %", target: "≥ 0,3", predicted: fx(p.expansionPct ?? 0, 1), ok: (p.expansionPct ?? 0) >= 0.3, deficit: 0 });
   rows.push({ key: "rho", label: "Плотность, г/см³", target: "проектная ± 0,02", predicted: fx(d.densityGcm3, 3), ok: null, deficit: 0 });
+  if (qualifyProducts && d.components.some(x => x.productId)) rows.forEach(r => { r.ok = null; r.deficit = 0; r.predicted += ' (типовой прогноз; испытать)'; });
   return rows;
 }
 
@@ -625,12 +645,12 @@ export function designToTargets(c: DesignConditions, user?: LabTargets): TargetD
     thickeningMinMin: t.thickeningMinMin, thickeningMaxMin: t.thickeningMaxMin,
     fluidLossMaxMl: t.fluidLossMaxMl, freeWaterMaxPct: t.freeWaterMaxPct,
     gasTight: t.gasTight,
-    expansion: t.expansion, fiber: t.fiber, extender: t.extender, stabilizerChoice: user?.stabilizerChoice, baseCement: user?.baseCement, doses: user?.doses,
+    expansion: t.expansion, fiber: t.fiber, extender: t.extender, stabilizerChoice: user?.stabilizerChoice, baseCement: user?.baseCement, doses: user?.doses, products: user?.products,
   };
   const score = (rows: ComplianceRow[]) => rows.reduce((s, r) => s + (r.ok === false ? 1 + r.deficit : 0), 0);
   let opts = { ...base };
   let design = designSlurry(c, opts);
-  let rows = complianceOf(design, t);
+  let rows = complianceOf(design, t, false);
   let sc = score(rows);
   const actions: string[] = [];
   const pct = (d: SlurryDesign, role: AdditiveRole) => d.components.filter((x) => x.role === role).reduce((s, x) => s + x.pctBwoc, 0);
@@ -660,7 +680,7 @@ export function designToTargets(c: DesignConditions, user?: LabTargets): TargetD
     let best: { o: DesignOptions; d: SlurryDesign; r: ComplianceRow[]; s: number; note: string } | null = null;
     for (const k of cands) {
       const d = designSlurry(c, k.o);
-      const r = complianceOf(d, t);
+      const r = complianceOf(d, t, false);
       const s = score(r);
       if (s < sc - 1e-6 && (!best || s < best.s)) best = { o: k.o, d, r, s, note: k.note };
     }
@@ -672,5 +692,6 @@ export function designToTargets(c: DesignConditions, user?: LabTargets): TargetD
     if (at >= 0) actions[at] = best.note; else actions.push(best.note);
   }
   if (actions.length) design = { ...design, rationale: [...design.rationale, `Корректировка под требования технолога: ${actions.join("; ")}.`] };
+  rows = complianceOf(design, t);
   return { design, targets: t, compliance: rows, allOk: rows.every((r) => r.ok !== false), actions };
 }

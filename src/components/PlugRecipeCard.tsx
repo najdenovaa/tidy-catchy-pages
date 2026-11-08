@@ -1,3 +1,4 @@
+import { RecipeProductsPanel } from "./CementProductPicker";
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -58,7 +59,7 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
       <CardHeader className="py-3 px-4">
         <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
           <FlaskConical className="w-4 h-4" /> Рецептура раствора для моста
-          <Badge variant={res.allOk ? "default" : "destructive"} className="text-[10px]">{res.allOk ? "требования выполнены (прогноз)" : `не выполнено: ${res.compliance.filter((c) => c.ok === false).length}`}</Badge>
+          <Badge variant={res.allOk ? "default" : "destructive"} className="text-[10px]">{res.compliance.some(c => c.ok === null && c.key !== "rho") ? "Требуется лабораторная проверка" : res.allOk ? "требования выполнены (прогноз)" : `не выполнено: ${res.compliance.filter((c) => c.ok === false).length}`}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0 space-y-3 text-xs">
@@ -114,6 +115,7 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
             </div>
           </div>
           <div className="space-y-2">
+            <RecipeProductsPanel choices={user.products} onChange={products => set("products", products)} roles={d.components.map(c => c.role)} />
             <RecipeDoseTable d={d} doses={user.doses} onChange={(doses) => set("doses", doses)} />
             <p className="text-[10px] text-muted-foreground">Плотность {f(d.densityGcm3, 3)} г/см³ · В/С {f(d.waterToBlend, 3)} · выход {f(d.yieldM3PerT, 3)} м³/т</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 text-[10px]" data-testid="recipe-props">

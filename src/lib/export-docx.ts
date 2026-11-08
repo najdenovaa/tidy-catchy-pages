@@ -1,3 +1,5 @@
+import { materialLabel, cementProduct } from "./cement-product-catalog";
+import { EQUIPMENT_LABELS, equipmentDetails, equipmentWarnings } from "./cementing-equipment";
 import { fixedReportTable, REPORT_TEXT_WIDTH, reportPageProperties } from "./report-layout";
 import { buildCementingReportExtras } from "./cementing-report-sections";
 import type { CementingReportExtras } from "./cementing-report-data";
@@ -268,6 +270,18 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
   }
   result.push(kvTable(fluidRows) as any);
 
+  result.push(sectionTitle("Комплектация обсадной колонны"));
+  const equipment = wellData.equipment ?? [];
+  if (equipment.length) {
+    result.push(gridTable(["Назначение / модель", "Изготовитель / шт.", "Параметры и паспорт"], equipment.map(e => [EQUIPMENT_LABELS[e.kind] + " / " + e.model, (e.manufacturer || "не задан") + " / " + e.quantity, equipmentDetails(e)])) as any);
+    equipment.forEach(e => {
+      if (e.sourceUrl) result.push(noteParagraph(e.model + ": источник " + e.sourceUrl));
+      if (e.note) result.push(noteParagraph(e.model + ": " + e.note));
+      equipmentWarnings(e, wellData).forEach(n => result.push(noteParagraph(e.model + ": " + n)));
+    });
+  } else result.push(noteParagraph("Комплектация не задана. Центраторы, количество и размещение при наличии расчёта приведены в разделе центрирования."));
+  result.push(noteParagraph("Противодавление клапана, разрыв мембраны и допустимый перепад при посадке пробки - разные параметры; не являются гидравлическими потерями или автоматически заданным давлением «Стоп»."));
+
   // Buffers
   result.push(sectionTitle("3. Буферные жидкости"));
   buffers.forEach(b => {
@@ -289,8 +303,10 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
       const bufferMassKg = b.volume * b.density;
       b.additives.forEach(a => {
         if (a.name) {
+          const product = cementProduct(a.productId);
+          if (product) result.push(noteParagraph(`${product.name}: ${product.dosage}. ${product.note} Источник: ${product.sourceUrl}`));
           const computedMass = a.percentage > 0 ? (a.percentage / 100) * bufferMassKg : a.massKg;
-          result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  ${a.name}: ${a.percentage}% = ${computedMass > 0 ? computedMass.toFixed(1) : "-"} кг`, size: 18, font: "Calibri" })] }));
+          result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  ${materialLabel(a)}: ${a.percentage > 0 ? a.percentage + "% от массы буфера" : "доза в кг"} = ${computedMass > 0 ? computedMass.toFixed(1) : "-"} кг`, size: 18, font: "Calibri" })] }));
         }
       });
     }
@@ -324,8 +340,10 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
     if (s.additives && s.additives.length > 0) {
       s.additives.forEach(a => {
         if (a.name) {
+          const product = cementProduct(a.productId);
+          if (product) result.push(noteParagraph(`${product.name}: ${product.dosage}. ${product.note} Источник: ${product.sourceUrl}`));
           const pctType = a.percentageType || 'bwoc';
-          result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  ${a.name}: ${a.percentage}% ${pctType}`, size: 18, font: "Calibri" })] }));
+          result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  ${materialLabel(a)}: ${a.percentage}% ${pctType}`, size: 18, font: "Calibri" })] }));
         }
       });
     }

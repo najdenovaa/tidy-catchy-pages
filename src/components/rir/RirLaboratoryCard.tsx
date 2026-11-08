@@ -1,3 +1,5 @@
+import { CementProductPicker, ProductDetails } from "../CementProductPicker";
+import { identityOf } from "@/lib/cement-product-catalog";
 import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -68,10 +70,15 @@ export default function RirLaboratoryCard({ kind, design, draft, context, totalM
           {["Марка компонента", "Партия / вода", "Масс. части", "SG", "кг/м³", "Проба, г", "Операция, кг", ""].map((x, i) => <th key={i}>{x}</th>)}
         </tr></thead><tbody>{mass.rows.map((x, i) => {
           const row = (p: Partial<typeof x>) => set({ ingredients: d.ingredients.map((a, k) => k === i ? { ...a, ...p } : a) });
-          return <tr key={i}><td><input className={inputClass} aria-label={"Компонент " + (i + 1)} value={x.name} onChange={v => row({ name: v.target.value })} /></td>
+          return <tr key={i}><td><input className={inputClass} aria-label={"Компонент " + (i + 1)} value={x.name} onChange={v => row({ name: v.target.value, productId: undefined, technicalSpec: undefined, sourceUrl: undefined })} />
+              <CementProductPicker use="cement" role={x.role} value={x.productId} onSelect={p => row({ ...identityOf(p), name: p.name, role: p.role, batch: "", sgAssumed: true })} />
+              <input className={inputClass} aria-label={"Производитель " + (i + 1)} placeholder="Производитель" value={x.manufacturer ?? ''} onChange={v => row({ manufacturer: v.target.value })} />
+              <ProductDetails productId={x.productId} doseBwoc={d.ingredients.some(y => y.role === "binder") ? x.parts / d.ingredients.filter(y => y.role === "binder").reduce((sum, y) => sum + y.parts, 0) * 100 : undefined} temperatureC={Math.max(d.bhctC, d.bhstC)} />
+              {x.productId && x.sgAssumed && <p className="text-xs text-amber-700">SG сохранено от исходного компонента как допущение. Укажите истинную плотность партии.</p>}
+            </td>
             <td><input className={inputClass} aria-label={"Партия " + (i + 1)} value={x.batch} onChange={v => row({ batch: v.target.value })} /></td>
             <td><NumberField key={"p" + i + x.parts} label={"Масса " + (i + 1)} value={x.parts} onChange={v => row({ parts: v ?? 0 })} /></td>
-            <td><NumberField key={"sg" + i + x.sg} label={"SG " + (i + 1)} value={x.sg} onChange={v => row({ sg: v ?? 0 })} /></td>
+            <td><NumberField key={"sg" + i + x.sg} label={"SG " + (i + 1)} value={x.sg} onChange={v => row({ sg: v ?? 0, sgAssumed: false })} /></td>
             <td>{f(x.kgPerM3)}</td><td>{f(x.kgPerM3 * d.sampleVolumeL)}</td><td>{f(x.kgPerM3 * operationFactor)}</td>
             <td><Button size="sm" variant="outline" aria-label={"Удалить компонент " + (i + 1)} onClick={() => set({ ingredients: d.ingredients.filter((_, k) => k !== i) })}>×</Button></td>
           </tr>;

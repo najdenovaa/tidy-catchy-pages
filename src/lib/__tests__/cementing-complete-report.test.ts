@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { cementProduct, identityOf } from "../cement-product-catalog";
+import { selectEquipment, equipmentProduct } from "../cementing-equipment";
 import { it, expect } from "vitest";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -17,7 +19,8 @@ const w = { ...ex.wellData, wellDepthMD: 260, casingDepthMD: 250, wellDepthTVD: 
     { md: 0, tvd: 0, zenith: 0, azimuth: 0 }, { md: 100, tvd: 98, zenith: 16, azimuth: 100 },
     { md: 260, tvd: 241, zenith: 35, azimuth: 112 },
   ] };
-const slurries = ex.slurries.map((x, i) => ({ ...x, topDepthMD: i === 0 ? 45 : 150, washVolume: 0,
+const slurries = ex.slurries.map((x, i) => ({ ...x,
+  additives: i === 0 ? [...x.additives, { ...identityOf(cementProduct('ig-retard')!), name: 'IG Retard', percentage: .2, percentageType: 'bwoc' as const, massKg: 0, specificGravity: 1.3, batch: 'IG26-QA' }] : x.additives, topDepthMD: i === 0 ? 45 : 150, washVolume: 0,
   flowRateSteps: [{ rateLps: 8, volumeM3: 1.5 }] }));
 const buffers = ex.buffers.map(b => ({ ...b, volume: .8, flowRateSteps: [{ rateLps: 8, volumeM3: .8 }] }));
 const volume = calculateVolumes(w, slurries);
@@ -40,7 +43,7 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   }, w, ex.drillingFluid.density)!;
   expect(cent.joints?.some(j => j.centralizerDepths.length > 0)).toBe(true);
   expect(cent.joints![cent.joints!.length - 1].bottomMD).toBe(250);
-  const reportWell = { ...w, standoffProfile: cent.results.map(r => ({ md: r.md, standoffPct: r.standoff })) };
+  const reportWell = { ...w, equipment: [{ ...selectEquipment(equipmentProduct('avrora-141sg')!, 'qa-float'), casingOD: w.casingOD, depthMD: w.ckodDepth, passport: 'PS-QA-168', thread: 'ОТТМ' }], standoffProfile: cent.results.map(r => ({ md: r.md, standoffPct: r.standoff })) };
   const { input, meta } = buildDisplacementInput({ ...dData, wellData: reportWell });
   const result = simulateDisplacement2D({ ...input, nTheta: 8, nZ: 18, maxSnapshots: 8, settleMin: settings.settleMin });
   const extras: CementingReportExtras = { centralization: cent,
@@ -80,6 +83,13 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   expect(xml).toContain("Потрубная ведомость");
   expect(xml).toContain("Замещение в затрубье");
   expect(xml).toContain("Контрольный результат");
+  expect(xml).toContain("AVRORA 141-SG");
+  expect(xml).toContain("PS-QA-168");
+  expect(xml).toContain("Изготовитель");
+  expect(xml).toContain("IG Retard");
+  expect(xml).toContain("IG chemical / Айсберг");
+  expect(xml).toContain("IG26-QA");
+  expect(xml).toContain("https://igchem.ru/chemical");
   if (extras.figures) {
     expect(Object.keys(zip.files).filter(k => /word\/media\/.+\.(png|jpg)$/.test(k)).length).toBeGreaterThanOrEqual(svg.length);
     expect(xml).toContain("3D-кадр");

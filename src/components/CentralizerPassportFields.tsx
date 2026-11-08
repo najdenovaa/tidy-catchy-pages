@@ -30,6 +30,8 @@ export default function CentralizerPassportFields({ spec, casingOD, onChange }: 
         return items.length ? <optgroup key={`${compatible}-${series}`} label={`${compatible ? `Для текущей колонны ${casingOD} мм` : 'Другие диаметры'} · ${series}`}>{items.map(x => <option key={x.id} value={x.id}>{x.spec.passport!.model}{(x.spec.passport!.outerDiameter ?? 0)<=(x.spec.passport!.innerDiameter ?? 0)?' · требует уточнения':''}</option>)}</optgroup> : null;
       }))}</select>
     </label>
+    <label className="block text-xs">Производитель<Input value={p?.manufacturer ?? ''} onChange={e => onChange({ ...spec, passport: { model: '', ...p, manufacturer: e.target.value } })} /></label>
+    {p?.sourceUrl && <a href={p.sourceUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline">Каталог изготовителя</a>}
     <label className="block text-xs">Обозначение изделия из паспорта<Input value={p?.model ?? ''} onChange={e => onChange({ ...spec, passport: { ...p, model: e.target.value } })} /></label>
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       <label className="text-xs">Количество рессор / лопастей, шт.<Input type="number" min={0} step={1} value={spec.bladesCount} onChange={e => onChange({ ...spec, bladesCount: Number(e.target.value) })} /></label>

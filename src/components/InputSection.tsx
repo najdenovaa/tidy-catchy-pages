@@ -1,3 +1,7 @@
+import type { CentralizerInterval } from "@/lib/centralization-calculations";
+import CementingEquipmentCard from "./CementingEquipmentCard";
+import { CementProductPicker, ProductDetails } from "./CementProductPicker";
+import { identityOf } from "@/lib/cement-product-catalog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
@@ -13,6 +17,7 @@ import * as XLSX from "xlsx";
 
 interface Props {
   wellData: WellData;
+  centralizerIntervals?: CentralizerInterval[];
   onWellDataChange: (d: WellData) => void;
   drillingFluid: DrillingFluid;
   onDrillingFluidChange: (f: DrillingFluid) => void;
@@ -35,7 +40,7 @@ interface Props {
   onLoadExample?: () => void;
 }
 
-type WellNumericKey = Exclude<keyof WellData, 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers' | 'standoffProfile' | 'casingType' | 'frictionCalibration'>;
+type WellNumericKey = Exclude<keyof WellData, 'equipment' | 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers' | 'standoffProfile' | 'casingType' | 'frictionCalibration'>;
 const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "wellDepthMD", label: "Глубина скважины (по стволу)", unit: "м" },
   { key: "wellDepthTVD", label: "Глубина скважины (по вертикали)", unit: "м" },
@@ -447,7 +452,7 @@ export default function InputSection(props: Props) {
   const updateBufferAdditive = (bIdx: number, aIdx: number, field: keyof Additive, value: string) => {
     const updated = [...buffers];
     const b = { ...updated[bIdx], additives: [...updated[bIdx].additives] };
-    b.additives[aIdx] = { ...b.additives[aIdx], [field]: field === "name" ? value : parseFloat(value) || 0 };
+    b.additives[aIdx] = { ...b.additives[aIdx], ...(field === "name" ? { productId: undefined, manufacturer: undefined, technicalSpec: undefined, sourceUrl: undefined } : {}), [field]: field === "name" ? value : parseFloat(value) || 0 };
     updated[bIdx] = b;
     onBuffersChange(updated);
   };
@@ -470,7 +475,7 @@ export default function InputSection(props: Props) {
       const pct = parseFloat(value) || 0;
       s.additives[aIdx] = { ...s.additives[aIdx], percentage: pct };
     } else {
-      s.additives[aIdx] = { ...s.additives[aIdx], [field]: field === "name" ? value : parseFloat(value) || 0 };
+      s.additives[aIdx] = { ...s.additives[aIdx], ...(field === "name" ? { productId: undefined, manufacturer: undefined, technicalSpec: undefined, sourceUrl: undefined } : {}), [field]: field === "name" ? value : parseFloat(value) || 0 };
     }
     updated[sIdx] = s;
     onSlurriesChange(updated);
@@ -634,6 +639,8 @@ export default function InputSection(props: Props) {
           </CardContent>
         )}
       </Card>
+
+      <CementingEquipmentCard well={wellData} centralizers={props.centralizerIntervals} onChange={onWellDataChange} />
 
       {/* ===== 1.5. Профиль скважины ===== */}
       <Card>
@@ -954,19 +961,23 @@ export default function InputSection(props: Props) {
                     <span className="text-xs text-muted-foreground">Компонентный состав</span>
                     <button onClick={() => { const u = [...buffers]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { name: "", percentage: 0, percentageType: 'bwoc' as AdditivePercentageType, massKg: 0 }] }; onBuffersChange(u); }} className="text-xs text-primary hover:underline">+ добавка</button>
                   </div>
+                  <CementProductPicker use="buffer" onSelect={p => { const u = [...buffers]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { ...identityOf(p), name: p.name, percentage: 0, percentageType: 'bwoc', massKg: p.id === 'ig-clean-l' ? 5 * b.volume : 0 }] }; onBuffersChange(u); }} />
                   {b.additives.map((a, aIdx) => {
                     const bufferMassKg = b.volume * b.density;
                     const computedMass = a.percentage > 0 ? (a.percentage / 100) * bufferMassKg : a.massKg;
                     return (
-                      <div key={aIdx} className="flex items-center gap-2">
+                      <div key={aIdx} className="flex flex-wrap items-center gap-2">
                         <DebouncedInput value={a.name} onChange={(e) => updateBufferAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1" />
                         <DebouncedInput type="number" step="0.01" value={a.percentage || ""} onChange={(e) => updateBufferAdditive(idx, aIdx, "percentage", e.target.value)} className="h-7 text-xs w-16" placeholder="%" />
                         <span className="text-xs text-muted-foreground">%</span>
-                        <div className="h-7 flex items-center px-2 rounded bg-muted text-xs font-medium border border-border min-w-[60px]">
-                          {computedMass > 0 ? computedMass.toFixed(1) : "—"}
-                        </div>
+                        <DebouncedInput aria-label="Масса реагента буфера, кг" type="number" min="0" value={computedMass || ''} className="h-7 text-xs w-20" onChange={e => { const u = [...buffers]; const a2 = [...u[idx].additives]; a2[aIdx] = { ...a2[aIdx], percentage: 0, massKg: Number(e.target.value) || 0 }; u[idx] = { ...u[idx], additives: a2 }; onBuffersChange(u); }} />
                         <span className="text-xs text-muted-foreground">кг</span>
+                        <DebouncedInput aria-label="Истинная плотность реагента буфера, г/см³" type="number" min="0" step="0.01" value={a.specificGravity || ''} placeholder="SG по паспорту" className="h-7 text-xs w-28" onChange={e => updateBufferAdditive(idx, aIdx, "specificGravity", e.target.value)} />
                         <button onClick={() => { const u = [...buffers]; u[idx] = { ...u[idx], additives: u[idx].additives.filter((_, i) => i !== aIdx) }; onBuffersChange(u); }} className="text-xs text-destructive">✕</button>
+                          <div className="basis-full grid grid-cols-2 gap-2">
+                            {(['manufacturer', 'batch'] as const).map(k => <DebouncedInput key={k} aria-label={k === 'manufacturer' ? 'Производитель реагента' : 'Партия реагента'} value={a[k] ?? ''} placeholder={k === 'manufacturer' ? 'Производитель' : 'Партия'} className="h-7 text-xs" onChange={e => { const u = [...buffers]; const aa = [...u[idx].additives]; aa[aIdx] = { ...aa[aIdx], [k]: e.target.value }; u[idx] = { ...u[idx], additives: aa }; onBuffersChange(u); } } />)}
+                          </div>
+                          <ProductDetails productId={a.productId} doseBwoc={undefined} temperatureC={wellData.bottomTempStatic} />
                       </div>
                     );
                   })}
@@ -1075,6 +1086,7 @@ export default function InputSection(props: Props) {
                       <span className="text-xs text-muted-foreground">Добавки</span>
                       <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { name: "", percentage: 0, percentageType: 'bwoc' as AdditivePercentageType, massKg: 0 }] }; onSlurriesChange(u); }} className="text-xs text-primary hover:underline">+ добавка</button>
                     </div>
+                    <CementProductPicker use="cement" onSelect={p => { const u = [...slurries]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { ...identityOf(p), name: p.name, percentage: p.bwocRange?.[0] ?? 0, percentageType: 'bwoc', massKg: 0 }] }; onSlurriesChange(u); }} />
                     {s.additives.map((a, aIdx) => {
                       const pctType = a.percentageType || 'bwoc';
                       const computedMass = a.percentage > 0 && dryMassKg > 0
@@ -1102,9 +1114,13 @@ export default function InputSection(props: Props) {
                             {computedMass > 0 ? computedMass.toFixed(1) : "—"}
                           </div>
                           <span className="text-xs text-muted-foreground">кг</span>
-                          <DebouncedInput type="number" step="0.01" value={a.specificGravity || ""} placeholder={`ρ ${additiveSG(a).sg}`} onChange={(e) => { const u = [...slurries]; const sl = { ...u[idx], additives: [...u[idx].additives] }; sl.additives[aIdx] = { ...sl.additives[aIdx], specificGravity: parseFloat(e.target.value) || undefined }; u[idx] = sl; onSlurriesChange(u); }} className="h-7 text-xs w-16" />
-                          <span className="text-[10px] text-muted-foreground" title="Удельный вес добавки для рецептуры по абсолютным объёмам">г/см³</span>
+                          <DebouncedInput type="number" step="0.01" value={a.specificGravity || ""} placeholder={`ρ ${additiveSG(a).sg}`} onChange={(e) => { const u = [...slurries]; const sl = { ...u[idx], additives: [...u[idx].additives] }; sl.additives[aIdx] = { ...sl.additives[aIdx], specificGravity: parseFloat(e.target.value) || undefined, specificGravityAssumed: false }; u[idx] = sl; onSlurriesChange(u); }} className="h-7 text-xs w-16" />
+                          <span className="text-[10px] text-muted-foreground" title="Истинная плотность добавки для абсолютных объёмов">г/см³{a.specificGravityAssumed ? " (допущение)" : ""}</span>
                           <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: u[idx].additives.filter((_, i) => i !== aIdx) }; onSlurriesChange(u); }} className="text-xs text-destructive">✕</button>
+                          <div className="basis-full grid grid-cols-2 gap-2">
+                            {(['manufacturer', 'batch'] as const).map(k => <DebouncedInput key={k} aria-label={k === 'manufacturer' ? 'Производитель реагента' : 'Партия реагента'} value={a[k] ?? ''} placeholder={k === 'manufacturer' ? 'Производитель' : 'Партия'} className="h-7 text-xs" onChange={e => { const u = [...slurries]; const aa = [...u[idx].additives]; aa[aIdx] = { ...aa[aIdx], [k]: e.target.value }; u[idx] = { ...u[idx], additives: aa }; onSlurriesChange(u); } } />)}
+                          </div>
+                          <ProductDetails productId={a.productId} doseBwoc={a.percentageType === "bwoc" && a.percentage > 0 ? a.percentage : undefined} temperatureC={wellData.bottomTempStatic} />
                         </div>
                       );
                     })}
