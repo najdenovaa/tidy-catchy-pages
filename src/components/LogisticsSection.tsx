@@ -56,7 +56,7 @@ export default function LogisticsSection({ pressure, materials, slurries, settin
           {field("unitMaxRateLps", "Макс. подача, л/с")}
           {field("mixerName", s.scheme==='classic'?"Смесительная машина":"Смесительная система")}
           {s.scheme==='classic'&&field("mixerCapacityT", "Бункер СМН, т")}
-          {field("mixRatePerPairLps", s.scheme==='classic'?"Затворение на пару, л/с":"Смешивание одной системы, л/с")}
+          {field("mixRatePerPairLps", s.scheme==='classic'?"Затворение одним ЦА через воронку, л/с":"Смешивание одной системы, л/с")}
           {field("tankerM3", "Автоцистерна воды, м³")}
           {field("reserveUnits", "Резервных ЦА, шт.")}
           {s.scheme!=='classic'&&<>{field('bulkVolumeM3','Цементовоз, объём м³')}{field('bulkPayloadT','Грузоподъёмность, т')}{field('bulkDensityTm3','Насыпная плотность, т/м³','0.05')}{field('bulkUnloadTmin','Пневмоподача одной линии, т/мин','0.1')}{field('maxBulkConnections','Линий сухого материала на смеситель')}</>}
@@ -75,7 +75,7 @@ export default function LogisticsSection({ pressure, materials, slurries, settin
       <button className="text-sm underline" onClick={()=>write({...s,equipmentQuantities:{},personnelQuantities:{}})}>Вернуть расчётное количество техники и людей</button>
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="p-4 space-y-2">
-          <h3 className="font-semibold text-sm">Состав техники</h3><p className="text-xs">{r.unitsWorking} рабочих машин, {r.workingPumps} насосов, {r.mixingSystems} смесительных систем. Отказ одного насоса: {f(r.onePumpOutRateLps,1)} л/с; {r.onePumpOutMeetsPeak?"пиковая подача сохраняется":"пиковая подача не обеспечена"}.</p>
+          <h3 className="font-semibold text-sm">Состав техники</h3><p className="text-xs">{r.unitsWorking} рабочих машин (на скважину {r.dischargeUnits}, на затворение {r.mixingCA}), {r.workingPumps} насосов, {r.mixingSystems} смесительных систем. Отказ одного нагнетательного насоса: {f(r.onePumpOutRateLps,1)} л/с; {r.onePumpOutMeetsPeak?"пиковая подача сохраняется":"пиковая подача не обеспечена"}.</p>
           <table className="w-full text-xs">
             <thead className="bg-muted/50"><tr><th className="p-1.5 text-left">Техника</th><th className="p-1.5 text-right">Кол-во</th><th className="p-1.5 text-left">Обоснование</th></tr></thead>
             <tbody>{r.equipment.map((e) => (
@@ -98,9 +98,9 @@ export default function LogisticsSection({ pressure, materials, slurries, settin
         </Card>
       </div>
 
-      <Card className="p-4 space-y-2"><h3 className="font-semibold">Схема расстановки оборудования</h3><p className="text-xs">Вид сверху. Показаны группы машин с фактически выбранным количеством. Вода идёт в смеситель с буровой; цементный раствор - от агрегатов на устье. Резерв подключается после переключения.</p><div className="overflow-x-auto"><div className="min-w-[760px]" dangerouslySetInnerHTML={{__html:cementFleetLayout(r,s)}}/></div></Card>
+      <Card className="p-4 space-y-2"><h3 className="font-semibold">Схема расстановки оборудования</h3><p className="text-xs">Вид сверху. Каждая машина показана отдельно. В классике вода поступает в ЦА затворения, сухой цемент из СМН - в воронку; готовый раствор из осреднительной ёмкости откачивают отдельные ЦА. СКЦ подключена к конечной нагнетательной линии.</p><div className="overflow-x-auto"><div className="min-w-[760px]" dangerouslySetInnerHTML={{__html:cementFleetLayout(r,s)}}/></div></Card>
       <Card className="p-4 space-y-2">
-        <h3 className="font-semibold text-sm">Потребность в насосных машинах по Q-P</h3>
+        <h3 className="font-semibold text-sm">Потребность в нагнетательных машинах по Q-P</h3>
         <div ref={ref} className="h-52">
           <LineChart width={width || 900} height={208} data={r.unitsProfile} margin={{ top: 6, right: 16, bottom: 14, left: 0 }}>
             <CartesianGrid stroke="hsl(var(--border))" strokeOpacity={0.5} />

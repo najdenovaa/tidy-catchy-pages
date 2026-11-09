@@ -156,7 +156,8 @@ function buildLogisticsPage(pressureResult: PressureProfileResult, materials: Ma
     ['Схема',FLEET_SCHEMES[r.scheme]],['Модель / производитель',`${config.manufacturer??''} ${config.unitName}`],
     ['Гидравлическая мощность / макс. подача всей машины',`${config.unitPowerKW} кВт / ${config.unitMaxRateLps} л/с`],['Предел давления машины',`${config.unitMaxPressureMPa} МПа`],
     ['Паспортная проверка',config.passportConfirmed?'Отмечена пользователем':'Не подтверждена; расчётный шаблон'],
-    ['Смешивание одной системы',`${config.mixRatePerPairLps} л/с`],
+    [r.scheme==='classic'?'Затворение одним ЦА через воронку':'Смешивание одной системы',`${config.mixRatePerPairLps} л/с`],
+    ['Рабочие машины: на скважину / затворение',`${r.dischargeUnits} / ${r.mixingCA}`],
     ...(r.scheme!=='classic'?[['ЦТ-25: объём / груз / насыпная плотность',`${config.bulkVolumeM3} м³ / ${config.bulkPayloadT} т / ${config.bulkDensityTm3} т/м³`],['Пневмоподача / входы на смеситель',`${config.bulkUnloadTmin} т/мин / ${config.maxBulkConnections}`],['Закрытая подача',config.closedMixing?'Выбрана':'Не подтверждена']]:[]),
   ]) as any);
   if(config.pumpCurve?.length)out.push(gridTable(['Давление рабочей точки, МПа','Подача всей машины, л/с'],config.pumpCurve.map(x=>[fmt(x.pressureMPa),fmt(x.rateLps)])) as any);
@@ -166,7 +167,7 @@ function buildLogisticsPage(pressureResult: PressureProfileResult, materials: Ma
   out.push(new Paragraph({ children: [] }));
   out.push(gridTable(["Этап", "Начало", "Длительность"], r.timeline.map((t) => [t.step, hm(t.startMin), hm(t.durationMin)])) as any);
   out.push(noteParagraph(`Схема: ${FLEET_SCHEMES[r.scheme]}; рабочих машин ${r.unitsWorking}; насосов ${r.workingPumps}; смесительных систем ${r.mixingSystems}; выполнимость ${r.feasible?'по введённым характеристикам':'НЕ ОБЕСПЕЧЕНА'}.`));
-  out.push(noteParagraph(`Отказ одного насоса: ${r.onePumpOutRateLps.toFixed(1)} л/с в пиковой точке; ${r.onePumpOutMeetsPeak?'пиковая подача сохраняется':'пиковая подача не обеспечена'}.`));
+  out.push(noteParagraph(`Отказ одного нагнетательного насоса: ${r.onePumpOutRateLps.toFixed(1)} л/с в пиковой точке; ${r.onePumpOutMeetsPeak?'пиковая подача сохраняется':'пиковая подача не обеспечена'}.`));
   r.notes.forEach((n) => out.push(noteParagraph(`⚠ ${n}`)));
   return out;
 }

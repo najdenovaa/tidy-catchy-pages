@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cementFleetLayout, cementFleetLayoutFigure } from './cement-fleet-layout';
+import { cementFleetLayout, cementFleetLayoutFigure, cementFleetConnections } from './cement-fleet-layout';
 import { DEFAULT_LOGISTICS, planLogistics } from './cement-logistics';
 import { fleetTemplate, type FleetScheme } from './cement-fleet-catalog';
 import { getCementingExample } from './cementing-example';
@@ -39,4 +39,36 @@ describe('Actual fleet top view', () => {
     expect(f.svg).not.toContain('data-equipment-id="mixer"');
     expect(f.height).toBeGreaterThan(900);
   });
+});
+
+it('classic: keeps dry SMN, water/jet pumps, averaging and high-pressure pumps in distinct stages',()=>{
+ const settings={...DEFAULT_LOGISTICS,equipmentQuantities:{mixer:5,main:3,'blend-ca':1,averaging:1,manifold:1}};
+ const r=planLogistics(pressure,materials,ex.slurries,settings);
+ expect(r.mixingCA).toBe(1);expect(r.mainUnits).toBe(3);
+ expect(r.unitsWorking).toBe(4);expect(r.dischargeUnits).toBe(3);
+ const edges=cementFleetConnections(r).map(e=>`${e.from}/${e.to}/${e.kind}`);
+ expect(edges).toContain('mixer/funnel/dry');expect(edges).toContain('water-source/blend-ca/water');
+ expect(edges).toContain('blend-ca/funnel/jet-water');expect(edges).toContain('funnel/averaging/mixed-slurry');
+ expect(edges).toContain('averaging/main/suction');expect(edges).toContain('main/manifold/discharge');expect(edges).toContain('manifold/well/common-discharge');
+ expect(edges).not.toContain('water-source/mixer/water');expect(edges).not.toContain('mixer/main/suction');
+ for(const id of ['averaging','manifold'])expect(r.equipment.find(e=>e.id===id)?.vehicle).toBe(true);
+ const noTank=planLogistics(pressure,materials,ex.slurries,{...settings,equipmentQuantities:{...settings.equipmentQuantities,averaging:0}});
+ expect(noTank.feasible).toBe(false);
+});
+it('integrated machines use the onboard manifold alone; multiple discharge machines need an external collector',()=>{
+ for(const scheme of ['single','twin'] as FleetScheme[]){
+  const s={...fleetTemplate(scheme,DEFAULT_LOGISTICS),equipmentQuantities:{main:1,'support-ca':0}};
+  const one=planLogistics(pressure,materials,ex.slurries,s);
+  expect(one.equipment.find(e=>e.id==='manifold')?.count).toBe(0);
+  expect(cementFleetConnections(one)).toContainEqual(expect.objectContaining({from:'main',to:'well',kind:'discharge'}));
+  const two=planLogistics(pressure,materials,ex.slurries,{...s,equipmentQuantities:{main:2,'support-ca':0}});
+  expect(two.equipment.find(e=>e.id==='manifold')?.count).toBe(1);
+  expect(cementFleetConnections(two)).toContainEqual(expect.objectContaining({from:'main',to:'manifold'}));
+ }
+});
+it('standalone mixer receives water and bulk cement, and supplies CA suction before the manifold',()=>{
+ const s={...fleetTemplate('mixer-ca',DEFAULT_LOGISTICS),equipmentQuantities:{main:3,mixer:1,bulk:2}};
+ const r=planLogistics(pressure,materials,ex.slurries,s),edges=cementFleetConnections(r);
+ for(const[from,to]of[['water-source','mixer'],['bulk','mixer'],['mixer','main'],['main','manifold'],['manifold','well']])expect(edges).toContainEqual(expect.objectContaining({from,to}));
+ expect(r.mixingCA).toBe(0);
 });
