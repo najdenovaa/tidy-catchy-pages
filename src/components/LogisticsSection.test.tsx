@@ -21,7 +21,7 @@ it('switches classic, twin, single and mixer-CA layouts with persisted callbacks
  for(const scheme of ['twin','single','mixer-ca']) {
   fireEvent.change(select,{target:{value:scheme}});
   expect(screen.getByText(/Производитель \/ семейство/)).toBeInTheDocument();
-  expect(screen.getByText(/Цементовоз ЦТ-25 \(25 м³\)/)).toBeInTheDocument();
+  expect(screen.getByRole('cell',{name:/Цементовоз ЦТ-25 \(25 м³\)/})).toBeInTheDocument();
   expect(save.mock.calls.at(-1)![0].scheme).toBe(scheme);
  }
  fireEvent.change(select,{target:{value:'classic'}});
