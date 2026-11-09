@@ -1,42 +1,76 @@
-import type { LogisticsResult,LogisticsSettings } from './cement-logistics';
-const esc=(s:string)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-/** Top view of equipment GROUPS. Quantities are actual selections, not hidden recommended counts. */
-export function cementFleetLayout(r:LogisticsResult,s:LogisticsSettings):string {
- const integrated=r.scheme==='single'||r.scheme==='twin',separate=r.mixers>0;
- const rows=(id:string)=>r.equipment.find(e=>e.id===id);
- const text=(x:number,y:number,str:string,size=15,color='#1e293b')=>`<text x="${x}" y="${y}" font-family="Arial,sans-serif" font-size="${size}" fill="${color}">${esc(str)}</text>`;
- const truck=(x:number,y:number,color:string,bulk=false)=>`<g transform="translate(${x} ${y})"><rect x="0" y="0" width="44" height="58" rx="7" fill="${color}" stroke="#334155"/><rect x="7" y="7" width="30" height="12" fill="#dbeafe"/><path d="M8 60H36" stroke="#334155" stroke-width="5"/><rect x="2" y="66" width="40" height="${bulk?96:80}" rx="${bulk?18:4}" fill="${bulk?'#f1e6cf':color}" stroke="#334155"/><path d="M-3 24v18 M47 24v18 M-3 90v27 M47 90v27" stroke="#334155" stroke-width="5"/></g>`;
- const card=(id:string,x:number,y:number,w:number,h:number,title:string,color:string,bulk=false)=>{const row=rows(id);return `<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="#94a3b8" ${row?.count===0?'stroke-dasharray="6 4"':''}/>${text(x+12,y+24,title,15)}${text(x+12,y+45,`${row?.count??0} ед.`,18,color)}${truck(x+w-64,y+40,color,bulk)}${text(x+12,y+72,bulk?'Тягач + полуприцеп':integrated&&id==='main'?'Миксер на борту':'Отдельная единица',12)}${text(x+12,y+94,bulk?'1 водитель-оператор':id==='skc'?'Бортовой автомобиль':'',12)}</g>`;};
- const arrow=(d:string,color:string,dash='')=>`<path d="${d}" fill="none" stroke="${color}" stroke-width="4" ${dash?'stroke-dasharray="'+dash+'"':''} marker-end="url(#${color.replace('#','a')})"/>`;
- const blue='#0284c7',red='#dc2626',dry='#a16207',green='#15803d',grey='#64748b';
- let out=`<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="900" viewBox="0 0 1120 900" style="width:100%;height:auto;background:white" role="img" aria-label="Схема расстановки цементировочной техники, вид сверху"><rect width="1120" height="900" fill="white"/><defs>`;
- for(const c of [blue,red,dry,green,grey])out+=`<marker id="${c.replace('#','a')}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="${c}"/></marker>`;
- out+=`</defs><rect x="12" y="40" width="1095" height="745" rx="18" fill="#f8fafc" stroke="#cbd5e1" stroke-dasharray="7 5"/>${text(28,27,'Расстановка оборудования: вид сверху, группы машин',19)}${text(28,75,`В парке ${r.totalVehicles} транспортных единиц; персонал ${r.totalPeople} чел.`,14)}`;
- out+=`<rect x="720" y="90" width="350" height="155" rx="12" fill="#f1f5f9" stroke="#475569"/><path d="M770 207L804 108L838 207Z M782 170H826 M792 139H816" fill="none" stroke="#475569" stroke-width="4"/><circle cx="957" cy="170" r="30" fill="white" stroke="#0f172a" stroke-width="4"/><circle cx="957" cy="170" r="10" fill="#0f172a"/>${text(740,231,'Буровая / скважина. Устье',16)}`;
- out+=`<rect x="330" y="100" width="310" height="100" rx="12" fill="#e0f2fe" stroke="${blue}"/>${text(348,130,s.waterSource==='tankers'?'Вода из автоцистерн':'Вода с буровой',17,blue)}${text(348,158,`Потребность: ${r.waterM3.toFixed(1)} м³`,14)}${text(348,183,s.waterSource==='tankers'?`Автоцистерн: ${r.tankers}`:'От точки водоснабжения буровой',12)}`;
- if(r.bulkTrucks>0)out+=card('bulk',30,280,270,230,'Цементовозы ЦТ-25',dry,true);
- else out+=`<rect x="30" y="300" width="250" height="100" fill="#fff7ed" stroke="${dry}"/>${text(44,330,'Подача сухого цемента',15,dry)}${text(44,358,r.scheme==='classic'?'Бункеры смесительных машин':'Автопоезда не выбраны',12)}`;
- out+=card('main',350,285,320,220,integrated?(r.scheme==='twin'?'Двухнасосный агрегат':'Однонасосный агрегат'):'Рабочие ЦА','#2563eb');
- if(separate)out+=card('mixer',350,545,320,205,'Отдельные смесители','#7c3aed');
- else out+=`<rect x="350" y="570" width="320" height="90" rx="12" fill="#eef2ff" stroke="#a5b4fc"/>${text(367,600,integrated?'Встроенный миксер':'Смеситель не выбран',16)}${text(367,625,integrated?'Отдельная машина не требуется':'Проверьте производительность смешивания',13)}`;
- if(integrated&&r.supportUnits>0)out+=card('support-ca',750,295,320,200,'Дополнительные рабочие ЦА','#ea580c');
- if(r.reserveCA>0)out+=card('reserve-ca',750,545,320,205,'Резервные ЦА',grey);
- out+=card('skc',30,545,270,205,'СКЦ - отдельная машина',green);
- out+=arrow('M720 130H640',blue);
- // Low-pressure water enters the mixer. Dry feed and slurry are separate routes.
- const mixerY=separate?565:325;
- out+=arrow(`M480 200V250H320V${mixerY+30}H350`,blue);
- out+=arrow(separate?'M280 410H320V680H350':'M280 410H350',dry);
- if(separate)out+=arrow('M510 545V505',red);
- out+=arrow('M670 365H700V265H957V204',red);
- out+=`<rect x="682" y="250" width="28" height="28" fill="#fee2e2" stroke="${red}"/>${text(723,278,'Манифольд',13,red)}`;
- if(r.supportUnits>0&&integrated)out+=arrow('M914 295V265H957V204',red);
- if(r.reserveCA>0)out+=arrow('M910 545V515H705V283',grey,'6 5');
- out+=arrow('M300 690H325V755H1090V170H990',green,'3 7');
- out+=text(366,520,'Раствор под давлением - к устью',13,red);
- out+=text(750,535,'Резерв: подключение после переключения',12,grey);
- out+=text(42,820,'Синий: вода. Коричневый: сухой материал. Красный: цементный раствор.',14);
- out+=text(42,845,'Зелёный пунктир: связь СКЦ. Серый пунктир: резервная обвязка.',14);
- out+=text(42,875,'Схема условная, без масштаба. Проезды, расстояния и фактическую обвязку согласовать на площадке.',13,grey);
- return out+'</svg>';
+import type { FleetEquipment, LogisticsResult, LogisticsSettings } from './cement-logistics';
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const WIDTH = 1320, CARD_WIDTH = 394, START_Y = 320;
+const COLORS = { water: '#0284c7', cement: '#dc2626', dry: '#a16207', skc: '#15803d', reserve: '#64748b' };
+const columns = [['bulk', 'mixer', 'water', 'averaging'], ['main', 'support-ca', 'manifold'], ['skc', 'reserve-ca']];
+const cardHeight = (count: number) => 88 + Math.ceil(count / 3) * 116;
+function placement(r: LogisticsResult) {
+  const placed: { row: FleetEquipment; x: number; y: number; height: number }[] = [];
+  // Every selected row and every actual unit is represented, including future vehicle types.
+  const known = new Set(columns.flat());
+  const lanes = columns.map((ids, col) => col === 0 ? [...ids, ...r.equipment.filter(e => !known.has(e.id)).map(e => e.id)] : ids);
+  lanes.forEach((ids, col) => {
+    let y = START_Y;
+    ids.forEach(id => {
+      const row = r.equipment.find(e => e.id === id && e.count > 0);
+      if (!row) return;
+      const height = cardHeight(row.count);
+      placed.push({ row, x: 24 + col * 436, y, height });
+      y += height + 30;
+    });
+  });
+  return { placed, height: Math.max(650, ...placed.map(p => p.y + p.height)) + 140 };
+}
+export function cementFleetLayoutFigure(r: LogisticsResult, s: LogisticsSettings) {
+  return { title: 'Схема расстановки оборудования, вид сверху', reportItem: 'fleetLayout' as const,
+    svg: cementFleetLayout(r, s), width: WIDTH, height: placement(r).height };
+}
+/** One labelled symbol for each actual machine. Instrument taps connect SKC to the pressure line. */
+export function cementFleetLayout(r: LogisticsResult, s: LogisticsSettings): string {
+  const { placed, height } = placement(r), integrated = r.scheme === 'single' || r.scheme === 'twin';
+  const text = (x: number, y: number, str: string, size = 15, color = '#1e293b') => `<text x="${x}" y="${y}" font-family="Arial,sans-serif" font-size="${size}" fill="${color}">${esc(str)}</text>`;
+  const path = (d: string, color: string, dashed = false, arrow = true) => `<path d="${d}" fill="none" stroke="${color}" stroke-width="3" ${dashed ? 'stroke-dasharray="5 5"' : ''} ${arrow ? `marker-end="url(#fleet-${color.slice(1)})"` : ''}/>`;
+  const color = (id: string) => id === 'bulk' ? COLORS.dry : id === 'skc' ? COLORS.skc : id === 'reserve-ca' ? COLORS.reserve : id === 'water' ? COLORS.water : id === 'mixer' ? '#7c3aed' : '#2563eb';
+  const titles: Record<string, string> = { bulk: 'Цементовозы ЦТ-25 с тягачами', main: integrated ? (r.scheme === 'twin' ? 'Двухнасосные агрегаты' : 'Однонасосные агрегаты') : 'Рабочие ЦА', 'support-ca': 'Дополнительные рабочие ЦА', 'reserve-ca': 'Резервные ЦА', skc: 'СКЦ - отдельные автомобили', mixer: 'Отдельные смесительные машины', water: 'Автоцистерны воды', manifold: 'Блоки манифольдов', averaging: 'Осреднительные ёмкости' };
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" style="width:100%;height:auto;background:white" role="img" aria-label="Схема расстановки цементировочной техники, вид сверху"><rect width="100%" height="100%" fill="white"/><defs>`;
+  for (const c of [...Object.values(COLORS), '#2563eb', '#7c3aed']) svg += `<marker id="fleet-${c.slice(1)}" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7Z" fill="${c}"/></marker>`;
+  svg += `</defs>${text(24, 30, 'Расстановка оборудования: каждая машина показана отдельно', 21)}${text(24, 59, `Транспорт: ${r.totalVehicles} ед.; персонал: ${r.totalPeople} чел.`, 16)}`;
+  svg += `<rect x="1110" y="80" width="186" height="195" rx="12" fill="#f1f5f9" stroke="#64748b"/><path d="M1130 170L1158 96L1186 170Z M1142 140H1174" fill="none" stroke="#475569" stroke-width="3"/><circle cx="1240" cy="140" r="24" fill="white" stroke="#0f172a" stroke-width="3"/><circle cx="1240" cy="140" r="7" fill="#0f172a"/>${text(1127, 218, 'Буровая / скважина', 16)}${text(1127, 244, 'Устье', 14)}`;
+  svg += `<rect x="24" y="85" width="394" height="110" rx="12" fill="#e0f2fe" stroke="${COLORS.water}"/>${text(42, 116, s.waterSource === 'tankers' ? 'Вода из автоцистерн' : 'Вода с буровой', 19, COLORS.water)}${text(42, 145, `Потребность: ${r.waterM3.toFixed(1)} м³`, 16)}${text(42, 173, s.waterSource === 'tankers' ? 'Подача в смесительную систему' : 'От точки водоснабжения буровой', 14)}`;
+  if (s.waterSource !== 'tankers') svg += path('M1110 100H1060V75H440V130H418', COLORS.water);
+  // One shared discharge line. All pump discharges join upstream of the SKC measurement section.
+  const pumps = placed.filter(p => p.row.id === 'main' || p.row.id === 'support-ca');
+  const busBottom = Math.max(START_Y, ...pumps.map(p => p.y + p.height - 45));
+  svg += `<g data-pressure-line="aggregate-to-well">${path(`M866 ${busBottom}V190H1240V164`, COLORS.cement)}<circle cx="1030" cy="190" r="11" fill="white" stroke="${COLORS.skc}" stroke-width="4"/>${text(620, 231, 'Датчики СКЦ в нагнетательной линии', 14, COLORS.skc)}${text(620, 254, 'После агрегатов, перед скважиной', 13, COLORS.skc)}</g>`;
+  const receiver = placed.find(p => p.row.id === (integrated ? 'main' : 'mixer'));
+  if (receiver) svg += path(`M220 195V220H440V${receiver.y + 64}H${receiver.x}`, COLORS.water);
+  for (const p of placed) {
+    const { row, x, y } = p, c = color(row.id);
+    svg += `<g data-equipment-group="${esc(row.id)}"><rect x="${x}" y="${y}" width="${CARD_WIDTH}" height="${p.height}" rx="12" fill="#f8fafc" stroke="#94a3b8"/>${text(x + 14, y + 27, titles[row.id] ?? row.name, 17)}${text(x + 14, y + 52, `${row.count} ед.`, 17, c)}`;
+    const note = row.id === 'bulk' ? 'Тягач + полуприцеп; 1 водитель-оператор' : row.id === 'main' && integrated ? 'Миксер на борту; экипаж 2 человека на машину' : row.id === 'skc' ? 'Бортовой автомобиль с будкой' : row.id === 'reserve-ca' ? 'Подключение после переключения обвязки' : row.vehicle ? 'Каждый символ - отдельная машина' : 'Каждый символ - отдельный блок / ёмкость';
+    svg += text(x + 14, y + 74, note, 13);
+    for (let i = 0; i < row.count; i++) {
+      const ix = x + 16 + (i % 3) * 124, iy = y + 92 + Math.floor(i / 3) * 116;
+      const label = row.id === 'bulk' ? `ЦТ-25 №${i + 1}` : row.id === 'skc' ? `СКЦ №${i + 1}` : `№${i + 1}`;
+      svg += `<g data-equipment-id="${esc(row.id)}" data-unit="${i + 1}" data-vehicle="${row.vehicle}"><title>${esc(row.name)} №${i + 1}</title>`;
+      if (row.vehicle) {
+        svg += `<rect x="${ix + 77}" y="${iy + 8}" width="30" height="47" rx="5" fill="${c}" stroke="#334155"/><rect x="${ix + 94}" y="${iy + 15}" width="8" height="32" fill="#dbeafe"/><path d="M${ix + 79} ${iy + 6}h23 M${ix + 79} ${iy + 57}h23" stroke="#334155" stroke-width="4"/><rect x="${ix}" y="${iy + 10}" width="70" height="43" rx="${row.id === 'bulk' ? 18 : 5}" fill="${row.id === 'bulk' ? '#f1e6cf' : c}" stroke="#334155"/><path d="M${ix + 8} ${iy + 7}h20 M${ix + 8} ${iy + 56}h20 M${ix + 70} ${iy + 31}h7" stroke="#334155" stroke-width="4"/>`;
+      } else svg += `<rect x="${ix + 14}" y="${iy + 10}" width="80" height="44" rx="${row.id === 'averaging' ? 20 : 4}" fill="#e2e8f0" stroke="#475569"/>`;
+      svg += text(ix + 53, iy + 82, label, 13) + '</g>';
+      const unitY = iy + 32;
+      if (row.id === 'main' || row.id === 'support-ca') svg += path(`M${ix + 107} ${unitY}H866`, COLORS.cement);
+      if (row.id === 'bulk' && receiver) svg += path(`M${ix + 107} ${unitY}H430V${receiver.y + 78}H${receiver.x}`, COLORS.dry);
+      if (row.id === 'skc') svg += path(`M${ix + 53} ${iy + 55}V${iy + 94}H1306V280H1030V201`, COLORS.skc, true, false);
+      if (row.id === 'reserve-ca') svg += path(`M${ix + 53} ${iy + 55}V${iy + 94}H882V206H866`, COLORS.reserve, true);
+      if (row.id === 'water') svg += path(`M${ix + 53} ${iy + 55}V${iy + 94}H12V140H24`, COLORS.water);
+    }
+    svg += '</g>';
+  }
+  const mixer = placed.find(p => p.row.id === 'mixer'), main = placed.find(p => p.row.id === 'main');
+  if (mixer && main) svg += path(`M418 ${mixer.y + mixer.height - 20}H448V${main.y + main.height - 20}H460`, COLORS.cement);
+  const legendY = height - 105;
+  svg += text(24, legendY, 'Синий: вода. Коричневый: сухой материал. Красный: раствор от агрегатов к скважине.', 15);
+  svg += text(24, legendY + 28, 'Зелёный: подключение СКЦ к датчикам в линии. Серый пунктир: резервная обвязка.', 15);
+  svg += text(24, legendY + 60, 'Схема условная, без масштаба. Фактические проезды, расстояния и обвязку согласовать на площадке.', 14, COLORS.reserve);
+  return svg + '</svg>';
 }

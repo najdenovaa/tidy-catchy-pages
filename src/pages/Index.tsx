@@ -1,7 +1,7 @@
 import ReportContentsDialog from "@/components/ReportContentsDialog";
 import { allowedReportFigure, missingReportFigures, reportIncludes, type ReportSelection } from "@/lib/cementing-report-options";
 import { planLogistics, normalizeLogisticsSettings } from "@/lib/cement-logistics";
-import { cementFleetLayout } from "@/lib/cement-fleet-layout";
+import { cementFleetLayoutFigure } from "@/lib/cement-fleet-layout";
 import { centralizerInventory } from "@/lib/cementing-equipment";
 import { centralizerMaterialGeometryKey } from "@/lib/materials-equipment-inventory";
 import BasketStopCard from "@/components/BasketStopCard";
@@ -401,7 +401,7 @@ export default function Index() {
       setExportStatus("Подготовка схем и 3D-кадров");
       try {
         const config=normalizeLogisticsSettings(reportWell.logistics),fleet=planLogistics(pressure,mats,snap.slurries,config);
-        const figures=[...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries),...buildDepthPressureReportSvgs(pressure.envelope,selection),...buildBasketStopReportSvgs(pressure.basketStop),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),{title:'Схема расстановки оборудования, вид сверху',reportItem:'fleetLayout' as const,svg:cementFleetLayout(fleet,config),width:1120,height:900}].filter(x=>allowedReportFigure('cementing',selection,x));
+        const figures=[...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries),...buildDepthPressureReportSvgs(pressure.envelope,selection),...buildBasketStopReportSvgs(pressure.basketStop),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),cementFleetLayoutFigure(fleet,config)].filter(x=>allowedReportFigure('cementing',selection,x));
         extras.warnings!.push(...missingReportFigures("cementing",selection,figures));
         extras.figures=await rasterizeReportSvgs(figures);
       } catch(err){extras.warnings!.push('Часть изображений недоступна: '+(err instanceof Error?err.message:String(err)));}
