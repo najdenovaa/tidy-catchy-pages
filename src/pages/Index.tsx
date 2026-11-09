@@ -1,8 +1,12 @@
+import ReportContentsDialog from "@/components/ReportContentsDialog";
+import { allowedReportFigure, missingReportFigures, reportIncludes, type ReportSelection } from "@/lib/cementing-report-options";
+import { planLogistics, normalizeLogisticsSettings } from "@/lib/cement-logistics";
+import { cementFleetLayout } from "@/lib/cement-fleet-layout";
 import { centralizerInventory } from "@/lib/cementing-equipment";
 import { centralizerMaterialGeometryKey } from "@/lib/materials-equipment-inventory";
 import BasketStopCard from "@/components/BasketStopCard";
 import { resolveCentralizationReport, displacementReportKey, runDisplacementForReport, type CentralizationReportData, type DisplacementReportData, type DisplacementReportSettings, type CementingReportExtras } from "@/lib/cementing-report-data";
-import { buildBasketStopReportSvgs, buildCementingReportSvgs, buildHydraulicReportSvgs, buildWellReportSvgs, rasterizeReportSvgs } from "@/lib/cementing-report-figures";
+import { buildBasketStopReportSvgs, buildCementingReportSvgs, buildHydraulicReportSvgs, buildDepthPressureReportSvgs, buildWellReportSvgs, rasterizeReportSvgs } from "@/lib/cementing-report-figures";
 import { collectCementingReportSupplements } from "@/lib/cementing-report-dom";
 import type { FoamReportBundle } from '@/lib/foam-cement-types';
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
@@ -82,6 +86,7 @@ export default function Index() {
   } = useCementingSession();
 
   const [activeTab, setActiveTab] = useState("input");
+  const [reportContentsOpen,setReportContentsOpen]=useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
   const [exportError, setExportError] = useState<string | null>(null);
@@ -364,7 +369,7 @@ export default function Index() {
     centralization: "Центрирование",
   };
 
-  const handleExportDocx = useCallback(async () => {
+  const handleExportDocx = useCallback(async (selection:ReportSelection) => {
     setExporting(true); setExportError(null); setExportFile(null); setExportStatus("Пересчёт текущих данных");
     try {
       const { exportToDocx } = await import("@/lib/export-docx");
@@ -385,24 +390,25 @@ export default function Index() {
         drillingFluid: snap.drillingFluid, displacementFluids: snap.displacementFluids, volumes: vol };
       const settings = displacementReportSettings;
       try {
+        if(reportIncludes(selection,'displacementSummary')||reportIncludes(selection,'displacement3D')||reportIncludes(selection,'displacementMap')){
         const d = displacementReport?.inputKey === displacementReportKey(data, settings) ? displacementReport : await runDisplacementForReport(data, settings);
         extras.displacement = d; setDisplacementReport(d);
+        }
       } catch (err) { extras.warnings!.push("Замещение не рассчитано: " + (err instanceof Error ? err.message : String(err))); }
       // Give the mounted engineering tabs a render with the same fresh snapshot before collecting supplementary tables.
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       extras.supplements = collectCementingReportSupplements();
       setExportStatus("Подготовка схем и 3D-кадров");
-      try { extras.figures = await rasterizeReportSvgs([...buildHydraulicReportSvgs(pressure.points), ...buildBasketStopReportSvgs(pressure.basketStop), ...buildWellReportSvgs(reportWell, snap.slurries), ...buildCementingReportSvgs(reportWell, extras)]); }
-      catch (err) { extras.warnings!.push("Часть изображений недоступна: " + (err instanceof Error ? err.message : String(err))); }
-      const foam = foamReport &&
-        JSON.stringify(foamReport.simulation.input.wellData) === JSON.stringify(snap.wellData) &&
-        Math.abs(foamReport.simulation.input.mudDensity - (snap.drillingFluid.density > 100 ? snap.drillingFluid.density / 1000 : snap.drillingFluid.density)) < 1e-8
-          ? foamReport : undefined;
-      if (foamReport && !foam) extras.warnings!.push("Пеноцементирование: исходные данные изменены; устаревший расчёт не включён.");
+      try {
+        const config=normalizeLogisticsSettings(reportWell.logistics),fleet=planLogistics(pressure,mats,snap.slurries,config);
+        const figures=[...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries),...buildDepthPressureReportSvgs(pressure.envelope,selection),...buildBasketStopReportSvgs(pressure.basketStop),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),{title:'Схема расстановки оборудования, вид сверху',reportItem:'fleetLayout' as const,svg:cementFleetLayout(fleet,config),width:1120,height:900}].filter(x=>allowedReportFigure('cementing',selection,x));
+        extras.warnings!.push(...missingReportFigures("cementing",selection,figures));
+        extras.figures=await rasterizeReportSvgs(figures);
+      } catch(err){extras.warnings!.push('Часть изображений недоступна: '+(err instanceof Error?err.message:String(err)));}
       setExportStatus("Формирование Word");
       const blob = await exportToDocx(reportWell, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient,
         undefined, cent?.results, { volumes: vol, pressureResult: pressure, materials: mats,
-          flushTimeMin: snap.flushTimeMin, flushVolumeM3: snap.flushVolumeM3 }, { foam, extras, returnBlob: true });
+          flushTimeMin: snap.flushTimeMin, flushVolumeM3: snap.flushVolumeM3 }, { extras, selection, returnBlob: true });
       if (!blob) throw new Error("Документ не создан");
       const file = { url: URL.createObjectURL(blob), name: "Программа-цементирования.docx" };
       setExportFile(file);
@@ -571,7 +577,7 @@ export default function Index() {
                 <span className="hidden sm:inline">Сохранить</span>
               </button>
               <button
-                onClick={handleExportDocx}
+                onClick={()=>setReportContentsOpen(true)}
                 disabled={exporting}
                 className="px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-secondary text-secondary-foreground font-semibold text-[10px] sm:text-sm hover:bg-secondary/80 transition-colors shadow-md flex items-center gap-1 disabled:opacity-50"
               >
@@ -589,6 +595,7 @@ export default function Index() {
         </div>
       </header>
 
+      <ReportContentsDialog scope="cementing" open={reportContentsOpen} onOpenChange={setReportContentsOpen} onConfirm={handleExportDocx} busy={exporting}/>
       {exporting && <p role="status" className="mx-4 my-2 text-sm">{exportStatus}…</p>}
       {exportFile && !exporting && <p className="mx-4 my-2 text-sm">Отчёт готов. <a className="text-primary underline" href={exportFile.url} download={exportFile.name}>Скачать DOCX</a></p>}
       {exportError && <p role="alert" className="mx-4 my-2 text-sm text-destructive">{exportError}</p>}

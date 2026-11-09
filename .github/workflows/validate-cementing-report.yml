@@ -5,6 +5,9 @@ on:
     paths:
       - 'src/lib/*report*'
       - 'src/lib/export-docx.ts'
+      - 'src/lib/export-casing-design-docx.ts'
+      - 'src/lib/cement-fleet-layout.ts'
+      - 'src/lib/__tests__/report-scopes.test.ts'
       - 'src/lib/__tests__/cementing-complete-report.test.ts'
       - 'src/lib/displacement-geometry.ts'
       - 'src/components/displacement/**'
@@ -40,13 +43,14 @@ jobs:
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, cairosvg
           d = pathlib.Path(os.environ["REPORT_QA_DIR"])
-          for f in d.glob("figure-*.svg"):
+          for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/centralization-report.docx" "$REPORT_QA_DIR/running-report.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
@@ -61,6 +65,14 @@ jobs:
           assert abs(title.rect.width - 595.3) < 2, title.rect
           model = next((p for p in doc if "Замещение: 3D-кадр t=" in p.get_text() and p.get_image_info()), None)
           assert model is not None, "Missing rendered displacement model page"
+          main_text = "\n".join(p.get_text() for p in doc)
+          assert "паспорт оснастки" not in main_text.lower() and "Потрубная ведомость" not in main_text
+          for stem, required, forbidden in [("centralization", "Расчёт центрирования", "Дохождение колонны:"), ("running", "Расчёт дохождения", "Потрубная ведомость")]:
+              scoped = fitz.open(d / (stem + "-report.pdf"))
+              text = "\n".join(p.get_text() for p in scoped)
+              assert required in text and forbidden not in text and "SECRET-PASSPORT-NOTE" not in text
+              assert any(p.get_image_info() for p in scoped), stem + " missing figures"
+              assert all(abs(p.rect.width - 595.3) < 2 for p in scoped)
           print("Rendered", len(doc), "A4 pages; approval-column separation", round(right.x0 - left.x0), "pt; model page", model.number + 1)
           preview = Image.new("RGB", (1000, 710), "white")
           for i, page in enumerate([title, model]):
@@ -79,3 +91,8 @@ jobs:
             /tmp/cementing-report-qa/cementing-report.docx
             /tmp/cementing-report-qa/cementing-report.pdf
             /tmp/cementing-report-qa/report-preview.png
+            /tmp/cementing-report-qa/centralization-report.docx
+            /tmp/cementing-report-qa/centralization-report.pdf
+            /tmp/cementing-report-qa/running-report.docx
+            /tmp/cementing-report-qa/running-report.pdf
+            /tmp/cementing-report-qa/fleet-layout.svg

@@ -1,3 +1,5 @@
+import { allowedReportFigure, type ReportScope, type ReportSelection, type ReportItem } from "./cementing-report-options";
+import { reportSeriesPlot } from "./report-series-plot";
 import { calculateCasingRunning, normalizeRunningSettings } from "./casing-running-analysis";
 import { runningBroomSVG } from "./casing-running-plot";
 import { centralizerShape, bladeCurve, bladeSection, bladeRadius, displayCentralizerPoint } from "./centralizer-shape";
@@ -7,11 +9,11 @@ import { pathPoints, frames } from "./displacement-geometry";
 import { centralizerReportSamples } from "./cementing-report-sections";
 import { getEffectiveTrajectory, type WellData, type SlurryInput } from "./cementing-calculations";
 import type { CementingReportExtras, ReportFigure } from "./cementing-report-data";
-export interface ReportSvg { title: string; svg: string; width: number; height: number; }
+export interface ReportSvg { reportItem?: ReportItem; title: string; svg: string; width: number; height: number; }
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 interface Polygon { v: number[][]; color: string; opacity?: number; }
-function sceneSvg(title: string, polygons: Polygon[], width: number, height: number, lines: number[][][] = []) {
-  const points = [...polygons.flatMap(x => x.v), ...lines.flat()];
+function sceneSvg(title: string, polygons: Polygon[], width: number, height: number, lines: number[][][] = [], boreLines:number[][][] = []) {
+  const points = [...polygons.flatMap(x => x.v), ...lines.flat(), ...boreLines.flat()];
   const xs = points.map(x => x[0]), ys = points.map(x => x[1]);
   const cx = (Math.max(...xs) + Math.min(...xs)) / 2, cy = (Math.max(...ys) + Math.min(...ys)) / 2;
   const scale = Math.min((width - 70) / Math.max(1e-6, Math.max(...xs) - Math.min(...xs)),
@@ -21,18 +23,21 @@ function sceneSvg(title: string, polygons: Polygon[], width: number, height: num
   return '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height +
     '"><rect width="100%" height="100%" fill="#101b2c"/><text x="24" y="28" fill="#e2e8f0" font-size="15" font-family="sans-serif">' + esc(title) + '</text>' +
     sorted.map(x => '<polygon points="' + x.v.map(at).join(" ") + '" fill="' + x.color + '" stroke="' + x.color + '" stroke-width=".3" opacity="' + (x.opacity ?? 1) + '"/>').join("") +
+    boreLines.map(v => '<polyline points="' + v.map(at).join(" ") + '" fill="none" stroke="#94a3b8" opacity=".75" stroke-width="1.2"/>').join("") +
     lines.map(v => '<polyline points="' + v.map(at).join(" ") + '" fill="none" stroke="#38bdf8" stroke-width="1" stroke-dasharray="6 4"/>').join("") +
     '<text x="24" y="' + (height - 22) + '" fill="#cbd5e1" font-size="12" font-family="sans-serif">Расчётный 3D-вид; радиальные размеры увеличены для наглядности</text></svg>';
 }
-export function buildCementingReportSvgs(w: WellData, extras: CementingReportExtras): ReportSvg[] {
+export function buildCementingReportSvgs(w: WellData, extras: CementingReportExtras, scope:ReportScope="cementing", selection?:ReportSelection): ReportSvg[] {
   const images: ReportSvg[] = [];
   const c=extras.centralization;
-  if(c?.running){
+  if(scope==='running'&&c?.running){
     const settings=normalizeRunningSettings(w.runningSettings,c.running.frictionCased,c.running.frictionOpenhole);
     const a=calculateCasingRunning({well:w,intervals:c.intervals,turbPoints:c.turbPoints,...c.running,settings});
+    if(a.valid){images.push(reportSeriesPlot('Профиль осевых сил по колонне','forceProfile',a.profile.map(p=>p.md),'MD сечения, м','Осевое усилие, кН',[{name:'Спуск',color:'#15803d',values:a.profile.map(p=>p.runInKN)},{name:'Подъём',color:'#dc2626',values:a.profile.map(p=>p.pullOutKN)}]),reportSeriesPlot('Момент при спуске: сухое вращение','torque',a.broom.map(p=>p.md),'Глубина башмака MD, м','Момент, кН·м',[{name:'Сухое трение при вращении',color:'#7c3aed',values:a.broom.map(p=>p.torqueKNm)}]));}
     if(a.valid)images.push({title:"Спуск колонны: веник по глубине башмака",svg:runningBroomSVG(a,settings),width:820,height:510});
   }
-  if (extras.centralization) for (const s of centralizerReportSamples(w, extras.centralization)) {
+  if(scope==='centralization'&&extras.centralization?.results.length)images.push(reportSeriesPlot('Профиль Standoff на опорах и в пролёте','standoff',extras.centralization.results.map(p=>p.md),'MD, м','Standoff, %',[{name:'В пролёте',color:'#dc2626',values:extras.centralization.results.map(p=>p.standoff)},{name:'На опоре',color:'#0284c7',values:extras.centralization.results.map(p=>100*(1-(p.supportEccentricity??p.eccentricity)))}]));
+  if (scope==='centralization'&&extras.centralization) for (const s of centralizerReportSamples(w, extras.centralization)) {
     if (!s.geometry) continue;
     const g = centralizerShape(s.spec,w.casingOD,s.bore,s.result.supportEccentricity ?? s.result.eccentricity)! , gain = 6;
     const camera = (v: Vec3) => {
@@ -50,8 +55,10 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
         face.kind === "edge" ? "rgb(52,66,82)" : "rgb(" + grey + "," + (grey + 5) + "," + Math.min(255, grey + 13) + ")" };
     });
     const free = g.blades.map(b => bladeCurve(g,b,'free').map(camera));
+    const boreLines:number[][][]=[-.8,.8].map(z=>Array.from({length:65},(_,i)=>camera([g.boreRadius*Math.cos(i*Math.PI/32),g.boreRadius*Math.sin(i*Math.PI/32),z*g.length])));
+    for(let i=0;i<4;i++){const a=i*Math.PI/2;boreLines.push([camera([g.boreRadius*Math.cos(a),g.boreRadius*Math.sin(a),-.8*g.length]),camera([g.boreRadius*Math.cos(a),g.boreRadius*Math.sin(a),.8*g.length])]);}
     const title = "Центратор на MD " + s.result.md.toFixed(1) + " м; зенит " + s.result.zenith.toFixed(1) + "°; прогиб ×6";
-    images.push({ title, width: 720, height: 650, svg: sceneSvg(title, polygons, 720, 650, free) });
+    images.push({ title, width: 720, height: 650, svg: sceneSvg(title, polygons, 720, 650, free, boreLines) });
     const scale = 120 / g.boreRadius, cy = 175, cx = 260;
     const bladeLines = g.blades.map(b => {
       const points=(state:'loaded'|'free')=>bladeSection(g,b,state).map(v=>(cx-v[1]*scale).toFixed(2)+','+(cy+v[0]*scale).toFixed(2)).join(' ');
@@ -71,7 +78,7 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
     }
 
   }
-  const data = extras.displacement;
+  const data = scope==='cementing'?extras.displacement:undefined;
   if (data?.result.snapshots.length) {
     const r = data.result, n = r.nTheta * r.nZ;
     const indices = [...new Set([Math.round(r.pumpEndSnap / 2), r.pumpEndSnap, r.snapshots.length - 1])];
@@ -121,7 +128,7 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
           '-' + r.zCenters[r.nZ - 1].toFixed(0) + ' м; слева направо - угол по окружности</text></svg>' });
     }
   }
-  return images;
+  return images.filter(figure=>allowedReportFigure(scope,selection,figure));
 }
 export async function rasterizeReportSvgs(images: ReportSvg[]): Promise<ReportFigure[]> {
   const out: ReportFigure[] = [];
@@ -133,38 +140,13 @@ export async function rasterizeReportSvgs(images: ReportSvg[]): Promise<ReportFi
       const canvas = document.createElement("canvas"); canvas.width = x.width * 2; canvas.height = x.height * 2;
       const ctx = canvas.getContext("2d"); if (!ctx) throw new Error("Недоступен экспорт изображений");
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-      out.push({ title: x.title, dataUrl: canvas.toDataURL("image/png"), width: x.width, height: x.height });
+      out.push({ reportItem:x.reportItem, title: x.title, dataUrl: canvas.toDataURL("image/png"), width: x.width, height: x.height });
     } finally { URL.revokeObjectURL(url); }
   }
   return out;
 }
 
-export function buildHydraulicReportSvgs(points: { time: number; surfacePressure: number; bottomholePressure: number; fracturePressure: number; pumpRateLps: number }[]): ReportSvg[] {
-  if (!points.length) return [];
-  const chart = (title: string, unit: string, series: { name: string; color: string; values: number[] }[]) => {
-    const maxT = Math.max(1, ...points.map(p => p.time));
-    const maxY = Math.max(1, ...series.flatMap(s => s.values.filter(Number.isFinite))) * 1.08;
-    const X = (t: number) => 65 + t / maxT * 620, Y = (v: number) => 335 - v / maxY * 255;
-    return { title, width: 720, height: 420, svg: '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420"><rect width="720" height="420" fill="white"/>' +
-      '<text x="25" y="25" font-family="sans-serif" font-size="16">' + esc(title) + '</text>' +
-      Array.from({ length: 6 }, (_, i) => '<line x1="65" x2="685" y1="' + Y(maxY * i / 5) + '" y2="' + Y(maxY * i / 5) +
-        '" stroke="#dbe3ec"/><text x="12" y="' + (Y(maxY * i / 5) + 4) + '" font-family="sans-serif" font-size="11">' +
-        (maxY * i / 5).toFixed(1) + '</text><text x="' + X(maxT * i / 5) + '" y="355" font-family="sans-serif" font-size="11">' +
-        (maxT * i / 5).toFixed(0) + '</text>').join("") +
-      series.map((s, j) => '<text x="' + (25 + j * 230) + '" y="55" fill="' + s.color + '" font-family="sans-serif" font-size="12">' + esc(s.name) +
-        '</text><polyline fill="none" stroke="' + s.color + '" stroke-width="2" points="' +
-        s.values.map((y, i) => Number.isFinite(y) ? X(points[i].time).toFixed(1) + "," + Y(y).toFixed(1) : "").join(" ") + '"/>').join("") +
-      '<text x="280" y="395" font-family="sans-serif" font-size="12">Время, мин; значения ' + esc(unit) + '</text></svg>' };
-  };
-  return [
-    chart("Давления в ходе цементирования", "МПа", [
-      { name: "Устье", color: "#4f46e5", values: points.map(p => p.surfacePressure) },
-      { name: "Забой", color: "#0284c7", values: points.map(p => p.bottomholePressure) },
-      { name: "Граница ГРП", color: "#e11d48", values: points.map(p => p.fracturePressure) },
-    ]),
-    chart("Расход закачки по времени", "л/с", [{ name: "Подача", color: "#0284c7", values: points.map(p => p.pumpRateLps) }]),
-  ];
-}
+export { hydraulicReportCharts as buildHydraulicReportSvgs, depthReportCharts as buildDepthPressureReportSvgs } from './cementing-report-charts';
 
 export function buildWellReportSvgs(w: WellData, slurries: SlurryInput[]): ReportSvg[] {
   const traj = getEffectiveTrajectory(w), depth = Math.max(1, w.casingDepthMD);

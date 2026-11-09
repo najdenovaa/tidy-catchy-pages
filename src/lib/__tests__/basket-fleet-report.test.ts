@@ -18,6 +18,6 @@ it('exports the selected modern fleet and basket comparison using current saved 
  const extras=existsSync(png)?{figures:[{title:svgs[0].title,dataUrl:'data:image/png;base64,'+readFileSync(png).toString('base64'),width:720,height:520}]}:undefined;
  const blob=await exportToDocx(well,ex.drillingFluid,ex.slurries,ex.buffers,ex.displacementFluids,ex.fractureGradient,undefined,undefined,{volumes:v,pressureResult:p},{returnBlob:true,extras});
  const bytes=Buffer.from(await (blob as Blob).arrayBuffer()),zip=await JSZip.loadAsync(bytes),xml=await zip.file('word/document.xml')!.async('text');
- for(const text of ['SERVA','Паспорт QA-26','Цементовоз ЦТ-25','Седельный тягач','Корзины: давление после Стоп','AVRORA 500S QA','несущая способность','пластового давления'])expect(xml).toContain(text);
+ for(const text of ['SERVA','Паспорт QA-26','Цементовоз ЦТ-25','с тягачом','Корзины: давление после Стоп','AVRORA 500S QA','несущая способность','пластового давления'])expect(xml).toContain(text);
  if(process.env.FLEET_QA_DIR){mkdirSync(process.env.FLEET_QA_DIR,{recursive:true});writeFileSync(process.env.FLEET_QA_DIR+'/fleet-basket.docx',bytes);writeFileSync(process.env.FLEET_QA_DIR+'/basket.svg',svgs[0].svg);}
 },45000);

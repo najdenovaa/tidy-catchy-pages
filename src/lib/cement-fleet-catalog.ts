@@ -1,7 +1,7 @@
 import type { LogisticsSettings } from './cement-logistics';
 export type FleetScheme = 'classic' | 'twin' | 'single' | 'mixer-ca';
 export const FLEET_SCHEMES: Record<FleetScheme,string> = {
-  classic:'Классика: ЦА + СМН', twin:'Двухнасосный агрегат + ЦТ-25', single:'Однонасосные агрегаты + ЦТ-25', 'mixer-ca':'Миксер + ЦА + ЦТ-25',
+  classic:'Классика: ЦА + СМН', twin:'Двухнасосный агрегат + ЦТ-25', single:'Однонасосный агрегат + ЦТ-25', 'mixer-ca':'Миксер + ЦА + ЦТ-25',
 };
 export const FLEET_MANUFACTURERS=['SERVA','Jereh','Halliburton Elite','Stewart & Stevenson','Хант (РФ)','Стромнефтемаш (УНБС)','Другая / свой парк'];
 /** Published specifications are reference limits, not a simultaneous Q-P duty point. */
@@ -13,6 +13,7 @@ export const FLEET_SOURCES=[
 ];
 /** Values marked as design assumptions remain editable; a brand never certifies a pump curve. */
 export function fleetTemplate(scheme: FleetScheme, old: LogisticsSettings): LogisticsSettings {
+  old={...old,equipmentQuantities:{},personnelQuantities:{}};
   if(scheme==='classic') return {...old,scheme,unitName:'ЦА-320',unitPowerKW:100,unitMaxPressureMPa:32,unitMaxRateLps:23,mixerName:'СМН-20',mixerCapacityT:20,mixRatePerPairLps:12,pumpsPerUnit:1,pumpCurve:undefined,passportConfirmed:false};
   return {...old,scheme,unitName:scheme==='mixer-ca'?'ЦА-320':'Агрегат по паспорту',manufacturer:scheme==='mixer-ca'?'Другая / свой парк':old.manufacturer||'SERVA',
     unitPowerKW:scheme==='mixer-ca'?100:scheme==='twin'?600:300,unitMaxPressureMPa:scheme==='mixer-ca'?32:70,unitMaxRateLps:scheme==='mixer-ca'?23:scheme==='twin'?50:25,pumpsPerUnit:scheme==='twin'?2:1,

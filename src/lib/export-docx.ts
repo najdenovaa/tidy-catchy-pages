@@ -1,3 +1,4 @@
+import { reportIncludes, type ReportSelection } from "./cementing-report-options";
 import { equipmentMaterialInventory, centralizerMaterialGeometryKey } from "./materials-equipment-inventory";
 import { centralizerInventory } from "./cementing-equipment";
 import { FLEET_SCHEMES } from "./cement-fleet-catalog";
@@ -305,10 +306,8 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
       const bufferMassKg = b.volume * b.density;
       b.additives.forEach(a => {
         if (a.name) {
-          const product = cementProduct(a.productId);
-          if (product) result.push(noteParagraph(`${product.name}: ${product.dosage}. ${product.note} Источник: ${product.sourceUrl}`));
           const computedMass = a.percentage > 0 ? (a.percentage / 100) * bufferMassKg : a.massKg;
-          result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  ${materialLabel(a)}: ${a.percentage > 0 ? a.percentage + "% от массы буфера" : "доза в кг"} = ${computedMass > 0 ? computedMass.toFixed(1) : "-"} кг`, size: 18, font: "Calibri" })] }));
+          result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  ${a.name}: ${a.percentage > 0 ? a.percentage + "% от массы буфера" : "доза в кг"} = ${computedMass > 0 ? computedMass.toFixed(1) : "-"} кг`, size: 18, font: "Calibri" })] }));
         }
       });
     }
@@ -342,10 +341,8 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
     if (s.additives && s.additives.length > 0) {
       s.additives.forEach(a => {
         if (a.name) {
-          const product = cementProduct(a.productId);
-          if (product) result.push(noteParagraph(`${product.name}: ${product.dosage}. ${product.note} Источник: ${product.sourceUrl}`));
           const pctType = a.percentageType || 'bwoc';
-          result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  ${materialLabel(a)}: ${a.percentage}% ${pctType}`, size: 18, font: "Calibri" })] }));
+          result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  ${a.name}: ${a.percentage}% ${pctType}`, size: 18, font: "Calibri" })] }));
         }
       });
     }
@@ -589,7 +586,6 @@ function buildSchedulePage(buffers: BufferFluid[], slurries: SlurryInput[], annu
 }
 
 function buildMaterialsPage(materials: MaterialSummary, wellData: WellData): Paragraph[] {
-  const equipmentNotes=(wellData.equipment??[]).flatMap(e=>[...(e.sourceUrl?[noteParagraph(e.model+": источник "+e.sourceUrl)]:[]),...equipmentWarnings(e,wellData).map(n=>noteParagraph(e.model+": "+n))]);
   const matHeaders = ["Наименование", "Количество", "Ед. изм."];
   const makeMatTable = (items: { name: string; amount: number; unit: string }[]) => {
     return fixedReportTable(3, {
@@ -617,15 +613,13 @@ function buildMaterialsPage(materials: MaterialSummary, wellData: WellData): Par
 
   return [
     sectionTitle("9. Цементные материалы"),
-    makeMatTable(materials.cementItems),
+    makeMatTable(materials.cementItems.map(x=>({...x,name:x.name.split(" / ")[0].trim()}))),
     new Paragraph({ spacing: { after: 150 }, children: [] }),
     sectionTitle("10. Буферные материалы"),
-    makeMatTable(materials.bufferItems),
+    makeMatTable(materials.bufferItems.map(x=>({...x,name:x.name.split(" / ")[0].trim()}))),
     new Paragraph({ spacing: { after: 150 }, children: [] }),
     sectionTitle("11. Технологическая оснастка"),
-    gridTable(['Наименование','Изготовитель','Количество, шт.','Параметры'],materials.equipmentItems.length?materials.equipmentItems.map(e=>[e.name,e.manufacturer??'Не задан',String(e.amount),e.details??'']):[['Оснастка не выбрана','-','-','Центраторы добавляются после расчёта расстановки']]) as any,
-    ...equipmentNotes,
-    ...materials.equipmentItems.filter(e=>e.calculated&&e.sourceUrl).map(e=>noteParagraph(e.name+': источник '+e.sourceUrl)),
+    makeMatTable(materials.equipmentItems.map(e=>({name:e.name,amount:e.amount,unit:'шт.'}))),
     new Paragraph({ spacing: { after: 150 }, children: [] }),
     sectionTitle("12. Вода для приготовления"),
     kvTable(waterRows) as any,
@@ -843,69 +837,6 @@ function buildTrajectoryPage(wellData: WellData, visualImages?: Record<string, s
   return content;
 }
 
-// ======== Centralization section ========
-
-function buildCentralizationPage(wellData: WellData, centralizationImages?: Record<string, string>, centralizationResults?: CentralizationResult[]): Paragraph[] {
-  const content: Paragraph[] = [
-    sectionTitle("16. Расчёт центрирования обсадной колонны"),
-  ];
-
-  const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
-  const clearance = (wellData.holeDiameter - wellData.casingOD) / 2;
-
-  content.push(kvTable([
-    { label: "Диаметр ствола", value: `${wellData.holeDiameter} мм` },
-    { label: "Наружный диаметр ОК", value: `${wellData.casingOD} мм` },
-    { label: "Внутренний диаметр ОК", value: `${fmt(casingID, 1)} мм` },
-    { label: "Радиальный зазор", value: `${fmt(clearance, 1)} мм` },
-  ]) as any);
-
-  if (centralizationImages) {
-    if (centralizationImages.crossSection) content.push(...buildImageParagraph(centralizationImages.crossSection, "Поперечное сечение - центрирование колонны", 800, 400));
-    if (centralizationImages.standoffProfile) content.push(...buildImageParagraph(centralizationImages.standoffProfile, "Профиль Standoff по стволу", 1400, 400));
-  }
-
-  // Build real table from results data
-  if (centralizationResults && centralizationResults.length > 0) {
-    const assumptions = [...new Set(centralizationResults.flatMap(r => r.calculationAssumptions ?? []))];
-    if (assumptions.length) content.push(noteParagraph('Оценочный расчёт центрирования. ' + assumptions.join(' ')));
-    const avgStandoff = Math.round(centralizationResults.reduce((s, r) => s + r.standoff, 0) / centralizationResults.length * 10) / 10;
-    const minStandoff = Math.min(...centralizationResults.map(r => r.standoff));
-
-    content.push(new Paragraph({
-      spacing: { before: 200, after: 80 },
-      children: [new TextRun({ text: `Средний Standoff: ${avgStandoff}%  |  Мин. Standoff: ${fmt(minStandoff, 1)}%`, bold: true, size: 20, font: "Calibri" })],
-    }));
-
-    const headers = ["MD, м", "TVD, м", "Зенит, °", "Эксц.", "Standoff, %", "Центратор"];
-    const tableRows = [
-      new TableRow({ children: headers.map(h => headerCell(h)) }),
-      ...centralizationResults.map(r => new TableRow({
-        children: [
-          cell(fmt(r.md, 0), { align: AlignmentType.RIGHT }),
-          cell(fmt(r.tvd, 1), { align: AlignmentType.RIGHT }),
-          cell(fmt(r.zenith, 1), { align: AlignmentType.RIGHT }),
-          cell(fmt(r.eccentricity, 3), { align: AlignmentType.RIGHT }),
-          cell(fmt(r.standoff, 1), { align: AlignmentType.RIGHT, bold: r.standoff < 50 }),
-          cell(r.hasCentralizer ? "●" : "-", { align: AlignmentType.CENTER }),
-        ],
-      })),
-    ];
-
-    content.push(new Paragraph({
-      spacing: { before: 150, after: 80 },
-      children: [new TextRun({ text: "Таблица результатов центрирования:", bold: true, size: 20, font: "Calibri" })],
-    }));
-    content.push(fixedReportTable(headers.length, {
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      layout: TableLayoutType.FIXED,
-      rows: tableRows,
-    }) as any);
-  }
-
-  return content;
-}
-
 // ======== WOC (ОЗЦ) section ========
 
 function wocStrength(t_h: number, bhct: number, cls: "G" | "H" = "G") {
@@ -1016,8 +947,9 @@ export async function exportToDocx(
     flushTimeMin?: number;
     flushVolumeM3?: number;
   },
-  options?: { returnBlob?: boolean; filename?: string; foam?: FoamReportBundle; extras?: CementingReportExtras },
+  options?: { returnBlob?: boolean; filename?: string; foam?: FoamReportBundle; extras?: CementingReportExtras; selection?:ReportSelection },
 ): Promise<Blob | void> {
+  const selection=options?.selection;
   const center=options?.extras?.centralization;
   if(center?.calculated)wellData={...wellData,centralizerMaterials:{geometryKey:centralizerMaterialGeometryKey(wellData),items:centralizerInventory(wellData.casingDepthMD,center.intervals)}};
   const volumes = preComputed?.volumes ?? calculateVolumes(wellData, slurries, displacementFluids?.[0]?.compressionCoeff ?? 1.0);
@@ -1083,170 +1015,42 @@ export async function exportToDocx(
   const labContent = buildLabPage(wellData, slurries, volumes, pressureResult);
   const normsContent = buildNormsPage(wellData, slurries, buffers, drillingFluid, volumes, pressureResult);
   const logisticsContent = buildLogisticsPage(pressureResult, materials, slurries, wellData.logistics);
+  const basketContent: any[] = [];
   const basket=pressureResult.basketStop;
-  if(basket){
-    logisticsContent.push(sectionTitle('Корзины: давление после Стоп'),noteParagraph(`Сценарий через ${basket.elapsedMin} мин. Основная гидравлика сохраняет полный столб без разгрузки.`));
+  if(basket&&reportIncludes(selection,"basket")){
+    basketContent.push(sectionTitle('Корзины: давление после Стоп'),noteParagraph(`Сценарий через ${basket.elapsedMin} мин. Основная гидравлика сохраняет полный столб без разгрузки.`));
     const depths=new Set([wellData.casingDepthMD,...basket.baskets.map(b=>b.md),...(wellData.reservoirLayers??[]).flatMap(l=>[l.topMD,l.bottomMD])]);
-    logisticsContent.push(gridTable(['MD, м','Полный столб, МПа','Сценарий, МПа','Снижение, МПа','Пластовое, МПа','ГРП / потери, МПа'],basket.rows.filter(r=>depths.has(r.md)).map(r=>[fmt(r.md,1),fmt(r.withoutMPa),fmt(r.scenarioMPa),fmt(r.reductionMPa),r.poreMPa===null?'Не задано':fmt(r.poreMPa),r.limitMPa===null?'Не задано':fmt(r.limitMPa)])) as any);
-    for(const b of basket.baskets){logisticsContent.push(noteParagraph(`${b.model}: MD ${b.md} м; передача ${fmt(b.transferPct,0)}%; ΔP ${fmt(b.transferredMPa)} МПа; реакция ${fmt(b.reactionKN)} кН; несущая способность ${b.capacityKN===undefined?'не задана':fmt(b.capacityKN)+' кН'}.`));b.notes.forEach(n=>logisticsContent.push(noteParagraph(n)));}
-    basket.notes.forEach(n=>logisticsContent.push(noteParagraph(n)));
+    basketContent.push(gridTable(['MD, м','Полный столб, МПа','Сценарий, МПа','Снижение, МПа','Пластовое, МПа','ГРП / потери, МПа'],basket.rows.filter(r=>depths.has(r.md)).map(r=>[fmt(r.md,1),fmt(r.withoutMPa),fmt(r.scenarioMPa),fmt(r.reductionMPa),r.poreMPa===null?'Не задано':fmt(r.poreMPa),r.limitMPa===null?'Не задано':fmt(r.limitMPa)])) as any);
+    for(const b of basket.baskets){basketContent.push(noteParagraph(`${b.model}: MD ${b.md} м; передача ${fmt(b.transferPct,0)}%; ΔP ${fmt(b.transferredMPa)} МПа; реакция ${fmt(b.reactionKN)} кН; несущая способность ${b.capacityKN===undefined?'не задана':fmt(b.capacityKN)+' кН'}.`));b.notes.forEach(n=>basketContent.push(noteParagraph(n)));}
+    basket.notes.forEach(n=>basketContent.push(noteParagraph(n)));
   }
 
   let riskContent: Paragraph[] = [];
   try {
+    if(!reportIncludes(selection,"risks"))throw new Error("not selected");
     const risk = await runLossRisk({ wellData, drillingFluid, buffers, slurries, displacementFluids, fractureGradient, flushTimeMin: preComputed?.flushTimeMin ?? 10, flushVolumeM3: preComputed?.flushVolumeM3 ?? 0 }, { ...DEFAULT_RISK, iterations: 100 });
     riskContent = buildRiskPage(risk);
   } catch { riskContent = [noteParagraph("Оценка риска не выполнена; расчёт этого раздела недоступен.")]; }
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
   const chartsDataContent = buildChartsDataPage(pressureResult, images?.chartImages);
   const trajectoryContent = buildTrajectoryPage(wellData, images?.visualImages);
-  const centralizationContent = buildCentralizationPage(wellData, images?.centralizationImages, centralizationResults);
-  const doc = new Document({
-    styles: { default: { document: { run: { font: "Calibri", size: 20 } } } },
-    sections: [
-      {
-        properties: reportPageProperties(),
-        children: titlePage,
-      },
-      {
-        properties: reportPageProperties(),
-        headers: {
-          default: new Header({
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "Исходные данные", size: 16, color: "999999", font: "Calibri", italics: true })],
-            })],
-          }),
-        },
-        children: inputContent,
-      },
-      {
-        properties: reportPageProperties(),
-        headers: {
-          default: new Header({
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "Гидравлика", size: 16, color: "999999", font: "Calibri", italics: true })],
-            })],
-          }),
-        },
-        children: hydraulicsContent,
-      },
-      {
-        properties: reportPageProperties(),
-        headers: {
-          default: new Header({
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "Закачка", size: 16, color: "999999", font: "Calibri", italics: true })],
-            })],
-          }),
-        },
-        children: scheduleContent,
-      },
-      {
-        properties: reportPageProperties(),
-        headers: {
-          default: new Header({
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "Материалы", size: 16, color: "999999", font: "Calibri", italics: true })],
-            })],
-          }),
-        },
-        children: materialsContent,
-      },
-      {
-        properties: reportPageProperties(),
-        headers: {
-          default: new Header({
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "Лаборатория и рецептура", size: 16, color: "999999", font: "Calibri", italics: true })],
-            })],
-          }),
-        },
-        children: labContent,
-      },
-      {
-        properties: reportPageProperties(),
-        headers: {
-          default: new Header({
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "Нормы, техника, риски", size: 16, color: "999999", font: "Calibri", italics: true })],
-            })],
-          }),
-        },
-        children: [...normsContent, ...logisticsContent, ...riskContent],
-      },
-      {
-        properties: reportPageProperties(),
-        headers: {
-          default: new Header({
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "План продавки", size: 16, color: "999999", font: "Calibri", italics: true })],
-            })],
-          }),
-        },
-        children: pressureProfileContent,
-      },
-      {
-        properties: reportPageProperties(),
-        headers: {
-          default: new Header({
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "Графики (данные)", size: 16, color: "999999", font: "Calibri", italics: true })],
-            })],
-          }),
-        },
-        children: chartsDataContent,
-      },
-      ...(trajectoryContent.length > 0 ? [{
-        properties: reportPageProperties(),
-        headers: {
-          default: new Header({
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "Визуализация", size: 16, color: "999999", font: "Calibri", italics: true })],
-            })],
-          }),
-        },
-        children: trajectoryContent,
-      }] : []),
-      ...(centralizationContent.length > 1 ? [{
-        properties: reportPageProperties(),
-        headers: {
-          default: new Header({
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "Центрирование", size: 16, color: "999999", font: "Calibri", italics: true })],
-            })],
-          }),
-        },
-        children: centralizationContent,
-      }] : []),
-      {
-        properties: reportPageProperties(),
-        headers: {
-          default: new Header({
-            children: [new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [new TextRun({ text: "ОЗЦ", size: 16, color: "999999", font: "Calibri", italics: true })],
-            })],
-          }),
-        },
-        children: buildWOCPage(wellData, slurries),
-      },
-      { properties: reportPageProperties(),
-        headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT,
-          children: [new TextRun({ text: "Расчётные модели и приложения", size: 16, color: "999999" })] })] }) },
-        children: buildCementingReportExtras(wellData, options?.extras) },
-      ...(options?.foam ? [{properties:reportPageProperties(),children:foamReportChildren(options.foam)}] : []),
-    ],
-  });
+  const sections: {properties:ReturnType<typeof reportPageProperties>;headers?:{default:Header};children:any[]}[]=[{properties:reportPageProperties(),children:titlePage}];
+  const add=(key:Parameters<typeof reportIncludes>[1],title:string,children:any[])=>{if(reportIncludes(selection,key)&&children.length)sections.push({properties:reportPageProperties(),headers:{default:new Header({children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:title,size:16,color:"999999",font:"Calibri"})]})]})},children});};
+  add('inputs','Исходные данные',inputContent);
+  add('hydraulics','Объёмы и гидравлика',hydraulicsContent);
+  add('schedule','Программа закачки',scheduleContent);
+  add('materials','Ведомость материалов',materialsContent);
+  add('lab','Рецептура и лабораторные требования',labContent);
+  add('norms','Проверки ограничений',normsContent);
+  add('logistics','Техника, персонал и график работ',logisticsContent);
+  add('basket','Корзины: давление после Стоп',basketContent);
+  add('risks','Оценка рисков',riskContent);
+  add('pressureTable','План продавки',pressureProfileContent);
+  add('chartData','Числовые данные графиков',chartsDataContent);
+  add('woc','ОЗЦ',buildWOCPage(wellData,slurries));
+  const extraContent=buildCementingReportExtras(wellData,options?.extras,'cementing',selection);
+  if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
+  const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});
 
   const blob = await Packer.toBlob(doc);
   if (options?.returnBlob) return blob;

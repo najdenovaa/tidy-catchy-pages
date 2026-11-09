@@ -7,7 +7,7 @@ import type { PressureProfileResult,MaterialSummary,SlurryInput } from './cement
 const pressure=(q:number,p:number)=>({points:[{time:1,pumpRateLps:q,surfacePressure:p,stage:'цемент'}]} as PressureProfileResult);
 const mats={cementItems:[{name:'Сухая смесь',amount:60,unit:'т'},{name:'В составе сухой смеси',amount:6000,unit:'кг'}],waterTotal:20} as MaterialSummary;
 const slurries=[{...getCementingExample().slurries[0],yieldPerTon:1,flowRateSteps:[{rateLps:20,volumeM3:60}]}] as SlurryInput[];
-it('adds a second single-pump machine for Q-P, not just for manufacturer name',()=>{
+it('adds a working CA for missing Q-P instead of another integrated mixing machine',()=>{
  const s={...fleetTemplate('single',DEFAULT_LOGISTICS),unitPowerKW:100,unitMaxRateLps:30,unitMaxPressureMPa:70,mixRatePerPairLps:40};
  expect(planLogistics(pressure(15,10),mats,slurries,s).peakUnitsHydraulic).toBe(2);
  expect(planLogistics(pressure(15,5),mats,slurries,s).peakUnitsHydraulic).toBe(1);
@@ -38,4 +38,20 @@ it('persists fleet settings and basket hypotheses with the well snapshot',()=>{
  expect(snap.wellData.logistics?.scheme).toBe('single');expect(snap.wellData.basketEvaluationMin).toBe(12);expect(snap.wellData.equipment?.[0].basketSupportPct).toBe(40);
  const invalid=normalizeLogisticsSettings({unitPowerKW:0,bulkPayloadT:NaN,maxBulkConnections:-1});
  expect(invalid.unitPowerKW).toBeGreaterThan(0);expect(invalid.bulkPayloadT).toBeGreaterThan(0);expect(invalid.maxBulkConnections).toBeGreaterThan(0);
+});
+
+it('uses built-in mixers, separate reserve CA, separate SKC and one combined CT-25 driver',()=>{
+ const s={...fleetTemplate('single',DEFAULT_LOGISTICS),unitPowerKW:100,unitMaxRateLps:30,mixRatePerPairLps:40};
+ const r=planLogistics(pressure(15,10),mats,slurries,s);
+ expect(r.mainUnits).toBe(1);expect(r.supportUnits).toBe(1);expect(r.reserveCA).toBe(1);expect(r.mixers).toBe(0);
+ expect(r.equipment.some(e=>e.id==='mixer')).toBe(false);expect(r.equipment.find(e=>e.id==='skc')?.count).toBe(1);
+ expect(r.equipment.filter(e=>e.id==='bulk')).toHaveLength(1);expect(r.personnel.find(e=>e.id==='bulk-operator')?.count).toBe(r.bulkTrucks);
+ expect(r.personnel.find(e=>e.id==='main-operator')?.count).toBe(1);expect(r.personnel.find(e=>e.id==='main-helper')?.count).toBe(1);
+ expect(r.tankers).toBe(0);
+});
+it('rechecks manually selected capacity and retains mandatory SKC and reserve floors',()=>{
+ const s={...fleetTemplate('twin',DEFAULT_LOGISTICS),equipmentQuantities:{main:0,'reserve-ca':0,skc:0},personnelQuantities:{'main-helper':0}};
+ const r=planLogistics(pressure(20,50),mats,slurries,s);expect(r.feasible).toBe(false);expect(r.reserveCA).toBe(1);expect(r.equipment.find(e=>e.id==='skc')?.count).toBe(1);
+ const restored=normalizeCementingSnapshot({...getCementingExample(),wellData:{...getCementingExample().wellData,logistics:s}}).wellData.logistics!;
+ expect(restored.equipmentQuantities?.main).toBe(0);expect(restored.personnelQuantities?.['main-helper']).toBe(0);
 });

@@ -1,3 +1,4 @@
+import { cementFleetLayout } from "@/lib/cement-fleet-layout";
 import { FLEET_SCHEMES, FLEET_MANUFACTURERS, FLEET_SOURCES, fleetTemplate, type FleetScheme } from "@/lib/cement-fleet-catalog";
 import { useEffect, useMemo } from "react";
 import { Card } from "@/components/ui/card";
@@ -57,9 +58,12 @@ export default function LogisticsSection({ pressure, materials, slurries, settin
           {s.scheme==='classic'&&field("mixerCapacityT", "Бункер СМН, т")}
           {field("mixRatePerPairLps", s.scheme==='classic'?"Затворение на пару, л/с":"Смешивание одной системы, л/с")}
           {field("tankerM3", "Автоцистерна воды, м³")}
-          {field("reserveUnits", "Резервных машин, шт.")}
+          {field("reserveUnits", "Резервных ЦА, шт.")}
           {s.scheme!=='classic'&&<>{field('bulkVolumeM3','Цементовоз, объём м³')}{field('bulkPayloadT','Грузоподъёмность, т')}{field('bulkDensityTm3','Насыпная плотность, т/м³','0.05')}{field('bulkUnloadTmin','Пневмоподача одной линии, т/мин','0.1')}{field('maxBulkConnections','Линий сухого материала на смеситель')}</>}
         </div>
+        <label className="block text-sm">Источник воды<select aria-label="Источник воды" className="block border rounded bg-background p-2" value={s.waterSource} onChange={e=>write({...s,waterSource:e.target.value as 'rig'|'tankers'})}><option value="rig">Вода с буровой</option><option value="tankers">Доставка автоцистернами</option></select></label>
+        {(s.scheme==='single'||s.scheme==='twin')&&<div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{field('supportUnitName','Дополнительный и резервный ЦА')}{field('supportPowerKW','Гидр. мощность ЦА, кВт')}{field('supportMaxPressureMPa','Предел давления ЦА, МПа')}{field('supportMaxRateLps','Подача ЦА, л/с')}</div>}
+        <p className="text-xs">Миксер одно- и двухнасосного агрегата входит в его состав. Всегда предусмотрен отдельный СКЦ; при интегрированном агрегате - минимум один резервный ЦА. Цементовоз с тягачом - один автопоезд и один водитель-оператор. На основной агрегат - оператор и помощник, они же водители.</p>
         <div className="flex flex-wrap gap-4 text-xs"><label><input type="checkbox" checked={s.passportConfirmed??false} onChange={e=>write({...s,passportConfirmed:e.target.checked})}/> Характеристики сверены с паспортом / Q-P</label>{s.scheme!=='classic'&&<label><input type="checkbox" checked={s.closedMixing??false} onChange={e=>write({...s,closedMixing:e.target.checked})}/> Закрытая беспылевая подача</label>}</div>
         <details className="text-xs"><summary>Рабочие точки Q-P и источники</summary><p className="my-2">Внесите точки для всей машины. Между точками применяется консервативная ступенчатая огибающая; выше последней точки экстраполяции нет. Значения Qmax и Pmax не считаются одновременным режимом.</p>
           {(s.pumpCurve??[]).map((point,i)=><div key={i} className="flex gap-2 my-1"><label>P, МПа<input aria-label={`Давление характеристики ${i+1}`} className="w-24 rounded border bg-background p-1" type="number" min="0.01" step="any" value={point.pressureMPa} onChange={e=>write({...s,passportConfirmed:false,pumpCurve:s.pumpCurve!.map((x,j)=>j===i?{...x,pressureMPa:Number(e.target.value)}:x)})}/></label><label>Q, л/с<input aria-label={`Подача характеристики ${i+1}`} className="w-24 rounded border bg-background p-1" type="number" min="0.01" step="any" value={point.rateLps} onChange={e=>write({...s,passportConfirmed:false,pumpCurve:s.pumpCurve!.map((x,j)=>j===i?{...x,rateLps:Number(e.target.value)}:x)})}/></label><button onClick={()=>write({...s,pumpCurve:s.pumpCurve!.filter((_,j)=>j!==i),passportConfirmed:false})}>Удалить</button></div>)}
@@ -68,13 +72,14 @@ export default function LogisticsSection({ pressure, materials, slurries, settin
         </details>
       </Card>
       {!r.feasible&&<p role="alert" className="text-red-600 font-semibold">Комплекс не обеспечивает заданный режим давления и подачи. Количество машин не является подтверждением выполнимости.</p>}
+      <button className="text-sm underline" onClick={()=>write({...s,equipmentQuantities:{},personnelQuantities:{}})}>Вернуть расчётное количество техники и людей</button>
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="p-4 space-y-2">
           <h3 className="font-semibold text-sm">Состав техники</h3><p className="text-xs">{r.unitsWorking} рабочих машин, {r.workingPumps} насосов, {r.mixingSystems} смесительных систем. Отказ одного насоса: {f(r.onePumpOutRateLps,1)} л/с; {r.onePumpOutMeetsPeak?"пиковая подача сохраняется":"пиковая подача не обеспечена"}.</p>
           <table className="w-full text-xs">
             <thead className="bg-muted/50"><tr><th className="p-1.5 text-left">Техника</th><th className="p-1.5 text-right">Кол-во</th><th className="p-1.5 text-left">Обоснование</th></tr></thead>
             <tbody>{r.equipment.map((e) => (
-              <tr key={e.name} className="border-t border-border/40 align-top"><td className="p-1.5 font-medium">{e.name}</td><td className="p-1.5 text-right text-base font-semibold">{e.count}</td><td className="p-1.5 text-muted-foreground">{e.note}</td></tr>
+              <tr key={e.id} className="border-t border-border/40 align-top"><td className="p-1.5 font-medium">{e.name}</td><td className="p-1.5 text-right"><input aria-label={`Количество техники: ${e.name}`} type="number" min={e.id==='skc'||(e.id==='reserve-ca'&&(s.scheme==='single'||s.scheme==='twin'))?1:0} step="1" className="w-16 border rounded bg-background p-1" value={e.count} onChange={event=>write({...s,equipmentQuantities:{...s.equipmentQuantities,[e.id]:Number(event.target.value)}})}/><div className="text-[10px] text-muted-foreground">расчёт {e.recommendedCount}</div></td><td className="p-1.5 text-muted-foreground">{e.note}</td></tr>
             ))}</tbody>
           </table>
           <div className="text-xs text-muted-foreground">
@@ -85,7 +90,7 @@ export default function LogisticsSection({ pressure, materials, slurries, settin
           <h3 className="font-semibold text-sm">Состав бригады</h3>
           <table className="w-full text-xs">
             <tbody>{r.personnel.map((p) => (
-              <tr key={p.role} className="border-t border-border/40"><td className="p-1.5">{p.role}</td><td className="p-1.5 text-right font-semibold">{p.count} чел.</td></tr>
+              <tr key={p.id} className="border-t border-border/40"><td className="p-1.5">{p.role}</td><td className="p-1.5 text-right"><input aria-label={`Персонал: ${p.role}`} type="number" min="0" step="1" className="w-16 border rounded bg-background p-1" value={p.count} onChange={e=>write({...s,personnelQuantities:{...s.personnelQuantities,[p.id]:Number(e.target.value)}})}/> чел.</td></tr>
             ))}
               <tr className="border-t border-border font-semibold"><td className="p-1.5">Итого</td><td className="p-1.5 text-right">{r.personnel.reduce((t, p) => t + p.count, 0)} чел.</td></tr>
             </tbody>
@@ -93,6 +98,7 @@ export default function LogisticsSection({ pressure, materials, slurries, settin
         </Card>
       </div>
 
+      <Card className="p-4 space-y-2"><h3 className="font-semibold">Схема расстановки оборудования</h3><p className="text-xs">Вид сверху. Показаны группы машин с фактически выбранным количеством. Вода идёт в смеситель с буровой; цементный раствор - от агрегатов на устье. Резерв подключается после переключения.</p><div className="overflow-x-auto"><div className="min-w-[760px]" dangerouslySetInnerHTML={{__html:cementFleetLayout(r,s)}}/></div></Card>
       <Card className="p-4 space-y-2">
         <h3 className="font-semibold text-sm">Потребность в насосных машинах по Q-P</h3>
         <div ref={ref} className="h-52">
