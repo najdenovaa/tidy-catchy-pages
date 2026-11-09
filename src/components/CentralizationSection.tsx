@@ -1,3 +1,6 @@
+import ReportContentsDialog from "./ReportContentsDialog";
+import { exportCasingDesignDocx } from "@/lib/export-casing-design-docx";
+import type { ReportSelection } from "@/lib/cementing-report-options";
 import { buildCentralizerJointSchedule, type CentralizationReportData } from "@/lib/cementing-report-data";
 import CentralizerCatalogPreview from "./CentralizerCatalogPreview";
 import { trajectoryAzimuth } from "@/lib/centralizer-mesh";
@@ -278,6 +281,7 @@ function standoffBg(standoff: number): string {
 
 // ─── Main component ─────────────────────────────────────────────
 export default function CentralizationSection({ wellData, mudDensity, fluidPV = 25, fluidYP = 25, flowRateLps = 10, pipeWeightKgPerM, frictionCased = 0.25, frictionOpenhole = 0.35, onResultsChange, onIntervalsChange, externalIntervals, onReportChange, onWellDataChange }: Props) {
+  const [reportOpen,setReportOpen]=useState(false),[reportBusy,setReportBusy]=useState(false),[reportError,setReportError]=useState('');
   const [mode, setMode] = useState<CalcMode>("manual");
   const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => [newInterval(wellData.casingDepthMD)]);
   const [results, setResults] = useState<CentralizationResult[] | null>(null);
@@ -490,8 +494,12 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   }, [onReportChange, mode, targetStandoff, autoSpec, autoJointLength, intervals, results, turbPoints, autoResults, selectedMD, jointSchedule, mudDensity, fluidPV, fluidYP, pipeWeightKgPerM, frictionCased, frictionOpenhole, wellData.runningSettings]);
 
 
+  const exportCenter=async(selection:ReportSelection)=>{setReportBusy(true);setReportError('');try{await exportCasingDesignDocx(wellData,{mode,targetStandoff:mode==='auto'?targetStandoff:undefined,autoSpec,jointLength:autoJointLength,intervals:runningIntervals,results:results??[],turbPoints,autoResults:autoResults??undefined,selectedMD:selectedMD??undefined,calculated:!!results?.length,joints:jointSchedule??undefined},mudDensity,'centralization',selection);}catch(e){setReportError(e instanceof Error?e.message:String(e));}finally{setReportBusy(false);}};
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={()=>setReportOpen(true)} disabled={!results?.length||reportBusy}>{reportBusy?'Формирование…':'Word: центрирование'}</Button><span className="text-xs text-muted-foreground">Отдельный отчёт центрирования без цементажа и дохождения.</span></div>
+      <ReportContentsDialog scope="centralization" open={reportOpen} onOpenChange={setReportOpen} onConfirm={exportCenter} busy={reportBusy}/>
+      {reportError&&<p role="alert" className="text-destructive">{reportError}</p>}
       {/* Mode switcher */}
       <div className="flex gap-2">
         <Button

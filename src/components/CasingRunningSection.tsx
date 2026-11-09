@@ -1,3 +1,8 @@
+import ReportContentsDialog from "./ReportContentsDialog";
+import { exportCasingDesignDocx } from "@/lib/export-casing-design-docx";
+import { buildCentralizerJointSchedule } from "@/lib/cementing-report-data";
+import { calculateCentralization } from "@/lib/centralization-calculations";
+import type { ReportSelection } from "@/lib/cementing-report-options";
 import { useMemo, useRef, useState } from 'react';
 import { Card,CardHeader,CardTitle,CardContent } from './ui/card';
 import { Input } from './ui/input';
@@ -16,6 +21,7 @@ export interface CasingRunningProps {
 const G=9.80665;
 export default function CasingRunningSection(props:CasingRunningProps){
   const {wellData:w,mudDensity,intervals,turbPoints,pv,yp,pipeWeightKgPerM}=props;
+  const [reportOpen,setReportOpen]=useState(false),[reportBusy,setReportBusy]=useState(false),[reportError,setReportError]=useState('');
   const [local,setLocal]=useState<CasingRunningSettings>();
   const settings=useMemo(()=>normalizeRunningSettings(w.runningSettings??local,props.frictionCased,props.frictionOpenhole),[w.runningSettings,local,props.frictionCased,props.frictionOpenhole]);
   const patch=(p:Partial<CasingRunningSettings>)=>{const next=normalizeRunningSettings({...settings,...p});setLocal(next);props.onSettingsChange?.(next);};
@@ -32,7 +38,10 @@ export default function CasingRunningSection(props:CasingRunningProps){
     ['blockWeightKN','Вес блока / подвески, кН',1],['maxHookKN','Предел нагрузки на крюк, кН (0 - не задан)',10],
     ['centralizerRunningKN','Сопротивление центратора без испытания, кН/шт.',.1],['turbulatorRunningKN','Сопротивление турбулизатора, кН/шт.',.1],
   ];
+  const exportRunning=async(selection:ReportSelection)=>{setReportBusy(true);setReportError('');try{await exportCasingDesignDocx({...w,runningSettings:settings},{mode:'manual',intervals,results:calculateCentralization(w,intervals,mudDensity),turbPoints,calculated:true,joints:buildCentralizerJointSchedule(w.casingDepthMD,intervals),running:{mudDensity,pv,yp,pipeWeightKgPerM,frictionCased:settings.frictionCased,frictionOpenhole:settings.frictionOpenhole}},mudDensity,'running',selection);}catch(e){setReportError(e instanceof Error?e.message:String(e));}finally{setReportBusy(false);}};
   return <section data-testid="casing-running-analysis" className="space-y-4">
+    <div className="flex flex-wrap gap-3 items-center"><Button variant="outline" disabled={!result.valid||reportBusy} onClick={()=>setReportOpen(true)}>{reportBusy?'Формирование…':'Word: дохождение'}</Button><span className="text-xs text-muted-foreground">Отдельный отчёт спуска колонны: нагрузки, веник и замеры.</span></div>
+    <ReportContentsDialog scope="running" open={reportOpen} onOpenChange={setReportOpen} onConfirm={exportRunning} busy={reportBusy}/>{reportError&&<p role="alert" className="text-destructive">{reportError}</p>}
     <Card><CardHeader><CardTitle>Спуск колонны: расчёт и график «веник»</CardTitle></CardHeader><CardContent className="space-y-4">
       <p className="text-sm text-muted-foreground">Каждая точка веника - отдельный расчёт нагрузки на крюке при текущей глубине башмака. Профиль усилий вдоль полностью спущенной колонны приведён отдельно.</p>
       <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">{fields.map(([key,label,step])=><label key={key} className="text-xs">{label}<Input aria-label={label} type="number" min="0" step={step} value={settings[key] as number} onChange={e=>patch({[key]:Number(e.target.value)})}/></label>)}</div>

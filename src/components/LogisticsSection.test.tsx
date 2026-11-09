@@ -37,3 +37,17 @@ it('edits basket hypotheses and displays a separate Stop comparison',()=>{
  expect(screen.getByTestId('basket-stop-comparison')).toBeInTheDocument();
  expect(screen.getByRole('img',{name:/Давление без корзины/})).toBeInTheDocument();
 });
+
+it('edits actual machines and crew and redraws fleet totals',()=>{
+ const save=vi.fn();
+ function Harness(){const [s,setS]=useState<LogisticsSettings>({...DEFAULT_LOGISTICS,scheme:'single'});return <LogisticsSection pressure={pressure} materials={materials} slurries={ex.slurries} settings={s} onSettingsChange={v=>{save(v);setS(v);}}/>;}
+ render(<Harness/>);
+ const main=screen.getByLabelText(/Количество техники: Цементировочный агрегат со встроенным миксером/i);
+ fireEvent.change(main,{target:{value:'3'}});
+ expect(save.mock.calls.at(-1)![0].equipmentQuantities.main).toBe(3);
+ expect(screen.getByRole('img',{name:'Схема расстановки цементировочной техники, вид сверху'})).toHaveTextContent('3 ед.');
+ const crew=screen.getAllByLabelText(/^Персонал:/)[0];
+ fireEvent.change(crew,{target:{value:'7'}});
+ expect(Object.values(save.mock.calls.at(-1)![0].personnelQuantities)).toContain(7);
+ expect(screen.getByLabelText('Источник воды')).toHaveValue('rig');
+});

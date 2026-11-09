@@ -2,9 +2,9 @@ import type { ReportSupplement } from "./cementing-report-data";
 /** Supplementary calculated tables/text, not screenshots of mobile controls. Core report data has dedicated builders. */
 const TITLES: Record<string, string> = {
   contact: "Время контакта технологических жидкостей", quality: "Качество замещения, газомиграция и целостность камня",
-  torquedrag: "Спуск колонны: Torque & Drag", drillhydr: "Буровая гидравлика", rotation: "Вращение колонны",
-  woc: "ОЗЦ: параметры активного расчёта", norms: "Проверки ограничений и норм", logistics: "Оснащение и логистика",
-  skc: "Контроль процесса цементирования", optimizer: "Варианты оптимизации", lab: "Лабораторный подбор текущей программы",
+  rotation: "Вращение при цементировании",
+
+  skc: "Контроль процесса цементирования", optimizer: "Варианты оптимизации",
 };
 const text = (node: Element) => {
   const copy = node.cloneNode(true) as Element;

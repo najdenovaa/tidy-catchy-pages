@@ -20,7 +20,7 @@ export type DisplacementReportInput = { wellData: WellData; slurries: SlurryInpu
 export interface ReportSupplement {
   title: string; paragraphs: string[]; tables: { headers: string[]; rows: string[][] }[];
 }
-export interface ReportFigure { title: string; dataUrl: string; width: number; height: number; }
+export interface ReportFigure { reportItem?: import("./cementing-report-options").ReportItem; title: string; dataUrl: string; width: number; height: number; }
 export interface CementingReportExtras {
   centralization?: CentralizationReportData | null; displacement?: DisplacementReportData | null;
   figures?: ReportFigure[]; supplements?: ReportSupplement[]; warnings?: string[];

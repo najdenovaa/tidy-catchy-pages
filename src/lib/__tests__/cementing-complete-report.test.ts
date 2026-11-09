@@ -53,9 +53,10 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   const pressure = calculatePressureProfile(reportWell, slurries, buffers, ex.drillingFluid, ex.displacementFluids,
     ex.fractureGradient, volume.displacementVolumeWithCompression);
   const svg = [...buildHydraulicReportSvgs(pressure.points), ...buildWellReportSvgs(reportWell, slurries), ...buildCementingReportSvgs(reportWell, extras)];
-  expect(svg.some(f => f.title.includes("веник по глубине башмака"))).toBe(true);
-  expect(svg.some(f => f.title.includes("Сечение через вершины"))).toBe(true);
-  expect(svg.some(f => f.title.includes("Продольный профиль планки"))).toBe(true);
+  expect(svg.some(f => f.title.includes("веник по глубине башмака"))).toBe(false);
+  expect(svg.some(f => f.title.includes("Сечение через вершины"))).toBe(false);
+  expect(svg.some(f => f.title.includes("ЭЦП во времени"))).toBe(true);
+  expect(svg.some(f => f.title.includes("Совмещённый график"))).toBe(true);
   expect(svg.some(f => f.title.includes("конец продавки"))).toBe(true);
   expect(svg.filter(f => f.title.startsWith("Замещение: 3D-кадр")).length).toBeGreaterThanOrEqual(2);
   for (const f of svg) expect(f.svg).not.toMatch(/NaN|Infinity/);
@@ -82,22 +83,23 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   expect(xml).toContain("СОГЛАСОВАНО");
   expect(xml).toContain("УТВЕРЖДАЮ");
   expect(xml).toContain("Тестовый центратор 168");
-  expect(xml).toContain("Зазор / конфликт, мм");
-  expect(xml).toContain("Потрубная ведомость");
-  expect(xml).toContain("Спуск колонны: веник и контроль нагрузок");
-  expect(xml).toContain("Предел крюка, кН");
+  expect(xml).not.toContain("Зазор / конфликт, мм");
+  expect(xml).not.toContain("Потрубная ведомость");
+  expect(xml).not.toContain("Спуск колонны: веник и контроль нагрузок");
+  expect(xml).not.toContain("Предел крюка, кН");
   expect(xml).toContain("Замещение в затрубье");
   expect(xml).toContain("Контрольный результат");
   expect(xml).toContain("AVRORA 141-SG");
-  expect(xml).toContain("PS-QA-168");
-  expect(xml.indexOf('PS-QA-168')).toBeGreaterThan(xml.indexOf('11. Технологическая оснастка'));
+  expect(xml).not.toContain("PS-QA-168");
+
   expect((xml.match(/Центратор \/ Тестовый центратор 168/g)??[]).length).toBe(1);
   expect(xml).not.toContain('Башмак БКМ');
-  expect(xml).toContain("Изготовитель");
+  expect(xml).not.toContain("Паспортные поля");
   expect(xml).toContain("IG Retard");
-  expect(xml).toContain("IG chemical / Айсберг");
-  expect(xml).toContain("IG26-QA");
-  expect(xml).toContain("https://igchem.ru/chemical");
+  expect(xml).not.toContain("Паспортные поля");
+  const materialSection = xml.slice(xml.indexOf("Ведомость материалов"), xml.indexOf("Рецептура", xml.indexOf("Ведомость материалов")));
+  expect(materialSection).not.toContain("IG26-QA");
+  expect(materialSection).not.toContain("https://igchem.ru/chemical");
   if (extras.figures) {
     expect(Object.keys(zip.files).filter(k => /word\/media\/.+\.(png|jpg)$/.test(k)).length).toBeGreaterThanOrEqual(svg.length);
     expect(xml).toContain("3D-кадр");

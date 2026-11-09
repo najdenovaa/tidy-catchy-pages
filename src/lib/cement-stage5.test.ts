@@ -63,7 +63,9 @@ describe("Техника и логистика", () => {
     expect(r.unitsWorking).toBeGreaterThanOrEqual(r.peakUnitsHydraulic);
     expect(r.unitsTotal).toBe(r.unitsWorking + 1);
     expect(r.mixers).toBeGreaterThanOrEqual(Math.ceil(r.blendT / 20));
-    expect(r.tankers).toBe(Math.ceil(materials.waterTotal / 10));
+    expect(r.tankers).toBe(0); // Вода с буровой по умолчанию.
+    const delivered = planLogistics(pressure, materials, slurries, {...DEFAULT_LOGISTICS, waterSource: "tankers"});
+    expect(delivered.tankers).toBe(Math.ceil(materials.waterTotal / 10));
     expect(r.timeline.length).toBe(5);
     expect(r.lineTestMPa).toBeGreaterThanOrEqual(Math.ceil(r.maxSurfaceMPa * 1.5) - 1e-9 > 32 ? 32 : Math.ceil(r.maxSurfaceMPa * 1.5));
   });
