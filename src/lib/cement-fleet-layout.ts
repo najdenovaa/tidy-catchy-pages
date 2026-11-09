@@ -80,7 +80,7 @@ export function cementFleetLayout(r:LogisticsResult,s:LogisticsSettings):string{
   else if(edge.from==='support-ca')d=`M${a.x} ${am}H884V${b.y+b.height+20}H${bx}V${b.y+b.height}`;
   else if(edge.to==='support-ca')d=`M${a.x+a.width} ${a.y+a.height-24}H${b.x-20}V${b.y+b.height-24}H${b.x}`;
   else d=`M${ax} ${a.y}V${b.y+b.height+20}H${bx}V${b.y+b.height}`;
-  out+=`<g data-flow-from="${edge.from}" data-flow-to="${edge.to}" data-fluid="${edge.kind}">${pipe(d,edge.fluid,edge.dashed)}</g>`;
+  out+=`<g data-flow-from="${edge.from}" data-flow-to="${edge.to}" data-fluid="${edge.kind}">${pipe(d,edge.fluid,edge.dashed,edge.to!=='well')}</g>`;
  }
  // Pipe connections are behind vehicles, with individual branches from each pump to its group outlet.
  for(const n of nodes){
