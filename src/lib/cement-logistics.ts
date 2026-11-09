@@ -25,7 +25,7 @@ export interface LogisticsResult {
   unitsForMixing:number;unitsWorking:number;unitsTotal:number;mixers:number;blendT:number;peakHydPowerKW:number;overPressure:boolean;maxSurfaceMPa:number;
   waterM3:number;tankers:number;equipment:FleetEquipment[];personnel:FleetPersonnel[];
   timeline:{step:string;durationMin:number;startMin:number}[];unitsProfile:{time:number;units:number;stage:string}[];lineTestMPa:number;notes:string[];
-  mainUnits:number;supportUnits:number;reserveCA:number;totalVehicles:number;totalPeople:number;
+  mainUnits:number;supportUnits:number;mixingCA:number;dischargeUnits:number;requiresManifold:boolean;reserveCA:number;totalVehicles:number;totalPeople:number;
 }
 const ceil=(v:number)=>Math.max(0,Math.ceil(v-1e-9));
 export function normalizeLogisticsSettings(value:unknown):LogisticsSettings {
@@ -59,41 +59,49 @@ export function planLogistics(pressure:PressureProfileResult,materials:MaterialS
   for(const p of pressure.points){const pressureMPa=Math.max(0,p.surfacePressure),cap=unitRateAt(pressureMPa);maxSurf=Math.max(maxSurf,pressureMPa);peakPower=Math.max(peakPower,p.pumpRateLps*pressureMPa);
     const n=p.pumpRateLps>0&&cap>0?ceil(p.pumpRateLps/cap):0,ratio=cap>0?p.pumpRateLps/cap:Infinity;
     if(p.pumpRateLps>0&&(n>peak||ratio>peakRatio)){peak=Math.max(peak,n);peakRatio=ratio;peakAt={stage:p.stage,time:p.time,rateLps:p.pumpRateLps,pressureMPa};}}
-  const mainRecommended=integrated?Math.max(1,recommendedMixing):Math.max(1,peak,classic?unitsForMixing:0);
+  const mainRecommended=integrated?Math.max(1,recommendedMixing):Math.max(1,peak);
   const mainUnits=qty('main',mainRecommended);
   let supportRecommended=0,unavailable=false;
   for(const p of pressure.points){if(p.pumpRateLps<=0)continue;const deficit=Math.max(0,p.pumpRateLps-mainUnits*unitRateAt(Math.max(0,p.surfacePressure)));
     if(deficit>1e-6){const cap=supportAt(Math.max(0,p.surfacePressure));if(!integrated||cap<=0)unavailable=true;else supportRecommended=Math.max(supportRecommended,ceil(deficit/cap));}}
   const supportUnits=integrated?qty('support-ca',supportRecommended):0;
   const reserveCA=qty('reserve-ca',s.reserveUnits,integrated?1:0);
-  const mixersRecommended=integrated?0:classic?Math.max(ceil(blendT/s.mixerCapacityT),unitsForMixing):recommendedMixing;
-  const mixers=integrated?0:qty('mixer',mixersRecommended),mixingSystems=integrated?mainUnits:classic?Math.min(mainUnits,mixers):mixers;
+  const mixersRecommended=integrated?0:classic?ceil(blendT/s.mixerCapacityT):recommendedMixing;
+  const mixingCA=classic?qty('blend-ca',Math.max(cementRate>0?1:0,unitsForMixing)):0;
+  const mixers=integrated?0:qty('mixer',mixersRecommended),mixingSystems=integrated?mainUnits:classic?(mixers>0?mixingCA:0):mixers;
+  const dischargeUnits=mainUnits+supportUnits,requiresManifold=classic||dischargeUnits>1;
+  const manifoldCount=qty('manifold',requiresManifold?1:0),averagingCount=qty('averaging',classic?1:0);
   const bulkTrucks=classic?0:qty('bulk',Math.max(bulkStockCount,bulkFeedCount));
   const waterM3=materials.waterTotal,tankers=s.waterSource==='tankers'?qty('water',ceil(waterM3/s.tankerM3)):0;
   const unitsProfile=pressure.points.map(p=>{const cap=unitRateAt(Math.max(0,p.surfacePressure)),deficit=Math.max(0,p.pumpRateLps-mainUnits*cap),aux=supportAt(Math.max(0,p.surfacePressure));return{time:p.time,stage:p.stage,units:p.pumpRateLps<=0?0:integrated?mainUnits+(aux>0?ceil(deficit/aux):0):cap>0?ceil(p.pumpRateLps/cap):0};});
   for(const p of pressure.points)if(p.pumpRateLps>mainUnits*unitRateAt(Math.max(0,p.surfacePressure))+supportUnits*supportAt(Math.max(0,p.surfacePressure))+1e-6)unavailable=true;
   const mixingOK=cementRate<=mixingSystems*s.mixRatePerPairLps+1e-6;
-  const bulkOK=classic||(bulkTrucks>=bulkStockCount&&bulkTrucks*s.bulkUnloadTmin!>=dryFeedTmin-1e-6&&mixingSystems*s.maxBulkConnections!>=bulkFeedCount);
+  const bulkOK=classic?mixers*s.mixerCapacityT>=blendT-1e-6:(bulkTrucks>=bulkStockCount&&bulkTrucks*s.bulkUnloadTmin!>=dryFeedTmin-1e-6&&mixingSystems*s.maxBulkConnections!>=bulkFeedCount);
   const waterOK=s.waterSource!=='tankers'||tankers*s.tankerM3>=waterM3-1e-6;
-  const feasible=!unavailable&&mixingOK&&bulkOK&&waterOK;
+  const processOK=(!classic||averagingCount>0)&&(!requiresManifold||manifoldCount>0);
+  const feasible=!unavailable&&mixingOK&&bulkOK&&waterOK&&processOK;
   const mainCapacity=unitRateAt(peakAt.pressureMPa),auxCapacity=supportAt(peakAt.pressureMPa);
   const onePumpOutRateLps=Math.max(0,mainUnits*mainCapacity+supportUnits*auxCapacity-Math.max(mainUnits>0?mainCapacity/s.pumpsPerUnit!:0,supportUnits>0?auxCapacity:0));
   const equipment:FleetEquipment[]=[];
   const add=(id:string,name:string,count:number,recommendedCount:number,note:string,vehicle=true)=>equipment.push({id,name,count,recommendedCount,note,vehicle});
-  add('main',`${integrated?'Цементировочный агрегат со встроенным миксером':'Цементировочный агрегат'} ${integrated?(s.manufacturer??'')+' ':''}${s.unitName}`,mainUnits,mainRecommended,integrated?`${s.pumpsPerUnit} насос(а) и встроенный миксер на одном шасси; экипаж 2 человека, они же водители.`:'Рабочие ЦА; резерв показан отдельной строкой.');
+  add('main',`${integrated?'Цементировочный агрегат со встроенным миксером':'Цементировочный агрегат'} ${integrated?(s.manufacturer??'')+' ':''}${s.unitName}`,mainUnits,mainRecommended,integrated?`${s.pumpsPerUnit} насос(а) и встроенный миксер на одном шасси; экипаж 2 человека, они же водители.`:'Нагнетательные ЦА: откачка готового раствора, отдельно от ЦА затворения и резерва.');
+  if(classic)add('blend-ca',`ЦА затворения ${s.unitName}`,mixingCA,Math.max(cementRate>0?1:0,unitsForMixing),'Отдельные ЦА подают воду через штуцер воронки и затворяют раствор в осреднительную ёмкость; в нагнетательную подачу на скважину не включаются.');
   if(integrated)add('support-ca',`Дополнительный рабочий ЦА ${s.supportUnitName}`,supportUnits,supportRecommended,'Добавляется при недостатке насосной подачи. Не увеличивает производительность встроенного миксера.');
   add('reserve-ca',`Резервный ЦА ${integrated?s.supportUnitName:s.unitName}`,reserveCA,s.reserveUnits>0?s.reserveUnits:integrated?1:0,integrated?'Обязателен минимум один отдельный ЦА; в текущую рабочую подачу не включается.':'Отдельная резервная машина; не включается в рабочую подачу.');
-  if(!integrated)add('mixer',classic?`Смесительная машина ${s.mixerName}`:`Автономный миксер ${s.mixerName}`,mixers,mixersRecommended,'Отдельное шасси. Смешивание и насосная подача проверяются раздельно.');
+  if(!integrated)add('mixer',classic?`Смесительная машина ${s.mixerName}`:`Автономный миксер ${s.mixerName}`,mixers,mixersRecommended,classic?'СМН перевозят и подают сухой цемент в воронку. Вода к СМН не подводится. Число СМН определяется запасом цемента, а не числом ЦА затворения.':'Беспылевой миксер принимает сухой цемент из цементовозов и воду; готовый раствор откачивают отдельные ЦА.');
   if(!classic)add('bulk',`Цементовоз ЦТ-25 (${s.bulkVolumeM3} м³) с тягачом`,bulkTrucks,Math.max(bulkStockCount,bulkFeedCount),`Автопоезд: полуприцеп и тягач считаются одной единицей; один водитель-оператор. Загрузка до ${bulkPayloadT.toFixed(1)} т; по запасу ${bulkStockCount}, по темпу ${bulkFeedCount}.`);
   add('skc','СКЦ - бортовой автомобиль с будкой',qty('skc',1,1),1,'Обязательная отдельная машина во всех схемах. Встроенная регистрация агрегата её не заменяет.');
-  add('manifold','Блок манифольдов',qty('manifold',1),1,`Обвязка на рабочее давление не ниже ${maxSurf.toFixed(1)} МПа.`,false);
+  add('manifold','Блок манифольдов на автомобиле',manifoldCount,requiresManifold?1:0,requiresManifold?'Объединяет нагнетательные линии ЦА в одну линию к цементировочной головке.':'У одной интегрированной машины манифольд встроен; отдельный блок не требуется.',true);
   if(s.waterSource==='tankers')add('water',`Автоцистерна воды ${s.tankerM3} м³`,tankers,ceil(waterM3/s.tankerM3),'Доставка воды; не подача цемента в скважину.');
-  add('averaging','Осреднительная ёмкость',qty('averaging',slurries.length>1?1:0),slurries.length>1?1:0,'Технологическая ёмкость; отдельной машиной не считается.',false);
+  add('averaging','Осреднительная ёмкость на автомобиле',averagingCount,classic?1:0,'Принимает раствор после воронки затворения; нагнетательные ЦА откачивают из неё. Отдельная транспортная единица.',true);
   const personnel:FleetPersonnel[]=[];
   const person=(id:string,role:string,n:number)=>personnel.push({id,role,count:Math.max((integrated&&(id==='main-operator'||id==='main-helper'))||id==='bulk-operator'?n:0,s.personnelQuantities?.[id]??n),recommendedCount:n});
   person('master','Мастер по цементированию',1);person('engineer','Инженер-технолог',1);
   person('main-operator',integrated?'Оператор агрегата / водитель':'Оператор рабочего ЦА / водитель',mainUnits);
   person('main-helper',integrated?'Помощник оператора агрегата / водитель':'Помощник оператора рабочего ЦА / водитель',mainUnits);
+  if(classic){person('blend-operator','Оператор ЦА затворения / водитель',mixingCA);person('blend-helper','Помощник оператора ЦА затворения / водитель',mixingCA);}
+  if(manifoldCount>0)person('manifold-operator','Оператор блока манифольдов / водитель',manifoldCount);
+  if(averagingCount>0)person('averaging-operator','Оператор осреднительной ёмкости / водитель',averagingCount);
   person('ca-operator','Оператор дополнительного и резервного ЦА / водитель',supportUnits+reserveCA);
   person('ca-helper','Помощник оператора дополнительного и резервного ЦА / водитель',supportUnits+reserveCA);
   if(!integrated)person('mixer-operator','Оператор отдельного смесителя / водитель',mixers);
@@ -102,21 +110,23 @@ export function planLogistics(pressure:PressureProfileResult,materials:MaterialS
   if(s.waterSource==='tankers')person('water-driver','Водитель автоцистерны',tankers);
   const notes:string[]=[];
   if(unavailable)notes.push('Выбранное количество рабочих машин не обеспечивает Q-P. Параллельное включение не повышает допустимое давление; резервный ЦА в текущую подачу не включён.');
-  if(!mixingOK)notes.push('Не хватает производительности смешивания. Дополнительный ЦА не заменяет миксер: увеличьте число основных машин / миксеров либо снизьте темп затворения.');
-  if(!bulkOK)notes.push('Не обеспечен запас или непрерывная пневмоподача сухого материала: проверьте число автопоездов и входов смесителя.');
+  if(!mixingOK)notes.push(classic?'Не хватает производительности ЦА затворения через воронку. Увеличьте их количество или снизьте темп затворения.':'Не хватает производительности смешивания. Дополнительный ЦА не заменяет миксер: увеличьте число основных машин / миксеров либо снизьте темп затворения.');
+  if(!processOK)notes.push('Неполная технологическая цепочка: для классики нужна осреднительная ёмкость; для объединения нагнетательных линий нужен блок манифольдов.');
+  if(!bulkOK)notes.push(classic?'Не хватает запаса сухого цемента в выбранных СМН.':'Не обеспечен запас или непрерывная пневмоподача сухого материала: проверьте число автопоездов и входов смесителя.');
   if(!waterOK)notes.push('Выбранные автоцистерны не обеспечивают рассчитанный запас воды.');
   if(!s.passportConfirmed&&!classic)notes.push('Q-P - редактируемый расчётный шаблон. Для подтверждения режима внесите характеристики фактической машины.');
   if(integrated)notes.push('У одно- и двухнасосного агрегата миксер встроен: отдельная смесительная машина, шасси и её экипаж не добавляются. Минимум один резервный ЦА обязателен.');
   if(integrated&&supportRecommended>0)notes.push(`Для повышения насосной подачи требуется ${supportRecommended} рабочий ЦА ${s.supportUnitName} дополнительно к обязательному резерву.`);
   if(integrated&&maxSurf>s.supportMaxPressureMPa!)notes.push('Предел давления резервного ЦА ниже максимального давления операции; он не заменяет основную машину на всех режимах.');
   for(const p of personnel)if(p.count<p.recommendedCount)notes.push(`${p.role}: вручную принято ${p.count}, расчётная потребность ${p.recommendedCount}; подтвердите распределение обязанностей.`);
-  if(!onePumpOutRateLps||onePumpOutRateLps<peakAt.rateLps-1e-6)notes.push('При отказе одного рабочего насоса пиковая подача не сохраняется; включение резервной машины требует переключения обвязки.');
+  if(!onePumpOutRateLps||onePumpOutRateLps<peakAt.rateLps-1e-6)notes.push('При отказе одного нагнетательного насоса пиковая подача не сохраняется; включение резервной машины требует переключения обвязки.');
   if(s.pumpsPerUnit===2)notes.push('Два насоса на общем шасси не являются независимым резервом при отказе миксера, питания или общего манифольда.');
-  notes.push(s.waterSource==='rig'?`Вода ${waterM3.toFixed(1)} м³ поступает с буровой в смесительную систему. Цементный раствор направляется от агрегатов через манифольд к устью скважины.`:'Вода поступает из выбранных автоцистерн в смеситель; цементный раствор закачивается через манифольд в скважину.');
+  if(classic)notes.push('Классика: СМН подают только сухой цемент в воронку. ЦА затворения подают воду через штуцер воронки в осреднительную ёмкость. Отдельные нагнетательные ЦА откачивают из ёмкости в блок манифольдов, далее одна линия идёт к скважине.');
+  else notes.push(s.waterSource==='rig'?`Вода ${waterM3.toFixed(1)} м³ поступает с буровой в смесительную систему. Готовый раствор откачивается нагнетательными машинами; отдельный блок манифольдов нужен при объединении нескольких рабочих машин.`:'Вода поступает из выбранных автоцистерн в смеситель; цементный раствор закачивается через манифольд в скважину.');
   const lineTestMPa=Math.min(s.unitMaxPressureMPa,Math.ceil(maxSurf*1.5));
   if(maxSurf*1.5>s.unitMaxPressureMPa)notes.push('Полуторакратное рабочее давление выше предела основного агрегата: ограниченное значение испытания не подтверждает достаточность опрессовки обвязки.');
   const timeline:LogisticsResult['timeline']=[];let t=0;
   for(const [step,d] of [['Расстановка техники, обвязка, инструктаж',s.rigUpMin],[`Испытание нагнетательных линий на ${lineTestMPa} МПа`,15],['Закачка буферов, затворение цемента и продавка',pressure.points.at(-1)?.time??0],['Проверка обратного клапана, сброс давления',15],['Промывка и демонтаж обвязки',s.rigDownMin]] as [string,number][]){timeline.push({step,durationMin:d,startMin:t});t+=d;}
-  const unitsWorking=mainUnits+supportUnits;
-  return{scheme,feasible,mixingSystems,workingPumps:mainUnits*s.pumpsPerUnit!+supportUnits,dryFeedTmin,bulkPayloadT,bulkStockCount,bulkFeedCount,bulkTrucks,onePumpOutRateLps,onePumpOutMeetsPeak:onePumpOutRateLps>=peakAt.rateLps-1e-6,unitRateAt,peakUnitsHydraulic:peak,peakAt,unitsForMixing,unitsWorking,unitsTotal:unitsWorking+reserveCA,mixers,blendT,peakHydPowerKW:peakPower,overPressure:maxSurf>s.unitMaxPressureMPa,maxSurfaceMPa:maxSurf,waterM3,tankers,equipment,personnel,timeline,unitsProfile,lineTestMPa,notes,mainUnits,supportUnits,reserveCA,totalVehicles:equipment.filter(x=>x.vehicle).reduce((sum,x)=>sum+x.count,0),totalPeople:personnel.reduce((sum,x)=>sum+x.count,0)};
+  const unitsWorking=mainUnits+supportUnits+mixingCA;
+  return{scheme,feasible,mixingSystems,workingPumps:mainUnits*s.pumpsPerUnit!+supportUnits+mixingCA,dryFeedTmin,bulkPayloadT,bulkStockCount,bulkFeedCount,bulkTrucks,onePumpOutRateLps,onePumpOutMeetsPeak:onePumpOutRateLps>=peakAt.rateLps-1e-6,unitRateAt,peakUnitsHydraulic:peak,peakAt,unitsForMixing,unitsWorking,unitsTotal:unitsWorking+reserveCA,mixers,blendT,peakHydPowerKW:peakPower,overPressure:maxSurf>s.unitMaxPressureMPa,maxSurfaceMPa:maxSurf,waterM3,tankers,equipment,personnel,timeline,unitsProfile,lineTestMPa,notes,mainUnits,supportUnits,mixingCA,dischargeUnits,requiresManifold,reserveCA,totalVehicles:equipment.filter(x=>x.vehicle).reduce((sum,x)=>sum+x.count,0),totalPeople:personnel.reduce((sum,x)=>sum+x.count,0)};
 }
