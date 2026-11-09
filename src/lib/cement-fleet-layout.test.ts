@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cementFleetLayout, cementFleetLayoutFigure, cementFleetConnections } from './cement-fleet-layout';
+import { cementFleetLayout, cementFleetLayoutFigure, cementFleetConnections, cementFleetLayoutPositions } from './cement-fleet-layout';
 import { DEFAULT_LOGISTICS, planLogistics } from './cement-logistics';
 import { fleetTemplate, type FleetScheme } from './cement-fleet-catalog';
 import { getCementingExample } from './cementing-example';
@@ -22,6 +22,11 @@ describe('Actual fleet top view', () => {
       expect(svg).toContain('Датчики СКЦ в нагнетательной линии');
       expect(svg).not.toContain('связь СКЦ');
       expect(svg).not.toMatch(/NaN|Infinity/);
+      const {nodes}=cementFleetLayoutPositions(r);
+      for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
+        const a=nodes[i],b=nodes[j];
+        expect(a.x+a.width<=b.x||b.x+b.width<=a.x||a.y+a.height<=b.y||b.y+b.height<=a.y).toBe(true);
+      }
       const figure = cementFleetLayoutFigure(r, settings);
       expect(svg).toContain(`viewBox="0 0 ${figure.width} ${figure.height}"`);
       if (process.env.REPORT_QA_DIR) {
@@ -71,4 +76,30 @@ it('standalone mixer receives water and bulk cement, and supplies CA suction bef
  const r=planLogistics(pressure,materials,ex.slurries,s),edges=cementFleetConnections(r);
  for(const[from,to]of[['water-source','mixer'],['bulk','mixer'],['mixer','main'],['main','manifold'],['manifold','well']])expect(edges).toContainEqual(expect.objectContaining({from,to}));
  expect(r.mixingCA).toBe(0);
+});
+it('places the manifold between pumps and well, with preparation farther below',()=>{
+ for(const scheme of ['classic','mixer-ca'] as FleetScheme[]){
+  const settings={...fleetTemplate(scheme,DEFAULT_LOGISTICS),equipmentQuantities:{main:3,mixer:3,bulk:2,'blend-ca':1,averaging:1,manifold:1,skc:1,'reserve-ca':1}};
+  const r=planLogistics(pressure,materials,ex.slurries,settings),{nodes}=cementFleetLayoutPositions(r);
+  const get=(id:string)=>nodes.find(n=>n.id===id)!;
+  expect(get('manifold').y+get('manifold').height).toBeLessThan(get('main').y);
+  expect(get('main').y+get('main').height).toBeLessThan(get('averaging').y);
+  expect(get('averaging').y+get('averaging').height).toBeLessThan(get(scheme==='classic'?'funnel':'mixer').y);
+  expect(get('skc').x).toBeGreaterThan(get('main').x+get('main').width);
+ }
+});
+it('keeps one integrated unit compact, its bulk trucks nearby and all cards separate',()=>{
+ for(const scheme of ['single','twin'] as FleetScheme[]){
+  const settings={...fleetTemplate(scheme,DEFAULT_LOGISTICS),equipmentQuantities:{main:1,bulk:2,'support-ca':0,'reserve-ca':1,skc:1}};
+  const r=planLogistics(pressure,materials,ex.slurries,settings),{nodes,height}=cementFleetLayoutPositions(r);
+  expect(height).toBeLessThan(1000);
+  const main=nodes.find(n=>n.id==='main')!,bulk=nodes.find(n=>n.id==='bulk')!;
+  expect(main.width).toBeLessThanOrEqual(300);expect(bulk.y).toBe(main.y);
+  expect(nodes.some(n=>n.id==='manifold')).toBe(false);
+  for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
+   const a=nodes[i],b=nodes[j];
+   expect(a.x+a.width<=b.x||b.x+b.width<=a.x||a.y+a.height<=b.y||b.y+b.height<=a.y).toBe(true);
+  }
+  if(process.env.REPORT_QA_DIR)writeFileSync(join(process.env.REPORT_QA_DIR,`compact-one-${scheme}.svg`),cementFleetLayout(r,settings));
+ }
 });
