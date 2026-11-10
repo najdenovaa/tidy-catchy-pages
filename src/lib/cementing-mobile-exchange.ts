@@ -5,7 +5,7 @@
  */
 import type { CementingSnapshot } from "./cementing-normalizers";
 import { normalizeCementingSnapshot } from "./cementing-normalizers";
-import { calculateVolumes } from "./cementing-calculations";
+import { calculateVolumes, resolveFlowRateSteps, buildDisplacementSchedule } from "./cementing-calculations";
 
 const FIELD_RE = /\[([A-Za-z0-9_.]+)\]\s*:\s*(.*)$/;
 const num = (v: string | undefined, fallback = 0) => {
@@ -80,13 +80,13 @@ export function exportCementingToMobileText(input: CementingSnapshot): string {
       line(`Буфер ${n}, объём, м3`, `spacer${n}.volumeM3`, v.volume),
       line(`Буфер ${n}, плотность, г/см3`, `spacer${n}.densityGcm3`, mobileDensity(v.density)));
   });
-  const bufferSteps = s.buffers.flatMap(v => v.flowRateSteps.length ? v.flowRateSteps : [{rateLps:0,volumeM3:v.volume}]);
+  const bufferSteps = s.buffers.flatMap(v => resolveFlowRateSteps(v.flowRateSteps, v.volume));
   bufferSteps.forEach((step,i) => {
     rows.push(line(`Буфер, расход ${i+1}, л/с`,`bufferStep${i+1}.rateLps`,step.rateLps));
     rows.push(line(`Буфер, объём ${i+1}, м3`,`bufferStep${i+1}.volumeM3`,step.volumeM3));
   });
   const disp = s.displacementFluids[0];
-  (disp?.flowRateSteps ?? []).forEach((step,i) => {
+  buildDisplacementSchedule(s.displacementFluids, calculateVolumes(s.wellData, s.slurries, disp?.compressionCoeff ?? 1).displacementVolumeWithCompression).forEach((step,i) => {
     rows.push(line(`Продавка, расход ${i+1}, л/с`,`dispStep${i+1}.rateLps`,step.rateLps));
     rows.push(line(`Продавка, объём ${i+1}, м3`,`dispStep${i+1}.volumeM3`,step.volumeM3));
   });
