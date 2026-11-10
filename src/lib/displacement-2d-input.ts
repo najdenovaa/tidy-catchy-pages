@@ -4,7 +4,7 @@
  * жидкости и порции, выходящие из-под башмака в затрубье (с учётом объёма колонны).
  */
 import {
-  effectiveRheology, getCavernCoeffAtDepth, getEffectiveTrajectory, buildDisplacementSchedule,
+  resolveFlowRateSteps, slurryDesignVolume, effectiveRheology, getCavernCoeffAtDepth, getEffectiveTrajectory, buildDisplacementSchedule,
   type WellData, type SlurryInput, type BufferFluid, type DrillingFluid, type DisplacementFluid, type VolumeResults, type FlowRateStep,
 } from "./cementing-calculations";
 import type { D2Fluid, D2Input, D2Stage } from "./displacement-2d";
@@ -88,11 +88,12 @@ export function buildDisplacementInput(p: {
   // Закачка у устья: буферы → растворы → продавка
   type Pump = { fluid: number | null; vol: number; rate: number };
   const pumps: Pump[] = [];
-  buffers.forEach((b, i) => pumps.push({ fluid: bufIdx[i], vol: Math.max(0, b.volume), rate: rateOf(b.flowRateSteps, 8) / 1000 }));
-  slurries.forEach((s, i) => {
-    const v = volumes.slurryVolumes[i]?.slurryVolumeM3 ?? 0;
-    pumps.push({ fluid: slIdx[i], vol: Math.max(0, v), rate: rateOf(s.flowRateSteps, 8) / 1000 });
-  });
+  buffers.forEach((b, i) => resolveFlowRateSteps(b.flowRateSteps, b.volume).forEach(st => {
+    pumps.push({ fluid: bufIdx[i], vol: st.volumeM3, rate: st.rateLps / 1000 });
+  }));
+  slurries.forEach((s, i) => resolveFlowRateSteps(s.flowRateSteps, slurryDesignVolume(w, slurries, i)).forEach(st => {
+    pumps.push({ fluid: slIdx[i], vol: st.volumeM3, rate: st.rateLps / 1000 });
+  }));
   const disp = buildDisplacementSchedule(displacementFluids, volumes.displacementVolumeWithCompression);
   disp.forEach((d) => pumps.push({ fluid: null, vol: d.volumeM3, rate: (d.rateLps || 8) / 1000 }));
   // Выход в затрубье: всё, что закачано сверх объёма колонны, выходит из-под башмака в том же порядке

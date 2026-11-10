@@ -62,7 +62,39 @@ export interface Additive extends ProductIdentity {
 
 export interface FlowRateStep {
   rateLps: number; // л/с
-  volumeM3: number; // м³
+  volumeM3: number; // м³; в режиме auto хранится 0, значение вычисляется
+  volumeMode?: "auto" | "manual";
+}
+
+/** Старые нулевые режимы означают автоостаток; старые положительные сохраняем. */
+export function isAutoVolume(step: FlowRateStep): boolean {
+  return step.volumeMode === "auto" || (step.volumeMode !== "manual" && !(step.volumeM3 > 0));
+}
+
+/** Ручные объёмы не меняются. Автоматические делят доступный остаток поровну. */
+export function resolveFlowRateSteps(steps: FlowRateStep[], totalVolume: number): FlowRateStep[] {
+  const source = steps?.length ? steps : [{ rateLps: 5, volumeM3: 0 }];
+  const manual = source.reduce((sum, st) => sum + (isAutoVolume(st) ? 0 : Math.max(0, st.volumeM3 || 0)), 0);
+  const autoCount = source.filter(isAutoVolume).length;
+  const remainder = Math.max(0, (totalVolume || 0) - manual);
+  return source.map(st => ({ ...st, volumeM3: isAutoVolume(st) ? remainder / autoCount : Math.max(0, st.volumeM3 || 0) }));
+}
+
+/** Единый геометрический объём раствора: интервал, вымыв, стакан и зумпф. */
+export function slurryDesignVolume(data: WellData, slurries: SlurryInput[], index: number): number {
+  const s = slurries[index];
+  if (!s || getSlurryHeight(slurries, index, data.casingDepthMD) <= 0) return 0;
+  const bottom = index === slurries.length - 1 ? data.casingDepthMD : slurries[index + 1].topDepthMD;
+  let volume = annularVolumeForInterval(s.topDepthMD, bottom, data.holeDiameter, data.casingOD,
+    data.prevCasingID, data.prevCasingDepth, data.cavernCoeff, data.cavernIntervals);
+  if (index === 0) volume += Math.max(0, s.washVolume || 0);
+  if (index === slurries.length - 1) {
+    if (data.ckodDepth > 0 && data.ckodDepth < data.casingDepthMD)
+      volume += totalPipeVolumeForRange(data.ckodDepth, data.casingDepthMD, data.casingOD, data.casingWall, data.casingSections);
+    if (data.wellDepthMD > data.casingDepthMD)
+      volume += openHoleVolumeForInterval(data.casingDepthMD, data.wellDepthMD, data.holeDiameter, data.cavernCoeff, data.cavernIntervals);
+  }
+  return volume;
 }
 
 export interface DrillingFluid {
@@ -647,7 +679,7 @@ export function buildDisplacementSchedule(
       ? df.flowRateSteps
       : [{ rateLps: 0, volumeM3: 0 }];
     steps.forEach((step, si) => {
-      const vol = Math.max(0, step.volumeM3 || 0);
+      const vol = isAutoVolume(step) ? 0 : Math.max(0, step.volumeM3 || 0);
       items.push({
         name: df.name,
         densityGcm3: (df.density || 0) / 1000,
@@ -657,9 +689,9 @@ export function buildDisplacementSchedule(
         compressionCoeff: df.compressionCoeff || 1.0,
         fluidIndex: fi,
         stepIndex: si,
-        auto: vol <= 0,
+        auto: isAutoVolume(step),
       });
-      if (vol <= 0) openIdx.push(items.length - 1);
+      if (isAutoVolume(step)) openIdx.push(items.length - 1);
     });
   });
 
@@ -792,7 +824,7 @@ export function calculateVolumes(
   const warnings: { type: 'error' | 'warning'; message: string }[] = [];
   const requiredCementVolume = totalSlurryVolume; // кольцевой + стакан
   const scheduledCementVolume = slurries.reduce(
-    (sum, s) => sum + (s.flowRateSteps || []).reduce((a, st) => a + (st.volumeM3 || 0), 0),
+    (sum, s, i) => sum + resolveFlowRateSteps(s.flowRateSteps, slurryDesignVolume(data, slurries, i)).reduce((a, st) => a + st.volumeM3, 0),
     0,
   );
   if (requiredCementVolume > 0 && scheduledCementVolume < requiredCementVolume * 0.98) {
@@ -1096,22 +1128,11 @@ export function calculateMaterials(
   let waterForCement = 0;
   let waterForBuffers = 0;
 
-  // Цементный стакан (внутри ОК от ЦКОД до башмака) — добавляем к нижнему раствору
-  const plugHeight = Math.max(0, wellData.casingDepthMD - wellData.ckodDepth);
-  const plugVolume = plugHeight > 0 && wellData.ckodDepth > 0
-    ? totalPipeVolumeForRange(wellData.ckodDepth, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections)
-    : 0;
-
   slurries.forEach((s, i) => {
-    const h = getSlurryHeight(slurries, i, wellData.casingDepthMD);
-    if (h > 0) {
-      const lastIdx = slurries.length - 1;
-      const mdBot = i === lastIdx ? wellData.casingDepthMD : slurries[i + 1].topDepthMD;
-      let vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
-      // Добавляем объём на вымыв для первого (верхнего) раствора
-      if (i === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
-      // Цементный стакан добавляем к последнему (нижнему) раствору
-      if (i === lastIdx && plugVolume > 0) vol += plugVolume;
+    const required = slurryDesignVolume(wellData, slurries, i);
+    // Недобор в режимах не уменьшает потребность; перепрокачка требует дополнительных материалов.
+    const vol = Math.max(required, resolveFlowRateSteps(s.flowRateSteps, required).reduce((sum, st) => sum + st.volumeM3, 0));
+    if (vol > 0) {
       const res = calculateCement(vol, s.density, s.waterRatio, s.yieldPerTon);
       const dryMassKg = res.dryMass * 1000; // тонны → кг
       cementItems.push({ name: s.name, amount: res.dryMass, unit: "т" });
@@ -1127,7 +1148,8 @@ export function calculateMaterials(
     }
   });
 
-  buffers.forEach(b => {
+  buffers.forEach(input => {
+    const b = { ...input, volume: Math.max(input.volume, resolveFlowRateSteps(input.flowRateSteps, input.volume).reduce((sum, st) => sum + st.volumeM3, 0)) };
     bufferItems.push({ name: b.name, amount: b.volume, unit: "м³" });
     const bufferMassKg = b.volume * b.density; // density в кг/м³
     // Вода в буфере = общий объём минус объём твёрдых добавок (плотность добавок ~1200 кг/м³)
@@ -1459,39 +1481,16 @@ export function calculatePressureProfile(
   // Буферы — по шагам
   buffers.forEach(b => {
     const bRheo = effectiveRheology(b.rheology, 'buffer');
-    if (b.flowRateSteps.length > 1) {
-      b.flowRateSteps.forEach(step => {
-        if (step.volumeM3 > 0) {
-          stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, hb: hbOf(bRheo), rateLps: step.rateLps, isCement: false, compressionCoeff: 1.0, fluidType: 'buffer' as AnnularFluidType });
-        }
-      });
-    } else {
-      const rate = b.flowRateSteps.length > 0 ? b.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: b.name, volume: b.volume, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, hb: hbOf(bRheo), rateLps: rate, isCement: false, compressionCoeff: 1.0, fluidType: 'buffer' as AnnularFluidType });
-    }
+    resolveFlowRateSteps(b.flowRateSteps, b.volume).forEach(step => {
+      if (step.volumeM3 > 0) stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, hb: hbOf(bRheo), rateLps: step.rateLps, isCement: false, compressionCoeff: 1.0, fluidType: 'buffer' });
+    });
   });
 
-  // Цементные растворы — в порядке списка (первый в списке качается первым)
   slurries.forEach((s, origIdx) => {
-    const h = getSlurryHeight(slurries, origIdx, wellData.casingDepthMD);
-    if (h <= 0) return;
-    const lastIdx = slurries.length - 1;
-    const mdBot = origIdx === lastIdx ? wellData.casingDepthMD : slurries[origIdx + 1].topDepthMD;
-    let vol = annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals);
-    // Добавляем объём на вымыв для первого (верхнего) раствора
-    if (origIdx === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
-    if (vol <= 0) return;
     const sRheo = effectiveRheology(s.rheology, cementCategory(s.density));
-    if (s.flowRateSteps.length > 1) {
-      s.flowRateSteps.forEach(step => {
-        if (step.volumeM3 > 0) {
-          stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, hb: hbOf(sRheo), rateLps: step.rateLps, isCement: true, compressionCoeff: 1.0, fluidType: 'cement' as AnnularFluidType });
-        }
-      });
-    } else {
-      const rate = s.flowRateSteps.length > 0 ? s.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: s.name, volume: vol, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, hb: hbOf(sRheo), rateLps: rate, isCement: true, compressionCoeff: 1.0, fluidType: 'cement' as AnnularFluidType });
-    }
+    resolveFlowRateSteps(s.flowRateSteps, slurryDesignVolume(wellData, slurries, origIdx)).forEach(step => {
+      if (step.volumeM3 > 0) stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, hb: hbOf(sRheo), rateLps: step.rateLps, isCement: true, compressionCoeff: 1.0, fluidType: 'cement' });
+    });
   });
 
   // === Промывка ЛВД (пауза): цемент оседает под собственным весом ===

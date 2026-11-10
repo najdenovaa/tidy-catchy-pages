@@ -130,11 +130,12 @@ function normalizeFlowRateSteps(value: unknown, fallbackRate = 0, fallbackVolume
     .map((step) => ({
       rateLps: toNumber(step.rateLps, fallbackRate),
       volumeM3: toNumber(step.volumeM3, fallbackVolume),
+      ...(step.volumeMode === "auto" || step.volumeMode === "manual" ? { volumeMode: step.volumeMode as "auto" | "manual" } : {}),
     }));
 
   return normalized.length > 0
     ? normalized
-    : [{ rateLps: fallbackRate, volumeM3: fallbackVolume }];
+    : [{ rateLps: fallbackRate, volumeM3: 0, volumeMode: "auto" }];
 }
 
 function normalizeTrajectoryPoint(value: unknown): TrajectoryPoint {

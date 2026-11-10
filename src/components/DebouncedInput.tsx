@@ -46,6 +46,7 @@ function DebouncedInputInner({
     setLocalValue(val);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
+      timerRef.current = null;
       lastEmitted.current = val;
       // Create a minimal synthetic event
       const synth = { target: { value: val } } as React.ChangeEvent<HTMLInputElement>;
@@ -58,7 +59,15 @@ function DebouncedInputInner({
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, []);
 
-  return <Input {...rest} value={localValue} onChange={handleChange} />;
+  return <Input {...rest} value={localValue} onChange={handleChange} onBlur={(e) => {
+    // Commit before a click adds/removes a regime or starts calculation.
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+      lastEmitted.current = e.target.value;
+      onChangeRef.current({ target: { value: e.target.value } } as React.ChangeEvent<HTMLInputElement>);
+    }
+  }} />;
 }
 
 export const DebouncedInput = memo(DebouncedInputInner);

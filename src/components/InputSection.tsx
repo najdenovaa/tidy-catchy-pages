@@ -1,4 +1,3 @@
-import ReadyCementAlternatives from "./ReadyCementAlternatives";
 import { CementProductPicker, ProductDetails } from "./CementProductPicker";
 import { productAdditive } from "@/lib/cement-product-catalog";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,7 +9,7 @@ import { additiveSG } from "@/lib/cement-program";
 import { Label } from "@/components/ui/label";
 import { useState, memo, useCallback, useMemo, ChangeEvent } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
-import { buildDisplacementSchedule, getCasingID, getSlurryHeight, annularVolumePerMeter, annularVolumeForInterval, hydrostaticPressure, interpolateTVD, calculateTVDFromSurvey, calculateCement, calculateAdditiveMass, effectiveRheology, cementCategory, calculateHydraulics, getFlowRateLps } from "@/lib/cementing-calculations";
+import { isAutoVolume, resolveFlowRateSteps, slurryDesignVolume, buildDisplacementSchedule, getCasingID, getSlurryHeight, annularVolumePerMeter, annularVolumeForInterval, hydrostaticPressure, interpolateTVD, calculateTVDFromSurvey, calculateCement, calculateAdditiveMass, effectiveRheology, cementCategory, calculateHydraulics, getFlowRateLps } from "@/lib/cementing-calculations";
 import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, AdditivePercentageType, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval, ReservoirLayer } from "@/lib/cementing-calculations";
 import * as XLSX from "xlsx";
 
@@ -67,23 +66,26 @@ function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: bool
   );
 }
 
-const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck, isDynamic, remainderLabel }: {
+export const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck, isDynamic, remainderLabel, resolvedVolumes }: {
   steps: FlowRateStep[];
   totalVolume: number;
   remainderLabel?: string;
+  resolvedVolumes?: number[];
   onChange: (s: FlowRateStep[]) => void;
   fracCheck?: (rateLps: number) => { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null;
   isDynamic?: boolean;
 }) {
-  const usedVolume = steps.reduce((s, st) => s + st.volumeM3, 0);
+  const effectiveSteps = resolveFlowRateSteps(steps, totalVolume);
+  const usedVolume = effectiveSteps.reduce((s, st, i) => s + (resolvedVolumes?.[i] ?? st.volumeM3), 0);
   const remaining = totalVolume - usedVolume;
 
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground font-medium">Режимы закачки</span>
-        <button onClick={() => onChange([...steps, { rateLps: 5, volumeM3: Math.max(0, remaining) }])} className="text-xs text-primary hover:underline">+ режим</button>
+        <button onClick={() => onChange([...steps, { rateLps: 5, volumeM3: 0, volumeMode: "auto" }])} className="text-xs text-primary hover:underline">+ режим</button>
       </div>
+      <p className="text-[10px] text-muted-foreground">Авто: объём жидкости или остаток после ручных режимов. Введите объём для ручной корректировки.</p>
       {steps.map((step, i) => {
         const fc = fracCheck ? fracCheck(step.rateLps) : null;
         return (
@@ -96,10 +98,11 @@ const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolu
                 <span className="text-xs text-muted-foreground">л/с</span>
               </div>
               <div className="flex items-center gap-1">
-                <DebouncedInput type="number" step="0.1" value={step.volumeM3 || ""} onChange={(e) => {
-                  const u = [...steps]; u[i] = { ...u[i], volumeM3: parseFloat(e.target.value) || 0 }; onChange(u);
+                <DebouncedInput type="number" step="0.1" value={Number((resolvedVolumes?.[i] ?? effectiveSteps[i].volumeM3).toFixed(3))} onChange={(e) => {
+                  const u = [...steps]; u[i] = { ...u[i], volumeM3: Math.max(0, parseFloat(e.target.value) || 0), volumeMode: "manual" }; onChange(u);
                 }} className="h-7 text-xs w-28" placeholder="м³" />
                 <span className="text-xs text-muted-foreground">м³</span>
+                <button type="button" title="Автоматически пересчитывать объём по жидкости и интервалам" className={`text-xs px-1.5 py-1 rounded ${isAutoVolume(step) ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"}`} onClick={() => { const u = [...steps]; u[i] = { ...u[i], volumeM3: 0, volumeMode: "auto" }; onChange(u); }}>Авто{isAutoVolume(step) ? " ✓" : ""}</button>
               </div>
               {steps.length > 1 && (
                 <button onClick={() => onChange(steps.filter((_, j) => j !== i))} className="text-xs text-destructive">✕</button>
@@ -127,7 +130,7 @@ const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolu
       })}
       {totalVolume > 0 && (
         <div className={`text-xs ${Math.abs(remaining) < 0.01 ? "text-muted-foreground" : "text-destructive font-medium"}`}>
-          Остаток: {remaining.toFixed(2)} м³ из {totalVolume.toFixed(2)} м³{remainderLabel ? ` (${remainderLabel})` : ""}
+          Остаток: {remaining.toFixed(3)} м³ из {totalVolume.toFixed(2)} м³{remainderLabel ? ` (${remainderLabel})` : ""}
         </div>
       )}
     </div>
@@ -925,7 +928,7 @@ export default function InputSection(props: Props) {
         {openSections.buffers && (
           <CardContent className="pt-4 space-y-4">
             <div className="flex justify-end">
-              <button onClick={() => onBuffersChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 }, additives: [], flowRateSteps: [{ rateLps: 5, volumeM3: 1 }] }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+              <button onClick={() => onBuffersChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 }, additives: [], flowRateSteps: [{ rateLps: 5, volumeM3: 0, volumeMode: "auto" }] }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                 + Добавить буфер
               </button>
             </div>
@@ -991,13 +994,12 @@ export default function InputSection(props: Props) {
         {openSections.cement && (
           <CardContent className="pt-4 space-y-4">
             <div className="flex justify-end gap-2">
-              <button onClick={() => onSlurriesChange([...slurries, { name: `Раствор ${slurries.length + 1}`, density: 1.85, topDepthMD: 0, rheology: { pv: 30, yp: 10 }, additives: [], thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateSteps: [{ rateLps: 5, volumeM3: 0 }], waterRatio: 0.5, yieldPerTon: 0.63 }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+              <button onClick={() => onSlurriesChange([...slurries, { name: `Раствор ${slurries.length + 1}`, density: 1.85, topDepthMD: 0, rheology: { pv: 30, yp: 10 }, additives: [], thickeningTime30Bc: 0, thickeningTime50Bc: 0, flowRateSteps: [{ rateLps: 5, volumeM3: 0, volumeMode: "auto" }], waterRatio: 0.5, yieldPerTon: 0.63 }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                 + Добавить раствор
               </button>
             </div>
             <p className="text-xs text-muted-foreground italic">Порядок: первый = у устья (верхний), последний = у забоя (у башмака). В закачке: первым качается верхний (первый в списке), последним — нижний.</p>
 
-            <ReadyCementAlternatives densityGcm3={slurries[0]?.density} temperatureC={wellData.bottomTempStatic} />
             {slurries.map((s, idx) => {
               const height = getSlurryHeight(slurries, idx, wellData.casingDepthMD);
               // Расчёт сухой массы цемента для автоподстановки массы добавок
@@ -1007,16 +1009,7 @@ export default function InputSection(props: Props) {
               const cementRes = slurryVol > 0 ? calculateCement(slurryVol, s.density) : null;
               const dryMassKg = cementRes ? cementRes.dryMass * 1000 : 0; // т → кг
 
-              // Общий объём раствора: кольцевой + стакан + зумпф (для нижнего раствора)
-              const pipeVPM = Math.PI / 4 * Math.pow((wellData.casingOD - 2 * wellData.casingWall) / 1000, 2);
-              const plugVol = (wellData.ckodDepth > 0 && wellData.ckodDepth < wellData.casingDepthMD)
-                ? pipeVPM * (wellData.casingDepthMD - wellData.ckodDepth) : 0;
-              // Зумпф: открытый ствол ниже башмака ОК
-              const holeVPM = Math.PI / 4 * Math.pow(wellData.holeDiameter / 1000, 2);
-              const ratholeVol = wellData.wellDepthMD > wellData.casingDepthMD
-                ? holeVPM * wellData.cavernCoeff * (wellData.wellDepthMD - wellData.casingDepthMD) : 0;
-              const isBottomSlurry = mdBot >= wellData.casingDepthMD - 0.5;
-              const totalSlurryVol = slurryVol + (isBottomSlurry ? (plugVol + ratholeVol) : 0);
+              const totalSlurryVol = slurryDesignVolume(wellData, slurries, idx);
 
               return (
                 <div key={idx} className="p-3 rounded-lg bg-muted/30 space-y-3 border border-border/50">
@@ -1137,7 +1130,7 @@ export default function InputSection(props: Props) {
           <CardContent className="pt-4 space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground italic">Порции продавки — порядок закачки. Можно использовать разные жидкости.</span>
-              <button onClick={() => onDisplacementFluidsChange([...displacementFluids, { name: `Порция ${displacementFluids.length + 1}`, density: 1010, rheology: { pv: 1, yp: 0 }, compressionCoeff: 1.0, flowRateSteps: [{ rateLps: 5, volumeM3: 0 }] }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+              <button onClick={() => onDisplacementFluidsChange([...displacementFluids, { name: `Порция ${displacementFluids.length + 1}`, density: 1010, rheology: { pv: 1, yp: 0 }, compressionCoeff: 1.0, flowRateSteps: [{ rateLps: 5, volumeM3: 0, volumeMode: "auto" }] }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                 + Порция
               </button>
             </div>
@@ -1145,23 +1138,26 @@ export default function InputSection(props: Props) {
               <div className="p-3 rounded-lg bg-muted/50 border border-border/50">
                 <span className="text-sm font-medium">Расчётный объём продавки: <span className="text-primary font-bold">{calcDispVol.toFixed(2)} м³</span></span>
                 {(() => {
-                  const totalUsed = displacementFluids.reduce((s, df) => s + df.flowRateSteps.reduce((ss, st) => ss + st.volumeM3, 0), 0);
-                  const rem = calcDispVol - totalUsed;
+                  const totalUsed = displacementFluids.flatMap(df => df.flowRateSteps);
+                  const used = resolveFlowRateSteps(totalUsed, calcDispVol).reduce((sum, st) => sum + st.volumeM3, 0);
+                  const rem = calcDispVol - used;
                   return (
                     <span className={`ml-3 text-sm ${Math.abs(rem) < 0.01 ? "text-muted-foreground" : "text-destructive font-medium"}`}>
                       (остаток: {rem.toFixed(2)} м³)
                     </span>
                   );
                 })()}
+                <p className="mt-1 text-xs text-muted-foreground">Ручные объёмы не перезаписываются. Автоостаток распределяется между автоматическими режимами всех порций. Модель продавки ограничена посадкой пробки; при расхождении проверьте красный остаток.</p>
               </div>
             )}
             {displacementFluids.map((df, idx) => {
-              const explicitOf = (d: DisplacementFluid) => d.flowRateSteps.reduce((ss, st) => ss + (st.volumeM3 || 0), 0);
-              const othersExplicit = displacementFluids.reduce((t, d, j) => (j === idx ? t : t + explicitOf(d)), 0);
-              const portionVol = calcDispVol > 0
-                ? buildDisplacementSchedule(displacementFluids, calcDispVol).filter((it) => it.fluidIndex === idx).reduce((t, it) => t + it.volumeM3, 0)
-                : explicitOf(df);
-              const hasAuto = df.flowRateSteps.some((st) => !(st.volumeM3 > 0));
+              // Распределяем автоостаток между всеми порциями, не меняя ручной ввод.
+              const allSteps = displacementFluids.flatMap(d => d.flowRateSteps);
+              const resolved = resolveFlowRateSteps(allSteps, calcDispVol);
+              const offset = displacementFluids.slice(0, idx).reduce((sum, d) => sum + d.flowRateSteps.length, 0);
+              const portionSteps = resolved.slice(offset, offset + df.flowRateSteps.length);
+              const portionVol = portionSteps.reduce((sum, st) => sum + st.volumeM3, 0);
+              const hasAuto = df.flowRateSteps.some(isAutoVolume);
               return (
               <div key={idx} className="p-3 rounded-lg bg-muted/30 space-y-3 border border-border/50">
                 <div className="flex items-center justify-between">
@@ -1191,7 +1187,8 @@ export default function InputSection(props: Props) {
                 <FannEditor rheology={df.rheology} onChange={(r) => { const u = [...displacementFluids]; u[idx] = { ...u[idx], rheology: r }; onDisplacementFluidsChange(u); }} />
                 <FlowRateStepsEditor
                   steps={df.flowRateSteps}
-                  totalVolume={Math.max(0, calcDispVol - othersExplicit)}
+                  totalVolume={portionVol}
+                  resolvedVolumes={portionSteps.map(st => st.volumeM3)}
                   onChange={(steps) => { const u = [...displacementFluids]; u[idx] = { ...u[idx], flowRateSteps: steps }; onDisplacementFluidsChange(u); }}
                   fracCheck={(rateLps) => fracCheck(rateLps, df.density, df.rheology.pv, df.rheology.yp, true, df.name)}
                   isDynamic={!!dynamicBHPMap}

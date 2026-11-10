@@ -27,7 +27,7 @@ import type {
   VolumeResults, MaterialSummary, PressurePoint, StageBoundary, PressureProfileResult,
 } from "./cementing-calculations";
 import {
-  calculateVolumes, calculateHydraulics, calculateSafeTime, calculateBHCT,
+  resolveFlowRateSteps, slurryDesignVolume, calculateVolumes, calculateHydraulics, calculateSafeTime, calculateBHCT,
   calculateMaterials, calculatePressureProfile,
   getSlurryHeight, getCasingID, interpolateTVD, getFlowRateLps, getEffectiveTrajectory,
   annularVolumePerMeter, pipeVolumePerMeter, buildDisplacementSchedule,
@@ -298,7 +298,7 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
     result.push(kvTable(bRows) as any);
     // Flow rate steps
     if (b.flowRateSteps && b.flowRateSteps.length > 0) {
-      b.flowRateSteps.forEach((step, si) => {
+      resolveFlowRateSteps(b.flowRateSteps, b.volume).forEach((step, si) => {
         result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  Режим ${si + 1}: ${fmt(step.rateLps, 1)} л/с × ${fmt(step.volumeM3, 2)} м³`, size: 18, font: "Calibri" })] }));
       });
     }
@@ -334,7 +334,7 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
     result.push(kvTable(sRows) as any);
     // Flow rate steps
     if (s.flowRateSteps && s.flowRateSteps.length > 0) {
-      s.flowRateSteps.forEach((step, si) => {
+      resolveFlowRateSteps(s.flowRateSteps, slurryDesignVolume(wellData, slurries, i)).forEach((step, si) => {
         result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  Режим ${si + 1}: ${fmt(step.rateLps, 1)} л/с × ${fmt(step.volumeM3, 2)} м³`, size: 18, font: "Calibri" })] }));
       });
     }
@@ -362,7 +362,7 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
     ];
     result.push(kvTable(dfRows) as any);
     if (df.flowRateSteps && df.flowRateSteps.length > 0) {
-      df.flowRateSteps.forEach((step, si) => {
+      buildDisplacementSchedule(displacementFluids, calculateVolumes(wellData, slurries, displacementFluids[0]?.compressionCoeff ?? 1).displacementVolumeWithCompression).filter(it => it.fluidIndex === idx).forEach((step, si) => {
         result.push(new Paragraph({ spacing: { after: 20 }, children: [new TextRun({ text: `  Режим ${si + 1}: ${fmt(step.rateLps, 1)} л/с × ${fmt(step.volumeM3, 2)} м³`, size: 18, font: "Calibri" })] }));
       });
     }
@@ -488,7 +488,7 @@ function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volume
   return content;
 }
 
-function buildSchedulePage(buffers: BufferFluid[], slurries: SlurryInput[], annularVPM: number, displacementVolume: number, displacementFluids: DisplacementFluid[], casingDepthMD: number): Paragraph[] {
+function buildSchedulePage(buffers: BufferFluid[], slurries: SlurryInput[], annularVPM: number, displacementVolume: number, displacementFluids: DisplacementFluid[], casingDepthMD: number, wellData: WellData): Paragraph[] {
   const lpsToM3min = (lps: number) => lps * 0.06;
   const defaultRate = displacementFluids.length > 0 && displacementFluids[0].flowRateSteps.length > 0
     ? displacementFluids[0].flowRateSteps[0].rateLps : 8;
@@ -498,31 +498,14 @@ function buildSchedulePage(buffers: BufferFluid[], slurries: SlurryInput[], annu
   stages.push({ name: "Опрессовка ЛВД (25 МПа)", fluid: "-", rateLps: 0, volume: 0 });
 
   buffers.forEach(b => {
-    if (b.flowRateSteps.length > 1) {
-      b.flowRateSteps.forEach((step, si) => {
-        if (step.volumeM3 > 0) stages.push({ name: `${b.name} (режим ${si + 1})`, fluid: `${b.name} (${b.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 });
-      });
-    } else {
-      const rate = b.flowRateSteps.length > 0 ? b.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: `Буфер: ${b.name}`, fluid: `${b.name} (${b.density} кг/м³)`, rateLps: rate, volume: b.volume });
-    }
+    resolveFlowRateSteps(b.flowRateSteps, b.volume).forEach((step, si) => {
+      if (step.volumeM3 > 0) stages.push({ name: `${b.name} (режим ${si + 1})`, fluid: `${b.name} (${b.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 });
+    });
   });
-
-  slurries.forEach((s, origIdx) => {
-    const height = getSlurryHeight(slurries, origIdx, casingDepthMD);
-    let vol = annularVPM * height;
-    // Добавляем объём на вымыв для первого (верхнего) раствора
-    if (origIdx === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
-    if (vol > 0) {
-      if (s.flowRateSteps.length > 1) {
-        s.flowRateSteps.forEach((step, si) => {
-          if (step.volumeM3 > 0) stages.push({ name: `${s.name} (режим ${si + 1})`, fluid: `${s.name} (${s.density} г/см³)`, rateLps: step.rateLps, volume: step.volumeM3 });
-        });
-      } else {
-        const rate = s.flowRateSteps.length > 0 ? s.flowRateSteps[0].rateLps : 5;
-        stages.push({ name: `ЦР: ${s.name}`, fluid: `${s.name} (${s.density} г/см³)`, rateLps: rate, volume: vol });
-      }
-    }
+  slurries.forEach((s, i) => {
+    resolveFlowRateSteps(s.flowRateSteps, slurryDesignVolume(wellData, slurries, i)).forEach((step, si) => {
+      if (step.volumeM3 > 0) stages.push({ name: `${s.name} (режим ${si + 1})`, fluid: `${s.name} (${s.density} г/см³)`, rateLps: step.rateLps, volume: step.volumeM3 });
+    });
   });
 
   stages.push({ name: "Промывка ЛВД, сброс пробки", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.5 });
@@ -1011,7 +994,7 @@ export async function exportToDocx(
 
   const inputContent = buildInputPage(wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
   const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult, buffers);
-  const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolumeWithCompression, displacementFluids, wellData.casingDepthMD);
+  const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolumeWithCompression, displacementFluids, wellData.casingDepthMD, wellData);
   const materialsContent = buildMaterialsPage(materials, wellData);
   const labContent = buildLabPage(wellData, slurries, volumes, pressureResult);
   const normsContent = buildNormsPage(wellData, slurries, buffers, drillingFluid, volumes, pressureResult);

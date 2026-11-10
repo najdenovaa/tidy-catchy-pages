@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getSlurryHeight, annularVolumeForInterval, buildDisplacementSchedule } from "@/lib/cementing-calculations";
+import { resolveFlowRateSteps, slurryDesignVolume, getSlurryHeight, annularVolumeForInterval, buildDisplacementSchedule } from "@/lib/cementing-calculations";
 import type { BufferFluid, SlurryInput, DisplacementFluid, WellData } from "@/lib/cementing-calculations";
 
 interface Props {
@@ -33,51 +33,17 @@ export default function PumpingSchedule({ buffers, slurries, annularVPM, displac
 
   // 2. Буферы — по шагам
   buffers.forEach((b) => {
-    if (b.flowRateSteps.length > 1) {
-      b.flowRateSteps.forEach((step, si) => {
-        if (step.volumeM3 > 0) {
-          stages.push({ name: `${b.name} (режим ${si + 1})`, fluid: `${b.name} (${b.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 });
-        }
-      });
-    } else {
-      const rate = b.flowRateSteps.length > 0 ? b.flowRateSteps[0].rateLps : 5;
-      stages.push({ name: `Буфер: ${b.name}`, fluid: `${b.name} (${b.density} кг/м³)`, rateLps: rate, volume: b.volume });
-    }
+    resolveFlowRateSteps(b.flowRateSteps, b.volume).forEach((step, si) => {
+      if (step.volumeM3 > 0) stages.push({ name: `${b.name} (режим ${si + 1})`, fluid: `${b.name} (${b.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 });
+    });
   });
 
-  // 3. Цементные растворы — в порядке списка (первый по списку качается первым)
-  slurries.forEach((s, origIdx) => {
-    const height = getSlurryHeight(slurries, origIdx, casingDepthMD);
-    const lastIdx = slurries.length - 1;
-    const mdBot = origIdx === lastIdx ? casingDepthMD : slurries[origIdx + 1].topDepthMD;
-    let vol = wellData
-      ? annularVolumeForInterval(s.topDepthMD, mdBot, wellData.holeDiameter, wellData.casingOD, wellData.prevCasingID, wellData.prevCasingDepth, wellData.cavernCoeff, wellData.cavernIntervals)
-      : annularVPM * height;
-    // Стакан + зумпф для нижнего раствора
-    if (wellData && origIdx === lastIdx) {
-      if (wellData.ckodDepth > 0 && wellData.ckodDepth < casingDepthMD) {
-        const pipeVPM = Math.PI / 4 * Math.pow((wellData.casingOD - 2 * wellData.casingWall) / 1000, 2);
-        vol += pipeVPM * (casingDepthMD - wellData.ckodDepth);
-      }
-      // Зумпф (открытый ствол ниже башмака)
-      if (wellData.wellDepthMD > casingDepthMD) {
-        const holeVPM = Math.PI / 4 * Math.pow(wellData.holeDiameter / 1000, 2);
-        vol += holeVPM * wellData.cavernCoeff * (wellData.wellDepthMD - casingDepthMD);
-      }
-    }
-    if (origIdx === 0 && s.washVolume && s.washVolume > 0) vol += s.washVolume;
-    if (vol > 0) {
-      if (s.flowRateSteps.length > 1) {
-        s.flowRateSteps.forEach((step, si) => {
-          if (step.volumeM3 > 0) {
-            stages.push({ name: `${s.name} (режим ${si + 1})`, fluid: `${s.name} (${s.density} г/см³)`, rateLps: step.rateLps, volume: step.volumeM3 });
-          }
-        });
-      } else {
-        const rate = s.flowRateSteps.length > 0 ? s.flowRateSteps[0].rateLps : 5;
-        stages.push({ name: `ЦР: ${s.name}`, fluid: `${s.name} (${s.density} г/см³)`, rateLps: rate, volume: vol });
-      }
-    }
+  slurries.forEach((s, i) => {
+    const vol = wellData ? slurryDesignVolume(wellData, slurries, i)
+      : annularVPM * getSlurryHeight(slurries, i, casingDepthMD) + (i === 0 ? (s.washVolume || 0) : 0);
+    resolveFlowRateSteps(s.flowRateSteps, vol).forEach((step, si) => {
+      if (step.volumeM3 > 0) stages.push({ name: `${s.name} (режим ${si + 1})`, fluid: `${s.name} (${s.density} г/см³)`, rateLps: step.rateLps, volume: step.volumeM3 });
+    });
   });
 
   // 4. Промывка ЛВД
