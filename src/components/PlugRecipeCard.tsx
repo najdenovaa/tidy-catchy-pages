@@ -1,3 +1,5 @@
+import ExtenderSelector from "./ExtenderSelector";
+import ReadyCementAlternatives from "./ReadyCementAlternatives";
 import { RecipeProductsPanel } from "./CementProductPicker";
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -92,6 +94,7 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
               </select>
             </label>
             <p className="text-[10px] text-muted-foreground">SMS: 0,5-2% BWOC для лабораторного скрининга. При выборе проверять реологию, время загустевания и седиментацию.</p>
+            <ExtenderSelector value={user.extender} sg={user.extenderSG} onChange={(extender,extenderSG)=>setUser(u=>({...u,extender,extenderSG}))} />
             {FIELDS.map((fd) => (
               <label key={fd.key} className="flex items-center justify-between gap-2">
                 <span>{fd.label}, {fd.unit}</span>
@@ -149,6 +152,7 @@ export default function PlugRecipeCard({ inputs, results, wocHours, purpose, onP
           </div>
         </div>
         {res.actions.length > 0 && <p className="text-muted-foreground">Корректировка: {res.actions.join("; ")}.</p>}
+        <ReadyCementAlternatives densityGcm3={d.densityGcm3} temperatureC={t.bhctC} />
         {d.warnings.map((w) => <p key={w} className="text-amber-600">⚠ {w}</p>)}
         <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => { onApply(d); setMsg("Рецептура записана в раствор моста: добавки, В/С, выход, реология, время загустевания. Нажмите «Расчёт» для пересчёта."); }}>

@@ -1,3 +1,5 @@
+import ExtenderSelector from "./ExtenderSelector";
+import ReadyCementAlternatives from "./ReadyCementAlternatives";
 import { RecipeProductsPanel } from "./CementProductPicker";
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
@@ -163,18 +165,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
                   </select>
                 </label>
                 <p className="text-[10px] text-muted-foreground">SMS: ориентир 0,5-2% BWOC; дозировку можно изменить в таблице. Бентонит увеличивает водопотребность и реологию. Выбор требует лабораторного подтверждения.</p>
-                <label className="flex items-center justify-between gap-2 text-xs">
-                  <span>Облегчающая добавка</span>
-                  <select
-                    value={t.extender ?? "auto"}
-                    onChange={(e) => set({ extender: e.target.value === "auto" ? undefined : (e.target.value as LabTargets["extender"]) })}
-                    className="h-8 rounded border border-border bg-background px-2 text-xs"
-                  >
-                    <option value="auto">автовыбор</option>
-                    <option value="bentonite">бентонит</option>
-                    <option value="microspheres">микросферы</option>
-                  </select>
-                </label>
+                <ExtenderSelector value={t.extender} sg={t.extenderSG} onChange={(extender,extenderSG)=>set({extender,extenderSG})} />
               </div>
 
               <div className="space-y-3">
@@ -210,6 +201,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
                 Часть требований недостижима одновременно в рамках корреляций (например, высокая ранняя прочность облегчённого раствора на холодной кровле). Ослабьте требование или смените тип облегчения / плотность.
               </div>
             )}
+            <ReadyCementAlternatives densityGcm3={conditions[i].densityGcm3} temperatureC={conditions[i].bhctC} />
             {d.warnings.map((w) => <div key={w} className="text-xs text-amber-700 dark:text-amber-500">⚠ {w}</div>)}
           </div>
         );

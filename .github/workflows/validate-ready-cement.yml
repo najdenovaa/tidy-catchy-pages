@@ -7,6 +7,14 @@ on:
       - "src/components/LabTargetsPanel.tsx"
       - "src/components/PlugRecipeCard.tsx"
       - "src/test/nefteservis-systems.test.ts"
+      - "src/components/ExtenderSelector*"
+      - "src/components/RecipeDoseTable.tsx"
+      - "src/components/CementProductPicker.tsx"
+      - "src/components/InputSection.tsx"
+      - "src/lib/cement-mineral-extenders*"
+      - "src/lib/cement-recipe-designer.ts"
+      - "src/lib/cement-product-catalog*"
+      - "src/lib/cement-program.ts"
       - ".github/workflows/validate-ready-cement.yml"
   workflow_dispatch:
 
@@ -23,6 +31,6 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit -p tsconfig.app.json
       - name: Catalog tests
-        run: npx vitest run src/test/nefteservis-systems.test.ts
+        run: npx vitest run
       - name: Production build
         run: npm run build

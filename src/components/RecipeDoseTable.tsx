@@ -20,7 +20,7 @@ export default function RecipeDoseTable({ d, doses, onChange, textSize = "text-[
   };
   const present = new Set(d.components.map((c) => c.role));
   const excluded = (Object.keys(cur) as Role[]).filter((r) => cur[r] === 0 && !present.has(r));
-  const addable = (Object.keys(DOSE_ROLES) as Role[]).filter((r) => !present.has(r) && cur[r] !== 0);
+  const addable = (Object.keys(DOSE_ROLES) as Role[]).filter((r) => r !== "mineralExtender" && !present.has(r) && cur[r] !== 0);
   const manual = Object.keys(cur).length > 0;
 
   return (
@@ -67,7 +67,7 @@ export default function RecipeDoseTable({ d, doses, onChange, textSize = "text-[
       </table>
       <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
         {addable.length > 0 && (
-          <select value="" onChange={(e) => { const r = e.target.value as Role; if (r) setDose(r, DOSE_ROLES[r].step * Math.max(1, Math.round(DOSE_ROLES[r].max / 4 / DOSE_ROLES[r].step))); }}
+          <select value="" onChange={(e) => { const r = e.target.value as Role; if (r) setDose(r, r === "lime" ? 1 : DOSE_ROLES[r].step * Math.max(1, Math.round(DOSE_ROLES[r].max / 4 / DOSE_ROLES[r].step))); }}
             className="h-6 rounded border border-border bg-background px-1 text-[10px]" data-testid="dose-add">
             <option value="">+ добавить добавку</option>
             {addable.map((r) => <option key={r} value={r}>{DOSE_ROLES[r].label}</option>)}
@@ -80,7 +80,8 @@ export default function RecipeDoseTable({ d, doses, onChange, textSize = "text-[
         ))}
         {manual && <button type="button" onClick={() => onChange(undefined)} className="ml-auto text-primary underline-offset-2 hover:underline">сбросить все дозировки</button>}
       </div>
-      <p className="text-[10px] text-muted-foreground">Дозировки можно править: свойства раствора и камня пересчитываются сразу. Пустое поле — автоподбор, × — исключить.</p>
+      {d.components.some(c=>c.role==="lime")&&<p className="text-[10px] text-amber-700">Ca(OH)₂ - активатор для лабораторной проверки. Начальный 1% в ручном вводе не является оптимальной дозой. Расширение от гашёной извести автоматически не назначается.</p>}
+      <p className="text-[10px] text-muted-foreground">Проценты BWOC считаются от массы базового цемента: масса добавки = масса цемента × % / 100. Дозировки можно править: свойства раствора и камня пересчитываются сразу. Пустое поле — автоподбор, × — исключить.</p>
     </div>
   );
 }

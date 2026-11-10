@@ -45,3 +45,9 @@ export function normalizeProductIdentity(source: Record<string, unknown>): Produ
     if (typeof source[k] === 'string' && source[k]) out[k] = source[k];
   return out;
 }
+
+/** Program defaults are editable mass percentages, not conversions of supplier volume recommendations. */
+export function standardProductPercent(p:CementProduct):number {
+ return p.bwocRange?.[0]??(({defoamer:.2,wash:.5,spacer:1,microsilica:10} as Record<string,number>)[p.role]??.1);
+}
+export function productAdditive(p:CementProduct){return{...identityOf(p),name:p.name,percentage:standardProductPercent(p),percentageType:'bwoc' as const,massKg:0};}

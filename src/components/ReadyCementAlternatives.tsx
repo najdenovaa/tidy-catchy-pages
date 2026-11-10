@@ -76,8 +76,8 @@ interface Props {
 
 /** A read-only alternative catalog, with explicit engineering qualification. */
 export default function ReadyCementAlternatives({ densityGcm3, temperatureC, className = "" }: Props) {
-  const [open, setOpen] = useState(false);
-  const [showAll, setShowAll] = useState(false);
+  const [open, setOpen] = useState(true);
+  const [showAll, setShowAll] = useState(true);
   const validDensity = typeof densityGcm3 === "number" && Number.isFinite(densityGcm3) && densityGcm3 > 0
     ? densityGcm3 > 20 ? densityGcm3 / 1000 : densityGcm3
     : undefined;
@@ -96,7 +96,7 @@ export default function ReadyCementAlternatives({ densityGcm3, temperatureC, cla
       >
         <span className="flex items-center gap-2 min-w-0">
           <Factory className="h-4 w-4 shrink-0 text-primary" />
-          <span className="text-sm font-semibold">Альтернатива: готовые цементные системы</span>
+          <span className="text-sm font-semibold">Готовые смеси «Нефтесервис»</span>
           <span className="hidden sm:inline rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">Нефтесервис</span>
         </span>
         <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />

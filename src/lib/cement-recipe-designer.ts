@@ -1,3 +1,4 @@
+import { mineralExtender, type ExtenderChoice } from "./cement-mineral-extenders";
 import { cementProduct, identityOf, productWarnings, type ProductIdentity, type ProductChoices } from "./cement-product-catalog";
 /**
  * Подбор рецептуры тампонажного раствора под условия скважины и прогноз его свойств.
@@ -35,7 +36,7 @@ export interface DesignConditions {
 }
 
 export type AdditiveRole =
-  | "base" | "extender" | "lightweight" | "weighting" | "retarder" | "accelerator" | "fluidLoss" | "dispersant"
+  | "base" | "lime" | "mineralExtender" | "extender" | "lightweight" | "weighting" | "retarder" | "accelerator" | "fluidLoss" | "dispersant"
   | "defoamer" | "stabilizer" | "silica" | "gasBlock" | "expanding" | "fiber";
 
 export interface DesignedComponent extends ProductIdentity {
@@ -184,7 +185,8 @@ export interface DesignOptions {
   gasTight?: boolean;
   expansion?: boolean;
   fiber?: boolean;
-  extender?: "auto" | "bentonite" | "microspheres";
+  extender?: ExtenderChoice;
+  extenderSG?: number;
   stabilizerChoice?: StabilizerChoice;
   dispersantMin?: number;
   acceleratorPct?: number;
@@ -201,6 +203,8 @@ export type DoseOverrides = Partial<Record<Exclude<AdditiveRole, "base">, number
 
 /** Роли добавок, доступные для ручного ввода: подпись и типовой верхний предел дозировки (% bwoc) */
 export const DOSE_ROLES: Record<Exclude<AdditiveRole, "base">, { label: string; max: number; step: number }> = {
+  lime: { label: "Гашёная известь Ca(OH)₂ (активатор)", max: 20, step: 1 },
+  mineralExtender: { label: "Минеральный облегчитель (МК-85 / зола / опока)", max: 100, step: 1 },
   extender: { label: "Бентонит (облегчение)", max: 16, step: 0.5 },
   lightweight: { label: "Полые микросферы (облегчение)", max: 90, step: 1 },
   weighting: { label: "Утяжелитель (барит / гематит)", max: 120, step: 2 },
@@ -235,6 +239,9 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
     return v !== undefined && Number.isFinite(v) ? Math.max(0, v) : undefined;
   };
   const manualList = o.doses ? (Object.keys(o.doses) as Exclude<AdditiveRole, "base">[]).filter((r) => man(r) !== undefined) : [];
+  const selectedMineral = mineralExtender(o.extender) ?? ((man("mineralExtender") ?? 0)>0 ? mineralExtender("mk85") : undefined);
+  const mineralDose = selectedMineral ? (man("mineralExtender") ?? selectedMineral.screeningPct) : 0;
+  const mineralSG = o.extenderSG && Number.isFinite(o.extenderSG) && o.extenderSG>0 ? o.extenderSG : selectedMineral?.sg;
   const comps: DesignedComponent[] = [];
   const add = (x: DesignedComponent) => {
     if (x.pctBwoc <= 0) return;
@@ -256,6 +263,12 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
     if (man("silica") === undefined) rationale.push(`BHST ${c.bhstC.toFixed(0)} °C > 110 °C — 35% кварцевой муки против ретрогрессии прочности.`);
   } else if (c.bhstC > 110) warnings.push(`BHST ${c.bhstC.toFixed(0)} °C > 110 °C, а кварцевая мука исключена — ретрогрессия прочности камня.`);
 
+  const limeDose=man("lime")??0;
+  if(limeDose>0){
+    add({role:"lime",name:"Известь гашёная Ca(OH)₂",purpose:"Щелочной и пуццолановый активатор; не самостоятельная расширяющая добавка",pctBwoc:limeDose,sg:2.24,sgAssumed:true,productId:"hydrated-lime",sourceUrl:"https://www.osha.gov/chemicaldata/202"});
+    warnings.push("Гашёная известь Ca(OH)₂ уже гидратирована. Её доза не засчитывается как расширяющий агент CaO/MgO. Эффект в сульфоалюминатной или пуццолановой системе, загустевание, реология, прочность и объёмная стабильность требуют лабораторного подтверждения; 2,24 г/см³ - справочная плотность чистого вещества, не паспорт партии.");
+  }
+
   // ── Плотность: облегчение / утяжеление ──
   const WC_MIN = 0.35 * (base.wcNeat / 0.44), WC_NEAT_MAX = 0.46 * (base.wcNeat / 0.44);
   const wcMax = (bent: number) => WC_NEAT_MAX + 0.053 * bent + (0.4 * silica) / 100;
@@ -267,6 +280,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   const solve = () => { const d = dryOf(comps.concat(extra()), cementSG); return waterForDensity(rho, d.mass, d.vol) / 1000; };
   const extra = (): DesignedComponent[] => {
     const e: DesignedComponent[] = [];
+    if(selectedMineral && mineralDose>0)e.push({role:"mineralExtender",name:selectedMineral.name,purpose:selectedMineral.purpose,pctBwoc:mineralDose,sg:mineralSG!,sgAssumed:!(o.extenderSG && Number.isFinite(o.extenderSG) && o.extenderSG>0),productId:"mineral-"+selectedMineral.id,sourceUrl:selectedMineral.sourceUrl});
     if (bent > 0) e.push({ role: "extender", name: "Бентонит (глинопорошок), сухое смешение", purpose: "Облегчение и удержание воды затворения, стабилизация от водоотделения", pctBwoc: bent, sg: 2.65 });
     if (micro > 0) e.push({ role: "lightweight", name: microName, purpose: "Облегчение раствора без избытка воды (сохранение прочности)", pctBwoc: micro, sg: microSG });
     if (heavy > 0) e.push({ role: "weighting", name: heavyName, purpose: "Утяжеление раствора", pctBwoc: heavy, sg: heavySG });
@@ -274,7 +288,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   };
 
   let wc = solve();
-  if (wc > WC_NEAT_MAX + (0.4 * silica) / 100) {
+  if (wc > WC_NEAT_MAX + (0.4 * silica) / 100 && !selectedMineral) {
     // облегчённый: бентонит (до 14%, при выборе «только бентонит» — до 16%), далее микросферы
     const bentMax = o.extender === "bentonite" ? 16 : 14;
     if (o.extender !== "microspheres" && !(stabilizerChoice === "auto" && rho <= 1.65) && !["metasilicate", "polymer", "none"].includes(stabilizerChoice)) {
@@ -312,7 +326,7 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
     }
     wc = solve();
     rationale.push(`Плотность ${rho.toFixed(2)} г/см³ выше предела чистого цемента — ${heavyName.toLowerCase()} ${heavy}% и пластификатор.`);
-  } else {
+  } else if(!selectedMineral) {
     rationale.push(`Плотность ${rho.toFixed(2)} г/см³ достигается без облегчающих и утяжеляющих добавок; итоговое В/Ц рассчитано по абсолютным объёмам с учётом всех компонентов.`);
   }
   // ручные дозировки облегчения / утяжеления: плотность сохраняется, меняется вода затворения
@@ -329,7 +343,8 @@ export function designSlurry(c: DesignConditions, o: DesignOptions = {}): Slurry
   }
   if (mh !== undefined) { heavy = mh; if (heavy > 0 && rho <= 2.2) { heavyName = "Барит (утяжелитель)"; heavySG = 4.2; } }
   extra().forEach((e) => comps.push(e));
-  const isLight = bent > 0 || micro > 0;
+  const isLight = bent > 0 || micro > 0 || mineralDose>0;
+  if(selectedMineral){rationale.push(`${selectedMineral.name}: ${mineralDose}% BWOC; истинная плотность ${mineralSG} г/см³. Вода рассчитана по абсолютным объёмам. Насыпная плотность не используется.`);warnings.push(`${selectedMineral.name}: начальная доза - сценарий для лаборатории. Прогнозы реологии, загустевания, водоотделения и прочности не калиброваны для этой минеральной добавки. ${selectedMineral.note}`);}
 
   // ── Водоотдача ──
   const flTarget = o.fluidLossMaxMl ?? (c.gas ? 50 : c.coversPay ? 100 : 250);
@@ -575,7 +590,8 @@ export interface LabTargets {
   gasTight?: boolean;
   expansion?: boolean;
   fiber?: boolean;
-  extender?: "auto" | "bentonite" | "microspheres";
+  extender?: ExtenderChoice;
+  extenderSG?: number;
   stabilizerChoice?: StabilizerChoice;
   /** Базовый цемент */
   baseCement?: BaseCementKey;
@@ -584,7 +600,7 @@ export interface LabTargets {
 }
 
 /** Требования по умолчанию: ПБ НГП, API RP 10B-2 и типовая практика для назначения пачки. */
-export function defaultTargets(c: DesignConditions): Required<Omit<LabTargets, "thickeningMaxMin" | "sgsMaxMin" | "baseCement" | "doses" | "products">> & Pick<LabTargets, "thickeningMaxMin" | "sgsMaxMin" | "baseCement" | "doses" | "products"> {
+export function defaultTargets(c: DesignConditions): Required<Omit<LabTargets, "thickeningMaxMin" | "sgsMaxMin" | "baseCement" | "doses" | "products" | "extenderSG">> & Pick<LabTargets, "thickeningMaxMin" | "sgsMaxMin" | "baseCement" | "doses" | "products" | "extenderSG"> {
   return {
     thickeningMinMin: Math.round(Math.max(60, c.requiredThickeningMin)),
     thickeningMaxMin: undefined,
@@ -663,7 +679,7 @@ export function designToTargets(c: DesignConditions, user?: LabTargets): TargetD
     thickeningMinMin: t.thickeningMinMin, thickeningMaxMin: t.thickeningMaxMin,
     fluidLossMaxMl: t.fluidLossMaxMl, freeWaterMaxPct: t.freeWaterMaxPct,
     gasTight: t.gasTight,
-    expansion: t.expansion, fiber: t.fiber, extender: t.extender, stabilizerChoice: user?.stabilizerChoice, baseCement: user?.baseCement, doses: user?.doses, products: user?.products,
+    expansion: t.expansion, fiber: t.fiber, extender: t.extender, stabilizerChoice: user?.stabilizerChoice, baseCement: user?.baseCement, extenderSG:user?.extenderSG, doses: user?.doses, products: user?.products,
   };
   const score = (rows: ComplianceRow[]) => rows.reduce((s, r) => s + (r.ok === false ? 1 + r.deficit : 0), 0);
   let opts = { ...base };
