@@ -1,3 +1,4 @@
+import { mineralExtender } from "./cement-mineral-extenders";
 import { materialLabel, productWarnings, cementProduct, type ProductIdentity } from "./cement-product-catalog";
 /**
  * Программа цементирования: температурный режим (BHCT), программа лабораторных испытаний
@@ -227,6 +228,8 @@ export function buildLabProgram(
 // ═══════════════════════ Рецептура по абсолютным объёмам ═══════════════════════
 
 const SG_LIBRARY: [RegExp, number, string][] = [
+  [/негаш[её]н.*извест|извест.*негаш[её]н|оксид кальция/i, 3.34, "негашёная известь CaO"],
+  [/гаш[её]н.*извест|извест.*гаш[её]н|гидроксид кальция|hydrated lime|slaked lime/i, 2.24, "гашёная известь Ca(OH)₂"],
   [/микрокремнез|silica fume|мк-?\d/i, 2.2, "микрокремнезём"],
   [/микросфер|алюмосиликат|аспм|полые сфер/i, 0.7, "микросферы"],
   [/барит/i, 4.2, "барит"],
@@ -240,6 +243,7 @@ const SG_LIBRARY: [RegExp, number, string][] = [
   [/nacl|хлорид натрия|соль/i, 2.17, "хлорид натрия"],
   [/перлит/i, 2.4, "перлит"],
   [/зола|летуч|fly ?ash/i, 2.4, "зола-унос"],
+  [/опок/i, 2.2, "опока (типовая оценка)"],
   [/шлак/i, 2.9, "шлак"],
   [/гипс/i, 2.7, "гипс"],
   [/mgo|оксид магния|расширя|ррд|пр-?\d/i, 3.3, "расширяющая добавка"],
@@ -256,6 +260,8 @@ const DEFAULT_ADDITIVE_SG = 1.5;
 /** Удельный вес добавки: заданный пользователем → по названию → 1.5 (с флагом «уточнить»). */
 export function additiveSG(a: Additive): { sg: number; source: "user" | "library" | "default"; matched?: string } {
   if (a.specificGravity && a.specificGravity > 0) return { sg: a.specificGravity, source: a.specificGravityAssumed ? "default" : "user" };
+  const mineral=mineralExtender(a.productId?.replace(/^mineral-/,''));
+  if(mineral)return{sg:mineral.sg,source:"default",matched:"модельная истинная плотность минерального облегчителя"};
   const product = cementProduct(a.productId);
   if (product) {
     const assumed: Record<string, number> = { retarder: 1.3, fluidLoss: 1.3, dispersant: 1.35, defoamer: 1, microsilica: 2.2 };

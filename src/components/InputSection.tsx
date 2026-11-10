@@ -1,5 +1,6 @@
+import ReadyCementAlternatives from "./ReadyCementAlternatives";
 import { CementProductPicker, ProductDetails } from "./CementProductPicker";
-import { identityOf } from "@/lib/cement-product-catalog";
+import { productAdditive } from "@/lib/cement-product-catalog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
@@ -957,7 +958,7 @@ export default function InputSection(props: Props) {
                     <span className="text-xs text-muted-foreground">Компонентный состав</span>
                     <button onClick={() => { const u = [...buffers]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { name: "", percentage: 0, percentageType: 'bwoc' as AdditivePercentageType, massKg: 0 }] }; onBuffersChange(u); }} className="text-xs text-primary hover:underline">+ добавка</button>
                   </div>
-                  <CementProductPicker use="buffer" onSelect={p => { const u = [...buffers]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { ...identityOf(p), name: p.name, percentage: 0, percentageType: 'bwoc', massKg: p.id === 'ig-clean-l' ? 5 * b.volume : 0 }] }; onBuffersChange(u); }} />
+                  <CementProductPicker use="buffer" onSelect={p => { const u = [...buffers]; u[idx] = { ...u[idx], additives: [...u[idx].additives, productAdditive(p)] }; onBuffersChange(u); }} />
                   {b.additives.map((a, aIdx) => {
                     const bufferMassKg = b.volume * b.density;
                     const computedMass = a.percentage > 0 ? (a.percentage / 100) * bufferMassKg : a.massKg;
@@ -965,7 +966,7 @@ export default function InputSection(props: Props) {
                       <div key={aIdx} className="flex flex-wrap items-center gap-2">
                         <DebouncedInput value={a.name} onChange={(e) => updateBufferAdditive(idx, aIdx, "name", e.target.value)} placeholder="Наименование" className="h-7 text-xs flex-1" />
                         <DebouncedInput type="number" step="0.01" value={a.percentage || ""} onChange={(e) => updateBufferAdditive(idx, aIdx, "percentage", e.target.value)} className="h-7 text-xs w-16" placeholder="%" />
-                        <span className="text-xs text-muted-foreground">%</span>
+                        <span className="text-xs text-muted-foreground">% массы буфера</span>
                         <DebouncedInput aria-label="Масса реагента буфера, кг" type="number" min="0" value={computedMass || ''} className="h-7 text-xs w-20" onChange={e => { const u = [...buffers]; const a2 = [...u[idx].additives]; a2[aIdx] = { ...a2[aIdx], percentage: 0, massKg: Number(e.target.value) || 0 }; u[idx] = { ...u[idx], additives: a2 }; onBuffersChange(u); }} />
                         <span className="text-xs text-muted-foreground">кг</span>
                         <DebouncedInput aria-label="Истинная плотность реагента буфера, г/см³" type="number" min="0" step="0.01" value={a.specificGravity || ''} placeholder="SG по паспорту" className="h-7 text-xs w-28" onChange={e => updateBufferAdditive(idx, aIdx, "specificGravity", e.target.value)} />
@@ -996,6 +997,7 @@ export default function InputSection(props: Props) {
             </div>
             <p className="text-xs text-muted-foreground italic">Порядок: первый = у устья (верхний), последний = у забоя (у башмака). В закачке: первым качается верхний (первый в списке), последним — нижний.</p>
 
+            <ReadyCementAlternatives densityGcm3={slurries[0]?.density} temperatureC={wellData.bottomTempStatic} />
             {slurries.map((s, idx) => {
               const height = getSlurryHeight(slurries, idx, wellData.casingDepthMD);
               // Расчёт сухой массы цемента для автоподстановки массы добавок
@@ -1082,7 +1084,7 @@ export default function InputSection(props: Props) {
                       <span className="text-xs text-muted-foreground">Добавки</span>
                       <button onClick={() => { const u = [...slurries]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { name: "", percentage: 0, percentageType: 'bwoc' as AdditivePercentageType, massKg: 0 }] }; onSlurriesChange(u); }} className="text-xs text-primary hover:underline">+ добавка</button>
                     </div>
-                    <CementProductPicker use="cement" onSelect={p => { const u = [...slurries]; u[idx] = { ...u[idx], additives: [...u[idx].additives, { ...identityOf(p), name: p.name, percentage: p.bwocRange?.[0] ?? 0, percentageType: 'bwoc', massKg: 0 }] }; onSlurriesChange(u); }} />
+                    <CementProductPicker use="cement" onSelect={p => { const u = [...slurries]; u[idx] = { ...u[idx], additives: [...u[idx].additives, productAdditive(p)] }; onSlurriesChange(u); }} />
                     {s.additives.map((a, aIdx) => {
                       const pctType = a.percentageType || 'bwoc';
                       const computedMass = a.percentage > 0 && dryMassKg > 0

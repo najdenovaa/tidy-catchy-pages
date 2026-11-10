@@ -10,13 +10,14 @@ afterEach(cleanup);
 const example = getCementingExample();
 const input = { ...example, slurries: [{ ...example.slurries[0], name: 'Облегчённый ПЦТ-III-Об' }], pressure: null, volumes: null };
 
-it('updates the recipe heading and applied binder from G to I-50 without offering ready blends', () => {
+it('updates the recipe heading and applied binder from G to I-50 while showing the separate ready-blend catalogue', () => {
   const onApplySlurries = vi.fn();
   const onTargetsChange = vi.fn();
   const { rerender } = render(<LabTargetsPanel input={input} targets={[undefined]} onTargetsChange={onTargetsChange} onApplySlurries={onApplySlurries} />);
   expect(screen.getByText(/Раствор 1.*основа ПЦТ I-G/)).toBeInTheDocument();
   expect(screen.queryByRole('option', { name: /III-Об/ })).not.toBeInTheDocument();
-  expect(screen.queryByTestId('ready-cement-alternatives')).not.toBeInTheDocument();
+  expect(screen.getByTestId('ready-cement-alternatives')).toBeInTheDocument();
+  expect(screen.getByText('Готовые смеси «Нефтесервис»')).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Тампонажный цемент'), { target: { value: 'I50' } });
   expect(onTargetsChange).toHaveBeenCalledWith(0, { baseCement: 'I50' });
   rerender(<LabTargetsPanel input={input} targets={[{ baseCement: 'I50' }]} onTargetsChange={onTargetsChange} onApplySlurries={onApplySlurries} />);

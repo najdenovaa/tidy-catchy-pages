@@ -5,6 +5,10 @@ on:
     paths:
       - 'src/lib/*report*'
       - 'src/lib/export-docx.ts'
+      - 'src/lib/cement-recipe-designer.ts'
+      - 'src/lib/cement-mineral-extenders*'
+      - 'src/lib/cement-program.ts'
+      - 'src/lib/cement-product-catalog*'
       - 'src/lib/export-casing-design-docx.ts'
       - 'src/lib/cement-fleet-layout.ts'
       - 'src/lib/__tests__/report-scopes.test.ts'
