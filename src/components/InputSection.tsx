@@ -1,3 +1,4 @@
+import WellSurveyImport from "./WellSurveyImport";
 import { CementProductPicker, ProductDetails } from "./CementProductPicker";
 import { productAdditive } from "@/lib/cement-product-catalog";
 import { Card, CardContent } from "@/components/ui/card";
@@ -138,6 +139,12 @@ export const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, to
 });
 
 export default function InputSection(props: Props) {
+  const [trajectoryPage,setTrajectoryPage]=useState(0),[cavernPage,setCavernPage]=useState(0);
+  const trajectoryPages=Math.max(1,Math.ceil((props.wellData.trajectory?.length??0)/100));
+  const cavernPages=Math.max(1,Math.ceil((props.wellData.cavernIntervals?.length??0)/100));
+  const trajectoryCurrent=Math.min(trajectoryPage,trajectoryPages-1),cavernCurrent=Math.min(cavernPage,cavernPages-1);
+  const trajectoryStart=trajectoryCurrent*100,cavernStart=cavernCurrent*100;
+
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     well: false, trajectory: false, reservoirs: false, mud: false, buffers: false, cement: false, displacement: false, hydraulics: false, flush: false,
   });
@@ -593,6 +600,8 @@ export default function InputSection(props: Props) {
               )}
             </div>
 
+            <WellSurveyImport kind="caliper" wellData={wellData} onChange={onWellDataChange} />
+
             {/* Интервалы кавернозности */}
             <div className="mt-4 space-y-2">
               <div className="flex items-center justify-between">
@@ -601,6 +610,7 @@ export default function InputSection(props: Props) {
                   onClick={() => {
                     const intervals = [...(wellData.cavernIntervals || [])];
                     intervals.push({ fromMD: wellData.prevCasingDepth || 0, toMD: wellData.casingDepthMD || 1000, coeff: wellData.cavernCoeff || 1.0 });
+                    setCavernPage(Math.floor((intervals.length-1)/100));
                     onWellDataChange({ ...wellData, cavernIntervals: intervals });
                   }}
                   className="text-xs text-primary hover:underline"
@@ -611,7 +621,7 @@ export default function InputSection(props: Props) {
                   <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-xs text-muted-foreground px-1">
                     <span>От (MD), м</span><span>До (MD), м</span><span>Коэфф. каверн.</span><span></span>
                   </div>
-                  {wellData.cavernIntervals.map((iv, i) => (
+                  {wellData.cavernIntervals.slice(cavernStart, cavernStart+100).map((iv,offset)=>({iv,i:cavernStart+offset})).map(({iv,i}) => (
                     <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
                       <Input type="number" step="any" value={iv.fromMD || ""} onChange={(e) => {
                         const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], fromMD: parseFloat(e.target.value) || 0 };
@@ -631,6 +641,7 @@ export default function InputSection(props: Props) {
                       }} className="text-xs text-destructive">✕</button>
                     </div>
                   ))}
+                  {cavernPages>1&&<div className="flex gap-3 items-center text-xs"><button disabled={cavernCurrent===0} onClick={()=>setCavernPage(cavernCurrent-1)}>Предыдущие интервалы</button><span>Страница {cavernCurrent+1} из {cavernPages}; всего {wellData.cavernIntervals.length}. В расчёте используются все.</span><button disabled={cavernCurrent+1>=cavernPages} onClick={()=>setCavernPage(cavernCurrent+1)}>Следующие интервалы</button></div>}
                   <p className="text-[10px] text-muted-foreground/60 italic">Глубины без интервалов используют коэфф. по умолчанию ({wellData.cavernCoeff})</p>
                 </div>
               ) : (
@@ -648,6 +659,8 @@ export default function InputSection(props: Props) {
         {openSections.trajectory && (
           <CardContent className="pt-4 space-y-3">
             <p className="text-xs text-muted-foreground italic">Задайте точки инклинометрии. TVD используется для расчёта давлений.</p>
+            <WellSurveyImport kind="trajectory" wellData={wellData} onChange={onWellDataChange} />
+            {trajectoryPages>1&&<div className="flex gap-3 items-center text-xs"><button disabled={trajectoryCurrent===0} onClick={()=>setTrajectoryPage(trajectoryCurrent-1)}>Предыдущие точки</button><span>Страница {trajectoryCurrent+1} из {trajectoryPages}; всего {wellData.trajectory.length}. В расчёте используются все.</span><button disabled={trajectoryCurrent+1>=trajectoryPages} onClick={()=>setTrajectoryPage(trajectoryCurrent+1)}>Следующие точки</button></div>}
             {/* Desktop table */}
             <div className="overflow-x-auto hidden sm:block">
               <table className="w-full text-sm">
@@ -662,7 +675,7 @@ export default function InputSection(props: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {(wellData.trajectory || []).map((pt, i) => (
+                  {(wellData.trajectory || []).slice(trajectoryStart,trajectoryStart+100).map((pt,offset)=>({pt,i:trajectoryStart+offset})).map(({pt,i}) => (
                     <tr key={i} className="border-b border-border/30">
                       <td className="py-1 px-2 text-xs text-muted-foreground">{i + 1}</td>
                       <td className="py-1 px-2 min-w-[120px]"><Input type="number" step="any" value={pt.md || ""} onChange={(e) => updateTrajectoryPoint(i, "md", e.target.value)} className="h-7 text-xs w-full" /></td>
@@ -688,7 +701,7 @@ export default function InputSection(props: Props) {
             </div>
             {/* Mobile cards */}
             <div className="sm:hidden space-y-3">
-              {(wellData.trajectory || []).map((pt, i) => (
+              {(wellData.trajectory || []).slice(trajectoryStart,trajectoryStart+100).map((pt,offset)=>({pt,i:trajectoryStart+offset})).map(({pt,i}) => (
                 <div key={i} className="border border-border rounded-lg p-3 space-y-2 bg-muted/30">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-muted-foreground">Точка {i + 1}</span>
@@ -744,6 +757,7 @@ export default function InputSection(props: Props) {
                   const traj = [...(wellData.trajectory || [])];
                   const lastPt = traj[traj.length - 1];
                   traj.push({ md: (lastPt?.md || 0) + 50, azimuth: lastPt?.azimuth || 0, zenith: lastPt?.zenith || 0, tvd: 0 });
+                  setTrajectoryPage(Math.floor((traj.length-1)/100));
                   onWellDataChange({ ...wellData, trajectory: traj });
                 }}
                 className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"

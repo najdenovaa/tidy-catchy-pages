@@ -11,6 +11,8 @@ on:
       - "src/components/RecipeDoseTable.tsx"
       - "src/components/CementProductPicker.tsx"
       - "src/components/InputSection.tsx"
+      - "src/components/WellSurveyImport*"
+      - "src/lib/well-survey-import*"
       - "src/lib/cement-mineral-extenders*"
       - "src/lib/cement-recipe-designer.ts"
       - "src/lib/cement-product-catalog*"
@@ -31,6 +33,6 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit -p tsconfig.app.json
       - name: Catalog tests
-        run: npx vitest run
+        run: npx vitest run --maxWorkers=2
       - name: Production build
         run: npm run build
