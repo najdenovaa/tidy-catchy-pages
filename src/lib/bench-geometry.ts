@@ -1,7 +1,7 @@
 import type {MovingPlugCase} from './moving-plug';
 export interface BenchGeometry {survey:{mdM:number;tvdM:number}[];sections:{fromM:number;toM:number;diameterMm:number}[]}
 export function defaultBenchGeometry(p:MovingPlugCase):BenchGeometry{return {survey:[{mdM:0,tvdM:0},{mdM:p.totalLengthM,tvdM:0}],sections:[{fromM:0,toM:p.totalLengthM,diameterMm:p.diameterMm}]};}
-export function normalizeBenchGeometry(v:unknown):BenchGeometry|undefined{if(v===undefined)return undefined;const x=v&&typeof v==='object'?v as Record<string,unknown>:{},num=(r:unknown,k:string)=>r&&typeof r==='object'&&typeof (r as any)[k]==='number'&&Number.isFinite((r as any)[k])?(r as any)[k]:-1;return {survey:Array.isArray(x.survey)?x.survey.slice(0,2002).map(r=>({mdM:num(r,'mdM'),tvdM:num(r,'tvdM')})):[],sections:Array.isArray(x.sections)?x.sections.slice(0,52).map(r=>({fromM:num(r,'fromM'),toM:num(r,'toM'),diameterMm:num(r,'diameterMm')})):[]};}
+export function normalizeBenchGeometry(v:unknown):BenchGeometry|undefined{if(v===undefined)return undefined;const x=v&&typeof v==='object'?v as Record<string,unknown>:{},num=(r:unknown,k:string)=>r&&typeof r==='object'&&typeof (r as any)[k]==='number'&&Number.isFinite((r as any)[k])?(r as any)[k]:Number.NaN;return {survey:Array.isArray(x.survey)?x.survey.slice(0,2002).map(r=>({mdM:num(r,'mdM'),tvdM:num(r,'tvdM')})):[],sections:Array.isArray(x.sections)?x.sections.slice(0,52).map(r=>({fromM:num(r,'fromM'),toM:num(r,'toM'),diameterMm:num(r,'diameterMm')})):[]};}
 export function benchGeometryKey(g?:BenchGeometry){return normalizeBenchGeometry(g)??null;}
 export function compileBenchGeometry(p:MovingPlugCase,raw:BenchGeometry){
  const g=normalizeBenchGeometry(raw)!,length=p.totalLengthM,areaRef=Math.PI*(p.diameterMm/1000)**2/4;
