@@ -7,6 +7,8 @@ on:
       - 'src/lib/compressible-*'
       - 'src/lib/transport-refinement*'
       - 'src/lib/transport-mesh*'
+      - 'src/lib/moving-plug*'
+      - 'src/lib/__tests__/moving-plug-report.test.ts'
       - 'src/lib/__tests__/compressible-report.test.ts'
       - 'src/lib/export-docx.ts'
       - 'src/lib/cement-recipe-designer.ts'
@@ -54,11 +56,11 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/__tests__/compressible-report.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/__tests__/compressible-report.test.ts src/lib/__tests__/moving-plug-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
-          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/centralization-report.docx" "$REPORT_QA_DIR/running-report.docx" "$REPORT_QA_DIR/transport-report.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/centralization-report.docx" "$REPORT_QA_DIR/running-report.docx" "$REPORT_QA_DIR/transport-report.docx" "$REPORT_QA_DIR/plug-benchmark.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
@@ -92,6 +94,12 @@ jobs:
           assert "Чувствительность к сетке и шагу" in transport_text and "L1 состава (0-2)" in transport_text
           assert "После перекрытия" in transport_text and "разность массы через ЦКОД" in transport_text
           assert "Герметичное перекрытие задано пользователем" in transport_text
+          plug = fitz.open(d / "plug-benchmark.pdf")
+          plug_text = " ".join(" ".join(p.get_text().split()) for p in plug)
+          assert "Проверочный стенд движения поршня (не скважина)" in plug_text
+          assert "Достижение заданного упора" in plug_text and "Камера" in plug_text
+          assert any("Стенд поршня: положение" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
+          assert any("Стенд поршня: давления" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
           print("Rendered", len(doc), "A4 pages; approval-column separation", round(right.x0 - left.x0), "pt; model page", model.number + 1)
           preview = Image.new("RGB", (1000, 710), "white")
           for i, page in enumerate([title, model]):
@@ -117,3 +125,5 @@ jobs:
             /tmp/cementing-report-qa/fleet-layout.svg
             /tmp/cementing-report-qa/transport-report.docx
             /tmp/cementing-report-qa/transport-report.pdf
+            /tmp/cementing-report-qa/plug-benchmark.docx
+            /tmp/cementing-report-qa/plug-benchmark.pdf

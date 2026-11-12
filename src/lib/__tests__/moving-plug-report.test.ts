@@ -1,0 +1,22 @@
+// @vitest-environment node
+import {it,expect} from 'vitest';
+import JSZip from 'jszip';
+import {mkdirSync,writeFileSync,readFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {flowFixture} from '@/test/fixtures/compressible-flow';
+import {movingPlugReference} from '../moving-plug';
+import {buildCementingReportSvgs} from '../cementing-report-figures';
+import {defaultReportSelection} from '../cementing-report-options';
+import {exportToDocx} from '../export-docx';
+import {calculateVolumes,calculatePressureProfile} from '../cementing-calculations';
+it('exports independent benchmark inputs and actual figures; rejects stale figures and honors selection',async()=>{
+ const p=flowFixture();p.wellData.stopStorage={...p.wellData.stopStorage,plugBenchEnabled:true,plugBenchCase:movingPlugReference()};
+ const selection=Object.fromEntries(Object.keys(defaultReportSelection('cementing')).map(k=>[k,k==='plugBenchmark']));const svgs=buildCementingReportSvgs(p.wellData,{},'cementing',selection);expect(svgs).toHaveLength(2);for(const f of svgs)expect(f.svg).not.toMatch(/NaN|Infinity/);
+ const dir=process.env.REPORT_QA_DIR;let figures:any[]=[];if(dir){mkdirSync(dir,{recursive:true});svgs.forEach((f,i)=>writeFileSync(join(dir,`plug-bench-${i}.svg`),f.svg));if(process.env.REPORT_QA_RASTER)figures=svgs.map((f,i)=>({...f,dataUrl:'data:image/png;base64,'+readFileSync(join(dir,`plug-bench-${i}.png`)).toString('base64')}));}
+ const volumes=calculateVolumes(p.wellData,p.slurries),pressureResult=calculatePressureProfile(p.wellData,p.slurries,p.buffers,p.drillingFluid,p.displacementFluids,p.fractureGradient,volumes.displacementVolumeWithCompression);
+ async function make(w=p.wellData,pick=selection,images=figures){const blob=await exportToDocx(w,p.drillingFluid,p.slurries,p.buffers,p.displacementFluids,p.fractureGradient,undefined,[],{volumes,pressureResult},{returnBlob:true,selection:pick,extras:{figures:images}});if(!blob)throw new Error('No DOCX');const bytes=Buffer.from(await blob.arrayBuffer());return {bytes,xml:await (await JSZip.loadAsync(bytes)).file('word/document.xml').async('text')};}
+ const out=await make();expect(out.xml).toContain('Проверочный стенд движения поршня (не скважина)');expect(out.xml).toContain('Диаметр стенда, мм');expect(out.xml).toContain('момент достижения упора найден');expect(out.xml).toContain('Камера');if(dir)writeFileSync(join(dir,'plug-benchmark.docx'),out.bytes);
+ // A tiny valid PNG with deliberately stale provenance must never be embedded.
+ const stale=[{...svgs[0],title:'STALE-PLUG-FIGURE',sourceKey:'old',dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlS8AAAAASUVORK5CYII='}];const changed=await make({...p.wellData,stopStorage:{...p.wellData.stopStorage,plugBenchCase:{...movingPlugReference(),durationSec:650}}},selection,stale);expect(changed.xml).toContain('Устаревшие иллюстрации стенда исключены');expect(changed.xml).not.toContain('STALE-PLUG-FIGURE');
+ const off=await make(p.wellData,{...selection,plugBenchmark:false});expect(off.xml).not.toContain('Проверочный стенд движения поршня (не скважина)');
+},45000);

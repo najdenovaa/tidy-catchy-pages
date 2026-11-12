@@ -25,6 +25,8 @@ on:
       - "src/lib/flow-boundaries*"
       - "src/lib/transport-refinement*"
       - "src/lib/transport-mesh*"
+      - "src/lib/moving-plug*"
+      - "src/components/MovingPlugBench*"
       - "src/components/CompressibleTransport*"
       - "src/components/PvtHydrostatics*"
       - "src/components/StopStorage*"
