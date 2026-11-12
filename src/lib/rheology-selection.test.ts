@@ -48,5 +48,6 @@ it('changes the main pressure trace when the selected model changes, and blocks 
 it('uses fitted Bingham in 2D and explicitly rejects unsupported nonlinear models',()=>{
  const ex=getCementingExample(),p={...ex,volumes:calculateVolumes(ex.wellData,ex.slurries)};
  const slurries=ex.slurries.map(s=>({...s,rheology:{...r,model:'bingham' as const}}));const d=buildDisplacementInput({...p,slurries});expect(d.input.fluids.find(f=>f.kind==='cement').pv).toBeCloseTo(fitRheology(fann).bingham.pv/1000,10);
+ const bottom=buildDisplacementInput({...p,drillingFluid:{...p.drillingFluid,rheologyBottomhole:{...r,pv:0,yp:0,model:'bingham'}}});expect(bottom.input.fluids[0].pv).toBeCloseTo(fitRheology(fann).bingham.pv/1000,10);
  expect(()=>buildDisplacementInput({...p,slurries:slurries.map(s=>({...s,rheology:{...r,model:'hb'}}))})).toThrow('не поддерживает');
 });

@@ -75,7 +75,7 @@ export function buildDisplacementInput(p: {
 
   // Жидкости
   const colors: string[] = [];
-  const mudR = d2Rheology(effectiveRheology(mudIn.rheologyBottomhole && (mudIn.rheologyBottomhole.pv > 0 || mudIn.rheologyBottomhole.yp > 0) ? mudIn.rheologyBottomhole : mudIn.rheology, "mud"));
+  const mudR = d2Rheology(effectiveRheology(mudIn.rheologyBottomhole && (mudIn.rheologyBottomhole.pv > 0 || mudIn.rheologyBottomhole.yp > 0 || !!mudIn.rheologyBottomhole.fann) ? mudIn.rheologyBottomhole : mudIn.rheology, "mud"));
   const fluids: D2Fluid[] = [{ name: mudIn.name || "Буровой раствор", density: mudIn.density, pv: mudR.pv / 1000, yp: mudR.yp, kind: "mud" }];
   colors.push(D2_COLORS.mud[0]);
   const bufIdx = buffers.map((b, i) => {
