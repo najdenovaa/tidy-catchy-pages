@@ -1,3 +1,4 @@
+import {benchEquipmentKey,validateBenchEquipment,checkBenchPassage,checkBenchPressure,BenchEquipmentLimitError,type BenchEquipment,type BenchPressureStop} from './bench-equipment';
 import {compileBenchGeometry,benchGeometryKey,type BenchGeometry} from './bench-geometry';
 import {initializeGeometryPressure} from './geometry-pressure';
 import {resolveBenchLaws,rheologyPairKey,type BenchRheologyPair} from './bench-rheology';
@@ -9,25 +10,28 @@ export interface CoupledFrame extends HydraulicFrame {
   velocityMps:number; mode:'stuck'|'moving'|'seated'; forceResidualMPa:number; seatReactionMPa:number;
 }
 export interface CoupledTracePoint {timeSec:number;xM:number;inletMPa:number;backWallMPa:number;aheadWallMPa:number;phase:'approach'|'seated';region?:number;minCellM?:number;maxCellM?:number}
-export function coupledCaseKey(input:MovingPlugCase,n:number,mu:number,switchSec:number,rheology?:BenchRheologyPair,geometry?:BenchGeometry){return JSON.stringify(['coupled-piston-pressure-v1',normalizeMovingPlugCase(input),n,mu,switchSec,rheologyPairKey(rheology),benchGeometryKey(geometry)]);}
+export function coupledCaseKey(input:MovingPlugCase,n:number,mu:number,switchSec:number,rheology?:BenchRheologyPair,geometry?:BenchGeometry,equipment?:BenchEquipment){return JSON.stringify(['coupled-piston-pressure-v1',normalizeMovingPlugCase(input),n,mu,switchSec,rheologyPairKey(rheology),benchGeometryKey(geometry),benchEquipmentKey(equipment)]);}
 export interface CoupledPlugResult extends Omit<PlugHydraulics,'model'|'frames'> {
   model:'coupled-piston-pressure-v1'; inputKey:string; trace:CoupledTracePoint[]; frames:CoupledFrame[]; landingTimeSec:number|null;
+  equipment?:BenchEquipment; equipmentPassage?:ReturnType<typeof checkBenchPassage>; equipmentStop?:BenchPressureStop;
   geometryEvents?:{timeSec:number;mdM:number}[]; maxForceResidualMPa:number; rejectedSteps:number;
 }
 const sum=(a:number[])=>a.reduce((v,x)=>v+x,0);
 const forceTolerance=1e-6;
 /** Nested, converged pressure/position solve; candidates never mutate the old state. */
-export function simulateCoupledPlug(input:MovingPlugCase,n=8,mu=10,switchSec=0,rheology?:BenchRheologyPair,geometry?:BenchGeometry):CoupledPlugResult{
-  const p=normalizeMovingPlugCase(input)!,r:CoupledPlugResult={model:'coupled-piston-pressure-v1',inputKey:coupledCaseKey(input,n,mu,switchSec,rheology,geometry),rheology,geometry,geometryEvents:[],trace:[],status:'stopped',reason:'',viscosityMpas:mu,cellsPerChamber:n,switchSec,frames:[],initialKg:[0,0,0],injectedKg:[0,0,0],returnedKg:[0,0,0],retainedKg:[0,0,0],acceptedSteps:0,maxMassResidualKg:0,maxComponentResidualKg:0,maxGeometricResidualM3:0,maxReynolds:0,landingTimeSec:null,maxForceResidualMPa:0,rejectedSteps:0};
+export function simulateCoupledPlug(input:MovingPlugCase,n=8,mu=10,switchSec=0,rheology?:BenchRheologyPair,geometry?:BenchGeometry,equipment?:BenchEquipment):CoupledPlugResult{
+  const p=normalizeMovingPlugCase(input)!,r:CoupledPlugResult={model:'coupled-piston-pressure-v1',inputKey:coupledCaseKey(input,n,mu,switchSec,rheology,geometry,equipment),rheology,geometry,equipment,geometryEvents:[],trace:[],status:'stopped',reason:'',viscosityMpas:mu,cellsPerChamber:n,switchSec,frames:[],initialKg:[0,0,0],injectedKg:[0,0,0],returnedKg:[0,0,0],retainedKg:[0,0,0],acceptedSteps:0,maxMassResidualKg:0,maxComponentResidualKg:0,maxGeometricResidualM3:0,maxReynolds:0,landingTimeSec:null,maxForceResidualMPa:0,rejectedSteps:0};
   let last:CoupledFrame|undefined;
   try{
     resolveBenchLaws(rheology,mu);
     if(!p||!Number.isInteger(n)||n<1||n>60||!Number.isFinite(mu)||!rheology&&mu<=0||!Number.isFinite(switchSec)||switchSec<0||switchSec>p.durationSec)throw new Error('Нужны 1-60 ячеек, положительная вязкость и корректный момент метки.');
-    initializePlug(p); // Shared case validation; no two-chamber trajectory is used.
+    initializePlug(p);
+    if(equipment){r.equipment=validateBenchEquipment(equipment);r.equipmentPassage=checkBenchPassage(p,r.equipment,geometry);if(r.equipmentPassage.status==='blocked')throw new Error('Оснастка не проходит: минимальный ID '+r.equipmentPassage.minDiameterMm+' мм меньше требуемого прохода '+r.equipmentPassage.requiredDriftMm+' мм на пути запуска 0 - упор. Расчёт движения не начат.');}
     const geo=geometry?compileBenchGeometry(p,geometry):undefined,initial=geo?initializeGeometryPressure(p,n,geo):undefined;
     const a=Math.PI*(p.diameterMm/1000)**2/4,source=p.rateLps/1000*p.rhoBackKgM3,faces=geo?geo.faces(p.initialXM,n):pistonFaces(p,n,p.initialXM);
     let pressure=Array(2*n).fill(p.outletMPa),state:AleState={facesM:faces,massKg:faces.slice(1).map((x,i)=>a*(x-faces[i])*(i<n?p.rhoBackKgM3:p.rhoAheadKgM3)*Math.exp(p.outletMPa/(i<n?p.bulkBackMPa:p.bulkAheadMPa))),fractions:Array.from({length:2*n},(_,i)=>i<n?[1,0,0]:[0,0,1])},time=0,x=p.initialXM,landed=false;
     if(initial){state=initial.state;pressure=initial.pressures;r.capacityM3=geo!.capacityM3;}
+    if(equipment)checkBenchPressure(equipment,0,initial?.inletMPa??p.outletMPa,initial?.wallMPa??p.outletMPa,initial?.wallMPa??p.outletMPa);
     advanceAle(state,faces,state.massKg,Array(2*n+1).fill(0),1,a,[1,0,0],undefined,n);
     const cellRange=(f:number[])=>{const d=f.slice(1).map((v,i)=>v-f[i]);return {minCellM:Math.min(...d),maxCellM:Math.max(...d)};};
     r.initialKg=[sum(state.massKg.slice(0,n)),0,sum(state.massKg.slice(n))];r.retainedKg=[...r.initialKg];
@@ -71,8 +75,9 @@ export function simulateCoupledPlug(input:MovingPlugCase,n=8,mu=10,switchSec=0,r
           const physical=at(solved.x,dt,false);
           if(!landed&&(physical.v>1e-10||event)&&Math.abs(physical.force)>forceTolerance)throw new Error('Физический шаг не подтвердил силовой корень.');
           if(!landed&&physical.v<=1e-10&&!event&&physical.force>forceTolerance)throw new Error('Не выполнено условие покоя поршня.');
+          if(equipment)checkBenchPressure(equipment,time+dt,physical.step.inletMPa,physical.step.backWallMPa,physical.step.aheadWallMPa);
           candidate=physical;seatEvent=event&&stop===p.seatXM;geometryEvent=event&&stop!==p.seatXM;break;
-        }catch(e){lastError=e instanceof Error?e.message:String(e);r.rejectedSteps++;dt/=2;if(dt<=1e-8)break;}
+        }catch(e){if(e instanceof BenchEquipmentLimitError){r.rejectedSteps++;throw e;}lastError=e instanceof Error?e.message:String(e);r.rejectedSteps++;dt/=2;if(dt<=1e-8)break;}
       }
       if(!candidate)throw new Error('Шаг связанного стенда отклонён: '+lastError);
       const step=candidate.step,injected=r.injectedKg.map((m,j)=>m+step.injectedKg[j]),returned=r.returnedKg.map((m,j)=>m+step.returnedKg[j]),retained=[0,1,2].map(j=>sum(step.state.massKg.map((m,i)=>m*step.state.fractions[i][j]))),residuals=retained.map((m,j)=>Math.abs(r.initialKg[j]+injected[j]-returned[j]-m));
@@ -87,7 +92,9 @@ export function simulateCoupledPlug(input:MovingPlugCase,n=8,mu=10,switchSec=0,r
       if(time-r.frames.at(-1)!.timeSec>=p.durationSec/150||seatEvent||geometryEvent||Math.abs(time-switchSec)<1e-8||time>=p.durationSec-1e-8)r.frames.push(last);
     }
     r.status='complete';r.reason=r.landingTimeSec===null?'Связанный стенд рассчитан; упор за назначенное время не достигнут.':'Связанный стенд рассчитан; движение и посадка найдены по локальным давлениям.';
-  }catch(e){r.reason=e instanceof Error?e.message:String(e);}
+  }catch(e){if(e instanceof BenchEquipmentLimitError)r.equipmentStop=e.detail;r.reason=e instanceof Error?e.message:String(e);}
   if(last&&r.frames.at(-1)?.timeSec!==last.timeSec)r.frames.push(last);return r;
 }
 export function coupledPlugCsv(r:CoupledPlugResult){return 'model;status;time_s;x_m;step_mean_velocity_m_s;mode;inlet_mpa;back_wall_mpa;ahead_wall_mpa;force_residual_mpa;seat_reaction_mpa\n'+r.frames.map(f=>[r.model,r.status,f.timeSec,f.xM,f.velocityMps,f.mode,f.inletMPa,f.backWallMPa,f.aheadWallMPa,f.forceResidualMPa,f.seatReactionMPa].join(';')).join('\n');}
+
+export function coupledEquipmentCsv(r:CoupledPlugResult){const e=r.equipment,pass=r.equipmentPassage,stop=r.equipmentStop,rows:unknown[][]=[['model',r.model],['status',r.status],['reason',r.reason],['name',e?.name],['source',e?.source],['rigid_diameter_mm',e?.rigidDiameterMm],['required_drift_mm',e?.minDriftMm],['max_inlet_mpa',e?.maxInletMPa],['max_forward_dp_mpa',e?.maxForwardDifferentialMPa],['max_reverse_dp_mpa',e?.maxReverseDifferentialMPa],['passage_status',pass?.status],['min_id_mm',pass?.minDiameterMm],['drift_margin_mm',pass?.driftMarginMm],['radial_core_clearance_mm',pass?.radialCoreClearanceMm],['attempt_time_s',stop?.timeSec],['attempt_inlet_mpa',stop?.inletMPa],['attempt_dp_mpa',stop?.differentialMPa],['limit_kind',stop?.kind],['limit_mpa',stop?.limitMPa]];return 'metric;value\n'+rows.map(row=>row.map(v=>v===undefined||typeof v==='number'&&!Number.isFinite(v)?'':'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\n');}
