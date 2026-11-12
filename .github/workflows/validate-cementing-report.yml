@@ -70,7 +70,9 @@ jobs:
           model = next((p for p in doc if "Замещение: 3D-кадр t=" in p.get_text() and p.get_image_info()), None)
           assert model is not None, "Missing rendered displacement model page"
           main_text = "\n".join(p.get_text() for p in doc)
-          assert "паспорт оснастки" not in main_text.lower() and "Потрубная ведомость" not in main_text
+          # Passport references are legitimate input provenance; the passport body must stay out.
+          assert "Паспорт оснастки QA-056" in main_text
+          assert "SECRET-PASSPORT-CONTENT" not in main_text and "Потрубная ведомость" not in main_text
           for stem, required, forbidden in [("centralization", "Расчёт центрирования", "Дохождение колонны:"), ("running", "Расчёт дохождения", "Потрубная ведомость")]:
               scoped = fitz.open(d / (stem + "-report.pdf"))
               text = "\n".join(p.get_text() for p in scoped)

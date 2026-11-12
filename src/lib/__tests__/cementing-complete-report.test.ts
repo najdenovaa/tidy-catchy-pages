@@ -71,7 +71,7 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   }
   const library = saveFluidRevision(emptyFluidLibrary(), "slurry", fluidProperties("slurry", slurries[0]), {source:"Протокол библиотеки QA-056",basis:"laboratory",temperatureC:58,pressureMPa:25,notes:"Контроль источника"});
   const reportSlurries = [applyFluidRevision("slurry",slurries[0],library.entries[0],1),...slurries.slice(1)];
-  const eqLib=saveEquipmentRevision(emptyEquipmentLibrary(),equipmentProperties({id:"qa",kind:"shoe",model:"Башмак QA",manufacturer:"Завод QA",quantity:1}),{source:"Паспорт оснастки QA-056",basis:"passport",notes:"Без вложения паспорта"});
+  const eqLib=saveEquipmentRevision(emptyEquipmentLibrary(),equipmentProperties({id:"qa",kind:"shoe",model:"Башмак QA",manufacturer:"Завод QA",quantity:1,note:"SECRET-PASSPORT-CONTENT"}),{source:"Паспорт оснастки QA-056",basis:"passport",notes:"Без вложения паспорта"});
   reportWell.equipment=[...(reportWell.equipment??[]),applyEquipmentRevision({id:"qa",kind:"shoe",model:"",manufacturer:"",quantity:1},eqLib.entries[0],1)];
   const b = await exportToDocx(reportWell, ex.drillingFluid, reportSlurries, buffers, ex.displacementFluids, ex.fractureGradient,
     undefined, cent.results, { volumes: volume, pressureResult: pressure }, { extras, returnBlob: true });
@@ -80,6 +80,8 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   const xml = await zip.file("word/document.xml")!.async("text");
   expect(xml).toContain("Протокол библиотеки QA-056");
   expect(xml).toContain("Паспорт оснастки QA-056");
+  expect(xml).not.toContain("SECRET-PASSPORT-CONTENT");
+  expect(Object.keys(zip.files).some(path=>path.startsWith("word/embeddings/"))).toBe(false);
   expect(xml).toContain("снимок выбранной версии");
   const grids = [...xml.matchAll(/<w:tblGrid>(.*?)<\/w:tblGrid>/g)];
   expect(grids.length).toBeGreaterThan(20);
