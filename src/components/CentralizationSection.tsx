@@ -1,3 +1,5 @@
+import { centralizerMaterialGeometryKey } from "@/lib/materials-equipment-inventory";
+import { boreDiameterAtDepth } from "@/lib/well-geometry";
 import ReportContentsDialog from "./ReportContentsDialog";
 import { exportCasingDesignDocx } from "@/lib/export-casing-design-docx";
 import type { ReportSelection } from "@/lib/cementing-report-options";
@@ -335,6 +337,15 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
     setAutoTurbResults(summary);
   }, [wellData, mudDensity, fluidPV, fluidYP, flowRateLps, turbBladesCount, turbBladeAngle, turbBladeHeight, turbSpacing]);
 
+
+  const geometryKey = JSON.stringify([centralizerMaterialGeometryKey(wellData), mudDensity]);
+  const previousGeometryKey = useRef(geometryKey);
+  useEffect(() => {
+    if (previousGeometryKey.current === geometryKey) return;
+    previousGeometryKey.current = geometryKey;
+    setResults(null); setAutoResults(null); setCalculatedTarget(null);
+    onResultsChange?.(null);
+  }, [geometryKey, onResultsChange]);
 
   const crossSectionRef = useRef<HTMLDivElement>(null);
   const standoffProfileRef = useRef<HTMLDivElement>(null);
@@ -858,7 +869,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             const cased = selectedResult.md <= (wellData.prevCasingDepth || 0) && wellData.prevCasingID > 0;
             const currentIntervals = autoResults ? autoResults.map((iv, i) => ({ id: String(i), fromMD: iv.fromMD, toMD: iv.toMD, jointLength: autoJointLength, centralizersPerJoint: iv.centralizersPerJoint, spec: autoSpec })) : intervals;
             const currentResult = calculateCentralization(wellData, currentIntervals, mudDensity, undefined, undefined, {fromMD:selectedResult.md, toMD:selectedResult.md})[0];
-            return spec && currentResult ? <div className="space-y-2"><label className="text-sm">Выберите глубину для 3D<select aria-label="Глубина 3D" className="block bg-background border border-input rounded p-2" value={selectedResult.md} onChange={e => setSelectedMD(+e.target.value)}>{results.map(r => <option key={r.md} value={r.md}>{r.md} м MD</option>)}</select></label><Centralizer3DInspector targetStandoff={mode === 'auto' ? calculatedTarget ?? undefined : undefined} spec={spec} result={currentResult} azimuth={trajectoryAzimuth(wellData.trajectory, currentResult.md)} casingID={casingID} casingOD={wellData.casingOD} boreDiameter={cased ? wellData.prevCasingID : wellData.holeDiameter} cased={cased} /></div> : null;
+            return spec && currentResult ? <div className="space-y-2"><label className="text-sm">Выберите глубину для 3D<select aria-label="Глубина 3D" className="block bg-background border border-input rounded p-2" value={selectedResult.md} onChange={e => setSelectedMD(+e.target.value)}>{results.map(r => <option key={r.md} value={r.md}>{r.md} м MD</option>)}</select></label><Centralizer3DInspector targetStandoff={mode === 'auto' ? calculatedTarget ?? undefined : undefined} spec={spec} result={currentResult} azimuth={trajectoryAzimuth(wellData.trajectory, currentResult.md)} casingID={casingID} casingOD={wellData.casingOD} boreDiameter={boreDiameterAtDepth(wellData,currentResult.md)} cased={cased} /></div> : null;
           })()}
           {/* Cross-section preview */}
           <Card>
@@ -872,7 +883,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
               <div ref={crossSectionRef} className="flex flex-col sm:flex-row items-center gap-4">
                 <CrossSectionView
                   eccentricity={selectedResult?.eccentricity ?? 0}
-                  holeD={selectedResult && selectedResult.md <= (wellData.prevCasingDepth || 0) && wellData.prevCasingID > 0 ? wellData.prevCasingID : wellData.holeDiameter}
+                  holeD={boreDiameterAtDepth(wellData,selectedResult?.md??0)}
                   casingOD={wellData.casingOD}
                   casingID={casingID}
                   standoff={selectedResult?.standoff}

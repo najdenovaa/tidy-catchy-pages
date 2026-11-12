@@ -1,3 +1,4 @@
+import { createAnnularGeometry, boreDiameterAtDepth } from "@/lib/well-geometry";
 import { useEffect, useRef, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -49,7 +50,7 @@ interface FluidZone {
 function buildFluidZones(
   wellData: WellData, slurries: SlurryInput[], buffers: BufferFluid[], drillingFluid: DrillingFluid
 ): FluidZone[] {
-  const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
+  const geometry = createAnnularGeometry(wellData,wellData.casingDepthMD);
   const zones: FluidZone[] = [];
 
   const cementColors = [
@@ -89,9 +90,8 @@ function buildFluidZones(
 
   let cur = cemInts.length > 0 ? Math.min(...cemInts.map(c => c.top)) : wellData.casingDepthMD;
   for (let i = buffers.length - 1; i >= 0; i--) {
-    const bufH = buffers[i].volume / annVPM;
     const bot = cur;
-    const top = Math.max(0, cur - bufH);
+    const top = geometry.depthAboveVolume(cur,buffers[i].volume);
     zones.push({
       topMD: top,
       botMD: bot,
@@ -214,6 +214,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
   const [rotationOn, setRotationOn] = useState(false);
   const [rotationRPM, setRotationRPM] = useState(25);
 
+  const geometry=useMemo(()=>createAnnularGeometry(wellData,wellData.casingDepthMD),[wellData]);
   const zones = useMemo(
     () => buildFluidZones(wellData, slurries, buffers, drillingFluid),
     [wellData, slurries, buffers, drillingFluid]
@@ -337,6 +338,9 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
       const zenithDeg = zenithAt(md);
       const isOpenHole = md > wellData.prevCasingDepth;
       const zone = getZoneAt(md);
+      const section=geometry.at(md);
+      const localVelocity=section&&section.areaM2>0?avgRate*.001/section.areaM2:0;
+      const localCavern=(boreDiameterAtDepth(wellData,md)/Math.max(1e-9,wellData.holeDiameter))**2;
       const centData = getCentDataAtMD(md);
       const ecc = centData.ecc;
       const turbMult = centData.turbMult;
@@ -393,7 +397,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
               drillingFluid.density,
               drillingFluid.rheology.yp,
               isOpenHole,
-              wellData.cavernCoeff,
+              localCavern,
               distTop,
               distBoundary,
               angle,
@@ -402,7 +406,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
               zone.idx,
               ecc,
               turbMult,
-              avgVel,
+              localVelocity,
               zone.type,
               zone.bufferSubType,
             ) - eccPenalty);
@@ -633,7 +637,7 @@ export default function DisplacementEfficiency({ wellData, slurries, buffers, dr
     ctx.fillText("Засвет (каналы БР)", legX, legY + legH + 12);
     ctx.textAlign = "right";
     ctx.fillText("Полное замещение", legX + legW, legY + legH + 12);
-  }, [zones, mdMin, mdMax, drillingFluid, avgRate, annArea, wellData, getCentDataAtMD, traj, centralizationResults, rotationOn, rotationRPM]);
+  }, [zones, mdMin, mdMax, drillingFluid, avgRate, annArea, wellData, geometry, getCentDataAtMD, traj, centralizationResults, rotationOn, rotationRPM]);
 
   const range = zones.length > 0 ? `${mdMin.toFixed(0)} – ${mdMax.toFixed(0)} м` : "";
 

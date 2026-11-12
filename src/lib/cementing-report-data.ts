@@ -1,3 +1,4 @@
+import { WELL_GEOMETRY_MODEL_VERSION } from "./well-geometry";
 import type { WellData, BufferFluid, SlurryInput, DrillingFluid, DisplacementFluid, VolumeResults } from "./cementing-calculations";
 import { calculateCentralization, autoPlaceCentralizers, type CentralizationResult, type CentralizerInterval, type CentralizerSpec, type TurbulatorPoint, type AutoPlacementInterval } from "./centralization-calculations";
 import type { D2Result, D2Stage } from "./displacement-2d";
@@ -26,7 +27,7 @@ export interface CementingReportExtras {
   figures?: ReportFigure[]; supplements?: ReportSupplement[]; warnings?: string[];
 }
 export function displacementReportKey(p: DisplacementReportInput, settings: DisplacementReportSettings) {
-  return JSON.stringify([p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes, settings]);
+  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes, settings]);
 }
 export function buildCentralizerJointSchedule(depth: number, intervals: CentralizerInterval[]) {
   const rows: NonNullable<CentralizationReportData["joints"]> = [];

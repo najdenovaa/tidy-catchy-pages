@@ -1,3 +1,4 @@
+import { scaleCavernInterval } from "./well-geometry";
 /**
  * Вероятностная оценка риска поглощения и недоподъёма цемента (метод Монте-Карло).
  * Неопределённости: градиенты ГРП/поглощения и пластового давления, кавернозность, реология растворов,
@@ -80,7 +81,7 @@ const scaleRheo = (r: Rheology, k: number): Rheology => ({
 export function actualToc(w: WellData, plannedTop: number, cavernActual: number): number {
   const planned = annularVolumeForInterval(plannedTop, w.casingDepthMD, w.holeDiameter, w.casingOD, w.prevCasingID, w.prevCasingDepth, w.cavernCoeff, w.cavernIntervals);
   const k = cavernActual / Math.max(1e-6, w.cavernCoeff);
-  const actualVol = (top: number) => annularVolumeForInterval(top, w.casingDepthMD, w.holeDiameter, w.casingOD, w.prevCasingID, w.prevCasingDepth, cavernActual, w.cavernIntervals?.map((iv) => ({ ...iv, coeff: iv.coeff * k })));
+  const actualVol = (top: number) => annularVolumeForInterval(top, w.casingDepthMD, w.holeDiameter, w.casingOD, w.prevCasingID, w.prevCasingDepth, cavernActual, w.cavernIntervals?.map(iv=>scaleCavernInterval(iv,k,w.holeDiameter)));
   let lo = 0, hi = w.casingDepthMD;
   if (actualVol(0) <= planned) return 0;
   for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (actualVol(mid) > planned) lo = mid; else hi = mid; }
@@ -119,7 +120,7 @@ export async function runLossRisk(
 
     const w: WellData = {
       ...w0, cavernCoeff: cav,
-      cavernIntervals: w0.cavernIntervals?.map((iv) => ({ ...iv, coeff: Math.max(1, iv.coeff * cav / Math.max(1e-6, w0.cavernCoeff)) })),
+      cavernIntervals: w0.cavernIntervals?.map(iv=>iv.diameterMm?scaleCavernInterval(iv,cav/Math.max(1e-6,w0.cavernCoeff),w0.holeDiameter):({...iv,coeff:Math.max(1,iv.coeff*cav/Math.max(1e-6,w0.cavernCoeff))})),
       reservoirLayers: layers.map((l) => ({ ...l, fracGrad: l.fracGrad * kFrac, absorbGrad: l.absorbGrad * kFrac, porePressureGrad: l.porePressureGrad * kPore })),
       standoffProfile: w0.standoffProfile?.map((p) => ({ ...p, standoffPct: Math.min(100, Math.max(5, p.standoffPct + dSo)) })),
       annularStandoffPct: Math.min(100, Math.max(5, (w0.annularStandoffPct ?? 67) + dSo)),

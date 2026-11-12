@@ -1,3 +1,4 @@
+import { createAnnularGeometry } from "@/lib/well-geometry";
 import { useMemo, useRef } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Text, Line, Grid } from "@react-three/drei";
@@ -180,7 +181,7 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
   const prevCasIR = (wellData.prevCasingID / 2 / 1000) * vizScale;
 
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
-  const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
+  const geometry = useMemo(()=>createAnnularGeometry(wellData,wellData.casingDepthMD),[wellData]);
 
   // Cement sections
   const cementSections = useMemo(() => {
@@ -201,14 +202,13 @@ function WellScene3D({ wellData, slurries, buffers, drillingFluid, displacementF
     const secs: { mdTop: number; mdBot: number; color: string; name: string }[] = [];
     let currentMD = slurries.length > 0 ? Math.min(...slurries.map(s => s.topDepthMD)) : wellData.casingDepthMD;
     for (let i = buffers.length - 1; i >= 0; i--) {
-      const bufH = buffers[i].volume / annVPM;
       const mdBot = currentMD;
-      const mdTop = Math.max(0, currentMD - bufH);
+      const mdTop = geometry.depthAboveVolume(currentMD,buffers[i].volume);
       secs.push({ mdTop, mdBot, color: BUFFER_COLORS_3D[i % BUFFER_COLORS_3D.length], name: buffers[i].name });
       currentMD = mdTop;
     }
     return secs;
-  }, [buffers, slurries, annVPM, wellData.casingDepthMD]);
+  }, [buffers, slurries, geometry, wellData.casingDepthMD]);
 
   const topFluidMD = bufferSections.length > 0
     ? Math.min(...bufferSections.map(b => b.mdTop))
@@ -441,7 +441,7 @@ function CrossSectionInner({ wellData, slurries, buffers, drillingFluid }: Omit<
   const plotH = h - marginTop - marginBottom;
 
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
-  const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
+  const geometry = useMemo(()=>createAnnularGeometry(wellData,wellData.casingDepthMD),[wellData]);
   const totalMD = wellData.casingDepthMD;
 
   // Narrow wellbore — like a real well (~15-20% of plot width)
@@ -470,9 +470,8 @@ function CrossSectionInner({ wellData, slurries, buffers, drillingFluid }: Omit<
   const bufferSections: { top: number; bot: number; color: string; name: string }[] = [];
   let curMD = cementSections.length > 0 ? Math.min(...cementSections.map(c => c.top)) : totalMD;
   for (let i = buffers.length - 1; i >= 0; i--) {
-    const bufH = buffers[i].volume / annVPM;
     const mdBot = curMD;
-    const mdTop = Math.max(0, curMD - bufH);
+    const mdTop = geometry.depthAboveVolume(curMD,buffers[i].volume);
     bufferSections.push({ top: mdTop, bot: mdBot, color: BUFFER_COLORS_3D[i % BUFFER_COLORS_3D.length], name: buffers[i].name });
     curMD = mdTop;
   }

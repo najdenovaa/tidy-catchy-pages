@@ -1,3 +1,4 @@
+import { createAnnularGeometry, boreDiameterAtDepth } from "./well-geometry";
 import { centralizerDeflection, centralizerModelNotes } from "./centralizer-response";
 // Centralization / eccentricity calculation engine
 import type { WellData, TrajectoryPoint } from "./cementing-calculations";
@@ -118,12 +119,7 @@ export function autoPlaceTurbulators(
   // Re-by-depth: local annular cross-section + temperature-corrected PV
   for (let md = 0; md <= wellData.casingDepthMD; md += step) {
     // Local bore diameter
-    let boreDiameter_mm: number;
-    if (md <= prevCasingDepth && prevCasingID > 0) {
-      boreDiameter_mm = prevCasingID; // внутри предыдущей колонны
-    } else {
-      boreDiameter_mm = wellData.holeDiameter * Math.sqrt(cavernCoeff); // открытый ствол с кавернозностью
-    }
+    const boreDiameter_mm = boreDiameterAtDepth(wellData,md);
 
     const dh_m = (boreDiameter_mm - wellData.casingOD) / 1000;
     if (dh_m <= 0) continue;
@@ -307,11 +303,8 @@ export function calculateCentralization(
   const step = 5;
   const wpm = casingWeightPerMeter(wellData.casingOD, wellData.casingWall);
   const bf = buoyancyFactor(mudDensity);
-  const rc_mm = radialClearance(wellData.holeDiameter, wellData.casingOD);
-  const rc_m = rc_mm / 1000;
+  const geometry=createAnnularGeometry(wellData,wellData.casingDepthMD);
   const EI = STEEL_E * casingMomentOfInertia(wellData.casingOD, wellData.casingWall);
-
-  if (rc_mm <= 0) return results;
 
   // Pre-sort turbulator points for fast lookup
   const turbPoints = turbulatorPoints?.slice().sort((a, b) => a.md - b.md) ?? [];
@@ -325,12 +318,7 @@ export function calculateCentralization(
   for (let md = mdStart; md <= mdEnd; md += step) {
     const { tvd, zenith } = interpolateTrajectory(wellData.trajectory, md);
 
-    // Локальный диаметр ствола (предыдущая колонна vs открытый ствол).
-    // Для центрирования используем номинальный диаметр без кавернозности
-    // (центраторы опираются на стенку реального ствола).
-    const boreDia_mm = (md <= prevCasingDepth && prevCasingID > 0)
-      ? prevCasingID
-      : wellData.holeDiameter;
+    const boreDia_mm = geometry.at(md)?.diameterMm ?? boreDiameterAtDepth(wellData,md);
     const rc_mm_local = (boreDia_mm - wellData.casingOD) / 2;
     const rc_m_local = rc_mm_local / 1000;
     const annularGap_mm = rc_mm_local;
@@ -493,11 +481,9 @@ export function autoPlaceCentralizers(
 ): AutoPlacementInterval[] {
   const wpm = casingWeightPerMeter(wellData.casingOD, wellData.casingWall);
   const bf = buoyancyFactor(mudDensity);
-  const rc_mm = radialClearance(wellData.holeDiameter, wellData.casingOD);
-  const rc_m = rc_mm / 1000;
   const EI = STEEL_E * casingMomentOfInertia(wellData.casingOD, wellData.casingWall);
 
-  if (rc_mm <= 0 || EI <= 0) return [];
+  if (EI <= 0) return [];
 
   const MAX_CPJ = 8.0;
 

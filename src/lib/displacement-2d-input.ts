@@ -1,3 +1,4 @@
+import { boreDiameterAtDepth } from "./well-geometry";
 /**
  * Сборка входных данных 2D-модели вытеснения из программы цементирования:
  * геометрия по глубине (ствол / предыдущая колонна, каверны, центрирование, зенит),
@@ -62,7 +63,7 @@ export function buildDisplacementInput(p: {
   const rC = w.casingOD / 2000;
   const geom = (md: number) => {
     const inPrev = w.prevCasingDepth > 0 && md < w.prevCasingDepth && w.prevCasingID > 0;
-    const rH = inPrev ? w.prevCasingID / 2000 : (w.holeDiameter * Math.sqrt(getCavernCoeffAtDepth(md, w.cavernCoeff || 1, w.cavernIntervals))) / 2000;
+    const rH = boreDiameterAtDepth(w,md) / 2000;
     return { rHole: rH, rCasing: rC, standoff: Math.min(1, Math.max(0.05, interp(so, md, soDef))), inclDeg: interp(zen, md, 0) };
   };
 

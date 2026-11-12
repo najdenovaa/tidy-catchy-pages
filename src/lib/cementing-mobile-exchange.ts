@@ -160,7 +160,7 @@ export function importMobileCementingText(text: string, current: CementingSnapsh
       prevCasingID:num(m.prevCasingID,0),ckodDepth:num(m.ckodDepth,0),
       cavernCoeff:num(m.cavernCoeff,1),cementRiseHeight:num(m.cementTopMD,0),
       trajectory:[{md:0,tvd:0,zenith:0,azimuth:0},{md:casingDepthMD,tvd,zenith:0,azimuth:0},{md:wellDepthMD,tvd:wellDepthMD ? tvd*wellDepthMD/casingDepthMD : tvd,zenith:0,azimuth:0}].filter((p,i,a)=>i===0 || p.md>a[i-1].md),
-      casingSections:undefined,cavernIntervals:undefined,reservoirLayers:[],
+      casingSections:undefined,cavernIntervals:undefined,caliperLog:undefined,reservoirLayers:[],
       standoffProfile:undefined,
     },
     drillingFluid:{name:"Буровой раствор",density:mudDensity,rheology:{pv:num(m.mudPV,0),yp:num(m.mudYP,0)},fluidLoss:0},

@@ -1,3 +1,5 @@
+import WellGeometrySummary from "./WellGeometrySummary";
+import { cavernIntervalCoeff } from "@/lib/well-geometry";
 import WellSurveyImport from "./WellSurveyImport";
 import { CementProductPicker, ProductDetails } from "./CementProductPicker";
 import { productAdditive } from "@/lib/cement-product-catalog";
@@ -38,7 +40,7 @@ interface Props {
   onLoadExample?: () => void;
 }
 
-type WellNumericKey = Exclude<keyof WellData, 'equipment' | 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers' | 'standoffProfile' | 'casingType' | 'frictionCalibration'>;
+type WellNumericKey = Exclude<keyof WellData, 'equipment' | 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers' | 'standoffProfile' | 'casingType' | 'frictionCalibration' | 'caliperLog'>;
 const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "wellDepthMD", label: "Глубина скважины (по стволу)", unit: "м" },
   { key: "wellDepthTVD", label: "Глубина скважины (по вертикали)", unit: "м" },
@@ -600,6 +602,7 @@ export default function InputSection(props: Props) {
               )}
             </div>
 
+            <WellGeometrySummary wellData={wellData} />
             <WellSurveyImport kind="caliper" wellData={wellData} onChange={onWellDataChange} />
 
             {/* Интервалы кавернозности */}
@@ -611,7 +614,7 @@ export default function InputSection(props: Props) {
                     const intervals = [...(wellData.cavernIntervals || [])];
                     intervals.push({ fromMD: wellData.prevCasingDepth || 0, toMD: wellData.casingDepthMD || 1000, coeff: wellData.cavernCoeff || 1.0 });
                     setCavernPage(Math.floor((intervals.length-1)/100));
-                    onWellDataChange({ ...wellData, cavernIntervals: intervals });
+                    onWellDataChange({ ...wellData, cavernIntervals: intervals, ...(wellData.caliperLog?{caliperLog:{...wellData.caliperLog,intervalsEdited:true}}:{}) });
                   }}
                   className="text-xs text-primary hover:underline"
                 >+ интервал</button>
@@ -625,19 +628,19 @@ export default function InputSection(props: Props) {
                     <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
                       <Input type="number" step="any" value={iv.fromMD || ""} onChange={(e) => {
                         const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], fromMD: parseFloat(e.target.value) || 0 };
-                        onWellDataChange({ ...wellData, cavernIntervals: arr });
+                        onWellDataChange({ ...wellData, cavernIntervals: arr, ...(wellData.caliperLog?{caliperLog:{...wellData.caliperLog,intervalsEdited:true}}:{}) });
                       }} className="h-7 text-xs min-w-[100px]" />
                       <Input type="number" step="any" value={iv.toMD || ""} onChange={(e) => {
                         const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], toMD: parseFloat(e.target.value) || 0 };
-                        onWellDataChange({ ...wellData, cavernIntervals: arr });
+                        onWellDataChange({ ...wellData, cavernIntervals: arr, ...(wellData.caliperLog?{caliperLog:{...wellData.caliperLog,intervalsEdited:true}}:{}) });
                       }} className="h-7 text-xs min-w-[100px]" />
-                      <Input type="number" step="0.01" value={iv.coeff || ""} onChange={(e) => {
-                        const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], coeff: parseFloat(e.target.value) || 0 };
-                        onWellDataChange({ ...wellData, cavernIntervals: arr });
+                      <Input type="number" step="0.01" value={Number(cavernIntervalCoeff(iv,wellData.holeDiameter).toFixed(6)) || ""} onChange={(e) => {
+                        const arr = [...wellData.cavernIntervals!]; arr[i] = { ...arr[i], diameterMm:undefined, coeff: parseFloat(e.target.value) || 0 };
+                        onWellDataChange({ ...wellData, cavernIntervals: arr, ...(wellData.caliperLog?{caliperLog:{...wellData.caliperLog,intervalsEdited:true}}:{}) });
                       }} className="h-7 text-xs min-w-[100px]" />
                       <button onClick={() => {
                         const arr = wellData.cavernIntervals!.filter((_, j) => j !== i);
-                        onWellDataChange({ ...wellData, cavernIntervals: arr.length > 0 ? arr : undefined });
+                        onWellDataChange({ ...wellData, cavernIntervals: arr.length > 0 ? arr : undefined, ...(wellData.caliperLog?{caliperLog:{...wellData.caliperLog,intervalsEdited:true}}:{}) });
                       }} className="text-xs text-destructive">✕</button>
                     </div>
                   ))}

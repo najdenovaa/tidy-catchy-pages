@@ -1,3 +1,4 @@
+import { boreDiameterAtDepth } from "./well-geometry";
 import { centralizerInventory } from "./cementing-equipment";
 import { allowedReportFigure, reportIncludes, type ReportScope, type ReportSelection } from "./cementing-report-options";
 import { calculateCasingRunning, normalizeRunningSettings } from "./casing-running-analysis";
@@ -11,7 +12,7 @@ const f = (v: unknown, n = 2) => typeof v === "number" && Number.isFinite(v) ? v
 const p = (text: string) => new Paragraph({ spacing: { after: 100 }, children: [new TextRun({ text: text.replace(/[—–]/g, "-"), size: 20, font: "Calibri" })] });
 const h = (text: string) => new Paragraph({ text, heading: HeadingLevel.HEADING_2, keepNext: true, spacing: { before: 200, after: 100 } });
 export function localBore(w: WellData, md: number) {
-  return md <= (w.prevCasingDepth || 0) && w.prevCasingID > 0 ? w.prevCasingID : w.holeDiameter;
+  return boreDiameterAtDepth(w,md);
 }
 export function centralizerReportSamples(w: WellData, data: CentralizationReportData) {
   const withSupport = data.results.filter(r => r.hasCentralizer);

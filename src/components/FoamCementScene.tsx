@@ -1,3 +1,4 @@
+import { boreDiameterAtDepth } from "@/lib/well-geometry";
 import { useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
@@ -47,12 +48,7 @@ function Scene({ frame, wellData }: { frame: FoamFrame; wellData: WellData }) {
           direction.normalize(),
         );
       const hole =
-        c.md <= w.prevCasingDepth
-          ? w.prevCasingID
-          : w.holeDiameter *
-            Math.sqrt(
-              getCavernCoeffAtDepth(c.md, w.cavernCoeff, w.cavernIntervals),
-            );
+        boreDiameterAtDepth(w,c.md);
       const radialScale = 0.35 / w.holeDiameter;
       return {
         cell: c,

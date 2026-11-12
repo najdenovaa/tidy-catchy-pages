@@ -1,3 +1,4 @@
+import { normalizeCaliperLog } from "./well-geometry";
 import { normalizeRunningSettings } from "./casing-running-analysis";
 import { normalizeCentralizerMaterials } from "./materials-equipment-inventory";
 import { normalizeLogisticsSettings } from "./cement-logistics";
@@ -164,6 +165,7 @@ function normalizeCavernInterval(value: unknown): CavernInterval {
     fromMD: toNumber(source.fromMD, 0),
     toMD: toNumber(source.toMD, 0),
     coeff: toNumber(source.coeff, 1),
+    ...(toNumber(source.diameterMm,0)>0 ? {diameterMm:toNumber(source.diameterMm,0)} : {}),
   };
 }
 
@@ -196,7 +198,9 @@ export function normalizeWellData(value: unknown): WellData {
     ? source.reservoirLayers.filter(isRecord).map(normalizeReservoirLayer)
     : undefined;
 
+  const caliperLog=normalizeCaliperLog(source.caliperLog);
   return {
+    ...(caliperLog?{caliperLog}:{}),
     equipment: normalizeEquipment(source.equipment),
     ...(source.runningSettings ? { runningSettings: normalizeRunningSettings(source.runningSettings) } : {}),
     ...(normalizeCentralizerMaterials(source.centralizerMaterials) ? { centralizerMaterials: normalizeCentralizerMaterials(source.centralizerMaterials) } : {}),

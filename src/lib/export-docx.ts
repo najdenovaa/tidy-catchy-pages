@@ -1,3 +1,4 @@
+import { cavernIntervalCoeff, boreDiameterAtDepth } from "./well-geometry";
 import { reportIncludes, type ReportSelection } from "./cementing-report-options";
 import { equipmentMaterialInventory, centralizerMaterialGeometryKey } from "./materials-equipment-inventory";
 import { centralizerInventory } from "./cementing-equipment";
@@ -233,21 +234,29 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
     result.push(fixedReportTable(3, { width: { size: 100, type: WidthType.PERCENTAGE }, layout: TableLayoutType.FIXED, rows: csRows }) as any);
   }
 
+  if(wellData.caliperLog){const c=wellData.caliperLog;result.push(kvTable([
+    {label:"Источник кавернометрии LAS",value:c.fileName+"; кривая "+c.curve},
+    {label:"Исходные отсчёты",value:String(c.samples.length)+"; единицы файла "+c.depthUnit+" / "+c.diameterUnit},
+    {label:"Обработка профиля",value:"Шаг "+c.intervalStepM+" м; допустимый разрыв "+c.maxGapM+" м; измеренный диаметр независим от номинального"},
+    {label:"Правки интервалов после импорта",value:c.intervalsEdited?"Есть; исходные отсчёты сохранены в проекте":"Нет"},
+  ]) as any);}
   // Cavern intervals
   if (wellData.cavernIntervals && wellData.cavernIntervals.length > 0) {
     result.push(new Paragraph({ spacing: { before: 150, after: 80 }, children: [new TextRun({ text: "Интервалы кавернозности (открытый ствол):", bold: true, size: 20, font: "Calibri" })] }));
-    const ciHeaders = ["От (MD), м", "До (MD), м", "Коэфф. каверн."];
+    const measured=wellData.cavernIntervals.some(iv=>iv.diameterMm!==undefined);
+    const ciHeaders = ["От (MD), м", "До (MD), м", "Коэфф. каверн.",...(measured?["Изм. экв. Ø, мм"]:[])];
     const ciRows = [
       new TableRow({ children: ciHeaders.map(h => headerCell(h)) }),
       ...wellData.cavernIntervals.map(iv => new TableRow({
         children: [
           cell(fmt(iv.fromMD, 0), { align: AlignmentType.CENTER }),
           cell(fmt(iv.toMD, 0), { align: AlignmentType.CENTER }),
-          cell(fmt(iv.coeff, 2), { align: AlignmentType.CENTER }),
+          cell(fmt(cavernIntervalCoeff(iv,wellData.holeDiameter), 2), { align: AlignmentType.CENTER }),
+          ...(measured?[cell(iv.diameterMm!==undefined?fmt(iv.diameterMm,1):"-",{align:AlignmentType.CENTER})]:[]),
         ],
       })),
     ];
-    result.push(fixedReportTable(3, { width: { size: 100, type: WidthType.PERCENTAGE }, layout: TableLayoutType.FIXED, rows: ciRows }) as any);
+    result.push(fixedReportTable(measured?4:3, { width: { size: 100, type: WidthType.PERCENTAGE }, layout: TableLayoutType.FIXED, rows: ciRows }) as any);
   }
 
   // Trajectory
@@ -415,9 +424,9 @@ function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volume
 
   const volRows = [
     { label: "Внутренний диаметр ОК", value: `${fmt(volumes.casingID, 1)} мм` },
-    { label: "Эквивалентный диаметр (с каверн.)", value: `${fmt(volumes.equivalentDiameter, 1)} мм` },
+    { label: "Средний экв. диаметр открытого ствола", value: `${fmt(volumes.equivalentDiameter, 1)} мм` },
     { label: "Межтрубное пр-во", value: `${fmt(volumes.annularVolumePerMeterPrevCasing, 4)} м³/м` },
-    { label: "Затрубное пр-во", value: `${fmt(volumes.annularVolumePerMeter, 4)} м³/м` },
+    { label: "Затрубье: среднее по открытому стволу", value: `${fmt(volumes.annularVolumePerMeter, 4)} м³/м` },
     { label: "Внутр. объём колонны", value: `${fmt(volumes.pipeVolumePerMeter, 4)} м³/м` },
     { label: "Расчётный объём продавки", value: `${fmt(volumes.displacementVolume, 1)} м³` },
     { label: "С учётом коэф. сжатия", value: `${fmt(volumes.displacementVolumeWithCompression, 1)} м³` },
@@ -808,11 +817,11 @@ function buildTrajectoryPage(wellData: WellData, visualImages?: Record<string, s
       children: [new TextRun({ text: "Конструкция скважины (поперечный разрез):", bold: true, size: 20, font: "Calibri" })],
     }),
     kvTable([
-      { label: "Диаметр ствола (с каверн.)", value: `${fmt(wellData.holeDiameter * Math.sqrt(wellData.cavernCoeff), 1)} мм` },
+      { label: "Проход у башмака по профилю", value: `${fmt(boreDiameterAtDepth(wellData,wellData.casingDepthMD), 1)} мм` },
       { label: "Наружный диаметр ОК", value: `${wellData.casingOD} мм` },
       { label: "Внутренний диаметр ОК", value: `${fmt(casingID, 1)} мм` },
       { label: "Толщина стенки ОК", value: `${wellData.casingWall} мм` },
-      { label: "Зазор затрубья (одностор.)", value: `${fmt((wellData.holeDiameter - wellData.casingOD) / 2, 1)} мм` },
+      { label: "Радиальный зазор у башмака", value: `${fmt((boreDiameterAtDepth(wellData,wellData.casingDepthMD) - wellData.casingOD) / 2, 1)} мм` },
       { label: "Предыдущая колонна (OD/ID)", value: `${wellData.prevCasingOD} / ${wellData.prevCasingID} мм` },
       { label: "Глубина предыдущей колонны", value: `${wellData.prevCasingDepth} м` },
     ]) as any,
