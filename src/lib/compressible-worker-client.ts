@@ -1,3 +1,4 @@
+import {transportRefinementInputs,summarizeTransportRefinement} from './transport-refinement';
 import type {CementingSnapshot} from './cementing-normalizers';
 import {transportInputKey,type TransportResult} from './compressible-transport';
 export function startTransportWorker(input:CementingSnapshot,onProgress?:(fraction:number)=>void){
@@ -10,4 +11,15 @@ export function startTransportWorker(input:CementingSnapshot,onProgress?:(fracti
   worker.postMessage(input);
  });
  return {promise,cancel:()=>{worker.terminate();rejectTask(new Error('Расчёт отменён.'));}};
+}
+
+/** Sequential Workers bound memory and allow cancelling between as well as during runs. */
+export function startTransportRefinement(input:CementingSnapshot,onProgress?:(fraction:number)=>void){
+ const plan=transportRefinementInputs(input);let active:ReturnType<typeof startTransportWorker>|undefined,cancelled=false;
+ const promise=(async()=>{const runs:TransportResult[]=[];for(let i=0;i<plan.length;i++){
+  if(cancelled)throw new Error('Расчёт отменён.');
+  active=startTransportWorker(plan[i].input,f=>onProgress?.((i+f)/plan.length));const result=await active.promise;
+  if(cancelled)throw new Error('Расчёт отменён.');runs.push(result);onProgress?.((i+1)/plan.length);
+ }return {...runs[0],study:summarizeTransportRefinement(input,runs)};})();
+ return {promise,cancel:()=>{cancelled=true;active?.cancel();}};
 }

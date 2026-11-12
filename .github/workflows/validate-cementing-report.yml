@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/lib/*report*'
       - 'src/lib/compressible-*'
+      - 'src/lib/transport-refinement*'
       - 'src/lib/__tests__/compressible-report.test.ts'
       - 'src/lib/export-docx.ts'
       - 'src/lib/cement-recipe-designer.ts'
@@ -85,7 +86,9 @@ jobs:
               assert all(abs(p.rect.width - 595.3) < 2 for p in scoped)
           transport = fitz.open(d / "transport-report.pdf")
           assert any("1D-перенос: давление" in " ".join(p.get_text().split()) and p.get_image_info() for p in transport), "Missing transport pressure plot"
-          assert "накопленная невязка" in " ".join(" ".join(p.get_text().split()) for p in transport)
+          transport_text = " ".join(" ".join(p.get_text().split()) for p in transport)
+          assert "накопленная невязка" in transport_text
+          assert "Чувствительность к сетке и шагу" in transport_text and "L1 состава (0-2)" in transport_text
           print("Rendered", len(doc), "A4 pages; approval-column separation", round(right.x0 - left.x0), "pt; model page", model.number + 1)
           preview = Image.new("RGB", (1000, 710), "white")
           for i, page in enumerate([title, model]):
