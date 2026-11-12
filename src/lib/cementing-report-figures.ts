@@ -42,6 +42,13 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
       images.push(tag(reportSeriesPlot('Стенд: лабораторная скорость, t='+hf.timeSec.toFixed(3)+' с','plugBenchmark',hf.facesM,'Координата стенда, м','Скорость, м/с',[{name:'Жидкость',color:'#059669',values:hf.laboratoryVelocityMps}])));
     }
 
+    const coupled=bench.coupled,cf=coupled?.frames.at(-1),cn=coupled?.cellsPerChamber;
+    if(coupled&&cf&&cn){
+      images.push(tag(reportSeriesPlot('Связанный стенд: движение и посадка','plugBenchmark',coupled.frames.map(f=>f.timeSec),'Время, с','Положение, м',[{name:'Связанная траектория',color:'#7c3aed',values:coupled.frames.map(f=>f.xM)}])));
+      for(const [start,end,name,color] of [[0,cn,'сзади','#ef4444'],[cn,2*cn,'впереди','#0284c7']] as const){const indices=Array.from({length:end-start},(_,j)=>start+j);images.push(tag(reportSeriesPlot('Связанный стенд: давление '+name+', t='+cf.timeSec.toFixed(3)+' с','plugBenchmark',indices.flatMap(i=>[cf.facesM[i],cf.facesM[i+1]]),'Координата стенда, м','Давление, МПа',[{name:'Связанное решение',color,values:indices.flatMap(i=>[cf.pressuresMPa[i],cf.pressuresMPa[i]])}])));}
+      images.push(tag(reportSeriesPlot('Связанный стенд: скорость жидкости','plugBenchmark',cf.facesM,'Координата стенда, м','Скорость, м/с',[{name:'Жидкость',color:'#059669',values:cf.laboratoryVelocityMps}])));
+    }
+
   }
   const transport=extras.compressibleTransport;
   if(scope==='cementing'&&transport?.frames.length){
