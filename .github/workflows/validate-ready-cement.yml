@@ -24,6 +24,7 @@ on:
       - "src/lib/compressible-*"
       - "src/lib/flow-boundaries*"
       - "src/lib/transport-refinement*"
+      - "src/lib/transport-mesh*"
       - "src/components/CompressibleTransport*"
       - "src/components/PvtHydrostatics*"
       - "src/components/StopStorage*"

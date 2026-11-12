@@ -1000,9 +1000,10 @@ export async function exportToDocx(
       ...r.components.map(f=>noteParagraph(f.name+': накопленная невязка '+f.residualKg.toExponential(3)+' кг.')),
       ...r.limitations.map(noteParagraph),...(r.boundaryEvents??[]).map(e=>noteParagraph('t = '+fmt(e.timeMin,3)+' мин; ЦКОД '+fmt(e.depthMD,1)+' м. '+e.note)));
       if(r.study?.inputKey===r.inputKey){const study=r.study;content.push(sectionTitle('Чувствительность к сетке и шагу'),noteParagraph(study.note),noteParagraph('Полных прогонов: '+study.rows.filter(x=>x.status==='complete').length+' из '+study.rows.length+'.'),
-        gridTable(['Прогон','Ячеек','Длина, м','Макс. шаг, с','Шагов','Баланс, кг'],study.rows.map(x=>[x.label,String(x.cellCount),fmt(x.actualCellLengthM,2),fmt(x.stepSeconds,2),String(x.acceptedSteps),x.maxMassResidualKg.toExponential(2)])) as any,
+        gridTable(['Прогон','Ячеек','Длина min-max, м','Макс. шаг, с','Шагов','Баланс, кг'],study.rows.map(x=>[x.label,String(x.cellCount),x.minCellLengthM.toPrecision(4)+' - '+x.maxCellLengthM.toPrecision(4),fmt(x.stepSeconds,2),String(x.acceptedSteps),x.maxMassResidualKg.toExponential(2)])) as any,
         ...study.rows.filter(x=>x.status!=='complete').map(x=>noteParagraph(x.label+': остановлен. '+x.reason)),
-        gridTable(['Сравнение','Разность подачи, МПа','Разность возврата, м³','L1 состава (0-2)'],study.comparisons.map(x=>[x.label,x.maxInletDifferenceMPa.toExponential(3),x.returnDifferenceM3.toExponential(3),x.compositionL1.toExponential(3)])) as any);}
+        gridTable(['Сравнение','Разность подачи, МПа','Разность возврата, м³','L1 состава (0-2)'],study.comparisons.map(x=>[x.label,x.maxInletDifferenceMPa.toExponential(3),x.returnDifferenceM3.toExponential(3),x.compositionL1.toExponential(3)])) as any,
+        ...study.comparisons.filter(x=>x.barrierTransferredDifferenceKg!==undefined).map(x=>noteParagraph(x.label+': разность массы через ЦКОД '+x.barrierTransferredDifferenceKg!.toExponential(3)+' кг. До перекрытия: '+(x.beforeClosureMPa===undefined?'нет общей выборки':x.beforeClosureMPa.toExponential(3)+' МПа')+'. После перекрытия: '+(x.afterClosureMPa===undefined?'нет общей выборки или перекрытие не задано':x.afterClosureMPa.toExponential(3)+' МПа; общая выборка с '+fmt(x.afterComparisonStartMin!,3)+' мин')+'.')));}
 
     }
     add('compressibleTransport','Исследовательский сжимаемый перенос',content);
