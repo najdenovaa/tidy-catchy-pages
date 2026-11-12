@@ -581,6 +581,15 @@ export default function CementingAnimation({
     let cumDisplacementVol = 0;
 
     return pressureData.map((point, idx) => {
+      if(point.transportColumns){
+        const label=(id:string,type:FluidKey)=>{const [role,index]=id.split(':');return role==='cement'?slurries[Number(index)]?.name||FLUID_LABELS.cement:role==='buffer'?buffers[Number(index)]?.name||FLUID_LABELS.buffer:FLUID_LABELS[type];};
+        const pipeSegments=point.transportColumns.pipe.map(b=>({fluid:b.fluidType,label:label(b.fluidId,b.fluidType),topMD:b.topMD,botMD:b.botMD,fracTop:b.topMD/Math.max(casingDepthMD,1),fracBot:b.botMD/Math.max(casingDepthMD,1),volM3:b.volumeM3}));
+        const annulusSegments=point.transportColumns.annulus.map(b=>({fluid:b.fluidType,label:label(b.fluidId,b.fluidType),topMD:b.topMD,botMD:b.botMD,heightM:b.botMD-b.topMD}));
+        const bottom=point.transportColumns.annulus[0],flowConnected=(point.shoeRateLps??0)>EPS;
+        const activeExit=bottom&&flowConnected?{fluid:bottom.fluidType,label:label(bottom.fluidId,bottom.fluidType),volumeM3:bottom.volumeM3}:null;
+        return {pipeSegments,annulusSegments,activeExit,flowConnected} as VisualFrame;
+      }
+
       const isFlushStage = point.processKind?point.processKind==='surfaceFlush':/промывка лвд/i.test(point.stage);
       const deltaVol = Math.max(0, point.cumulativeVolume - lastCumVol);
 

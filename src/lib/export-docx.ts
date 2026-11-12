@@ -945,6 +945,15 @@ export async function exportToDocx(
   const scheduleContent = buildSchedulePage(pressureResult.processContract??buildProcessContract({wellData,drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin:preComputed?.flushTimeMin??10,flushVolumeM3:preComputed?.flushVolumeM3??0},volumes.displacementVolumeWithCompression));
   if(pressureResult.processAudit){const a=pressureResult.processAudit;scheduleContent.push(kvTable([{label:'Моделирование: закачано до Стоп',value:fmt(a.pumpedVolumeM3,3)+' м³'},{label:'Разница с планом порций',value:fmt(a.differenceM3,3)+' м³'},{label:'Время Стоп в модели',value:fmt(pressureResult.stopTime,2)+' мин'}]) as any,noteParagraph(a.reason));}
 
+  if(pressureResult.inventory){
+    const a=pressureResult.inventory,names=new Map(pressureResult.processContract?.fluids.map(f=>[f.id,f.name])??[]);names.set('mud:initial','Исходный буровой раствор');
+    scheduleContent.push(noteParagraph('Баланс жидкостей в скважине'),kvTable([
+      {label:'Закачано / расчётный возврат',value:fmt(a.injectedM3,3)+' / '+fmt(a.returnedM3,3)+' м³'},
+      {label:'Незаполненный объём трубы на Стоп',value:fmt(a.pipeVoidM3,3)+' м³'},
+      {label:'Максимальная пошаговая невязка',value:a.maxStepResidualM3.toExponential(2)+' м³; '+a.maxStepResidualKg.toExponential(2)+' кг'},
+      {label:'Масса в скважине / на возврате',value:fmt(a.retainedMassKg/1000,3)+' / '+fmt(a.returnedMassKg/1000,3)+' т'}
+    ]) as any,gridTable(['Жидкость','Исходно, м³','Вход, м³','Труба, м³','Затрубье, м³','Возврат, м³'],a.fluids.map(f=>[names.get(f.fluidId)??f.fluidId,fmt(f.initialM3,3),fmt(f.injectedM3,3),fmt(f.pipeM3,3),fmt(f.annulusM3,3),fmt(f.returnedM3,3)])) as any,...a.limitations.map(noteParagraph));
+  }
   const materialsContent = buildMaterialsPage(materials, wellData);
   const labContent = buildLabPage(wellData, slurries, volumes, pressureResult);
   const normsContent = buildNormsPage(wellData, slurries, buffers, drillingFluid, volumes, pressureResult);

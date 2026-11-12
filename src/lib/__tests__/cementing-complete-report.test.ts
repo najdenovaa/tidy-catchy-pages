@@ -85,6 +85,9 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   expect(xml).toContain("Бингам: МНК по Fann");
   expect(xml).toContain("RMSE, Па");
   expect(xml).toContain("Проверка интеграла Q × dt");
+  expect(xml).toContain("Баланс жидкостей в скважине");
+  expect(xml).toContain("Максимальная пошаговая невязка");
+  expect(xml).toContain("Физическая сжимаемость");
   expect(xml).not.toContain("Опрессовка ЛВД (25 МПа)");
   expect(xml).toContain("Паспорт оснастки QA-056");
   expect(xml).not.toContain("SECRET-PASSPORT-CONTENT");
