@@ -1,2 +1,2 @@
-import {simulateMovingPlug} from './moving-plug';
-self.onmessage=e=>{try{self.postMessage({type:'result',result:simulateMovingPlug(e.data)});}catch(error){self.postMessage({type:'error',message:error instanceof Error?error.message:String(error)});}};
+import {evaluatePlugBench} from './plug-bench';
+self.onmessage=e=>{try{const result=evaluatePlugBench(e.data);if(!result)throw new Error('Не задан случай стенда.');self.postMessage({type:'result',result});}catch(error){self.postMessage({type:'error',message:error instanceof Error?error.message:String(error)});}};
