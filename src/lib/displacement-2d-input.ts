@@ -1,3 +1,4 @@
+import {rheologyResolution} from "./cement-rheology";
 import { boreDiameterAtDepth } from "./well-geometry";
 /**
  * Сборка входных данных 2D-модели вытеснения из программы цементирования:
@@ -54,6 +55,11 @@ export function buildDisplacementInput(p: {
 }): { input: Omit<D2Input, "onProgress">; meta: D2Meta } {
   const { wellData: w, slurries, buffers, drillingFluid: mudIn, displacementFluids, volumes } = p;
   const notes: string[] = [];
+  const inputRheologies=[mudIn.rheology,...(mudIn.rheologyBottomhole?[mudIn.rheologyBottomhole]:[]),...buffers.map(f=>f.rheology),...slurries.map(f=>f.rheology),...displacementFluids.map(f=>f.rheology)];
+  for(const r of inputRheologies){const resolved=rheologyResolution(r);if(!resolved.valid)throw new Error(resolved.error);if(r.model==='hb'||r.model==='powerLaw')throw new Error('2D-модель вытеснения использует закон Бингама и пока не поддерживает выбранную нелинейную модель. Основная гидравлика использует выбранную модель; 2D не подменяет её PV/YP.');}
+  if(inputRheologies.some(r=>r.fann&&!r.model))notes.push('Прежний 2D-решатель использует PV/YP Бингама; Fann в этой модели не меняет закон течения.');
+  const d2Rheology=(r:typeof mudIn.rheology)=>{const o=rheologyResolution(r);return r.model==='bingham'&&o.fit?{...r,pv:o.fit.bingham.pv,yp:o.fit.bingham.ypPa}:r;};
+
   const shoe = w.casingDepthMD;
   const traj = getEffectiveTrajectory(w).slice().sort((a, b) => a.md - b.md);
   const zen = traj.map((t) => ({ md: t.md, v: t.zenith || 0 }));
@@ -69,18 +75,18 @@ export function buildDisplacementInput(p: {
 
   // Жидкости
   const colors: string[] = [];
-  const mudR = effectiveRheology(mudIn.rheologyBottomhole && (mudIn.rheologyBottomhole.pv > 0 || mudIn.rheologyBottomhole.yp > 0) ? mudIn.rheologyBottomhole : mudIn.rheology, "mud");
+  const mudR = d2Rheology(effectiveRheology(mudIn.rheologyBottomhole && (mudIn.rheologyBottomhole.pv > 0 || mudIn.rheologyBottomhole.yp > 0) ? mudIn.rheologyBottomhole : mudIn.rheology, "mud"));
   const fluids: D2Fluid[] = [{ name: mudIn.name || "Буровой раствор", density: mudIn.density, pv: mudR.pv / 1000, yp: mudR.yp, kind: "mud" }];
   colors.push(D2_COLORS.mud[0]);
   const bufIdx = buffers.map((b, i) => {
-    const r = effectiveRheology(b.rheology, "buffer");
+    const r = d2Rheology(effectiveRheology(b.rheology, "buffer"));
     fluids.push({ name: b.name || `Буфер ${i + 1}`, density: b.density, pv: r.pv / 1000, yp: r.yp, kind: "spacer" });
     colors.push(D2_COLORS.spacer[i % D2_COLORS.spacer.length]);
     return fluids.length - 1;
   });
   const slIdx = slurries.map((s, i) => {
     const rho = s.density < 10 ? s.density * 1000 : s.density;
-    const r = effectiveRheology(s.rheology, rho >= 1650 ? "heavy_cement" : "light_cement");
+    const r = d2Rheology(effectiveRheology(s.rheology, rho >= 1650 ? "heavy_cement" : "light_cement"));
     fluids.push({ name: s.name || `Цемент ${i + 1}`, density: rho, pv: r.pv / 1000, yp: r.yp, kind: "cement" });
     colors.push(D2_COLORS.cement[i % D2_COLORS.cement.length]);
     return fluids.length - 1;

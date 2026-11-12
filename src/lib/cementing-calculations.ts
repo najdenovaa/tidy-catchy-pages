@@ -4,21 +4,22 @@ import { evaluateBasketStop, type BasketStopResult, type StopColumnSegment } fro
 import { materialLabel, type ProductIdentity } from "./cement-product-catalog";
 import type { EquipmentSelection } from "./cementing-equipment";
 // Core cementing calculation formulas
-import { hbFromFann, hbFriction, flowIndexN, type FannReadings, type HBParams } from "./cement-rheology";
+import { hbFromFann, selectedRheology, rheologyInputErrors, hbFriction, flowIndexN, type FannReadings, type HBParams } from "./cement-rheology";
 
 export interface Rheology {
+  model?: import("./cement-rheology").RheologyModel;
   pv: number; // Пластическая вязкость, сПз
   yp: number; // ДНС (динамическое напряжение сдвига), Па
   /** Показания вискозиметра Fann 600/300/200/100/6/3 — если заданы, гидравлика считается по Гершелю–Балкли */
   fann?: FannReadings;
 }
 
-/** Параметры Гершеля–Балкли из показаний Fann (кэш по объекту реологии). */
+/** Выбранный закон в представлении HB (Бингам и степенная - частные случаи). Кэш по неизменяемому объекту. */
 const hbCache = new WeakMap<object, HBParams | null>();
 export function hbOf(r: Rheology | undefined): HBParams | undefined {
-  if (!r || !r.fann) return undefined;
+  if (!r) return undefined;
   if (hbCache.has(r)) return hbCache.get(r) ?? undefined;
-  const hb = hbFromFann(r.fann) ?? null;
+  const hb = selectedRheology(r) ?? null;
   hbCache.set(r, hb);
   return hb ?? undefined;
 }
@@ -36,7 +37,7 @@ const DEFAULT_RHEOLOGY: Record<FluidCategory, Rheology> = {
 
 /** Returns user rheology if filled (pv or yp > 0), otherwise returns defaults for the category */
 export function effectiveRheology(r: Rheology, category: FluidCategory): Rheology {
-  if (r.pv > 0 || r.yp > 0) return r;
+  if (r.model !== undefined || r.pv > 0 || r.yp > 0) return r;
   if (r.fann && hbOf(r)) {
     const r600 = Number(r.fann.r600) || 0, r300 = Number(r.fann.r300) || 0;
     return { ...r, pv: Math.max(0, r600 - r300), yp: Math.max(0, 2 * r300 - r600) * 0.4788 };
@@ -1044,8 +1045,14 @@ export function calculateHydraulics(
     let frAnnTotal = 0;
     for(const cell of createAnnularGeometry(data,data.casingDepthMD).cells){
       if(cell.areaM2<=0)continue;
-      const r=frictionLossWithRegime(flowRateM3min,cell.bottomMD-cell.topMD,cell.diameterMm-data.casingOD,avgPv,avgYp,cell.areaM2,avgDensity,"annulus");
-      frAnnTotal+=r.pressureMPa*eccentricityFrictionFactor(standoffH,data.casingOD/cell.diameterMm,avgPv,avgYp,r.regime);
+      const explicit=slurries.some(s=>s.rheology.model!==undefined)||mudRheoH.model!==undefined;
+      if(explicit){
+        const fluids=slurries.length?slurries.map(sl=>({r:effectiveRheology(sl.rheology,cementCategory(sl.density)),density:sl.density*1000})):[{r:mudRheoH,density:drillingFluidDensityGcm3?drillingFluidDensityGcm3*1000:1100}];
+        for(const f of fluids){const hb=hbOf(f.r),r=frictionLossWithRegime(flowRateM3min,(cell.bottomMD-cell.topMD)/fluids.length,cell.diameterMm-data.casingOD,f.r.pv,f.r.yp,cell.areaM2,f.density,"annulus",hb);frAnnTotal+=r.pressureMPa*eccentricityFrictionFactor(standoffH,data.casingOD/cell.diameterMm,f.r.pv,f.r.yp,r.regime,hb);}
+      }else{
+        const r=frictionLossWithRegime(flowRateM3min,cell.bottomMD-cell.topMD,cell.diameterMm-data.casingOD,avgPv,avgYp,cell.areaM2,avgDensity,"annulus");
+        frAnnTotal+=r.pressureMPa*eccentricityFrictionFactor(standoffH,data.casingOD/cell.diameterMm,avgPv,avgYp,r.regime);
+      }
     }
     frictionAnn = frAnnTotal;
   }
@@ -1281,6 +1288,7 @@ export function calculatePressureProfile(
   /** fast — без расчёта макс. безопасного расхода в каждой точке (для оптимизатора) */
   opts: { fast?: boolean } = {},
 ): PressureProfileResult {
+  const rheologyErrors=rheologyInputErrors({drillingFluid,slurries,buffers,displacementFluids});if(rheologyErrors.length)throw new Error(rheologyErrors.join("\n"));
   const points: PressurePoint[] = [];
   slurries = slurries.map((s) => ({
     ...s,

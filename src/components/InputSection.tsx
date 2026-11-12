@@ -1,3 +1,4 @@
+import {rheologyInputErrors} from "@/lib/cement-rheology";
 import FluidLibrary from "./FluidLibrary";
 import WellGeometrySummary from "./WellGeometrySummary";
 import { cavernIntervalCoeff } from "@/lib/well-geometry";
@@ -287,6 +288,7 @@ export default function InputSection(props: Props) {
   // Fracture risk checker — использует динамические BHP из симуляции когда доступны,
   // иначе вычисляет приближённо
   const fracCheck = (rateLps: number, _fluidDensity: number, fluidPv: number, fluidYp: number, isDisplacement: boolean = false, stageName?: string): { risk: boolean; ecd: number; fracP: number; hydroStatic: number; frictionLoss: number } | null => {
+    if([drillingFluid.rheology,...slurries.map(x=>x.rheology),...buffers.map(x=>x.rheology),...displacementFluids.map(x=>x.rheology)].some(r=>r.model!==undefined))return null;
     // Если есть динамические данные — используем их (100% совпадение с графиком)
     if (dynamicBHPMap && stageName) {
       const key = `${stageName}|${rateLps}`;
@@ -507,6 +509,8 @@ export default function InputSection(props: Props) {
 
   return (
     <div className="space-y-4">
+      {rheologyInputErrors(props).map((m,i)=><p key={i} role="alert" className="text-sm text-destructive">{m}</p>)}
+      {[drillingFluid.rheology,...slurries.map(x=>x.rheology),...buffers.map(x=>x.rheology),...displacementFluids.map(x=>x.rheology)].some(r=>r.model!==undefined)&&<p className="text-xs text-muted-foreground">Выбрана явная модель реологии. Давления и пределы расхода проверяйте после «Расчёт» по динамическим графикам; предварительная оценка PV/YP в строках режимов отключена.</p>}
       {/* Upload hint */}
       {props.onLoadExample && props.slurries.length === 0 && !props.wellData.wellDepthMD && (
         <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">

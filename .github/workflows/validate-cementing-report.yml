@@ -69,6 +69,8 @@ jobs:
           assert abs(title.rect.width - 595.3) < 2, title.rect
           model = next((p for p in doc if "Замещение: 3D-кадр t=" in p.get_text() and p.get_image_info()), None)
           assert model is not None, "Missing rendered displacement model page"
+          assert any("Кривые течения" in p.get_text() and p.get_image_info() for p in doc), "Missing rheology flow plot"
+          assert any("Остатки реологии" in p.get_text() and p.get_image_info() for p in doc), "Missing rheology residual plot"
           main_text = "\n".join(p.get_text() for p in doc)
           # Passport references are legitimate input provenance; the passport body must stay out.
           assert "Паспорт оснастки QA-056" in " ".join(main_text.split())

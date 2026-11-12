@@ -73,6 +73,7 @@ function corr(x: number[], y: number[]): number {
 }
 
 const scaleRheo = (r: Rheology, k: number): Rheology => ({
+  ...r,
   pv: r.pv * k, yp: r.yp * k,
   ...(r.fann ? { fann: Object.fromEntries(Object.entries(r.fann).map(([key, v]) => [key, (Number(v) || 0) * k])) } : {}),
 });

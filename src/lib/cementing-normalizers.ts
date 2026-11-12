@@ -107,6 +107,7 @@ function normalizeRheology(value: unknown, fallback: Rheology = { pv: 0, yp: 0 }
     ? Object.fromEntries(["r600", "r300", "r200", "r100", "r6", "r3"].filter(k => fannSrc[k] !== undefined && fannSrc[k] !== null && fannSrc[k] !== "" && Number.isFinite(Number(fannSrc[k]))).map((k) => [k, toNumber(fannSrc[k], 0)]))
     : undefined;
   return {
+    ...(typeof source.model==='string'?{model:source.model.slice(0,32) as Rheology['model']}:{ }),
     pv: toNumber(source.pv, fallback.pv),
     yp: toNumber(source.yp, fallback.yp),
     ...(fann && Object.values(fann).some((v) => v > 0) ? { fann } : {}),

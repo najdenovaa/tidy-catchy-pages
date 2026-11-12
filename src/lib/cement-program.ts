@@ -193,7 +193,7 @@ export function buildLabProgram(
     tests.push({
       test: "Реология (вискозиметр Fann 600…3 об/мин)",
       conditions: `27 °C (поверхность) и BHCT ${bhctUsedC.toFixed(0)} °C после кондиционирования`,
-      criterion: "Ввести показания — гидравлика пересчитается по Гершелю–Балкли",
+      criterion: "Ввести показания и явно выбрать модель для гидравлики; проверить диапазон и ошибку подбора",
       actual: s.rheology.fann ? "показания введены" : undefined,
       status: s.rheology.fann ? "ok" : "todo",
       reference: "API RP 10B-2 §12",
