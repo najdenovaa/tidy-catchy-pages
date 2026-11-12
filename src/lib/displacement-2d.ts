@@ -41,6 +41,7 @@ export interface D2Fluid {
 
 /** Порция, входящая в затрубье у башмака (в порядке выхода). */
 export interface D2Stage {
+  drivingStageId?:string;
   fluid: number;
   volumeM3: number;
   /** Расход, м³/с (0 — выдержка длительностью holdS) */

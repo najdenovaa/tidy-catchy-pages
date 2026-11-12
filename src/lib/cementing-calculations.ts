@@ -1,3 +1,4 @@
+import {buildProcessContract,type ProcessContract} from "./cementing-process";
 import { cavernIntervalCoeff, createAnnularGeometry } from "./well-geometry";
 import { equipmentMaterialInventory, type EquipmentMaterialItem, type CalculatedCentralizerMaterials } from "./materials-equipment-inventory";
 import { evaluateBasketStop, type BasketStopResult, type StopColumnSegment } from "./cement-basket-stop";
@@ -1185,6 +1186,7 @@ export function calculateMaterials(
 export type AnnularFluidType = 'mud' | 'buffer' | 'cement' | 'displacement';
 
 export interface PressurePoint {
+  stageId?:string; fluidId?:string; eventId?:string; processKind?:import("./cementing-process").ProcessStage["kind"]|"start"|"postStop";
   stage: string;
   time: number;
   surfacePressure: number;
@@ -1263,6 +1265,9 @@ export interface DepthEnvelopePoint {
 }
 
 export interface PressureProfileResult {
+  processContract?:ProcessContract;
+  processEvents?:ProcessContract["events"];
+  processAudit?:{pumpedVolumeM3:number;plannedWellVolumeM3:number;differenceM3:number;reason:string};
   basketStop?: BasketStopResult;
   /** огибающие давления по глубине (пусто в быстром режиме) */
   envelope: DepthEnvelopePoint[];
@@ -1370,58 +1375,13 @@ export function calculatePressureProfile(
   const initEcd = bottomTVD > 0 ? hydroMudFull / (0.00981 * bottomTVD) : 0;
   points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: mudDensityGcm3, annMudHeightM: initProfile.mudH, annBufferHeightM: initProfile.bufferH, annCementHeightM: initProfile.cementH, annDisplHeightM: initProfile.displH, freefallSettledM3: 0, annularVelocityMps: 0, ecdAtBottomGcm3: initEcd, ecdStaticAtBottomGcm3: initEcd, ecdAtPrevShoeGcm3: mudDensityGcm3, fracGradEcdGcm3, porePressureEcdGcm3 });
 
-  interface Stage { name: string; volume: number; densityGcm3: number; pv: number; yp: number; hb?: HBParams; rateLps: number; isCement: boolean; compressionCoeff: number; durationMin?: number; isFlushPause?: boolean; fluidType: AnnularFluidType }
-  const stages: Stage[] = [];
-
-  // Буферы — по шагам
-  buffers.forEach(b => {
-    const bRheo = effectiveRheology(b.rheology, 'buffer');
-    resolveFlowRateSteps(b.flowRateSteps, b.volume).forEach(step => {
-      if (step.volumeM3 > 0) stages.push({ name: b.name, volume: step.volumeM3, densityGcm3: b.density / 1000, pv: bRheo.pv, yp: bRheo.yp, hb: hbOf(bRheo), rateLps: step.rateLps, isCement: false, compressionCoeff: 1.0, fluidType: 'buffer' });
-    });
+  const processContract=buildProcessContract({wellData,drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin,flushVolumeM3},displacementVol);
+  const stages=processContract.stages.map(st=>{
+    const f=processContract.fluids.find(f=>f.id===st.fluidId)!;
+    const rheology=effectiveRheology(f.rheology,f.kind==='cement'?cementCategory(f.densityKgM3/1000):f.kind==='buffer'?'buffer':f.kind==='displacement'?'displacement':'mud');
+    return {id:st.id,fluidId:st.fluidId,kind:st.kind,name:st.name,volume:st.volumeM3,densityGcm3:f.densityKgM3/1000,pv:rheology.pv,yp:rheology.yp,hb:hbOf(rheology),rateLps:st.rateLps,isCement:st.kind==='cement',compressionCoeff:st.compressionCoeff,durationMin:st.kind==='surfaceFlush'?st.durationMin??undefined:undefined,isFlushPause:st.kind==='surfaceFlush',fluidType:st.kind==='surfaceFlush'?'mud' as AnnularFluidType:f.kind as AnnularFluidType};
   });
-
-  slurries.forEach((s, origIdx) => {
-    const sRheo = effectiveRheology(s.rheology, cementCategory(s.density));
-    resolveFlowRateSteps(s.flowRateSteps, slurryDesignVolume(wellData, slurries, origIdx)).forEach(step => {
-      if (step.volumeM3 > 0) stages.push({ name: s.name, volume: step.volumeM3, densityGcm3: s.density, pv: sRheo.pv, yp: sRheo.yp, hb: hbOf(sRheo), rateLps: step.rateLps, isCement: true, compressionCoeff: 1.0, fluidType: 'cement' });
-    });
-  });
-
-  // === Промывка ЛВД (пауза): цемент оседает под собственным весом ===
-  stages.push({
-    name: "Промывка ЛВД",
-    volume: flushVolumeM3,
-    densityGcm3: mudDensityGcm3,
-    pv: mudRheo.pv,
-    yp: mudRheo.yp,
-    hb: hbOf(mudRheo),
-    rateLps: flushVolumeM3 > 0 && flushTimeMin > 0 ? (flushVolumeM3 / (flushTimeMin * 60)) * 1000 : 0,
-    isCement: false,
-    compressionCoeff: 1.0,
-    durationMin: flushTimeMin,
-    isFlushPause: true,
-    fluidType: 'mud' as AnnularFluidType,
-  });
-
-  // Продавочные жидкости — по шагам с распределением расчётного объёма продавки
-  // Единая продавка: порции сохраняют свои объёмы, остаток/избыток балансируются
-  const dispScheduleSim = buildDisplacementSchedule(displacementFluids, displacementVol);
-  const fallbackDispRate = dispScheduleSim.find(it => it.rateLps > 0)?.rateLps ?? 5;
-  dispScheduleSim.forEach(it => {
-    stages.push({
-      name: it.name,
-      volume: it.volumeM3,
-      densityGcm3: it.densityGcm3,
-      pv: it.rheology.pv,
-      yp: it.rheology.yp,
-      hb: hbOf(it.rheology),
-      rateLps: it.rateLps > 0 ? it.rateLps : fallbackDispRate,
-      isCement: false,
-      compressionCoeff: it.compressionCoeff,
-      fluidType: 'displacement' as AnnularFluidType,
-    });
-  });
+  const stageFrameRanges:{index:number;stageId:string;fluidId:string;timeMin:number;kind:import("./cementing-process").ProcessStage["kind"]}[]=[];
 
 
   let cementStartFound = false;
@@ -1700,15 +1660,17 @@ export function calculatePressureProfile(
   for (let stageIdx = 0; stageIdx < stages.length; stageIdx++) {
     if (plugLanded) break;
     const s = stages[stageIdx];
+    stageFrameRanges.push({index:points.length,stageId:s.id,fluidId:s.fluidId,timeMin:cumTime,kind:s.kind});
     if (s.isCement && !cementStartFound) {
       cementStartTime = cumTime;
       cementStartFound = true;
     }
 
-    const groupLabel = (!s.isCement && cumTime >= cementStartTime && cementStartFound && !s.isFlushPause) ? "Продавка" : s.name;
-    if (groupLabel !== prevGroupLabel) {
+    const groupLabel = s.kind==='displacement' ? "Продавка" : s.name;
+    const groupKey=s.kind==='displacement'?'displacement':s.kind+'|'+s.fluidId;
+    if (groupKey !== prevGroupLabel) {
       stageBoundaries.push({ time: cumTime, label: groupLabel });
-      prevGroupLabel = groupLabel;
+      prevGroupLabel = groupKey;
     }
 
     // === Обработка паузы «Промывка ЛВД» — цемент оседает под собственным весом ===
@@ -1817,7 +1779,8 @@ export function calculatePressureProfile(
       // === Генерируем точки: экспоненциальное оседание ===
       let prevSettledVol = 0;
       let equilibriumReached = false;
-      for (let m = 1; m <= pauseMin; m++) {
+      for (let sample = 1; sample <= Math.ceil(pauseMin); sample++) {
+        const m=Math.min(sample,pauseMin);
         const tNow = cumTime + m;
 
         const settledFrac = 1 - Math.exp(-m / Math.max(settlingTau, 0.01));
@@ -1825,7 +1788,7 @@ export function calculatePressureProfile(
 
         // Выход на устье = объём вытесненный за шаг → расход л/с
         const deltaVol = settledVol - prevSettledVol; // м³ за шаг
-        let returnRateLps = deltaVol / 60 * 1000; // м³/мин → л/с
+        let returnRateLps = deltaVol / (60*Math.max(1e-9,m-(sample-1))) * 1000; // м³/мин → л/с
         // Ограничиваем: выход на устье не должен превышать последнюю производительность
         returnRateLps = Math.min(returnRateLps, lastActiveRate);
         // Плавное затухание к нулю к концу промывки
@@ -1896,7 +1859,7 @@ export function calculatePressureProfile(
     pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0, fluidType: s.fluidType, pv: s.pv, yp: s.yp, hb: s.hb });
     const batchIdx = pumpHistory.length - 1;
 
-    const isDisplacement = !s.isCement && cementStartFound && !s.isFlushPause;
+    const isDisplacement = s.kind==='displacement';
     if (isDisplacement && displacementStartTime === null) {
       displacementStartTime = cumTime;
     }
@@ -2116,7 +2079,18 @@ export function calculatePressureProfile(
     maxPressureMPa: c.maxP, maxAtStage: c.maxStage, maxAtTimeMin: c.maxT, marginMPa: c.limit - c.maxP,
     porePressureMPa: c.pore, minPressureMPa: Number.isFinite(c.minP) ? c.minP : 0,
   }));
-  return { points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope,
+  const processEvents:ProcessContract["events"]=[{id:"start",kind:"start",timeMin:0}];
+  for(let i=0;i<stageFrameRanges.length;i++){
+    const range=stageFrameRanges[i],end=stageFrameRanges[i+1]?.index??points.length;
+    processEvents.push({id:range.stageId+"/actualStart",kind:"stageStart",timeMin:range.timeMin,stageId:range.stageId,fluidId:range.fluidId},{id:range.stageId+"/actualEnd",kind:"stageEnd",timeMin:stageFrameRanges[i+1]?.timeMin??stopTime,stageId:range.stageId,fluidId:range.fluidId});
+    for(let j=range.index;j<end;j++){points[j].processKind=points[j].time>=stopTime&&points[j].pumpRateLps===0?'postStop':range.kind;points[j].stageId=range.stageId;points[j].fluidId=range.fluidId;points[j].eventId=points[j].time>=stopTime&&points[j].pumpRateLps===0?'actualStop':range.stageId+'/actualStart';}
+  }
+  processEvents.push({id:'actualStop',kind:'stop',timeMin:stopTime});
+  for(const point of points)if(!point.eventId){point.eventId='actualStop';point.processKind='postStop';}
+  points[0].eventId='start';points[0].processKind='start';
+  const pumpedVolumeM3=points.at(-1)?.cumulativeVolume??0;
+  const processAudit={pumpedVolumeM3,plannedWellVolumeM3:processContract.wellVolumeM3,differenceM3:pumpedVolumeM3-processContract.wellVolumeM3,reason:'План назначенных порций сравнивается с фактически смоделированной закачкой. Досрочный Стоп, свободное падение и сжатие могут менять объём продавки. Промывка ЛВД идёт мимо скважины. Это не баланс конечного скважинного инвентаря.'};
+  return { processContract,processAudit,processEvents, points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope,
     basketStop: wellData.equipment?.some(e => e.kind === "basket" && e.quantity > 0) ? evaluateBasketStop(wellData, annColumn(), fractureGradient) : undefined };
 }
 

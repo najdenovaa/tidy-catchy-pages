@@ -1,3 +1,4 @@
+import {buildProcessContract,type ProcessContract} from "./cementing-process";
 import {rheologyReportFluids} from "./rheology-report";
 import {rheologyDescription,rheologyResolution,rheologyMetrics} from "./cement-rheology";
 import { equipmentSignature } from "./equipment-library";
@@ -508,85 +509,12 @@ function buildHydraulicsPage(wellData: WellData, slurries: SlurryInput[], volume
   return content;
 }
 
-function buildSchedulePage(buffers: BufferFluid[], slurries: SlurryInput[], annularVPM: number, displacementVolume: number, displacementFluids: DisplacementFluid[], casingDepthMD: number, wellData: WellData): Paragraph[] {
-  const lpsToM3min = (lps: number) => lps * 0.06;
-  const defaultRate = displacementFluids.length > 0 && displacementFluids[0].flowRateSteps.length > 0
-    ? displacementFluids[0].flowRateSteps[0].rateLps : 8;
-
-  const stages: { name: string; fluid: string; rateLps: number; volume: number }[] = [];
-  stages.push({ name: "Заполнение ЛВД", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.0 });
-  stages.push({ name: "Опрессовка ЛВД (25 МПа)", fluid: "-", rateLps: 0, volume: 0 });
-
-  buffers.forEach(b => {
-    resolveFlowRateSteps(b.flowRateSteps, b.volume).forEach((step, si) => {
-      if (step.volumeM3 > 0) stages.push({ name: `${b.name} (режим ${si + 1})`, fluid: `${b.name} (${b.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 });
-    });
-  });
-  slurries.forEach((s, i) => {
-    resolveFlowRateSteps(s.flowRateSteps, slurryDesignVolume(wellData, slurries, i)).forEach((step, si) => {
-      if (step.volumeM3 > 0) stages.push({ name: `${s.name} (режим ${si + 1})`, fluid: `${s.name} (${s.density} г/см³)`, rateLps: step.rateLps, volume: step.volumeM3 });
-    });
-  });
-
-  stages.push({ name: "Промывка ЛВД, сброс пробки", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.5 });
-
-  buildDisplacementSchedule(displacementFluids, displacementVolume).forEach((it) => {
-    const df = displacementFluids[it.fluidIndex];
-    const portion = displacementFluids.length > 1 ? ` (порция ${it.fluidIndex + 1})` : "";
-    const mode = df.flowRateSteps.length > 1 ? ` (режим ${it.stepIndex + 1})` : "";
-    stages.push({ name: `Продавка: ${df.name}${portion}${mode}${it.auto ? " - остаток" : ""}`, fluid: `${df.name} (${df.density} кг/м³)`, rateLps: it.rateLps > 0 ? it.rateLps : defaultRate, volume: it.volumeM3 });
-  });
-
-  stages.push({ name: "Фиксация «СТОП», проверка ЦКОД", fluid: "-", rateLps: 0, volume: 0 });
-  stages.push({ name: "Промывка ЛВД, демонтаж ГЦУ", fluid: "Тех. вода", rateLps: 0, volume: 0 });
-
-  let cumulative = 0, cumTime = 0;
-  const stagesData = stages.map(s => {
-    cumulative += s.volume;
-    const rateM3min = lpsToM3min(s.rateLps);
-    const time = rateM3min > 0 ? s.volume / rateM3min : (s.name.includes("Опрессовка") ? 10 : s.name.includes("СТОП") ? 15 : s.name.includes("демонтаж") ? 45 : 0);
-    cumTime += time;
-    return { ...s, cumulative, time, cumTime };
-  });
-
-  const headers = ["Этап", "Жидкость", "л/с", "V, м³", "Время, мин", "∑ мин", "∑ V, м³"];
-
-  const tableRows = [
-    new TableRow({
-      children: headers.map(h => headerCell(h)),
-    }),
-    ...stagesData.map(s => new TableRow({
-      children: [
-        cell(s.name),
-        cell(s.fluid),
-        cell(s.rateLps > 0 ? fmt(s.rateLps, 1) : "-", { align: AlignmentType.CENTER }),
-        cell(s.volume > 0 ? fmt(s.volume, 1) : "-", { align: AlignmentType.RIGHT }),
-        cell(fmt(s.time, 1), { align: AlignmentType.RIGHT }),
-        cell(fmt(s.cumTime, 1), { align: AlignmentType.RIGHT }),
-        cell(s.volume > 0 ? fmt(s.cumulative, 1) : "-", { align: AlignmentType.RIGHT }),
-      ],
-    })),
-    new TableRow({
-      children: [
-        cell("ИТОГО", { bold: true }),
-        cell(""),
-        cell(""),
-        cell(""),
-        cell(""),
-        cell(fmt(cumTime, 1), { bold: true, align: AlignmentType.RIGHT }),
-        cell(fmt(cumulative, 1), { bold: true, align: AlignmentType.RIGHT }),
-      ],
-    }),
-  ];
-
-  return [
-    sectionTitle("8. Порядок закачки технологических жидкостей"),
-    fixedReportTable(headers.length, {
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      layout: TableLayoutType.FIXED,
-      rows: tableRows,
-    }) as any,
-  ];
+function buildSchedulePage(c:ProcessContract):Paragraph[]{
+ const rows=c.stages.map(s=>[s.name+' (режим '+(s.stepIndex+1)+')',s.destination==='well'?'В скважину':'ЛВД, мимо скважины',fmt(s.rateLps,2),fmt(s.volumeM3,3),s.startMin===null?'-':fmt(s.startMin,2),s.endMin===null?'-':fmt(s.endMin,2)]);
+ return [sectionTitle('8. Программа закачки'),noteParagraph('Общее расписание режимов и паузы ЛВД. Баланс проверяется до округления чисел. Подготовка, опрессовки и демонтаж назначаются отдельным планом работ; их незаданные объёмы и длительности в расчёт не добавлены.'),
+  gridTable(['Этап','Назначение','л/с','м³','Начало, мин','Конец, мин'],rows) as any,
+  kvTable([{label:'Назначено в скважину',value:fmt(c.wellVolumeM3,3)+' м³; '+(c.canRun?fmt(c.wellMassKg/1000,3)+' т':'масса не подтверждена')},{label:'Промывка ЛВД отдельно',value:fmt(c.surfaceVolumeM3,3)+' м³'},{label:'Плановое время до Стоп',value:c.totalTimeMin===null?'Не определено':fmt(c.totalTimeMin,2)+' мин'},{label:'Проверка интеграла Q × dt',value:fmt(c.volumeResidualM3,9)+' м³; '+fmt(c.massResidualKg,6)+' кг'}]) as any,
+  noteParagraph('Это баланс назначенных порций при фиксированной плотности, а не баланс конечного содержимого скважины. В динамике свободное падение, сжатие и досрочная посадка пробки могут изменить объём и время до Стоп.'),...c.issues.map(x=>noteParagraph(x.message))];
 }
 
 function buildMaterialsPage(materials: MaterialSummary, wellData: WellData): Paragraph[] {
@@ -1014,7 +942,9 @@ export async function exportToDocx(
 
   const inputContent = buildInputPage(wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
   const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult, buffers);
-  const scheduleContent = buildSchedulePage(buffers, slurries, volumes.annularVolumePerMeter, volumes.displacementVolumeWithCompression, displacementFluids, wellData.casingDepthMD, wellData);
+  const scheduleContent = buildSchedulePage(pressureResult.processContract??buildProcessContract({wellData,drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin:preComputed?.flushTimeMin??10,flushVolumeM3:preComputed?.flushVolumeM3??0},volumes.displacementVolumeWithCompression));
+  if(pressureResult.processAudit){const a=pressureResult.processAudit;scheduleContent.push(kvTable([{label:'Моделирование: закачано до Стоп',value:fmt(a.pumpedVolumeM3,3)+' м³'},{label:'Разница с планом порций',value:fmt(a.differenceM3,3)+' м³'},{label:'Время Стоп в модели',value:fmt(pressureResult.stopTime,2)+' мин'}]) as any,noteParagraph(a.reason));}
+
   const materialsContent = buildMaterialsPage(materials, wellData);
   const labContent = buildLabPage(wellData, slurries, volumes, pressureResult);
   const normsContent = buildNormsPage(wellData, slurries, buffers, drillingFluid, volumes, pressureResult);
