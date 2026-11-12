@@ -5,15 +5,17 @@ import {pressureAleStep,pistonFaces,type PlugHydraulics,type HydraulicFrame} fro
 export interface CoupledFrame extends HydraulicFrame {
   velocityMps:number; mode:'stuck'|'moving'|'seated'; forceResidualMPa:number; seatReactionMPa:number;
 }
+export interface CoupledTracePoint {timeSec:number;xM:number;inletMPa:number;backWallMPa:number;aheadWallMPa:number;phase:'approach'|'seated'}
+export function coupledCaseKey(input:MovingPlugCase,n:number,mu:number,switchSec:number){return JSON.stringify(['coupled-piston-pressure-v1',normalizeMovingPlugCase(input),n,mu,switchSec]);}
 export interface CoupledPlugResult extends Omit<PlugHydraulics,'model'|'frames'> {
-  model:'coupled-piston-pressure-v1'; frames:CoupledFrame[]; landingTimeSec:number|null;
+  model:'coupled-piston-pressure-v1'; inputKey:string; trace:CoupledTracePoint[]; frames:CoupledFrame[]; landingTimeSec:number|null;
   maxForceResidualMPa:number; rejectedSteps:number;
 }
 const sum=(a:number[])=>a.reduce((v,x)=>v+x,0);
 const forceTolerance=1e-6;
 /** Nested, converged pressure/position solve; candidates never mutate the old state. */
 export function simulateCoupledPlug(input:MovingPlugCase,n=8,mu=10,switchSec=0):CoupledPlugResult{
-  const p=normalizeMovingPlugCase(input)!,r:CoupledPlugResult={model:'coupled-piston-pressure-v1',status:'stopped',reason:'',viscosityMpas:mu,cellsPerChamber:n,switchSec,frames:[],initialKg:[0,0,0],injectedKg:[0,0,0],returnedKg:[0,0,0],retainedKg:[0,0,0],acceptedSteps:0,maxMassResidualKg:0,maxComponentResidualKg:0,maxGeometricResidualM3:0,maxReynolds:0,landingTimeSec:null,maxForceResidualMPa:0,rejectedSteps:0};
+  const p=normalizeMovingPlugCase(input)!,r:CoupledPlugResult={model:'coupled-piston-pressure-v1',inputKey:coupledCaseKey(input,n,mu,switchSec),trace:[],status:'stopped',reason:'',viscosityMpas:mu,cellsPerChamber:n,switchSec,frames:[],initialKg:[0,0,0],injectedKg:[0,0,0],returnedKg:[0,0,0],retainedKg:[0,0,0],acceptedSteps:0,maxMassResidualKg:0,maxComponentResidualKg:0,maxGeometricResidualM3:0,maxReynolds:0,landingTimeSec:null,maxForceResidualMPa:0,rejectedSteps:0};
   let last:CoupledFrame|undefined;
   try{
     if(!p||!Number.isInteger(n)||n<1||n>60||!Number.isFinite(mu)||mu<=0||!Number.isFinite(switchSec)||switchSec<0||switchSec>p.durationSec)throw new Error('Нужны 1-60 ячеек, положительная вязкость и корректный момент метки.');
@@ -22,7 +24,7 @@ export function simulateCoupledPlug(input:MovingPlugCase,n=8,mu=10,switchSec=0):
     let pressure=Array(2*n).fill(p.outletMPa),state:AleState={facesM:faces,massKg:faces.slice(1).map((x,i)=>a*(x-faces[i])*(i<n?p.rhoBackKgM3:p.rhoAheadKgM3)*Math.exp(p.outletMPa/(i<n?p.bulkBackMPa:p.bulkAheadMPa))),fractions:Array.from({length:2*n},(_,i)=>i<n?[1,0,0]:[0,0,1])},time=0,x=p.initialXM,landed=false;
     advanceAle(state,faces,state.massKg,Array(2*n+1).fill(0),1,a,[1,0,0],undefined,n);
     r.initialKg=[sum(state.massKg.slice(0,n)),0,sum(state.massKg.slice(n))];r.retainedKg=[...r.initialKg];
-    last={timeSec:0,xM:x,facesM:faces,pressuresMPa:pressure,massesKg:state.massKg,fractions:state.fractions,relativeFluxKgS:Array(2*n+1).fill(0),laboratoryVelocityMps:Array(2*n+1).fill(0),inletMPa:p.outletMPa,backWallMPa:p.outletMPa,aheadWallMPa:p.outletMPa,movingForceMismatchMPa:null,maxReynolds:0,velocityMps:0,mode:'stuck',forceResidualMPa:0,seatReactionMPa:0};r.frames.push(last);
+    last={timeSec:0,xM:x,facesM:faces,pressuresMPa:pressure,massesKg:state.massKg,fractions:state.fractions,relativeFluxKgS:Array(2*n+1).fill(0),laboratoryVelocityMps:Array(2*n+1).fill(0),inletMPa:p.outletMPa,backWallMPa:p.outletMPa,aheadWallMPa:p.outletMPa,movingForceMismatchMPa:null,maxReynolds:0,velocityMps:0,mode:'stuck',forceResidualMPa:0,seatReactionMPa:0};r.frames.push(last);r.trace.push({timeSec:0,xM:x,inletMPa:p.outletMPa,backWallMPa:p.outletMPa,aheadWallMPa:p.outletMPa,phase:'approach'});
     while(time<p.durationSec-1e-8){
       if(r.acceptedSteps>=4000)throw new Error('Превышен лимит 4000 принятых шагов связанного стенда.');
       const injection=time>=switchSec-1e-8?[0,1,0]:[1,0,0];
@@ -73,6 +75,7 @@ export function simulateCoupledPlug(input:MovingPlugCase,n=8,mu=10,switchSec=0):
       r.acceptedSteps++;r.injectedKg=injected;r.returnedKg=returned;r.retainedKg=retained;
       r.maxMassResidualKg=Math.max(r.maxMassResidualKg,step.maxContinuityResidualKg);r.maxComponentResidualKg=Math.max(r.maxComponentResidualKg,step.maxMassResidualKg,...residuals);r.maxGeometricResidualM3=Math.max(r.maxGeometricResidualM3,step.maxGeometricResidualM3);r.maxReynolds=Math.max(r.maxReynolds,step.maxReynolds);r.maxForceResidualMPa=Math.max(r.maxForceResidualMPa,forceResidual);
       last={timeSec:time,xM:x,facesM:state.facesM,massesKg:state.massKg,fractions:state.fractions,pressuresMPa:pressure,relativeFluxKgS:step.relativeFluxKgS,laboratoryVelocityMps:step.laboratoryVelocityMps,inletMPa:step.inletMPa,backWallMPa:step.backWallMPa,aheadWallMPa:step.aheadWallMPa,movingForceMismatchMPa:null,maxReynolds:step.maxReynolds,velocityMps:candidate.v,mode:landed?'seated':candidate.v>1e-10?'moving':'stuck',forceResidualMPa:forceResidual,seatReactionMPa:wasLanded?Math.max(0,candidate.force):0};
+      r.trace.push({timeSec:time,xM:x,inletMPa:step.inletMPa,backWallMPa:step.backWallMPa,aheadWallMPa:step.aheadWallMPa,phase:wasLanded?'seated':'approach'});
       if(time-r.frames.at(-1)!.timeSec>=p.durationSec/150||seatEvent||Math.abs(time-switchSec)<1e-8||time>=p.durationSec-1e-8)r.frames.push(last);
     }
     r.status='complete';r.reason=r.landingTimeSec===null?'Связанный стенд рассчитан; упор за назначенное время не достигнут.':'Связанный стенд рассчитан; движение и посадка найдены по локальным давлениям.';
