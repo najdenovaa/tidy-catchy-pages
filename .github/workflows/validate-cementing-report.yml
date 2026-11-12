@@ -11,6 +11,9 @@ on:
       - 'src/lib/ale-transport*'
       - 'src/lib/plug-ale*'
       - 'src/lib/plug-pressure*'
+      - 'src/lib/bench-rheology*'
+      - 'src/lib/piston-rheology*'
+      - 'src/components/BenchRheologyControls*'
       - 'src/lib/coupled-plug*'
       - 'src/lib/coupled-refinement*'
       - 'src/components/CoupledStudyView*'
@@ -116,6 +119,7 @@ jobs:
           assert "Связанный расчёт движения и давления" in plug_text and "Посадка в связанном расчёте" in plug_text
           assert any("Связанный стенд: движение и посадка" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
           assert "Чувствительность связанного расчёта" in plug_text and "L1 состава (0-2)" in plug_text
+          assert "Раздельная реология жидкостей стенда" in plug_text and "Ньютон: μ 20" in plug_text
           assert any("Чувствительность связи:" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
           print("Rendered", len(doc), "A4 pages; approval-column separation", round(right.x0 - left.x0), "pt; model page", model.number + 1)
           preview = Image.new("RGB", (1000, 710), "white")
