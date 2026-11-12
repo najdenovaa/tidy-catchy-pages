@@ -1,3 +1,4 @@
+import {StopStoragePanel} from "@/components/StopStorageSection";
 import FluidInventoryPanel from '@/components/FluidInventoryPanel';
 import {buildProcessContract} from "@/lib/cementing-process";
 import {rheologyInputErrors} from "@/lib/cement-rheology";
@@ -10,7 +11,7 @@ import { centralizerInventory } from "@/lib/cementing-equipment";
 import { centralizerMaterialGeometryKey } from "@/lib/materials-equipment-inventory";
 import BasketStopCard from "@/components/BasketStopCard";
 import { resolveCentralizationReport, displacementReportKey, runDisplacementForReport, type CentralizationReportData, type DisplacementReportData, type DisplacementReportSettings, type CementingReportExtras } from "@/lib/cementing-report-data";
-import { buildBasketStopReportSvgs, buildCementingReportSvgs, buildHydraulicReportSvgs, buildDepthPressureReportSvgs, buildWellReportSvgs, rasterizeReportSvgs } from "@/lib/cementing-report-figures";
+import { buildStopStorageReportSvgs,buildBasketStopReportSvgs, buildCementingReportSvgs, buildHydraulicReportSvgs, buildDepthPressureReportSvgs, buildWellReportSvgs, rasterizeReportSvgs } from "@/lib/cementing-report-figures";
 import { collectCementingReportSupplements } from "@/lib/cementing-report-dom";
 import type { FoamReportBundle } from '@/lib/foam-cement-types';
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
@@ -412,7 +413,7 @@ export default function Index() {
       setExportStatus("Подготовка схем и 3D-кадров");
       try {
         const config=normalizeLogisticsSettings(reportWell.logistics),fleet=planLogistics(pressure,mats,snap.slurries,config);
-        const figures=[...rheologyReportFigures(snap),...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries),...buildDepthPressureReportSvgs(pressure.envelope,selection),...buildBasketStopReportSvgs(pressure.basketStop),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),cementFleetLayoutFigure(fleet,config)].filter(x=>allowedReportFigure('cementing',selection,x));
+        const figures=[...buildStopStorageReportSvgs(pressure.stopStorage),...rheologyReportFigures(snap),...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries),...buildDepthPressureReportSvgs(pressure.envelope,selection),...buildBasketStopReportSvgs(pressure.basketStop),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),cementFleetLayoutFigure(fleet,config)].filter(x=>allowedReportFigure('cementing',selection,x));
         extras.warnings!.push(...missingReportFigures("cementing",selection,figures));
         extras.figures=await rasterizeReportSvgs(figures);
       } catch(err){extras.warnings!.push('Часть изображений недоступна: '+(err instanceof Error?err.message:String(err)));}
@@ -828,7 +829,7 @@ export default function Index() {
             <TabsContent value="charts" forceMount>
               <div data-tab-content="charts">
                 {calcSnapshot && pressureResult ? (
-                  <><FluidInventoryPanel result={pressureResult} /><ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin}
+                  <><FluidInventoryPanel result={pressureResult} /><StopStoragePanel result={pressureResult.stopStorage} /><ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin}
                     envelope={pressureResult.envelope} prevShoeMD={snapWellData?.prevCasingDepth ?? 0} casingDepthMD={snapWellData?.casingDepthMD ?? 0} layers={snapWellData?.reservoirLayers} /></>
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>

@@ -19,6 +19,8 @@ on:
       - "src/lib/rheology-*"
       - "src/lib/cementing-process*"
       - "src/lib/fluid-inventory*"
+      - "src/lib/stop-storage*"
+      - "src/components/StopStorage*"
       - "src/lib/cementing-inventory*"
       - "src/components/FluidInventoryPanel*"
       - "src/components/ProcessContractPanel*"

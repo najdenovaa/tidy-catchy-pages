@@ -1,3 +1,4 @@
+import {StopStorageControls} from "./StopStorageSection";
 import ProcessContractPanel from "./ProcessContractPanel";
 import {rheologyInputErrors} from "@/lib/cement-rheology";
 import FluidLibrary from "./FluidLibrary";
@@ -43,7 +44,7 @@ interface Props {
   onLoadExample?: () => void;
 }
 
-type WellNumericKey = Exclude<keyof WellData, 'equipment' | 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers' | 'standoffProfile' | 'casingType' | 'frictionCalibration' | 'caliperLog' | 'centralizerDesign'>;
+type WellNumericKey = Exclude<keyof WellData, 'stopStorage' | 'equipment' | 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers' | 'standoffProfile' | 'casingType' | 'frictionCalibration' | 'caliperLog' | 'centralizerDesign'>;
 const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "wellDepthMD", label: "Глубина скважины (по стволу)", unit: "м" },
   { key: "wellDepthTVD", label: "Глубина скважины (по вертикали)", unit: "м" },
@@ -541,6 +542,7 @@ export default function InputSection(props: Props) {
         </Link>
       </div>
       <ProcessContractPanel input={props} />
+      <StopStorageControls well={wellData} onChange={onWellDataChange} />
       {/* ===== 1. Скважина ===== */}
       <Card>
         <SectionHeader title="📐 Данные скважины" isOpen={openSections.well} onClick={() => toggle("well")} />
@@ -1207,7 +1209,7 @@ export default function InputSection(props: Props) {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label><DebouncedInput type="number" step="1" value={df.density || ""} onChange={(e) => handleDispFluidChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">PV, сПз</Label><DebouncedInput type="number" value={df.rheology.pv || ""} onChange={(e) => handleDispFluidChange(idx, "pv", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">YP, Па</Label><DebouncedInput type="number" step="0.1" value={df.rheology.yp || ""} onChange={(e) => handleDispFluidChange(idx, "yp", e.target.value)} className="h-8 text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Коэфф. сжатия</Label><DebouncedInput type="number" step="0.01" value={df.compressionCoeff || ""} onChange={(e) => handleDispFluidChange(idx, "compressionCoeff", e.target.value)} className="h-8 text-sm" placeholder="1.00" /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Запас объёма продавки (коэфф.)</Label><DebouncedInput type="number" step="0.01" value={df.compressionCoeff || ""} onChange={(e) => handleDispFluidChange(idx, "compressionCoeff", e.target.value)} className="h-8 text-sm" placeholder="1.00" /></div>
                 </div>
                 <FannEditor rheology={df.rheology} onChange={(r) => { const u = [...displacementFluids]; u[idx] = { ...u[idx], rheology: r }; onDisplacementFluidsChange(u); }} />
                 <FlowRateStepsEditor

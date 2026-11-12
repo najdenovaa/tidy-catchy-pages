@@ -988,6 +988,17 @@ export async function exportToDocx(
   add('rheology','Модели и измерения реологии',rheologyContent);
   add('hydraulics','Объёмы и гидравлика',hydraulicsContent);
   add('schedule','Программа закачки',scheduleContent);
+  if(pressureResult.stopStorage){
+    const r=pressureResult.stopStorage,e=r.curve.at(-1),p=r.settings;
+    const content:any[]=[sectionTitle('Сжатие и упругость после посадки пробки'),noteParagraph('Это дополнительная подача после геометрического Стоп; замещение и баланс до Стоп не увеличиваются. Прирост давления не является допустимым или абсолютным устьевым давлением.'),
+      kvTable([{label:'Прирост давления / расход',value:fmt(p.pressureRiseMPa,3)+' МПа / '+fmt(p.rateLps,3)+' л/с'},{label:'Упругость стали E / ν',value:fmt(p.youngModulusMPa,0)+' МПа / '+fmt(p.poissonRatio,3)},{label:'Закрепление',value:p.restraint==='fixedLength'?'Длина закреплена':'Закрытые торцы, свободное удлинение'},{label:'Источник',value:p.source.trim()||'Не указан; требуется подтверждение.'}]) as any,
+      ...r.issues.map(noteParagraph)];
+    if(e)content.push(kvTable([{label:'Вместимость над пробкой',value:fmt(r.baselineCapacityM3,3)+' м³'},{label:'Дополнительная подача',value:fmt(e.injectedReferenceM3*1000,2)+' л'},{label:'Сжатие жидкостей / расширение колонны',value:fmt(e.fluidCompressionReferenceM3*1000,2)+' / '+fmt(e.steelExpansionReferenceM3*1000,2)+' л'},{label:'Длительность дополнительной подачи',value:fmt(e.timeMin,3)+' мин'},{label:'Расчётный обратимый объём при снятии прироста давления',value:fmt(e.injectedReferenceM3*1000,2)+' л'},{label:'Максимальные невязки',value:Math.max(...r.curve.map(p=>Math.abs(p.residualM3))).toExponential(2)+' м³; '+Math.max(...r.curve.map(p=>Math.abs(p.residualKg))).toExponential(2)+' кг'}]) as any,
+      gridTable(['Жидкость','Над пробкой, м³','K, МПа','ρ исходная, кг/м³'],r.fluids.map(f=>[f.name,fmt(f.volumeM3,3),fmt(f.bulkModulusMPa,2),fmt(f.densityKgM3,1)])) as any,
+      gridTable(['ΔP, МПа','Подача, л','Сжатие, л','Колонна, л','Время, мин'],r.curve.filter((_,i)=>i%4===0).map(p=>[fmt(p.pressureRiseMPa,3),fmt(p.injectedReferenceM3*1000,2),fmt(p.fluidCompressionReferenceM3*1000,2),fmt(p.steelExpansionReferenceM3*1000,2),fmt(p.timeMin,3)])) as any);
+    content.push(...r.limitations.map(noteParagraph));add('stopStorage','Сжатие после посадки',content);
+  }
+
   add('materials','Ведомость материалов',materialsContent);
   add('lab','Рецептура и лабораторные требования',labContent);
   add('norms','Проверки ограничений',normsContent);

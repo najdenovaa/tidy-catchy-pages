@@ -146,7 +146,7 @@ export async function rasterizeReportSvgs(images: ReportSvg[]): Promise<ReportFi
   return out;
 }
 
-export { hydraulicReportCharts as buildHydraulicReportSvgs, depthReportCharts as buildDepthPressureReportSvgs } from './cementing-report-charts';
+export { stopStorageReportCharts as buildStopStorageReportSvgs,hydraulicReportCharts as buildHydraulicReportSvgs, depthReportCharts as buildDepthPressureReportSvgs } from './cementing-report-charts';
 
 export function buildWellReportSvgs(w: WellData, slurries: SlurryInput[]): ReportSvg[] {
   const traj = getEffectiveTrajectory(w), depth = Math.max(1, w.casingDepthMD);
