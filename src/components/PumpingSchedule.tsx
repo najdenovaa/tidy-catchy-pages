@@ -1,196 +1,28 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { resolveFlowRateSteps, slurryDesignVolume, getSlurryHeight, annularVolumeForInterval, buildDisplacementSchedule } from "@/lib/cementing-calculations";
-import type { BufferFluid, SlurryInput, DisplacementFluid, WellData } from "@/lib/cementing-calculations";
-
-interface Props {
-  buffers: BufferFluid[];
-  slurries: SlurryInput[];
-  annularVPM: number;
-  displacementVolume: number;
-  displacementFluids: DisplacementFluid[];
-  casingDepthMD: number;
-  wellData?: WellData;
-}
-
-const fmt = (v: number, dec: number = 1) => v.toFixed(dec);
-const lpsToM3min = (lps: number) => lps * 0.06;
-
-export default function PumpingSchedule({ buffers, slurries, annularVPM, displacementVolume, displacementFluids, casingDepthMD, wellData }: Props) {
-  const compressionCoeff = Math.max(displacementFluids?.[0]?.compressionCoeff ?? 1.0, 1.0);
-  const showRaw = compressionCoeff > 1.001;
-  const rawDisplacementVolume = displacementVolume / compressionCoeff;
-
-  type Stage = { name: string; fluid: string; rateLps: number; volume: number; rawVolume?: number };
-  const stages: Stage[] = [];
-
-  const defaultRate = displacementFluids.length > 0 && displacementFluids[0].flowRateSteps.length > 0
-    ? displacementFluids[0].flowRateSteps[0].rateLps : 8;
-
-  // 1. Заполнение ЛВД
-  stages.push({ name: "Заполнение ЛВД", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.0 });
-  stages.push({ name: "Опрессовка ЛВД (25 МПа)", fluid: "—", rateLps: 0, volume: 0 });
-
-  // 2. Буферы — по шагам
-  buffers.forEach((b) => {
-    resolveFlowRateSteps(b.flowRateSteps, b.volume).forEach((step, si) => {
-      if (step.volumeM3 > 0) stages.push({ name: `${b.name} (режим ${si + 1})`, fluid: `${b.name} (${b.density} кг/м³)`, rateLps: step.rateLps, volume: step.volumeM3 });
-    });
-  });
-
-  slurries.forEach((s, i) => {
-    const vol = wellData ? slurryDesignVolume(wellData, slurries, i)
-      : annularVPM * getSlurryHeight(slurries, i, casingDepthMD) + (i === 0 ? (s.washVolume || 0) : 0);
-    resolveFlowRateSteps(s.flowRateSteps, vol).forEach((step, si) => {
-      if (step.volumeM3 > 0) stages.push({ name: `${s.name} (режим ${si + 1})`, fluid: `${s.name} (${s.density} г/см³)`, rateLps: step.rateLps, volume: step.volumeM3 });
-    });
-  });
-
-  // 4. Промывка ЛВД
-  stages.push({ name: "Промывка ЛВД, сброс пробки", fluid: "Тех. вода", rateLps: defaultRate * 0.5, volume: 1.5 });
-
-  // 5. Продавка — единый график порций (как в расчёте): заданные объёмы сохраняются,
-  //    остаток до расчётного объёма получают порции/режимы без объёма
-  const dispSchedule = buildDisplacementSchedule(displacementFluids, displacementVolume);
-  dispSchedule.forEach((it) => {
-    const df = displacementFluids[it.fluidIndex];
-    const portion = displacementFluids.length > 1 ? ` (порция ${it.fluidIndex + 1})` : "";
-    const mode = df.flowRateSteps.length > 1 ? ` (режим ${it.stepIndex + 1})` : "";
-    stages.push({
-      name: `Продавка: ${df.name}${portion}${mode}${it.auto ? " — остаток" : ""}`,
-      fluid: `${df.name} (${df.density} кг/м³)`,
-      rateLps: it.rateLps > 0 ? it.rateLps : defaultRate,
-      volume: it.volumeM3,
-      rawVolume: it.volumeM3 / compressionCoeff,
-    });
-  });
-
-  // 6. СТОП
-  stages.push({ name: "Фиксация «СТОП», проверка ЦКОД", fluid: "—", rateLps: 0, volume: 0 });
-  stages.push({ name: "Промывка ЛВД, демонтаж ГЦУ", fluid: "Тех. вода", rateLps: 0, volume: 0 });
-
-  // Накопление: основное (с коэф. сжатия) и параллельное "raw" (без коэф.) — стартует с момента продавки и тянется до конца
-  let cumulative = 0;
-  let cumTime = 0;
-  let rawCumulative = 0;
-  let rawCumTime = 0;
-  let rawStarted = false;
-  const stagesWithCum = stages.map((s) => {
-    cumulative += s.volume;
-    const rateM3min = lpsToM3min(s.rateLps);
-    const time = rateM3min > 0 ? s.volume / rateM3min : (s.name.includes("Опрессовка") ? 10 : s.name.includes("СТОП") ? 15 : s.name.includes("демонтаж") ? 45 : 0);
-    cumTime += time;
-
-    const isDisp = s.rawVolume !== undefined;
-    if (isDisp && !rawStarted) {
-      rawStarted = true;
-      // до продавки — все стадии одинаковые
-      rawCumulative = cumulative - s.volume;
-      rawCumTime = cumTime - time;
-    }
-    let rawVol: number | undefined;
-    let rawTime: number | undefined;
-    if (rawStarted && showRaw) {
-      rawVol = isDisp ? s.rawVolume : s.volume;
-      rawCumulative += rawVol!;
-      rawTime = rateM3min > 0 ? rawVol! / rateM3min : time;
-      rawCumTime += rawTime;
-    }
-    return {
-      ...s,
-      cumulative,
-      time,
-      cumTime,
-      rawVol: rawStarted && showRaw ? rawVol : undefined,
-      rawTime: rawStarted && showRaw ? rawTime : undefined,
-      rawCumulative: rawStarted && showRaw ? rawCumulative : undefined,
-      rawCumTime: rawStarted && showRaw ? rawCumTime : undefined,
-    };
-  });
-
-  const totalTime = cumTime;
-  const totalRawTime = showRaw ? rawCumTime : undefined;
-  const totalRawCum = showRaw ? rawCumulative : undefined;
-
-  return (
-    <Card>
-      <CardHeader className="pb-4">
-        <CardTitle className="text-lg">Порядок закачки технологических жидкостей</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {showRaw && (
-          <div className="mb-3 text-xs text-muted-foreground">
-            Коэф. сжатия = {compressionCoeff.toFixed(3)}. В скобках указаны значения <span className="font-medium">без учёта коэф. сжатия</span>.
-          </div>
-        )}
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-xs">Наименование этапа</TableHead>
-                <TableHead className="text-xs">Жидкость</TableHead>
-                <TableHead className="text-xs text-right">Произв-ть, л/с</TableHead>
-                <TableHead className="text-xs text-right">Объём, м³</TableHead>
-                <TableHead className="text-xs text-right">Время стадии, мин</TableHead>
-                <TableHead className="text-xs text-right">Общее время, мин</TableHead>
-                <TableHead className="text-xs text-right">Накопит. V, м³</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {stagesWithCum.map((s, i) => {
-                const hasRaw = s.rawVol !== undefined;
-                const hasRawCum = s.rawCumulative !== undefined;
-                return (
-                  <TableRow key={i} className={s.name.startsWith("ЦР:") || s.name.startsWith("ЦР (") ? "bg-primary/5" : ""}>
-                    <TableCell className="text-sm">{s.name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{s.fluid}</TableCell>
-                    <TableCell className="text-sm text-right">{s.rateLps > 0 ? fmt(s.rateLps, 1) : "—"}</TableCell>
-                    <TableCell className="text-sm text-right font-medium">
-                      {s.volume > 0 ? fmt(s.volume) : "—"}
-                      {hasRaw && s.volume > 0 && (
-                        <span className="text-muted-foreground font-normal"> ({fmt(s.rawVol!)})</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-right">
-                      {fmt(s.time)}
-                      {hasRaw && s.time > 0 && (
-                        <span className="text-muted-foreground"> ({fmt(s.rawTime!)})</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-right">
-                      {fmt(s.cumTime)}
-                      {hasRawCum && (
-                        <span className="text-muted-foreground"> ({fmt(s.rawCumTime!)})</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-right font-medium">
-                      {s.volume > 0 ? fmt(s.cumulative) : "—"}
-                      {hasRawCum && s.volume > 0 && (
-                        <span className="text-muted-foreground font-normal"> ({fmt(s.rawCumulative!)})</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              <TableRow className="font-semibold border-t-2 border-border">
-                <TableCell colSpan={5} className="text-sm">ИТОГО: общее время работы</TableCell>
-                <TableCell className="text-sm text-right">
-                  {fmt(totalTime)}
-                  {totalRawTime !== undefined && (
-                    <span className="text-muted-foreground font-normal"> ({fmt(totalRawTime)})</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-sm text-right">
-                  {fmt(cumulative)}
-                  {totalRawCum !== undefined && (
-                    <span className="text-muted-foreground font-normal"> ({fmt(totalRawCum)})</span>
-                  )}
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
-  );
+import {useMemo} from 'react';
+import {Card,CardHeader,CardTitle,CardContent} from './ui/card';
+import {Table,TableHeader,TableHead,TableRow,TableCell,TableBody} from './ui/table';
+import {buildProcessContract,processContractCsv} from '@/lib/cementing-process';
+import type {CementingSnapshot} from '@/lib/cementing-normalizers';
+import type {PressureProfileResult} from '@/lib/cementing-calculations';
+import FluidInventoryPanel from './FluidInventoryPanel';
+import {StopStoragePanel} from './StopStorageSection';
+/** One calculated snapshot, one schedule. Service volumes never increase well injection. */
+export default function PumpingSchedule({input,result}:{input:CementingSnapshot;result?:PressureProfileResult}){
+ const c=useMemo(()=>result?.processContract??buildProcessContract(input),[input,result]);
+ let wellVolume=0;
+ const rows=c.stages.map(s=>{if(s.destination==='well')wellVolume+=s.volumeM3;return {...s,wellVolume};});
+ const time=(n:number|null)=>n===null?'не определено':n.toFixed(2);
+ return <div className="space-y-4">
+ <Card><CardHeader><CardTitle className="text-lg">Расписание и баланс закачки</CardTitle></CardHeader><CardContent className="space-y-4">
+ <p className="text-xs text-muted-foreground">План по рассчитанному снимку программы. Промывка ЛВД идёт мимо скважины. Незаданные подготовка, опрессовка и демонтаж сюда не добавляются.</p>
+ <div className="grid sm:grid-cols-3 gap-3 text-sm"><p>План в скважину: <b>{c.wellVolumeM3.toFixed(3)} м³</b><br/>Масса порций: {c.canRun?(c.wellMassKg/1000).toFixed(3)+' т':'не подтверждена'}</p><p>ЛВД отдельно: <b>{c.surfaceVolumeM3.toFixed(3)} м³</b></p><p>Плановое время: <b>{time(c.totalTimeMin)}{c.totalTimeMin!==null?' мин':''}</b></p></div>
+ {c.issues.map((x,i)=><p key={i} role={x.severity==='error'?'alert':'status'} className={'text-xs '+(x.severity==='error'?'text-destructive':'text-amber-700')}>{x.message}</p>)}
+ <div className="overflow-x-auto"><Table><TableHeader><TableRow>{['Порция / режим','Жидкость / назначение','л/с','Объём, м³','Длительность, мин','Конец, мин','В скважину накопленно, м³'].map(t=><TableHead key={t} className="text-xs">{t}</TableHead>)}</TableRow></TableHeader><TableBody>{rows.map(s=>{const f=c.fluids.find(f=>f.id===s.fluidId);return <TableRow key={s.id}><TableCell>{s.name} / {s.stepIndex+1}</TableCell><TableCell className="text-xs">{f?.densityKgM3.toFixed(0)} кг/м³<br/>{s.destination==='well'?'В скважину':'ЛВД мимо скважины'}</TableCell><TableCell>{s.rateLps.toFixed(2)}</TableCell><TableCell>{s.volumeM3.toFixed(3)}</TableCell><TableCell>{time(s.durationMin)}</TableCell><TableCell>{time(s.endMin)}</TableCell><TableCell>{s.wellVolume.toFixed(3)}</TableCell></TableRow>;})}</TableBody></Table></div>
+ <p className="text-xs text-muted-foreground">Невязка интеграла расхода по времени: {c.volumeResidualM3.toExponential(2)} м³; {c.massResidualKg.toExponential(2)} кг. Это проверка назначенных порций. Фактическое распределение в модели показано отдельным балансом ниже.</p>
+ {result?.processAudit&&<p className="text-xs text-muted-foreground">Стоп в модели: {result.stopTime.toFixed(2)} мин. Разница закачанного объёма с планом: {result.processAudit.differenceM3.toFixed(3)} м³. {result.processAudit.reason}</p>}
+ <button type="button" className="text-xs text-primary underline" onClick={()=>{const url=URL.createObjectURL(new Blob(['\uFEFF'+processContractCsv(c)],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='cementing-process.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}>Скачать расписание CSV</button>
+ </CardContent></Card>
+ {result&&<FluidInventoryPanel result={result}/>}
+ <StopStoragePanel result={result?.stopStorage}/>
+ </div>;
 }
