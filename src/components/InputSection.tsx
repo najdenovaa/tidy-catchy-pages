@@ -1,5 +1,5 @@
 import {StopStorageControls} from "./StopStorageSection";
-import ProcessContractPanel from "./ProcessContractPanel";
+import SectionHeader from "./InputSectionHeader";
 import {rheologyInputErrors} from "@/lib/cement-rheology";
 import FluidLibrary from "./FluidLibrary";
 import WellGeometrySummary from "./WellGeometrySummary";
@@ -15,7 +15,6 @@ import FannEditor from "@/components/FannEditor";
 import { additiveSG } from "@/lib/cement-program";
 import { Label } from "@/components/ui/label";
 import { useState, memo, useCallback, useMemo, ChangeEvent } from "react";
-import { ChevronRight, ChevronDown } from "lucide-react";
 import { isAutoVolume, resolveFlowRateSteps, slurryDesignVolume, buildDisplacementSchedule, getCasingID, getSlurryHeight, annularVolumePerMeter, annularVolumeForInterval, hydrostaticPressure, interpolateTVD, calculateTVDFromSurvey, calculateCement, calculateAdditiveMass, effectiveRheology, cementCategory, calculateHydraulics, getFlowRateLps } from "@/lib/cementing-calculations";
 import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, AdditivePercentageType, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval, ReservoirLayer } from "@/lib/cementing-calculations";
 import * as XLSX from "xlsx";
@@ -63,15 +62,6 @@ const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "pumpZoneTop", label: "Зона ГНО — верх (MD)", unit: "м" },
   { key: "pumpZoneBottom", label: "Зона ГНО — низ (MD)", unit: "м" },
 ];
-
-function SectionHeader({ title, isOpen, onClick }: { title: string; isOpen: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="w-full flex items-center gap-2 py-3 px-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-      {isOpen ? <ChevronDown className="w-4 h-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground" />}
-      <span className="font-medium text-sm text-foreground text-left">{title}</span>
-    </button>
-  );
-}
 
 export const FlowRateStepsEditor = memo(function FlowRateStepsEditor({ steps, totalVolume, onChange, fracCheck, isDynamic, remainderLabel, resolvedVolumes }: {
   steps: FlowRateStep[];
@@ -541,8 +531,6 @@ export default function InputSection(props: Props) {
           <span className="underline underline-offset-2">Загрузить исходные данные — заполним за вас</span>
         </Link>
       </div>
-      <ProcessContractPanel input={props} />
-      <StopStorageControls well={wellData} onChange={onWellDataChange} />
       {/* ===== 1. Скважина ===== */}
       <Card>
         <SectionHeader title="📐 Данные скважины" isOpen={openSections.well} onClick={() => toggle("well")} />
@@ -1241,6 +1229,8 @@ export default function InputSection(props: Props) {
           </CardContent>
         )}
       </Card>
+
+      <StopStorageControls well={wellData} onChange={onWellDataChange} />
 
       {/* ===== 6. Параметры ГРП ===== */}
       <Card>

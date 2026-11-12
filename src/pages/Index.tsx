@@ -1,5 +1,3 @@
-import {StopStoragePanel} from "@/components/StopStorageSection";
-import FluidInventoryPanel from '@/components/FluidInventoryPanel';
 import {buildProcessContract} from "@/lib/cementing-process";
 import {rheologyInputErrors} from "@/lib/cement-rheology";
 import {rheologyReportFigures} from "@/lib/rheology-report";
@@ -804,15 +802,7 @@ export default function Index() {
           <TabsContent value="schedule">
             <div data-tab-content="schedule">
               {calcSnapshot && volumes ? (
-                <PumpingSchedule
-                  buffers={calcSnapshot.buffers}
-                  slurries={calcSnapshot.slurries}
-                  annularVPM={volumes.annularVolumePerMeter}
-                  displacementVolume={volumes.displacementVolumeWithCompression}
-                  displacementFluids={calcSnapshot.displacementFluids}
-                  casingDepthMD={calcSnapshot.wellData.casingDepthMD}
-                  wellData={calcSnapshot.wellData}
-                />
+                <PumpingSchedule input={calcSnapshot} result={pressureResult??undefined} />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
               )}
@@ -829,8 +819,8 @@ export default function Index() {
             <TabsContent value="charts" forceMount>
               <div data-tab-content="charts">
                 {calcSnapshot && pressureResult ? (
-                  <><FluidInventoryPanel result={pressureResult} /><StopStoragePanel result={pressureResult.stopStorage} /><ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin}
-                    envelope={pressureResult.envelope} prevShoeMD={snapWellData?.prevCasingDepth ?? 0} casingDepthMD={snapWellData?.casingDepthMD ?? 0} layers={snapWellData?.reservoirLayers} /></>
+                  <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin}
+                    envelope={pressureResult.envelope} prevShoeMD={snapWellData?.prevCasingDepth ?? 0} casingDepthMD={snapWellData?.casingDepthMD ?? 0} layers={snapWellData?.reservoirLayers} />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
                 )}
