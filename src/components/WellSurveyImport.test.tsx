@@ -19,6 +19,8 @@ describe('local survey preview',()=>{
   fireEvent.click(screen.getByRole('button',{name:'Применить кавернометрию'}));
   const result=onChange.mock.calls[0][0];
   expect(result.cavernIntervals).toHaveLength(1);expect(result.cavernIntervals[0].coeff).toBeCloseTo(1.21,9);
+  expect(result.cavernIntervals[0].diameterMm).toBeCloseTo(220,9);
+  expect(result.caliperLog).toMatchObject({fileName:"well.las",curve:"CALI",samples:[{md:0,diameterMm:220},{md:1,diameterMm:220},{md:2,diameterMm:220}]});
   expect(result.cavernIntervals[0].toMD).toBe(2);expect(result.wellDepthMD).toBe(2);
  });
  it('does not assume unknown units or apply a corrupt file',async()=>{

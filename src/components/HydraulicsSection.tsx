@@ -42,9 +42,9 @@ export default function HydraulicsSection({ wellData, slurries, fractureGradient
 
   const volumeRows = [
     { label: "Внутренний диаметр ОК", value: fmt(volumes.casingID, 1), unit: "мм" },
-    { label: "Эквивалентный диаметр (с каверн.)", value: fmt(volumes.equivalentDiameter, 1), unit: "мм" },
+    { label: "Средний экв. диаметр открытого ствола", value: fmt(volumes.equivalentDiameter, 1), unit: "мм" },
     { label: `Межтрубное пр-во`, value: fmt(volumes.annularVolumePerMeterPrevCasing, 4), unit: "м³/м" },
-    { label: `Затрубное пр-во`, value: fmt(volumes.annularVolumePerMeter, 4), unit: "м³/м" },
+    { label: `Затрубье: среднее по открытому стволу`, value: fmt(volumes.annularVolumePerMeter, 4), unit: "м³/м" },
     { label: `Внутр. объём колонны`, value: fmt(volumes.pipeVolumePerMeter, 4), unit: "м³/м" },
     { label: "Расчётный объём продавки", value: fmt(volumes.displacementVolume, 1), unit: "м³" },
     { label: "С учётом коэф. сжатия", value: fmt(volumes.displacementVolumeWithCompression, 1), unit: "м³" },

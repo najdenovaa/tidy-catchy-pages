@@ -11,7 +11,6 @@ export default function WellSurveyImport({kind,wellData,onChange}:Props){
   const [table,setTable]=useState<ImportTable|null>(null),[name,setName]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
   const [md,setMd]=useState(-1),[az,setAz]=useState(-1),[inc,setInc]=useState(-1),[cal,setCal]=useState(-1);
   const [depthUnit,setDepthUnit]=useState<LengthUnit|''>(''),[diameterUnit,setDiameterUnit]=useState<LengthUnit|''>(''),[angleUnit,setAngleUnit]=useState<AngleUnit>('deg'),[azimuthUnit,setAzimuthUnit]=useState<AngleUnit>('deg'),[maxGap,setMaxGap]=useState(2),[intervalStep,setIntervalStep]=useState(5);
-  const [appliedDiameter,setAppliedDiameter]=useState<number|null>(null);
   const title=kind==='caliper'?'Импорт кавернометрии LAS 2.0':'Импорт инклинометрии TXT / CSV';
   const preview=useMemo(()=>{
     if(!table)return null;
@@ -53,7 +52,7 @@ export default function WellSurveyImport({kind,wellData,onChange}:Props){
     <label className="block text-xs">{title}<Input aria-label={title} className="mt-1 text-xs" type="file" disabled={busy} accept={kind==='caliper'?'.las':'.txt,.csv,.tsv'} onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)void load(f);}}/></label>
     {busy&&<p role="status">Читаем файл…</p>}{error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
     {notice&&<p role="status" className="text-xs text-primary">{notice}</p>}
-    {appliedDiameter!==null&&appliedDiameter!==wellData.holeDiameter&&<p role="alert" className="text-xs text-destructive">Номинальный диаметр изменился после импорта LAS. Повторите импорт и замените коэффициенты для нового диаметра.</p>}
+
     {table&&<>
       <p className="text-xs font-medium">{name}: {table.rows.length} отсчётов, {table.columns.length} колонок</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -65,11 +64,11 @@ export default function WellSurveyImport({kind,wellData,onChange}:Props){
       </div>
       <div className="overflow-auto max-h-36 text-[11px]"><table className="w-full"><thead><tr>{table.columns.map((c,i)=><th className="text-left px-2" key={i}>{c.name}{c.unit?` (${c.unit})`:''}</th>)}</tr></thead><tbody>{table.rows.slice(0,5).map((r,i)=><tr key={i}>{r.map((v,j)=><td className="px-2" key={j}>{v??'NULL'}</td>)}</tr>)}</tbody></table></div>
       {preview?.error&&<p role="alert" className="text-xs text-destructive">{preview.error}</p>}
-      {preview?.caliper&&<div className="text-xs space-y-1"><p>Открытый ствол: {wellData.prevCasingDepth}–{wellData.wellDepthMD} м MD. Номинальный диаметр: {wellData.holeDiameter} мм.</p><p>Интервалов: {preview.caliper.intervals.length}; покрытие: {preview.caliper.coveredM.toFixed(2)} м; диаметр: {preview.caliper.minDiameterMm.toFixed(1)}–{preview.caliper.maxDiameterMm.toFixed(1)} мм.</p><p>Будут заменены все текущие интервалы кавернозности. K рассчитан по средней площади; объём сохраняется при усреднении по шагу, локальные пики и сужения сглаживаются; при изменении номинального диаметра импорт следует повторить.</p></div>}
+      {preview?.caliper&&<div className="text-xs space-y-1"><p>Открытый ствол: {wellData.prevCasingDepth}–{wellData.wellDepthMD} м MD. Номинальный диаметр: {wellData.holeDiameter} мм.</p><p>Интервалов: {preview.caliper.intervals.length}; покрытие: {preview.caliper.coveredM.toFixed(2)} м; диаметр: {preview.caliper.minDiameterMm.toFixed(1)}–{preview.caliper.maxDiameterMm.toFixed(1)} мм.</p><p>Будут заменены все текущие интервалы кавернозности. K рассчитан по средней площади; объём сохраняется при усреднении по шагу, локальные пики и сужения сглаживаются; измеренный эквивалентный диаметр сохраняется независимо от номинала.</p></div>}
       {preview?.survey&&<p className="text-xs">Будет заменена текущая инклинометрия. Точек: {preview.survey.points.length}; конечная MD: {preview.survey.points[preview.survey.points.length-1].md.toFixed(2)} м; TVD: {preview.survey.points[preview.survey.points.length-1].tvd.toFixed(2)} м (минимальная кривизна). Глубина скважины по стволу не изменяется.</p>}
       {warnings.map((w,i)=><p key={i} className="text-xs text-amber-700 dark:text-amber-400">{w}</p>)}
       <div className="flex gap-2"><Button size="sm" disabled={!preview||!!preview.error} onClick={()=>{
-        if(preview?.caliper){onChange({...wellData,cavernIntervals:preview.caliper.intervals});setAppliedDiameter(wellData.holeDiameter);setNotice(`LAS применён: ${preview.caliper.intervals.length} интервалов. Пересчитайте программу.`);}
+        if(preview?.caliper){onChange({...wellData,cavernIntervals:preview.caliper.intervals.map(iv=>({...iv,diameterMm:wellData.holeDiameter*Math.sqrt(iv.coeff)})),caliperLog:{fileName:name,curve:table.columns[cal].name,importedAt:new Date().toISOString(),depthUnit,diameterUnit,nominalDiameterMm:wellData.holeDiameter,intervalStepM:intervalStep,maxGapM:maxGap,samples:preview.caliper.measurements}});setNotice(`LAS применён: ${preview.caliper.intervals.length} интервалов. Пересчитайте программу.`);}
         if(preview?.survey){onChange({...wellData,trajectory:preview.survey.points,...(preview.survey.points[preview.survey.points.length-1].md>=wellData.wellDepthMD?{wellDepthTVD:interpolateTVD(wellData.wellDepthMD,preview.survey.points)}:{})});setNotice('Инклинометрия применена. TVD пересчитана по точкам; глубина скважины по стволу не изменена. Пересчитайте программу.');}
       }}>Применить {kind==='caliper'?'кавернометрию':'инклинометрию'}</Button><Button variant="outline" size="sm" onClick={()=>{setTable(null);setError('');}}>Закрыть предпросмотр</Button></div>
     </>}

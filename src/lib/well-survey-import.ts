@@ -111,7 +111,7 @@ export function buildSurvey(t:ImportTable,m:{md:number;azimuth:number;zenith:num
   return {points:calculateTVDFromSurvey(points),warnings};
 }
 export interface CaliperOptions {depthColumn:number;diameterColumn:number;depthUnit:LengthUnit;diameterUnit:LengthUnit;nominalDiameterMm:number;topMD:number;bottomMD:number;maxGapM:number;intervalStepM?:number;}
-export interface CaliperPreview {intervals:CavernInterval[];coveredM:number;minDiameterMm:number;maxDiameterMm:number;missingPairs:number;warnings:string[];}
+export interface CaliperPreview {measurements:{md:number;diameterMm:number|null}[];intervals:CavernInterval[];coveredM:number;minDiameterMm:number;maxDiameterMm:number;missingPairs:number;warnings:string[];}
 /** K=(d1²+d2²)/(2*dNom²): mean cross-sectional area between adjacent samples.
  * Nulls and large gaps remain uncovered. No extrapolation beyond the measured log. */
 export function buildCaliper(t:ImportTable,o:CaliperOptions):CaliperPreview {
@@ -134,7 +134,7 @@ export function buildCaliper(t:ImportTable,o:CaliperOptions):CaliperPreview {
   if(belowNominal)warnings.push(`Участков с диаметром ниже номинального: ${belowNominal}. Проверьте сужения и единицы; измерения не увеличены до номинала.`);
   warnings.push('Вне измеренного диапазона используется коэффициент по умолчанию. Последний отсчёт не продлевается до забоя.');
   let min=Infinity,max=-Infinity;for(const d of diameters){min=Math.min(min,d);max=Math.max(max,d);}
-  return {intervals:grouped,coveredM:grouped.reduce((s,v)=>s+v.toMD-v.fromMD,0),minDiameterMm:min,maxDiameterMm:max,missingPairs,warnings};
+  return {measurements:t.rows.map(r=>({md:r[o.depthColumn]!*dk,diameterMm:r[o.diameterColumn]===null?null:r[o.diameterColumn]!*ck})),intervals:grouped,coveredM:grouped.reduce((s,v)=>s+v.toMD-v.fromMD,0),minDiameterMm:min,maxDiameterMm:max,missingPairs,warnings};
 }
 
 /** Area-preserving depth bins. Never merge across an unmeasured gap. */

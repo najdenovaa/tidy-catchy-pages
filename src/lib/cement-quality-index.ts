@@ -230,7 +230,7 @@ export function calculateCementQuality(input: CQIInput): {
 
   const points: CementQualityPoint[] = steps.map(s => {
     const isOpenHole = s.md > prevCasingDepth;
-    const cavern = getCavernCoeffAtDepth(s.md, wellData.cavernCoeff, wellData.cavernIntervals);
+    const cavern = getCavernCoeffAtDepth(s.md, wellData.cavernCoeff, wellData.cavernIntervals,wellData.holeDiameter);
     const contactMin = lookupContact(s.md);
     const cqi = calcCQI({
       standoff: s.standoff,

@@ -1,3 +1,4 @@
+import { cavernIntervalCoeff, createAnnularGeometry } from "./well-geometry";
 import { equipmentMaterialInventory, type EquipmentMaterialItem, type CalculatedCentralizerMaterials } from "./materials-equipment-inventory";
 import { evaluateBasketStop, type BasketStopResult, type StopColumnSegment } from "./cement-basket-stop";
 import { materialLabel, type ProductIdentity } from "./cement-product-catalog";
@@ -130,6 +131,7 @@ export interface CavernInterval {
   fromMD: number; // м — начало интервала
   toMD: number;   // м — конец интервала
   coeff: number;  // коэффициент кавернозности
+  diameterMm?: number; // измеренный эквивалентный диаметр, независимый от номинала
 }
 
 export interface ReservoirLayer {
@@ -167,6 +169,7 @@ export interface WellData {
   trajectory: TrajectoryPoint[];
   casingSections?: CasingSection[];
   cavernIntervals?: CavernInterval[];
+  caliperLog?: import("./well-geometry").CaliperLog;
   reservoirLayers?: ReservoirLayer[];
   ckodShearPressureMPa?: number; // давление среза пробки на ЦКОД, МПа (по умолчанию 1.5)
   /** Температура нейтрального слоя / поверхности, °C (по умолчанию 15) */
@@ -200,10 +203,10 @@ export function getCasingIDAtDepth(md: number, casingOD: number, defaultWall: nu
 }
 
 // Получить коэффициент кавернозности на данной глубине MD
-export function getCavernCoeffAtDepth(md: number, defaultCoeff: number, intervals?: CavernInterval[]): number {
+export function getCavernCoeffAtDepth(md: number, defaultCoeff: number, intervals?: CavernInterval[], nominalDiameterMm?: number): number {
   if (!intervals || intervals.length === 0) return defaultCoeff;
   for (const iv of intervals) {
-    if (md >= iv.fromMD && md < iv.toMD) return iv.coeff;
+    if (md >= iv.fromMD && md < iv.toMD) return cavernIntervalCoeff(iv, nominalDiameterMm ?? 0);
   }
   return defaultCoeff;
 }
@@ -570,7 +573,7 @@ export function openHoleVolumeForInterval(
     if (cursor < iv.toMD) {
       const segStart = Math.max(cursor, iv.fromMD);
       const segEnd = Math.min(iv.toMD, bot);
-      vol += nominalVPM * iv.coeff * (segEnd - segStart);
+      vol += nominalVPM * cavernIntervalCoeff(iv, holeDiamMm) * (segEnd - segStart);
       cursor = segEnd;
     }
   }
@@ -623,7 +626,7 @@ export function annularVolumeForInterval(
         if (cursor < iv.toMD) {
           const segStart = Math.max(cursor, iv.fromMD);
           const segEnd = Math.min(iv.toMD, openBot);
-          openHoleVol += annularVolumePerMeter(holeDiamMm, casingODmm, iv.coeff) * (segEnd - segStart);
+          openHoleVol += annularVolumePerMeter(holeDiamMm, casingODmm, cavernIntervalCoeff(iv, holeDiamMm)) * (segEnd - segStart);
           cursor = segEnd;
         }
       }
@@ -745,12 +748,14 @@ export function calculateVolumes(
 ): VolumeResults {
   const casingID = getCasingID(data.casingOD, data.casingWall);
   const wellVPM = wellVolumePerMeter(data.holeDiameter);
-  const wellVCav = wellVolumeWithCavern(data.holeDiameter, data.cavernCoeff);
-  const annVPM = annularVolumePerMeter(data.holeDiameter, data.casingOD, data.cavernCoeff);
+  const openTop=Math.max(0,Math.min(data.prevCasingDepth,data.casingDepthMD));
+  const openLength=Math.max(0,data.casingDepthMD-openTop);
+  const wellVCav = openLength>0 ? openHoleVolumeForInterval(openTop,data.casingDepthMD,data.holeDiameter,data.cavernCoeff,data.cavernIntervals)/openLength : wellVolumeWithCavern(data.holeDiameter,data.cavernCoeff);
+  const annVPM = Math.max(0,wellVCav-pipeVolumePerMeter(data.casingOD));
   const annVPMprev = interCasingVolumePerMeter(data.prevCasingID, data.casingOD);
   const pipeVPM = pipeVolumePerMeter(casingID);
-  const openHoleVPM = wellVolumePerMeter(data.holeDiameter) * data.cavernCoeff;
-  const eqDiam = equivalentDiameter(data.holeDiameter, data.cavernCoeff);
+  const openHoleVPM = wellVCav;
+  const eqDiam = Math.sqrt(wellVCav*4/Math.PI)*1000;
 
   // Объём затрубного пространства с учётом интервалов кавернозности
   const totalAnnular = annularVolumeForInterval(
@@ -1031,26 +1036,11 @@ export function calculateHydraulics(
     const avgDensity = slurries.length > 0 ? slurries.reduce((s, sl) => s + sl.density * 1000, 0) / slurries.length : 1100;
     const standoffH = data.annularStandoffPct ?? 67;
 
-    const prevShoeH = data.prevCasingDepth || 0;
-    const upperLenH = Math.min(prevShoeH, data.casingDepthMD);
-    const lowerLenH = Math.max(0, data.casingDepthMD - upperLenH);
-    const prevIDH = data.prevCasingID || data.holeDiameter;
-    const dHydAnnUpperH = Math.max(prevIDH - data.casingOD, 10);
-    const prevIDmH = prevIDH / 1000;
-    const casODmH = data.casingOD / 1000;
-    const annAreaUpperH = (Math.PI / 4) * (prevIDmH * prevIDmH - casODmH * casODmH);
-    const dHydAnnLowerH = Math.max(data.holeDiameter - data.casingOD, 10);
-    const dHoleMH = data.holeDiameter / 1000;
-    const annAreaLowerH = (Math.PI / 4) * (dHoleMH * dHoleMH - casODmH * casODmH);
-
     let frAnnTotal = 0;
-    if (upperLenH > 0) {
-      const r = frictionLossWithRegime(flowRateM3min, upperLenH, dHydAnnUpperH, avgPv, avgYp, annAreaUpperH, avgDensity, "annulus");
-      frAnnTotal += r.pressureMPa * eccentricityFrictionFactor(standoffH, data.casingOD / prevIDH, avgPv, avgYp, r.regime);
-    }
-    if (lowerLenH > 0) {
-      const r = frictionLossWithRegime(flowRateM3min, lowerLenH, dHydAnnLowerH, avgPv, avgYp, annAreaLowerH, avgDensity, "annulus");
-      frAnnTotal += r.pressureMPa * eccentricityFrictionFactor(standoffH, data.casingOD / data.holeDiameter, avgPv, avgYp, r.regime);
+    for(const cell of createAnnularGeometry(data,data.casingDepthMD).cells){
+      if(cell.areaM2<=0)continue;
+      const r=frictionLossWithRegime(flowRateM3min,cell.bottomMD-cell.topMD,cell.diameterMm-data.casingOD,avgPv,avgYp,cell.areaM2,avgDensity,"annulus");
+      frAnnTotal+=r.pressureMPa*eccentricityFrictionFactor(standoffH,data.casingOD/cell.diameterMm,avgPv,avgYp,r.regime);
     }
     frictionAnn = frAnnTotal;
   }
@@ -1310,15 +1300,14 @@ export function calculatePressureProfile(
   const fracP = (fractureGradient * bottomTVD) / 1000;
   const casingID = weightedAverageCasingID(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
   const dHydPipe = casingID;
-  const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
+  const geometry = createAnnularGeometry(wellData, wellData.casingDepthMD);
+  const annVPM = geometry.at(Math.max(0,wellData.casingDepthMD-1e-7))?.areaM2 ?? 0;
   const pipeAreaM2 = (Math.PI / 4) * (casingID / 1000) * (casingID / 1000);
 
   // === Двухсекционная модель затрубья ===
   // Верх: от устья до башмака предыдущей колонны — межколонное пространство (prevCasingID × casingOD)
   // Низ: от башмака предыдущей колонны до забоя — открытый ствол (holeDiameter × casingOD)
   const prevShoe = wellData.prevCasingDepth || 0;
-  const upperLen = Math.min(prevShoe, wellData.casingDepthMD); // межколонное
-  const lowerLen = Math.max(0, wellData.casingDepthMD - upperLen); // открытый ствол
 
   // === Константы ЭЦП (доступны во всех push'ах) ===
   const prevShoeTVD = interpolateTVD(prevShoe, traj);
@@ -1327,18 +1316,6 @@ export function calculatePressureProfile(
     ? Math.max(...wellData.reservoirLayers.map(r => r.porePressureGrad || 0))
     : 0;
   const porePressureEcdGcm3 = maxPorePressureGrad > 0 ? maxPorePressureGrad / 9.81 : 0;
-
-  // Верхняя секция (межколонное)
-  const prevID = wellData.prevCasingID || wellData.holeDiameter; // если нет предыдущей колонны — используем дырку
-  const dHydAnnUpper = Math.max(prevID - wellData.casingOD, 10); // мм
-  const prevIDm = prevID / 1000;
-  const casODm = wellData.casingOD / 1000;
-  const annAreaUpper = (Math.PI / 4) * (prevIDm * prevIDm - casODm * casODm);
-
-  // Нижняя секция (открытый ствол)
-  const dHydAnnLower = Math.max(wellData.holeDiameter - wellData.casingOD, 10); // мм
-  const dHoleM = wellData.holeDiameter / 1000;
-  const annAreaLower = (Math.PI / 4) * (dHoleM * dHoleM - casODm * casODm);
 
   const mudDensityGcm3 = drillingFluid.density / 1000;
   // Начальная гидростатика — затрубье заполнено буровым раствором
@@ -1363,109 +1340,14 @@ export function calculatePressureProfile(
   // Annular profile helper — compute fluid heights by type from exitBatches
   interface FluidBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; }
 
-  // Maximum cement height = from shoe to the topmost slurry top
-  const maxCementHeight = slurries.length > 0
-    ? Math.max(0, wellData.casingDepthMD - Math.min(...slurries.map(s => s.topDepthMD)))
-    : wellData.casingDepthMD;
-
   function calcAnnularProfile(): { mudH: number; bufferH: number; cementH: number; displH: number } {
     const result = { mudH: 0, bufferH: 0, cementH: 0, displH: 0 };
-    const exitBatches: FluidBatch[] = [];
-    const mudExited = Math.min(totalPumped, pipeCapacity);
-    if (mudExited > 0) exitBatches.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited, fluidType: 'mud' });
-    let pumpedExited = Math.max(0, totalPumped - pipeCapacity);
-    for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
-      // Продавочная жидкость находится за верхней пробкой и не должна выходить в затрубье
-      // до посадки пробки в ЦКОД. Её объём лишь проталкивает впереди идущие пачки.
-      if (pumpHistory[i].fluidType === 'displacement') continue;
-      const take = Math.min(pumpHistory[i].volumeM3, pumpedExited);
-      if (take > 0) {
-        const effectiveType = (i === freefallBatchIdx) ? ('mud' as AnnularFluidType) : pumpHistory[i].fluidType;
-        exitBatches.push({ densityGcm3: pumpHistory[i].densityGcm3, volumeM3: take, fluidType: effectiveType });
-      }
-      pumpedExited -= take;
-    }
-
-    // Two-section annulus model: fill from bottom (shoe) upward
-    // Lower section: open hole (from prevShoe to casingDepthMD) — uses annAreaLower
-    // Upper section: prev casing (from 0 to prevShoe) — uses annAreaUpper
-    // IMPORTANT: apply cavern coefficient to open hole section to match cement volume calculation
-    // (annularVolumeForInterval uses cavernCoeff, so height conversion must use the same VPM)
-    const lowerVPM = annVPM; // m³/m (open hole section, cavern already in annVPM)
-    const upperVPM = annAreaUpper > 0 ? annAreaUpper : annVPM / 1000; // m³/m (inter-casing, no cavern)
-
-    function addHeight(type: AnnularFluidType, h: number) {
-      switch (type) {
-        case 'mud': result.mudH += h; break;
-        case 'buffer': result.bufferH += h; break;
-        case 'cement': result.cementH += h; break;
-        case 'displacement': result.displH += h; break;
-      }
-    }
-
-    // Walk batches from last exited (bottom) to first exited (top)
-    let filledFromBottom = 0; // meters filled from bottom (shoe) upward
-    for (let i = exitBatches.length - 1; i >= 0; i--) {
-      let volRemaining = exitBatches[i].volumeM3;
-      const ft = exitBatches[i].fluidType;
-
-      // Fill lower section first (open hole)
-      const lowerRemaining = Math.max(0, lowerLen - filledFromBottom);
-      if (lowerRemaining > 0 && volRemaining > 0) {
-        let hLower = Math.min(volRemaining / lowerVPM, lowerRemaining);
-        // Cap cement height to prevent overflow above topDepthMD
-        if (ft === 'cement') {
-          hLower = Math.min(hLower, Math.max(0, maxCementHeight - result.cementH));
-        }
-        if (hLower > 0) {
-          addHeight(ft, hLower);
-          volRemaining -= hLower * lowerVPM;
-          filledFromBottom += hLower;
-        }
-      }
-
-      // Then fill upper section (prev casing)
-      const upperStart = Math.max(0, filledFromBottom - lowerLen);
-      const upperRemaining = Math.max(0, upperLen - upperStart);
-      if (upperRemaining > 0 && volRemaining > 0) {
-        let hUpper = Math.min(volRemaining / upperVPM, upperRemaining);
-        // Cap cement height
-        if (ft === 'cement') {
-          hUpper = Math.min(hUpper, Math.max(0, maxCementHeight - result.cementH));
-        }
-        if (hUpper > 0) {
-          addHeight(ft, hUpper);
-          volRemaining -= hUpper * upperVPM;
-          filledFromBottom += hUpper;
-        }
-      }
-
-      if (filledFromBottom >= wellData.casingDepthMD) break;
-    }
-
-    // Remaining annular space — добиваем цементом, если по дизайну цемент должен
-    // подниматься до устья (maxCementHeight ≈ casingDepthMD) и цемент уже есть в затрубье.
-    // Иначе — оставшееся место занимает буровой раствор.
-    const totalFilled = result.mudH + result.bufferH + result.cementH + result.displH;
-    const cementToSurface = maxCementHeight >= wellData.casingDepthMD - 0.5;
-    if (totalFilled < wellData.casingDepthMD) {
-      const gap = wellData.casingDepthMD - totalFilled;
-      if (result.cementH > 0 && cementToSurface && gap < 2.0) {
-        // компенсируем погрешность округления объёмов
-        result.cementH += gap;
-      } else {
-        result.mudH += gap;
-      }
-    }
-
-    // Если по дизайну цемент должен быть до устья, а буфер «застрял» наверху —
-    // в реальности буфер вытесняется на поверхность, и его место занимает цемент.
-    if (cementToSurface && result.cementH > 0 && result.bufferH > 0) {
-      const totalNonMud = result.cementH + result.bufferH + result.displH;
-      if (totalNonMud >= wellData.casingDepthMD - 1.0) {
-        result.cementH += result.bufferH;
-        result.bufferH = 0;
-      }
+    for(const c of annColumn(false,true)){
+      const height=c.bot-c.top;
+      if(c.fluidType==='cement')result.cementH+=height;
+      else if(c.fluidType==='buffer')result.bufferH+=height;
+      else if(c.fluidType==='displacement')result.displH+=height;
+      else result.mudH+=height;
     }
 
     return result;
@@ -1578,139 +1460,10 @@ export function calculatePressureProfile(
   // Порядок выхода: сначала исходный буровой из трубы, потом закачанные флюиды по порядку.
   // В затрубье: самый свежий флюид внизу (у забоя), самый старый — вверху.
   function calcAnnularHydrostatic(): number {
-    let pressure = 0;
-
-    // Строим список того, что вышло в затрубье (в порядке выхода = снизу вверх наоборот)
-    // Всего вышло totalPumped м³ из трубы
-    // Первым вышел буровой раствор (до pipeCapacity м³), затем закачанные флюиды
-    const exitBatches: FluidBatch[] = [];
-    const mudExited = Math.min(totalPumped, pipeCapacity);
-    if (mudExited > 0) exitBatches.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited, fluidType: 'mud' as AnnularFluidType });
-
-    let pumpedExited = Math.max(0, totalPumped - pipeCapacity);
-    for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
-      if (pumpHistory[i].fluidType === 'displacement') continue;
-      const take = Math.min(pumpHistory[i].volumeM3, pumpedExited);
-      if (take > 0) exitBatches.push({ densityGcm3: pumpHistory[i].densityGcm3, volumeM3: take, fluidType: pumpHistory[i].fluidType });
-      pumpedExited -= take;
-    }
-
-    // Двухсекционная модель: заполняем затрубье снизу вверх
-    let currentBottomMD = wellData.casingDepthMD;
-    for (let i = exitBatches.length - 1; i >= 0; i--) {
-      const batch = exitBatches[i];
-      if (batch.volumeM3 <= 0 || currentBottomMD <= 0) continue;
-      let volRemaining = batch.volumeM3;
-
-      // Сначала заполняем нижнюю секцию (открытый ствол)
-      if (currentBottomMD > prevShoe && volRemaining > 0) {
-        const availableLen = currentBottomMD - Math.max(prevShoe, 0);
-        const maxVol = availableLen * lowerVPMhydro;
-        const fillVol = Math.min(volRemaining, maxVol);
-        const fillLen = lowerVPMhydro > 0 ? fillVol / lowerVPMhydro : 0;
-        const topMD = currentBottomMD - fillLen;
-        const tvdBot = interpolateTVD(currentBottomMD, traj);
-        const tvdTop = interpolateTVD(topMD, traj);
-        pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
-        currentBottomMD = topMD;
-        volRemaining -= fillVol;
-      }
-
-      // Затем заполняем верхнюю секцию (межтрубное)
-      if (currentBottomMD > 0 && currentBottomMD <= prevShoe + 0.001 && volRemaining > 0) {
-        const availableLen = currentBottomMD;
-        const maxVol = availableLen * upperVPMhydro;
-        const fillVol = Math.min(volRemaining, maxVol);
-        const fillLen = upperVPMhydro > 0 ? fillVol / upperVPMhydro : 0;
-        const topMD = Math.max(0, currentBottomMD - fillLen);
-        const tvdBot = interpolateTVD(currentBottomMD, traj);
-        const tvdTop = interpolateTVD(topMD, traj);
-        pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
-        currentBottomMD = topMD;
-        volRemaining -= fillVol;
-      }
-
-      if (currentBottomMD <= 0) break;
-    }
-
-    // Выше всех пачек — исходный буровой раствор
-    if (currentBottomMD > 0) {
-      const tvd = interpolateTVD(currentBottomMD, traj);
-      pressure += mudDensityGcm3 * tvd * 0.00981;
-    }
-
-    return pressure;
+    return hydroFromColumn(annColumn(),wellData.casingDepthMD);
   }
-
-  // Те же VPM для двухсекционной модели затрубья (используются и для расчёта на произвольной глубине)
-  const lowerVPMhydro = annVPM;
-  const upperVPMhydro = annAreaUpper > 0 ? annAreaUpper : annVPM;
-
-  // Гидростатика затрубья ДО заданной глубины targetMD (для расчёта ЭЦП в произвольной точке)
-  function calcAnnularHydrostaticAtDepth(targetMD: number, cementAsWater = false): number {
-    if (targetMD <= 0) return 0;
-    let pressure = 0;
-    const exitBatches: FluidBatch[] = [];
-    const mudExited = Math.min(totalPumped, pipeCapacity);
-    if (mudExited > 0) exitBatches.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited, fluidType: 'mud' as AnnularFluidType });
-    let pumpedExited = Math.max(0, totalPumped - pipeCapacity);
-    for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
-      if (pumpHistory[i].fluidType === 'displacement') continue;
-      const take = Math.min(pumpHistory[i].volumeM3, pumpedExited);
-      if (take > 0) exitBatches.push({ densityGcm3: cementAsWater && pumpHistory[i].fluidType === "cement" ? 1.0 : pumpHistory[i].densityGcm3, volumeM3: take, fluidType: pumpHistory[i].fluidType });
-      pumpedExited -= take;
-    }
-    const effectiveBottomMD = Math.min(targetMD, wellData.casingDepthMD);
-    // Работаем с копией объёмов батчей, чтобы не мутировать общий массив
-    const batchVols = exitBatches.map(b => b.volumeM3);
-
-    // Если целевая глубина <= башмак пред. ОК, то нижняя секция (открытый ствол
-    // от prevShoe до casingDepthMD) физически ниже точки расчёта — её объёмы
-    // «резервируем» и не включаем в гидростатику на башмаке.
-    if (targetMD <= prevShoe + 0.001 && lowerLen > 0 && lowerVPMhydro > 0) {
-      let lowerCapacity = lowerLen * lowerVPMhydro;
-      for (let i = exitBatches.length - 1; i >= 0 && lowerCapacity > 0; i--) {
-        if (batchVols[i] <= 0) continue;
-        const take = Math.min(batchVols[i], lowerCapacity);
-        batchVols[i] -= take;
-        lowerCapacity -= take;
-      }
-    }
-
-    let currentBottomMD = effectiveBottomMD;
-    for (let i = exitBatches.length - 1; i >= 0; i--) {
-      const batch = exitBatches[i];
-      let volRemaining = batchVols[i];
-      if (volRemaining <= 0 || currentBottomMD <= 0) continue;
-      if (currentBottomMD > prevShoe && volRemaining > 0) {
-        const availableLen = currentBottomMD - Math.max(prevShoe, 0);
-        const fillVol = Math.min(volRemaining, availableLen * lowerVPMhydro);
-        const fillLen = lowerVPMhydro > 0 ? fillVol / lowerVPMhydro : 0;
-        const topMD = currentBottomMD - fillLen;
-        const tvdBot = interpolateTVD(currentBottomMD, traj);
-        const tvdTop = interpolateTVD(topMD, traj);
-        pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
-        currentBottomMD = topMD;
-        volRemaining -= fillVol;
-      }
-      if (currentBottomMD > 0 && currentBottomMD <= prevShoe + 0.001 && volRemaining > 0) {
-        const availableLen = currentBottomMD;
-        const fillVol = Math.min(volRemaining, availableLen * upperVPMhydro);
-        const fillLen = upperVPMhydro > 0 ? fillVol / upperVPMhydro : 0;
-        const topMD = Math.max(0, currentBottomMD - fillLen);
-        const tvdBot = interpolateTVD(currentBottomMD, traj);
-        const tvdTop = interpolateTVD(topMD, traj);
-        pressure += batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
-        currentBottomMD = topMD;
-        volRemaining -= fillVol;
-      }
-      if (currentBottomMD <= 0) break;
-    }
-    if (currentBottomMD > 0) {
-      const tvd = interpolateTVD(currentBottomMD, traj);
-      pressure += mudDensityGcm3 * tvd * 0.00981;
-    }
-    return pressure;
+  function calcAnnularHydrostaticAtDepth(targetMD:number,cementAsWater=false):number {
+    return hydroFromColumn(annColumn(cementAsWater),Math.min(targetMD,wellData.casingDepthMD));
   }
 
   // ═══ Послойное трение в затрубье и проверка по пластам ═══
@@ -1749,16 +1502,9 @@ export function calculatePressureProfile(
     for (let i = exit.length - 1; i >= 0 && bottom > 0; i--) {
       let vol = exit[i].volumeM3;
       const r = rheoForBatch(exit[i]);
-      while (vol > 1e-9 && bottom > 0) {
-        const inLower = bottom > prevShoe;
-        const vpm = inLower ? lowerVPMhydro : upperVPMhydro;
-        const avail = inLower ? bottom - Math.max(prevShoe, 0) : bottom;
-        const len = Math.min(avail, vol / Math.max(1e-9, vpm));
-        if (len <= 1e-9) break;
-        segs.push({ topMD: bottom - len, bottomMD: bottom, density: exit[i].densityGcm3 * 1000, pv: r.pv, yp: r.yp, hb: r.hb });
-        bottom -= len;
-        vol -= len * vpm;
-      }
+      const top=geometry.depthAboveVolume(bottom,vol);
+      if(bottom>top)segs.push({topMD:top,bottomMD:bottom,density:exit[i].densityGcm3*1000,pv:r.pv,yp:r.yp,hb:r.hb});
+      bottom=top;
     }
     if (bottom > 0) segs.push({ topMD: 0, bottomMD: bottom, density: mudDensityGcm3 * 1000, pv: mudRheo.pv, yp: mudRheo.yp, hb: hbOf(mudRheo) });
     return segs;
@@ -1791,12 +1537,13 @@ export function calculatePressureProfile(
       if (bot <= top) continue;
       let z = bot;
       while (z > top + 1e-6) {
-        const zTop = Math.max(top, z - SUBSTEP_M, z > prevShoe ? prevShoe : 0);
+        const cell=geometry.at(Math.max(0,z-1e-7))!;
+        const zTop = Math.max(top, z - SUBSTEP_M, cell.topMD);
         const len = z - zTop;
         const lower = (z + zTop) / 2 > prevShoe;
-        const dh = lower ? dHydAnnLower : dHydAnnUpper;
-        const area = lower ? annAreaLower : annAreaUpper;
-        const outer = lower ? wellData.holeDiameter : prevID;
+        const dh = cell.diameterMm-wellData.casingOD;
+        const area = cell.areaM2;
+        const outer = cell.diameterMm;
         const r = frictionLossWithRegime(flowRateM3min, len, dh, sg.pv, sg.yp, area, sg.density, "annulus", sg.hb);
         const f = eccentricityFrictionFactor(standoffAt((z + zTop) / 2), wellData.casingOD / outer, sg.pv, sg.yp, r.regime, sg.hb);
         p += r.pressureMPa * f;
@@ -1839,7 +1586,7 @@ export function calculatePressureProfile(
     }
   }
   /** Столб жидкостей в затрубье (интервалы сверху вниз не упорядочены): заполнение от забоя вверх по объёмам. */
-  function annColumn(cementAsWater = false): StopColumnSegment[] {
+  function annColumn(cementAsWater = false, profileMode = false): StopColumnSegment[] {
     const batches: { rho: number; vol: number; fluidType: string }[] = [];
     const mudExited = Math.min(totalPumped, pipeCapacity);
     if (mudExited > 0) batches.push({ rho: mudDensityGcm3, vol: mudExited, fluidType: "mud" });
@@ -1847,24 +1594,15 @@ export function calculatePressureProfile(
     for (let i = 0; i < pumpHistory.length && left > 0; i++) {
       if (pumpHistory[i].fluidType === "displacement") continue;
       const take = Math.min(pumpHistory[i].volumeM3, left);
-      if (take > 0) batches.push({ rho: cementAsWater && pumpHistory[i].fluidType === "cement" ? 1.0 : pumpHistory[i].densityGcm3, vol: take, fluidType: pumpHistory[i].fluidType });
+      if (take > 0) batches.push({ rho: cementAsWater && pumpHistory[i].fluidType === "cement" ? 1.0 : pumpHistory[i].densityGcm3, vol: take, fluidType: profileMode && i===freefallBatchIdx ? 'mud' : pumpHistory[i].fluidType });
       left -= take;
     }
     const out: StopColumnSegment[] = [];
     let bot = wellData.casingDepthMD;
     for (let i = batches.length - 1; i >= 0 && bot > 0; i--) {
-      let v = batches[i].vol;
-      while (v > 1e-9 && bot > 0) {
-        const lower = bot > prevShoe + 1e-6;
-        const vpm = lower ? lowerVPMhydro : upperVPMhydro;
-        const limitTop = lower ? Math.max(prevShoe, 0) : 0;
-        if (vpm <= 0) break;
-        const len = Math.min(v / vpm, bot - limitTop);
-        const top = bot - len;
-        out.push({ top, bot, rho: batches[i].rho, fluidType: batches[i].fluidType });
-        v -= len * vpm; bot = top;
-        if (len <= 1e-9) break;
-      }
+      const top=geometry.depthAboveVolume(bot,batches[i].vol);
+      if(bot>top)out.push({top,bot,rho:batches[i].rho,fluidType:batches[i].fluidType});
+      bot=top;
     }
     if (bot > 0) out.push({ top: 0, bot, rho: mudDensityGcm3, fluidType: "mud" });
     return out;
@@ -1903,12 +1641,13 @@ export function calculatePressureProfile(
       if (bot <= top) continue;
       let z = bot;
       while (z > top + 1e-6) {
-        const zTop = Math.max(top, z - SUBSTEP_M, z > prevShoe ? prevShoe : 0);
+        const cell=geometry.at(Math.max(0,z-1e-7))!;
+        const zTop = Math.max(top, z - SUBSTEP_M, cell.topMD);
         const len = z - zTop;
         const lower = (z + zTop) / 2 > prevShoe;
-        const dh = lower ? dHydAnnLower : dHydAnnUpper;
-        const area = lower ? annAreaLower : annAreaUpper;
-        const outer = lower ? wellData.holeDiameter : prevID;
+        const dh = cell.diameterMm-wellData.casingOD;
+        const area = cell.areaM2;
+        const outer = cell.diameterMm;
         const r = frictionLossWithRegime(rateM3min, len, dh, sg.pv, sg.yp, area, sg.density, "annulus", sg.hb);
         p += r.pressureMPa * eccentricityFrictionFactor(standoffAt((z + zTop) / 2), wellData.casingOD / outer, sg.pv, sg.yp, r.regime, sg.hb);
         z = zTop;
@@ -2223,7 +1962,7 @@ export function calculatePressureProfile(
       const surfP = surfPRaw;
       const bhp = bhpRaw;
 
-      const annAreaForVel = annAreaLower > 0 ? annAreaLower : (annAreaUpper > 0 ? annAreaUpper : 0);
+      const annAreaForVel = annVPM;
       const annularVelocityMps = annAreaForVel > 0 ? (actualRateLps / 1000) / annAreaForVel : 0;
 
       const annP = calcAnnularProfile();

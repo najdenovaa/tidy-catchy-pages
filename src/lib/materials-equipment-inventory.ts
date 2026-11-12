@@ -1,10 +1,11 @@
+import { WELL_GEOMETRY_MODEL_VERSION } from './well-geometry';
 import { EQUIPMENT_LABELS, equipmentDetails, type EquipmentSelection } from './cementing-equipment';
 import type { WellData } from './cementing-calculations';
 export interface CentralizerMaterialItem { model:string; manufacturer:string; quantity:number; sourceUrl?:string }
 export interface CalculatedCentralizerMaterials { geometryKey:string; items:CentralizerMaterialItem[] }
 export interface EquipmentMaterialItem { name:string; amount:number; unit:string; manufacturer?:string; details?:string; sourceUrl?:string; calculated?:boolean }
 export function centralizerMaterialGeometryKey(w:WellData):string {
- return JSON.stringify([w.casingDepthMD,w.casingOD,w.casingWall,w.holeDiameter,w.prevCasingDepth,w.prevCasingID,w.cavernCoeff,w.cavernIntervals??[],w.trajectory??[],w.pumpZoneTop,w.pumpZoneBottom]);
+ return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION,w.casingDepthMD,w.casingOD,w.casingWall,w.holeDiameter,w.prevCasingDepth,w.prevCasingID,w.cavernCoeff,w.cavernIntervals??[],w.trajectory??[],w.pumpZoneTop,w.pumpZoneBottom]);
 }
 export function normalizeCentralizerMaterials(v:unknown):CalculatedCentralizerMaterials|undefined {
  if(!v||typeof v!=='object')return undefined;

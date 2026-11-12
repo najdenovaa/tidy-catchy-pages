@@ -1,3 +1,4 @@
+import { boreDiameterAtDepth, createAnnularGeometry } from "./well-geometry";
 import {
   getCasingID,
   getCasingIDAtDepth,
@@ -129,8 +130,8 @@ export function validateFoamJob(input: FoamJobInput): string[] {
     errors.push("Некорректная толщина обсадной колонны.");
   if (!Number.isFinite(w.cavernCoeff) || w.cavernCoeff <= 0)
     errors.push("Коэффициент кавернозности должен быть больше нуля.");
-  if (w.holeDiameter * Math.sqrt(w.cavernCoeff || 1) <= w.casingOD)
-    errors.push("Ствол должен быть шире наружного диаметра колонны.");
+  if (createAnnularGeometry(w,w.casingDepthMD).cells.some(c=>c.areaM2<=0))
+    errors.push("Ствол должен быть шире наружного диаметра колонны на всех интервалах профиля.");
   if (w.prevCasingDepth > 0 && w.prevCasingID <= w.casingOD)
     errors.push("ID предыдущей колонны должен быть больше OD спускаемой.");
   if (
@@ -361,12 +362,7 @@ function geometry(input: FoamJobInput): GeometryCell[] {
       const outer =
         kind === "pipe"
           ? getCasingIDAtDepth(md, w.casingOD, w.casingWall, w.casingSections)
-          : md <= w.prevCasingDepth
-            ? w.prevCasingID
-            : w.holeDiameter *
-              Math.sqrt(
-                getCavernCoeffAtDepth(md, w.cavernCoeff, w.cavernIntervals),
-              );
+          : boreDiameterAtDepth(w,md);
       const inner = kind === "pipe" ? 0 : w.casingOD;
       const a = area(outer) - area(inner);
       if (!Number.isFinite(a) || a <= 0)

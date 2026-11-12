@@ -1,3 +1,4 @@
+import { boreDiameterAtDepth } from "./well-geometry";
 /**
  * Автоподбор программы цементирования.
  * Перебор расходов (буфер+цемент / продавка) и параметров разделительного буфера (объём, плотность).
@@ -221,7 +222,7 @@ export function displacementIndex(
   for (let i = 0; i < centr.length; i++) {
     const c = centr[i];
     const len = i < centr.length - 1 ? centr[i + 1].md - c.md : i > 0 ? c.md - centr[i - 1].md : 1;
-    const outer = c.md <= w.prevCasingDepth ? w.prevCasingID : w.holeDiameter * Math.sqrt(getCavernCoeffAtDepth(c.md, w.cavernCoeff, w.cavernIntervals));
+    const outer = boreDiameterAtDepth(w,c.md);
     const so = c.standoff;
     const sp = f.spacer ? pair(f.spacer, f.mud, outer, so, f.spacer.volumeM3) : null;
     const ce = f.cement ? pair(f.cement, f.spacer ?? f.mud, outer, so) : null;

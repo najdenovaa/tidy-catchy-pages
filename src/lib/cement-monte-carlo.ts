@@ -1,3 +1,4 @@
+import { scaleCavernInterval } from "./well-geometry";
 // Monte Carlo uncertainty analysis for cement quality (CQI)
 // Perturbs key inputs (caverns, rheology, eccentricity) and runs N CQI simulations
 // Produces P10/P50/P90 distributions + probability of success.
@@ -73,10 +74,7 @@ export function runMonteCarloCQI(
       ...baseInput.wellData,
       holeDiameter: baseInput.wellData.holeDiameter * cavernFactor,
       cavernCoeff: baseInput.wellData.cavernCoeff * (1 + sampleSymmetric(options.cavernUncertainty)),
-      cavernIntervals: baseInput.wellData.cavernIntervals?.map((cv) => ({
-        ...cv,
-        coeff: cv.coeff * (1 + sampleSymmetric(options.cavernUncertainty)),
-      })),
+      cavernIntervals: baseInput.wellData.cavernIntervals?.map(cv=>scaleCavernInterval(cv,1+sampleSymmetric(options.cavernUncertainty),baseInput.wellData.holeDiameter,cavernFactor)),
     };
 
     // Perturb rheology of drilling fluid + cement slurries

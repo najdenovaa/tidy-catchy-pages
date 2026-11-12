@@ -1,3 +1,4 @@
+import { boreDiameterAtDepth } from "./well-geometry";
 /** Sensitivity study of post-stop load transfer. A permeable basket is not a packer.
  * No basket credit is applied to the primary hydraulic/safety calculation. */
 import { getEffectiveTrajectory, interpolateTVD, type WellData } from './cementing-calculations';
@@ -39,8 +40,7 @@ export function evaluateBasketStop(w: WellData, column: StopColumnSegment[], fra
       supportTop = top;
       if(supportTop <= upperBoundary) break;
     }
-    const localCavern=w.cavernIntervals?.find(c=>md>=c.fromMD&&md<=c.toMD)?.coeff??w.cavernCoeff??1;
-    const outer = md <= w.prevCasingDepth && w.prevCasingID > 0 ? w.prevCasingID : w.holeDiameter * Math.sqrt(localCavern > 0 ? localCavern : 1);
+    const outer = boreDiameterAtDepth(w,md);
     const area = Math.PI/4*Math.max(0,(outer/1000)**2-(w.casingOD/1000)**2);
     const desired = potentialMPa*fraction;
     const capacity = e.basketCapacityKN;

@@ -1,3 +1,4 @@
+import { boreDiameterAtDepth } from "./well-geometry";
 /** Casing running: each broomstick point is a NEW bottom-to-top equilibrium.
  * Soft-string force balance: Johancsik et al.; survey angles in radians, forces kN.
  * No hard-string, pressure-end force, surge/swab or buckling certification is implied.
@@ -69,9 +70,7 @@ export function runningSurvey(traj: TrajectoryPoint[], md: number) {
   return pts[pts.length-1];
 }
 export function runningBore(w: WellData, md: number) {
-  if (md < w.prevCasingDepth && w.prevCasingID>0) return w.prevCasingID;
-  const k = w.cavernIntervals?.find(x=>md>=x.fromMD&&md<x.toMD)?.coeff ?? w.cavernCoeff ?? 1;
-  return w.holeDiameter*Math.sqrt(Math.max(.01,k));
+  return boreDiameterAtDepth(w,md);
 }
 interface Tool { targetMD: number; runningKN: number; od: number; rigid: boolean; }
 function prepare(input: CasingRunningInput) {
