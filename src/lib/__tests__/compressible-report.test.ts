@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import {mkdirSync,writeFileSync,readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {studyFixture} from '@/test/fixtures/compressible-flow';
+import {buildProcessContract} from '../cementing-process';
 import {transportRefinementInputs,summarizeTransportRefinement} from '../transport-refinement';
 import {simulateCompressibleTransport} from '../compressible-transport';
 import {exportToDocx} from '../export-docx';
@@ -23,3 +24,5 @@ it('exports the accepted mass budget and figures, excludes deselected data and r
  const stale=await make({...p.wellData,stopStorage:{...p.wellData.stopStorage,surfaceBackpressureMPa:2}});expect(stale.xml).toContain('Результат устарел');expect(stale.xml).not.toContain('накопленная невязка');expect(stale.xml).not.toContain('1D-перенос: давление');
  const off=await make(p.wellData,{...selection,compressibleTransport:false});expect(off.xml).not.toContain('накопленная невязка');expect(off.xml).not.toContain('Чувствительность к сетке и шагу');
 },45000);
+
+it('exports actual prescribed-boundary events and invalidates them after a setting change',async()=>{const p=studyFixture();p.wellData.stopStorage={...p.wellData.stopStorage,flowClosureEnabled:true,flowClosureTimeMin:buildProcessContract(p).totalTimeMin-1/60,flowStepSeconds:.5};const result=simulateCompressibleTransport(p);expect(result.status,result.reason).toBe('complete');const volumes=calculateVolumes(p.wellData,p.slurries),pressureResult=calculatePressureProfile(p.wellData,p.slurries,p.buffers,p.drillingFluid,p.displacementFluids,p.fractureGradient,volumes.displacementVolumeWithCompression);const selection=Object.fromEntries(Object.keys(defaultReportSelection('cementing')).map(k=>[k,k==='compressibleTransport']));const blob=await exportToDocx(p.wellData,p.drillingFluid,p.slurries,p.buffers,p.displacementFluids,p.fractureGradient,undefined,[],{volumes,pressureResult,flushTimeMin:0,flushVolumeM3:0},{returnBlob:true,selection,extras:{compressibleTransport:result}});if(!blob)throw new Error('No DOCX');const xml=await (await JSZip.loadAsync(await blob.arrayBuffer())).file('word/document.xml').async('text');expect(xml).toContain('Герметичное перекрытие задано пользователем');expect(xml).toContain('не прогноз посадки');},45000);

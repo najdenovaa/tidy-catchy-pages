@@ -4,7 +4,8 @@ export interface FlowFluid {id:string;name:string;rhoRef:number;bulkMPa:number;p
 export interface FlowCell {volumeM3:number;lengthM:number;tvd:number;kind:'pipe'|'annulus';outerMm:number;innerMm:number;md:number;standoffPct?:number}
 export interface FlowState {pressures:number[];fractions:number[][];masses:number[]}
 export interface FlowStep {state:FlowState;fluxKgS:number[];inletMPa:number;returnedKg:number[];maxComponentResidualKg:number;maxRelativeResidual:number;iterations:number}
-export interface FlowSystem {frictionMultiplier?:number;cells:FlowCell[];fluids:FlowFluid[];referenceMPa:number;outletMPa:number;inletTvd:number;outletTvd:number}
+export interface FlowBarrier {face:number;closed?:boolean;checkValve?:boolean;crackMPa?:number}
+export interface FlowSystem {barriers?:FlowBarrier[];frictionMultiplier?:number;cells:FlowCell[];fluids:FlowFluid[];referenceMPa:number;outletMPa:number;inletTvd:number;outletTvd:number}
 const sum=(a:number[])=>a.reduce((n,v)=>n+v,0);
 /** Harmonic mass-fraction mixture, additive physical volumes, exponential constant-K EOS. */
 export function mixtureDensity(fluids:FlowFluid[],fractions:number[],p:number,pref:number){
@@ -29,7 +30,8 @@ function face(s:FlowSystem,i:number,p:number[],fractions:number[][],zeroFlow=fal
  const f=i===n?fractions[n-1]:i===0?fractions[0]:s.fluids.map((_,j)=>(fractions[i-1][j]+fractions[i][j])/2);
  const rho=mixtureDensity(s.fluids,f,pm,s.referenceMPa).rho;
  const dz=i===n?s.outletTvd-left.tvd:i===0?right.tvd-s.inletTvd:right.tvd-left.tvd;
- const drive=pl-pr+rho*9.81*dz/1e6;
+ const barrier=s.barriers?.find(b=>b.face===i);
+ const drive=pl-pr+rho*9.81*dz/1e6-(barrier?.checkValve?(barrier.crackMPa??0):0);
  const weights=s.fluids.map((v,j)=>f[j]/(v.rhoRef*Math.exp((pm-s.referenceMPa)/v.bulkMPa))*rho);
  const loss=(q:number)=>{
   let value=0;
@@ -39,6 +41,7 @@ function face(s:FlowSystem,i:number,p:number[],fractions:number[][],zeroFlow=fal
   }
   return value*(s.frictionMultiplier??1);
  };
+ if(barrier?.closed||barrier?.checkValve&&drive<=0)return {flux:0,conductance:0,loss};
  if(zeroFlow)return {flux:0,conductance:0,loss};
  const target=Math.abs(drive),yieldLoss=loss(1e-13);
  if(target<=yieldLoss+1e-14){const slope=(loss(1e-7)-yieldLoss)/1e-7;return {flux:0,conductance:slope>0?rho/(slope+yieldLoss/.002):0,loss};}
@@ -51,6 +54,7 @@ function face(s:FlowSystem,i:number,p:number[],fractions:number[][],zeroFlow=fal
 }
 export function initializeFlow(s:FlowSystem,mudIndex:number):FlowState{
  if(!s.cells.length||!s.fluids.length||!s.fluids[mudIndex]||s.cells.some(c=>!Number.isFinite(c.volumeM3)||c.volumeM3<=0||c.lengthM<=0||c.innerMm<=0)||s.fluids.some(f=>!(f.bulkMPa>0&&f.rhoRef>0)))throw new Error('Некорректная геометрия или свойства потока.');
+ if(s.barriers?.some((b,i,a)=>!Number.isInteger(b.face)||b.face<=0||b.face>=s.cells.length||!(Number.isFinite(b.crackMPa??0)&&(b.crackMPa??0)>=0)||a.findIndex(x=>x.face===b.face)!==i))throw new Error('Недопустимая внутренняя граница потока.');
  const fractions=s.cells.map(()=>s.fluids.map((_,j)=>j===mudIndex?1:0)),pressures=s.cells.map(()=>s.outletMPa);
  // Equilibrium of the same midpoint-gravity discretization used by the flow faces.
  for(let i=s.cells.length-1;i>=0;i--){const next=i===s.cells.length-1?s.outletMPa:pressures[i+1],nextTvd=i===s.cells.length-1?s.outletTvd:s.cells[i+1].tvd,dz=s.cells[i].tvd-nextTvd;let p=next;
