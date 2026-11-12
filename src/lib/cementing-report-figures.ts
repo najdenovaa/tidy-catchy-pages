@@ -50,6 +50,8 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
     }
 
     const study=bench.study;
+    const geometry=(coupled??bench.hydraulics)?.geometry;
+    if(geometry){images.push(tag(reportSeriesPlot('Геометрия стенда: траектория MD/TVD','plugBenchmark',geometry.survey.map(s=>s.mdM),'MD, м','TVD вниз, м',[{name:'Траектория',color:'#0284c7',values:geometry.survey.map(s=>s.tvdM)}])),tag(reportSeriesPlot('Геометрия стенда: внутренний диаметр','plugBenchmark',geometry.sections.flatMap(s=>[s.fromM,s.toM]),'MD, м','Внутренний диаметр, мм',[{name:'Секции',color:'#7c3aed',values:geometry.sections.flatMap(s=>[s.diameterMm,s.diameterMm])}])));}
     if(study?.rows.length===5){for(const [indices,title,xLabel,kind] of [[[0,1,2],'Сетка','Ячеек на камеру','mesh'],[[0,3,4],'Шаг времени','Максимальный шаг, с','time']] as const){const rows=indices.map(i=>study.rows[i]);if(rows.every(r=>r.status==='complete')){const landing=rows.every(r=>r.landingTimeSec!==null);images.push(tag(reportSeriesPlot('Чувствительность связи: '+title,'plugBenchmark',rows.map(r=>kind==='mesh'?r.cellsPerChamber:r.stepSec),xLabel,landing?'Посадка, с':'Макс. давление входа, МПа',[{name:landing?'Посадка':'Макс. на принятых шагах',color:'#7c3aed',values:rows.map(r=>landing?r.landingTimeSec!:r.maxInletMPa!)}])));}}}
 
   }
