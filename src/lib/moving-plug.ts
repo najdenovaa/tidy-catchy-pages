@@ -1,3 +1,4 @@
+import type {PlugHydraulics} from './plug-pressure';
 /** Reduced horizontal two-chamber sealed-piston benchmark. Not a well-job simulator. */
 export interface MovingPlugCase {
  diameterMm:number;totalLengthM:number;initialXM:number;seatXM:number;
@@ -12,7 +13,7 @@ export interface PlugState {timeSec:number;xM:number;backMassKg:number;aheadMass
 export interface PlugSample extends PlugState {velocityMps:number;massResidualKg:number;forceResidualMPa:number}
 export interface PlugSpatialFrame {timeSec:number;xM:number;facesM:number[];massKg:number[];fractions:number[][]}
 export interface PlugSpatialResult {status:'complete'|'stopped';reason:string;cellsPerChamber:number;switchSec:number;frames:PlugSpatialFrame[];initialKg:number[];injectedKg:number[];returnedKg:number[];retainedKg:number[];maxComponentResidualKg:number;maxGeometricResidualM3:number;acceptedSteps:number}
-export interface MovingPlugResult {spatial?:PlugSpatialResult;model:'sealed-piston-bench-v1';input:MovingPlugCase;status:'complete'|'stopped';reason:string;landingTimeSec:number|null;samples:PlugSample[];maxMassResidualKg:number;limitations:string[]}
+export interface MovingPlugResult {hydraulics?:PlugHydraulics;spatial?:PlugSpatialResult;model:'sealed-piston-bench-v1';input:MovingPlugCase;status:'complete'|'stopped';reason:string;landingTimeSec:number|null;samples:PlugSample[];maxMassResidualKg:number;limitations:string[]}
 const area=(p:MovingPlugCase)=>Math.PI*(p.diameterMm/1000)**2/4;
 function rho(ref:number,k:number,pressure:number){if(!Number.isFinite(pressure)||pressure<0||Math.abs(pressure/k)>.1)throw new Error('Выход за область EOS: P ≥ 0 и P/K ≤ 10%.');return ref*Math.exp(pressure/k);}
 function validate(p:MovingPlugCase){const a=area(p);if(![a,a*p.totalLengthM,a*p.initialXM,a*(p.totalLengthM-p.seatXM),a*p.totalLengthM*Math.max(p.rhoBackKgM3,p.rhoAheadKgM3),p.rateLps/1000*p.rhoBackKgM3].every(Number.isFinite)||!(a>0&&a*p.initialXM>0&&a*(p.totalLengthM-p.seatXM)>0))throw new Error('Невыразимая геометрия или масса стенда.');if(MOVING_PLUG_FIELDS.some(([k])=>!Number.isFinite(p[k]))||!(p.diameterMm>0&&p.totalLengthM>0&&p.initialXM>0&&p.seatXM>p.initialXM&&p.seatXM<p.totalLengthM&&p.rhoBackKgM3>0&&p.rhoAheadKgM3>0&&p.bulkBackMPa>0&&p.bulkAheadMPa>0&&p.outletMPa>=0&&p.breakawayMPa>=0&&p.dragMPaPerMps>=0&&p.outletResistanceMPaPerM3s>=0&&p.rateLps>=0&&p.durationSec>0&&p.stepSec>0&&p.durationSec/p.stepSec<=1000))throw new Error('Нужны положительные геометрия/K/плотности, 0 < x₀ < упор < длина, неотрицательные сопротивления/расход/давление и не более 1000 назначенных шагов.');}

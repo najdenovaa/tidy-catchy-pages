@@ -36,6 +36,12 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
     const spatial=bench.spatial,frame=spatial?.frames.at(-1);
     if(frame){const x=frame.massKg.flatMap((_,i)=>[frame.facesM[i],frame.facesM[i+1]]);images.push(tag(reportSeriesPlot('Стенд ALE: состав, t='+frame.timeSec.toFixed(3)+' с (пассивная метка)','plugBenchmark',x,'Координата стенда, м','Массовая доля',[{name:'Исходная сзади',color:'#327de6',values:frame.fractions.flatMap(f=>[f[0],f[0]])},{name:'Метка',color:'#e6463c',values:frame.fractions.flatMap(f=>[f[1],f[1]])},{name:'Впереди',color:'#a0aab4',values:frame.fractions.flatMap(f=>[f[2],f[2]])}])));}
 
+    const hf=bench.hydraulics?.frames.at(-1),hn=bench.hydraulics?.cellsPerChamber;
+    if(hf&&hn){
+      for(const [start,end,name,color] of [[0,hn,'сзади','#ef4444'],[hn,2*hn,'впереди','#0284c7']] as const){const indices=Array.from({length:end-start},(_,j)=>start+j);images.push(tag(reportSeriesPlot('Стенд: локальное давление '+name+', t='+hf.timeSec.toFixed(3)+' с','plugBenchmark',indices.flatMap(i=>[hf.facesM[i],hf.facesM[i+1]]),'Координата стенда, м','Давление, МПа',[{name:'Заданная траектория',color,values:indices.flatMap(i=>[hf.pressuresMPa[i],hf.pressuresMPa[i]])}])));}
+      images.push(tag(reportSeriesPlot('Стенд: лабораторная скорость, t='+hf.timeSec.toFixed(3)+' с','plugBenchmark',hf.facesM,'Координата стенда, м','Скорость, м/с',[{name:'Жидкость',color:'#059669',values:hf.laboratoryVelocityMps}])));
+    }
+
   }
   const transport=extras.compressibleTransport;
   if(scope==='cementing'&&transport?.frames.length){

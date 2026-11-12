@@ -10,6 +10,8 @@ on:
       - 'src/lib/moving-plug*'
       - 'src/lib/ale-transport*'
       - 'src/lib/plug-ale*'
+      - 'src/lib/plug-pressure*'
+      - 'src/components/PlugPressureView*'
       - 'src/lib/plug-bench*'
       - 'src/components/PlugSpatialView*'
       - 'src/lib/__tests__/moving-plug-report.test.ts'
@@ -106,6 +108,8 @@ jobs:
           assert any("Стенд поршня: давления" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
           assert "Максимальная геометрическая невязка" in plug_text
           assert any("Стенд ALE: состав" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
+          assert any("Стенд: локальное давление" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
+          assert "Максимальная невязка непрерывности" in " ".join(" ".join(p.get_text().split()) for p in plug)
           print("Rendered", len(doc), "A4 pages; approval-column separation", round(right.x0 - left.x0), "pt; model page", model.number + 1)
           preview = Image.new("RGB", (1000, 710), "white")
           for i, page in enumerate([title, model]):
