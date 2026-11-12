@@ -994,11 +994,11 @@ export async function exportToDocx(
   if(suppliedTransport){
     const content:any[]=[sectionTitle('Исследовательский сжимаемый 1D-перенос')];
     if(!freshTransport)content.push(noteParagraph('Результат устарел: исходные данные изменились. Пересчитайте исследовательскую ветку.'));
-    else{const r=freshTransport;content.push(noteParagraph((r.status==='complete'?'Расписание циркуляции рассчитано. ':'Расчёт остановлен; представлен только принятый участок. ')+r.reason),
+    else{const r=freshTransport;content.push(noteParagraph((r.status==='complete'?'Назначенное расписание рассчитано. ':'Расчёт остановлен; представлен только принятый участок. ')+r.reason),
       kvTable([{label:'Сетка и шаг',value:r.cellCount+' ячеек; назначено '+fmt(r.cellLengthM,1)+' м; максимум '+fmt(r.stepSeconds,2)+' с'},{label:'Принятые шаги',value:String(r.acceptedSteps)},{label:'Максимальная относительная невязка шага',value:r.maxStepRelativeResidual.toExponential(3)}]) as any,
       gridTable(['Жидкость','K, МПа','Исходно, кг','Подача, кг','Возврат, кг','В контуре, кг'],r.components.map(f=>[f.name,fmt(f.bulkMPa,1),fmt(f.initialKg,3),fmt(f.injectedKg,3),fmt(f.returnedKg,3),fmt(f.retainedKg,3)])) as any,
       ...r.components.map(f=>noteParagraph(f.name+': накопленная невязка '+f.residualKg.toExponential(3)+' кг.')),
-      ...r.limitations.map(noteParagraph));
+      ...r.limitations.map(noteParagraph),...(r.boundaryEvents??[]).map(e=>noteParagraph('t = '+fmt(e.timeMin,3)+' мин; ЦКОД '+fmt(e.depthMD,1)+' м. '+e.note)));
       if(r.study?.inputKey===r.inputKey){const study=r.study;content.push(sectionTitle('Чувствительность к сетке и шагу'),noteParagraph(study.note),noteParagraph('Полных прогонов: '+study.rows.filter(x=>x.status==='complete').length+' из '+study.rows.length+'.'),
         gridTable(['Прогон','Ячеек','Длина, м','Макс. шаг, с','Шагов','Баланс, кг'],study.rows.map(x=>[x.label,String(x.cellCount),fmt(x.actualCellLengthM,2),fmt(x.stepSeconds,2),String(x.acceptedSteps),x.maxMassResidualKg.toExponential(2)])) as any,
         ...study.rows.filter(x=>x.status!=='complete').map(x=>noteParagraph(x.label+': остановлен. '+x.reason)),

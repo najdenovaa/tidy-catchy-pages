@@ -22,6 +22,7 @@ on:
       - "src/lib/stop-storage*"
       - "src/lib/pvt-hydrostatics*"
       - "src/lib/compressible-*"
+      - "src/lib/flow-boundaries*"
       - "src/lib/transport-refinement*"
       - "src/components/CompressibleTransport*"
       - "src/components/PvtHydrostatics*"

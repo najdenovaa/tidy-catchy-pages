@@ -4,6 +4,7 @@ import {transportInputKey,type TransportResult,type TransportStudy} from './comp
 /** Separate spatial and temporal refinements; never change both axes in one comparison. */
 export function transportRefinementInputs(input:CementingSnapshot){
  const p=normalizeCementingSnapshot(input),s=p.wellData.stopStorage;
+ if(s?.flowCheckValve||s?.flowClosureEnabled)throw new Error('Пятипрогонное сравнение пока доступно для открытого контура без внутренних границ.');
  if(!s?.flowEnabled)throw new Error('Включите исследовательский перенос.');
  const depth=p.wellData.casingDepthMD,h=s.flowCellLengthM??250,dt=s.flowStepSeconds??30;
  if(!(depth>0&&h>=10&&h<=1000&&dt>=.1&&dt<=60))throw new Error('Недопустимая сетка или шаг времени.');

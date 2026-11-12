@@ -17,3 +17,5 @@ it('integrates composition over physical volume rather than matching cell indexe
  half.profile=r.profile.flatMap(c=>[{...c,volumeM3:c.volumeM3/2},{...c,volumeM3:c.volumeM3/2}]);expect(compositionDistance(r,half)).toBeCloseTo(0,12);
  half.profile[0].volumeM3*=2;expect(()=>compositionDistance(r,half)).toThrow('вместимости');
 });
+
+it('does not mix internal-boundary runs into the open-contour study',()=>{const p=studyFixture();p.wellData.stopStorage={...p.wellData.stopStorage,flowCheckValve:true};expect(()=>transportRefinementInputs(p)).toThrow('открытого контура');});
