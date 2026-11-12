@@ -1,3 +1,4 @@
+import {transportMesh} from './transport-mesh';
 import {initializeFlow,advanceFlow,type FlowSystem,type FlowCell,type FlowState} from './compressible-flow';
 import {buildProcessContract} from './cementing-process';
 import {normalizeCementingSnapshot,type CementingSnapshot} from './cementing-normalizers';
@@ -7,10 +8,11 @@ import {getEffectiveTrajectory,interpolateTVD,totalPipeVolumeForRange,effectiveR
 import {rheologyInputErrors} from './cement-rheology';
 export interface TransportFrame {sealClosed?:boolean;barrierFlowKgS?:number;timeMin:number;stage:string;inletMPa:number;shoeCellMPa:number;pumpedReferenceM3:number;returnedReferenceM3:number;returnRateReferenceLps:number;maxStepResidualKg:number}
 export interface TransportStudy {
- inputKey:string; rows:{label:string;cellCount:number;actualCellLengthM:number;stepSeconds:number;acceptedSteps:number;status:string;reason:string;maxMassResidualKg:number}[];
- comparisons:{label:string;maxInletDifferenceMPa:number;returnDifferenceM3:number;compositionL1:number}[];note:string;
+ inputKey:string; rows:{label:string;cellCount:number;actualCellLengthM:number;minCellLengthM:number;maxCellLengthM:number;stepSeconds:number;acceptedSteps:number;status:string;reason:string;maxMassResidualKg:number}[];
+ comparisons:{label:string;maxInletDifferenceMPa:number;returnDifferenceM3:number;compositionL1:number;beforeClosureMPa?:number;afterClosureMPa?:number;barrierTransferredDifferenceKg?:number;afterComparisonStartMin?:number}[];note:string;
 }
 export interface TransportResult {
+ mesh?:{minLengthM:number;maxLengthM:number;meanLengthM:number};
  study?:TransportStudy;
  boundaryEvents?:{timeMin:number;kind:string;depthMD:number;note:string}[];
  model:'compressible-fv-research-v1';inputKey:string;status:'complete'|'stopped';reason:string;cellLengthM:number;stepSeconds:number;cellCount:number;acceptedSteps:number;maxStepRelativeResidual:number;
@@ -47,9 +49,9 @@ export function simulateCompressibleTransport(input:CementingSnapshot,progress?:
   if(hasBarrier&&!(w.ckodDepth>0&&w.ckodDepth<=w.casingDepthMD))throw new Error('Для границы нужна глубина ЦКОД в пределах колонны.');
   const closureTime=settings.flowClosureTimeMin;
   if(settings.flowClosureEnabled&&!(closureTime!==undefined&&closureTime>=0&&closureTime<=(contract.totalTimeMin??0)))throw new Error('Задайте момент перекрытия от 0 до конца расписания, мин.');
-  const cuts=[...new Set([0,...Array.from({length:count},(_,i)=>(i+1)*w.casingDepthMD/count),...(hasBarrier?[w.ckodDepth]:[])])].sort((a,b)=>a-b);
-  const pipeCount=cuts.length-1,barrierFace=cuts.indexOf(w.ckodDepth);
-  if(pipeCount*2>120)throw new Error('Граница ЦКОД увеличила сетку выше 120 ячеек; увеличьте назначенную длину.');
+  const mesh=transportMesh(w.casingDepthMD,r.cellLengthM,hasBarrier?w.ckodDepth:undefined,settings.flowMeshRefinement??1);
+  const {cuts,pipeCount}=mesh,barrierFace=cuts.indexOf(w.ckodDepth);
+  r.mesh={minLengthM:mesh.minLengthM,maxLengthM:mesh.maxLengthM,meanLengthM:mesh.meanLengthM};
   const traj=getEffectiveTrajectory(w),ann=createAnnularGeometry(w,w.casingDepthMD),cells:FlowCell[]=[];
   const standoff=(md:number)=>{const points=[...(w.standoffProfile??[])].sort((a,b)=>a.md-b.md);if(!points.length)return w.annularStandoffPct??67;const right=points.findIndex(p=>p.md>=md);if(right===0)return points[0].standoffPct;if(right<0)return points.at(-1)!.standoffPct;const a=points[right-1],b=points[right];return a.standoffPct+(md-a.md)/(b.md-a.md)*(b.standoffPct-a.standoffPct);};
   for(let i=0;i<pipeCount;i++){
