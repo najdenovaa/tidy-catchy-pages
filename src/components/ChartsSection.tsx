@@ -117,9 +117,9 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <Line yAxisId="pressure" type="linear" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                 <Line yAxisId="pressure" type="monotone" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2.25} dot={false} />
                 <Line yAxisId="pressure" type="monotone" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
-                <Line yAxisId="rate" type="stepAfter" dataKey="pumpRateLps" name="Производительность" stroke="hsl(280, 60%, 55%)" strokeWidth={2} dot={false} />
+                <Line yAxisId="rate" type={pressureData[0]?.transportColumns?"stepBefore":"stepAfter"} dataKey="pumpRateLps" name="Производительность" stroke="hsl(280, 60%, 55%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="density" type="stepAfter" dataKey="densityGcm3" name="Плотность закачки" stroke="hsl(345, 80%, 35%)" strokeWidth={2.5} dot={false} />
-                <Line yAxisId="rate" type="monotone" dataKey="annularReturnRate" name="Выход на устье" stroke="hsl(30, 80%, 50%)" strokeWidth={1.75} dot={false} />
+                <Line yAxisId="rate" type={pressureData[0]?.transportColumns?"stepBefore":"monotone"} dataKey="annularReturnRate" name="Выход на устье" stroke="hsl(30, 80%, 50%)" strokeWidth={1.75} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </ScrollableChart>
@@ -303,7 +303,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                 <Line yAxisId="pressure" type="linear" dataKey="fracturePressure" name="Давление ГРП" stroke="hsl(0, 70%, 50%)" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="bottomholePressure" name="Давление на забое" stroke="hsl(215, 70%, 45%)" strokeWidth={2} dot={false} />
                 <Line yAxisId="pressure" type="linear" dataKey="surfacePressure" name="Давление на насосе" stroke="hsl(160, 60%, 40%)" strokeWidth={2} dot={false} />
-                <Line yAxisId="rate" type="stepAfter" dataKey="pumpRateLps" name="Производительность (факт)" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
+                <Line yAxisId="rate" type={pressureData[0]?.transportColumns?"stepBefore":"stepAfter"} dataKey="pumpRateLps" name="Производительность (факт)" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
                 <Line yAxisId="rate" type="linear" dataKey="maxSafeRateLps" name="Макс. безопасная Q, л/с" stroke="hsl(25, 90%, 50%)" strokeWidth={2.5} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -366,7 +366,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
                     <ReferenceLine yAxisId="re" y={3000} stroke="hsl(0, 70%, 50%)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "Re = 3000", position: "right", fontSize: 10, fill: "hsl(0, 70%, 50%)" }} />
                     {stageBoundaries.map((b, i) => <ReferenceLine key={`regime-stage-${i}`} yAxisId="re" x={b.time} stroke={STAGE_COLORS[i % STAGE_COLORS.length]} strokeDasharray="6 3" strokeWidth={1} />)}
                     <Line yAxisId="re" type="linear" dataKey="reynoldsAnn" name="Re (затрубье)" stroke="hsl(200, 60%, 50%)" strokeWidth={2.5} dot={false} />
-                    <Line yAxisId="rate" type="stepAfter" dataKey="pumpRateLps" name="Производительность" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
+                    <Line yAxisId="rate" type={pressureData[0]?.transportColumns?"stepBefore":"stepAfter"} dataKey="pumpRateLps" name="Производительность" stroke="hsl(280, 60%, 55%)" strokeWidth={1.5} dot={false} strokeDasharray="3 2" />
                   </LineChart>
                 </ResponsiveContainer>
               </ScrollableChart>

@@ -5,7 +5,7 @@ import { reportSeriesPlot,type PlotSeries } from './report-series-plot';
 type P=Pick<PressurePoint,'time'|'surfacePressure'|'bottomholePressure'|'fracturePressure'|'pumpRateLps'>&Partial<PressurePoint>;
 export function hydraulicReportCharts(points:P[],selection?:ReportSelection,stages:StageBoundary[]=[]) {
  if(!points.length)return[];
- const time=points.map(p=>p.time),series=(name:string,color:string,key:keyof P,axis?:'right'):PlotSeries=>({name,color,values:points.map(p=>typeof p[key]==='number'?p[key] as number:null),axis});
+ const time=points.map(p=>p.time),series=(name:string,color:string,key:keyof P,axis?:'right'):PlotSeries=>({name,color,values:points.map(p=>typeof p[key]==='number'?p[key] as number:null),axis,curve:points[0]?.transportColumns&&(key==='pumpRateLps'||key==='annularReturnRate')?'stepBefore':undefined});
  const pressure=[series('Устье','#4f46e5','surfacePressure'),series('Забой','#0284c7','bottomholePressure'),series('ГРП','#dc2626','fracturePressure')];
  const list=[
  reportSeriesPlot('Совмещённый график цементирования','combined',time,'Время, мин','Давление, МПа',[...pressure,series('Закачка, правая шкала','#16a34a','pumpRateLps','right'),series('Выход, правая шкала','#d97706','annularReturnRate','right')],{rightUnit:'Расход, л/с',stages}),

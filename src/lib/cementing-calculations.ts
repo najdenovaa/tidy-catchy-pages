@@ -1,3 +1,4 @@
+import { FluidInventory, type InventorySummary } from "./fluid-inventory";
 import {buildProcessContract,type ProcessContract} from "./cementing-process";
 import { cavernIntervalCoeff, createAnnularGeometry } from "./well-geometry";
 import { equipmentMaterialInventory, type EquipmentMaterialItem, type CalculatedCentralizerMaterials } from "./materials-equipment-inventory";
@@ -1187,6 +1188,10 @@ export type AnnularFluidType = 'mud' | 'buffer' | 'cement' | 'displacement';
 
 export interface PressurePoint {
   stageId?:string; fluidId?:string; eventId?:string; processKind?:import("./cementing-process").ProcessStage["kind"]|"start"|"postStop";
+  /** Conservative fixed-density transport; interval averages end at this frame. */
+  transportColumns?:{pipe:{fluidId:string;fluidType:AnnularFluidType|'void';topMD:number;botMD:number;volumeM3:number}[];annulus:{fluidId:string;fluidType:AnnularFluidType;topMD:number;botMD:number;volumeM3:number}[]};
+  cumulativeReturnM3?:number; pipeVoidM3?:number; shoeRateLps?:number;
+  inventoryResidualKg?:number;
   stage: string;
   time: number;
   surfacePressure: number;
@@ -1268,6 +1273,7 @@ export interface PressureProfileResult {
   processContract?:ProcessContract;
   processEvents?:ProcessContract["events"];
   processAudit?:{pumpedVolumeM3:number;plannedWellVolumeM3:number;differenceM3:number;reason:string};
+  inventory?:InventorySummary & { maxStepResidualKg:number; maxStepResidualM3:number; limitations:string[] };
   basketStop?: BasketStopResult;
   /** огибающие давления по глубине (пусто в быстром режиме) */
   envelope: DepthEnvelopePoint[];
@@ -1350,17 +1356,40 @@ export function calculatePressureProfile(
   const pipeCapacity = totalPipeVolumeForRange(0, wellData.casingDepthMD, wellData.casingOD, wellData.casingWall, wellData.casingSections);
   const pipeVPM = wellData.casingDepthMD > 0 ? pipeCapacity / wellData.casingDepthMD : pipeVolumePerMeter(avgCasingID);
   interface PumpBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; pv?: number; yp?: number; hb?: HBParams; }
-  const pumpHistory: PumpBatch[] = [];
-  let totalPumped = 0;
-  let freefallBatchIdx = -1;
+  type TrackedFluid=Omit<PumpBatch,'volumeM3'> & {fluidId:string};
+  const inventory=new FluidInventory<TrackedFluid>(pipeCapacity,geometry.totalVolume,{fluidId:'mud:initial',densityGcm3:mudDensityGcm3,fluidType:'mud',pv:mudRheo.pv,yp:mudRheo.yp,hb:hbOf(mudRheo)});
+  let maxStepResidualKg=0,maxStepResidualM3=0;
+  function inventoryFrame(){
+    const a=inventory.summary();maxStepResidualKg=Math.max(maxStepResidualKg,a.maxResidualKg);maxStepResidualM3=Math.max(maxStepResidualM3,a.maxResidualM3,Math.abs(a.geometryResidualM3));
+    const pipe:NonNullable<PressurePoint['transportColumns']>['pipe']=[];
+    let volume=inventory.pipeVoidM3;
+    if(volume>1e-10)pipe.push({fluidId:'void',fluidType:'void',topMD:0,botMD:pipeDepthAtVolume(volume),volumeM3:volume});
+    for(const b of [...inventory.pipe].reverse()){
+      const topMD=pipeDepthAtVolume(volume);volume+=b.volumeM3;
+      pipe.push({fluidId:b.fluidId,fluidType:b.fluidType,topMD,botMD:pipeDepthAtVolume(volume),volumeM3:b.volumeM3});
+    }
+    let bot=wellData.casingDepthMD;
+    const annulus:NonNullable<PressurePoint['transportColumns']>['annulus']=[];
+    for(const b of [...inventory.annulus].reverse()){
+      const topMD=geometry.depthAboveVolume(bot,b.volumeM3);
+      annulus.push({fluidId:b.fluidId,fluidType:b.fluidType,topMD,botMD:bot,volumeM3:b.volumeM3});bot=topMD;
+    }
+    return {transportColumns:{pipe,annulus},cumulativeReturnM3:a.returnedM3,pipeVoidM3:a.pipeVoidM3,inventoryResidualKg:a.maxResidualKg};
+  }
+
+  function pipeDepthAtVolume(volume:number){
+    if(!wellData.casingSections?.length)return Math.min(wellData.casingDepthMD,volume/pipeVPM);
+    let lo=0,hi=wellData.casingDepthMD;
+    for(let i=0;i<35;i++){const mid=(lo+hi)/2;const v=totalPipeVolumeForRange(0,mid,wellData.casingOD,wellData.casingWall,wellData.casingSections);if(v<volume)lo=mid;else hi=mid;}
+    return (lo+hi)/2;
+  }
   let currentFreefallSettled = 0;
 
   // Annular profile helper — compute fluid heights by type from exitBatches
-  interface FluidBatch { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; }
 
   function calcAnnularProfile(): { mudH: number; bufferH: number; cementH: number; displH: number } {
     const result = { mudH: 0, bufferH: 0, cementH: 0, displH: 0 };
-    for(const c of annColumn(false,true)){
+    for(const c of annColumn()){
       const height=c.bot-c.top;
       if(c.fluidType==='cement')result.cementH+=height;
       else if(c.fluidType==='buffer')result.bufferH+=height;
@@ -1373,7 +1402,7 @@ export function calculatePressureProfile(
 
   const initProfile = calcAnnularProfile();
   const initEcd = bottomTVD > 0 ? hydroMudFull / (0.00981 * bottomTVD) : 0;
-  points.push({ stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: mudDensityGcm3, annMudHeightM: initProfile.mudH, annBufferHeightM: initProfile.bufferH, annCementHeightM: initProfile.cementH, annDisplHeightM: initProfile.displH, freefallSettledM3: 0, annularVelocityMps: 0, ecdAtBottomGcm3: initEcd, ecdStaticAtBottomGcm3: initEcd, ecdAtPrevShoeGcm3: mudDensityGcm3, fracGradEcdGcm3, porePressureEcdGcm3 });
+  points.push({ ...inventoryFrame(),stage: "Начало", time: 0, surfacePressure: 0, bottomholePressure: hydroMudFull, fracturePressure: fracP, cumulativeVolume: 0, pumpRateLps: 0, annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: mudDensityGcm3, annMudHeightM: initProfile.mudH, annBufferHeightM: initProfile.bufferH, annCementHeightM: initProfile.cementH, annDisplHeightM: initProfile.displH, freefallSettledM3: 0, annularVelocityMps: 0, ecdAtBottomGcm3: initEcd, ecdStaticAtBottomGcm3: initEcd, ecdAtPrevShoeGcm3: mudDensityGcm3, fracGradEcdGcm3, porePressureEcdGcm3 });
 
   const processContract=buildProcessContract({wellData,drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin,flushVolumeM3},displacementVol);
   const stages=processContract.stages.map(st=>{
@@ -1385,7 +1414,6 @@ export function calculatePressureProfile(
 
 
   let cementStartFound = false;
-  let cementFreefallVol = 0; // объём, на который цемент ушёл вниз при паузе (надо догнать продавкой)
 
   // Отслеживаем границы этапов (группируем продавку)
   const stageBoundaries: StageBoundary[] = [];
@@ -1393,38 +1421,13 @@ export function calculatePressureProfile(
 
   // Вычисляет гидростатику ТРУБЫ с учётом текущих флюидов
   // Труба заполняется сверху: последний закачанный флюид — у устья, старый — у забоя
-  function calcPipeHydrostatic(): number {
-    let pressure = 0;
-    let depthMD = 0; // от устья вниз
-    let remaining = pipeCapacity;
-
-    // Идём от последнего закачанного (сверху) к первому (снизу)
-    for (let i = pumpHistory.length - 1; i >= 0 && remaining > 0; i--) {
-      const batch = pumpHistory[i];
-      const take = Math.min(batch.volumeM3, remaining);
-      if (take <= 0) continue;
-      const heightM = take / pipeVPM;
-      const topMD = depthMD;
-      const botMD = Math.min(depthMD + heightM, wellData.casingDepthMD);
-      const tvdTop = interpolateTVD(topMD, traj);
-      const tvdBot = interpolateTVD(botMD, traj);
-      const dp = batch.densityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
-      pressure += dp;
-      depthMD = botMD;
-      remaining -= take;
+  function calcPipeHydrostatic(state=inventory): number {
+    let pressure=0,volume=state.pipeVoidM3;
+    for(const batch of [...state.pipe].reverse()){
+      const topMD=pipeDepthAtVolume(volume);volume+=batch.volumeM3;
+      const botMD=pipeDepthAtVolume(volume);
+      pressure+=batch.densityGcm3*Math.max(0,interpolateTVD(botMD,traj)-interpolateTVD(topMD,traj))*0.00981;
     }
-
-    // Если осталось место — внизу трубы исходный буровой раствор
-    let mudDp = 0;
-    if (remaining > 0 && depthMD < wellData.casingDepthMD) {
-      const botMD = wellData.casingDepthMD;
-      const tvdTop = interpolateTVD(depthMD, traj);
-      const tvdBot = interpolateTVD(botMD, traj);
-      mudDp = mudDensityGcm3 * Math.max(0, tvdBot - tvdTop) * 0.00981;
-      pressure += mudDp;
-    }
-
-
     return pressure;
   }
 
@@ -1432,8 +1435,8 @@ export function calculatePressureProfile(
   // Флюид выходит из трубы снизу и поднимается в затрубье.
   // Порядок выхода: сначала исходный буровой из трубы, потом закачанные флюиды по порядку.
   // В затрубье: самый свежий флюид внизу (у забоя), самый старый — вверху.
-  function calcAnnularHydrostatic(): number {
-    return hydroFromColumn(annColumn(),wellData.casingDepthMD);
+  function calcAnnularHydrostatic(state=inventory): number {
+    return hydroFromColumn(annColumn(false,state),wellData.casingDepthMD);
   }
   function calcAnnularHydrostaticAtDepth(targetMD:number,cementAsWater=false):number {
     return hydroFromColumn(annColumn(cementAsWater),Math.min(targetMD,wellData.casingDepthMD));
@@ -1461,16 +1464,7 @@ export function calculatePressureProfile(
   /** Сегменты затрубья снизу вверх по текущему состоянию закачки (та же логика заполнения, что и гидростатика). */
   function annularSegments(): AnnSeg[] {
     const segs: AnnSeg[] = [];
-    const exit: { densityGcm3: number; volumeM3: number; fluidType: AnnularFluidType; pv?: number; yp?: number; hb?: HBParams }[] = [];
-    const mudExited = Math.min(totalPumped, pipeCapacity);
-    if (mudExited > 0) exit.push({ densityGcm3: mudDensityGcm3, volumeM3: mudExited, fluidType: 'mud', pv: mudRheo.pv, yp: mudRheo.yp, hb: hbOf(mudRheo) });
-    let pumpedExited = Math.max(0, totalPumped - pipeCapacity);
-    for (let i = 0; i < pumpHistory.length && pumpedExited > 0; i++) {
-      if (pumpHistory[i].fluidType === 'displacement') continue;
-      const take = Math.min(pumpHistory[i].volumeM3, pumpedExited);
-      if (take > 0) exit.push({ ...pumpHistory[i], volumeM3: take });
-      pumpedExited -= take;
-    }
+    const exit=inventory.annulus;
     let bottom = wellData.casingDepthMD;
     for (let i = exit.length - 1; i >= 0 && bottom > 0; i--) {
       let vol = exit[i].volumeM3;
@@ -1559,17 +1553,8 @@ export function calculatePressureProfile(
     }
   }
   /** Столб жидкостей в затрубье (интервалы сверху вниз не упорядочены): заполнение от забоя вверх по объёмам. */
-  function annColumn(cementAsWater = false, profileMode = false): StopColumnSegment[] {
-    const batches: { rho: number; vol: number; fluidType: string }[] = [];
-    const mudExited = Math.min(totalPumped, pipeCapacity);
-    if (mudExited > 0) batches.push({ rho: mudDensityGcm3, vol: mudExited, fluidType: "mud" });
-    let left = Math.max(0, totalPumped - pipeCapacity);
-    for (let i = 0; i < pumpHistory.length && left > 0; i++) {
-      if (pumpHistory[i].fluidType === "displacement") continue;
-      const take = Math.min(pumpHistory[i].volumeM3, left);
-      if (take > 0) batches.push({ rho: cementAsWater && pumpHistory[i].fluidType === "cement" ? 1.0 : pumpHistory[i].densityGcm3, vol: take, fluidType: profileMode && i===freefallBatchIdx ? 'mud' : pumpHistory[i].fluidType });
-      left -= take;
-    }
+  function annColumn(cementAsWater = false, state=inventory): StopColumnSegment[] {
+    const batches=state.annulus.map(b=>({rho:cementAsWater&&b.fluidType==='cement'?1:b.densityGcm3,vol:b.volumeM3,fluidType:b.fluidType}));
     const out: StopColumnSegment[] = [];
     let bot = wellData.casingDepthMD;
     for (let i = batches.length - 1; i >= 0 && bot > 0; i--) {
@@ -1652,9 +1637,10 @@ export function calculatePressureProfile(
     return lo / 0.06;
   }
 
+  // Incompressible baseline: a volume allowance cannot physically pass a landed plug.
+  const geometricPlugVolume=totalPipeVolumeForRange(0,wellData.ckodDepth,wellData.casingOD,wellData.casingWall,wellData.casingSections);
+  const displacementStopTarget=Math.min(displacementVol,geometricPlugVolume);
   let cumDisplacementVol = 0; // накопленный объём продавки (для отслеживания догонки)
-  let freefallOffset = 0; // объём, сместившийся при U-tube оседании (добавляется к totalPumped)
-  let displacementStartTime: number | null = null; // старт продавки после промывки
 
   let plugLanded = false;
   for (let stageIdx = 0; stageIdx < stages.length; stageIdx++) {
@@ -1674,81 +1660,31 @@ export function calculatePressureProfile(
     }
 
     // === Обработка паузы «Промывка ЛВД» — цемент оседает под собственным весом ===
-    if (s.isFlushPause && s.durationMin) {
+    if (s.isFlushPause) {
+      if(!s.durationMin||s.durationMin<=0)continue;
       const pauseMin = s.durationMin;
 
-      // === Анализ содержимого трубы: ищем инверсии плотности (тяжёлое над лёгким) ===
-      // Собираем текущий профиль трубы (сверху вниз)
-      interface PipeSlice { densityGcm3: number; volumeM3: number; }
-      const pipeProfile: PipeSlice[] = [];
-      let pipeRemaining = pipeCapacity;
-
-      for (let i = pumpHistory.length - 1; i >= 0 && pipeRemaining > 0; i--) {
-        const b = pumpHistory[i];
-        const take = Math.min(b.volumeM3, pipeRemaining);
-        if (take > 0) pipeProfile.push({ densityGcm3: b.densityGcm3, volumeM3: take });
-        pipeRemaining -= take;
-      }
-      // Если осталось — внизу исходный буровой раствор
-      if (pipeRemaining > 0) {
-        pipeProfile.push({ densityGcm3: mudDensityGcm3, volumeM3: pipeRemaining });
-      }
-
-      // Найти плотность тяжёлого флюида вверху трубы и лёгкого внизу
-      // Тяжёлый цемент сверху падает, вытесняя лёгкий снизу в затрубье
-      let heavyDensity = 0;
-      let heavyVolume = 0;
-      let lightDensityBelow = mudDensityGcm3;
-
-      // Ищем первый тяжёлый слой сверху трубы
-      for (const slice of pipeProfile) {
-        if (slice.densityGcm3 > mudDensityGcm3 + 0.05) {
-          heavyDensity = Math.max(heavyDensity, slice.densityGcm3);
-          heavyVolume += slice.volumeM3;
-        } else {
-          // Нашли лёгкий слой ниже тяжёлого
-          if (heavyVolume > 0) {
-            lightDensityBelow = slice.densityGcm3;
-            break;
-          }
+      // Closed liquid inventory: drainage creates a void at the top, never new cement.
+      let freefallVol=0;
+      const drivingPressureMPa=Math.max(0,calcPipeHydrostatic()-calcAnnularHydrostatic());
+      const heavyVolume=inventory.pipe.reduce((n,b)=>n+b.volumeM3,0);
+      if(drivingPressureMPa>0.02){
+        let lo=0,hi=heavyVolume;
+        for(let i=0;i<35;i++){
+          const v=(lo+hi)/2,trial=inventory.clone();trial.freefall(v);
+          if(calcPipeHydrostatic(trial)>calcAnnularHydrostatic(trial))lo=v;else hi=v;
         }
-      }
-
-      // === Расчёт объёма свободного падения (итеративно до равновесия U-трубки) ===
-      let freefallVol = 0;
-      if (heavyVolume > 0 && heavyDensity > lightDensityBelow + 0.05) {
-        const savedTotal = totalPumped;
-        const testBatch: FluidBatch = { densityGcm3: heavyDensity, volumeM3: 0, fluidType: 'cement' as AnnularFluidType };
-        pumpHistory.push(testBatch);
-        const maxFreefall = Math.min(heavyVolume, pipeCapacity * 0.4);
-        const step = Math.max(maxFreefall / 100, 0.01);
-
-        for (let v = step; v <= maxFreefall; v += step) {
-          testBatch.volumeM3 = v;
-          totalPumped = savedTotal + v;
-          const pH = calcPipeHydrostatic();
-          const aH = calcAnnularHydrostatic();
-          if (pH <= aH + 0.02) { freefallVol = v; break; }
-          freefallVol = v;
-        }
-
-        testBatch.volumeM3 = 0;
-        totalPumped = savedTotal;
-      } else {
-        pumpHistory.push({ densityGcm3: mudDensityGcm3, volumeM3: 0, fluidType: 'mud' as AnnularFluidType });
+        freefallVol=(lo+hi)/2;
       }
 
       // === Расчёт скорости свободного падения через бинарный поиск (трение = движущее давление) ===
       let settlingTau = 0.5; // мин (по умолчанию — быстро)
       if (freefallVol > 0 && heavyVolume > 0) {
-        const drivingPressureMPa = (heavyDensity - lightDensityBelow) * 9.81 *
-          tvdInterval(0, Math.min(heavyVolume / pipeVPM, wellData.casingDepthMD), traj) / 1000;
-
         if (drivingPressureMPa > 0.01) {
           // Средние свойства цемента для трения
           const cPv = slurries.length > 0 ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).pv, 0) / slurries.length : 30;
           const cYp = slurries.length > 0 ? slurries.reduce((s, sl) => s + effectiveRheology(sl.rheology, cementCategory(sl.density)).yp, 0) / slurries.length : 5;
-          const cDensity = heavyDensity * 1000;
+          const cDensity = inventory.pipe.reduce((n,b)=>n+b.volumeM3*b.densityGcm3*1000,0)/Math.max(heavyVolume,1e-9);
 
           // Бинарный поиск: friction_pipe(Q) + friction_ann(Q) = ΔP_driving
           let lo = 0, hi = 20 * 0.06; // макс 20 л/с
@@ -1765,17 +1701,7 @@ export function calculatePressureProfile(
           }
         }
       }
-      // Растягиваем оседание на всю промывку — не менее 1/3 паузы
-      // чтобы кривая затухания заняла бо́льшую часть паузы (без длинных плоских участков)
-      settlingTau = Math.max(settlingTau, pauseMin * 0.3);
-
-      const ffBatchIdx = pumpHistory.length - 1;
-      freefallBatchIdx = ffBatchIdx;
-      const savedCumVol = cumVol;
-
-      // Определяем макс. допустимый расход на выходе = последний расход перед паузой
-      const lastActiveRate = points.length > 0 ? points[points.length - 1].pumpRateLps : 5;
-
+      const savedCumVol=cumVol;
       // === Генерируем точки: экспоненциальное оседание ===
       let prevSettledVol = 0;
       let equilibriumReached = false;
@@ -1786,62 +1712,48 @@ export function calculatePressureProfile(
         const settledFrac = 1 - Math.exp(-m / Math.max(settlingTau, 0.01));
         const settledVol = freefallVol * settledFrac;
 
-        // Выход на устье = объём вытесненный за шаг → расход л/с
-        const deltaVol = settledVol - prevSettledVol; // м³ за шаг
-        let returnRateLps = deltaVol / (60*Math.max(1e-9,m-(sample-1))) * 1000; // м³/мин → л/с
-        // Ограничиваем: выход на устье не должен превышать последнюю производительность
-        returnRateLps = Math.min(returnRateLps, lastActiveRate);
-        // Плавное затухание к нулю к концу промывки
-        const pauseFrac = m / Math.max(pauseMin, 0.001);
-        const taper = Math.pow(Math.max(0, 1 - pauseFrac), 1.15);
-        returnRateLps = Math.max(0, returnRateLps * taper);
-        if (m === pauseMin) returnRateLps = 0;
-        prevSettledVol = settledVol;
-
+        const deltaVol=settledVol-prevSettledVol;
+        const transfer=inventory.freefall(deltaVol);
+        const returnRateLps=transfer.returnedM3/(60*Math.max(1e-9,m-(sample-1)))*1000;
+        prevSettledVol=settledVol;
         // Определяем момент достижения равновесия (95% от freefallVol)
         if (!equilibriumReached && settledFrac >= 0.95) {
           equilibriumTimeMin = m;
           equilibriumReached = true;
         }
 
-        pumpHistory[ffBatchIdx].volumeM3 = settledVol;
         currentFreefallSettled = settledVol;
-        totalPumped = savedCumVol + settledVol;
 
         const pipeHydro = calcPipeHydrostatic();
         const annHydro = calcAnnularHydrostatic();
 
         const surfP = Math.max(0, annHydro - pipeHydro);
-        const bhp = annHydro;
+        const pauseSegs=annularSegments(),pauseFlow=returnRateLps*0.06;
+        const pauseFriction=annFrictionAbove(pauseFlow,wellData.casingDepthMD,pauseSegs);
+        const bhp = annHydro+pauseFriction.pressureMPa;
 
         const annP = calcAnnularProfile();
         points.push({
-          stage: s.name, time: tNow,
+          ...inventoryFrame(),shoeRateLps:returnRateLps,stage: s.name, time: tNow,
           surfacePressure: surfP, surfaceStaticMPa: surfP, bottomholePressure: bhp, fracturePressure: fracP,
           cumulativeVolume: savedCumVol, pumpRateLps: 0, annularReturnRate: returnRateLps,
-          flowRegimeAnn: 0, reynoldsAnn: 0,
+          flowRegimeAnn: pauseFriction.regime, reynoldsAnn: pauseFriction.reynolds,
           maxSafeRateLps: opts.fast ? 0 : maxSafeRateNow(annularSegments()),
           densityGcm3: mudDensityGcm3,
           annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH,
           freefallSettledM3: currentFreefallSettled,
-          annularVelocityMps: 0,
+          annularVelocityMps: annVPM>0?returnRateLps/1000/annVPM:0,
           ecdAtBottomGcm3: bottomTVD > 0 ? bhp / (0.00981 * bottomTVD) : 0,
-          ecdStaticAtBottomGcm3: bottomTVD > 0 ? bhp / (0.00981 * bottomTVD) : 0,
-          ecdAtPrevShoeGcm3: prevShoeTVD > 0 ? calcAnnularHydrostaticAtDepth(prevShoe) / (0.00981 * prevShoeTVD) : 0,
+          ecdStaticAtBottomGcm3: bottomTVD > 0 ? annHydro / (0.00981 * bottomTVD) : 0,
+          ecdAtPrevShoeGcm3: prevShoeTVD > 0 ? (calcAnnularHydrostaticAtDepth(prevShoe)+annFrictionAbove(pauseFlow,prevShoe,pauseSegs).pressureMPa) / (0.00981 * prevShoeTVD) : 0,
           fracGradEcdGcm3, porePressureEcdGcm3,
         });
+        trackZones(pauseFlow,pauseSegs,s.name,tNow);trackEnvelope(pauseFlow,pauseSegs,s.name);
       }
       if (!equilibriumReached) equilibriumTimeMin = pauseMin;
 
       // Финализируем: используем фактически осевший объём (не полный равновесный),
       // чтобы избежать скачка на границе промывка→продавка
-      const finalSettledFrac = 1 - Math.exp(-pauseMin / Math.max(settlingTau, 0.01));
-      const actualSettledVol = freefallVol * finalSettledFrac;
-      cementFreefallVol = actualSettledVol; // запоминаем для продавки (объём догонки)
-      freefallOffset = actualSettledVol; // смещение для корректного totalPumped в последующих этапах
-      pumpHistory[ffBatchIdx].volumeM3 = actualSettledVol;
-      currentFreefallSettled = actualSettledVol;
-      totalPumped = savedCumVol + actualSettledVol;
       cumTime += pauseMin;
       continue;
     }
@@ -1850,19 +1762,7 @@ export function calculatePressureProfile(
     const flowRateM3min = s.rateLps * 0.06;
     const stageTime = flowRateM3min > 0 ? s.volume / flowRateM3min : 0;
 
-    // Трубное трение — взвешенное по доле заполнения трубы закачиваемым флюидом
-    // Часть трубы занята новым флюидом, остальное — буровым раствором
-    const densityKgM3 = s.densityGcm3 * 1000;
-    const frPipePumped = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3, "pipe", s.hb);
-    const frPipeMud = frictionLossWithRegime(flowRateM3min, wellData.casingDepthMD, dHydPipe, mudRheo.pv, mudRheo.yp, pipeAreaM2, drillingFluid.density, "pipe", hbOf(mudRheo));
-
-    pumpHistory.push({ densityGcm3: s.densityGcm3, volumeM3: 0, fluidType: s.fluidType, pv: s.pv, yp: s.yp, hb: s.hb });
-    const batchIdx = pumpHistory.length - 1;
-
     const isDisplacement = s.kind==='displacement';
-    if (isDisplacement && displacementStartTime === null) {
-      displacementStartTime = cumTime;
-    }
 
     const MAX_STEPS_PER_STAGE = 500;
     const rawStepCount = Math.max(1, Math.ceil(stageTime / 0.5));
@@ -1877,7 +1777,7 @@ export function calculatePressureProfile(
 
       // === Проверка посадки пробки на ЦКОД ===
       if (isDisplacement) {
-        const remaining = displacementVol - cumDisplacementVol;
+        const remaining = displacementStopTarget - cumDisplacementVol;
         if (stepVolume >= remaining - 1e-6) {
           // Обрезаем шаг до точного остатка
           stepVolume = Math.max(0, remaining);
@@ -1885,39 +1785,38 @@ export function calculatePressureProfile(
           const addFrac = s.volume > 0 ? stepVolume / s.volume : 0;
           frac = Math.min(1, prevFrac + addFrac);
           progressedTime = stageTime * frac;
-          cumDisplacementVol = displacementVol;
+          cumDisplacementVol = displacementStopTarget;
           plugLanded = true;
         } else {
           cumDisplacementVol += stepVolume;
         }
       }
 
+      const previousProgress=step===1?0:Math.min((step-1)*dtMin,stageTime);
+      const previousVolume=stageTime>0?s.volume*previousProgress/stageTime:0;
+      const transfer=inventory.pump({fluidId:s.fluidId,densityGcm3:s.densityGcm3,fluidType:s.fluidType,pv:s.pv,yp:s.yp,hb:s.hb},Math.max(0,s.volume*frac-previousVolume));
+      const intervalMin=Math.max(1e-9,progressedTime-previousProgress);
+      const shoeFlowM3min=transfer.shoeM3/intervalMin;
       const tNow = cumTime + progressedTime;
       const vNow = cumVol + s.volume * frac;
       lastFracDone = frac;
       lastProgressedTime = progressedTime;
 
-      pumpHistory[batchIdx].volumeM3 = s.volume * frac;
-      const residualFreefallOffset = isDisplacement
-        ? Math.max(0, freefallOffset - cumDisplacementVol)
-        : freefallOffset;
-      totalPumped = cumVol + s.volume * frac + residualFreefallOffset;
-
-      // Доля трубы, заполненная закачанным флюидом
-      const filledFraction = Math.min(totalPumped / Math.max(pipeCapacity, 0.01), 1);
-
-      // Производительность = номинальная (объёмы уже распределены по номинальному расходу)
-      const actualRateLps = s.rateLps;
-      const actualFlowRateM3min = actualRateLps * 0.06;
-
-      // Пересчёт трения
-      const frPipePumpedActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, s.pv, s.yp, pipeAreaM2, densityKgM3, "pipe", s.hb);
-      const frPipeMudActual = frictionLossWithRegime(actualFlowRateM3min, wellData.casingDepthMD, dHydPipe, mudRheo.pv, mudRheo.yp, pipeAreaM2, drillingFluid.density, "pipe", hbOf(mudRheo));
-      const frPipe = (frPipePumpedActual.pressureMPa * filledFraction + frPipeMudActual.pressureMPa * (1 - filledFraction)) * kFriction;
+      const actualRateLps=s.rateLps;
+      const actualFlowRateM3min=actualRateLps*0.06;
+      // Pipe losses use retained batches, including their own density and rheology.
+      let frPipe=0,pipeVolume=inventory.pipeVoidM3;
+      for(const b of [...inventory.pipe].reverse()){
+        const top=pipeDepthAtVolume(pipeVolume);pipeVolume+=b.volumeM3;
+        const bot=pipeDepthAtVolume(pipeVolume),len=bot-top;
+        if(len<=0)continue;
+        const area=b.volumeM3/len,diameter=Math.sqrt(4*area/Math.PI)*1000,r=rheoForBatch(b);
+        frPipe+=frictionLossWithRegime(actualFlowRateM3min,len,diameter,r.pv,r.yp,area,b.densityGcm3*1000,'pipe',r.hb).pressureMPa*kFriction;
+      }
 
       // Трение в затрубье — послойно по фактическому заполнению, с эксцентриситетом по глубине
       const segsNow = annularSegments();
-      const frAnnDynamic = annFrictionAbove(actualFlowRateM3min, wellData.casingDepthMD, segsNow);
+      const frAnnDynamic = annFrictionAbove(shoeFlowM3min, wellData.casingDepthMD, segsNow);
       const frAnnNow = frAnnDynamic.pressureMPa;
       const reAnnNow = frAnnDynamic.reynolds;
       const flowRegimeAnnNow = frAnnDynamic.regime;
@@ -1925,21 +1824,17 @@ export function calculatePressureProfile(
       const pipeHydro = calcPipeHydrostatic();
       const annHydro = calcAnnularHydrostatic();
 
-      const surfPRaw = Math.max(0, (annHydro - pipeHydro) + frPipe + frAnnNow);
+      const surfPRaw = inventory.pipeVoidM3>1e-8?0:Math.max(0, (annHydro - pipeHydro) + frPipe + frAnnNow);
       const bhpRaw = annHydro + frAnnNow;
 
       // === Выход на устье ===
-      let totalAnnReturn = actualRateLps;
-      if (isDisplacement) {
-        totalAnnReturn = residualFreefallOffset > 0.000001 ? 0 : actualRateLps;
-      }
-      totalAnnReturn = Math.max(0, Math.min(totalAnnReturn, actualRateLps));
+      const totalAnnReturn=transfer.returnedM3/intervalMin/0.06;
 
       const surfP = surfPRaw;
       const bhp = bhpRaw;
 
       const annAreaForVel = annVPM;
-      const annularVelocityMps = annAreaForVel > 0 ? (actualRateLps / 1000) / annAreaForVel : 0;
+      const annularVelocityMps = annAreaForVel > 0 ? (shoeFlowM3min / 60) / annAreaForVel : 0;
 
       const annP = calcAnnularProfile();
       const ecdBottom = bottomTVD > 0 ? (annHydro + frAnnNow) / (0.00981 * bottomTVD) : 0;
@@ -1947,30 +1842,23 @@ export function calculatePressureProfile(
       let ecdPrevShoe = 0;
       if (prevShoe > 0 && prevShoeTVD > 0) {
         const hydroAtShoe = calcAnnularHydrostaticAtDepth(prevShoe);
-        const frictionAtShoe = annFrictionAbove(actualFlowRateM3min, prevShoe, segsNow).pressureMPa;
+        const frictionAtShoe = annFrictionAbove(shoeFlowM3min, prevShoe, segsNow).pressureMPa;
         ecdPrevShoe = (hydroAtShoe + frictionAtShoe) / (0.00981 * prevShoeTVD);
       }
-      points.push({ stage: s.name, time: tNow, surfaceStaticMPa: Math.max(0, annHydro - pipeHydro), surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: opts.fast ? 0 : maxSafeRateNow(segsNow), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps, ecdAtBottomGcm3: ecdBottom, ecdStaticAtBottomGcm3: ecdStaticBottom, ecdAtPrevShoeGcm3: ecdPrevShoe, fracGradEcdGcm3, porePressureEcdGcm3 });
+      points.push({ ...inventoryFrame(),shoeRateLps:shoeFlowM3min/0.06,stage: s.name, time: tNow, surfaceStaticMPa: Math.max(0, annHydro - pipeHydro), surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: opts.fast ? 0 : maxSafeRateNow(segsNow), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps, ecdAtBottomGcm3: ecdBottom, ecdStaticAtBottomGcm3: ecdStaticBottom, ecdAtPrevShoeGcm3: ecdPrevShoe, fracGradEcdGcm3, porePressureEcdGcm3 });
 
-      trackZones(actualFlowRateM3min, segsNow, s.name, tNow);
-      trackEnvelope(actualFlowRateM3min, segsNow, s.name);
+      trackZones(shoeFlowM3min, segsNow, s.name, tNow);
+      trackEnvelope(shoeFlowM3min, segsNow, s.name);
 
       if (plugLanded) break;
     }
 
     if (plugLanded) {
       // Стадия оборвана на посадке пробки — фиксируем частичные значения
-      pumpHistory[batchIdx].volumeM3 = s.volume * lastFracDone;
       cumTime += lastProgressedTime;
       cumVol += s.volume * lastFracDone;
       break;
     }
-
-    pumpHistory[batchIdx].volumeM3 = s.volume;
-    const remainingFreefallOffset = isDisplacement
-      ? Math.max(0, freefallOffset - cumDisplacementVol)
-      : freefallOffset;
-    totalPumped = cumVol + s.volume + remainingFreefallOffset;
 
     cumTime += stageTime;
     cumVol += s.volume;
@@ -1991,7 +1879,6 @@ export function calculatePressureProfile(
   // реологию буферов/цемента/продавки, расход, плотности — то есть ВСЕ вводимые параметры)
   const lastPoint = points[points.length - 1];
   const lastSurfP = lastPoint ? lastPoint.surfacePressure : 0;
-  const lastRate = lastPoint ? lastPoint.pumpRateLps : 0;
 
   // Скачок давления СТОП = динамическое давление продавки (трение + U-tube)
   // + срез ЦКОД (bump-инкремент для подтверждения посадки).
@@ -2012,9 +1899,9 @@ export function calculatePressureProfile(
 
   // Скачок давления от посадки пробки (от динамического давления на насосе)
   points.push({
-    stage: "СТОП (пробка в ЦКОД)", time: cumTime + 0.5,
+    ...inventoryFrame(),shoeRateLps:0,stage: "СТОП (пробка в ЦКОД)", time: cumTime + 0.5,
     surfacePressure: stopSpikeMPa, bottomholePressure: bottomHoleAtStop,
-    fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: lastRate,
+    fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
     annMudHeightM: finalAnnP.mudH, annBufferHeightM: finalAnnP.bufferH, annCementHeightM: finalAnnP.cementH, annDisplHeightM: finalAnnP.displH,
     freefallSettledM3: currentFreefallSettled,
@@ -2025,7 +1912,7 @@ export function calculatePressureProfile(
 
   // Удержание давления СТОП (насос остановлен — трение уходит, остаётся U-tube + bump)
   points.push({
-    stage: "СТОП (удержание)", time: cumTime + 5,
+    ...inventoryFrame(),shoeRateLps:0,stage: "СТОП (удержание)", time: cumTime + 5,
     surfacePressure: stopHoldMPa, bottomholePressure: bottomHoleAtStop,
     fracturePressure: fracP, cumulativeVolume: cumVol, pumpRateLps: 0,
     annularReturnRate: 0, flowRegimeAnn: 0, reynoldsAnn: 0, maxSafeRateLps: 0, densityGcm3: 0,
@@ -2087,10 +1974,15 @@ export function calculatePressureProfile(
   }
   processEvents.push({id:'actualStop',kind:'stop',timeMin:stopTime});
   for(const point of points)if(!point.eventId){point.eventId='actualStop';point.processKind='postStop';}
-  points[0].eventId='start';points[0].processKind='start';
+  points[0].eventId='start';points[0].processKind='start';points[0].cumulativeReturnM3=0;points[0].pipeVoidM3=0;points[0].shoeRateLps=0;points[0].inventoryResidualKg=0;
   const pumpedVolumeM3=points.at(-1)?.cumulativeVolume??0;
-  const processAudit={pumpedVolumeM3,plannedWellVolumeM3:processContract.wellVolumeM3,differenceM3:pumpedVolumeM3-processContract.wellVolumeM3,reason:'План назначенных порций сравнивается с фактически смоделированной закачкой. Досрочный Стоп, свободное падение и сжатие могут менять объём продавки. Промывка ЛВД идёт мимо скважины. Это не баланс конечного скважинного инвентаря.'};
-  return { processContract,processAudit,processEvents, points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope,
+  const processAudit={pumpedVolumeM3,plannedWellVolumeM3:processContract.wellVolumeM3,differenceM3:pumpedVolumeM3-processContract.wellVolumeM3,reason:'План назначенных порций сравнивается с фактически смоделированной закачкой. В модели постоянной плотности Стоп ограничен геометрическим объёмом до ЦКОД. Коэффициент сжатия увеличивает план, но не создаёт дополнительный физический поток через посаженную пробку. Промывка ЛВД идёт мимо скважины. Это не баланс конечного скважинного инвентаря.'};
+  const inventoryResult={...inventory.summary(),maxStepResidualKg,maxStepResidualM3,limitations:[
+    'Одномерный поршневой перенос при постоянной заданной плотности, без смешения, потерь и притоков. Возврат расчётный, не измеренный.',
+    'Свободное падение рассчитывается только в паузе ЛВД; скорость и равновесие оценочные. Динамическое U-tube при работающих насосах не решено.',
+    'Стоп ограничен геометрией до ЦКОД в несжимаемой модели. Коэффициент сжатия - запас объёма продавки. Физическая сжимаемость, упругость труб, газ и PVT/EOS пока не решаются.'
+  ]};
+  return { inventory:inventoryResult,processContract,processAudit,processEvents, points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope,
     basketStop: wellData.equipment?.some(e => e.kind === "basket" && e.quantity > 0) ? evaluateBasketStop(wellData, annColumn(), fractureGradient) : undefined };
 }
 
