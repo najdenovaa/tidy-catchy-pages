@@ -1,3 +1,4 @@
+import {MovingPlugControls} from './MovingPlugBench';
 import {useState} from "react";
 import {Card,CardHeader,CardTitle,CardContent} from "./ui/card";
 import SectionHeader from "./InputSectionHeader";
@@ -12,6 +13,7 @@ export function StopStorageControls({well,onChange}:{well:WellData;onChange:(w:W
  return <Card>
  <SectionHeader title="🔩 Сжимаемость жидкостей и упругость колонны" isOpen={open} onClick={()=>setOpen(!open)}/>
  {open&&<CardContent className="pt-4 space-y-3">
+ <MovingPlugControls enabled={s.plugBenchEnabled} value={s.plugBenchCase} onChange={(plugBenchEnabled,plugBenchCase)=>update({plugBenchEnabled,plugBenchCase})}/>
  <label className="text-sm font-semibold flex gap-2 items-center"><input type="checkbox" checked={s.enabled} onChange={e=>update({enabled:e.target.checked})}/> Учитывать сжатие и упругость после посадки пробки</label>
  <label className="text-sm font-semibold flex gap-2 items-center"><input type="checkbox" checked={s.hydrostaticsEnabled??false} onChange={e=>update({hydrostaticsEnabled:e.target.checked})}/> Сравнить PVT-гидростатику по кадрам закачки</label>
  <label className="text-sm font-semibold flex gap-2 items-center"><input type="checkbox" checked={s.flowEnabled??false} onChange={e=>update({flowEnabled:e.target.checked})}/> Исследовательский 1D-перенос со сжимаемостью</label>

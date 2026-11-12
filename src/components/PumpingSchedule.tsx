@@ -1,3 +1,4 @@
+import MovingPlugBench from './MovingPlugBench';
 import CompressibleTransportPanel from "./CompressibleTransportPanel";
 import type {TransportResult} from "@/lib/compressible-transport";
 import PvtHydrostaticsPanel from "./PvtHydrostaticsPanel";
@@ -28,6 +29,7 @@ export default function PumpingSchedule({input,result,transportResult,onTranspor
  {result&&<FluidInventoryPanel result={result}/>}
  <StopStoragePanel result={result?.stopStorage}/>
  <PvtHydrostaticsPanel result={result?.pvtHydrostatics}/>
+ <MovingPlugBench enabled={input.wellData.stopStorage?.plugBenchEnabled} input={input.wellData.stopStorage?.plugBenchCase}/>
  <CompressibleTransportPanel input={input} cachedResult={transportResult} onResult={onTransportResult}/>
  </div>;
 }

@@ -1,3 +1,4 @@
+import {simulateMovingPlug,normalizeMovingPlugCase,MOVING_PLUG_FIELDS} from './moving-plug';
 import {transportInputKey} from "./compressible-transport";
 import {buildProcessContract,type ProcessContract} from "./cementing-process";
 import {rheologyReportFluids} from "./rheology-report";
@@ -989,6 +990,16 @@ export async function exportToDocx(
   add('rheology','Модели и измерения реологии',rheologyContent);
   add('hydraulics','Объёмы и гидравлика',hydraulicsContent);
   add('schedule','Программа закачки',scheduleContent);
+  if(wellData.stopStorage?.plugBenchEnabled&&reportIncludes(selection,'plugBenchmark')){
+    const config=wellData.stopStorage.plugBenchCase,content:any[]=[sectionTitle('Проверочный стенд движения поршня (не скважина)')];
+    if(!config)content.push(noteParagraph('Не задан самостоятельный эталонный сценарий стенда.'));
+    else{const bench=simulateMovingPlug(config),last=bench.samples.at(-1),first=bench.samples[0];content.push(noteParagraph(bench.reason),kvTable(MOVING_PLUG_FIELDS.map(([key,label])=>({label,value:String(bench.input[key])}))) as any,
+      kvTable([{label:'Достижение заданного упора',value:bench.landingTimeSec===null?'Не достигнут':fmt(bench.landingTimeSec,6)+' с'},{label:'Максимальная пошаговая невязка массы',value:bench.maxMassResidualKg.toExponential(3)+' кг'}]) as any,...bench.limitations.map(noteParagraph));
+      if(first&&last)content.push(gridTable(['Камера','Исходно, кг','Подача, кг','Возврат, кг','Осталось, кг'],[['Сзади',fmt(first.backMassKg,6),fmt(last.injectedKg,6),'0',fmt(last.backMassKg,6)],['Впереди',fmt(first.aheadMassKg,6),'0',fmt(last.returnedKg,6),fmt(last.aheadMassKg,6)]]) as any);
+      if(options?.extras?.figures?.some(f=>f.reportItem==='plugBenchmark'&&f.sourceKey!==JSON.stringify(bench.input)))content.push(noteParagraph('Устаревшие иллюстрации стенда исключены: параметры изменились.'));
+    }add('plugBenchmark','Проверочный стенд движения поршня',content);
+  }
+
   const suppliedTransport=options?.extras?.compressibleTransport;
   const freshTransport=suppliedTransport?.inputKey===transportInputKey({wellData,drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin:preComputed?.flushTimeMin??10,flushVolumeM3:preComputed?.flushVolumeM3??0})?suppliedTransport:undefined;
   if(suppliedTransport){
@@ -1036,7 +1047,7 @@ export async function exportToDocx(
   add('pressureTable','План продавки',pressureProfileContent);
   add('chartData','Числовые данные графиков',chartsDataContent);
   add('woc','ОЗЦ',buildWOCPage(wellData,slurries));
-  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>f.reportItem!=='compressibleTransport'||!!freshTransport)}:undefined;
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='compressibleTransport'||!!freshTransport)&&(f.reportItem!=='plugBenchmark'||wellData.stopStorage?.plugBenchEnabled&&f.sourceKey===JSON.stringify(normalizeMovingPlugCase(wellData.stopStorage.plugBenchCase))))}:undefined;
   const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});

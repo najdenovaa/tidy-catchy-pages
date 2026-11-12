@@ -1,3 +1,4 @@
+import {simulateMovingPlug} from './moving-plug';
 import { allowedReportFigure, type ReportScope, type ReportSelection, type ReportItem } from "./cementing-report-options";
 import { reportSeriesPlot } from "./report-series-plot";
 import { calculateCasingRunning, normalizeRunningSettings } from "./casing-running-analysis";
@@ -9,7 +10,7 @@ import { pathPoints, frames } from "./displacement-geometry";
 import { centralizerReportSamples } from "./cementing-report-sections";
 import { getEffectiveTrajectory, type WellData, type SlurryInput } from "./cementing-calculations";
 import type { CementingReportExtras, ReportFigure } from "./cementing-report-data";
-export interface ReportSvg { reportItem?: ReportItem; title: string; svg: string; width: number; height: number; }
+export interface ReportSvg { sourceKey?:string; reportItem?: ReportItem; title: string; svg: string; width: number; height: number; }
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 interface Polygon { v: number[][]; color: string; opacity?: number; }
 function sceneSvg(title: string, polygons: Polygon[], width: number, height: number, lines: number[][][] = [], boreLines:number[][][] = []) {
@@ -29,6 +30,10 @@ function sceneSvg(title: string, polygons: Polygon[], width: number, height: num
 }
 export function buildCementingReportSvgs(w: WellData, extras: CementingReportExtras, scope:ReportScope="cementing", selection?:ReportSelection): ReportSvg[] {
   const images: ReportSvg[] = [];
+  if(scope==='cementing'&&w.stopStorage?.plugBenchEnabled&&w.stopStorage.plugBenchCase&&selection?.plugBenchmark===true){
+    const bench=simulateMovingPlug(w.stopStorage.plugBenchCase),key=JSON.stringify(bench.input),tag=(f:ReportSvg)=>({...f,sourceKey:key});
+    if(bench.samples.length>1){images.push(tag(reportSeriesPlot('Стенд поршня: положение (не скважина)','plugBenchmark',bench.samples.map(p=>p.timeSec),'Время, с','Положение, м',[{name:'Поршень',color:'#4f46e5',values:bench.samples.map(p=>p.xM)}])),tag(reportSeriesPlot('Стенд поршня: давления (не скважина)','plugBenchmark',bench.samples.map(p=>p.timeSec),'Время, с','Давление, МПа',[{name:'Сзади',color:'#ef4444',values:bench.samples.map(p=>p.backMPa)},{name:'Впереди',color:'#0284c7',values:bench.samples.map(p=>p.aheadMPa)}])));}
+  }
   const transport=extras.compressibleTransport;
   if(scope==='cementing'&&transport?.frames.length){
     images.push(reportSeriesPlot('Исследовательский 1D-перенос: давление','compressibleTransport',transport.frames.map(p=>p.timeMin),'Время, мин','Давление, МПа',[{name:'Подача',color:'#4f46e5',values:transport.frames.map(p=>p.inletMPa)},{name:'Ячейка трубы у башмака',color:'#0284c7',values:transport.frames.map(p=>p.shoeCellMPa)}]));
@@ -146,7 +151,7 @@ export async function rasterizeReportSvgs(images: ReportSvg[]): Promise<ReportFi
       const canvas = document.createElement("canvas"); canvas.width = x.width * 2; canvas.height = x.height * 2;
       const ctx = canvas.getContext("2d"); if (!ctx) throw new Error("Недоступен экспорт изображений");
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-      out.push({ reportItem:x.reportItem, title: x.title, dataUrl: canvas.toDataURL("image/png"), width: x.width, height: x.height });
+      out.push({ ...(x.sourceKey?{sourceKey:x.sourceKey}:{}),reportItem:x.reportItem, title: x.title, dataUrl: canvas.toDataURL("image/png"), width: x.width, height: x.height });
     } finally { URL.revokeObjectURL(url); }
   }
   return out;
