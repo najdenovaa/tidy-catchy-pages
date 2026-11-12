@@ -1,3 +1,4 @@
+import ProcessContractPanel from "./ProcessContractPanel";
 import {rheologyInputErrors} from "@/lib/cement-rheology";
 import FluidLibrary from "./FluidLibrary";
 import WellGeometrySummary from "./WellGeometrySummary";
@@ -539,6 +540,7 @@ export default function InputSection(props: Props) {
           <span className="underline underline-offset-2">Загрузить исходные данные — заполним за вас</span>
         </Link>
       </div>
+      <ProcessContractPanel input={props} />
       {/* ===== 1. Скважина ===== */}
       <Card>
         <SectionHeader title="📐 Данные скважины" isOpen={openSections.well} onClick={() => toggle("well")} />

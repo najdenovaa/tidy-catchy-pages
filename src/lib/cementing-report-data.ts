@@ -16,7 +16,7 @@ export interface DisplacementReportSettings { rotationRpm: number; settleMin: nu
 export interface DisplacementReportData {
   inputKey: string; result: D2Result; meta: D2Meta; stages: D2Stage[]; settings: DisplacementReportSettings;
 }
-export type DisplacementReportInput = { wellData: WellData; slurries: SlurryInput[]; buffers: BufferFluid[];
+export type DisplacementReportInput = { flushTimeMin?:number;flushVolumeM3?:number;wellData: WellData; slurries: SlurryInput[]; buffers: BufferFluid[];
   drillingFluid: DrillingFluid; displacementFluids: DisplacementFluid[]; volumes: VolumeResults };
 export interface ReportSupplement {
   title: string; paragraphs: string[]; tables: { headers: string[]; rows: string[][] }[];
@@ -27,7 +27,7 @@ export interface CementingReportExtras {
   figures?: ReportFigure[]; supplements?: ReportSupplement[]; warnings?: string[];
 }
 export function displacementReportKey(p: DisplacementReportInput, settings: DisplacementReportSettings) {
-  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "rheology-selection-v1", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes, settings]);
+  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "process-contract-v1", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes,p.flushTimeMin??0,p.flushVolumeM3??0, settings]);
 }
 export function buildCentralizerJointSchedule(depth: number, intervals: CentralizerInterval[]) {
   const rows: NonNullable<CentralizationReportData["joints"]> = [];

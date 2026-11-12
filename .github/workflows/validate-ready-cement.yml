@@ -17,6 +17,8 @@ on:
       - "src/lib/fluid-library*"
       - "src/lib/cement-rheology*"
       - "src/lib/rheology-*"
+      - "src/lib/cementing-process*"
+      - "src/components/ProcessContractPanel*"
       - "src/components/FannEditor*"
       - "src/lib/equipment-library*"
       - "src/components/EquipmentLibrary*"

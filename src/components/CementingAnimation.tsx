@@ -32,6 +32,7 @@ type FluidKey = "mud" | "buffer" | "cement" | "displacement" | "void";
 type AnnulusFluidKey = Exclude<FluidKey, "void">;
 
 interface PumpBatch {
+  fluidId?:string;
   fluid: FluidKey;
   label: string;
   volumeM3: number;
@@ -315,7 +316,7 @@ function buildAnnulusSegmentsFromTargets(
 function pushBatch(target: PumpBatch[], batch: PumpBatch) {
   if (batch.volumeM3 <= EPS) return;
   const last = target[target.length - 1];
-  if (last && last.fluid === batch.fluid && last.label === batch.label) {
+  if (last && last.fluid === batch.fluid && last.label === batch.label && last.fluidId===batch.fluidId) {
     last.volumeM3 += batch.volumeM3;
   } else {
     target.push({ ...batch });
@@ -580,7 +581,7 @@ export default function CementingAnimation({
     let cumDisplacementVol = 0;
 
     return pressureData.map((point, idx) => {
-      const isFlushStage = /промывка лвд/i.test(point.stage);
+      const isFlushStage = point.processKind?point.processKind==='surfaceFlush':/промывка лвд/i.test(point.stage);
       const deltaVol = Math.max(0, point.cumulativeVolume - lastCumVol);
 
       if (isFlushStage) {
@@ -616,9 +617,9 @@ export default function CementingAnimation({
       }
 
       if (deltaVol > EPS) {
-        const batchMeta = classifyStage(point.stage, bufferNames, slurryNames);
+        const batchMeta = point.processKind?(point.processKind==='cement'?{fluid:'cement' as const,label:point.stage}:point.processKind==='buffer'?{fluid:'buffer' as const,label:point.stage}:point.processKind==='displacement'?{fluid:'displacement' as const,label:point.stage}:null):classifyStage(point.stage, bufferNames, slurryNames);
         if (batchMeta) {
-          pushBatch(history, { ...batchMeta, volumeM3: deltaVol });
+          pushBatch(history, { ...batchMeta,fluidId:point.fluidId, volumeM3: deltaVol });
           if (batchMeta.fluid === "displacement") {
             cumDisplacementVol += deltaVol;
           }

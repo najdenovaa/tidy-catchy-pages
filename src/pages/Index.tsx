@@ -1,3 +1,4 @@
+import {buildProcessContract} from "@/lib/cementing-process";
 import {rheologyInputErrors} from "@/lib/cement-rheology";
 import {rheologyReportFigures} from "@/lib/rheology-report";
 import ReportContentsDialog from "@/components/ReportContentsDialog";
@@ -301,6 +302,7 @@ export default function Index() {
       flushVolumeM3,
     });
     const errors=rheologyInputErrors(snapshot);if(errors.length){alert(errors.join("\n"));return;}
+    const contract=buildProcessContract(snapshot);if(!contract.canRun){alert(contract.issues.filter(x=>x.severity==='error').map(x=>x.message).join("\n"));return;}
     setCalcSnapshot(snapshot);
     setCalcCount(prev => prev + 1);
     // Log calculation to backend
@@ -394,7 +396,7 @@ export default function Index() {
       if (cent) setCentralizationResults(cent.results);
       const extras: CementingReportExtras = { centralization: cent, warnings: [] };
       setExportStatus("Расчёт замещения");
-      const data = { wellData: reportWell, slurries: snap.slurries, buffers: snap.buffers,
+      const data = { flushTimeMin:snap.flushTimeMin,flushVolumeM3:snap.flushVolumeM3,wellData: reportWell, slurries: snap.slurries, buffers: snap.buffers,
         drillingFluid: snap.drillingFluid, displacementFluids: snap.displacementFluids, volumes: vol };
       const settings = displacementReportSettings;
       try {
@@ -866,6 +868,7 @@ export default function Index() {
               <div data-tab-content="displace3d">
                 {calcSnapshot && volumes && snapWellData ? (
                   <Displacement2DSection
+                    flushTimeMin={calcSnapshot.flushTimeMin} flushVolumeM3={calcSnapshot.flushVolumeM3}
                     initialReport={displacementReport}
                     initialSettings={displacementReportSettings}
                     onSettingsChange={setDisplacementReportSettings}

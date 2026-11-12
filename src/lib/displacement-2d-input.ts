@@ -1,3 +1,4 @@
+import {buildProcessContract} from "./cementing-process";
 import {rheologyResolution} from "./cement-rheology";
 import { boreDiameterAtDepth } from "./well-geometry";
 /**
@@ -46,6 +47,7 @@ function interp(points: { md: number; v: number }[], md: number, def: number) {
 }
 
 export function buildDisplacementInput(p: {
+  flushTimeMin?:number;flushVolumeM3?:number;
   wellData: WellData;
   slurries: SlurryInput[];
   buffers: BufferFluid[];
@@ -93,22 +95,20 @@ export function buildDisplacementInput(p: {
   });
 
   // Закачка у устья: буферы → растворы → продавка
-  type Pump = { fluid: number | null; vol: number; rate: number };
+  type Pump = { fluid: number | null; vol: number; rate: number;stageId:string;fluidId:string;holdS?:number };
   const pumps: Pump[] = [];
-  buffers.forEach((b, i) => resolveFlowRateSteps(b.flowRateSteps, b.volume).forEach(st => {
-    pumps.push({ fluid: bufIdx[i], vol: st.volumeM3, rate: st.rateLps / 1000 });
-  }));
-  slurries.forEach((s, i) => resolveFlowRateSteps(s.flowRateSteps, slurryDesignVolume(w, slurries, i)).forEach(st => {
-    pumps.push({ fluid: slIdx[i], vol: st.volumeM3, rate: st.rateLps / 1000 });
-  }));
-  const disp = buildDisplacementSchedule(displacementFluids, volumes.displacementVolumeWithCompression);
-  disp.forEach((d) => pumps.push({ fluid: null, vol: d.volumeM3, rate: (d.rateLps || 8) / 1000 }));
+  const contract=buildProcessContract({...p,fractureGradient:0,flushTimeMin:p.flushTimeMin??0,flushVolumeM3:p.flushVolumeM3??0},volumes.displacementVolumeWithCompression);
+  if(!contract.canRun)throw new Error(contract.issues.filter(x=>x.severity==='error').map(x=>x.message).join('\n'));
+  for(const stage of contract.stages){const f=contract.fluids.find(f=>f.id===stage.fluidId)!;pumps.push({fluid:stage.kind==='buffer'?bufIdx[f.index]:stage.kind==='cement'?slIdx[f.index]:null,vol:stage.volumeM3,rate:stage.rateLps/1000,stageId:stage.id,fluidId:stage.fluidId,...(stage.kind==='surfaceFlush'?{vol:0,rate:0,holdS:(stage.durationMin??0)*60}:{})});}
+  notes.push(...contract.issues.map(x=>x.message));
+  notes.push('2D использует общие порции и расходы устьевой закачки. Пауза ЛВД передана нулевой подачей. Свободное падение и сжатие в поршневой подаче не воспроизводятся; время 2D отсчитывается от выхода первых порций у башмака.');
   // Выход в затрубье: всё, что закачано сверх объёма колонны, выходит из-под башмака в том же порядке
   const Vc = volumes.totalPipeVolume;
   const exitSeq = pumps.filter((x) => x.fluid !== null) as { fluid: number; vol: number; rate: number }[];
   const stages: D2Stage[] = [];
   let pumped = 0, exitPtr = 0, exitLeft = exitSeq[0]?.vol ?? 0, tStart = 0, tNow = 0, started = false;
   for (const pu of pumps) {
+    if(pu.holdS){if(started)stages.push({fluid:stages.at(-1)?.fluid??0,volumeM3:0,rateM3s:0,holdS:pu.holdS,drivingStageId:pu.stageId});tNow+=pu.holdS;continue;}
     let left = pu.vol;
     while (left > 1e-9) {
       // объём до момента начала выхода порций
@@ -120,8 +120,8 @@ export function buildDisplacementInput(p: {
         chunk = Math.min(left, exitLeft);
         const f = exitSeq[exitPtr].fluid;
         const last = stages[stages.length - 1];
-        if (last && last.fluid === f && Math.abs(last.rateM3s - pu.rate) < 1e-9) last.volumeM3 += chunk;
-        else stages.push({ fluid: f, volumeM3: chunk, rateM3s: pu.rate });
+        if (last && last.fluid === f && last.drivingStageId===pu.stageId && Math.abs(last.rateM3s - pu.rate) < 1e-9) last.volumeM3 += chunk;
+        else stages.push({ fluid: f, volumeM3: chunk, rateM3s: pu.rate,drivingStageId:pu.stageId });
         exitLeft -= chunk;
         if (exitLeft <= 1e-9) { exitPtr++; exitLeft = exitSeq[exitPtr]?.vol ?? 0; }
       }

@@ -84,6 +84,8 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   expect(xml).toContain("Протокол библиотеки QA-056");
   expect(xml).toContain("Бингам: МНК по Fann");
   expect(xml).toContain("RMSE, Па");
+  expect(xml).toContain("Проверка интеграла Q × dt");
+  expect(xml).not.toContain("Опрессовка ЛВД (25 МПа)");
   expect(xml).toContain("Паспорт оснастки QA-056");
   expect(xml).not.toContain("SECRET-PASSPORT-CONTENT");
   expect(Object.keys(zip.files).some(path=>path.startsWith("word/embeddings/"))).toBe(false);

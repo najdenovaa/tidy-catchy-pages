@@ -46,6 +46,7 @@ function ProfileChart({ res, designTop }: { res: D2Result; designTop: number }) 
 }
 
 export default function Displacement2DSection(p: {
+  flushTimeMin?:number;flushVolumeM3?:number;
   wellData: WellData; slurries: SlurryInput[]; buffers: BufferFluid[]; drillingFluid: DrillingFluid;
   displacementFluids: DisplacementFluid[]; volumes: VolumeResults;
   initialReport?: DisplacementReportData | null;
