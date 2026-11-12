@@ -71,7 +71,7 @@ jobs:
           assert model is not None, "Missing rendered displacement model page"
           main_text = "\n".join(p.get_text() for p in doc)
           # Passport references are legitimate input provenance; the passport body must stay out.
-          assert "Паспорт оснастки QA-056" in main_text
+          assert "Паспорт оснастки QA-056" in " ".join(main_text.split())
           assert "SECRET-PASSPORT-CONTENT" not in main_text and "Потрубная ведомость" not in main_text
           for stem, required, forbidden in [("centralization", "Расчёт центрирования", "Дохождение колонны:"), ("running", "Расчёт дохождения", "Потрубная ведомость")]:
               scoped = fitz.open(d / (stem + "-report.pdf"))
