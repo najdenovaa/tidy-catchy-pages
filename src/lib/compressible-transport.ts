@@ -6,10 +6,15 @@ import {createAnnularGeometry} from './well-geometry';
 import {getEffectiveTrajectory,interpolateTVD,totalPipeVolumeForRange,effectiveRheology,cementCategory,hbOf} from './cementing-calculations';
 import {rheologyInputErrors} from './cement-rheology';
 export interface TransportFrame {timeMin:number;stage:string;inletMPa:number;shoeCellMPa:number;pumpedReferenceM3:number;returnedReferenceM3:number;returnRateReferenceLps:number;maxStepResidualKg:number}
+export interface TransportStudy {
+ inputKey:string; rows:{label:string;cellCount:number;actualCellLengthM:number;stepSeconds:number;acceptedSteps:number;status:string;reason:string;maxMassResidualKg:number}[];
+ comparisons:{label:string;maxInletDifferenceMPa:number;returnDifferenceM3:number;compositionL1:number}[];note:string;
+}
 export interface TransportResult {
+ study?:TransportStudy;
  model:'compressible-fv-research-v1';inputKey:string;status:'complete'|'stopped';reason:string;cellLengthM:number;stepSeconds:number;cellCount:number;acceptedSteps:number;maxStepRelativeResidual:number;
  frames:TransportFrame[];components:{name:string;id:string;rhoRef:number;bulkMPa:number;initialKg:number;injectedKg:number;returnedKg:number;retainedKg:number;residualKg:number}[];
- profile:{leg:string;md:number;pressureMPa:number;fractions:{name:string;massFraction:number}[]}[];limitations:string[];
+ profile:{leg:string;md:number;volumeM3:number;pressureMPa:number;fractions:{id:string;name:string;massFraction:number}[]}[];limitations:string[];
 }
 /** Full normalized key; a short display hash is not used for report/cache validity. */
 export function transportInputKey(input:CementingSnapshot){const p=normalizeCementingSnapshot(input);return JSON.stringify(['compressible-fv-research-v1',{...p,wellData:{...p.wellData,caliperLog:undefined}}]);}
@@ -48,7 +53,7 @@ export function simulateCompressibleTransport(input:CementingSnapshot,progress?:
   if(system.referenceMPa<0||system.outletMPa<0)throw new Error('Опорное давление и противодавление должны быть неотрицательными.');
   let state:FlowState=initializeFlow(system,fluids.findIndex(f=>f.id==='mud:0')),time=0,pumped=0,returned=0;
   r.cellCount=cells.length;r.components=fluids.map((f,j)=>({...f,initialKg:state.masses.reduce((n,m,i)=>n+m*state.fractions[i][j],0),injectedKg:0,returnedKg:0,retainedKg:0,residualKg:0}));
-  const snapshot=()=>{r.components.forEach((f,j)=>{f.retainedKg=state.masses.reduce((n,m,i)=>n+m*state.fractions[i][j],0);f.residualKg=f.initialKg+f.injectedKg-f.returnedKg-f.retainedKg;});r.profile=cells.map((c,i)=>({leg:c.kind,md:c.md,pressureMPa:state.pressures[i],fractions:fluids.map((f,j)=>({name:f.name,massFraction:state.fractions[i][j]}))}));};snapshot();
+  const snapshot=()=>{r.components.forEach((f,j)=>{f.retainedKg=state.masses.reduce((n,m,i)=>n+m*state.fractions[i][j],0);f.residualKg=f.initialKg+f.injectedKg-f.returnedKg-f.retainedKg;});r.profile=cells.map((c,i)=>({leg:c.kind,md:c.md,volumeM3:c.volumeM3,pressureMPa:state.pressures[i],fractions:fluids.map((f,j)=>({id:f.id,name:f.name,massFraction:state.fractions[i][j]}))}));};snapshot();
   r.frames.push({timeMin:0,stage:'Гидростатическое равновесие',inletMPa:system.outletMPa,shoeCellMPa:state.pressures[count-1],pumpedReferenceM3:0,returnedReferenceM3:0,returnRateReferenceLps:0,maxStepResidualKg:0});
   for(const stage of contract.stages){
    const isSurface=stage.destination==='surface',index=isSurface?0:fluids.findIndex(f=>f.id===stage.fluidId),rate=isSurface?0:stage.rateLps/1000,kgS=rate*fluids[index].rhoRef;

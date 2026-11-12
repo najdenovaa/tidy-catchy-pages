@@ -31,3 +31,14 @@ it('reducing the time step improves the implicit-upwind tracer solution',()=>{
  const run=(dt:number)=>{let state=warm;for(let t=0;t<T;t+=dt)state=advanceFlow(s,state,dt,2,1).state;return state.fractions[0][1];};
  const exact=1-Math.exp(-2*T/warm.masses[0]);expect(Math.abs(run(5)-exact)).toBeLessThan(Math.abs(run(10)-exact));
 });
+
+it('reduces spatial front error under mesh refinement at fixed time step',()=>{
+ const run=(n:number)=>{
+  const s=system();s.fluids[1]={...s.fluids[0],id:'tracer',name:'Tracer'};s.cells=Array.from({length:n},(_,i)=>({volumeM3:.02/n,lengthM:100/n,tvd:0,kind:'pipe' as const,outerMm:20,innerMm:Math.sqrt(.0008/Math.PI)*1000,md:(i+.5)*100/n}));
+  let state=initializeFlow(s,0);for(let i=0;i<3;i++)state=advanceFlow(s,state,10,2,0).state;
+  const initialMass=state.masses.reduce((a,b)=>a+b,0),T=5,front=2*T/initialMass;
+  for(let t=0;t<T-1e-8;t+=.1)state=advanceFlow(s,state,.1,2,1).state;
+  let l1=0;for(let i=0;i<n;i++){const exact=Math.max(0,Math.min(1,(front-i/n)*n));l1+=Math.abs(state.fractions[i][1]-exact)/n;}return l1;
+ };
+ const errors=[8,16,32].map(run);expect(errors[1]).toBeLessThan(errors[0]);expect(errors[2]).toBeLessThan(errors[1]);
+},20000);

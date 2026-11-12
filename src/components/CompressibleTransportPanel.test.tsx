@@ -1,0 +1,13 @@
+import {it,expect,vi} from 'vitest';
+import {render,screen,fireEvent,cleanup} from '@testing-library/react';
+import {afterEach} from 'vitest';
+import CompressibleTransportPanel from './CompressibleTransportPanel';
+import {studyFixture} from '@/test/fixtures/compressible-flow';
+import {simulateCompressibleTransport} from '@/lib/compressible-transport';
+import {transportRefinementInputs,summarizeTransportRefinement} from '@/lib/transport-refinement';
+const workers=vi.hoisted(()=>({cancel:vi.fn(),start:vi.fn()}));
+vi.mock('@/lib/compressible-worker-client',()=>({startTransportWorker:(...args:any[])=>workers.start(...args),startTransportRefinement:(...args:any[])=>workers.start(...args)}));
+vi.mock('recharts',()=>({ResponsiveContainer:()=>null,LineChart:()=>null,Line:()=>null,XAxis:()=>null,YAxis:()=>null,CartesianGrid:()=>null,Tooltip:()=>null,Legend:()=>null}));
+afterEach(()=>{cleanup();vi.clearAllMocks();});
+it('hides the old sensitivity table after changing source inputs',()=>{const p=studyFixture(),runs=transportRefinementInputs(p).map(x=>simulateCompressibleTransport(x.input)),r={...runs[0],study:summarizeTransportRefinement(p,runs)};const view=render(<CompressibleTransportPanel input={p} cachedResult={r}/>);expect(screen.getByText('Чувствительность к сетке и шагу')).toBeInTheDocument();view.rerender(<CompressibleTransportPanel input={{...p,drillingFluid:{...p.drillingFluid,density:1200}}} cachedResult={r}/>);expect(screen.queryByText('Чувствительность к сетке и шагу')).not.toBeInTheDocument();});
+it('cancels an active refinement when the source changes',()=>{workers.start.mockReturnValue({cancel:workers.cancel,promise:new Promise(()=>{})});const p=studyFixture(),view=render(<CompressibleTransportPanel input={p}/>);fireEvent.click(screen.getByRole('button',{name:'Сравнить сетку и шаг: 5 прогонов'}));expect(screen.getByRole('status')).toHaveTextContent('0%');view.rerender(<CompressibleTransportPanel input={{...p,flushTimeMin:1}}/>);expect(workers.cancel).toHaveBeenCalled();expect(screen.queryByText('Отменить')).not.toBeInTheDocument();});

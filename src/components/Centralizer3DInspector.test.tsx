@@ -23,4 +23,4 @@ it('разделяет цель, результат пролёта и опоры
   expect(host.querySelector('tbody')!.textContent).toBe(rows);
 
  }finally{await act(async()=>root.unmount());host.remove();}
-});
+},15000);

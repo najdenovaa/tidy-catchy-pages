@@ -999,6 +999,11 @@ export async function exportToDocx(
       gridTable(['Жидкость','K, МПа','Исходно, кг','Подача, кг','Возврат, кг','В контуре, кг'],r.components.map(f=>[f.name,fmt(f.bulkMPa,1),fmt(f.initialKg,3),fmt(f.injectedKg,3),fmt(f.returnedKg,3),fmt(f.retainedKg,3)])) as any,
       ...r.components.map(f=>noteParagraph(f.name+': накопленная невязка '+f.residualKg.toExponential(3)+' кг.')),
       ...r.limitations.map(noteParagraph));
+      if(r.study?.inputKey===r.inputKey){const study=r.study;content.push(sectionTitle('Чувствительность к сетке и шагу'),noteParagraph(study.note),noteParagraph('Полных прогонов: '+study.rows.filter(x=>x.status==='complete').length+' из '+study.rows.length+'.'),
+        gridTable(['Прогон','Ячеек','Длина, м','Макс. шаг, с','Шагов','Баланс, кг'],study.rows.map(x=>[x.label,String(x.cellCount),fmt(x.actualCellLengthM,2),fmt(x.stepSeconds,2),String(x.acceptedSteps),x.maxMassResidualKg.toExponential(2)])) as any,
+        ...study.rows.filter(x=>x.status!=='complete').map(x=>noteParagraph(x.label+': остановлен. '+x.reason)),
+        gridTable(['Сравнение','Разность подачи, МПа','Разность возврата, м³','L1 состава (0-2)'],study.comparisons.map(x=>[x.label,x.maxInletDifferenceMPa.toExponential(3),x.returnDifferenceM3.toExponential(3),x.compositionL1.toExponential(3)])) as any);}
+
     }
     add('compressibleTransport','Исследовательский сжимаемый перенос',content);
   }
