@@ -1,3 +1,4 @@
+import {saveEquipmentRevision,emptyEquipmentLibrary,equipmentProperties,applyEquipmentRevision} from "../equipment-library";
 import {saveFluidRevision, emptyFluidLibrary, fluidProperties, applyFluidRevision} from "../fluid-library";
 // @vitest-environment node
 import { cementProduct, identityOf } from "../cement-product-catalog";
@@ -7,7 +8,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import JSZip from "jszip";
 import { getCementingExample } from "../cementing-example";
-import { calculateVolumes, calculatePressureProfile } from "../cementing-calculations";
+import { calculateVolumes, calculatePressureProfile, type WellData } from "../cementing-calculations";
 import { buildDisplacementInput } from "../displacement-2d-input";
 import { simulateDisplacement2D } from "../displacement-2d";
 import { resolveCentralizationReport, displacementReportKey, type CementingReportExtras } from "../cementing-report-data";
@@ -45,7 +46,7 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   }, w, ex.drillingFluid.density)!;
   expect(cent.joints?.some(j => j.centralizerDepths.length > 0)).toBe(true);
   expect(cent.joints![cent.joints!.length - 1].bottomMD).toBe(250);
-  const reportWell = { ...w, equipment: [{ ...selectEquipment(equipmentProduct('avrora-141sg')!, 'qa-float'), casingOD: w.casingOD, depthMD: w.ckodDepth, passport: 'PS-QA-168', thread: 'ОТТМ' }], standoffProfile: cent.results.map(r => ({ md: r.md, standoffPct: r.standoff })) };
+  const reportWell:WellData = { ...w, equipment: [{ ...selectEquipment(equipmentProduct('avrora-141sg')!, 'qa-float'), casingOD: w.casingOD, depthMD: w.ckodDepth, passport: 'PS-QA-168', thread: 'ОТТМ' }], standoffProfile: cent.results.map(r => ({ md: r.md, standoffPct: r.standoff })) };
   const { input, meta } = buildDisplacementInput({ ...dData, wellData: reportWell });
   const result = simulateDisplacement2D({ ...input, nTheta: 8, nZ: 18, maxSnapshots: 8, settleMin: settings.settleMin });
   const extras: CementingReportExtras = { centralization: cent,
@@ -70,12 +71,15 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   }
   const library = saveFluidRevision(emptyFluidLibrary(), "slurry", fluidProperties("slurry", slurries[0]), {source:"Протокол библиотеки QA-056",basis:"laboratory",temperatureC:58,pressureMPa:25,notes:"Контроль источника"});
   const reportSlurries = [applyFluidRevision("slurry",slurries[0],library.entries[0],1),...slurries.slice(1)];
+  const eqLib=saveEquipmentRevision(emptyEquipmentLibrary(),equipmentProperties({id:"qa",kind:"shoe",model:"Башмак QA",manufacturer:"Завод QA",quantity:1}),{source:"Паспорт оснастки QA-056",basis:"passport",notes:"Без вложения паспорта"});
+  reportWell.equipment=[...(reportWell.equipment??[]),applyEquipmentRevision({id:"qa",kind:"shoe",model:"",manufacturer:"",quantity:1},eqLib.entries[0],1)];
   const b = await exportToDocx(reportWell, ex.drillingFluid, reportSlurries, buffers, ex.displacementFluids, ex.fractureGradient,
     undefined, cent.results, { volumes: volume, pressureResult: pressure }, { extras, returnBlob: true });
   if (!b) throw new Error("DOCX was not generated");
   const bytes = Buffer.from(await b.arrayBuffer()), zip = await JSZip.loadAsync(bytes);
   const xml = await zip.file("word/document.xml")!.async("text");
   expect(xml).toContain("Протокол библиотеки QA-056");
+  expect(xml).toContain("Паспорт оснастки QA-056");
   expect(xml).toContain("снимок выбранной версии");
   const grids = [...xml.matchAll(/<w:tblGrid>(.*?)<\/w:tblGrid>/g)];
   expect(grids.length).toBeGreaterThan(20);

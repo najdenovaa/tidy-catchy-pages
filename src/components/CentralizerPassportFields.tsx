@@ -1,3 +1,5 @@
+import EquipmentLibrary from "./EquipmentLibrary";
+import { equipmentReferenceText, centralizerSignature } from "@/lib/equipment-library-reference";
 import { Input } from '@/components/ui/input';
 import type { CentralizerSpec } from '@/lib/centralization-calculations';
 import { kgfToKN, passportExamples, passportWarnings, passportAssumptions, type CentralizerPassport } from '@/lib/centralizer-passports';
@@ -21,6 +23,8 @@ export default function CentralizerPassportFields({ spec, casingOD, onChange }: 
   ];
   if (spec.type === 'spring') fields.push(['restoringForceKgf', p?.forceLimitAmbiguous ? 'Восстанавливающее усилие по таблице, кгс' : 'Восстанавливающее усилие, не менее, кгс'], ['restoringStandoff', 'Степень центрирования при испытании, %']);
   return <div className="space-y-3 border border-border rounded-md p-3">
+    <EquipmentLibrary spec={spec} onSpecChange={onChange} />
+    {spec.libraryReference&&<p className="text-xs">{equipmentReferenceText(spec.libraryReference,centralizerSignature(spec))}</p>}
     <label className="block text-xs">Выбрать из справочника оснастки
       <select aria-label="Пример паспорта" className="block w-full bg-background border border-input rounded p-2 mt-1" value="" onChange={e => {
         const example = passportExamples.find(x => x.id === e.target.value);

@@ -1,3 +1,6 @@
+import EquipmentLibrary from "./EquipmentLibrary";
+import { equipmentSignature } from "@/lib/equipment-library";
+import { equipmentReferenceText } from "@/lib/equipment-library-reference";
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +17,7 @@ export default function CementingEquipmentCard({ well, onChange }: { well: WellD
   };
   return <Card data-testid="cementing-equipment"><CardHeader><CardTitle className="text-base">Комплектация обсадной колонны</CardTitle></CardHeader><CardContent className="space-y-3">
     <p className="text-xs text-muted-foreground">Каталог ООО «Аврора» и ручной ввод по паспорту. Укажите типоразмер, резьбу, количество и глубину. Данные входят в сохранение расчёта и Word-отчёт. Центраторы и их размещение рассчитываются во вкладке «Центрирование»; количество автоматически включается в эту ведомость материалов.</p>
+    <EquipmentLibrary items={items} onChange={write} />
     <div className="flex flex-wrap gap-2"><select className={cls + ' sm:w-60'} aria-label="Категория оснастки" value={kind} onChange={e => setKind(e.target.value as EquipmentKind)}>{Object.entries(EQUIPMENT_LABELS).map(([id, n]) => <option key={id} value={id}>{n}</option>)}</select>
       <select className={cls + ' sm:w-72'} aria-label="Изделие Аврора" value="" onChange={e => { if (e.target.value) add(e.target.value); }}><option value="">Добавить из каталога</option>{EQUIPMENT_PRODUCTS.filter(p => p.kind === kind).map(p => <option key={p.id} value={p.id}>{p.model}</option>)}</select>
       <Button variant="outline" size="sm" onClick={() => add()}>Внести свой паспорт</Button></div>
@@ -26,6 +30,7 @@ export default function CementingEquipmentCard({ well, onChange }: { well: WellD
         </div>
         {e.depthMD !== undefined && e.depthMD > 0 && (e.kind === 'shoe' ? e.depthMD <= well.wellDepthMD : e.kind === 'floatCollar' && e.depthMD <= well.casingDepthMD) && <Button variant="outline" size="sm" onClick={() => onChange({ ...well, [e.kind === 'shoe' ? 'casingDepthMD' : 'ckodDepth']: e.depthMD })}>{e.kind === 'shoe' ? 'Принять глубину башмака для расчёта' : 'Принять глубину ЦКОД для расчёта'}</Button>}
         {e.kind === 'basket' && <div className="rounded border p-3 space-y-2"><p className="text-xs font-semibold">Сценарий после «Стоп»: передача нагрузки на корзину</p><p className="text-xs text-muted-foreground">Параметры задаются для оценки чувствительности. Корзина не герметизирует затрубье. Без доли передачи и времени формирования перемычки снижение давления не начисляется.</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-2">{([['basketSupportPct','Доля передачи нагрузки, %'],['basketBridgeMin','Формирование перемычки после Стоп, мин'],['basketCarrierDensityGcm3','Плотность несущей жидкости, г/см³'],['basketCapacityKN','Несущая способность с креплением, кН']] as const).map(([k,l])=><label className="text-xs" key={k}>{l}<input aria-label={l} type="number" min={k==='basketCarrierDensityGcm3'?0.1:0} max={k==='basketSupportPct'?100:undefined} step="any" placeholder={k==='basketCarrierDensityGcm3'?'1.0':'Не задано'} className={cls} value={e[k]??''} onChange={v=>patch({[k]:v.target.value===''?undefined:Number(v.target.value)})}/></label>)}</div></div>}
+        {e.libraryReference && <p className="text-xs border rounded p-2">{equipmentReferenceText(e.libraryReference,equipmentSignature(e))}</p>}
         {product && <p className="text-xs text-muted-foreground">{product.note}</p>}
         <label className="block text-xs">Примечание<textarea className={cls} value={e.note ?? ''} onChange={v => patch({ note: v.target.value })} /></label>
         {e.sourceUrl && <a className="text-xs text-primary underline" href={e.sourceUrl} target="_blank" rel="noreferrer">Источник изготовителя</a>}
