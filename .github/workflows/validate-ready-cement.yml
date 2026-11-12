@@ -20,6 +20,8 @@ on:
       - "src/lib/cementing-process*"
       - "src/lib/fluid-inventory*"
       - "src/lib/stop-storage*"
+      - "src/lib/pvt-hydrostatics*"
+      - "src/components/PvtHydrostatics*"
       - "src/components/StopStorage*"
       - "src/lib/cementing-inventory*"
       - "src/components/FluidInventoryPanel*"

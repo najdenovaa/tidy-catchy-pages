@@ -9,7 +9,7 @@ import { centralizerInventory } from "@/lib/cementing-equipment";
 import { centralizerMaterialGeometryKey } from "@/lib/materials-equipment-inventory";
 import BasketStopCard from "@/components/BasketStopCard";
 import { resolveCentralizationReport, displacementReportKey, runDisplacementForReport, type CentralizationReportData, type DisplacementReportData, type DisplacementReportSettings, type CementingReportExtras } from "@/lib/cementing-report-data";
-import { buildStopStorageReportSvgs,buildBasketStopReportSvgs, buildCementingReportSvgs, buildHydraulicReportSvgs, buildDepthPressureReportSvgs, buildWellReportSvgs, rasterizeReportSvgs } from "@/lib/cementing-report-figures";
+import { buildPvtHydrostaticReportSvgs,buildStopStorageReportSvgs,buildBasketStopReportSvgs, buildCementingReportSvgs, buildHydraulicReportSvgs, buildDepthPressureReportSvgs, buildWellReportSvgs, rasterizeReportSvgs } from "@/lib/cementing-report-figures";
 import { collectCementingReportSupplements } from "@/lib/cementing-report-dom";
 import type { FoamReportBundle } from '@/lib/foam-cement-types';
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
@@ -411,7 +411,7 @@ export default function Index() {
       setExportStatus("Подготовка схем и 3D-кадров");
       try {
         const config=normalizeLogisticsSettings(reportWell.logistics),fleet=planLogistics(pressure,mats,snap.slurries,config);
-        const figures=[...buildStopStorageReportSvgs(pressure.stopStorage),...rheologyReportFigures(snap),...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries),...buildDepthPressureReportSvgs(pressure.envelope,selection),...buildBasketStopReportSvgs(pressure.basketStop),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),cementFleetLayoutFigure(fleet,config)].filter(x=>allowedReportFigure('cementing',selection,x));
+        const figures=[...buildPvtHydrostaticReportSvgs(pressure.pvtHydrostatics),...buildStopStorageReportSvgs(pressure.stopStorage),...rheologyReportFigures(snap),...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries),...buildDepthPressureReportSvgs(pressure.envelope,selection),...buildBasketStopReportSvgs(pressure.basketStop),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),cementFleetLayoutFigure(fleet,config)].filter(x=>allowedReportFigure('cementing',selection,x));
         extras.warnings!.push(...missingReportFigures("cementing",selection,figures));
         extras.figures=await rasterizeReportSvgs(figures);
       } catch(err){extras.warnings!.push('Часть изображений недоступна: '+(err instanceof Error?err.message:String(err)));}

@@ -1,3 +1,4 @@
+import PvtHydrostaticsPanel from "./PvtHydrostaticsPanel";
 import {useMemo} from 'react';
 import {Card,CardHeader,CardTitle,CardContent} from './ui/card';
 import {Table,TableHeader,TableHead,TableRow,TableCell,TableBody} from './ui/table';
@@ -24,5 +25,6 @@ export default function PumpingSchedule({input,result}:{input:CementingSnapshot;
  </CardContent></Card>
  {result&&<FluidInventoryPanel result={result}/>}
  <StopStoragePanel result={result?.stopStorage}/>
+ <PvtHydrostaticsPanel result={result?.pvtHydrostatics}/>
  </div>;
 }
