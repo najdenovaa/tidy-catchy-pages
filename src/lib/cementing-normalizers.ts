@@ -1,3 +1,4 @@
+import { normalizeCentralizerDesign } from "./equipment-library-reference";
 import { normalizeFluidLibraryReference } from "./fluid-library-reference";
 import { normalizeCaliperLog } from "./well-geometry";
 import { normalizeRunningSettings } from "./casing-running-analysis";
@@ -203,6 +204,7 @@ export function normalizeWellData(value: unknown): WellData {
   return {
     ...(caliperLog?{caliperLog}:{}),
     equipment: normalizeEquipment(source.equipment),
+    ...(normalizeCentralizerDesign(source.centralizerDesign)?{centralizerDesign:normalizeCentralizerDesign(source.centralizerDesign)}:{}),
     ...(source.runningSettings ? { runningSettings: normalizeRunningSettings(source.runningSettings) } : {}),
     ...(normalizeCentralizerMaterials(source.centralizerMaterials) ? { centralizerMaterials: normalizeCentralizerMaterials(source.centralizerMaterials) } : {}),
     ...(isRecord(source.logistics) ? { logistics: normalizeLogisticsSettings(source.logistics) } : {}),

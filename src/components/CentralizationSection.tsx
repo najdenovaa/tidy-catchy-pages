@@ -284,24 +284,37 @@ function standoffBg(standoff: number): string {
 // ─── Main component ─────────────────────────────────────────────
 export default function CentralizationSection({ wellData, mudDensity, fluidPV = 25, fluidYP = 25, flowRateLps = 10, pipeWeightKgPerM, frictionCased = 0.25, frictionOpenhole = 0.35, onResultsChange, onIntervalsChange, externalIntervals, onReportChange, onWellDataChange }: Props) {
   const [reportOpen,setReportOpen]=useState(false),[reportBusy,setReportBusy]=useState(false),[reportError,setReportError]=useState('');
-  const [mode, setMode] = useState<CalcMode>("manual");
-  const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => [newInterval(wellData.casingDepthMD)]);
+  const [mode, setMode] = useState<CalcMode>(wellData.centralizerDesign?.mode??"manual");
+  const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => wellData.centralizerDesign?.intervals??[newInterval(wellData.casingDepthMD)]);
   const [results, setResults] = useState<CentralizationResult[] | null>(null);
   const [selectedMD, setSelectedMD] = useState<number | null>(null);
   const [autoResults, setAutoResults] = useState<AutoPlacementInterval[] | null>(null);
 
   // Auto mode state
-  const [targetStandoff, setTargetStandoff] = useState(67);
+  const [targetStandoff, setTargetStandoff] = useState(wellData.centralizerDesign?.targetStandoff??67);
   const [calculatedTarget, setCalculatedTarget] = useState<number | null>(null);
-  const [autoJointLength, setAutoJointLength] = useState(12);
-  const [autoSpecType, setAutoSpecType] = useState<CentralizerType>("rigid");
-  const [autoSpec, setAutoSpec] = useState<CentralizerSpec>({
+  const [autoJointLength, setAutoJointLength] = useState(wellData.centralizerDesign?.jointLength??12);
+  const [autoSpecType, setAutoSpecType] = useState<CentralizerType>(wellData.centralizerDesign?.autoSpec.type??"rigid");
+  const [autoSpec, setAutoSpec] = useState<CentralizerSpec>(wellData.centralizerDesign?.autoSpec??{
     type: "rigid",
     bladesCount: centralizerPresets.rigid.bladesCount!,
     bladeHeight: centralizerPresets.rigid.bladeHeight!,
     restoringForce: centralizerPresets.rigid.restoringForce!,
     maxAxialLoad: centralizerPresets.rigid.maxAxialLoad!,
   });
+  // Restore newly loaded project inputs before effects publish a report. Ignore parent echoes.
+  const incomingDesign = JSON.stringify(wellData.centralizerDesign ?? null);
+  const [lastIncomingDesign,setLastIncomingDesign] = useState(incomingDesign);
+  if(lastIncomingDesign!==incomingDesign){
+    setLastIncomingDesign(incomingDesign);
+    const d=wellData.centralizerDesign;
+    const local={mode,targetStandoff,jointLength:autoJointLength,autoSpec,intervals};
+    if(!d){
+      setMode('manual');setTargetStandoff(67);setAutoJointLength(12);setAutoSpecType('rigid');setAutoSpec({type:'rigid',bladesCount:centralizerPresets.rigid.bladesCount!,bladeHeight:centralizerPresets.rigid.bladeHeight!,restoringForce:centralizerPresets.rigid.restoringForce!,maxAxialLoad:centralizerPresets.rigid.maxAxialLoad!});setIntervals([newInterval(wellData.casingDepthMD)]);setResults(null);setAutoResults(null);setCalculatedTarget(null);
+    }else if(JSON.stringify(local)!==JSON.stringify(d)){
+      setMode(d.mode);setTargetStandoff(d.targetStandoff);setAutoJointLength(d.jointLength);setAutoSpec(d.autoSpec);setAutoSpecType(d.autoSpec.type);setIntervals(d.intervals);setResults(null);setAutoResults(null);setCalculatedTarget(null);
+    }
+  }
   // Turbulizer state — point-based manual + auto
   const [turbPoints, setTurbPoints] = useState<TurbulatorPoint[]>([]);
   const [autoTurbResults, setAutoTurbResults] = useState<AutoTurbulatorResult[] | null>(null);
@@ -497,7 +510,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   }, [results, intervals, autoResults, autoJointLength, autoSpec, wellData.casingDepthMD]);
   useEffect(() => {
     onReportChange?.({
-      mode, targetStandoff: mode === "auto" ? targetStandoff : undefined, autoSpec, jointLength: autoJointLength,
+      mode, targetStandoff, autoSpec, jointLength: autoJointLength,
       running: {mudDensity, pv:fluidPV, yp:fluidYP, pipeWeightKgPerM, frictionCased, frictionOpenhole},
       intervals, results: results ?? [], turbPoints, autoResults: autoResults ?? undefined,
       selectedMD: selectedMD ?? undefined, calculated: !!results?.length, joints: jointSchedule ?? undefined,

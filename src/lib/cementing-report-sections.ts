@@ -1,3 +1,4 @@
+import {equipmentReferenceText,centralizerSignature} from "./equipment-library-reference";
 import { boreDiameterAtDepth } from "./well-geometry";
 import { centralizerInventory } from "./cementing-equipment";
 import { allowedReportFigure, reportIncludes, type ReportScope, type ReportSelection } from "./cementing-report-options";
@@ -38,6 +39,7 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
    ['Ствол / проход предыдущей колонны, мм',f(w.holeDiameter)+' / '+f(w.prevCasingID)],['Башмак предыдущей колонны MD, м',f(w.prevCasingDepth)],
  ]),reportDataTable(['MD, м','TVD, м','Зенит, °','Азимут, °'],w.trajectory.map(t=>[f(t.md,1),f(t.tvd,1),f(t.zenith,1),f(t.azimuth,1)])));
  if(scope!=='cementing'&&c&&yes('materials'))out.push(h('Ведомость оснастки'),reportDataTable(['Наименование','Количество, шт.'],centralizerInventory(w.casingDepthMD,c.intervals).map(x=>[x.model,String(x.quantity)])));
+ if(scope!=='cementing'&&c&&yes('inputs'))for(const iv of c.intervals)if(iv.spec.libraryReference)out.push(p((iv.spec.passport?.model||iv.spec.type)+'; MD '+f(iv.fromMD,1)+'-'+f(iv.toMD,1)+' м; '+equipmentReferenceText(iv.spec.libraryReference,centralizerSignature(iv.spec))));
  if(scope==='centralization'&&c){
    if(yes('inputs'))out.push(h('Задание на центрирование'),p('Режим: '+(c.mode==='auto'?'по целевому Standoff':'ручная расстановка')+'; целевой Standoff '+(c.targetStandoff===undefined?'не задан':f(c.targetStandoff,1)+'%')+'. На опоре и в пролёте оцениваются разные значения.'));
    if(yes('placement')){

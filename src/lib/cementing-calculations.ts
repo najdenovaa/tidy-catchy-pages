@@ -147,6 +147,7 @@ export interface ReservoirLayer {
 }
 
 export interface WellData {
+  centralizerDesign?: import("./equipment-library-reference").CentralizerDesign;
   runningSettings?: import("./casing-running-analysis").CasingRunningSettings;
   equipment?: EquipmentSelection[];
   centralizerMaterials?: CalculatedCentralizerMaterials;

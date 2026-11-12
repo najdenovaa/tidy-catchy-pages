@@ -1,3 +1,5 @@
+import { equipmentSignature } from "./equipment-library";
+import { equipmentReferenceText } from "./equipment-library-reference";
 import { fluidReferenceText } from "./fluid-library";
 import { cavernIntervalCoeff, boreDiameterAtDepth } from "./well-geometry";
 import { reportIncludes, type ReportSelection } from "./cementing-report-options";
@@ -278,6 +280,8 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
     ];
     result.push(fixedReportTable(4, { width: { size: 100, type: WidthType.PERCENTAGE }, layout: TableLayoutType.FIXED, rows: trajRows }) as any);
   }
+
+  for(const e of wellData.equipment??[])if(e.libraryReference)result.push(kvTable([{label:"Источник оснастки: "+e.model,value:equipmentReferenceText(e.libraryReference,equipmentSignature(e))}]) as any);
 
   // Drilling fluid
   result.push(sectionTitle("2. Буровой раствор"));

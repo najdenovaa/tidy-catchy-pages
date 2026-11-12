@@ -1,5 +1,6 @@
+import { normalizeEquipmentReference, normalizeLibraryCentralizer } from "./equipment-library-reference";
 import { buildCentralizerJointSchedule } from "./cementing-report-data";
-import type { CentralizerInterval } from "./centralization-calculations";
+import type { CentralizerSpec, CentralizerInterval } from "./centralization-calculations";
 import type { WellData } from './cementing-calculations';
 export type EquipmentKind = 'shoe' | 'floatCollar' | 'checkValve' | 'lowerPlug' | 'upperPlug' | 'centralizer' | 'stopCollar' | 'stageCollar' | 'basket';
 export const EQUIPMENT_LABELS: Record<EquipmentKind, string> = {
@@ -37,6 +38,8 @@ export const EQUIPMENT_PRODUCTS: readonly EquipmentProduct[] = [
   make('avrora-530', 'stageCollar', 'AVRORA 530', 'catalog/', 'Муфта ступенчатого цементирования. Исполнение и рабочие пределы - по паспорту.'),
 ];
 export interface EquipmentSelection {
+  libraryReference?: import("./equipment-library-reference").EquipmentLibraryReference;
+  centralizerSpec?: CentralizerSpec;
   id: string; productId?: string; kind: EquipmentKind; model: string; manufacturer: string; sourceUrl?: string;
   quantity: number; casingOD?: number; outerDiameter?: number; passageID?: number; thread?: string;
   depthMD?: number; maxTemperatureC?: number; backpressureMPa?: number; membraneRuptureMPa?: number;
@@ -72,6 +75,8 @@ export function normalizeEquipment(value: unknown): EquipmentSelection[] {
       for (const k of ['productId', 'sourceUrl', 'thread', 'passport', 'note'] as const) if (typeof x[k] === 'string') out[k] = x[k];
       for (const k of ['casingOD', 'outerDiameter', 'passageID', 'depthMD', 'maxTemperatureC', 'backpressureMPa', 'membraneRuptureMPa', 'stopPressureMPa', 'basketSupportPct', 'basketBridgeMin', 'basketCarrierDensityGcm3', 'basketCapacityKN'] as const)
         if (typeof x[k] === 'number' && Number.isFinite(x[k]) && x[k] >= 0) out[k] = x[k];
+      const ref=normalizeEquipmentReference(x.libraryReference);if(ref)out.libraryReference=ref;
+      const spec=normalizeLibraryCentralizer(x.centralizerSpec);if(spec&&out.kind==='centralizer')out.centralizerSpec=spec;
       return out;
     });
 }
@@ -89,7 +94,7 @@ export function centralizerInventory(depth: number, intervals: CentralizerInterv
   for (const row of rows) for (const md of row.centralizerDepths) {
     const iv = intervals.find(x => row.topMD >= x.fromMD && row.topMD < x.toMD); if (!iv) continue;
     const p = iv.spec.passport, model = p?.model || iv.spec.type, manufacturer = p?.manufacturer || 'не указан';
-    const key = model + '|' + manufacturer, g = groups.get(key) ?? { model, manufacturer, quantity: 0, sourceUrl: p?.sourceUrl };
+    const key = model + '|' + manufacturer + '|' + (iv.spec.libraryReference?.entryId??'') + '|' + (iv.spec.libraryReference?.revision??''), g = groups.get(key) ?? { model, manufacturer, quantity: 0, sourceUrl: p?.sourceUrl };
     g.quantity++; groups.set(key, g);
   }
   return [...groups.values()];

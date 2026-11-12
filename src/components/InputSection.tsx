@@ -41,7 +41,7 @@ interface Props {
   onLoadExample?: () => void;
 }
 
-type WellNumericKey = Exclude<keyof WellData, 'equipment' | 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers' | 'standoffProfile' | 'casingType' | 'frictionCalibration' | 'caliperLog'>;
+type WellNumericKey = Exclude<keyof WellData, 'equipment' | 'trajectory' | 'casingSections' | 'cavernIntervals' | 'reservoirLayers' | 'standoffProfile' | 'casingType' | 'frictionCalibration' | 'caliperLog' | 'centralizerDesign'>;
 const wellFields: { key: WellNumericKey; label: string; unit: string }[] = [
   { key: "wellDepthMD", label: "Глубина скважины (по стволу)", unit: "м" },
   { key: "wellDepthTVD", label: "Глубина скважины (по вертикали)", unit: "м" },

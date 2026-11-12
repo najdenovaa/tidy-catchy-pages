@@ -101,7 +101,12 @@ export default function Index() {
   const appliedMaterialResults=useRef<CentralizationResult[] | null>(null);
   const handleCentralizationReport=useCallback((data:CentralizationReportData)=>{
     setCentralizationReport(data);
-    if(!data.calculated || appliedMaterialResults.current===data.results)return;
+    setWellData(w=>{
+      const centralizerDesign={mode:data.mode,targetStandoff:data.targetStandoff??67,jointLength:data.jointLength??12,autoSpec:data.autoSpec??data.intervals[0]?.spec,intervals:data.intervals};
+      return JSON.stringify(w.centralizerDesign)===JSON.stringify(centralizerDesign)?w:{...w,centralizerDesign};
+    });
+    if(!data.calculated){setCentralizationResults(null);return;}
+    if(appliedMaterialResults.current===data.results)return;
     appliedMaterialResults.current=data.results;
     const intervals=data.mode==='auto'&&data.autoResults&&data.autoSpec?data.autoResults.map((x,i)=>({id:`materials-${i}`,fromMD:x.fromMD,toMD:x.toMD,centralizersPerJoint:x.centralizersPerJoint,jointLength:data.jointLength??12,spec:data.autoSpec!})):data.intervals;
     setWellData(w=>{

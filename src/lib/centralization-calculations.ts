@@ -8,6 +8,7 @@ import { getCasingID } from "./cementing-calculations";
 export type CentralizerType = "rigid" | "spring" | "solid";
 
 export interface CentralizerSpec {
+  libraryReference?: import("./equipment-library-reference").EquipmentLibraryReference;
   passport?: import("./centralizer-passports").CentralizerPassport;
   type: CentralizerType;
   bladesCount: number;     // количество планок
