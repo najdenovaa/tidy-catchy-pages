@@ -14,6 +14,8 @@ on:
       - "src/components/WellSurveyImport*"
       - "src/lib/well-survey-import*"
       - "src/lib/well-geometry*"
+      - "src/lib/fluid-library*"
+      - "src/components/FluidLibrary*"
       - "src/components/WellGeometrySummary*"
       - "src/lib/cement-mineral-extenders*"
       - "src/lib/cement-recipe-designer.ts"

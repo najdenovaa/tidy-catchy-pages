@@ -1,3 +1,4 @@
+import { fluidReferenceText } from "./fluid-library";
 import { cavernIntervalCoeff, boreDiameterAtDepth } from "./well-geometry";
 import { reportIncludes, type ReportSelection } from "./cementing-report-options";
 import { equipmentMaterialInventory, centralizerMaterialGeometryKey } from "./materials-equipment-inventory";
@@ -293,6 +294,7 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
       { label: "YP (забой)", value: `${drillingFluid.rheologyBottomhole.yp} Па` },
     );
   }
+  if (drillingFluid.libraryReference) fluidRows.push({ label: "Источник свойств / библиотека", value: fluidReferenceText("mud", drillingFluid) });
   result.push(kvTable(fluidRows) as any);
 
   // Buffers
@@ -304,6 +306,7 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
       { label: "Объём", value: `${b.volume} м³` },
       { label: "PV / YP", value: `${b.rheology.pv} сПз / ${b.rheology.yp} Па` },
     ];
+    if (b.libraryReference) bRows.push({ label: "Источник свойств / библиотека", value: fluidReferenceText("buffer", b) });
     result.push(kvTable(bRows) as any);
     // Flow rate steps
     if (b.flowRateSteps && b.flowRateSteps.length > 0) {
@@ -340,6 +343,7 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
       { label: "Загустевание 30 Вс", value: `${s.thickeningTime30Bc || "-"} мин` },
       { label: "Загустевание 50 Вс", value: `${s.thickeningTime50Bc || "-"} мин` },
     ];
+    if (s.libraryReference) sRows.push({ label: "Источник свойств / библиотека", value: fluidReferenceText("slurry", s) });
     result.push(kvTable(sRows) as any);
     // Flow rate steps
     if (s.flowRateSteps && s.flowRateSteps.length > 0) {
@@ -369,6 +373,7 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
       { label: "PV / YP", value: `${df.rheology.pv} сПз / ${df.rheology.yp} Па` },
       { label: "Коэфф. сжатия", value: `${df.compressionCoeff ?? 1.0}` },
     ];
+    if (df.libraryReference) dfRows.push({ label: "Источник свойств / библиотека", value: fluidReferenceText("displacement", df) });
     result.push(kvTable(dfRows) as any);
     if (df.flowRateSteps && df.flowRateSteps.length > 0) {
       buildDisplacementSchedule(displacementFluids, calculateVolumes(wellData, slurries, displacementFluids[0]?.compressionCoeff ?? 1).displacementVolumeWithCompression).filter(it => it.fluidIndex === idx).forEach((step, si) => {

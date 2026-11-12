@@ -1,3 +1,4 @@
+import { normalizeFluidLibraryReference } from "./fluid-library-reference";
 import { normalizeCaliperLog } from "./well-geometry";
 import { normalizeRunningSettings } from "./casing-running-analysis";
 import { normalizeCentralizerMaterials } from "./materials-equipment-inventory";
@@ -102,7 +103,7 @@ function normalizeRheology(value: unknown, fallback: Rheology = { pv: 0, yp: 0 }
   const source = isRecord(value) ? value : {};
   const fannSrc = isRecord(source.fann) ? source.fann : null;
   const fann = fannSrc
-    ? Object.fromEntries(["r600", "r300", "r200", "r100", "r6", "r3"].map((k) => [k, toNumber(fannSrc[k], 0)]))
+    ? Object.fromEntries(["r600", "r300", "r200", "r100", "r6", "r3"].filter(k => fannSrc[k] !== undefined && fannSrc[k] !== null && fannSrc[k] !== "" && Number.isFinite(Number(fannSrc[k]))).map((k) => [k, toNumber(fannSrc[k], 0)]))
     : undefined;
   return {
     pv: toNumber(source.pv, fallback.pv),
@@ -243,13 +244,14 @@ export function normalizeDrillingFluid(value: unknown): DrillingFluid {
   );
 
   return {
+    libraryReference: normalizeFluidLibraryReference(source.libraryReference),
     name: toString(source.name),
     density: toNumber(source.density, 0),
     rheology: normalizeRheology(
       isRecord(source.rheology) ? source.rheology : { pv: source.pv, yp: source.yp },
     ),
     rheologyBottomhole:
-      bottomhole.pv > 0 || bottomhole.yp > 0
+      bottomhole.pv > 0 || bottomhole.yp > 0 || !!bottomhole.fann
         ? bottomhole
         : undefined,
     fluidLoss: toNumber(source.fluidLoss, 0),
@@ -261,6 +263,7 @@ export function normalizeSlurryInput(value: unknown, index = 0): SlurryInput {
   const fallbackRate = toNumber(source.flowRateLps, 0);
 
   return {
+    libraryReference: normalizeFluidLibraryReference(source.libraryReference),
     name: recipeSlurryName({ name: toString(source.name, `Раствор ${index + 1}`), density: toNumber(source.density, 0), labTargets: isRecord(source.labTargets) ? source.labTargets : undefined }),
     density: toNumber(source.density, 0),
     topDepthMD: toNumber(source.topDepthMD, 0),
@@ -287,6 +290,7 @@ export function normalizeBufferFluid(value: unknown, index = 0): BufferFluid {
   const fallbackRate = toNumber(source.flowRateLps, 0);
 
   return {
+    libraryReference: normalizeFluidLibraryReference(source.libraryReference),
     name: toString(source.name, `Буфер ${index + 1}`),
     bufferType: normalizeBufferType(source.bufferType),
     density: toNumber(source.density, 0),
@@ -306,6 +310,7 @@ export function normalizeDisplacementFluid(value: unknown, index = 0): Displacem
   const fallbackRate = toNumber(source.flowRateLps, 0);
 
   return {
+    libraryReference: normalizeFluidLibraryReference(source.libraryReference),
     name: toString(source.name, `Порция ${index + 1}`),
     density: toNumber(source.density, 0),
     rheology: normalizeRheology(

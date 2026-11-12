@@ -99,6 +99,7 @@ export function slurryDesignVolume(data: WellData, slurries: SlurryInput[], inde
 }
 
 export interface DrillingFluid {
+  libraryReference?: import("./fluid-library-reference").FluidLibraryReference;
   name: string;
   density: number; // кг/м³
   rheology: Rheology; // реология на поверхности (основная)
@@ -107,6 +108,7 @@ export interface DrillingFluid {
 }
 
 export interface DisplacementFluid {
+  libraryReference?: import("./fluid-library-reference").FluidLibraryReference;
   name: string;
   density: number; // кг/м³
   rheology: Rheology;
@@ -270,6 +272,7 @@ export interface CementSlurry {
 }
 
 export interface BufferFluid {
+  libraryReference?: import("./fluid-library-reference").FluidLibraryReference;
   name: string;
   bufferType?: 'chemical_wash' | 'elastic_spacer' | 'cement_wash' | 'water' | 'weighted';
   density: number; // кг/м³
@@ -280,6 +283,7 @@ export interface BufferFluid {
 }
 
 export interface SlurryInput {
+  libraryReference?: import("./fluid-library-reference").FluidLibraryReference;
   name: string;
   density: number; // г/см³ (input) / кг/м³ (internal)
   topDepthMD: number; // м — глубина верха цемента от устья

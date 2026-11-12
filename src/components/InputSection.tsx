@@ -1,3 +1,4 @@
+import FluidLibrary from "./FluidLibrary";
 import WellGeometrySummary from "./WellGeometrySummary";
 import { cavernIntervalCoeff } from "@/lib/well-geometry";
 import WellSurveyImport from "./WellSurveyImport";
@@ -519,6 +520,7 @@ export default function InputSection(props: Props) {
         </div>
       )}
       <div className="flex items-center justify-end gap-4 flex-wrap">
+        <FluidLibrary {...props} />
         {props.onLoadExample && (
           <button type="button" onClick={props.onLoadExample} className="inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors">
             <span>🧪</span>
