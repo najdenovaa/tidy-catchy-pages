@@ -29,6 +29,12 @@ function sceneSvg(title: string, polygons: Polygon[], width: number, height: num
 }
 export function buildCementingReportSvgs(w: WellData, extras: CementingReportExtras, scope:ReportScope="cementing", selection?:ReportSelection): ReportSvg[] {
   const images: ReportSvg[] = [];
+  const transport=extras.compressibleTransport;
+  if(scope==='cementing'&&transport?.frames.length){
+    images.push(reportSeriesPlot('Исследовательский 1D-перенос: давление','compressibleTransport',transport.frames.map(p=>p.timeMin),'Время, мин','Давление, МПа',[{name:'Подача',color:'#4f46e5',values:transport.frames.map(p=>p.inletMPa)},{name:'Ячейка трубы у башмака',color:'#0284c7',values:transport.frames.map(p=>p.shoeCellMPa)}]));
+    images.push(reportSeriesPlot('Исследовательский 1D-перенос: возврат','compressibleTransport',transport.frames.map(p=>p.timeMin),'Время, мин','Возврат при опорном давлении, м³',[{name:'Расчётный возврат',color:'#d97706',values:transport.frames.map(p=>p.returnedReferenceM3)}]));
+  }
+
   const c=extras.centralization;
   if(scope==='running'&&c?.running){
     const settings=normalizeRunningSettings(w.runningSettings,c.running.frictionCased,c.running.frictionOpenhole);

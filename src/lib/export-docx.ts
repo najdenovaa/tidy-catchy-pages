@@ -1,3 +1,4 @@
+import {transportInputKey} from "./compressible-transport";
 import {buildProcessContract,type ProcessContract} from "./cementing-process";
 import {rheologyReportFluids} from "./rheology-report";
 import {rheologyDescription,rheologyResolution,rheologyMetrics} from "./cement-rheology";
@@ -988,6 +989,19 @@ export async function exportToDocx(
   add('rheology','Модели и измерения реологии',rheologyContent);
   add('hydraulics','Объёмы и гидравлика',hydraulicsContent);
   add('schedule','Программа закачки',scheduleContent);
+  const suppliedTransport=options?.extras?.compressibleTransport;
+  const freshTransport=suppliedTransport?.inputKey===transportInputKey({wellData,drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin:preComputed?.flushTimeMin??10,flushVolumeM3:preComputed?.flushVolumeM3??0})?suppliedTransport:undefined;
+  if(suppliedTransport){
+    const content:any[]=[sectionTitle('Исследовательский сжимаемый 1D-перенос')];
+    if(!freshTransport)content.push(noteParagraph('Результат устарел: исходные данные изменились. Пересчитайте исследовательскую ветку.'));
+    else{const r=freshTransport;content.push(noteParagraph((r.status==='complete'?'Расписание циркуляции рассчитано. ':'Расчёт остановлен; представлен только принятый участок. ')+r.reason),
+      kvTable([{label:'Сетка и шаг',value:r.cellCount+' ячеек; назначено '+fmt(r.cellLengthM,1)+' м; максимум '+fmt(r.stepSeconds,2)+' с'},{label:'Принятые шаги',value:String(r.acceptedSteps)},{label:'Максимальная относительная невязка шага',value:r.maxStepRelativeResidual.toExponential(3)}]) as any,
+      gridTable(['Жидкость','K, МПа','Исходно, кг','Подача, кг','Возврат, кг','В контуре, кг'],r.components.map(f=>[f.name,fmt(f.bulkMPa,1),fmt(f.initialKg,3),fmt(f.injectedKg,3),fmt(f.returnedKg,3),fmt(f.retainedKg,3)])) as any,
+      ...r.components.map(f=>noteParagraph(f.name+': накопленная невязка '+f.residualKg.toExponential(3)+' кг.')),
+      ...r.limitations.map(noteParagraph));
+    }
+    add('compressibleTransport','Исследовательский сжимаемый перенос',content);
+  }
   if(pressureResult.pvtHydrostatics){
     const r=pressureResult.pvtHydrostatics,e=r.curve.at(-1),content:any[]=[sectionTitle('PVT-гидростатика при фиксированных границах'),noteParagraph('Сравнительные равновесные состояния по кадрам основной закачки. Эти значения не подменяют динамические давления и не являются балансом массы закачки.'),
       kvTable([{label:'Опорное давление / противодавление',value:fmt(r.referencePressureMPa,3)+' / '+fmt(r.surfaceBackpressureMPa,3)+' МПа изб.'},{label:'Источник свойств',value:r.source.trim()||'Не указан; требуется подтверждение.'}]) as any,...r.issues.map(noteParagraph)];
@@ -1016,7 +1030,8 @@ export async function exportToDocx(
   add('pressureTable','План продавки',pressureProfileContent);
   add('chartData','Числовые данные графиков',chartsDataContent);
   add('woc','ОЗЦ',buildWOCPage(wellData,slurries));
-  const extraContent=buildCementingReportExtras(wellData,options?.extras,'cementing',selection);
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>f.reportItem!=='compressibleTransport'||!!freshTransport)}:undefined;
+  const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});
 

@@ -1,3 +1,5 @@
+import CompressibleTransportPanel from "./CompressibleTransportPanel";
+import type {TransportResult} from "@/lib/compressible-transport";
 import PvtHydrostaticsPanel from "./PvtHydrostaticsPanel";
 import {useMemo} from 'react';
 import {Card,CardHeader,CardTitle,CardContent} from './ui/card';
@@ -8,7 +10,7 @@ import type {PressureProfileResult} from '@/lib/cementing-calculations';
 import FluidInventoryPanel from './FluidInventoryPanel';
 import {StopStoragePanel} from './StopStorageSection';
 /** One calculated snapshot, one schedule. Service volumes never increase well injection. */
-export default function PumpingSchedule({input,result}:{input:CementingSnapshot;result?:PressureProfileResult}){
+export default function PumpingSchedule({input,result,transportResult,onTransportResult}:{input:CementingSnapshot;result?:PressureProfileResult;transportResult?:TransportResult|null;onTransportResult?:(r:TransportResult|null)=>void}){
  const c=useMemo(()=>result?.processContract??buildProcessContract(input),[input,result]);
  let wellVolume=0;
  const rows=c.stages.map(s=>{if(s.destination==='well')wellVolume+=s.volumeM3;return {...s,wellVolume};});
@@ -26,5 +28,6 @@ export default function PumpingSchedule({input,result}:{input:CementingSnapshot;
  {result&&<FluidInventoryPanel result={result}/>}
  <StopStoragePanel result={result?.stopStorage}/>
  <PvtHydrostaticsPanel result={result?.pvtHydrostatics}/>
+ <CompressibleTransportPanel input={input} cachedResult={transportResult} onResult={onTransportResult}/>
  </div>;
 }

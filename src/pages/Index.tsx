@@ -1,3 +1,5 @@
+import {transportInputKey,type TransportResult} from "@/lib/compressible-transport";
+import {startTransportWorker} from "@/lib/compressible-worker-client";
 import {buildProcessContract} from "@/lib/cementing-process";
 import {rheologyInputErrors} from "@/lib/cement-rheology";
 import {rheologyReportFigures} from "@/lib/rheology-report";
@@ -96,6 +98,7 @@ export default function Index() {
   const [exportFile, setExportFile] = useState<{ url: string; name: string } | null>(null);
   useEffect(() => () => { if (exportFile) URL.revokeObjectURL(exportFile.url); }, [exportFile]);
   const [centralizationReport, setCentralizationReport] = useState<CentralizationReportData | null>(null);
+  const [transportReport,setTransportReport]=useState<TransportResult|null>(null);
   const [displacementReport, setDisplacementReport] = useState<DisplacementReportData | null>(null);
   const [displacementReportSettings, setDisplacementReportSettings] = useState<DisplacementReportSettings>({ fine: false, rotationRpm: 0, settleMin: 30 });
   const [foamReport, setFoamReport] = useState<FoamReportBundle | null>(null);
@@ -395,6 +398,11 @@ export default function Index() {
       setCalcSnapshot(snap);
       if (cent) setCentralizationResults(cent.results);
       const extras: CementingReportExtras = { centralization: cent, warnings: [] };
+      if(snap.wellData.stopStorage?.flowEnabled&&reportIncludes(selection,'compressibleTransport')){
+        setExportStatus('Сжимаемый перенос: исследовательская ветка');
+        const transportInput={...snap,wellData:reportWell};
+        try{const t=transportReport?.inputKey===transportInputKey(transportInput)?transportReport:await startTransportWorker(transportInput).promise;extras.compressibleTransport=t;setTransportReport(t);}catch(e){extras.warnings!.push('Исследовательский перенос не рассчитан: '+(e instanceof Error?e.message:String(e)));}
+      }
       setExportStatus("Расчёт замещения");
       const data = { flushTimeMin:snap.flushTimeMin,flushVolumeM3:snap.flushVolumeM3,wellData: reportWell, slurries: snap.slurries, buffers: snap.buffers,
         drillingFluid: snap.drillingFluid, displacementFluids: snap.displacementFluids, volumes: vol };
@@ -429,7 +437,7 @@ export default function Index() {
     } catch (err) {
       setExportError("Не удалось сформировать отчёт: " + (err instanceof Error ? err.message : String(err)));
     } finally { setExporting(false); setExportStatus(""); }
-  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3, centralizationReport, displacementReport, displacementReportSettings, foamReport]);
+  }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3, centralizationReport, displacementReport, displacementReportSettings, foamReport,transportReport]);
 
   const buildSavePayload = useCallback((): SaveCalcPayload => {
     const freshSnapshot = normalizeCementingSnapshot({
@@ -802,7 +810,7 @@ export default function Index() {
           <TabsContent value="schedule">
             <div data-tab-content="schedule">
               {calcSnapshot && volumes ? (
-                <PumpingSchedule input={calcSnapshot} result={pressureResult??undefined} />
+                <PumpingSchedule input={{...calcSnapshot,wellData:snapWellData??calcSnapshot.wellData}} result={pressureResult??undefined} transportResult={transportReport} onTransportResult={setTransportReport} />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
               )}
