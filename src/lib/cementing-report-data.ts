@@ -27,7 +27,7 @@ export interface CementingReportExtras {
   figures?: ReportFigure[]; supplements?: ReportSupplement[]; warnings?: string[];
 }
 export function displacementReportKey(p: DisplacementReportInput, settings: DisplacementReportSettings) {
-  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes, settings]);
+  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "rheology-selection-v1", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes, settings]);
 }
 export function buildCentralizerJointSchedule(depth: number, intervals: CentralizerInterval[]) {
   const rows: NonNullable<CentralizationReportData["joints"]> = [];

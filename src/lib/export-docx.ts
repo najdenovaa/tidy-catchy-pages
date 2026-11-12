@@ -1,3 +1,5 @@
+import {rheologyReportFluids} from "./rheology-report";
+import {rheologyDescription,rheologyResolution,rheologyMetrics} from "./cement-rheology";
 import { equipmentSignature } from "./equipment-library";
 import { equipmentReferenceText } from "./equipment-library-reference";
 import { fluidReferenceText } from "./fluid-library";
@@ -1039,6 +1041,12 @@ export async function exportToDocx(
   const sections: {properties:ReturnType<typeof reportPageProperties>;headers?:{default:Header};children:any[]}[]=[{properties:reportPageProperties(),children:titlePage}];
   const add=(key:Parameters<typeof reportIncludes>[1],title:string,children:any[])=>{if(reportIncludes(selection,key)&&children.length)sections.push({properties:reportPageProperties(),headers:{default:new Header({children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:title,size:16,color:"999999",font:"Calibri"})]})]})},children});};
   add('inputs','Исходные данные',inputContent);
+  const rheologyContent:any[]=[sectionTitle('Реология жидкостей'),noteParagraph('Конфигурация Fann R1-B1-F1. МНК Бингама - по напряжению; степенная и Гершель-Балкли - регрессия в логарифмах, для ГБ перебор предела текучести. Метрики рассчитаны в Па. Графики ограничены диапазоном измерений; вне него - экстраполяция. Подбор не подтверждает стабильность или совместимость.')];
+  for(const f of rheologyReportFluids({drillingFluid,buffers,slurries,displacementFluids})){
+    const res=rheologyResolution(f.r);rheologyContent.push(noteParagraph(f.name+': '+rheologyDescription(f.appliedR)+(f.appliedR!==f.r?'; использованы модельные PV/YP по типу жидкости (не измерения)':'')));
+    if(res.fit){const fit=res.fit;rheologyContent.push(gridTable(['Модель','R²','RMSE, Па','Макс. ошибка, Па'],(['bingham','powerLaw','hb'] as const).map(m=>{const a=rheologyMetrics(fit,m);return [m,fmt(a.r2,5),fmt(a.rmse,4),fmt(a.maxError,4)];})) as any,gridTable(['об/мин','γ, с⁻¹','τ, Па'],fit.points.map(p=>[String(p.rpm),fmt(p.gamma,3),fmt(p.tau,4)])) as any);}
+  }
+  add('rheology','Модели и измерения реологии',rheologyContent);
   add('hydraulics','Объёмы и гидравлика',hydraulicsContent);
   add('schedule','Программа закачки',scheduleContent);
   add('materials','Ведомость материалов',materialsContent);

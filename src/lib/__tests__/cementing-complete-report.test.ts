@@ -1,3 +1,4 @@
+import {rheologyReportFigures} from "../rheology-report";
 import {saveEquipmentRevision,emptyEquipmentLibrary,equipmentProperties,applyEquipmentRevision} from "../equipment-library";
 import {saveFluidRevision, emptyFluidLibrary, fluidProperties, applyFluidRevision} from "../fluid-library";
 // @vitest-environment node
@@ -22,6 +23,7 @@ const w = { ...ex.wellData, wellDepthMD: 260, casingDepthMD: 250, wellDepthTVD: 
     { md: 260, tvd: 241, zenith: 35, azimuth: 112 },
   ] };
 const slurries = ex.slurries.map((x, i) => ({ ...x,
+  rheology:i===0?{...x.rheology,model:"bingham" as const,fann:{r600:80,r300:50,r200:38,r100:26,r6:9,r3:8}}:x.rheology,
   additives: i === 0 ? [...x.additives, { ...identityOf(cementProduct('ig-retard')!), name: 'IG Retard', percentage: .2, percentageType: 'bwoc' as const, massKg: 0, specificGravity: 1.3, batch: 'IG26-QA' }] : x.additives, topDepthMD: i === 0 ? 45 : 150, washVolume: 0,
   flowRateSteps: [{ rateLps: 8, volumeM3: 1.5 }] }));
 const buffers = ex.buffers.map(b => ({ ...b, volume: .8, flowRateSteps: [{ rateLps: 8, volumeM3: .8 }] }));
@@ -54,12 +56,13 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
     supplements: [{ title: "Расчёт времени контакта", paragraphs: ["Контрольный результат"], tables: [{ headers: ["MD", "Время"], rows: [["100", "6,2"]] }] }] };
   const pressure = calculatePressureProfile(reportWell, slurries, buffers, ex.drillingFluid, ex.displacementFluids,
     ex.fractureGradient, volume.displacementVolumeWithCompression);
-  const svg = [...buildHydraulicReportSvgs(pressure.points), ...buildWellReportSvgs(reportWell, slurries), ...buildCementingReportSvgs(reportWell, extras)];
+  const svg = [...rheologyReportFigures(dData), ...buildHydraulicReportSvgs(pressure.points), ...buildWellReportSvgs(reportWell, slurries), ...buildCementingReportSvgs(reportWell, extras)];
   expect(svg.some(f => f.title.includes("веник по глубине башмака"))).toBe(false);
   expect(svg.some(f => f.title.includes("Сечение через вершины"))).toBe(false);
   expect(svg.some(f => f.title.includes("ЭЦП во времени"))).toBe(true);
   expect(svg.some(f => f.title.includes("Совмещённый график"))).toBe(true);
   expect(svg.some(f => f.title.includes("конец продавки"))).toBe(true);
+  expect(svg.some(f=>f.reportItem==="rheology"&&f.title.startsWith("Остатки"))).toBe(true);
   expect(svg.filter(f => f.title.startsWith("Замещение: 3D-кадр")).length).toBeGreaterThanOrEqual(2);
   for (const f of svg) expect(f.svg).not.toMatch(/NaN|Infinity/);
   const dir = process.env.REPORT_QA_DIR;
@@ -79,6 +82,8 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   const bytes = Buffer.from(await b.arrayBuffer()), zip = await JSZip.loadAsync(bytes);
   const xml = await zip.file("word/document.xml")!.async("text");
   expect(xml).toContain("Протокол библиотеки QA-056");
+  expect(xml).toContain("Бингам: МНК по Fann");
+  expect(xml).toContain("RMSE, Па");
   expect(xml).toContain("Паспорт оснастки QA-056");
   expect(xml).not.toContain("SECRET-PASSPORT-CONTENT");
   expect(Object.keys(zip.files).some(path=>path.startsWith("word/embeddings/"))).toBe(false);

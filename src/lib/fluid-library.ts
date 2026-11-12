@@ -1,3 +1,4 @@
+import { rheologyResolution } from "./cement-rheology";
 import type {DrillingFluid, BufferFluid, SlurryInput, DisplacementFluid, Rheology} from './cementing-calculations';
 import {normalizeDrillingFluid, normalizeBufferFluid, normalizeSlurryInput, normalizeDisplacementFluid} from './cementing-normalizers';
 import type {FluidLibraryReference} from './fluid-library-reference';
@@ -38,6 +39,7 @@ function validateProperties(p:FluidProperties){
   if(!p.rheology || typeof p.rheology !== 'object')throw new Error('Не заданы свойства реологии.');
   for(const r of [p.rheology,p.rheologyBottomhole].filter(Boolean) as Rheology[]){
     if(!r||![r.pv,r.yp].every(v=>Number.isFinite(v)&&v>=0))throw new Error('PV и YP должны быть неотрицательными числами.');
+    const resolution=rheologyResolution(r);if(!resolution.valid)throw new Error(resolution.error);
     if(r.fann&&!Object.values(r.fann).every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0))throw new Error('Некорректные показания Fann.');
   }
   for(const k of ['fluidLoss','thickeningTime30Bc','thickeningTime50Bc','waterRatio','yieldPerTon','cementSG','compressionCoeff'] as const){const v=p[k];if(v!==undefined&&(!Number.isFinite(v)||v<0))throw new Error('Свойства жидкости должны быть конечными неотрицательными числами.');}

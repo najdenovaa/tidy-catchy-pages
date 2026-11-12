@@ -7,7 +7,7 @@
 export const FANN_RPMS = [600, 300, 200, 100, 6, 3] as const;
 export type FannRpm = (typeof FANN_RPMS)[number];
 
-/** Показания шкалы (градусы) на скоростях 600/300/200/100/6/3 об/мин. 0 или пусто — не измерено. */
+/** Показания шкалы (градусы) на скоростях 600/300/200/100/6/3 об/мин. Пусто — не измерено; нулевой момент исключается из логарифмического подбора. */
 export interface FannReadings {
   r600?: number; r300?: number; r200?: number; r100?: number; r6?: number; r3?: number;
 }
@@ -43,10 +43,10 @@ export function fannPoints(f: FannReadings | undefined): { rpm: number; gamma: n
     .map((p) => ({ rpm: p.rpm, gamma: p.rpm * RPM_TO_SHEAR, tau: p.dial * DIAL_TO_PA }));
 }
 
-/** Достаточно ли показаний для подбора: нужны 600 и 300 и ещё хотя бы одно. */
+/** Достаточно ли положительных показаний для подбора: минимум три разные скорости. */
 export function hasFann(f: FannReadings | undefined): boolean {
   const pts = fannPoints(f);
-  return pts.length >= 3 && pts.some((p) => p.rpm === 600) && pts.some((p) => p.rpm === 300);
+  return pts.length >= 3;
 }
 
 function r2Of(obs: number[], pred: number[]): number {
@@ -72,9 +72,15 @@ export function fitRheology(f: FannReadings | undefined): RheologyFit | null {
   const pts = fannPoints(f);
   const g = pts.map((p) => p.gamma), t = pts.map((p) => p.tau);
 
+  if(Math.max(...t)-Math.min(...t)<1e-9)return null;
+
   // Бингам (МНК по всем точкам)
   const bl = linReg(g, t);
-  const bPv = Math.max(0, bl.b), bYp = Math.max(0, bl.a);
+  const candidates=[{mu:Math.max(0,bl.b),yield:Math.max(0,bl.a)},
+    {mu:g.reduce((v,x,i)=>v+x*t[i],0)/g.reduce((v,x)=>v+x*x,0),yield:0},
+    {mu:0,yield:t.reduce((a,b)=>a+b,0)/t.length}];
+  candidates.sort((a,b)=>t.reduce((v,x,i)=>v+(a.yield+a.mu*g[i]-x)**2,0)-t.reduce((v,x,i)=>v+(b.yield+b.mu*g[i]-x)**2,0));
+  const bPv=candidates[0].mu,bYp=candidates[0].yield;
   const bingham = { pv: bPv * 1000, ypPa: bYp, r2: r2Of(t, g.map((x) => bYp + bPv * x)) };
 
   // Степенная (МНК в логарифмах)
@@ -97,7 +103,7 @@ export function fitRheology(f: FannReadings | undefined): RheologyFit | null {
     if (sse < bestSse) { bestSse = sse; bestHb = { tau0, K, n, r2: r2Of(t, pred) }; }
   }
 
-  const r600 = Number(f!.r600), r300 = Number(f!.r300);
+  const r600 = Number(f!.r600)||0, r300 = Number(f!.r300)||0;
   const pv600300 = Math.max(0, r600 - r300);
   const yp600300Pa = Math.max(0, 2 * r300 - r600) * 0.4788;
 
@@ -111,11 +117,13 @@ export function fitRheology(f: FannReadings | undefined): RheologyFit | null {
   cands[2][1] -= 0.002;
   const best = cands.sort((a, b) => b[1] - a[1])[0][0];
 
+  if(![bingham.pv,bingham.ypPa,bingham.r2,powerLaw.K,powerLaw.n,powerLaw.r2,bestHb.tau0,bestHb.K,bestHb.n,bestHb.r2].every(Number.isFinite))return null;
   return { points: pts, bingham, powerLaw, hb: bestHb, best, pv600300, yp600300Pa, binghamLowShearErrorPct };
 }
 
 /** Параметры ГБ для гидравлики: из показаний Fann, если они есть. */
 export function hbFromFann(f: FannReadings | undefined): HBParams | undefined {
+  if(!(f?.r600>0&&f?.r300>0))return undefined;
   const fit = fitRheology(f);
   if (!fit) return undefined;
   return { tau0: fit.hb.tau0, K: fit.hb.K, n: Math.min(1.2, Math.max(0.1, fit.hb.n)) };
@@ -162,4 +170,35 @@ export function flowIndexN(hb: HBParams | undefined, pv: number, ypPa: number): 
   const t300 = Math.max(1e-3, pv + ypLbf);
   const t600 = Math.max(t300 * 1.0001, 2 * pv + ypLbf);
   return Math.min(1, Math.max(0.1, 3.32 * Math.log10(t600 / t300)));
+}
+
+
+export type RheologyModel = 'pvyp'|'bingham'|'powerLaw'|'hb';
+export const RHEOLOGY_MODELS:Record<RheologyModel,string>={pvyp:'Бингам: заданные PV/YP',bingham:'Бингам: МНК по Fann',powerLaw:'Степенная по Fann',hb:'Гершель–Балкли по Fann'};
+export interface RheologyInput {pv:number;yp:number;fann?:FannReadings;model?:RheologyModel}
+export function rheologyResolution(r:RheologyInput){
+ r=r??{pv:0,yp:0};
+ const fit=fitRheology(r.fann),selection=r.model;
+ // No selection is the historical mode: HB with bounded n or PV/YP defaults.
+ if(selection===undefined){const params=hbFromFann(r.fann);return {valid:true,label:'Прежний автоматический режим: '+(params?'Гершель–Балкли':'PV/YP'),params,fit,error:''};}
+ const fail=(error:string)=>({valid:false,label:RHEOLOGY_MODELS[selection]??'Неизвестная модель',params:undefined as HBParams|undefined,fit,error});
+ if(!Object.prototype.hasOwnProperty.call(RHEOLOGY_MODELS,selection))return fail('Неизвестная модель реологии. Выберите поддерживаемую модель.');
+ if(selection==='pvyp')return Number.isFinite(r.pv)&&r.pv>0&&Number.isFinite(r.yp)&&r.yp>=0?{valid:true,label:RHEOLOGY_MODELS[selection],params:undefined as HBParams|undefined,fit,error:''}:fail('Для заданной реологии PV должен быть больше 0, YP не меньше 0.');
+ if(r.fann&&Object.values(r.fann).some(v=>v!==undefined&&(!Number.isFinite(v)||v<0)))return fail('Исправьте отрицательные или неконечные показания Fann.');
+ if(!fit)return fail('Для выбранной модели нужны минимум три положительных показания на разных скоростях и изменяющееся напряжение.');
+ const params:HBParams=selection==='bingham'?{tau0:fit.bingham.ypPa,K:fit.bingham.pv/1000,n:1}:selection==='powerLaw'?{tau0:0,K:fit.powerLaw.K,n:fit.powerLaw.n}:{tau0:fit.hb.tau0,K:fit.hb.K,n:fit.hb.n};
+ if(![params.tau0,params.K,params.n].every(Number.isFinite)||params.K<=0||params.tau0<0||params.n<0.1||params.n>1.2)return fail('Параметры вне диапазона текущей гидравлической корреляции: K > 0, τ₀ ≥ 0, 0,1 ≤ n ≤ 1,2. Коэффициенты не обрезаются.');
+ return {valid:true,label:RHEOLOGY_MODELS[selection],params,fit,error:''};
+}
+export function selectedRheology(r:RheologyInput):HBParams|undefined{const out=rheologyResolution(r);if(!out.valid)throw new Error(out.error);return out.params;}
+export function rheologyMetrics(fit:RheologyFit,model:Exclude<RheologyModel,'pvyp'>){
+ const pred=(g:number)=>model==='bingham'?fit.bingham.ypPa+fit.bingham.pv*g/1000:model==='powerLaw'?fit.powerLaw.K*g**fit.powerLaw.n:fit.hb.tau0+fit.hb.K*g**fit.hb.n;
+ const errors=fit.points.map(p=>pred(p.gamma)-p.tau);
+ return {rmse:Math.sqrt(errors.reduce((s,e)=>s+e*e,0)/errors.length),mae:errors.reduce((s,e)=>s+Math.abs(e),0)/errors.length,maxError:Math.max(...errors.map(Math.abs)),r2:fit[model].r2,pred};
+}
+export function rheologyDescription(r:RheologyInput){const o=rheologyResolution(r),p=o.params;return `${o.label}; ${o.valid?(p?`τ₀ ${p.tau0.toFixed(4)} Па; K ${p.K.toPrecision(6)} Па·с^n; n ${p.n.toFixed(5)}`:`PV ${r.pv} сПз; YP ${r.yp} Па`):o.error}${o.fit?`; диапазон измерений ${Math.min(...o.fit.points.map(p=>p.gamma)).toFixed(2)}–${Math.max(...o.fit.points.map(p=>p.gamma)).toFixed(2)} с⁻¹`:''}`;}
+/** Only explicitly selected invalid models block calculation; historical projects keep their behavior. */
+export function rheologyInputErrors(input:{drillingFluid:{name:string;rheology:RheologyInput;rheologyBottomhole?:RheologyInput};slurries:{name:string;rheology:RheologyInput}[];buffers:{name:string;rheology:RheologyInput}[];displacementFluids:{name:string;rheology:RheologyInput}[]}){
+ const fluids=[input.drillingFluid,...input.slurries,...input.buffers,...input.displacementFluids,...(input.drillingFluid.rheologyBottomhole?[{name:input.drillingFluid.name+' (забой)',rheology:input.drillingFluid.rheologyBottomhole}]:[])];
+ return fluids.flatMap(f=>{const r=rheologyResolution(f.rheology);return r.valid?[]:[`${f.name||'Жидкость'}: ${r.error}`];});
 }

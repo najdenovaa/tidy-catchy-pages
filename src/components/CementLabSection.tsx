@@ -1,3 +1,5 @@
+import {rheologyFigure} from "@/lib/rheology-figure";
+import {rheologyDescription} from "@/lib/cement-rheology";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -187,70 +189,10 @@ function TemperatureCard({ lab }: { lab: ReturnType<typeof buildLabProgram> }) {
   );
 }
 
-function FlowCurvesCard({ fluids }: { fluids: { name: string; r: Rheology }[] }) {
-  const withFann = fluids.map((x) => ({ ...x, fit: fitRheology(x.r.fann) })).filter((x) => x.fit);
-  const [sel, setSel] = useState(0);
-  const boxRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const el = boxRef.current;
-    if (!el) return;
-    const upd = () => { if (el.clientWidth > 0) setWidth(el.clientWidth); };
-    upd();
-    const ro = new ResizeObserver(upd);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [withFann.length]);
-  if (withFann.length === 0) {
-    return (
-      <Card className="p-4 text-xs text-muted-foreground">
-        <h3 className="font-semibold text-foreground text-sm mb-1">Кривые течения</h3>
-        Показания вискозиметра Fann не введены. Введите их в карточках жидкостей на вкладке «Данные» — появится сравнение моделей Бингама, степенной и Гершеля–Балкли, а гидравлика станет точнее на малых расходах.
-      </Card>
-    );
-  }
-  const cur = withFann[Math.min(sel, withFann.length - 1)];
-  const fit = cur.fit!;
-  const gMax = Math.max(...fit.points.map((p) => p.gamma));
-  const curve = Array.from({ length: 41 }, (_, i) => {
-    const g = (gMax * i) / 40;
-    return {
-      gamma: Math.round(g),
-      hb: fit.hb.tau0 + fit.hb.K * Math.pow(g, fit.hb.n),
-      bingham: fit.yp600300Pa + (fit.pv600300 / 1000) * g,
-    };
-  });
-  const hbAt = (g: number) => fit.hb.tau0 + fit.hb.K * Math.pow(g, fit.hb.n);
-  const bAt = (g: number) => fit.yp600300Pa + (fit.pv600300 / 1000) * g;
-  const data = [
-    ...curve.map((c) => ({ ...c, measured: undefined as number | undefined })),
-    ...fit.points.map((p) => ({ gamma: Math.round(p.gamma), hb: hbAt(p.gamma), bingham: bAt(p.gamma), measured: p.tau })),
-  ].sort((a, b) => a.gamma - b.gamma);
-  return (
-    <Card className="p-4 space-y-2">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="font-semibold">Кривые течения: замер и модели</h3>
-        <select value={sel} onChange={(e) => setSel(Number(e.target.value))} className="h-8 text-xs rounded border border-border bg-background px-2">
-          {withFann.map((x, i) => <option key={x.name} value={i}>{x.name}</option>)}
-        </select>
-      </div>
-      <div className="h-64" ref={boxRef}>
-        {(
-          <ComposedChart width={width > 0 ? width : 900} height={256} data={data} margin={{ top: 4, right: 16, bottom: 16, left: 0 }}>
-            <CartesianGrid stroke="hsl(var(--border))" strokeOpacity={0.5} />
-            <XAxis dataKey="gamma" type="number" domain={[0, "dataMax"]} tick={{ fontSize: 11 }} label={{ value: "Скорость сдвига, с⁻¹", position: "insideBottom", offset: -8, fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} label={{ value: "τ, Па", angle: -90, position: "insideLeft", fontSize: 11 }} />
-            <Tooltip formatter={(v: number) => (typeof v === "number" ? `${v.toFixed(1)} Па` : v)} labelFormatter={(g) => `γ = ${g} с⁻¹`} contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", fontSize: 12 }} />
-            <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 11 }} />
-            <Line dataKey="hb" name="Гершель–Балкли" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} isAnimationActive={false} />
-            <Line dataKey="bingham" name="Бингам (PV/YP по 600/300)" stroke="hsl(var(--muted-foreground))" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
-            <Scatter dataKey="measured" name="Замер Fann" fill="hsl(var(--foreground))" isAnimationActive={false} />
-          </ComposedChart>
-        )}
-      </div>
-      <div className="text-[11px] text-muted-foreground">
-        R²: Гершель–Балкли {fit.hb.r2.toFixed(4)} · Бингам {fit.bingham.r2.toFixed(4)} · степенная {fit.powerLaw.r2.toFixed(4)}. На 3 об/мин Бингам ошибается на {f(fit.binghamLowShearErrorPct, 0)}% — именно эта зона определяет трение при малых расходах и вытеснение из узкой стороны зазора.
-      </div>
-    </Card>
-  );
+function FlowCurvesCard({fluids}:{fluids:{name:string;r:Rheology}[]}){
+ const [sel,setSel]=useState(0),[residual,setResidual]=useState(false);
+ const available=fluids.filter(f=>fitRheology(f.r.fann));
+ if(!available.length)return <Card className="p-4 text-xs">Кривые течения: введите минимум три положительных показания Fann на вкладке «Ввод».</Card>;
+ const current=available[Math.min(sel,available.length-1)],figure=rheologyFigure(current.r,residual,current.name);
+ return <Card className="p-4 space-y-2"><h3 className="font-semibold text-sm">Сравнение моделей реологии</h3><select aria-label="Жидкость графика реологии" className="rounded border p-2 bg-background text-xs" value={Math.min(sel,available.length-1)} onChange={e=>setSel(Number(e.target.value))}>{available.map((f,i)=><option key={i} value={i}>{f.name}</option>)}</select><p className="text-xs">{rheologyDescription(current.r)}</p><button className="text-xs text-primary underline" onClick={()=>setResidual(!residual)}>{residual?'Кривые течения':'Остатки аппроксимации'}</button>{figure&&<div role="img" aria-label={figure.title} dangerouslySetInnerHTML={{__html:figure.svg}}/>}<p className="text-xs text-muted-foreground">Модель выбирается в карточке жидкости. График ограничен диапазоном измерений; метрики - в карточке Fann. Отсутствие лабораторной проверки не заменяется подбором кривой.</p></Card>;
 }
