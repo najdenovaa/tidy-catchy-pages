@@ -988,6 +988,14 @@ export async function exportToDocx(
   add('rheology','Модели и измерения реологии',rheologyContent);
   add('hydraulics','Объёмы и гидравлика',hydraulicsContent);
   add('schedule','Программа закачки',scheduleContent);
+  if(pressureResult.pvtHydrostatics){
+    const r=pressureResult.pvtHydrostatics,e=r.curve.at(-1),content:any[]=[sectionTitle('PVT-гидростатика при фиксированных границах'),noteParagraph('Сравнительные равновесные состояния по кадрам основной закачки. Эти значения не подменяют динамические давления и не являются балансом массы закачки.'),
+      kvTable([{label:'Опорное давление / противодавление',value:fmt(r.referencePressureMPa,3)+' / '+fmt(r.surfaceBackpressureMPa,3)+' МПа изб.'},{label:'Источник свойств',value:r.source.trim()||'Не указан; требуется подтверждение.'}]) as any,...r.issues.map(noteParagraph)];
+    if(e)content.push(gridTable(['Жидкость','ρ при опорном давлении, кг/м³','K, МПа'],r.properties.map(p=>[p.name,fmt(p.densityKgM3,2),fmt(p.bulkModulusMPa,2)])) as any,kvTable([{label:'PVT-гидростатика затрубья на Стоп',value:fmt(e.annularBottomMPa,3)+' МПа'},{label:'Максимальное отличие от постоянной плотности',value:fmt(r.maxPressureDifferenceMPa,3)+' МПа'},{label:'Максимальное изменение плотности',value:fmt(r.maxDensityChangePct,3)+'%'},{label:'Масса равновесных столбов: труба / затрубье',value:fmt(e.pipeMassKg/1000,3)+' / '+fmt(e.annularMassKg/1000,3)+' т'},{label:'Эквивалентный объём при опорном давлении: труба / затрубье',value:fmt(e.pipeReferenceVolumeM3,3)+' / '+fmt(e.annularReferenceVolumeM3,3)+' м³'}]) as any,
+      gridTable(['Столб','MD, м','Жидкость','P верх/низ, МПа','ρ верх/низ, кг/м³'],[...r.finalPipe.map(c=>({...c,leg:'Труба'})),...r.finalAnnulus.map(c=>({...c,leg:'Затрубье'}))].slice(0,100).map(c=>[c.leg,fmt(c.topMD,1)+'-'+fmt(c.bottomMD,1),c.fluidName,fmt(c.topPressureMPa,3)+' / '+fmt(c.bottomPressureMPa,3),fmt(c.topDensityKgM3,1)+' / '+fmt(c.bottomDensityKgM3,1)])) as any);
+    if(r.finalPipe.length+r.finalAnnulus.length>100)content.push(noteParagraph('В отчёте показаны первые 100 сегментов конечного профиля.'));
+    content.push(...r.limitations.map(noteParagraph));add('pvtHydrostatics','PVT-гидростатика',content);
+  }
   if(pressureResult.stopStorage){
     const r=pressureResult.stopStorage,e=r.curve.at(-1),p=r.settings;
     const content:any[]=[sectionTitle('Сжатие и упругость после посадки пробки'),noteParagraph('Это дополнительная подача после геометрического Стоп; замещение и баланс до Стоп не увеличиваются. Прирост давления не является допустимым или абсолютным устьевым давлением.'),

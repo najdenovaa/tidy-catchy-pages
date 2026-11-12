@@ -1,3 +1,4 @@
+import {evaluatePvtHydrostatics,type PvtHydrostaticResult} from "./pvt-hydrostatics";
 import {evaluateStopStorage,type StopStorageResult} from "./stop-storage";
 import { FluidInventory, type InventorySummary } from "./fluid-inventory";
 import {buildProcessContract,type ProcessContract} from "./cementing-process";
@@ -1272,6 +1273,7 @@ export interface DepthEnvelopePoint {
 }
 
 export interface PressureProfileResult {
+  pvtHydrostatics?:PvtHydrostaticResult;
   stopStorage?:StopStorageResult;
   processContract?:ProcessContract;
   processEvents?:ProcessContract["events"];
@@ -1986,7 +1988,8 @@ export function calculatePressureProfile(
     'Стоп ограничен геометрией до ЦКОД в несжимаемой модели. Коэффициент сжатия - запас объёма продавки. Физическая сжимаемость, упругость труб, газ и PVT/EOS пока не решаются.'
   ]};
   const stopStorage=evaluateStopStorage(wellData,points.at(-1)?.transportColumns,processContract.fluids,lastPoint?.fluidId,plugLanded&&Math.abs(cumDisplacementVol-geometricPlugVolume)<1e-6);
-  return { stopStorage,inventory:inventoryResult,processContract,processAudit,processEvents, points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope,
+  const pvtHydrostatics=opts.fast?undefined:evaluatePvtHydrostatics(wellData,points,processContract.fluids);
+  return { pvtHydrostatics,stopStorage,inventory:inventoryResult,processContract,processAudit,processEvents, points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope,
     basketStop: wellData.equipment?.some(e => e.kind === "basket" && e.quantity > 0) ? evaluateBasketStop(wellData, annColumn(), fractureGradient) : undefined };
 }
 
