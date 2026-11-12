@@ -10,6 +10,7 @@ export default function FluidInventoryPanel({result}:{result:PressureProfileResu
  <p>Закачано<br/><b>{a.injectedM3.toFixed(3)} м³</b></p><p>Расчётный возврат<br/><b>{a.returnedM3.toFixed(3)} м³</b></p><p>Незаполненный объём трубы<br/><b>{a.pipeVoidM3.toFixed(3)} м³</b></p><p>Масса в скважине<br/><b>{(a.retainedMassKg/1000).toFixed(3)} т</b></p>
  </div>
  <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr>{['Жидкость','Исходно, м³','Вход, м³','Труба, м³','Затрубье, м³','Возврат, м³'].map(t=><th key={t} className="p-2 text-left">{t}</th>)}</tr></thead><tbody>{a.fluids.map(f=><tr key={f.fluidId}>{[names.get(f.fluidId)??f.fluidId,...[f.initialM3,f.injectedM3,f.pipeM3,f.annulusM3,f.returnedM3].map(v=>v.toFixed(3))].map((v,i)=><td key={i} className="p-2 border-t">{v}</td>)}</tr>)}</tbody></table></div>
+ <p className="text-xs text-muted-foreground">Расходы на графике - средние за интервал, заканчивающийся в расчётной точке; показаны ступенями.</p>
  <p className="text-xs">Максимальная пошаговая невязка: {a.maxStepResidualM3.toExponential(2)} м³; {a.maxStepResidualKg.toExponential(2)} кг.</p>
  {a.limitations.map(t=><p key={t} className="text-xs text-muted-foreground">{t}</p>)}
  </section>;
