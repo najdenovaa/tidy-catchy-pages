@@ -49,6 +49,9 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
       images.push(tag(reportSeriesPlot('Связанный стенд: скорость жидкости','plugBenchmark',cf.facesM,'Координата стенда, м','Скорость, м/с',[{name:'Жидкость',color:'#059669',values:cf.laboratoryVelocityMps}])));
     }
 
+    const study=bench.study;
+    if(study?.rows.length===5){for(const [indices,title,xLabel,kind] of [[[0,1,2],'Сетка','Ячеек на камеру','mesh'],[[0,3,4],'Шаг времени','Максимальный шаг, с','time']] as const){const rows=indices.map(i=>study.rows[i]);if(rows.every(r=>r.status==='complete')){const landing=rows.every(r=>r.landingTimeSec!==null);images.push(tag(reportSeriesPlot('Чувствительность связи: '+title,'plugBenchmark',rows.map(r=>kind==='mesh'?r.cellsPerChamber:r.stepSec),xLabel,landing?'Посадка, с':'Макс. давление входа, МПа',[{name:landing?'Посадка':'Макс. на принятых шагах',color:'#7c3aed',values:rows.map(r=>landing?r.landingTimeSec!:r.maxInletMPa!)}])));}}}
+
   }
   const transport=extras.compressibleTransport;
   if(scope==='cementing'&&transport?.frames.length){
