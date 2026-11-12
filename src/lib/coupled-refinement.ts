@@ -1,3 +1,4 @@
+import {resolveBenchLaws,type BenchRheologyPair} from './bench-rheology';
 import {coupledCaseKey,simulateCoupledPlug,type CoupledPlugResult,type CoupledFrame,type CoupledTracePoint} from './coupled-plug';
 import {initializePlug,normalizeMovingPlugCase,type MovingPlugCase} from './moving-plug';
 
@@ -21,9 +22,10 @@ export interface CoupledStudy {
   rows:CoupledStudyRow[]; comparisons:CoupledComparison[]; note:string;
 }
 export const coupledStudyNote='Различия приведены по модулю; для временных профилей показан максимум на общей выборке. Пять прогонов: N, 2N, 4N при одном максимальном шаге; затем dt/2 и dt/4 при исходной сетке. Фактические шаги могут уменьшаться. Сравниваются все принятые временные точки с линейной интерполяцией только внутри одной фазы. Подход к упору и состояние после посадки разделены: кадр посадки относится к подходу, после посадки сравнение начинается с общей области покрытия следующих шагов. Неразрешённые пики могут быть пропущены. L1 состава (0-2) - интеграл суммы модулей разностей массовых долей по одной физической координате, делённый на длину; включает разность положения поршня. Незавершённые пары не сравниваются. Разности показывают численную чувствительность, не физическую погрешность или промысловую валидацию. Нулевое расхождение само по себе не доказывает точность.';
-export function coupledRefinementPlan(input:MovingPlugCase,n:number,mu:number,switchSec:number){
+export function coupledRefinementPlan(input:MovingPlugCase,n:number,mu:number,switchSec:number,rheology?:BenchRheologyPair){
+  resolveBenchLaws(rheology,mu);
   const p=normalizeMovingPlugCase(input);if(!p)throw new Error('Не задан сценарий связанного стенда.');
-  if(!Number.isInteger(n)||n<1||n*4>60||!Number.isFinite(mu)||mu<=0||!Number.isFinite(switchSec)||switchSec<0||switchSec>p.durationSec)throw new Error('Для пяти прогонов нужны 1-15 исходных ячеек в каждой камере, положительная вязкость и корректный момент метки.');
+  if(!Number.isInteger(n)||n<1||n*4>60||!Number.isFinite(mu)||!rheology&&mu<=0||!Number.isFinite(switchSec)||switchSec<0||switchSec>p.durationSec)throw new Error('Для пяти прогонов нужны 1-15 исходных ячеек в каждой камере, положительная вязкость и корректный момент метки.');
   const plan=[{label:'Исходный',input:p,n},...[2,4].map(k=>({label:'Сетка ×'+k,input:{...p},n:n*k})),...[2,4].map(k=>({label:'Шаг /'+k,input:{...p,stepSec:p.stepSec/k},n}))];
   for(const c of plan){try{initializePlug(c.input);}catch(e){throw new Error(c.label+': '+(e instanceof Error?e.message:String(e))+' Для dt/4 допускается не более 1000 назначенных шагов.');}}
   return plan;
@@ -53,9 +55,9 @@ export function compareCoupledPhase(a:CoupledTracePoint[],b:CoupledTracePoint[],
   for(const time of times){const x=interpolate(aa,time),y=interpolate(bb,time);if(!x||!y)throw new Error('Нет общей временной выборки фазы.');fields.forEach((_,i)=>{maxima[i]=Math.max(maxima[i],Math.abs(x[i]-y[i]));});}
   return {startSec,endSec,samples:times.length,maxInletMPa:maxima[0],maxBackWallMPa:maxima[1],maxAheadWallMPa:maxima[2],maxPositionM:maxima[3]};
 }
-export function summarizeCoupledRefinement(input:MovingPlugCase,n:number,mu:number,switchSec:number,runs:CoupledPlugResult[]):CoupledStudy{
-  const plan=coupledRefinementPlan(input,n,mu,switchSec),key=coupledCaseKey(input,n,mu,switchSec);
-  if(runs.length!==5||runs.some((r,i)=>r.inputKey!==coupledCaseKey(plan[i].input,plan[i].n,mu,switchSec)||r.cellsPerChamber!==plan[i].n||r.viscosityMpas!==mu||r.switchSec!==switchSec))throw new Error('Прогоны не соответствуют плану связанного уточнения.');
+export function summarizeCoupledRefinement(input:MovingPlugCase,n:number,mu:number,switchSec:number,runs:CoupledPlugResult[],rheology?:BenchRheologyPair):CoupledStudy{
+  const plan=coupledRefinementPlan(input,n,mu,switchSec,rheology),key=coupledCaseKey(input,n,mu,switchSec,rheology);
+  if(runs.length!==5||runs.some((r,i)=>r.inputKey!==coupledCaseKey(plan[i].input,plan[i].n,mu,switchSec,rheology)||r.cellsPerChamber!==plan[i].n||r.viscosityMpas!==mu||r.switchSec!==switchSec))throw new Error('Прогоны не соответствуют плану связанного уточнения.');
   for(const r of runs){validateTrace(r.trace);if(r.trace.length!==(r.frames.length?r.acceptedSteps+1:0)||r.trace.length&&r.trace[0].phase!=='approach'||r.trace.at(-1)?.timeSec!==r.frames.at(-1)?.timeSec)throw new Error('Неполная или некорректная история принятых шагов.');if(r.landingTimeSec!==null&&(!Number.isFinite(r.landingTimeSec)||!r.trace.some(f=>f.timeSec===r.landingTimeSec&&f.phase==='approach')))throw new Error('Нет принятого события посадки.');if(r.trace.some(f=>f.phase==='seated'&&(r.landingTimeSec===null||f.timeSec<=r.landingTimeSec)||f.phase==='approach'&&r.landingTimeSec!==null&&f.timeSec>r.landingTimeSec))throw new Error('История фаз не согласована с посадкой.');}
   const study:CoupledStudy={model:'coupled-refinement-v1',inputKey:key,status:'partial',reason:'',rows:runs.map((r,i)=>{
     const trace=r.trace,steps=trace.slice(1).map((f,j)=>f.timeSec-trace[j].timeSec),lengths=trace.flatMap(f=>[f.xM/plan[i].n,(plan[i].input.totalLengthM-f.xM)/plan[i].n]);
@@ -73,9 +75,9 @@ export function summarizeCoupledRefinement(input:MovingPlugCase,n:number,mu:numb
   }
   study.status=study.rows.every(r=>r.status==='complete')&&study.comparisons.every(c=>c.comparable)?'complete':'partial';study.reason=study.status==='complete'?'Пять прогонов рассчитаны; показаны численные различия.':'Есть незавершённые прогоны или несопоставимые пары; отсутствующие различия не заменены нулями.';return study;
 }
-export function evaluateCoupledRefinement(input:MovingPlugCase,n:number,mu:number,switchSec:number,baseline?:CoupledPlugResult):CoupledStudy{
-  try{const plan=coupledRefinementPlan(input,n,mu,switchSec),runs=plan.map((c,i)=>i===0&&baseline?.inputKey===coupledCaseKey(c.input,c.n,mu,switchSec)?baseline:simulateCoupledPlug(c.input,c.n,mu,switchSec));return summarizeCoupledRefinement(input,n,mu,switchSec,runs);}
-  catch(e){return {model:'coupled-refinement-v1',inputKey:coupledCaseKey(input,n,mu,switchSec),status:'unavailable',reason:e instanceof Error?e.message:String(e),rows:[],comparisons:[],note:coupledStudyNote};}
+export function evaluateCoupledRefinement(input:MovingPlugCase,n:number,mu:number,switchSec:number,baseline?:CoupledPlugResult,rheology?:BenchRheologyPair):CoupledStudy{
+  try{const plan=coupledRefinementPlan(input,n,mu,switchSec,rheology),runs=plan.map((c,i)=>i===0&&baseline?.inputKey===coupledCaseKey(c.input,c.n,mu,switchSec,rheology)?baseline:simulateCoupledPlug(c.input,c.n,mu,switchSec,rheology));return summarizeCoupledRefinement(input,n,mu,switchSec,runs,rheology);}
+  catch(e){return {model:'coupled-refinement-v1',inputKey:coupledCaseKey(input,n,mu,switchSec,rheology),status:'unavailable',reason:e instanceof Error?e.message:String(e),rows:[],comparisons:[],note:coupledStudyNote};}
 }
 function csvCell(v:unknown){return v===undefined||v===null?'':typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':String(v);}
 export function coupledStudyRunsCsv(s:CoupledStudy){return ['study_status;run;cells_per_chamber;nominal_step_s;accepted_steps;rejected_attempts;run_status;last_time_s;landing_time_s;actual_min_step_s;actual_max_step_s;min_cell_m;max_cell_m;max_inlet_mpa;mass_residual_kg;component_residual_kg;force_residual_mpa;reason',...s.rows.map(r=>[s.status,r.label,r.cellsPerChamber,r.stepSec,r.acceptedSteps,r.rejectedSteps,r.status,r.endTimeSec,r.landingTimeSec,r.minStepSec,r.maxStepSec,r.minCellM,r.maxCellM,r.maxInletMPa,r.maxMassResidualKg,r.maxComponentResidualKg,r.maxForceResidualMPa,r.reason].map(csvCell).join(';'))].join('\n');}
