@@ -2,6 +2,7 @@ import type {WellData,PressurePoint,AnnularFluidType} from './cementing-calculat
 import {totalPipeVolumeForRange} from './cementing-calculations';
 import type {ProcessFluid} from './cementing-process';
 export interface StopStorageSettings {
+ flowEnabled?:boolean; flowCellLengthM?:number; flowStepSeconds?:number;
  hydrostaticsEnabled?:boolean; referencePressureMPa?:number; surfaceBackpressureMPa?:number;
  enabled:boolean; pressureRiseMPa:number; rateLps:number;
  youngModulusMPa:number; poissonRatio:number; restraint:'fixedLength'|'closedEnds';
@@ -19,7 +20,7 @@ export function normalizeStopStorage(value:unknown):StopStorageSettings|undefine
  if(!value||typeof value!=='object'||Array.isArray(value))return undefined;
  const s=value as Record<string,unknown>,b=s.bulkModuliMPa&&typeof s.bulkModuliMPa==='object'?s.bulkModuliMPa as Record<string,unknown>:{};
  const n=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)?v:0;
- return {...(typeof s.hydrostaticsEnabled==='boolean'?{hydrostaticsEnabled:s.hydrostaticsEnabled}:{}),...(s.referencePressureMPa!==undefined?{referencePressureMPa:typeof s.referencePressureMPa==='number'&&Number.isFinite(s.referencePressureMPa)?s.referencePressureMPa:-1}:{}),...(s.surfaceBackpressureMPa!==undefined?{surfaceBackpressureMPa:typeof s.surfaceBackpressureMPa==='number'&&Number.isFinite(s.surfaceBackpressureMPa)?s.surfaceBackpressureMPa:-1}:{}),enabled:s.enabled===true,pressureRiseMPa:n(s.pressureRiseMPa),rateLps:n(s.rateLps),youngModulusMPa:n(s.youngModulusMPa),poissonRatio:n(s.poissonRatio),restraint:s.restraint==='closedEnds'?'closedEnds':'fixedLength',bulkModuliMPa:Object.fromEntries(['mud','buffer','cement','displacement'].filter(k=>b[k]!==undefined).map(k=>[k,n(b[k])])),source:typeof s.source==='string'?s.source.slice(0,2000):''};
+ return {...(typeof s.flowEnabled==='boolean'?{flowEnabled:s.flowEnabled}:{}),...(s.flowCellLengthM!==undefined?{flowCellLengthM:n(s.flowCellLengthM)}:{}),...(s.flowStepSeconds!==undefined?{flowStepSeconds:n(s.flowStepSeconds)}:{}),...(typeof s.hydrostaticsEnabled==='boolean'?{hydrostaticsEnabled:s.hydrostaticsEnabled}:{}),...(s.referencePressureMPa!==undefined?{referencePressureMPa:typeof s.referencePressureMPa==='number'&&Number.isFinite(s.referencePressureMPa)?s.referencePressureMPa:-1}:{}),...(s.surfaceBackpressureMPa!==undefined?{surfaceBackpressureMPa:typeof s.surfaceBackpressureMPa==='number'&&Number.isFinite(s.surfaceBackpressureMPa)?s.surfaceBackpressureMPa:-1}:{}),enabled:s.enabled===true,pressureRiseMPa:n(s.pressureRiseMPa),rateLps:n(s.rateLps),youngModulusMPa:n(s.youngModulusMPa),poissonRatio:n(s.poissonRatio),restraint:s.restraint==='closedEnds'?'closedEnds':'fixedLength',bulkModuliMPa:Object.fromEntries(['mud','buffer','cement','displacement'].filter(k=>b[k]!==undefined).map(k=>[k,n(b[k])])),source:typeof s.source==='string'?s.source.slice(0,2000):''};
 }
 /** Incremental Lamé volume compliance; pressure increments are internal only, units MPa. */
 export function steelVolumeCompliance(volumeM3:number,odMm:number,wallMm:number,eMPa:number,nu:number,restraint:StopStorageSettings['restraint']){

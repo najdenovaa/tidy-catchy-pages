@@ -21,6 +21,8 @@ on:
       - "src/lib/fluid-inventory*"
       - "src/lib/stop-storage*"
       - "src/lib/pvt-hydrostatics*"
+      - "src/lib/compressible-*"
+      - "src/components/CompressibleTransport*"
       - "src/components/PvtHydrostatics*"
       - "src/components/StopStorage*"
       - "src/lib/cementing-inventory*"

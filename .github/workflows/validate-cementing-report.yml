@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'src/lib/*report*'
+      - 'src/lib/compressible-*'
+      - 'src/lib/__tests__/compressible-report.test.ts'
       - 'src/lib/export-docx.ts'
       - 'src/lib/cement-recipe-designer.ts'
       - 'src/lib/cement-mineral-extenders*'
@@ -50,11 +52,11 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/__tests__/compressible-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
-          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/centralization-report.docx" "$REPORT_QA_DIR/running-report.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/centralization-report.docx" "$REPORT_QA_DIR/running-report.docx" "$REPORT_QA_DIR/transport-report.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
@@ -81,6 +83,9 @@ jobs:
               assert required in text and forbidden not in text and "SECRET-PASSPORT-NOTE" not in text
               assert any(p.get_image_info() for p in scoped), stem + " missing figures"
               assert all(abs(p.rect.width - 595.3) < 2 for p in scoped)
+          transport = fitz.open(d / "transport-report.pdf")
+          assert any("1D-перенос: давление" in " ".join(p.get_text().split()) and p.get_image_info() for p in transport), "Missing transport pressure plot"
+          assert "накопленная невязка" in " ".join(" ".join(p.get_text().split()) for p in transport)
           print("Rendered", len(doc), "A4 pages; approval-column separation", round(right.x0 - left.x0), "pt; model page", model.number + 1)
           preview = Image.new("RGB", (1000, 710), "white")
           for i, page in enumerate([title, model]):
@@ -104,3 +109,5 @@ jobs:
             /tmp/cementing-report-qa/running-report.docx
             /tmp/cementing-report-qa/running-report.pdf
             /tmp/cementing-report-qa/fleet-layout.svg
+            /tmp/cementing-report-qa/transport-report.docx
+            /tmp/cementing-report-qa/transport-report.pdf
