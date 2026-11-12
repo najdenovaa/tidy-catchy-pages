@@ -29,6 +29,7 @@ on:
       - "src/lib/ale-transport*"
       - "src/lib/plug-ale*"
       - "src/lib/plug-pressure*"
+      - "src/lib/coupled-plug*"
       - "src/components/PlugPressureView*"
       - "src/lib/plug-bench*"
       - "src/components/PlugSpatialView*"

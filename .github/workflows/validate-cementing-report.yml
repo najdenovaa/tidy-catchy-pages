@@ -11,6 +11,7 @@ on:
       - 'src/lib/ale-transport*'
       - 'src/lib/plug-ale*'
       - 'src/lib/plug-pressure*'
+      - 'src/lib/coupled-plug*'
       - 'src/components/PlugPressureView*'
       - 'src/lib/plug-bench*'
       - 'src/components/PlugSpatialView*'
@@ -110,6 +111,8 @@ jobs:
           assert any("Стенд ALE: состав" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
           assert any("Стенд: локальное давление" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
           assert "Максимальная невязка непрерывности" in " ".join(" ".join(p.get_text().split()) for p in plug)
+          assert "Связанный расчёт движения и давления" in plug_text and "Посадка в связанном расчёте" in plug_text
+          assert any("Связанный стенд: движение и посадка" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
           print("Rendered", len(doc), "A4 pages; approval-column separation", round(right.x0 - left.x0), "pt; model page", model.number + 1)
           preview = Image.new("RGB", (1000, 710), "white")
           for i, page in enumerate([title, model]):

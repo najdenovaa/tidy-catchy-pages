@@ -28,8 +28,8 @@ function linear(lower:number[],diag:number[],upper:number[],rhs:number[]){
   if(!(d.at(-1)!>0))throw new Error('Вырожденная матрица давления.');
   x[x.length-1]=b.at(-1)!/d.at(-1)!;for(let i=x.length-2;i>=0;i--)x[i]=(b[i]-upper[i]*x[i+1])/d[i];return x;
 }
-function density(ref:number,k:number,p:number){
-  if(!Number.isFinite(p)||p<0||p/k>.1)throw new Error('Пространственная EOS: нужны P ≥ 0 и P/K ≤ 10%.');
+function density(ref:number,k:number,p:number,algebraicTrial=false){
+  if(!Number.isFinite(p)||(algebraicTrial?Math.abs(p/k)>.5:p<0||p/k>.1))throw new Error('Пространственная EOS: нужны P ≥ 0 и P/K ≤ 10%.');
   return ref*Math.exp(p/k);
 }
 export function pistonFaces(p:MovingPlugCase,n:number,x:number){
@@ -37,8 +37,10 @@ export function pistonFaces(p:MovingPlugCase,n:number,x:number){
 }
 /** Independent cell EOS + continuity + quasi-steady viscous face momentum.
  * Piston trajectory is prescribed; this does NOT solve its force balance.
+ * algebraicTrial extends EOS to |p/K| <= .5 only for rejected/root-search
+ * candidates. Every accepted step MUST be recomputed with the default false.
  */
-export function pressureAleStep(p:MovingPlugCase,n:number,mu:number,old:AleState,oldPressure:number[],faces:number[],dt:number,source:number,injection:number[]){
+export function pressureAleStep(p:MovingPlugCase,n:number,mu:number,old:AleState,oldPressure:number[],faces:number[],dt:number,source:number,injection:number[],algebraicTrial=false){
   const nc=2*n,a=Math.PI*(p.diameterMm/1000)**2/4;
   if(!Number.isInteger(n)||n<1||n>60||oldPressure.length!==nc||old.massKg.length!==nc||old.facesM.length!==nc+1||faces.length!==nc+1||![dt,source,mu].every(Number.isFinite)||dt<=0||source<0||mu<=0)throw new Error('Недопустимые параметры пространственного шага.');
   if(![p.totalLengthM,p.diameterMm,p.rhoBackKgM3,p.rhoAheadKgM3,p.bulkBackMPa,p.bulkAheadMPa].every(v=>Number.isFinite(v)&&v>0)||!Number.isFinite(p.outletMPa)||p.outletMPa<0||!Number.isFinite(p.outletResistanceMPaPerM3s)||p.outletResistanceMPaPerM3s<0||faces[0]!==0||old.facesM[0]!==0||faces[nc]!==p.totalLengthM||old.facesM[nc]!==p.totalLengthM)throw new Error('Недопустимая EOS или неподвижные внешние границы стенда.');
@@ -51,7 +53,7 @@ export function pressureAleStep(p:MovingPlugCase,n:number,mu:number,old:AleState
   if(volume.some(x=>!Number.isFinite(x)||x<=0)||w.some(x=>!Number.isFinite(x)))throw new Error('Вырожденная движущаяся сетка давления.');
   const resist=faces.map((_,i)=>i===0||i===n?0:laminarResistance(i===nc?faces[nc]-center[nc-1]:center[i]-center[i-1],p.diameterMm,mu)+(i===nc?p.outletResistanceMPaPerM3s:0));
   const evaluate=(pressure:number[])=>{
-    const rho=pressure.map((v,i)=>density(ref[i],bulk[i],v)),mass=rho.map((v,i)=>v*volume[i]),flux=Array(nc+1).fill(0),qlab=Array(nc+1).fill(0),dl=Array(nc+1).fill(0),dr=Array(nc+1).fill(0);
+    const rho=pressure.map((v,i)=>density(ref[i],bulk[i],v,algebraicTrial)),mass=rho.map((v,i)=>v*volume[i]),flux=Array(nc+1).fill(0),qlab=Array(nc+1).fill(0),dl=Array(nc+1).fill(0),dr=Array(nc+1).fill(0);
     flux[0]=source;qlab[0]=source/rho[0];qlab[n]=a*w[n];
     for(let i=1;i<nc;i++)if(i!==n){
       qlab[i]=(pressure[i-1]-pressure[i])/resist[i];const rel=qlab[i]-a*w[i],up=rel>=0?i-1:i;
@@ -75,9 +77,9 @@ export function pressureAleStep(p:MovingPlugCase,n:number,mu:number,old:AleState
   }
   if(e.norm>1e-10)throw new Error('Пространственное давление не сошлось.');
   const velocity=e.qlab.map(q=>q/a),re=velocity.map((u,i)=>Math.abs(u)*(p.diameterMm/1000)*(i===0?e.rho[0]:i===nc?e.rho[nc-1]:Math.max(e.rho[i-1],e.rho[i]))/(mu/1000)),maxReynolds=Math.max(...re);
-  if(maxReynolds>2000)throw new Error('Re > 2000: ламинарное сопротивление стенда неприменимо; нужен другой закон потерь.');
+  if(!algebraicTrial&&maxReynolds>2000)throw new Error('Re > 2000: ламинарное сопротивление стенда неприменимо; нужен другой закон потерь.');
   const inletMPa=pressure[0]+laminarResistance(center[0],p.diameterMm,mu)*e.qlab[0],backWallMPa=pressure[n-1]-laminarResistance(faces[n]-center[n-1],p.diameterMm,mu)*e.qlab[n],aheadWallMPa=pressure[n]+laminarResistance(center[n]-faces[n],p.diameterMm,mu)*e.qlab[n];
-  density(p.rhoBackKgM3,p.bulkBackMPa,inletMPa);density(p.rhoBackKgM3,p.bulkBackMPa,backWallMPa);density(p.rhoAheadKgM3,p.bulkAheadMPa,aheadWallMPa);
+  if(!algebraicTrial){density(p.rhoBackKgM3,p.bulkBackMPa,inletMPa);density(p.rhoBackKgM3,p.bulkBackMPa,backWallMPa);density(p.rhoAheadKgM3,p.bulkAheadMPa,aheadWallMPa);}
   const transport=advanceAle(old,faces,e.mass,e.flux,dt,a,injection,undefined,n);
   return {...transport,pressures:pressure,relativeFluxKgS:e.flux,laboratoryVelocityMps:velocity,inletMPa,backWallMPa,aheadWallMPa,maxReynolds,maxContinuityResidualKg:Math.max(...e.residual.map(Math.abs)),iterations};
 }
@@ -107,7 +109,7 @@ export function evaluatePlugPressure(base:MovingPlugResult,n:number,mu:number,sw
   }catch(e){r.reason=e instanceof Error?e.message:String(e);}
   if(last&&r.frames.at(-1)?.timeSec!==last.timeSec)r.frames.push(last);return r;
 }
-export function plugPressureCsv(r:PlugHydraulics,f:HydraulicFrame){
+export function plugPressureCsv(r:Pick<PlugHydraulics,'status'>,f:HydraulicFrame){
   return 'status;time_s;cell;left_m;right_m;p_mpa;mass_kg;back_fraction;marker_fraction;ahead_fraction\n'+f.massesKg.map((m,i)=>[r.status,f.timeSec,i,f.facesM[i],f.facesM[i+1],f.pressuresMPa[i],m,...f.fractions[i]].join(';')).join('\n');
 }
-export function plugPressureFacesCsv(r:PlugHydraulics,f:HydraulicFrame){return 'status;time_s;face;x_m;relative_mass_flux_kg_s;laboratory_velocity_m_s\n'+f.facesM.map((x,i)=>[r.status,f.timeSec,i,x,f.relativeFluxKgS[i],f.laboratoryVelocityMps[i]].join(';')).join('\n');}
+export function plugPressureFacesCsv(r:Pick<PlugHydraulics,'status'>,f:HydraulicFrame){return 'status;time_s;face;x_m;relative_mass_flux_kg_s;laboratory_velocity_m_s\n'+f.facesM.map((x,i)=>[r.status,f.timeSec,i,x,f.relativeFluxKgS[i],f.laboratoryVelocityMps[i]].join(';')).join('\n');}
