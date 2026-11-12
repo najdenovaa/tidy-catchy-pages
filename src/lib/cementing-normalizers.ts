@@ -1,3 +1,4 @@
+import {normalizeStopStorage} from "./stop-storage";
 import { normalizeCentralizerDesign } from "./equipment-library-reference";
 import { normalizeFluidLibraryReference } from "./fluid-library-reference";
 import { normalizeCaliperLog } from "./well-geometry";
@@ -205,6 +206,7 @@ export function normalizeWellData(value: unknown): WellData {
   return {
     ...(caliperLog?{caliperLog}:{}),
     equipment: normalizeEquipment(source.equipment),
+    ...(normalizeStopStorage(source.stopStorage)?{stopStorage:normalizeStopStorage(source.stopStorage)}:{}),
     ...(normalizeCentralizerDesign(source.centralizerDesign)?{centralizerDesign:normalizeCentralizerDesign(source.centralizerDesign)}:{}),
     ...(source.runningSettings ? { runningSettings: normalizeRunningSettings(source.runningSettings) } : {}),
     ...(normalizeCentralizerMaterials(source.centralizerMaterials) ? { centralizerMaterials: normalizeCentralizerMaterials(source.centralizerMaterials) } : {}),

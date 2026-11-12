@@ -28,3 +28,8 @@ export function depthReportCharts(envelope:DepthEnvelopePoint[],selection?:Repor
  series('Максимум за операцию','#dc2626','maxPressureMPa',equiv),series('Минимум при циркуляции','#16a34a','minPressureMPa',equiv),series('Минимальная гидростатика','#0284c7','minHydrostaticMPa',equiv),series('ОЗЦ','#7c3aed','wocHydrostaticMPa',equiv),series('Пластовое: заданное / оценочное','#a16207','porePressureMPa',equiv),series('ГРП / поглощение','#64748b','fracPressureMPa',equiv)],{depth:true});
  return[build(false),build(true)].filter(p=>reportIncludes(selection,p.reportItem));
 }
+
+export function stopStorageReportCharts(r:import('./stop-storage').StopStorageResult|undefined){
+ if(r?.status!=='ready')return [];
+ return [reportSeriesPlot('Дополнительная подача после посадки пробки','stopStorage',r.curve.map(p=>p.injectedReferenceM3*1000),'Дополнительная подача в исходном состоянии, л','Прирост давления ΔP, МПа',[{name:'Замкнутая труба над ЦКОД',color:'#4f46e5',values:r.curve.map(p=>p.pressureRiseMPa)}])];
+}
