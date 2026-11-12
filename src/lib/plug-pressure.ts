@@ -1,3 +1,5 @@
+import {geometryPressureStep,initializeGeometryPressure} from './geometry-pressure';
+import {compileBenchGeometry,type CompiledBenchGeometry,type BenchGeometry} from './bench-geometry';
 import {resolveBenchLaws,isNewtonian,pipeFlowForPressure,wallStressForRate,yieldPressure,type BenchRheologyPair} from './bench-rheology';
 import {advanceAle, type AleState} from './ale-transport';
 import type {MovingPlugResult, MovingPlugCase} from './moving-plug';
@@ -10,7 +12,7 @@ export interface HydraulicFrame {
 }
 export interface PlugHydraulics {
   model:'prescribed-piston-pressure-v1';maxReynoldsBack?:number;maxReynoldsAhead?:number; status:'complete'|'stopped'; reason:string;
-  rheology?:BenchRheologyPair; viscosityMpas:number; cellsPerChamber:number; switchSec:number; frames:HydraulicFrame[];
+  geometry?:BenchGeometry;capacityM3?:number; rheology?:BenchRheologyPair; viscosityMpas:number; cellsPerChamber:number; switchSec:number; frames:HydraulicFrame[];
   initialKg:number[]; injectedKg:number[]; returnedKg:number[]; retainedKg:number[];
   acceptedSteps:number; maxMassResidualKg:number; maxComponentResidualKg:number;
   maxGeometricResidualM3:number; maxReynolds:number;
@@ -41,7 +43,8 @@ export function pistonFaces(p:MovingPlugCase,n:number,x:number){
  * algebraicTrial extends EOS to |p/K| <= .5 only for rejected/root-search
  * candidates. Every accepted step MUST be recomputed with the default false.
  */
-export function pressureAleStep(p:MovingPlugCase,n:number,mu:number,old:AleState,oldPressure:number[],faces:number[],dt:number,source:number,injection:number[],algebraicTrial=false,rheology?:BenchRheologyPair){
+export function pressureAleStep(p:MovingPlugCase,n:number,mu:number,old:AleState,oldPressure:number[],faces:number[],dt:number,source:number,injection:number[],algebraicTrial=false,rheology?:BenchRheologyPair,geometry?:CompiledBenchGeometry){
+  if(geometry)return geometryPressureStep(p,n,mu,old,oldPressure,faces,dt,source,injection,algebraicTrial,rheology,geometry);
   const laws=resolveBenchLaws(rheology,mu);
   const nc=2*n,a=Math.PI*(p.diameterMm/1000)**2/4;
   if(!Number.isInteger(n)||n<1||n>60||oldPressure.length!==nc||old.massKg.length!==nc||old.facesM.length!==nc+1||faces.length!==nc+1||![dt,source,mu].every(Number.isFinite)||dt<=0||source<0||!rheology&&mu<=0)throw new Error('Недопустимые параметры пространственного шага.');
@@ -96,27 +99,28 @@ export function pressureAleStep(p:MovingPlugCase,n:number,mu:number,old:AleState
   const transport=advanceAle(old,faces,e.mass,e.flux,dt,a,injection,undefined,n);
   return {...transport,pressures:pressure,relativeFluxKgS:e.flux,laboratoryVelocityMps:velocity,inletMPa,backWallMPa,aheadWallMPa,maxReynolds,maxReynoldsBack,maxReynoldsAhead,maxContinuityResidualKg:Math.max(...e.residual.map(Math.abs)),iterations};
 }
-export function evaluatePlugPressure(base:MovingPlugResult,n:number,mu:number,switchSec:number,rheology?:BenchRheologyPair):PlugHydraulics{
-  const p=base.input,r:PlugHydraulics={model:'prescribed-piston-pressure-v1',rheology,status:'stopped',reason:'',viscosityMpas:mu,cellsPerChamber:n,switchSec,frames:[],initialKg:[0,0,0],injectedKg:[0,0,0],returnedKg:[0,0,0],retainedKg:[0,0,0],acceptedSteps:0,maxMassResidualKg:0,maxComponentResidualKg:0,maxGeometricResidualM3:0,maxReynolds:0};
+export function evaluatePlugPressure(base:MovingPlugResult,n:number,mu:number,switchSec:number,rheology?:BenchRheologyPair,geometry?:BenchGeometry):PlugHydraulics{
+  const p=base.input,r:PlugHydraulics={model:'prescribed-piston-pressure-v1',rheology,geometry,status:'stopped',reason:'',viscosityMpas:mu,cellsPerChamber:n,switchSec,frames:[],initialKg:[0,0,0],injectedKg:[0,0,0],returnedKg:[0,0,0],retainedKg:[0,0,0],acceptedSteps:0,maxMassResidualKg:0,maxComponentResidualKg:0,maxGeometricResidualM3:0,maxReynolds:0};
   let last:HydraulicFrame|undefined;
   try{
     resolveBenchLaws(rheology,mu);
     if(!Number.isInteger(n)||n<1||n>60||!Number.isFinite(mu)||!rheology&&mu<=0||!Number.isFinite(switchSec)||switchSec<0||switchSec>p.durationSec||!base.samples.length)throw new Error('Нужны 1-60 ячеек, положительная вязкость и корректный момент метки.');
-    const first=base.samples[0],a=Math.PI*(p.diameterMm/1000)**2/4,faces=pistonFaces(p,n,first.xM);
+    const geo=geometry?compileBenchGeometry(p,geometry):undefined,initial=geo?initializeGeometryPressure(p,n,geo):undefined;const first=base.samples[0],a=Math.PI*(p.diameterMm/1000)**2/4,faces=geo?geo.faces(first.xM,n):pistonFaces(p,n,first.xM);
     let pressure=Array(2*n).fill(p.outletMPa),state:AleState={facesM:faces,massKg:faces.slice(1).map((x,i)=>a*(x-faces[i])*density(i<n?p.rhoBackKgM3:p.rhoAheadKgM3,i<n?p.bulkBackMPa:p.bulkAheadMPa,p.outletMPa)),fractions:Array.from({length:2*n},(_,i)=>i<n?[1,0,0]:[0,0,1])};
+    if(initial){state=initial.state;pressure=initial.pressures;r.capacityM3=geo!.capacityM3;}
     advanceAle(state,faces,state.massKg,Array(2*n+1).fill(0),1,a,[1,0,0],undefined,n);
     r.initialKg=[total(state.massKg.slice(0,n)),0,total(state.massKg.slice(n))];r.retainedKg=[...r.initialKg];
-    last={timeSec:0,xM:first.xM,facesM:faces,pressuresMPa:pressure,massesKg:state.massKg,fractions:state.fractions,relativeFluxKgS:Array(2*n+1).fill(0),laboratoryVelocityMps:Array(2*n+1).fill(0),inletMPa:p.outletMPa,backWallMPa:p.outletMPa,aheadWallMPa:p.outletMPa,movingForceMismatchMPa:null,maxReynolds:0};r.frames.push(last);
+    last={timeSec:0,xM:first.xM,facesM:geo?faces.map(geo.fromLogical):faces,pressuresMPa:pressure,massesKg:state.massKg,fractions:state.fractions,relativeFluxKgS:Array(2*n+1).fill(0),laboratoryVelocityMps:Array(2*n+1).fill(0),inletMPa:initial?.inletMPa??p.outletMPa,backWallMPa:initial?.wallMPa??p.outletMPa,aheadWallMPa:initial?.wallMPa??p.outletMPa,movingForceMismatchMPa:null,maxReynolds:0};r.frames.push(last);
     const stride=Math.max(1,Math.ceil((base.samples.length-1)/150));
     for(let k=1;k<base.samples.length;k++){
       const prev=base.samples[k-1],next=base.samples[k],dt=next.timeSec-prev.timeSec;
       if(prev.timeSec<switchSec-1e-8&&next.timeSec>switchSec+1e-8)throw new Error('Шаг пересекает смену метки; нужна согласованная временная сетка.');
-      const step=pressureAleStep(p,n,mu,state,pressure,pistonFaces(p,n,next.xM),dt,p.rateLps/1000*p.rhoBackKgM3,prev.timeSec>=switchSec-1e-8?[0,1,0]:[1,0,0],false,rheology);
+      const step=pressureAleStep(p,n,mu,state,pressure,geo?geo.faces(next.xM,n):pistonFaces(p,n,next.xM),dt,p.rateLps/1000*p.rhoBackKgM3,prev.timeSec>=switchSec-1e-8?[0,1,0]:[1,0,0],false,rheology,geo);
       const injected=r.injectedKg.map((m,j)=>m+step.injectedKg[j]),returned=r.returnedKg.map((m,j)=>m+step.returnedKg[j]),retained=[0,1,2].map(j=>total(step.state.massKg.map((m,i)=>m*step.state.fractions[i][j]))),residuals=retained.map((m,j)=>Math.abs(r.initialKg[j]+injected[j]-returned[j]-m));
       if(residuals.some((e,j)=>e>1e-7*Math.max(1,r.initialKg[j]+injected[j],returned[j]+retained[j])))throw new Error('Накопленный баланс пространственного давления не сошёлся.');
       state=step.state;pressure=step.pressures;r.injectedKg=injected;r.returnedKg=returned;r.retainedKg=retained;r.acceptedSteps++;
       r.maxMassResidualKg=Math.max(r.maxMassResidualKg,step.maxContinuityResidualKg);r.maxComponentResidualKg=Math.max(r.maxComponentResidualKg,step.maxMassResidualKg,...residuals);r.maxGeometricResidualM3=Math.max(r.maxGeometricResidualM3,step.maxGeometricResidualM3);r.maxReynolds=Math.max(r.maxReynolds,step.maxReynolds);r.maxReynoldsBack=Math.max(r.maxReynoldsBack??0,step.maxReynoldsBack);r.maxReynoldsAhead=Math.max(r.maxReynoldsAhead??0,step.maxReynoldsAhead);
-      last={timeSec:next.timeSec,xM:next.xM,facesM:state.facesM,massesKg:state.massKg,fractions:state.fractions,pressuresMPa:pressure,relativeFluxKgS:step.relativeFluxKgS,laboratoryVelocityMps:step.laboratoryVelocityMps,inletMPa:step.inletMPa,backWallMPa:step.backWallMPa,aheadWallMPa:step.aheadWallMPa,movingForceMismatchMPa:!next.landed&&next.velocityMps>1e-9?step.backWallMPa-step.aheadWallMPa-p.breakawayMPa-p.dragMPaPerMps*next.velocityMps:null,maxReynolds:step.maxReynolds,maxReynoldsBack:step.maxReynoldsBack,maxReynoldsAhead:step.maxReynoldsAhead};
+      last={timeSec:next.timeSec,xM:next.xM,facesM:geo?state.facesM.map(geo.fromLogical):state.facesM,massesKg:state.massKg,fractions:state.fractions,pressuresMPa:pressure,relativeFluxKgS:step.relativeFluxKgS,laboratoryVelocityMps:step.laboratoryVelocityMps,inletMPa:step.inletMPa,backWallMPa:step.backWallMPa,aheadWallMPa:step.aheadWallMPa,movingForceMismatchMPa:!next.landed&&next.velocityMps>1e-9?step.backWallMPa-step.aheadWallMPa-p.breakawayMPa-p.dragMPaPerMps*next.velocityMps:null,maxReynolds:step.maxReynolds,maxReynoldsBack:step.maxReynoldsBack,maxReynoldsAhead:step.maxReynoldsAhead};
       if(k%stride===0||k===base.samples.length-1||next.landed&&!prev.landed||Math.abs(next.timeSec-switchSec)<1e-8)r.frames.push(last);
     }
     r.status=base.status;r.reason=base.status==='complete'?'Пространственные давления рассчитаны на заданной траектории; обратная связь с движением не включена.':'Пространственные давления рассчитаны только на принятой части механического прогона.';
