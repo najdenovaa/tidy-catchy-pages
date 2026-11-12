@@ -1,4 +1,4 @@
-import {simulateMovingPlug} from './moving-plug';
+import {evaluatePlugBench,plugBenchKey} from './plug-bench';
 import { allowedReportFigure, type ReportScope, type ReportSelection, type ReportItem } from "./cementing-report-options";
 import { reportSeriesPlot } from "./report-series-plot";
 import { calculateCasingRunning, normalizeRunningSettings } from "./casing-running-analysis";
@@ -31,8 +31,11 @@ function sceneSvg(title: string, polygons: Polygon[], width: number, height: num
 export function buildCementingReportSvgs(w: WellData, extras: CementingReportExtras, scope:ReportScope="cementing", selection?:ReportSelection): ReportSvg[] {
   const images: ReportSvg[] = [];
   if(scope==='cementing'&&w.stopStorage?.plugBenchEnabled&&w.stopStorage.plugBenchCase&&selection?.plugBenchmark===true){
-    const bench=simulateMovingPlug(w.stopStorage.plugBenchCase),key=JSON.stringify(bench.input),tag=(f:ReportSvg)=>({...f,sourceKey:key});
+    const bench=evaluatePlugBench(w.stopStorage)!,key=plugBenchKey(w.stopStorage),tag=(f:ReportSvg)=>({...f,sourceKey:key});
     if(bench.samples.length>1){images.push(tag(reportSeriesPlot('Стенд поршня: положение (не скважина)','plugBenchmark',bench.samples.map(p=>p.timeSec),'Время, с','Положение, м',[{name:'Поршень',color:'#4f46e5',values:bench.samples.map(p=>p.xM)}])),tag(reportSeriesPlot('Стенд поршня: давления (не скважина)','plugBenchmark',bench.samples.map(p=>p.timeSec),'Время, с','Давление, МПа',[{name:'Сзади',color:'#ef4444',values:bench.samples.map(p=>p.backMPa)},{name:'Впереди',color:'#0284c7',values:bench.samples.map(p=>p.aheadMPa)}])));}
+    const spatial=bench.spatial,frame=spatial?.frames.at(-1);
+    if(frame){const x=frame.massKg.flatMap((_,i)=>[frame.facesM[i],frame.facesM[i+1]]);images.push(tag(reportSeriesPlot('Стенд ALE: состав, t='+frame.timeSec.toFixed(3)+' с (пассивная метка)','plugBenchmark',x,'Координата стенда, м','Массовая доля',[{name:'Исходная сзади',color:'#327de6',values:frame.fractions.flatMap(f=>[f[0],f[0]])},{name:'Метка',color:'#e6463c',values:frame.fractions.flatMap(f=>[f[1],f[1]])},{name:'Впереди',color:'#a0aab4',values:frame.fractions.flatMap(f=>[f[2],f[2]])}])));}
+
   }
   const transport=extras.compressibleTransport;
   if(scope==='cementing'&&transport?.frames.length){

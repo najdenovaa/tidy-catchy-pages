@@ -29,7 +29,7 @@ export default function PumpingSchedule({input,result,transportResult,onTranspor
  {result&&<FluidInventoryPanel result={result}/>}
  <StopStoragePanel result={result?.stopStorage}/>
  <PvtHydrostaticsPanel result={result?.pvtHydrostatics}/>
- <MovingPlugBench enabled={input.wellData.stopStorage?.plugBenchEnabled} input={input.wellData.stopStorage?.plugBenchCase}/>
+ <MovingPlugBench enabled={input.wellData.stopStorage?.plugBenchEnabled} input={input.wellData.stopStorage?.plugBenchCase} aleEnabled={input.wellData.stopStorage?.plugAleEnabled} cells={input.wellData.stopStorage?.plugAleCells} switchSec={input.wellData.stopStorage?.plugAleSwitchSec}/>
  <CompressibleTransportPanel input={input} cachedResult={transportResult} onResult={onTransportResult}/>
  </div>;
 }

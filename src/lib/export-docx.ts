@@ -1,4 +1,5 @@
-import {simulateMovingPlug,normalizeMovingPlugCase,MOVING_PLUG_FIELDS} from './moving-plug';
+import {MOVING_PLUG_FIELDS} from './moving-plug';
+import {evaluatePlugBench,plugBenchKey} from './plug-bench';
 import {transportInputKey} from "./compressible-transport";
 import {buildProcessContract,type ProcessContract} from "./cementing-process";
 import {rheologyReportFluids} from "./rheology-report";
@@ -993,10 +994,12 @@ export async function exportToDocx(
   if(wellData.stopStorage?.plugBenchEnabled&&reportIncludes(selection,'plugBenchmark')){
     const config=wellData.stopStorage.plugBenchCase,content:any[]=[sectionTitle('Проверочный стенд движения поршня (не скважина)')];
     if(!config)content.push(noteParagraph('Не задан самостоятельный эталонный сценарий стенда.'));
-    else{const bench=simulateMovingPlug(config),last=bench.samples.at(-1),first=bench.samples[0];content.push(noteParagraph(bench.reason),kvTable(MOVING_PLUG_FIELDS.map(([key,label])=>({label,value:String(bench.input[key])}))) as any,
+    else{const bench=evaluatePlugBench(wellData.stopStorage)!,last=bench.samples.at(-1),first=bench.samples[0];content.push(noteParagraph(bench.reason),kvTable(MOVING_PLUG_FIELDS.map(([key,label])=>({label,value:String(bench.input[key])}))) as any,
       kvTable([{label:'Достижение заданного упора',value:bench.landingTimeSec===null?'Не достигнут':fmt(bench.landingTimeSec,6)+' с'},{label:'Максимальная пошаговая невязка массы',value:bench.maxMassResidualKg.toExponential(3)+' кг'}]) as any,...bench.limitations.map(noteParagraph));
       if(first&&last)content.push(gridTable(['Камера','Исходно, кг','Подача, кг','Возврат, кг','Осталось, кг'],[['Сзади',fmt(first.backMassKg,6),fmt(last.injectedKg,6),'0',fmt(last.backMassKg,6)],['Впереди',fmt(first.aheadMassKg,6),'0',fmt(last.returnedKg,6),fmt(last.aheadMassKg,6)]]) as any);
-      if(options?.extras?.figures?.some(f=>f.reportItem==='plugBenchmark'&&f.sourceKey!==JSON.stringify(bench.input)))content.push(noteParagraph('Устаревшие иллюстрации стенда исключены: параметры изменились.'));
+      if(bench.spatial){const sp=bench.spatial;content.push(sectionTitle('Перенос пассивной метки на движущейся сетке'),noteParagraph(sp.reason),noteParagraph('Траектория и давления заданы двухкамерной моделью; метка имеет те же плотность и K, что жидкость сзади, и не влияет на движение. Это не распределённый расчёт гидравлики скважины. Фронт численно размывается апвиндом первого порядка.'),kvTable([{label:'Ячеек на камеру / подача метки с',value:String(sp.cellsPerChamber)+' / '+fmt(sp.switchSec,3)+' с'},{label:'Принятые шаги / кадры просмотра',value:String(sp.acceptedSteps)+' / '+String(sp.frames.length)},{label:'Максимальная компонентная невязка',value:sp.frames.length?sp.maxComponentResidualKg.toExponential(3)+' кг':'Не определена'},{label:'Максимальная геометрическая невязка',value:sp.frames.length?sp.maxGeometricResidualM3.toExponential(3)+' м³':'Не определена'}]) as any);
+        if(sp.frames.length)content.push(gridTable(['Компонент','Исходно, кг','Подача, кг','Возврат, кг','Осталось, кг'],['Исходная сзади','Метка подачи','Жидкость впереди'].map((name,j)=>[name,fmt(sp.initialKg[j],6),fmt(sp.injectedKg[j],6),fmt(sp.returnedKg[j],6),fmt(sp.retainedKg[j],6)])) as any);}
+      if(options?.extras?.figures?.some(f=>f.reportItem==='plugBenchmark'&&f.sourceKey!==plugBenchKey(wellData.stopStorage)))content.push(noteParagraph('Устаревшие иллюстрации стенда исключены: параметры изменились.'));
     }add('plugBenchmark','Проверочный стенд движения поршня',content);
   }
 
@@ -1047,7 +1050,7 @@ export async function exportToDocx(
   add('pressureTable','План продавки',pressureProfileContent);
   add('chartData','Числовые данные графиков',chartsDataContent);
   add('woc','ОЗЦ',buildWOCPage(wellData,slurries));
-  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='compressibleTransport'||!!freshTransport)&&(f.reportItem!=='plugBenchmark'||wellData.stopStorage?.plugBenchEnabled&&f.sourceKey===JSON.stringify(normalizeMovingPlugCase(wellData.stopStorage.plugBenchCase))))}:undefined;
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='compressibleTransport'||!!freshTransport)&&(f.reportItem!=='plugBenchmark'||wellData.stopStorage?.plugBenchEnabled&&f.sourceKey===plugBenchKey(wellData.stopStorage)))}:undefined;
   const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});

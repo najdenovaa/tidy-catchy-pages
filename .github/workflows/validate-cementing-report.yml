@@ -8,6 +8,10 @@ on:
       - 'src/lib/transport-refinement*'
       - 'src/lib/transport-mesh*'
       - 'src/lib/moving-plug*'
+      - 'src/lib/ale-transport*'
+      - 'src/lib/plug-ale*'
+      - 'src/lib/plug-bench*'
+      - 'src/components/PlugSpatialView*'
       - 'src/lib/__tests__/moving-plug-report.test.ts'
       - 'src/lib/__tests__/compressible-report.test.ts'
       - 'src/lib/export-docx.ts'
@@ -100,6 +104,8 @@ jobs:
           assert "Достижение заданного упора" in plug_text and "Камера" in plug_text
           assert any("Стенд поршня: положение" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
           assert any("Стенд поршня: давления" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
+          assert "Максимальная геометрическая невязка" in plug_text
+          assert any("Стенд ALE: состав" in " ".join(p.get_text().split()) and p.get_image_info() for p in plug)
           print("Rendered", len(doc), "A4 pages; approval-column separation", round(right.x0 - left.x0), "pt; model page", model.number + 1)
           preview = Image.new("RGB", (1000, 710), "white")
           for i, page in enumerate([title, model]):
