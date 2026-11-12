@@ -30,7 +30,7 @@ function sceneSvg(title: string, polygons: Polygon[], width: number, height: num
 }
 export function buildCementingReportSvgs(w: WellData, extras: CementingReportExtras, scope:ReportScope="cementing", selection?:ReportSelection): ReportSvg[] {
   const images: ReportSvg[] = [];
-  if(scope==='cementing'&&w.stopStorage?.plugBenchEnabled&&w.stopStorage.plugBenchCase&&selection?.plugBenchmark!==false){
+  if(scope==='cementing'&&w.stopStorage?.plugBenchEnabled&&w.stopStorage.plugBenchCase&&selection?.plugBenchmark===true){
     const bench=simulateMovingPlug(w.stopStorage.plugBenchCase),key=JSON.stringify(bench.input),tag=(f:ReportSvg)=>({...f,sourceKey:key});
     if(bench.samples.length>1){images.push(tag(reportSeriesPlot('Стенд поршня: положение (не скважина)','plugBenchmark',bench.samples.map(p=>p.timeSec),'Время, с','Положение, м',[{name:'Поршень',color:'#4f46e5',values:bench.samples.map(p=>p.xM)}])),tag(reportSeriesPlot('Стенд поршня: давления (не скважина)','plugBenchmark',bench.samples.map(p=>p.timeSec),'Время, с','Давление, МПа',[{name:'Сзади',color:'#ef4444',values:bench.samples.map(p=>p.backMPa)},{name:'Впереди',color:'#0284c7',values:bench.samples.map(p=>p.aheadMPa)}])));}
   }

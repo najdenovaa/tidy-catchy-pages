@@ -6,11 +6,12 @@ import {join} from 'node:path';
 import {flowFixture} from '@/test/fixtures/compressible-flow';
 import {movingPlugReference} from '../moving-plug';
 import {buildCementingReportSvgs} from '../cementing-report-figures';
-import {defaultReportSelection} from '../cementing-report-options';
+import {defaultReportSelection,reportIncludes} from '../cementing-report-options';
 import {exportToDocx} from '../export-docx';
 import {calculateVolumes,calculatePressureProfile} from '../cementing-calculations';
 it('exports independent benchmark inputs and actual figures; rejects stale figures and honors selection',async()=>{
  const p=flowFixture();p.wellData.stopStorage={...p.wellData.stopStorage,plugBenchEnabled:true,plugBenchCase:movingPlugReference()};
+ expect(defaultReportSelection('cementing').plugBenchmark).toBe(false);expect(reportIncludes(undefined,'plugBenchmark')).toBe(false);expect(buildCementingReportSvgs(p.wellData,{}).some(f=>f.reportItem==='plugBenchmark')).toBe(false);
  const selection=Object.fromEntries(Object.keys(defaultReportSelection('cementing')).map(k=>[k,k==='plugBenchmark']));const svgs=buildCementingReportSvgs(p.wellData,{},'cementing',selection);expect(svgs).toHaveLength(2);for(const f of svgs)expect(f.svg).not.toMatch(/NaN|Infinity/);
  const dir=process.env.REPORT_QA_DIR;let figures:any[]=[];if(dir){mkdirSync(dir,{recursive:true});svgs.forEach((f,i)=>writeFileSync(join(dir,`plug-bench-${i}.svg`),f.svg));if(process.env.REPORT_QA_RASTER)figures=svgs.map((f,i)=>({...f,dataUrl:'data:image/png;base64,'+readFileSync(join(dir,`plug-bench-${i}.png`)).toString('base64')}));}
  const volumes=calculateVolumes(p.wellData,p.slurries),pressureResult=calculatePressureProfile(p.wellData,p.slurries,p.buffers,p.drillingFluid,p.displacementFluids,p.fractureGradient,volumes.displacementVolumeWithCompression);
