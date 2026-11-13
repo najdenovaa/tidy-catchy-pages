@@ -10,6 +10,7 @@ export const centralizerPlacementText = (p:CentralizerPlacement) => `${p.role ==
 export function centralizerLayoutErrors(depth:number, intervals:CentralizerInterval[]):string[] {
   if(!intervals.some(x=>x.pattern))return [];
   const errors:string[]=[];
+  if(!intervals.some(x=>x.centralizersPerJoint>0))errors.push('Расстановка А/Б пуста: задайте количество изделий больше нуля.');
   if(!Number.isFinite(depth)||depth<=0||depth>20000)errors.push('Для А/Б глубина колонны должна быть больше 0 и не более 20 000 м.');
   if(new Set(intervals.map(x=>x.id)).size!==intervals.length)errors.push('Идентификаторы интервалов не должны повторяться.');
   const sorted=[...intervals].sort((a,b)=>a.fromMD-b.fromMD);

@@ -94,10 +94,10 @@ jobs:
           assert "Изделие Альфа" in ab_text and "Изделие Бета" in ab_text and "АБ" in ab_text
           assert sum(bool(p.get_image_info()) for p in ab) >= 2, "A/B product diagrams missing"
           assert all(abs(p.rect.width - 595.3) < 2 for p in ab)
-          for role, model in [("А", "Изделие Альфа"), ("Б", "Изделие Бета")]:
-              assert any((role + ": " + model) in " ".join(p.get_text().split()) and p.get_image_info() for p in ab), model
+          for role, productName in [("А", "Изделие Альфа"), ("Б", "Изделие Бета")]:
+              assert any((role + ": " + productName) in " ".join(p.get_text().split()) and p.get_image_info() for p in ab), productName
           ab_preview = Image.new("RGB", (1000, 710), "white")
-          model_pages = [next(p for p in ab if (role + ": " + model) in " ".join(p.get_text().split()) and p.get_image_info()) for role, model in [("А", "Изделие Альфа"), ("Б", "Изделие Бета")]]
+          model_pages = [next(p for p in ab if (role + ": " + productName) in " ".join(p.get_text().split()) and p.get_image_info()) for role, productName in [("А", "Изделие Альфа"), ("Б", "Изделие Бета")]]
           for i, page in enumerate(model_pages):
               pix = page.get_pixmap(matrix=fitz.Matrix(.83,.83), alpha=False)
               ab_preview.paste(Image.frombytes("RGB",(pix.width,pix.height),pix.samples),(i*500,0))

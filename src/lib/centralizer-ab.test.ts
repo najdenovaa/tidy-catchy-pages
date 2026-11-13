@@ -31,7 +31,7 @@ describe('F34 actual A/B installation contract',()=>{
   });
   it('preserves legacy installation positions and refuses missing B / overlapping / fractional multiple counts',()=>{
     const old=iv({toMD:25,pattern:undefined,specB:undefined});expect(buildCentralizerJointSchedule(25,[old]).flatMap(r=>r.centralizerDepths)).toEqual([6,18,25]);
-    for(const xs of [[iv({specB:undefined})],[iv(),iv({id:'d',fromMD:10})],[iv({centralizersPerJoint:1.5})]]){
+    for(const xs of [[iv({specB:undefined})],[iv(),iv({id:'d',fromMD:10})],[iv({centralizersPerJoint:1.5})],[iv({centralizersPerJoint:0})]]){
       expect(centralizerLayoutErrors(120,xs).length).toBeGreaterThan(0);expect(()=>calculateCentralization(well,xs,1100)).toThrow();
       expect(calculateCasingRunning({well,intervals:xs,mudDensity:1100,pv:0,yp:0,settings:normalizeRunningSettings({})}).valid).toBe(false);
     }
