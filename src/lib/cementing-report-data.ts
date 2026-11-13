@@ -1,3 +1,5 @@
+import { buildCentralizerJointSchedule, type CentralizerJointRow } from './centralizer-layout';
+export { buildCentralizerJointSchedule } from './centralizer-layout';
 import { WELL_GEOMETRY_MODEL_VERSION } from "./well-geometry";
 import type { WellData, BufferFluid, SlurryInput, DrillingFluid, DisplacementFluid, VolumeResults } from "./cementing-calculations";
 import { calculateCentralization, autoPlaceCentralizers, type CentralizationResult, type CentralizerInterval, type CentralizerSpec, type TurbulatorPoint, type AutoPlacementInterval } from "./centralization-calculations";
@@ -10,7 +12,7 @@ export interface CentralizationReportData {
   intervals: CentralizerInterval[]; results: CentralizationResult[];
   turbPoints: TurbulatorPoint[]; autoResults?: AutoPlacementInterval[];
   selectedMD?: number; calculated: boolean;
-  joints?: { jointNum: number; topMD: number; bottomMD: number; centralizerDepths: number[] }[];
+  joints?: (Omit<CentralizerJointRow,"placements"> & {placements?:CentralizerJointRow["placements"]})[];
 }
 export interface DisplacementReportSettings { rotationRpm: number; settleMin: number; fine: boolean; }
 export interface DisplacementReportData {
@@ -28,24 +30,6 @@ export interface CementingReportExtras {
 }
 export function displacementReportKey(p: DisplacementReportInput, settings: DisplacementReportSettings) {
   return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "process-contract-v1", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes,p.flushTimeMin??0,p.flushVolumeM3??0, settings]);
-}
-export function buildCentralizerJointSchedule(depth: number, intervals: CentralizerInterval[]) {
-  const rows: NonNullable<CentralizationReportData["joints"]> = [];
-  let md = 0, jointNum = 1;
-  while (md < depth && rows.length < 50000) {
-    const iv = intervals.find(x => md >= x.fromMD && md < x.toMD);
-    const jl = iv?.jointLength && iv.jointLength > 0 ? iv.jointLength : 12;
-    const bottom = Math.min(md + jl, depth), points: number[] = [];
-    const cpj = iv?.centralizersPerJoint ?? 0;
-    if (cpj >= 1) {
-      for (let j = 1; j <= Math.min(20, Math.floor(cpj)); j++)
-        points.push(Math.round(md + (bottom - md) * j / (Math.floor(cpj) + 1)));
-    } else if (cpj > 0 && (jointNum - 1) % Math.max(1, Math.round(1 / cpj)) === 0)
-      points.push(Math.round((md + bottom) / 2));
-    rows.push({ jointNum: jointNum++, topMD: Math.round(md), bottomMD: Math.round(bottom), centralizerDepths: points });
-    md = bottom;
-  }
-  return rows;
 }
 export function resolveCentralizationReport(data: CentralizationReportData | null, w: WellData, mudDensity: number) {
   if (!data?.calculated) return null;

@@ -91,10 +91,10 @@ export function equipmentDetails(e: EquipmentSelection): string {
 export function centralizerInventory(depth: number, intervals: CentralizerInterval[]) {
   const rows = buildCentralizerJointSchedule(depth, intervals);
   const groups = new Map<string, { model: string; manufacturer: string; quantity: number; sourceUrl?: string }>();
-  for (const row of rows) for (const md of row.centralizerDepths) {
-    const iv = intervals.find(x => row.topMD >= x.fromMD && row.topMD < x.toMD); if (!iv) continue;
-    const p = iv.spec.passport, model = p?.model || iv.spec.type, manufacturer = p?.manufacturer || 'не указан';
-    const key = model + '|' + manufacturer + '|' + (iv.spec.libraryReference?.entryId??'') + '|' + (iv.spec.libraryReference?.revision??''), g = groups.get(key) ?? { model, manufacturer, quantity: 0, sourceUrl: p?.sourceUrl };
+  for (const row of rows) for (const placement of row.placements) {
+    const spec=placement.spec;
+    const p = spec.passport, model = p?.model || spec.type, manufacturer = p?.manufacturer || 'не указан';
+    const key = model + '|' + manufacturer + '|' + (spec.libraryReference?.entryId??'') + '|' + (spec.libraryReference?.revision??''), g = groups.get(key) ?? { model, manufacturer, quantity: 0, sourceUrl: p?.sourceUrl };
     g.quantity++; groups.set(key, g);
   }
   return [...groups.values()];

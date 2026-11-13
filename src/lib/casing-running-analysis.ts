@@ -1,3 +1,4 @@
+import { centralizerLayoutErrors } from './centralizer-layout';
 import { boreDiameterAtDepth } from "./well-geometry";
 /** Casing running: each broomstick point is a NEW bottom-to-top equilibrium.
  * Soft-string force balance: Johancsik et al.; survey angles in radians, forces kN.
@@ -77,14 +78,13 @@ function prepare(input: CasingRunningInput) {
   const {well:w,settings:s}=input;
   const schedule=buildCentralizerJointSchedule(w.casingDepthMD,input.intervals);
   const tools:Tool[]=[];let unknown=0;
-  for(const row of schedule) for(const md of row.centralizerDepths) {
-    const iv=input.intervals.find(x=>row.topMD>=x.fromMD&&row.topMD<x.toMD);
-    if(!iv)continue;
-    const p=iv.spec.passport;
+  for(const row of schedule) for(const placement of row.placements) {
+    const {md,spec}=placement;
+    const p=spec.passport;
     const force=p?.runningForceKgf!==undefined&&Number.isFinite(p.runningForceKgf)&&p.runningForceKgf>=0?p.runningForceKgf:undefined;
     if(force===undefined)unknown++;
     tools.push({targetMD:md,runningKN:force===undefined?s.centralizerRunningKN:force*.00980665,
-      od:iv.spec.type==='spring'?(p?.ringOD??w.casingOD):(p?.outerDiameter??w.casingOD+2*iv.spec.bladeHeight),rigid:iv.spec.type!=='spring'});
+      od:spec.type==='spring'?(p?.ringOD??w.casingOD):(p?.outerDiameter??w.casingOD+2*spec.bladeHeight),rigid:spec.type!=='spring'});
   }
   const centralizerCount=tools.length;
   for(const p of input.turbPoints??[])if(p.md>0&&p.md<=w.casingDepthMD)tools.push({targetMD:p.md,runningKN:s.turbulatorRunningKN,od:w.casingOD+2*p.bladeHeight,rigid:true});
@@ -166,6 +166,7 @@ export function calculateCasingRunning(input:CasingRunningInput):CasingRunningAn
   if(w.trajectory.some((p,i)=>!Number.isFinite(p.md)||!Number.isFinite(p.zenith)||!Number.isFinite(p.azimuth)||p.md<0||p.zenith<0||p.zenith>180||(i>0&&p.md<=w.trajectory[i-1].md)))errors.push('Инклинометрия: нужны конечные углы и возрастающие MD без дублей.');
   if(w.casingSections?.some(x=>!(x.wallThickness>0&&2*x.wallThickness<w.casingOD)))errors.push('Недопустимая толщина в секциях колонны.');
   const empty:CasingRunningAnalysis={valid:false,errors,notes,broom:[],profile:[],final:null,firstCompressionMD:null,firstCapacityMD:null,firstPassageConflictMD:null,maxPullKN:0,maxPullMD:0,maxBendingMPa:0,maxCombinedMPa:0,yieldMPa:s.grade==='K-55'?379:s.grade==='P-110'?758:552,internalVolumeM3:0,steelDisplacementM3:0,centralizerCount:0,unknownRunningCount:0,calibration:null};
+  errors.push(...centralizerLayoutErrors(w.casingDepthMD,input.intervals));
   if(errors.length)return empty;
   if(w.trajectory.length<2)notes.push('Инклинометрия отсутствует: принята вертикальная скважина.');
   else if(w.trajectory[w.trajectory.length-1].md<w.casingDepthMD)notes.push('Ниже последнего замера продолжены последние зенит и азимут.');

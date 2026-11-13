@@ -1,3 +1,4 @@
+import { CENTRALIZER_PATTERNS, centralizerAtResult, centralizerLayoutErrors, centralizerPlacementText } from '@/lib/centralizer-layout';
 import { centralizerMaterialGeometryKey } from "@/lib/materials-equipment-inventory";
 import { boreDiameterAtDepth } from "@/lib/well-geometry";
 import ReportContentsDialog from "./ReportContentsDialog";
@@ -370,10 +371,12 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   const casingID = wellData.casingOD - 2 * wellData.casingWall;
 
   const addInterval = useCallback(() => {
+    setResults(null); onResultsChange?.(null);
     setIntervals(prev => [...prev, newInterval(wellData.casingDepthMD)]);
   }, [wellData.casingDepthMD]);
 
   const removeInterval = useCallback((id: string) => {
+    setResults(null); onResultsChange?.(null);
     setIntervals(prev => prev.filter(iv => iv.id !== id));
   }, []);
 
@@ -389,6 +392,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
 
   const applyPreset = useCallback((id: string, type: CentralizerType) => {
     const p = centralizerPresets[type];
+    setResults(null); onResultsChange?.(null);
     setIntervals(prev => prev.map(iv => iv.id === id ? {
       ...iv,
       spec: { type, bladesCount: p.bladesCount!, bladeHeight: p.bladeHeight!, restoringForce: p.restoringForce!, maxAxialLoad: p.maxAxialLoad! },
@@ -407,7 +411,10 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
     });
   }, []);
 
+  const layoutErrors=centralizerLayoutErrors(wellData.casingDepthMD,intervals);
+
   const handleCalculateManual = useCallback(() => {
+    if(centralizerLayoutErrors(wellData.casingDepthMD,intervals).length)return;
     const res = calculateCentralization(wellData, intervals, mudDensity, undefined, turbPoints.length > 0 ? turbPoints : undefined);
     setResults(res);
     setAutoResults(null);
@@ -600,11 +607,26 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                   </div>
 
                 </div>
+                <label className="block text-xs">Последовательность изделий
+                  <select aria-label={`Последовательность интервала ${idx+1}`} className="block bg-background border border-input rounded p-2 mt-1" value={iv.pattern??'A'} onChange={e=>updateInterval(iv.id,{pattern:e.target.value==='A'?undefined:e.target.value as CentralizerInterval['pattern']})}>
+                    <option value="A">Только А</option>{CENTRALIZER_PATTERNS.map(p=><option key={p} value={p}>{p.replace(/A/g,'А').replace(/B/g,'Б')}</option>)}
+                  </select>
+                </label>
+                {iv.pattern&&<p className="text-xs text-muted-foreground">Повтор от меньшей MD к большей; заново в каждом интервале, по каждому изделию. Строки ведомости делятся на границах интервалов и не заменяют трубную меру.</p>}
+                <p className="text-xs font-semibold">Изделие А</p>
                 <CentralizerPassportFields spec={iv.spec} casingOD={wellData.casingOD} onChange={spec => updateInterval(iv.id, { spec })} />
+                {iv.pattern&&<fieldset className="border border-border rounded p-3 space-y-2"><legend className="text-xs font-semibold">Изделие Б</legend>
+                  <label className="block text-xs">Тип изделия Б<select aria-label={`Тип изделия Б интервала ${idx+1}`} className="block bg-background border border-input rounded p-2" value={iv.specB?.type??''} onChange={e=>{const type=e.target.value as CentralizerType;const p=centralizerPresets[type];if(p)updateInterval(iv.id,{specB:{type,bladesCount:p.bladesCount!,bladeHeight:p.bladeHeight!,restoringForce:p.restoringForce!,maxAxialLoad:p.maxAxialLoad!}});}}>
+                    <option value="" disabled>Выберите тип и паспорт Б</option>{(Object.keys(centralizerTypeLabels) as CentralizerType[]).map(t=><option key={t} value={t}>{centralizerTypeLabels[t]}</option>)}
+                  </select></label>
+                  {iv.specB&&<CentralizerPassportFields spec={iv.specB} casingOD={wellData.casingOD} onChange={specB=>updateInterval(iv.id,{specB})}/>}
+                </fieldset>}
                 {iv.spec.passport && (!iv.spec.passport.restoringForceKgf || !iv.spec.passport.restoringStandoff) && <CentralizerCatalogPreview spec={iv.spec} wellData={wellData} fromMD={iv.fromMD} toMD={iv.toMD} />}
               </div>
             ))}
-            <Button disabled={intervals.some(iv => passportWarnings(iv.spec, wellData.casingOD).length > 0)} onClick={handleCalculateManual} className="w-full gap-2">
+            {intervals.some(x=>x.pattern)&&<p className="text-xs text-muted-foreground">А/Б: профиль от первой до последней фактической опоры. Прогиб концевых свесов, передача моментов между пролётами и перераспределение реакций при касании не рассчитаны.</p>}
+            {layoutErrors.map((e,i)=><p key={i} className="text-xs text-destructive" role="alert">{e}</p>)}
+            <Button disabled={layoutErrors.length>0||intervals.some(iv => passportWarnings(iv.spec, wellData.casingOD).length > 0 || (iv.pattern&&iv.specB&&passportWarnings(iv.specB,wellData.casingOD).length>0))} onClick={handleCalculateManual} className="w-full gap-2">
               <Calculator className="w-4 h-4" /> Рассчитать центрирование
             </Button>
           </CardContent>
@@ -877,12 +899,14 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             </Card>
           </div>
 
+          {results.some(r=>r.centralizerRole)&&<details className="border border-border rounded p-3 text-xs"><summary>А/Б: метод расчёта и ограничения</summary><ul className="space-y-1 mt-2">{[...new Set(results.flatMap(r=>r.calculationAssumptions??[]))].map(note=><li key={note}>{note}</li>)}</ul></details>}
           {selectedResult && (() => {
-            const spec = autoResults ? autoSpec : intervals.find(iv => iv.id === selectedResult.intervalId)?.spec;
-            const cased = selectedResult.md <= (wellData.prevCasingDepth || 0) && wellData.prevCasingID > 0;
+            const supportResult=selectedResult.centralizerMD===undefined?selectedResult:results.find(r=>Math.abs(r.md-selectedResult.centralizerMD!)<1e-7)??selectedResult;
+            const spec = autoResults ? autoSpec : centralizerAtResult(intervals,supportResult);
+            const cased = supportResult.md <= (wellData.prevCasingDepth || 0) && wellData.prevCasingID > 0;
             const currentIntervals = autoResults ? autoResults.map((iv, i) => ({ id: String(i), fromMD: iv.fromMD, toMD: iv.toMD, jointLength: autoJointLength, centralizersPerJoint: iv.centralizersPerJoint, spec: autoSpec })) : intervals;
-            const currentResult = calculateCentralization(wellData, currentIntervals, mudDensity, undefined, undefined, {fromMD:selectedResult.md, toMD:selectedResult.md})[0];
-            return spec && currentResult ? <div className="space-y-2"><label className="text-sm">Выберите глубину для 3D<select aria-label="Глубина 3D" className="block bg-background border border-input rounded p-2" value={selectedResult.md} onChange={e => setSelectedMD(+e.target.value)}>{results.map(r => <option key={r.md} value={r.md}>{r.md} м MD</option>)}</select></label><Centralizer3DInspector targetStandoff={mode === 'auto' ? calculatedTarget ?? undefined : undefined} spec={spec} result={currentResult} azimuth={trajectoryAzimuth(wellData.trajectory, currentResult.md)} casingID={casingID} casingOD={wellData.casingOD} boreDiameter={boreDiameterAtDepth(wellData,currentResult.md)} cased={cased} /></div> : null;
+            const currentResult = calculateCentralization(wellData, currentIntervals, mudDensity, undefined, undefined, {fromMD:supportResult.md, toMD:supportResult.md})[0];
+            return spec && currentResult ? <div className="space-y-2"><label className="text-sm">Выберите глубину для 3D<select aria-label="Глубина 3D" className="block bg-background border border-input rounded p-2" value={selectedResult.md} onChange={e => setSelectedMD(+e.target.value)}>{results.map(r => <option key={r.md} value={r.md}>{r.md} м MD</option>)}</select></label>{supportResult.centralizerRole&&<p className="text-xs">На выбранной MD показано сечение трубы; 3D изделия {supportResult.centralizerRole==='A'?'А':'Б'}: {spec.passport?.model||spec.type}, фактическая опора MD {Number(supportResult.md.toFixed(3))} м.</p>}<Centralizer3DInspector targetStandoff={mode === 'auto' ? calculatedTarget ?? undefined : undefined} spec={spec} result={currentResult} azimuth={trajectoryAzimuth(wellData.trajectory, currentResult.md)} casingID={casingID} casingOD={wellData.casingOD} boreDiameter={boreDiameterAtDepth(wellData,currentResult.md)} cased={cased} /></div> : null;
           })()}
           {/* Cross-section preview */}
           <Card>
@@ -1002,13 +1026,13 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                   <span>Таблица спуска — расстановка центраторов</span>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-normal text-muted-foreground">
-                      Всего Ф: <span className="text-primary font-bold">{jointSchedule.filter(j => j.hasCentralizer).length} шт.</span>
-                      {' '}/ {jointSchedule.length} труб
+                      Всего Ф: <span className="text-primary font-bold">{jointSchedule.reduce((n,j)=>n+j.centralizerDepths.length,0)} шт.</span>
+                      {' '}/ {jointSchedule.length} участков; А: {jointSchedule.flatMap(j=>j.placements).filter(p=>p.role==='A').length}, Б: {jointSchedule.flatMap(j=>j.placements).filter(p=>p.role==='B').length}
                     </span>
                     <CopyImageButton targetRef={jointScheduleTableRef} label="Копировать" />
                   </div>
                 </CardTitle>
-                <p className="text-[10px] text-muted-foreground">Спуск с устья. Ф — установить центратор на указанной глубине.</p>
+                <p className="text-[10px] text-muted-foreground">От устья к забою. А/Б и модель указаны у каждой глубины. Для смешанной расстановки строки разделяются на границах интервалов.</p>
               </CardHeader>
               <CardContent className="p-0">
                 <div ref={jointScheduleTableRef} className="max-h-[500px] overflow-auto">
@@ -1032,7 +1056,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                             {j.hasCentralizer ? <span className="text-primary font-bold text-sm">Ф</span> : <span className="text-muted-foreground">—</span>}
                           </TableCell>
                           <TableCell className="text-xs px-2 py-1 font-medium">
-                            {j.centralizerDepths.length > 0 ? j.centralizerDepths.map(d => `${d} м`).join(", ") : ""}
+                            {j.centralizerDepths.length > 0 ? j.placements.map(centralizerPlacementText).join("; ") : ""}
                           </TableCell>
                         </TableRow>
                       ))}

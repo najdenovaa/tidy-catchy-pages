@@ -31,3 +31,22 @@ it('оставляет кнопки расчёта активными для П�
   await choose('AVRORA 205 · ОК 168 · OD 254');expect(button('Рассчитать расстановку').disabled).toBe(false);
  }finally{await act(async()=>root.unmount());host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();}
 });
+
+it('А/Б требует второго изделия, передаёт его в расчёт и сбрасывает результат при смене шаблона',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
+ vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(null);
+ const {getCementingExample}=await import('@/lib/cementing-example');
+ const well={...getCementingExample().wellData,casingDepthMD:120,pumpZoneTop:0,pumpZoneBottom:0};
+ const computed=vi.fn(),host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+ const button=()=>Array.from(host.querySelectorAll('button')).find(b=>b.textContent?.includes('Рассчитать центрирование'))!;
+ const select=async(label:string,value:string)=>{const el=host.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;await act(async()=>{el.value=value;el.dispatchEvent(new Event('change',{bubbles:true}));});};
+ try{
+  await act(async()=>root.render(<CentralizationSection wellData={well} mudDensity={1100} onResultsChange={computed}/>));
+  await select('Последовательность интервала 1','AAB');expect(button().disabled).toBe(true);expect(host.textContent).toContain('выберите изделие Б');
+  await select('Тип изделия Б интервала 1','spring');expect(button().disabled).toBe(false);
+  await act(async()=>button().click());
+  const values=computed.mock.lastCall![0];expect(values.some(r=>r.centralizerRole==='B')).toBe(true);expect(host.textContent).toContain('А/Б: метод расчёта');
+  await select('Последовательность интервала 1','AB');expect(computed.mock.lastCall![0]).toBeNull();expect(host.textContent).not.toContain('А/Б: метод расчёта');
+ }finally{await act(async()=>root.unmount());host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();}
+});

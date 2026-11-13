@@ -1,3 +1,4 @@
+import { centralizerAtResult, centralizerPlacementText, buildCentralizerJointSchedule } from './centralizer-layout';
 import {equipmentReferenceText,centralizerSignature} from "./equipment-library-reference";
 import { boreDiameterAtDepth } from "./well-geometry";
 import { centralizerInventory } from "./cementing-equipment";
@@ -19,16 +20,20 @@ export function centralizerReportSamples(w: WellData, data: CentralizationReport
   const withSupport = data.results.filter(r => r.hasCentralizer);
   const pool = withSupport.length ? withSupport : data.results;
   if (!pool.length) return [];
-  const chosen = [pool.reduce((a, b) => a.standoff < b.standoff ? a : b),
+  const supportSamples=data.results.filter(r=>r.centralizerMD!==undefined&&Math.abs(r.md-r.centralizerMD)<1e-7);
+  const representatives=['A','B'].flatMap(role=>{const a=supportSamples.filter(r=>r.centralizerRole===role);return a.length?[a.reduce((a,b)=>a.standoff<b.standoff?a:b)]:[];});
+  const chosen = [...representatives, pool.reduce((a, b) => a.standoff < b.standoff ? a : b),
     pool.reduce((a, b) => (a.supportEccentricity ?? a.eccentricity) > (b.supportEccentricity ?? b.eccentricity) ? a : b),
     ...(data.selectedMD !== undefined ? [pool.reduce((a, b) => Math.abs(a.md - data.selectedMD!) < Math.abs(b.md - data.selectedMD!) ? a : b)] : [])];
   return [...new Map(chosen.map(r => [r.md, r])).values()].map(result => {
     const interval = data.intervals.find(x => x.id === result.intervalId) ??
       data.intervals.find(x => result.md >= x.fromMD && result.md <= x.toMD);
     if (!interval) return null;
-    return { result, spec: interval.spec, bore: localBore(w, result.md), azimuth: trajectoryAzimuth(w.trajectory ?? [], result.md),
-      geometry: inspectCentralizer(interval.spec, w.casingOD, localBore(w, result.md), result.supportEccentricity ?? result.eccentricity) };
-  }).filter((x): x is NonNullable<typeof x> => !!x);
+    if(result.centralizerMD!==undefined) result=data.results.find(r=>Math.abs(r.md-result.centralizerMD!)<1e-7)??result;
+    const spec=centralizerAtResult(data.intervals,result)??interval.spec;
+    return { result, spec, bore: localBore(w, result.md), azimuth: trajectoryAzimuth(w.trajectory ?? [], result.md),
+      geometry: inspectCentralizer(spec, w.casingOD, localBore(w, result.md), result.supportEccentricity ?? result.eccentricity) };
+  }).filter((x): x is NonNullable<typeof x> => !!x).filter((x,i,a)=>a.findIndex(y=>Math.abs(y.result.md-x.result.md)<1e-7)===i);
 }
 export function buildCementingReportExtras(w:WellData,extras:CementingReportExtras={},scope:ReportScope='cementing',selection?:ReportSelection):(Paragraph|Table)[] {
  const out:(Paragraph|Table)[]=[],yes=(key:Parameters<typeof reportIncludes>[1])=>reportIncludes(selection,key);
@@ -38,19 +43,24 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
    ['Колонна, наружный диаметр / стенка, мм',f(w.casingOD)+' / '+f(w.casingWall)],['Проектная глубина башмака MD, м',f(w.casingDepthMD)],
    ['Ствол / проход предыдущей колонны, мм',f(w.holeDiameter)+' / '+f(w.prevCasingID)],['Башмак предыдущей колонны MD, м',f(w.prevCasingDepth)],
  ]),reportDataTable(['MD, м','TVD, м','Зенит, °','Азимут, °'],w.trajectory.map(t=>[f(t.md,1),f(t.tvd,1),f(t.zenith,1),f(t.azimuth,1)])));
- if(scope!=='cementing'&&c&&yes('materials'))out.push(h('Ведомость оснастки'),reportDataTable(['Наименование','Количество, шт.'],centralizerInventory(w.casingDepthMD,c.intervals).map(x=>[x.model,String(x.quantity)])));
- if(scope!=='cementing'&&c&&yes('inputs'))for(const iv of c.intervals)if(iv.spec.libraryReference)out.push(p((iv.spec.passport?.model||iv.spec.type)+'; MD '+f(iv.fromMD,1)+'-'+f(iv.toMD,1)+' м; '+equipmentReferenceText(iv.spec.libraryReference,centralizerSignature(iv.spec))));
+ if(scope!=='cementing'&&c&&yes('materials'))out.push(h('Ведомость оснастки'),reportDataTable(['Наименование / изготовитель','Количество, шт.'],centralizerInventory(w.casingDepthMD,c.intervals).map(x=>[x.model+'; '+x.manufacturer,String(x.quantity)])));
+ if(scope!=='cementing'&&c&&yes('inputs'))for(const iv of c.intervals){
+   const products=[{role:'А',spec:iv.spec},...(iv.pattern&&iv.specB?[{role:'Б',spec:iv.specB}]:[])];
+   for(const {role,spec} of products)if(spec.libraryReference)out.push(p(role+': '+(spec.passport?.model||spec.type)+'; MD '+f(iv.fromMD,1)+'-'+f(iv.toMD,1)+' м; '+equipmentReferenceText(spec.libraryReference,centralizerSignature(spec))));
+ }
  if(scope==='centralization'&&c){
    if(yes('inputs'))out.push(h('Задание на центрирование'),p('Режим: '+(c.mode==='auto'?'по целевому Standoff':'ручная расстановка')+'; целевой Standoff '+(c.targetStandoff===undefined?'не задан':f(c.targetStandoff,1)+'%')+'. На опоре и в пролёте оцениваются разные значения.'));
    if(yes('placement')){
-     out.push(h('Расстановка центраторов'),reportDataTable(['От MD, м','До MD, м','Наименование','шт./трубу','Длина трубы, м'],c.intervals.map(x=>[f(x.fromMD,1),f(x.toMD,1),x.spec.passport?.model||x.spec.type,f(x.centralizersPerJoint),f(x.jointLength,1)])));
-     if(c.joints?.length)out.push(h('Потрубная ведомость установки оснастки'),reportDataTable(['№ трубы','Кровля MD, м','Подошва MD, м','Центраторы MD, м'],c.joints.map(x=>[String(x.jointNum),f(x.topMD,1),f(x.bottomMD,1),x.centralizerDepths.join('; ')||'-'])));
+     out.push(h('Расстановка центраторов'),reportDataTable(['От MD, м','До MD, м','Наименование','шт./трубу','Длина трубы, м'],c.intervals.map(x=>[f(x.fromMD,1),f(x.toMD,1),'А: '+(x.spec.passport?.model||x.spec.type)+(x.pattern?'; Б: '+(x.specB?.passport?.model||x.specB?.type||'не задано')+'; '+x.pattern.replace(/A/g,'А').replace(/B/g,'Б'):''),f(x.centralizersPerJoint),f(x.jointLength,1)])));
+     const joints=buildCentralizerJointSchedule(w.casingDepthMD,c.intervals);
+     if(joints.length)out.push(h(c.intervals.some(x=>x.pattern)?'Установка А/Б по участкам (границы интервалов разделяют строки)':'Потрубная ведомость установки оснастки'),reportDataTable(['№ участка','Кровля MD, м','Подошва MD, м','Изделие / MD, м'],joints.map(x=>[String(x.jointNum),f(x.topMD,1),f(x.bottomMD,1),x.placements.map(centralizerPlacementText).join('; ')||'-'])));
      if(c.turbPoints.length)out.push(h('Расстановка турбулизаторов'),reportDataTable(['Наименование','MD, м'],c.turbPoints.map(x=>['Турбулизатор',f(x.md,1)])));
    }
+   if(yes('loads'))out.push(...[...new Set(c.results.flatMap(r=>r.calculationAssumptions??[]))].map(p));
    if(yes('loads'))out.push(h('Нагрузки, прогибы и зазоры по глубине'),reportDataTable(['MD, м','На опоре, %','В пролёте, %','Нагрузка, кН','Прогиб трубы, мм','Перегрузка'],c.results.map(r=>[f(r.md,1),f(100*(1-(r.supportEccentricity??r.eccentricity)),1),f(r.standoff,1),f(r.lateralLoadKN),f(r.spanSagMM),r.supportOverloaded===undefined?'Не оценено':r.supportOverloaded?'Да':'Нет'])));
    if(yes('clearance'))for(const x of centralizerReportSamples(w,c)){
      if(!x.geometry)continue;const g=x.geometry;
-     out.push(h('Контрольное сечение оснастки на MD '+f(x.result.md,1)+' м'),p('Расчётный проход '+f(x.bore)+' мм; смещение '+f(g.offset)+' мм; зазор труба-стенка '+f(g.minPipeGap)+'-'+f(g.maxPipeGap)+' мм.'),
+     out.push(h('Контрольное сечение '+(x.result.centralizerRole==='B'?'Б':x.result.centralizerRole==='A'?'А':'оснастки')+': '+(x.spec.passport?.model||x.spec.type)+' на MD '+f(x.result.md,1)+' м'),p('Расчётный проход '+f(x.bore)+' мм; смещение '+f(g.offset)+' мм; зазор труба-стенка '+f(g.minPipeGap)+'-'+f(g.maxPipeGap)+' мм.'),
        reportDataTable(['Планка','Монтаж, мм','От нагрузки, мм','Сжатие, мм','Зазор / конфликт, мм'],g.blades.map(b=>[String(b.index),f(b.mountingCompression),f(b.loadCompression),f(b.compression),f(b.gap)])),
        p('Отрицательный зазор означает геометрический конфликт. Прогиб рессор на опоре не включает прогиб трубы в пролёте.'));
    }
