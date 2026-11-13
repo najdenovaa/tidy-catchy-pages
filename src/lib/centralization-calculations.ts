@@ -1,3 +1,4 @@
+import { buildMixedSupportProfile } from './centralizer-mixed-response';
 import { createAnnularGeometry, boreDiameterAtDepth } from "./well-geometry";
 import { centralizerDeflection, centralizerModelNotes } from "./centralizer-response";
 // Centralization / eccentricity calculation engine
@@ -24,6 +25,8 @@ export interface CentralizerInterval {
   centralizersPerJoint: number; // кол-во центраторов на трубу
   jointLength: number;      // длина трубы, м (обычно 10-12 м)
   spec: CentralizerSpec;
+  pattern?: import('./centralizer-layout').CentralizerPattern;
+  specB?: CentralizerSpec;
 }
 
 export interface TurbulatorInterval {
@@ -187,6 +190,8 @@ export interface CentralizationResult {
   md: number;
   tvd: number;
   zenith: number;
+  centralizerRole?: 'A'|'B';
+  centralizerMD?: number;
   calculationAssumptions?: string[];
   supportEccentricity?: number;
   lateralLoadKN?: number;
@@ -316,7 +321,19 @@ export function calculateCentralization(
 
   const mdStart = range ? Math.max(0, Math.ceil(range.fromMD / step) * step) : 0;
   const mdEnd = range ? Math.min(wellData.casingDepthMD, range.toMD) : wellData.casingDepthMD;
-  for (let md = mdStart; md <= mdEnd; md += step) {
+  const mixed = intervals.some(x=>x.pattern) ? buildMixedSupportProfile(wellData.casingDepthMD, intervals, wellData.casingOD, EI,
+    md => boreDiameterAtDepth(wellData,md), md => {
+      const {zenith}=interpolateTrajectory(wellData.trajectory,md);
+      const tension=wpm*bf*Math.max(0,wellData.casingDepthMD-md)*Math.cos(zenith*Math.PI/180);
+      return lateralForceWithDLS(wpm,bf,zenith,tension,calcDLS(wellData.trajectory,md)*Math.PI/180/30);
+    }) : null;
+  const depths=new Set<number>();
+  for(let md=mdStart;md<=mdEnd;md+=step)depths.add(md);
+  if(mixed){
+    for(const md of mixed.depths)if(md>=(range?.fromMD??0)&&md<=mdEnd)depths.add(md);
+    if(range&&range.fromMD===range.toMD)depths.add(range.fromMD);
+  }
+  for (const md of [...depths].sort((a,b)=>a-b)) {
     const { tvd, zenith } = interpolateTrajectory(wellData.trajectory, md);
 
     const boreDia_mm = geometry.at(md)?.diameterMm ?? boreDiameterAtDepth(wellData,md);
@@ -394,6 +411,9 @@ export function calculateCentralization(
       const geometricStandoff = Math.max(0, Math.min(1, (od - wellData.casingOD) / (boreDia_mm - wellData.casingOD)));
       eccentricity = Math.max(eccentricity, 1 - geometricStandoff);
     }
+    const actual=mixed?.at(md);
+    if(mixed&&!actual)continue;
+    if(actual) { eccentricity=actual.eccentricity; hasCentralizer=!!actual.placement; spanLength=actual.spanM; }
     const standoff = (1 - eccentricity) * 100;
 
     results.push({
@@ -402,16 +422,18 @@ export function calculateCentralization(
       zenith,
       eccentricity: Math.round(eccentricity * 1000) / 1000,
       standoff: Math.round(standoff * 10) / 10,
-      calculationAssumptions: support && interval ? centralizerModelNotes(interval.spec) : undefined,
-      supportEccentricity: support ? support.supportMM / rc_mm_local : undefined,
-      lateralLoadKN: support?.loadKN,
-      spanSagMM: support?.sagMM,
+      centralizerRole: actual?.placement?.role,
+      centralizerMD: actual?.placement?.md,
+      calculationAssumptions: actual?.notes ?? (support && interval ? centralizerModelNotes(interval.spec) : undefined),
+      supportEccentricity: actual ? actual.supportEccentricity : support ? support.supportMM / rc_mm_local : undefined,
+      lateralLoadKN: actual?.loadKN ?? support?.loadKN,
+      spanSagMM: actual?.sagMM ?? support?.sagMM,
       supportSpanM: hasCentralizer ? spanLength : undefined,
-      supportOverloaded: support?.exceeded,
+      supportOverloaded: actual?.exceeded ?? support?.exceeded,
       hasCentralizer,
       hasTurbulizer,
       turbulenceMultiplier: turbMult,
-      intervalId: interval?.id ?? null,
+      intervalId: actual?.placement?.intervalId ?? interval?.id ?? null,
     });
   }
 

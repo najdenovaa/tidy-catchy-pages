@@ -1,3 +1,4 @@
+import { CENTRALIZER_PATTERNS } from './centralizer-layout';
 import type {CentralizerSpec,CentralizerInterval} from './centralization-calculations';
 export interface EquipmentLibraryReference {entryId:string;revision:number;source:string;basis:'passport'|'catalog'|'user';notes:string;appliedAt:string;signature:string}
 export function normalizeEquipmentReference(v:unknown):EquipmentLibraryReference|undefined{
@@ -31,6 +32,6 @@ export function normalizeCentralizerDesign(v:unknown):CentralizerDesign|undefine
  if(!v||typeof v!=='object')return;const d=v as CentralizerDesign,autoSpec=normalizeLibraryCentralizer(d.autoSpec);
  if(!autoSpec||!['manual','auto'].includes(d.mode)||!Number.isFinite(d.targetStandoff)||d.targetStandoff<10||d.targetStandoff>99||!Number.isFinite(d.jointLength)||d.jointLength<=0||!Array.isArray(d.intervals)||d.intervals.length>2000)return;
  const intervals:CentralizerInterval[]=[];
- for(const x of d.intervals){const spec=normalizeLibraryCentralizer(x?.spec);if(!spec||typeof x.id!=='string'||!['fromMD','toMD','centralizersPerJoint','jointLength'].every(k=>typeof x[k]==='number'&&Number.isFinite(x[k])&&x[k]>=0))return;intervals.push({id:x.id,fromMD:x.fromMD,toMD:x.toMD,centralizersPerJoint:x.centralizersPerJoint,jointLength:x.jointLength,spec});}
+ for(const x of d.intervals){const spec=normalizeLibraryCentralizer(x?.spec);if(!spec||typeof x.id!=='string'||!['fromMD','toMD','centralizersPerJoint','jointLength'].every(k=>typeof x[k]==='number'&&Number.isFinite(x[k])&&x[k]>=0))return;const specB=x.specB===undefined?undefined:normalizeLibraryCentralizer(x.specB);if(x.specB!==undefined&&!specB)return;if(x.pattern!==undefined&&!CENTRALIZER_PATTERNS.includes(x.pattern))return;intervals.push({id:x.id,fromMD:x.fromMD,toMD:x.toMD,centralizersPerJoint:x.centralizersPerJoint,jointLength:x.jointLength,spec,...(specB?{specB}:{}),...(x.pattern?{pattern:x.pattern}:{})});}
  return {mode:d.mode,targetStandoff:d.targetStandoff,jointLength:d.jointLength,autoSpec,intervals};
 }

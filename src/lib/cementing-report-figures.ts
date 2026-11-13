@@ -57,7 +57,7 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
     const free = g.blades.map(b => bladeCurve(g,b,'free').map(camera));
     const boreLines:number[][][]=[-.8,.8].map(z=>Array.from({length:65},(_,i)=>camera([g.boreRadius*Math.cos(i*Math.PI/32),g.boreRadius*Math.sin(i*Math.PI/32),z*g.length])));
     for(let i=0;i<4;i++){const a=i*Math.PI/2;boreLines.push([camera([g.boreRadius*Math.cos(a),g.boreRadius*Math.sin(a),-.8*g.length]),camera([g.boreRadius*Math.cos(a),g.boreRadius*Math.sin(a),.8*g.length])]);}
-    const title = "Центратор на MD " + s.result.md.toFixed(1) + " м; зенит " + s.result.zenith.toFixed(1) + "°; прогиб ×6";
+    const title = "Центратор на MD " + s.result.md.toFixed(1) + " м" + (s.result.centralizerRole ? "; " + (s.result.centralizerRole === "B" ? "Б: " : "А: ") + (s.spec.passport?.model || s.spec.type) : "") + "; зенит " + s.result.zenith.toFixed(1) + "°; прогиб ×6";
     images.push({ title, width: 720, height: 650, svg: sceneSvg(title, polygons, 720, 650, free, boreLines) });
     const scale = 120 / g.boreRadius, cy = 175, cx = 260;
     const bladeLines = g.blades.map(b => {

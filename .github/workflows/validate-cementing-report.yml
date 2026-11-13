@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths:
       - 'src/lib/*report*'
+      - 'src/lib/centralizer-*'
+      - 'src/lib/centralization-*'
+      - 'src/lib/casing-running-*'
       - 'src/lib/export-docx.ts'
       - 'src/lib/cement-recipe-designer.ts'
       - 'src/lib/cement-mineral-extenders*'
@@ -50,11 +53,12 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/centralization-report.docx" "$REPORT_QA_DIR/running-report.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/ab-centralization.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
@@ -85,6 +89,20 @@ jobs:
               assert required in text and forbidden not in text and "SECRET-PASSPORT-NOTE" not in text
               assert any(p.get_image_info() for p in scoped), stem + " missing figures"
               assert all(abs(p.rect.width - 595.3) < 2 for p in scoped)
+          ab = fitz.open(d / "ab-centralization.pdf")
+          ab_text = " ".join(" ".join(p.get_text().split()) for p in ab)
+          assert "Изделие Альфа" in ab_text and "Изделие Бета" in ab_text and "АБ" in ab_text
+          assert sum(bool(p.get_image_info()) for p in ab) >= 2, "A/B product diagrams missing"
+          assert all(abs(p.rect.width - 595.3) < 2 for p in ab)
+          for role, model in [("А", "Изделие Альфа"), ("Б", "Изделие Бета")]:
+              assert any((role + ": " + model) in " ".join(p.get_text().split()) and p.get_image_info() for p in ab), model
+          ab_preview = Image.new("RGB", (1000, 710), "white")
+          model_pages = [next(p for p in ab if (role + ": " + model) in " ".join(p.get_text().split()) and p.get_image_info()) for role, model in [("А", "Изделие Альфа"), ("Б", "Изделие Бета")]]
+          for i, page in enumerate(model_pages):
+              pix = page.get_pixmap(matrix=fitz.Matrix(.83,.83), alpha=False)
+              ab_preview.paste(Image.frombytes("RGB",(pix.width,pix.height),pix.samples),(i*500,0))
+          ab_preview.save(d / "ab-preview.png", optimize=True)
+          print("AB_QA_PNG=" + base64.b64encode((d / "ab-preview.png").read_bytes()).decode())
           print("Rendered", len(doc), "A4 pages; approval-column separation", round(right.x0 - left.x0), "pt; model page", model.number + 1)
           preview = Image.new("RGB", (1000, 710), "white")
           for i, page in enumerate([title, model]):
@@ -108,3 +126,6 @@ jobs:
             /tmp/cementing-report-qa/running-report.docx
             /tmp/cementing-report-qa/running-report.pdf
             /tmp/cementing-report-qa/fleet-layout.svg
+            /tmp/cementing-report-qa/ab-centralization.docx
+            /tmp/cementing-report-qa/ab-centralization.pdf
+            /tmp/cementing-report-qa/ab-preview.png
