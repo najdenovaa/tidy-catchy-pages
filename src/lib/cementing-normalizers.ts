@@ -1,3 +1,4 @@
+import {normalizePressureObservation} from './pressure-observation';
 import {normalizeStopStorage} from "./stop-storage";
 import { normalizeCentralizerDesign } from "./equipment-library-reference";
 import { normalizeFluidLibraryReference } from "./fluid-library-reference";
@@ -206,6 +207,7 @@ export function normalizeWellData(value: unknown): WellData {
   return {
     ...(caliperLog?{caliperLog}:{}),
     equipment: normalizeEquipment(source.equipment),
+    ...(source.pressureObservation!==undefined?{pressureObservation:normalizePressureObservation(source.pressureObservation)}:{}),
     ...(normalizeStopStorage(source.stopStorage)?{stopStorage:normalizeStopStorage(source.stopStorage)}:{}),
     ...(normalizeCentralizerDesign(source.centralizerDesign)?{centralizerDesign:normalizeCentralizerDesign(source.centralizerDesign)}:{}),
     ...(source.runningSettings ? { runningSettings: normalizeRunningSettings(source.runningSettings) } : {}),

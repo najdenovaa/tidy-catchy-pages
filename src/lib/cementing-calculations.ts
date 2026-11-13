@@ -1,3 +1,4 @@
+import {pressureObservationKey,resolveObservationDepth,observationBounds,observationNote,type PressureObservation,type PressureObservationRequest} from './pressure-observation';
 import {evaluateStopStorage,type StopStorageResult} from "./stop-storage";
 import { FluidInventory, type InventorySummary } from "./fluid-inventory";
 import {buildProcessContract,type ProcessContract} from "./cementing-process";
@@ -151,6 +152,7 @@ export interface ReservoirLayer {
 }
 
 export interface WellData {
+  pressureObservation?:PressureObservationRequest;
   stopStorage?:import("./stop-storage").StopStorageSettings;
   centralizerDesign?: import("./equipment-library-reference").CentralizerDesign;
   runningSettings?: import("./casing-running-analysis").CasingRunningSettings;
@@ -1272,6 +1274,7 @@ export interface DepthEnvelopePoint {
 }
 
 export interface PressureProfileResult {
+  observation?:PressureObservation;
   stopStorage?:StopStorageResult;
   processContract?:ProcessContract;
   processEvents?:ProcessContract["events"];
@@ -1303,6 +1306,7 @@ export function calculatePressureProfile(
   opts: { fast?: boolean } = {},
 ): PressureProfileResult {
   const rheologyErrors=rheologyInputErrors({drillingFluid,slurries,buffers,displacementFluids});if(rheologyErrors.length)throw new Error(rheologyErrors.join("\n"));
+  const observationSourceKey=wellData.pressureObservation&&!opts.fast?pressureObservationKey(wellData,slurries,buffers,drillingFluid,displacementFluids,fractureGradient,displacementVol,flushTimeMin,flushVolumeM3):undefined;
   const points: PressurePoint[] = [];
   slurries = slurries.map((s) => ({
     ...s,
@@ -1987,7 +1991,25 @@ export function calculatePressureProfile(
   ]};
   const stopStorage=evaluateStopStorage(wellData,points.at(-1)?.transportColumns,processContract.fluids,lastPoint?.fluidId,plugLanded&&Math.abs(cumDisplacementVol-geometricPlugVolume)<1e-6);
 
-  return { stopStorage,inventory:inventoryResult,processContract,processAudit,processEvents, points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope,
+  let observation:PressureObservation|undefined;
+  if(!opts.fast&&wellData.pressureObservation){
+    observation={sourceKey:observationSourceKey!,status:'unavailable',request:wellData.pressureObservation,issues:[],rows:[],poreSource:'Не определено',limitSource:'Не определено',note:observationNote};
+    try{
+      const target=resolveObservationDepth(wellData.pressureObservation,wellData,traj);observation.depthMD=target.md;observation.depthTVD=target.tvd;Object.assign(observation,observationBounds(wellData,target.md,target.tvd,fractureGradient));
+      if(!isRealTrajectory(wellData.trajectory))observation.issues.push('Использован условный профиль MD/TVD из глубин скважины, а не измеренная инклинометрия.');
+      if(traj.some((p,i)=>i>0&&p.tvd<traj[i-1].tvd))throw new Error('Профиль содержит восходящий участок. Текущая гидростатическая модель для выбранной глубины требует неубывающую TVD.');
+      const rows=points.map(frame=>{
+        const columns=frame.transportColumns?.annulus;if(!columns?.length)throw new Error('В кадре отсутствует расчётный состав затрубья; пересчитайте программу.');
+        const segs:AnnSeg[]=columns.map(c=>{const fluid=processContract.fluids.find(f=>f.id===c.fluidId),r=c.fluidId==='mud:initial'?mudRheo:fluid?effectiveRheology(fluid.rheology,fluid.kind==='cement'?cementCategory(fluid.densityKgM3/1000):fluid.kind==='buffer'?'buffer':fluid.kind==='displacement'?'displacement':'mud'):undefined;if(!r)throw new Error('Не найдены свойства жидкости '+c.fluidId);return {topMD:c.topMD,bottomMD:c.botMD,density:c.fluidId==='mud:initial'?drillingFluid.density:fluid!.densityKgM3,pv:r.pv,yp:r.yp,hb:hbOf(r)};});
+        let covered=0;for(const seg of [...segs].sort((a,b)=>a.topMD-b.topMD)){if(Math.abs(seg.topMD-covered)>1e-6||seg.bottomMD<=seg.topMD)throw new Error('Разрыв или перекрытие состава затрубья.');covered=seg.bottomMD;}if(Math.abs(covered-wellData.casingDepthMD)>1e-5)throw new Error('Состав затрубья не покрывает колонну.');
+        const rate=frame.shoeRateLps;if(rate===undefined||!Number.isFinite(rate)||rate<0)throw new Error('В кадре не задан расход через башмак.');
+        const hydrostaticMPa=hydroFromColumn(segs.map(s=>({top:s.topMD,bot:s.bottomMD,rho:s.density/1000})),target.md),frictionMPa=annFrictionAbove(rate*.06,target.md,segs).pressureMPa,pressureMPa=hydrostaticMPa+frictionMPa;
+        return {timeMin:frame.time,stage:frame.stage,hydrostaticMPa,frictionMPa,pressureMPa,ecdGcm3:target.tvd>1e-6?pressureMPa/(.00981*target.tvd):null,staticEcdGcm3:target.tvd>1e-6?hydrostaticMPa/(.00981*target.tvd):null,annularRateLps:rate};
+      });
+      if(rows.some(r=>![r.timeMin,r.hydrostaticMPa,r.frictionMPa,r.pressureMPa,r.annularRateLps,...(r.ecdGcm3===null?[]:[r.ecdGcm3,r.staticEcdGcm3!])].every(Number.isFinite)))throw new Error('Нечисловое состояние наблюдения.');observation.rows=rows;observation.status='ready';
+    }catch(e){observation.issues.push(e instanceof Error?e.message:String(e));}
+  }
+  return { observation,stopStorage,inventory:inventoryResult,processContract,processAudit,processEvents, points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope,
     basketStop: wellData.equipment?.some(e => e.kind === "basket" && e.quantity > 0) ? evaluateBasketStop(wellData, annColumn(), fractureGradient) : undefined };
 }
 

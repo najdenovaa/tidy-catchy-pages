@@ -1,3 +1,4 @@
+import {pressureObservationKey} from './pressure-observation';
 import {buildProcessContract,type ProcessContract} from "./cementing-process";
 import {rheologyReportFluids} from "./rheology-report";
 import {rheologyDescription,rheologyResolution,rheologyMetrics} from "./cement-rheology";
@@ -1007,8 +1008,13 @@ export async function exportToDocx(
   add('risks','Оценка рисков',riskContent);
   add('pressureTable','План продавки',pressureProfileContent);
   add('chartData','Числовые данные графиков',chartsDataContent);
+  const selectedDepthKey=pressureObservationKey(wellData,slurries,buffers,drillingFluid,displacementFluids,fractureGradient,volumes.displacementVolumeWithCompression,preComputed?.flushTimeMin??10,preComputed?.flushVolumeM3??0);
+  const freshObservation=pressureResult.observation?.sourceKey===selectedDepthKey?pressureResult.observation:undefined;
+  if(freshObservation){const r=freshObservation,content:any[]=[sectionTitle('Давление и ЭЦП на выбранной глубине'),kvTable([{label:'Запрошенная глубина',value:r.request.valueM+' м '+r.request.coordinate},{label:'MD / TVD',value:r.depthMD===undefined?'Не определено':fmt(r.depthMD,4)+' / '+fmt(r.depthTVD!,4)+' м'},{label:'Состояние расчёта',value:r.status==='ready'?'Рассчитан временной ряд':'Не рассчитано'},{label:'Источник пластового давления',value:r.poreSource},{label:'ГРП/поглощение и допустимый предел',value:r.limitSource}]) as any,...r.issues.map(noteParagraph),noteParagraph(r.note)];if(r.status==='ready'){content.push(kvTable([{label:'Пластовое / ГРП / поглощение / предел 95%, МПа',value:[r.poreMPa,r.fractureMPa,r.absorptionMPa,r.limitMPa].map(v=>v===undefined?'Не задано':fmt(v,5)).join(' / ')},{label:'Кадров временного ряда',value:String(r.rows.length)},{label:'Максимальное давление в затрубье, МПа',value:fmt(Math.max(...r.rows.map(p=>p.pressureMPa)),6)},{label:'Максимальная ЭЦП, г/см³',value:r.rows.some(p=>p.ecdGcm3!==null)?fmt(Math.max(...r.rows.map(p=>p.ecdGcm3??0)),6):'Не определяется при TVD около нуля'}]) as any);if(reportIncludes(selection,'chartData'))content.push(gridTable(['Время, мин','Этап','Гидрост., МПа','Трение, МПа','Давление, МПа','ЭЦП, г/см³'],r.rows.map(p=>[fmt(p.timeMin,5),p.stage,fmt(p.hydrostaticMPa,6),fmt(p.frictionMPa,6),fmt(p.pressureMPa,6),p.ecdGcm3===null?'Не определяется':fmt(p.ecdGcm3,6)])) as any);}add('selectedDepth','Давление и ЭЦП на выбранной глубине',content);}
+
   add('woc','ОЗЦ',buildWOCPage(wellData,slurries));
-  const reportExtras=options?.extras;
+  if(!freshObservation&&wellData.pressureObservation)add('selectedDepth','Давление и ЭЦП на выбранной глубине',[sectionTitle('Давление и ЭЦП на выбранной глубине'),noteParagraph('Нет актуального расчёта для выбранной глубины и исходных данных. Пересчитайте программу; прежние значения и рисунки исключены.')]);
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)}:undefined;
   const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});
