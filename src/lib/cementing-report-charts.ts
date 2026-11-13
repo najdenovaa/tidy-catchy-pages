@@ -33,13 +33,3 @@ export function stopStorageReportCharts(r:import('./stop-storage').StopStorageRe
  if(r?.status!=='ready')return [];
  return [reportSeriesPlot('Дополнительная подача после посадки пробки','stopStorage',r.curve.map(p=>p.injectedReferenceM3*1000),'Дополнительная подача в исходном состоянии, л','Прирост давления ΔP, МПа',[{name:'Замкнутая труба над ЦКОД',color:'#4f46e5',values:r.curve.map(p=>p.pressureRiseMPa)}])];
 }
-
-export function pvtHydrostaticReportCharts(r:import('./pvt-hydrostatics').PvtHydrostaticResult|undefined){
- if(r?.status!=='ready')return [];
- const curves=[reportSeriesPlot('PVT-гидростатика по кадрам закачки','pvtHydrostatics',r.curve.map(p=>p.timeMin),'Время основного расчёта, мин','Гидростатика у башмака, МПа',[
- {name:'PVT при фиксированных границах',color:'#4f46e5',values:r.curve.map(p=>p.annularBottomMPa)},
- {name:'Постоянная плотность',color:'#64748b',values:r.curve.map(p=>p.constantAnnularBottomMPa),dash:'4 4'}])];
- const p=r.finalAnnulus;
- if(p.length)curves.push(reportSeriesPlot('PVT-гидростатика: профиль затрубья на Стоп','pvtHydrostatics',[p[0].topMD,...p.map(c=>c.bottomMD)],'Глубина MD, м','Давление, МПа',[{name:'PVT: затрубье',color:'#4f46e5',values:[p[0].topPressureMPa,...p.map(c=>c.bottomPressureMPa)]}],{depth:true}));
- return curves;
-}

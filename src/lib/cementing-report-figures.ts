@@ -1,4 +1,3 @@
-import {evaluatePlugBench,plugBenchKey} from './plug-bench';
 import { allowedReportFigure, type ReportScope, type ReportSelection, type ReportItem } from "./cementing-report-options";
 import { reportSeriesPlot } from "./report-series-plot";
 import { calculateCasingRunning, normalizeRunningSettings } from "./casing-running-analysis";
@@ -30,38 +29,6 @@ function sceneSvg(title: string, polygons: Polygon[], width: number, height: num
 }
 export function buildCementingReportSvgs(w: WellData, extras: CementingReportExtras, scope:ReportScope="cementing", selection?:ReportSelection): ReportSvg[] {
   const images: ReportSvg[] = [];
-  if(scope==='cementing'&&w.stopStorage?.plugBenchEnabled&&w.stopStorage.plugBenchCase&&selection?.plugBenchmark===true){
-    const bench=evaluatePlugBench(w.stopStorage)!,key=plugBenchKey(w.stopStorage),tag=(f:ReportSvg)=>({...f,sourceKey:key});
-    if(bench.samples.length>1){images.push(tag(reportSeriesPlot('Стенд поршня: положение (не скважина)','plugBenchmark',bench.samples.map(p=>p.timeSec),'Время, с','Положение, м',[{name:'Поршень',color:'#4f46e5',values:bench.samples.map(p=>p.xM)}])),tag(reportSeriesPlot('Стенд поршня: давления (не скважина)','plugBenchmark',bench.samples.map(p=>p.timeSec),'Время, с','Давление, МПа',[{name:'Сзади',color:'#ef4444',values:bench.samples.map(p=>p.backMPa)},{name:'Впереди',color:'#0284c7',values:bench.samples.map(p=>p.aheadMPa)}])));}
-    const spatial=bench.spatial,frame=spatial?.frames.at(-1);
-    if(frame){const x=frame.massKg.flatMap((_,i)=>[frame.facesM[i],frame.facesM[i+1]]);images.push(tag(reportSeriesPlot('Стенд ALE: состав, t='+frame.timeSec.toFixed(3)+' с (пассивная метка)','plugBenchmark',x,'Координата стенда, м','Массовая доля',[{name:'Исходная сзади',color:'#327de6',values:frame.fractions.flatMap(f=>[f[0],f[0]])},{name:'Метка',color:'#e6463c',values:frame.fractions.flatMap(f=>[f[1],f[1]])},{name:'Впереди',color:'#a0aab4',values:frame.fractions.flatMap(f=>[f[2],f[2]])}])));}
-
-    const hf=bench.hydraulics?.frames.at(-1),hn=bench.hydraulics?.cellsPerChamber;
-    if(hf&&hn){
-      for(const [start,end,name,color] of [[0,hn,'сзади','#ef4444'],[hn,2*hn,'впереди','#0284c7']] as const){const indices=Array.from({length:end-start},(_,j)=>start+j);images.push(tag(reportSeriesPlot('Стенд: локальное давление '+name+', t='+hf.timeSec.toFixed(3)+' с','plugBenchmark',indices.flatMap(i=>[hf.facesM[i],hf.facesM[i+1]]),'Координата стенда, м','Давление, МПа',[{name:'Заданная траектория',color,values:indices.flatMap(i=>[hf.pressuresMPa[i],hf.pressuresMPa[i]])}])));}
-      images.push(tag(reportSeriesPlot('Стенд: лабораторная скорость, t='+hf.timeSec.toFixed(3)+' с','plugBenchmark',hf.facesM,'Координата стенда, м','Скорость, м/с',[{name:'Жидкость',color:'#059669',values:hf.laboratoryVelocityMps}])));
-    }
-
-    const coupled=bench.coupled,cf=coupled?.frames.at(-1),cn=coupled?.cellsPerChamber;
-    if(coupled&&cf&&cn){
-      images.push(tag(reportSeriesPlot('Связанный стенд: движение и посадка','plugBenchmark',coupled.frames.map(f=>f.timeSec),'Время, с','Положение, м',[{name:'Связанная траектория',color:'#7c3aed',values:coupled.frames.map(f=>f.xM)}])));
-      for(const [start,end,name,color] of [[0,cn,'сзади','#ef4444'],[cn,2*cn,'впереди','#0284c7']] as const){const indices=Array.from({length:end-start},(_,j)=>start+j);images.push(tag(reportSeriesPlot('Связанный стенд: давление '+name+', t='+cf.timeSec.toFixed(3)+' с','plugBenchmark',indices.flatMap(i=>[cf.facesM[i],cf.facesM[i+1]]),'Координата стенда, м','Давление, МПа',[{name:'Связанное решение',color,values:indices.flatMap(i=>[cf.pressuresMPa[i],cf.pressuresMPa[i]])}])));}
-      images.push(tag(reportSeriesPlot('Связанный стенд: скорость жидкости','plugBenchmark',cf.facesM,'Координата стенда, м','Скорость, м/с',[{name:'Жидкость',color:'#059669',values:cf.laboratoryVelocityMps}])));
-    }
-
-    if(coupled?.equipment&&coupled.trace.length>1){const e=coupled.equipment,t=coupled.trace.map(f=>f.timeSec);images.push(tag(reportSeriesPlot('Оснастка стенда: давление входа','plugBenchmark',t,'Время, с','Давление, МПа',[{name:'Принятые шаги',color:'#4f46e5',values:coupled.trace.map(f=>f.inletMPa)},{name:'Предел входа',color:'#ef4444',values:t.map(()=>e.maxInletMPa),dash:'5 4'}])),tag(reportSeriesPlot('Оснастка стенда: перепад на пробке','plugBenchmark',t,'Время, с','Сзади минус впереди, МПа',[{name:'Принятые шаги',color:'#0284c7',values:coupled.trace.map(f=>f.backWallMPa-f.aheadWallMPa)},{name:'Прямой предел',color:'#ef4444',values:t.map(()=>e.maxForwardDifferentialMPa),dash:'5 4'},{name:'Обратный предел',color:'#d97706',values:t.map(()=>-e.maxReverseDifferentialMPa),dash:'5 4'}])));}
-    const study=bench.study;
-    const geometry=(coupled??bench.hydraulics)?.geometry;
-    if(geometry){images.push(tag(reportSeriesPlot('Геометрия стенда: траектория MD/TVD','plugBenchmark',geometry.survey.map(s=>s.mdM),'MD, м','TVD вниз, м',[{name:'Траектория',color:'#0284c7',values:geometry.survey.map(s=>s.tvdM)}])),tag(reportSeriesPlot('Геометрия стенда: внутренний диаметр','plugBenchmark',geometry.sections.flatMap(s=>[s.fromM,s.toM]),'MD, м','Внутренний диаметр, мм',[{name:'Секции',color:'#7c3aed',values:geometry.sections.flatMap(s=>[s.diameterMm,s.diameterMm])}])));}
-    if(study?.rows.length===5){for(const [indices,title,xLabel,kind] of [[[0,1,2],'Сетка','Ячеек на камеру','mesh'],[[0,3,4],'Шаг времени','Максимальный шаг, с','time']] as const){const rows=indices.map(i=>study.rows[i]);if(rows.every(r=>r.status==='complete')){const landing=rows.every(r=>r.landingTimeSec!==null);images.push(tag(reportSeriesPlot('Чувствительность связи: '+title,'plugBenchmark',rows.map(r=>kind==='mesh'?r.cellsPerChamber:r.stepSec),xLabel,landing?'Посадка, с':'Макс. давление входа, МПа',[{name:landing?'Посадка':'Макс. на принятых шагах',color:'#7c3aed',values:rows.map(r=>landing?r.landingTimeSec!:r.maxInletMPa!)}])));}}}
-
-  }
-  const transport=extras.compressibleTransport;
-  if(scope==='cementing'&&transport?.frames.length){
-    images.push(reportSeriesPlot('Исследовательский 1D-перенос: давление','compressibleTransport',transport.frames.map(p=>p.timeMin),'Время, мин','Давление, МПа',[{name:'Подача',color:'#4f46e5',values:transport.frames.map(p=>p.inletMPa)},{name:'Ячейка трубы у башмака',color:'#0284c7',values:transport.frames.map(p=>p.shoeCellMPa)}]));
-    images.push(reportSeriesPlot('Исследовательский 1D-перенос: возврат','compressibleTransport',transport.frames.map(p=>p.timeMin),'Время, мин','Возврат при опорном давлении, м³',[{name:'Расчётный возврат',color:'#d97706',values:transport.frames.map(p=>p.returnedReferenceM3)}]));
-  }
-
   const c=extras.centralization;
   if(scope==='running'&&c?.running){
     const settings=normalizeRunningSettings(w.runningSettings,c.running.frictionCased,c.running.frictionOpenhole);
@@ -179,7 +146,7 @@ export async function rasterizeReportSvgs(images: ReportSvg[]): Promise<ReportFi
   return out;
 }
 
-export { pvtHydrostaticReportCharts as buildPvtHydrostaticReportSvgs,stopStorageReportCharts as buildStopStorageReportSvgs,hydraulicReportCharts as buildHydraulicReportSvgs, depthReportCharts as buildDepthPressureReportSvgs } from './cementing-report-charts';
+export { stopStorageReportCharts as buildStopStorageReportSvgs,hydraulicReportCharts as buildHydraulicReportSvgs, depthReportCharts as buildDepthPressureReportSvgs } from './cementing-report-charts';
 
 export function buildWellReportSvgs(w: WellData, slurries: SlurryInput[]): ReportSvg[] {
   const traj = getEffectiveTrajectory(w), depth = Math.max(1, w.casingDepthMD);

@@ -23,7 +23,6 @@ export interface ReportSupplement {
 }
 export interface ReportFigure { sourceKey?:string; reportItem?: import("./cementing-report-options").ReportItem; title: string; dataUrl: string; width: number; height: number; }
 export interface CementingReportExtras {
-  compressibleTransport?:import("./compressible-transport").TransportResult;
   centralization?: CentralizationReportData | null; displacement?: DisplacementReportData | null;
   figures?: ReportFigure[]; supplements?: ReportSupplement[]; warnings?: string[];
 }

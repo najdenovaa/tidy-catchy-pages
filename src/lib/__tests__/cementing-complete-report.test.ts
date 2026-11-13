@@ -13,11 +13,11 @@ import { calculateVolumes, calculatePressureProfile, type WellData } from "../ce
 import { buildDisplacementInput } from "../displacement-2d-input";
 import { simulateDisplacement2D } from "../displacement-2d";
 import { resolveCentralizationReport, displacementReportKey, type CementingReportExtras } from "../cementing-report-data";
-import { buildPvtHydrostaticReportSvgs,buildStopStorageReportSvgs,buildCementingReportSvgs, buildHydraulicReportSvgs, buildWellReportSvgs } from "../cementing-report-figures";
+import { buildStopStorageReportSvgs,buildCementingReportSvgs, buildHydraulicReportSvgs, buildWellReportSvgs } from "../cementing-report-figures";
 import { exportToDocx } from "../export-docx";
 import { REPORT_TEXT_WIDTH } from "../report-layout";
 const ex = getCementingExample();
-const w:WellData = { ...ex.wellData, stopStorage:{hydrostaticsEnabled:true,referencePressureMPa:0,surfaceBackpressureMPa:0,enabled:true,pressureRiseMPa:5,rateLps:.2,youngModulusMPa:206000,poissonRatio:.3,restraint:"fixedLength",bulkModuliMPa:{mud:2000,buffer:2000,cement:3000,displacement:2200},source:"PVT QA-056"}, wellDepthMD: 260, casingDepthMD: 250, wellDepthTVD: 241, prevCasingDepth: 60, ckodDepth: 235,
+const w:WellData = { ...ex.wellData, stopStorage:{enabled:true,pressureRiseMPa:5,rateLps:.2,youngModulusMPa:206000,poissonRatio:.3,restraint:"fixedLength",bulkModuliMPa:{mud:2000,buffer:2000,cement:3000,displacement:2200},source:"PVT QA-056"}, wellDepthMD: 260, casingDepthMD: 250, wellDepthTVD: 241, prevCasingDepth: 60, ckodDepth: 235,
   reservoirLayers: [], pumpZoneTop: 0, pumpZoneBottom: 0, trajectory: [
     { md: 0, tvd: 0, zenith: 0, azimuth: 0 }, { md: 100, tvd: 98, zenith: 16, azimuth: 100 },
     { md: 260, tvd: 241, zenith: 35, azimuth: 112 },
@@ -56,7 +56,7 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
     supplements: [{ title: "Расчёт времени контакта", paragraphs: ["Контрольный результат"], tables: [{ headers: ["MD", "Время"], rows: [["100", "6,2"]] }] }] };
   const pressure = calculatePressureProfile(reportWell, slurries, buffers, ex.drillingFluid, ex.displacementFluids,
     ex.fractureGradient, volume.displacementVolumeWithCompression);
-  const svg = [...rheologyReportFigures(dData), ...buildPvtHydrostaticReportSvgs(pressure.pvtHydrostatics),...buildStopStorageReportSvgs(pressure.stopStorage),...buildHydraulicReportSvgs(pressure.points), ...buildWellReportSvgs(reportWell, slurries), ...buildCementingReportSvgs(reportWell, extras)];
+  const svg = [...rheologyReportFigures(dData), ...buildStopStorageReportSvgs(pressure.stopStorage),...buildHydraulicReportSvgs(pressure.points), ...buildWellReportSvgs(reportWell, slurries), ...buildCementingReportSvgs(reportWell, extras)];
   expect(svg.some(f => f.title.includes("веник по глубине башмака"))).toBe(false);
   expect(svg.some(f => f.title.includes("Сечение через вершины"))).toBe(false);
   expect(svg.some(f => f.title.includes("ЭЦП во времени"))).toBe(true);
@@ -88,8 +88,8 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   expect(xml).toContain("Баланс жидкостей в скважине");
   expect(xml).toContain("Сжатие и упругость после посадки пробки");
   expect(xml).toContain("PVT QA-056");
-  expect(xml).toContain("PVT-гидростатика при фиксированных границах");
-  expect(xml).toContain("Максимальное изменение плотности");
+  expect(xml).not.toContain("PVT-гидростатика при фиксированных границах");
+  expect(xml).not.toContain("Максимальное изменение плотности");
   expect(xml).toContain("Расчётный обратимый объём");
   expect(xml).toContain("Максимальная пошаговая невязка");
   expect(xml).toContain("Физическая сжимаемость");

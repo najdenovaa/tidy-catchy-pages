@@ -1,7 +1,3 @@
-import MovingPlugBench from './MovingPlugBench';
-import CompressibleTransportPanel from "./CompressibleTransportPanel";
-import type {TransportResult} from "@/lib/compressible-transport";
-import PvtHydrostaticsPanel from "./PvtHydrostaticsPanel";
 import {useMemo} from 'react';
 import {Card,CardHeader,CardTitle,CardContent} from './ui/card';
 import {Table,TableHeader,TableHead,TableRow,TableCell,TableBody} from './ui/table';
@@ -11,7 +7,7 @@ import type {PressureProfileResult} from '@/lib/cementing-calculations';
 import FluidInventoryPanel from './FluidInventoryPanel';
 import {StopStoragePanel} from './StopStorageSection';
 /** One calculated snapshot, one schedule. Service volumes never increase well injection. */
-export default function PumpingSchedule({input,result,transportResult,onTransportResult}:{input:CementingSnapshot;result?:PressureProfileResult;transportResult?:TransportResult|null;onTransportResult?:(r:TransportResult|null)=>void}){
+export default function PumpingSchedule({input,result}:{input:CementingSnapshot;result?:PressureProfileResult}){
  const c=useMemo(()=>result?.processContract??buildProcessContract(input),[input,result]);
  let wellVolume=0;
  const rows=c.stages.map(s=>{if(s.destination==='well')wellVolume+=s.volumeM3;return {...s,wellVolume};});
@@ -28,8 +24,5 @@ export default function PumpingSchedule({input,result,transportResult,onTranspor
  </CardContent></Card>
  {result&&<FluidInventoryPanel result={result}/>}
  <StopStoragePanel result={result?.stopStorage}/>
- <PvtHydrostaticsPanel result={result?.pvtHydrostatics}/>
- <MovingPlugBench equipmentEnabled={input.wellData.stopStorage?.plugEquipmentEnabled} equipment={input.wellData.stopStorage?.plugEquipment} geometryEnabled={input.wellData.stopStorage?.plugGeometryEnabled} geometry={input.wellData.stopStorage?.plugGeometry} rheologyEnabled={input.wellData.stopStorage?.plugRheologyEnabled} backRheology={input.wellData.stopStorage?.plugBackRheology} aheadRheology={input.wellData.stopStorage?.plugAheadRheology} studyEnabled={input.wellData.stopStorage?.plugStudyEnabled} coupledEnabled={input.wellData.stopStorage?.plugCoupledEnabled} hydraulicsEnabled={input.wellData.stopStorage?.plugHydraulicsEnabled} viscosityMpas={input.wellData.stopStorage?.plugViscosityMpas} enabled={input.wellData.stopStorage?.plugBenchEnabled} input={input.wellData.stopStorage?.plugBenchCase} aleEnabled={input.wellData.stopStorage?.plugAleEnabled} cells={input.wellData.stopStorage?.plugAleCells} switchSec={input.wellData.stopStorage?.plugAleSwitchSec}/>
- <CompressibleTransportPanel input={input} cachedResult={transportResult} onResult={onTransportResult}/>
  </div>;
 }
