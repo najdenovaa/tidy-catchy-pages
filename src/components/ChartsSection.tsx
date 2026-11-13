@@ -1,3 +1,5 @@
+import SelectedDepthPressure from './SelectedDepthPressure';
+import type {PressureObservation,PressureObservationRequest} from '@/lib/pressure-observation';
 import { useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea } from "recharts";
@@ -16,6 +18,7 @@ function ScrollableChart({ children, chartRef, height }: { children: React.React
 }
 
 interface Props {
+  observation?:PressureObservation; observationRequest?:PressureObservationRequest; onObservationChange?:(r:PressureObservationRequest)=>void;
   pressureData: PressurePoint[];
   safeTime: number;
   cementStartTime: number;
@@ -30,7 +33,7 @@ interface Props {
 
 const STAGE_COLORS = ["hsl(200, 50%, 55%)", "hsl(120, 40%, 45%)", "hsl(35, 70%, 50%)", "hsl(280, 50%, 55%)", "hsl(340, 50%, 50%)"];
 
-export default function ChartsSection({ pressureData, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, envelope, prevShoeMD = 0, casingDepthMD = 0, layers }: Props) {
+export default function ChartsSection({ observation,observationRequest,onObservationChange,pressureData, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, envelope, prevShoeMD = 0, casingDepthMD = 0, layers }: Props) {
   const chartRef1 = useRef<HTMLDivElement>(null);
   const chartRef2 = useRef<HTMLDivElement>(null);
   const chartRef3 = useRef<HTMLDivElement>(null);
@@ -93,6 +96,7 @@ export default function ChartsSection({ pressureData, safeTime, cementStartTime,
         </CardContent>
       </Card>
 
+      <SelectedDepthPressure result={observation} request={observationRequest} defaultMD={casingDepthMD} onChange={onObservationChange}/>
       {/* Совмещённый график */}
       <Card>
         <CardHeader className="pb-4">

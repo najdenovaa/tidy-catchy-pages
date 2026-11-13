@@ -343,8 +343,8 @@ export default function Index() {
   );
   const avgStandoffPct = standoffProfile ? standoffProfile.reduce((a, r) => a + r.standoffPct, 0) / standoffProfile.length : 67;
   const snapWellData = useMemo(
-    () => calcSnapshot ? { ...calcSnapshot.wellData, standoffProfile, annularStandoffPct: avgStandoffPct } : null,
-    [calcSnapshot, standoffProfile, avgStandoffPct],
+    () => calcSnapshot ? { ...calcSnapshot.wellData, pressureObservation:wellData.pressureObservation, standoffProfile, annularStandoffPct: avgStandoffPct } : null,
+    [calcSnapshot, standoffProfile, avgStandoffPct,wellData.pressureObservation],
   );
 
   const pressureResult = useMemo(
@@ -411,7 +411,7 @@ export default function Index() {
       setExportStatus("Подготовка схем и 3D-кадров");
       try {
         const config=normalizeLogisticsSettings(reportWell.logistics),fleet=planLogistics(pressure,mats,snap.slurries,config);
-        const figures=[...buildStopStorageReportSvgs(pressure.stopStorage),...rheologyReportFigures(snap),...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries),...buildDepthPressureReportSvgs(pressure.envelope,selection),...buildBasketStopReportSvgs(pressure.basketStop),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),cementFleetLayoutFigure(fleet,config)].filter(x=>allowedReportFigure('cementing',selection,x));
+        const figures=[...buildStopStorageReportSvgs(pressure.stopStorage),...rheologyReportFigures(snap),...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries,pressure.observation),...buildDepthPressureReportSvgs(pressure.envelope,selection),...buildBasketStopReportSvgs(pressure.basketStop),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),cementFleetLayoutFigure(fleet,config)].filter(x=>allowedReportFigure('cementing',selection,x));
         extras.warnings!.push(...missingReportFigures("cementing",selection,figures));
         extras.figures=await rasterizeReportSvgs(figures);
       } catch(err){extras.warnings!.push('Часть изображений недоступна: '+(err instanceof Error?err.message:String(err)));}
@@ -819,7 +819,7 @@ export default function Index() {
             <TabsContent value="charts" forceMount>
               <div data-tab-content="charts">
                 {calcSnapshot && pressureResult ? (
-                  <ChartsSection pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin}
+                  <ChartsSection observation={pressureResult.observation} observationRequest={wellData.pressureObservation} onObservationChange={pressureObservation=>setWellData(w=>({...w,pressureObservation}))} pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin}
                     envelope={pressureResult.envelope} prevShoeMD={snapWellData?.prevCasingDepth ?? 0} casingDepthMD={snapWellData?.casingDepthMD ?? 0} layers={snapWellData?.reservoirLayers} />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>

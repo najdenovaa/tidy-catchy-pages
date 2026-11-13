@@ -1,9 +1,10 @@
+import type {PressureObservation} from './pressure-observation';
 import type { PressurePoint,DepthEnvelopePoint,StageBoundary } from './cementing-calculations';
 import type { ReportSelection } from './cementing-report-options';
 import { reportIncludes } from './cementing-report-options';
 import { reportSeriesPlot,type PlotSeries } from './report-series-plot';
 type P=Pick<PressurePoint,'time'|'surfacePressure'|'bottomholePressure'|'fracturePressure'|'pumpRateLps'>&Partial<PressurePoint>;
-export function hydraulicReportCharts(points:P[],selection?:ReportSelection,stages:StageBoundary[]=[]) {
+export function hydraulicReportCharts(points:P[],selection?:ReportSelection,stages:StageBoundary[]=[],observation?:PressureObservation) {
  if(!points.length)return[];
  const time=points.map(p=>p.time),series=(name:string,color:string,key:keyof P,axis?:'right'):PlotSeries=>({name,color,values:points.map(p=>typeof p[key]==='number'?p[key] as number:null),axis,curve:points[0]?.transportColumns&&(key==='pumpRateLps'||key==='annularReturnRate')?'stepBefore':undefined});
  const pressure=[series('Устье','#4f46e5','surfacePressure'),series('Забой','#0284c7','bottomholePressure'),series('ГРП','#dc2626','fracturePressure')];
@@ -18,7 +19,8 @@ export function hydraulicReportCharts(points:P[],selection?:ReportSelection,stag
  reportSeriesPlot('Рейнольдс и режим потока в затрубье','flowRegime',time,'Время, мин','Число Рейнольдса',[series('Re в затрубье','#0284c7','reynoldsAnn'),{name:'Граница перехода Re=2100',color:'#d97706',values:time.map(()=>2100),dash:'6 4'}],{stages}),
  reportSeriesPlot('Состав затрубного пространства: высоты жидкостей','annularFill',time,'Время, мин','Высота, м',[series('Буровой раствор','#a16207','annMudHeightM'),series('Буфер','#0284c7','annBufferHeightM'),series('Цемент','#64748b','annCementHeightM'),series('Продавочная жидкость','#16a34a','annDisplHeightM')],{stages}),
  ];
- return list.filter(p=>reportIncludes(selection,p.reportItem));
+ if(observation?.status==='ready'&&observation.rows.length){const r=observation,t=r.rows.map(p=>p.timeMin),at='MD '+r.depthMD!.toFixed(2)+' / TVD '+r.depthTVD!.toFixed(2)+' м';list.push(reportSeriesPlot('Давление на выбранной глубине: '+at,'selectedDepth',t,'Время, мин','Давление в затрубье, МПа',[{name:'Давление',color:'#2563eb',values:r.rows.map(p=>p.pressureMPa)},{name:'Гидростатика',color:'#38bdf8',values:r.rows.map(p=>p.hydrostaticMPa)},{name:'Пластовое: заданное',color:'#a16207',values:t.map(()=>r.poreMPa??null)},{name:'ГРП: заданное',color:'#ef4444',values:t.map(()=>r.fractureMPa??null)},{name:'Поглощение: заданное',color:'#a855f7',values:t.map(()=>r.absorptionMPa??null)},{name:'Предел 95%',color:'#dc2626',values:t.map(()=>r.limitMPa??null),dash:'5 4'}],{stages}));if(r.depthTVD!>1e-6)list.push(reportSeriesPlot('ЭЦП на выбранной глубине: '+at,'selectedDepth',t,'Время, мин','ЭЦП, г/см³',[{name:'ЭЦП',color:'#2563eb',values:r.rows.map(p=>p.ecdGcm3)},{name:'Статическая ЭЦП',color:'#38bdf8',values:r.rows.map(p=>p.staticEcdGcm3)},{name:'Пластовое в ед. плотности',color:'#a16207',values:t.map(()=>r.poreMPa===undefined?null:r.poreMPa/(.00981*r.depthTVD!))},{name:'Предел 95% в ед. плотности',color:'#dc2626',values:t.map(()=>r.limitMPa===undefined?null:r.limitMPa/(.00981*r.depthTVD!))}],{stages}));}
+ return list.filter(p=>reportIncludes(selection,p.reportItem)).map(p=>p.reportItem==='selectedDepth'?{...p,sourceKey:observation?.sourceKey}:p);
 }
 export function depthReportCharts(envelope:DepthEnvelopePoint[],selection?:ReportSelection) {
  if(!envelope.length)return[];

@@ -73,6 +73,9 @@ jobs:
           assert any("Остатки реологии" in p.get_text() and p.get_image_info() for p in doc), "Missing rheology residual plot"
           main_text = "\n".join(p.get_text() for p in doc)
           assert all(label not in main_text for label in ["Проверочный стенд движения поршня", "Исследовательский сжимаемый перенос", "PVT-гидростатика"]), "Retired research content leaked into report"
+          assert "Давление и ЭЦП на выбранной глубине" in main_text
+          assert any("Давление на выбранной глубине:" in " ".join(p.get_text().split()) and p.get_image_info() for p in doc)
+          assert any("ЭЦП на выбранной глубине:" in " ".join(p.get_text().split()) and p.get_image_info() for p in doc)
           # Passport references are legitimate input provenance; the passport body must stay out.
           assert "Паспорт оснастки QA-056" in " ".join(main_text.split())
           assert "SECRET-PASSPORT-CONTENT" not in main_text and "Потрубная ведомость" not in main_text
