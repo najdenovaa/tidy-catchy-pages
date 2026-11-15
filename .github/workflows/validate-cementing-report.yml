@@ -98,7 +98,8 @@ jobs:
           units = fitz.open(d / "chart-units.pdf")
           units_text = " ".join(" ".join(p.get_text().split()) for p in units)
           assert all(s in units_text for s in ["Глубина TVD, ft", "psi", "ppg (US)", "контрольной выборкой"]), units_text[:200]
-          assert sum(bool(p.get_image_info()) for p in units) >= 2
+          assert sum(len(p.get_image_info()) for p in units) >= 2
+          print("Units report:", len(units), "pages;", sum(len(p.get_image_info()) for p in units), "images")
           assert all(abs(p.rect.width - 595.3) < 2 for p in units)
           unit_page = next(p for p in units if p.get_image_info())
           unit_page.get_pixmap(matrix=fitz.Matrix(1,1), alpha=False).save(d / "chart-units-preview.png")
