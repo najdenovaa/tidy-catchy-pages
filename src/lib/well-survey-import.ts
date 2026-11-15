@@ -2,16 +2,19 @@
  * https://www.cwls.org/wp-content/uploads/2017/02/Las2_Update_Jan2017.pdf */
 import { calculateTVDFromSurvey, type TrajectoryPoint, type CavernInterval } from './cementing-calculations';
 export const SURVEY_MAX_BYTES = 10 * 1024 * 1024;
-const MAX_ROWS = 100000;
+export const SURVEY_MAX_ROWS = 100000;
+const MAX_ROWS = SURVEY_MAX_ROWS;
 export type LengthUnit = 'm' | 'ft' | 'mm' | 'cm' | 'in';
 export type AngleUnit = 'deg' | 'rad';
 export interface ImportTable {
   columns: { name: string; unit: string; description: string }[];
   rows: (number | null)[][];
   warnings: string[];
+  sourceRows?: number[];
+  cellIssues?: Record<string,string>;
 }
 export interface LasTable extends ImportTable { version: number; wrapped: boolean; }
-const valueOf = (s: unknown): number | null => {
+export const surveyNumber = (s: unknown): number | null => {
   const raw = String(s ?? '').trim().replace(/,/g, '.').replace(/[dD]([+-]?\d+)$/, 'e$1');
   if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw)) return null;
   const n = Number(raw); return Number.isFinite(n) ? n : null;
@@ -33,6 +36,7 @@ export function decodeSurveyText(bytes:ArrayBuffer):string {
   try{return new TextDecoder('utf-8',{fatal:true}).decode(a);}catch{return new TextDecoder('windows-1251').decode(a);}
 }
 export function parseLas(text:string):LasTable {
+  if(text.startsWith('LASF'))throw new Error('Ожидалась текстовая кавернометрия CWLS LAS 2.0, а не бинарное облако точек LAS.');
   const columns:ImportTable['columns']=[],data:{line:number;values:(number|null)[]}[]=[];
   let section='',version=NaN,wrapped:boolean|undefined,nullValue:number|null=null;
   const seen=new Set<string>();
@@ -45,17 +49,18 @@ export function parseLas(text:string):LasTable {
     if(section==='V'||section==='W'){
       const m=line.match(/^([^\s.]+)\s*\.(.*?)\s*:/);if(!m)continue;
       const key=m[1].toUpperCase(),raw=m[2].trim();
-      if(key==='VERS')version=valueOf(raw)??NaN;
+      if(key==='VERS')version=surveyNumber(raw)??NaN;
       if(key==='WRAP')wrapped=raw.toUpperCase()==='YES'?true:raw.toUpperCase()==='NO'?false:undefined;
-      if(key==='NULL')nullValue=valueOf(raw);
+      if(key==='NULL')nullValue=surveyNumber(raw);
       if(key==='DLM'&&!['SPACE','TAB'].includes(raw.toUpperCase()))throw new Error('LAS: экспортируйте LAS 2.0 с разделителем SPACE или TAB.');
     }else if(section==='C'){
       const colon=line.indexOf(':'),head=colon>=0?line.slice(0,colon):line,m=head.match(/^([^\s.]+)\s*\.([^\s]*)/);
       if(!m)throw new Error(`LAS, строка ${i+1}: не распознано описание кривой.`);
+      if(columns.some(c=>c.name.toUpperCase()===m[1].toUpperCase()))throw new Error(`LAS: повторяется имя кривой ${m[1]}. Нужны уникальные имена кривых.`);
       columns.push({name:m[1],unit:m[2],description:colon>=0?line.slice(colon+1).trim():''});
       if(columns.length>128)throw new Error('LAS: больше 128 кривых. Выгрузите нужные кривые отдельным файлом.');
     }else if(section==='A'){
-      const values=line.split(/\s+/).map(valueOf);
+      const values=line.split(/\s+/).map(surveyNumber);
       if(values.some(v=>v===null))throw new Error(`LAS, строка ${i+1}: ожидались числовые значения; пропуски задаются NULL.`);
       data.push({line:i+1,values});if(data.length>MAX_ROWS*2)throw new Error('LAS: слишком много строк. Разделите файл.');
     }
@@ -63,14 +68,24 @@ export function parseLas(text:string):LasTable {
   if(version!==2)throw new Error('Поддерживается LAS 2.0. Для других версий экспортируйте данные в LAS 2.0.');
   if(wrapped===undefined||!['V','W','C','A'].every(s=>seen.has(s))||nullValue===null)throw new Error('LAS: нужны разделы VERSION, WELL, CURVE, ASCII и значения VERS, WRAP, NULL.');
   if(columns.length<2||!data.length)throw new Error('LAS: нужны глубина, кривая диаметра и числовые данные.');
-  const rows:(number|null)[][]=[];
-  if(wrapped){let pending:(number|null)[]=[];for(const r of data){pending.push(...r.values);while(pending.length>=columns.length){rows.push(pending.slice(0,columns.length));pending=pending.slice(columns.length);}}if(pending.length)throw new Error('LAS WRAP YES: неполная последняя запись.');}
-  else for(const r of data){if(r.values.length!==columns.length)throw new Error(`LAS, строка ${r.line}: ${r.values.length} значений вместо ${columns.length}.`);rows.push(r.values);}
+  const rows:(number|null)[][]=[],sourceRows:number[]=[];
+  if(wrapped){let pending:(number|null)[]=[],startLine=0;for(const r of data){if(!pending.length)startLine=r.line;pending.push(...r.values);while(pending.length>=columns.length){rows.push(pending.slice(0,columns.length));sourceRows.push(startLine);pending=pending.slice(columns.length);startLine=r.line;}}if(pending.length)throw new Error('LAS WRAP YES: неполная последняя запись.');}
+  else for(const r of data){if(r.values.length!==columns.length)throw new Error(`LAS, строка ${r.line}: ${r.values.length} значений вместо ${columns.length}.`);rows.push(r.values);sourceRows.push(r.line);}
   if(rows.length>MAX_ROWS)throw new Error('LAS: больше 100 000 отсчётов. Разделите файл.');
-  return {columns,rows:rows.map(r=>r.map(v=>v===nullValue?null:v)),version,wrapped,warnings:[]};
+  return {columns,sourceRows,rows:rows.map(r=>r.map(v=>v===nullValue?null:v)),version,wrapped,warnings:[]};
+}
+export function surveyColumn(name:string):ImportTable['columns'][number] {
+  const m=name.match(/\[([^\]]+)\]|\(([^)]+)\)/),suffix=name.match(/[,/]\s*(m|ft|mm|cm|in|м|мм|см|фут|deg|rad|°|град|рад)\s*$/i);
+  return {name,unit:m?.[1]??m?.[2]??suffix?.[1]??'',description:''};
+}
+export function knownAngleUnit(unit:string):AngleUnit|undefined {
+  const u=unit.trim().toLowerCase().replace(/[.\s]/g,'');
+  if(['deg','degree','degrees','°','град','градус','градусы'].includes(u))return 'deg';
+  if(['rad','radian','radians','рад','радиан'].includes(u))return 'rad';
 }
 export function parseSurveyText(text:string):ImportTable {
-  const lines=text.replace(/^\uFEFF/,'').split(/\r?\n|\r/).map(x=>x.trim()).filter(x=>x&&!x.startsWith('#')&&!x.startsWith('//'));
+  const source=text.replace(/^\uFEFF/,'').split(/\r?\n|\r/).map((x,i)=>({text:x.trim(),row:i+1})).filter(x=>x.text&&!x.text.startsWith('#')&&!x.text.startsWith('//'));
+  const lines=source.map(x=>x.text);
   if(lines.length<2)throw new Error('Нужно минимум две строки инклинометрии.');
   const delim=lines[0].includes(';')?';':lines[0].includes('\t')?'\t':lines[0].includes(',')&&(!lines[0].includes(' ')||/[A-Za-zА-Яа-я]/.test(lines[0]))?',':'space';
   const split=(line:string)=>{
@@ -84,41 +99,52 @@ export function parseSurveyText(text:string):ImportTable {
     if(quoted)throw new Error('Незакрытая кавычка в TXT/CSV.');
     cells.push(value.trim());return cells;
   };
-  const first=split(lines[0]),header=first.some(x=>valueOf(x)===null),names=header?first:first.map((_,i)=>`Колонка ${i+1}`);
-  const rows=lines.slice(header?1:0).map((line,i)=>{const cells=split(line);if(cells.length!==names.length)throw new Error(`Строка ${i+(header?2:1)}: число колонок отличается от первой строки.`);return cells.map(valueOf);});
+  const first=split(lines[0]),header=first.every(x=>surveyNumber(x)===null)&&first.some(x=>/[A-Za-zА-Яа-я]/.test(x)&&!/^(null|nan|n\/a)$/i.test(x)),names=header?first:first.map((_,i)=>`Колонка ${i+1}`);
+  const rows=lines.slice(header?1:0).map((line,i)=>{const cells=split(line);if(cells.length!==names.length)throw new Error(`Строка ${source[i+(header?1:0)].row}: число колонок отличается от первой строки.`);return cells.map(surveyNumber);});
   if(rows.length>MAX_ROWS)throw new Error('Больше 100 000 точек. Разделите файл.');
-  const columns=names.map(name=>{const m=name.match(/\[([^\]]+)\]|\(([^)]+)\)/);return {name,unit:m?.[1]??m?.[2]??'',description:''};});
-  return {columns,rows,warnings:header?[]:['Нет заголовка: назначьте MD, азимут и зенит вручную.']};
+  const columns=names.map(surveyColumn);
+  return {columns,rows,sourceRows:source.slice(header?1:0).map(x=>x.row),warnings:header?[]:['Нет заголовка: назначьте MD, азимут и зенит вручную.']};
 }
 export function surveyColumns(t:ImportTable):{md:number;azimuth:number;zenith:number}{
   const n=t.columns.map(c=>c.name.toLowerCase());return {
     md:n.findIndex(x=>!/tvd|вертик|vertical/.test(x)&&/\bmd\b|measured|depth|глубин|ствол/.test(x)),
-    azimuth:n.findIndex(x=>/azim|азим|\bazi?\b/.test(x)),zenith:n.findIndex(x=>/zen|зенит|incl|\binc\b/.test(x)),
+    azimuth:n.findIndex(x=>/azim|азим|\bazi?\b/.test(x)),zenith:n.findIndex(x=>!/azim|азим|\bazi?\b/.test(x)&&/zen|зенит|incl|\binc\b|угол/.test(x)),
   };
 }
-export function buildSurvey(t:ImportTable,m:{md:number;azimuth:number;zenith:number},depthUnit:LengthUnit,angleUnit:AngleUnit,azimuthUnit:AngleUnit=angleUnit):{points:TrajectoryPoint[];warnings:string[]}{
-  const ix=Object.values(m);if(new Set(ix).size!==3||ix.some(i=>i<0||i>=t.columns.length))throw new Error('Назначьте три разные колонки: MD, азимут, зенит.');
+export function buildSurvey(t:ImportTable,m:{md:number;azimuth:number;zenith:number},depthUnit:LengthUnit,angleUnit:AngleUnit,azimuthUnit:AngleUnit=angleUnit,options:{maxGapM?:number;targetDepthMD?:number}={}):{points:TrajectoryPoint[];warnings:string[]}{
+  const ix=Object.values(m);if(new Set(ix).size!==3||ix.some(i=>!Number.isInteger(i)||i<0||i>=t.columns.length))throw new Error('Назначьте три разные колонки: MD, азимут, зенит.');
+  if(!Number.isFinite(lengthFactor(depthUnit))||!['deg','rad'].includes(angleUnit)||!['deg','rad'].includes(azimuthUnit))throw new Error('Выберите известные единицы глубины и обоих углов.');
+  if(options.maxGapM!==undefined&&(!Number.isFinite(options.maxGapM)||options.maxGapM<=0))throw new Error('Порог предупреждения о разрыве MD должен быть больше нуля.');
   const k=lengthFactor(depthUnit),a=angleUnit==='rad'?180/Math.PI:1,azFactor=azimuthUnit==='rad'?180/Math.PI:1;
-  const points=t.rows.map((r,i)=>{const md=r[m.md],az=r[m.azimuth],inc=r[m.zenith];
-    if(md===null||az===null||inc===null||[md,az,inc].some(n=>!Number.isFinite(n)))throw new Error(`Точка ${i+1}: пропуск или нечисловое значение.`);
-    if(md<0||inc*a<0||inc*a>180||az*azFactor<0||az*azFactor>360+1e-8)throw new Error(`Точка ${i+1}: MD ≥ 0, зенит 0–180°, азимут 0–360°.`);
+  const points=t.rows.map((r,i)=>{
+    for(const col of ix){const issue=t.cellIssues?.[`${i}:${col}`];if(issue)throw new Error(issue);}
+    const label=`Строка ${t.sourceRows?.[i]??i+1}`;
+    const md=r[m.md],az=r[m.azimuth],inc=r[m.zenith];
+    if(md===null||az===null||inc===null||[md,az,inc].some(n=>!Number.isFinite(n)))throw new Error(`${label}: пропуск или нечисловое значение.`);
+    if(md<0||inc*a<0||inc*a>180||az*azFactor<0||az*azFactor>360+1e-8)throw new Error(`${label}: MD ≥ 0, зенит 0–180°, азимут 0–360°.`);
     return {md:md*k,azimuth:(az*azFactor)%360,zenith:inc*a,tvd:0};
   }).sort((x,y)=>x.md-y.md);
   if(points.length<2)throw new Error('Нужно минимум две точки.');
   if(points.some((p,i)=>i>0&&p.md===points[i-1].md))throw new Error('Повторяются глубины MD. Удалите дубли перед импортом.');
   if(points[0].md!==0)throw new Error('Нет привязочной точки MD=0. Добавьте её: абсолютную TVD нельзя определить по этому файлу.');
   const warnings=[...t.warnings];if(t.rows.some((r,i)=>i>0&&(r[m.md]??0)<(t.rows[i-1][m.md]??0)))warnings.push('Точки отсортированы по MD.');
+  if(t.columns.some(c=>/tvd|вертик|vertical/i.test(c.name)))warnings.push('TVD из файла не применяется: TVD пересчитана методом минимальной кривизны по MD, зениту и азимуту.');
+  let gap=0;for(let i=1;i<points.length;i++)gap=Math.max(gap,points[i].md-points[i-1].md);
+  if(options.maxGapM!==undefined&&gap>options.maxGapM)warnings.push(`Максимальный разрыв MD ${gap.toFixed(2)} м больше заданного порога ${options.maxGapM} м. Уточните профиль: TVD между замерами рассчитана минимальной кривизной.`);
+  if(options.targetDepthMD!==undefined&&points[points.length-1].md<options.targetDepthMD)warnings.push('Инклинометрия не покрывает всю глубину скважины. До расчёта дополните профиль; конечная TVD скважины не изменена.');
   return {points:calculateTVDFromSurvey(points),warnings};
 }
 export interface CaliperOptions {depthColumn:number;diameterColumn:number;depthUnit:LengthUnit;diameterUnit:LengthUnit;nominalDiameterMm:number;topMD:number;bottomMD:number;maxGapM:number;intervalStepM?:number;}
-export interface CaliperPreview {measurements:{md:number;diameterMm:number|null}[];intervals:CavernInterval[];coveredM:number;minDiameterMm:number;maxDiameterMm:number;missingPairs:number;warnings:string[];}
+export interface CaliperPreview {measurements:{md:number;diameterMm:number|null}[];intervals:CavernInterval[];coveredM:number;minDiameterMm:number;maxDiameterMm:number;missingPairs:number;uncovered:{fromMD:number;toMD:number}[];warnings:string[];}
 /** K=(d1²+d2²)/(2*dNom²): mean cross-sectional area between adjacent samples.
  * Nulls and large gaps remain uncovered. No extrapolation beyond the measured log. */
 export function buildCaliper(t:ImportTable,o:CaliperOptions):CaliperPreview {
+  if(!Number.isFinite(lengthFactor(o.depthUnit))||!Number.isFinite(lengthFactor(o.diameterUnit)))throw new Error('Выберите известные единицы глубины и диаметра.');
+  if(o.intervalStepM!==undefined&&(!Number.isFinite(o.intervalStepM)||o.intervalStepM<.1))throw new Error('Шаг интервалов должен быть не меньше 0,1 м.');
   if(o.depthColumn<0||o.diameterColumn<0||o.depthColumn===o.diameterColumn||Math.max(o.depthColumn,o.diameterColumn)>=t.columns.length)throw new Error('Выберите разные колонки глубины и диаметра.');
   if(![o.nominalDiameterMm,o.bottomMD,o.maxGapM].every(v=>Number.isFinite(v)&&v>0)||!Number.isFinite(o.topMD)||o.topMD<0||o.bottomMD<=o.topMD)throw new Error('Проверьте диаметр, границы открытого ствола и допустимый разрыв.');
   const dk=lengthFactor(o.depthUnit),ck=lengthFactor(o.diameterUnit)*1000;
-  const samples=t.rows.map((r,i)=>{const d=r[o.depthColumn],diam=r[o.diameterColumn];if(d===null||!Number.isFinite(d)||d<0)throw new Error(`LAS: отсчёт ${i+1} без корректной глубины.`);return {md:d*dk,diam:diam!==null&&Number.isFinite(diam)&&diam>0?diam*ck:null};}).sort((a,b)=>a.md-b.md);
+  const samples=t.rows.map((r,i)=>{const d=r[o.depthColumn],diam=r[o.diameterColumn];if(d===null||!Number.isFinite(d)||d<0)throw new Error(`LAS: строка ${t.sourceRows?.[i]??i+1} без корректной глубины.`);return {md:d*dk,diam:diam!==null&&Number.isFinite(diam)&&diam>0?diam*ck:null};}).sort((a,b)=>a.md-b.md);
   if(samples.some((p,i)=>i>0&&p.md===samples[i-1].md))throw new Error('LAS: повторяются глубины. Выберите файл без дублей.');
   const intervals:CavernInterval[]=[],diameters:number[]=[];let missingPairs=0,belowNominal=0;
   for(let i=1;i<samples.length;i++){
@@ -130,11 +156,14 @@ export function buildCaliper(t:ImportTable,o:CaliperOptions):CaliperPreview {
   if(!intervals.length)throw new Error('Нет пригодных пар отсчётов в открытом стволе. Проверьте кривую, единицы, границы и разрывы.');
   const grouped = o.intervalStepM ? aggregateCaliperIntervals(intervals,o.intervalStepM) : intervals;
   if(grouped.length>5000)throw new Error('Больше 5000 интервалов. Увеличьте шаг усреднения или разделите файл по глубине.');
-  const warnings=[...t.warnings];if(missingPairs)warnings.push(`Пропущено участков с NULL/некорректным диаметром или разрывом: ${missingPairs}. Там останется коэффициент по умолчанию.`);
+  const warnings=[...t.warnings];if(t.rows.some((r,i)=>i>0&&r[o.depthColumn]!<t.rows[i-1][o.depthColumn]!))warnings.push('Кавернометрия отсортирована по MD.');if(missingPairs)warnings.push(`Пропущено участков с NULL/некорректным диаметром или разрывом: ${missingPairs}. Там останется коэффициент по умолчанию.`);
   if(belowNominal)warnings.push(`Участков с диаметром ниже номинального: ${belowNominal}. Проверьте сужения и единицы; измерения не увеличены до номинала.`);
   warnings.push('Вне измеренного диапазона используется коэффициент по умолчанию. Последний отсчёт не продлевается до забоя.');
+  const uncovered:{fromMD:number;toMD:number}[]=[];let cursor=o.topMD;
+  for(const iv of grouped){if(iv.fromMD>cursor+1e-8)uncovered.push({fromMD:cursor,toMD:iv.fromMD});cursor=iv.toMD;}
+  if(cursor<o.bottomMD-1e-8)uncovered.push({fromMD:cursor,toMD:o.bottomMD});
   let min=Infinity,max=-Infinity;for(const d of diameters){min=Math.min(min,d);max=Math.max(max,d);}
-  return {measurements:t.rows.map(r=>({md:r[o.depthColumn]!*dk,diameterMm:r[o.diameterColumn]===null?null:r[o.diameterColumn]!*ck})),intervals:grouped,coveredM:grouped.reduce((s,v)=>s+v.toMD-v.fromMD,0),minDiameterMm:min,maxDiameterMm:max,missingPairs,warnings};
+  return {measurements:samples.map(r=>({md:r.md,diameterMm:r.diam})),intervals:grouped,coveredM:grouped.reduce((s,v)=>s+v.toMD-v.fromMD,0),minDiameterMm:min,maxDiameterMm:max,missingPairs,uncovered,warnings};
 }
 
 /** Area-preserving depth bins. Never merge across an unmeasured gap. */
