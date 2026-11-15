@@ -14,10 +14,9 @@ import { DebouncedInput } from "@/components/DebouncedInput";
 import FannEditor from "@/components/FannEditor";
 import { additiveSG } from "@/lib/cement-program";
 import { Label } from "@/components/ui/label";
-import { useState, memo, useCallback, useMemo, ChangeEvent } from "react";
+import { useState, memo, useCallback, useMemo } from "react";
 import { isAutoVolume, resolveFlowRateSteps, slurryDesignVolume, buildDisplacementSchedule, getCasingID, getSlurryHeight, annularVolumePerMeter, annularVolumeForInterval, hydrostaticPressure, interpolateTVD, calculateTVDFromSurvey, calculateCement, calculateAdditiveMass, effectiveRheology, cementCategory, calculateHydraulics, getFlowRateLps } from "@/lib/cementing-calculations";
 import type { WellData, DrillingFluid, BufferFluid, SlurryInput, Additive, AdditivePercentageType, DisplacementFluid, FlowRateStep, TrajectoryPoint, CasingSection, CavernInterval, ReservoirLayer } from "@/lib/cementing-calculations";
-import * as XLSX from "xlsx";
 
 interface Props {
   wellData: WellData;
@@ -181,95 +180,6 @@ export default function InputSection(props: Props) {
     const calculated = calculateTVDFromSurvey(sorted);
     const lastTVD = calculated.length > 0 ? calculated[calculated.length - 1].tvd : wellData.wellDepthTVD;
     onWellDataChange({ ...wellData, trajectory: calculated, wellDepthTVD: lastTVD });
-  };
-
-  const handleTrajectoryExcelUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: "array" });
-
-      const getNumber = (value: unknown): number | null => {
-        if (value === null || value === undefined || value === "") return null;
-        if (typeof value === "number") return Number.isFinite(value) ? value : null;
-        const num = Number(String(value).replace(/\s/g, "").replace(",", "."));
-        return Number.isFinite(num) ? num : null;
-      };
-      const norm = (v: unknown) => String(v ?? "").toLowerCase().replace(/[\s\n\r,.;:°()/\\-]+/g, " ").trim();
-      const isMd = (s: string) => /\bmd\b/.test(s) || s.includes("глубина") || s.includes("ствол") || s.includes("measured") || s.includes("depth");
-      const isZen = (s: string) => /\bzen/.test(s) || s.includes("зенит") || s.includes("inclination") || /\binc\b/.test(s) || s.includes("угол");
-      const isAz = (s: string) => /\baz/.test(s) || s.includes("азимут");
-      const isTvd = (s: string) => /\btvd\b/.test(s) || s.includes("верт") || s.includes("vertical");
-
-      let mapped: TrajectoryPoint[] = [];
-
-      // Try every sheet
-      for (const sheetName of workbook.SheetNames) {
-        const sheet = workbook.Sheets[sheetName];
-        const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", blankrows: false });
-        if (!grid.length) continue;
-
-        // Find header row: a row whose cells (normalized) include MD + Zenith + Azimuth markers
-        let headerRowIdx = -1;
-        let mdCol = -1, zenCol = -1, azCol = -1, tvdCol = -1;
-        for (let r = 0; r < Math.min(grid.length, 20); r++) {
-          const row = grid[r] || [];
-          let m = -1, z = -1, a = -1, t = -1;
-          for (let c = 0; c < row.length; c++) {
-            const s = norm(row[c]);
-            if (!s) continue;
-            if (m < 0 && isMd(s) && !isTvd(s)) m = c;
-            else if (z < 0 && isZen(s)) z = c;
-            else if (a < 0 && isAz(s)) a = c;
-            else if (t < 0 && isTvd(s)) t = c;
-          }
-          if (m >= 0 && z >= 0 && a >= 0) {
-            headerRowIdx = r; mdCol = m; zenCol = z; azCol = a; tvdCol = t; break;
-          }
-        }
-
-        let candidate: TrajectoryPoint[] = [];
-        if (headerRowIdx >= 0) {
-          for (let r = headerRowIdx + 1; r < grid.length; r++) {
-            const row = grid[r] || [];
-            const md = getNumber(row[mdCol]);
-            const zenith = getNumber(row[zenCol]);
-            const azimuth = getNumber(row[azCol]);
-            if (md === null || zenith === null || azimuth === null) continue;
-            const tvd = tvdCol >= 0 ? getNumber(row[tvdCol]) ?? 0 : 0;
-            candidate.push({ md, azimuth, zenith, tvd });
-          }
-        } else {
-          // Fallback: assume first 3 numeric columns = MD, Zenith, Azimuth
-          for (const row of grid) {
-            const r = row as unknown[];
-            const md = getNumber(r[0]);
-            const zenith = getNumber(r[1]);
-            const azimuth = getNumber(r[2]);
-            if (md === null || zenith === null || azimuth === null) continue;
-            const tvd = getNumber(r[3]) ?? 0;
-            candidate.push({ md, azimuth, zenith, tvd });
-          }
-        }
-
-        if (candidate.length >= 2) { mapped = candidate; break; }
-      }
-
-      if (mapped.length < 2) {
-        alert("Не удалось распознать данные. Используйте шаблон: колонки MD (глубина по стволу), Zenith (зенит), Azimuth (азимут). Минимум 2 строки данных.");
-        event.target.value = "";
-        return;
-      }
-
-      updateTrajectory(mapped, true);
-      event.target.value = "";
-    } catch (err) {
-      console.error("Trajectory upload error:", err);
-      alert("Не удалось прочитать Excel-файл");
-      event.target.value = "";
-    }
   };
 
   const calcDispVol = displacementVolume ?? 0;
@@ -744,15 +654,6 @@ export default function InputSection(props: Props) {
               >
                 📥 Скачать шаблон инклинометрии
               </a>
-              <label className="text-xs px-3 py-1.5 rounded-md border border-border text-foreground hover:bg-muted cursor-pointer transition-colors">
-                Импорт Excel (MD-азимут-зенит)
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleTrajectoryExcelUpload}
-                  className="hidden"
-                />
-              </label>
               <button
                 onClick={() => {
                   const traj = [...(wellData.trajectory || [])];

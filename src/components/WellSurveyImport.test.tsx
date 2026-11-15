@@ -1,3 +1,4 @@
+import * as XLSX from 'xlsx';
 import {render,screen,fireEvent,waitFor,cleanup} from '@testing-library/react';
 import {afterEach,describe,it,expect,vi} from 'vitest';
 import WellSurveyImport from './WellSurveyImport';
@@ -39,7 +40,7 @@ describe('local survey preview',()=>{
  it('maps TXT columns and commits recalculated TVD without changing MD',async()=>{
   const onChange=vi.fn();render(<WellSurveyImport kind="trajectory" wellData={well()} onChange={onChange}/>);
   screen.getByTestId('import-trajectory').setAttribute('open','');
-  fireEvent.change(screen.getByLabelText('Импорт инклинометрии TXT / CSV'),{target:{files:[file('MD [m];Azimuth;Inclination\n0;0;0\n2;0;0','survey.txt')]}});
+  fireEvent.change(screen.getByLabelText('Импорт инклинометрии TXT / CSV / XLSX'),{target:{files:[file('MD [m];Azimuth;Inclination\n0;0;0\n2;0;0','survey.txt')]}});
   await waitFor(()=>expect(screen.getByText(/survey.txt:/)).toBeInTheDocument());expect(onChange).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button',{name:'Применить инклинометрию'}));
   expect(onChange.mock.calls[0][0]).toMatchObject({wellDepthMD:2,wellDepthTVD:2,trajectory:[{md:0,tvd:0},{md:2,tvd:2}]});
@@ -60,4 +61,53 @@ it('keeps global row indexes when paging through a long imported survey',()=>{
   fireEvent.click(row.querySelector('button')!);
   const result=onChange.mock.calls[0][0].trajectory;
   expect(result).toHaveLength(204);expect(result[0].md).toBe(0);expect(result[100].md).toBe(101);
+});
+
+const surveyInput='Импорт инклинометрии TXT / CSV / XLSX';
+function excelFile(rows:unknown[][],modify?:(s:XLSX.WorkSheet)=>void,cover=false){
+ const w=XLSX.utils.book_new(),s=XLSX.utils.aoa_to_sheet(rows);modify?.(s);
+ if(cover)XLSX.utils.book_append_sheet(w,XLSX.utils.aoa_to_sheet([['Обложка']]),'Обложка');
+ XLSX.utils.book_append_sheet(w,s,'Замеры');const bytes=XLSX.write(w,{type:'array',bookType:'xlsx'});
+ const f=new File([bytes],'survey.xlsx');Object.defineProperty(f,'arrayBuffer',{value:async()=>bytes});return f;
+}
+const surveyRows=[['MD [m]','AZI [deg]','INC [deg]'],[0,0,0],[1,0,0],[2,0,0]];
+describe('F04 shared Excel preview and apply',()=>{
+ it('TXT and Excel apply the same entire well snapshot, only after an explicit click',async()=>{
+  const snapshots=[];
+  for(const f of [file(surveyRows.map(r=>r.join(';')).join('\n'),'survey.txt'),excelFile(surveyRows)]){
+   const onChange=vi.fn(),r=render(<WellSurveyImport kind="trajectory" wellData={well()} onChange={onChange}/>);screen.getByTestId('import-trajectory').setAttribute('open','');
+   fireEvent.change(screen.getByLabelText(surveyInput),{target:{files:[f]}});
+   await waitFor(()=>expect(screen.getByRole('button',{name:'Применить инклинометрию'})).toBeEnabled());expect(onChange).not.toHaveBeenCalled();
+   fireEvent.click(screen.getByRole('button',{name:'Применить инклинометрию'}));snapshots.push(onChange.mock.calls[0][0]);r.unmount();
+  }
+  expect(snapshots[0]).toEqual(snapshots[1]);expect(snapshots[0].wellDepthTVD).toBe(2);
+ });
+ it('selects another sheet explicitly and invalidates the old preview on a row-range change; incomplete coverage keeps well TVD',async()=>{
+  const onChange=vi.fn();render(<WellSurveyImport kind="trajectory" wellData={well()} onChange={onChange}/>);screen.getByTestId('import-trajectory').setAttribute('open','');
+  fireEvent.change(screen.getByLabelText(surveyInput),{target:{files:[excelFile(surveyRows,undefined,true)]}});
+  await waitFor(()=>expect(screen.getByLabelText('Лист книги')).toBeInTheDocument());expect(onChange).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Лист книги'),{target:{value:'Замеры'}});expect(screen.queryByRole('button',{name:'Применить инклинометрию'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Обновить предпросмотр Excel'}));expect(screen.getByRole('button',{name:'Применить инклинометрию'})).toBeEnabled();
+  fireEvent.change(screen.getByLabelText('Последняя строка данных'),{target:{value:'3'}});expect(screen.queryByRole('button',{name:'Применить инклинометрию'})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Обновить предпросмотр Excel'}));expect(screen.getByText(/не покрывает всю глубину/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Применить инклинометрию'}));expect(onChange.mock.calls[0][0]).toMatchObject({wellDepthMD:2,wellDepthTVD:1.5});expect(onChange.mock.calls[0][0].trajectory).toHaveLength(2);
+ });
+ it('blocks formula caches, unknown angle units and a malformed row; a replacement file clears stale errors',async()=>{
+  const onChange=vi.fn();render(<WellSurveyImport kind="trajectory" wellData={well()} onChange={onChange}/>);screen.getByTestId('import-trajectory').setAttribute('open','');
+  const input=screen.getByLabelText(surveyInput);
+  fireEvent.change(input,{target:{files:[excelFile(surveyRows,s=>{s.A3={t:'n',v:1,f:'1'};})]}});
+  await waitFor(()=>expect(screen.getByRole('alert')).toHaveTextContent('Замеры!A3: формула'));expect(screen.getByRole('button',{name:'Применить инклинометрию'})).toBeDisabled();
+  fireEvent.change(input,{target:{files:[excelFile([['MD [m]','AZI [deg]','INC [gon]'],...surveyRows.slice(1)])]}});
+  await waitFor(()=>expect(screen.getByRole('alert')).toHaveTextContent('единицы зенита'));expect(onChange).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Единицы зенита'),{target:{value:'deg'}});expect(screen.getByRole('button',{name:'Применить инклинометрию'})).toBeEnabled();
+  fireEvent.change(input,{target:{files:[excelFile([surveyRows[0],surveyRows[1],[1,'',0]])]}});
+  await waitFor(()=>expect(screen.getByRole('alert')).toHaveTextContent('Строка 3: пропуск'));expect(onChange).not.toHaveBeenCalled();
+ });
+ it('a late earlier file read cannot replace the current preview',async()=>{
+  const onChange=vi.fn();render(<WellSurveyImport kind="trajectory" wellData={well()} onChange={onChange}/>);screen.getByTestId('import-trajectory').setAttribute('open','');
+  let finish:(x:ArrayBuffer)=>void;const old=new File(['old'],'old.txt');Object.defineProperty(old,'arrayBuffer',{value:()=>new Promise<ArrayBuffer>(r=>{finish=r;})});
+  const input=screen.getByLabelText(surveyInput);fireEvent.change(input,{target:{files:[old]}});
+  fireEvent.change(input,{target:{files:[excelFile(surveyRows)]}});await waitFor(()=>expect(screen.getByText(/survey.xlsx: 3 отсчётов/)).toBeInTheDocument());
+  finish!(new TextEncoder().encode('bad').buffer);await waitFor(()=>expect(screen.queryByRole('alert')).not.toBeInTheDocument());expect(screen.getByText(/survey.xlsx: 3 отсчётов/)).toBeInTheDocument();expect(onChange).not.toHaveBeenCalled();
+ });
 });

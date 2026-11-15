@@ -82,3 +82,15 @@ describe('TXT survey import',()=>{
   expect(decodeSurveyText(new Uint8Array([0xc3,0xeb,0xf3,0xe1,0xe8,0xed,0xe0]).buffer)).toBe('Глубина');
  });
 });
+
+it('LAS preserves uncovered ranges and sanitizes invalid raw diameters consistently with geometry',()=>{
+ const p=buildCaliper(parseLas(las('5 200\n6 200\n7 -2\n8 200\n9 200')),{...opts,topMD:0,bottomMD:12});
+ expect(p.uncovered).toEqual([{fromMD:0,toMD:5},{fromMD:6,toMD:8},{fromMD:9,toMD:12}]);expect(p.measurements[2].diameterMm).toBeNull();
+ expect(()=>buildCaliper(parseLas(las()),{...opts,intervalStepM:0})).toThrow(/Шаг/);
+ expect(()=>parseLas(las().replace('CALI.MM','DEPT.MM'))).toThrow(/имя кривой/);
+ expect(()=>parseLas('LASFbinary')).toThrow(/облако/);
+});
+it('TXT errors refer to the physical source row; an empty numeric record is not silently treated as a header',()=>{
+ const t=parseSurveyText('# comment\nMD [m];AZ;INC\n0;0;0\n\n2;;0');expect(t.sourceRows).toEqual([3,5]);expect(()=>buildSurvey(t,surveyColumns(t),'m','deg')).toThrow(/Строка 5/);
+ const a=parseSurveyText(';;\n0;0;0\n2;0;0');expect(a.rows).toHaveLength(3);expect(()=>buildSurvey(a,{md:0,azimuth:1,zenith:2},'m','deg')).toThrow(/Строка 1/);
+});
