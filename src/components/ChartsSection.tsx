@@ -1,3 +1,4 @@
+import type {ChartPresentations} from '@/lib/chart-presentation';
 import CementingChartData from './CementingChartData';
 import type {DepthChartSettings} from '@/lib/depth-chart-settings';
 import type {StopStorageResult} from '@/lib/stop-storage';
@@ -21,6 +22,7 @@ function ScrollableChart({ children, chartRef, height }: { children: React.React
 }
 
 interface Props {
+  chartPresentations?:ChartPresentations;onChartPresentationsChange?:(p:ChartPresentations)=>void;
   depthChartSettings?:DepthChartSettings; onDepthChartSettingsChange?:(s:DepthChartSettings)=>void; stopStorage?:StopStorageResult;
   observation?:PressureObservation; observationRequest?:PressureObservationRequest; onObservationChange?:(r:PressureObservationRequest)=>void;
   pressureData: PressurePoint[];
@@ -37,7 +39,7 @@ interface Props {
 
 const STAGE_COLORS = ["hsl(200, 50%, 55%)", "hsl(120, 40%, 45%)", "hsl(35, 70%, 50%)", "hsl(280, 50%, 55%)", "hsl(340, 50%, 50%)"];
 
-export default function ChartsSection({ depthChartSettings,onDepthChartSettingsChange,stopStorage,observation,observationRequest,onObservationChange,pressureData, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, envelope, prevShoeMD = 0, casingDepthMD = 0, layers }: Props) {
+export default function ChartsSection({ chartPresentations,onChartPresentationsChange,depthChartSettings,onDepthChartSettingsChange,stopStorage,observation,observationRequest,onObservationChange,pressureData, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, envelope, prevShoeMD = 0, casingDepthMD = 0, layers }: Props) {
   const chartRef1 = useRef<HTMLDivElement>(null);
   const chartRef2 = useRef<HTMLDivElement>(null);
   const chartRef3 = useRef<HTMLDivElement>(null);
@@ -102,7 +104,7 @@ export default function ChartsSection({ depthChartSettings,onDepthChartSettingsC
         </CardContent>
       </Card>
 
-      <CementingChartData result={numericResult} settings={depthChartSettings}/>
+      <CementingChartData result={numericResult} settings={depthChartSettings} presentations={chartPresentations} onPresentationsChange={onChartPresentationsChange}/>
       <SelectedDepthPressure result={observation} request={observationRequest} defaultMD={casingDepthMD} onChange={onObservationChange}/>
       {/* Совмещённый график */}
       <Card>

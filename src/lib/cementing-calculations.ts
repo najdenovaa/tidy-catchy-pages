@@ -179,6 +179,7 @@ export interface WellData {
   trajectory: TrajectoryPoint[];
   casingSections?: CasingSection[];
   cavernIntervals?: CavernInterval[];
+  chartPresentations?: import('./chart-presentation').ChartPresentations;
   depthChartSettings?: import('./depth-chart-settings').DepthChartSettings;
   caliperLog?: import("./well-geometry").CaliperLog;
   reservoirLayers?: ReservoirLayer[];
