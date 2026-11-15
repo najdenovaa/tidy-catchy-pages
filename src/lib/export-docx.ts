@@ -1,3 +1,5 @@
+import {cementingNumericCharts,chartCoverage} from './cementing-chart-data';
+import type {DepthChartSettings} from './depth-chart-settings';
 import {pressureObservationKey} from './pressure-observation';
 import {buildProcessContract,type ProcessContract} from "./cementing-process";
 import {rheologyReportFluids} from "./rheology-report";
@@ -577,7 +579,7 @@ function buildPressureProfilePage(pressureResult: PressureProfileResult): Paragr
         cell(fmt(p.fracturePressure, 2), { align: AlignmentType.RIGHT }),
         cell(fmt(p.pumpRateLps, 1), { align: AlignmentType.RIGHT }),
         cell(fmt(p.annularReturnRate, 1), { align: AlignmentType.RIGHT }),
-        cell(p.maxSafeRateLps > 0 ? fmt(p.maxSafeRateLps, 1) : "-", { align: AlignmentType.RIGHT, bold: true }),
+        cell(Number.isFinite(p.maxSafeRateLps) ? fmt(p.maxSafeRateLps, 1) : "-", { align: AlignmentType.RIGHT, bold: true }),
         cell(p.stage),
       ],
     })),
@@ -666,7 +668,7 @@ function buildImageParagraph(dataUrl: string, title: string, widthPx = 1400, hei
   }
 }
 
-function buildChartsDataPage(pressureResult: PressureProfileResult, chartImages?: Record<string, string>): Paragraph[] {
+function buildChartsDataPage(pressureResult: PressureProfileResult, chartImages?: Record<string, string>,settings?:DepthChartSettings,selection?:ReportSelection): Paragraph[] {
   const content: Paragraph[] = [
     sectionTitle("14. Графики - диаграммы и данные"),
   ];
@@ -679,6 +681,10 @@ function buildChartsDataPage(pressureResult: PressureProfileResult, chartImages?
     if (chartImages.pumpPlan) content.push(...buildImageParagraph(chartImages.pumpPlan, "План продавки: давления и макс. производительность", 1400, 500));
     if (chartImages.flowRegime) content.push(...buildImageParagraph(chartImages.flowRegime, "Режим потока в затрубном пространстве", 1400, 300));
   }
+
+  content.push(noteParagraph('Карта выбранных основных гидравлических графиков. Полные исходные ряды без прореживания выгружаются в XLSX из раздела «Графики». Таблица ниже является контрольной выборкой, а не полным набором отсчётов. Настройки MD/TVD и единиц применены к глубинным графикам; временные ряды и расчётные таблицы сохраняют подписанные единицы.'));
+  const plots=cementingNumericCharts(pressureResult,settings,selection),coverage=chartCoverage(plots,selection);
+  content.push(gridTable(['Раздел Word','Координата / шкала','Панелей / строк','Состояние'],coverage.map(c=>[c.label,[...new Set(c.ready.map(p=>p.data.xLabel+'; '+p.data.leftLabel+(p.data.rightLabel?'; '+p.data.rightLabel:'')))].join(' / ')||'-',c.ready.length+' / '+c.rows,c.status])) as any);
 
   // Tabular data as fallback / supplement
   const points = pressureResult.points;
@@ -695,13 +701,13 @@ function buildChartsDataPage(pressureResult: PressureProfileResult, chartImages?
           cell(fmt(p.bottomholePressure, 2), { align: AlignmentType.RIGHT }),
           cell(fmt(p.fracturePressure, 2), { align: AlignmentType.RIGHT }),
           cell(fmt(margin, 2), { align: AlignmentType.RIGHT, bold: margin < 1 }),
-          cell(p.maxSafeRateLps > 0 ? fmt(p.maxSafeRateLps, 1) : "-", { align: AlignmentType.RIGHT, bold: true }),
+          cell(Number.isFinite(p.maxSafeRateLps) ? fmt(p.maxSafeRateLps, 1) : "-", { align: AlignmentType.RIGHT, bold: true }),
         ],
       });
     }),
   ];
 
-  content.push(new Paragraph({ spacing: { before: 300, after: 80 }, children: [new TextRun({ text: "Давление на забое vs Давление ГРП (табличные данные):", bold: true, size: 20, font: "Calibri" })] }));
+  content.push(new Paragraph({ spacing: { before: 300, after: 80 }, children: [new TextRun({ text: "Контрольная выборка: давление на забое и давление ГРП (МПа):", bold: true, size: 20, font: "Calibri" })] }));
   content.push(fixedReportTable(5, { width: { size: 100, type: WidthType.PERCENTAGE }, layout: TableLayoutType.FIXED, rows: bhpRows }) as any);
 
   return content;
@@ -887,6 +893,8 @@ export async function exportToDocx(
   if(center?.calculated)wellData={...wellData,centralizerMaterials:{geometryKey:centralizerMaterialGeometryKey(wellData),items:centralizerInventory(wellData.casingDepthMD,center.intervals)}};
   const volumes = preComputed?.volumes ?? calculateVolumes(wellData, slurries, displacementFluids?.[0]?.compressionCoeff ?? 1.0);
   const pressureResult = preComputed?.pressureResult ?? calculatePressureProfile(wellData, slurries, buffers, drillingFluid, displacementFluids, fractureGradient, volumes.displacementVolumeWithCompression, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
+  const selectedDepthKey=pressureObservationKey(wellData,slurries,buffers,drillingFluid,displacementFluids,fractureGradient,volumes.displacementVolumeWithCompression,preComputed?.flushTimeMin??10,preComputed?.flushVolumeM3??0);
+  const freshObservation=pressureResult.observation?.sourceKey===selectedDepthKey?pressureResult.observation:undefined;
   const materials = { ...(preComputed?.materials ?? calculateMaterials(slurries, buffers, wellData)), equipmentItems:equipmentMaterialInventory(wellData) };
   const workTimeWithCement = pressureResult.stopTime - pressureResult.cementStartTime;
 
@@ -976,7 +984,7 @@ export async function exportToDocx(
     riskContent = buildRiskPage(risk);
   } catch { riskContent = [noteParagraph("Оценка риска не выполнена; расчёт этого раздела недоступен.")]; }
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
-  const chartsDataContent = buildChartsDataPage(pressureResult, images?.chartImages);
+  const chartsDataContent = buildChartsDataPage({...pressureResult,observation:freshObservation}, images?.chartImages,wellData.depthChartSettings,selection);
   const trajectoryContent = buildTrajectoryPage(wellData, images?.visualImages);
   const sections: {properties:ReturnType<typeof reportPageProperties>;headers?:{default:Header};children:any[]}[]=[{properties:reportPageProperties(),children:titlePage}];
   const add=(key:Parameters<typeof reportIncludes>[1],title:string,children:any[])=>{if(reportIncludes(selection,key)&&children.length)sections.push({properties:reportPageProperties(),headers:{default:new Header({children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:title,size:16,color:"999999",font:"Calibri"})]})]})},children});};
@@ -1008,8 +1016,7 @@ export async function exportToDocx(
   add('risks','Оценка рисков',riskContent);
   add('pressureTable','План продавки',pressureProfileContent);
   add('chartData','Числовые данные графиков',chartsDataContent);
-  const selectedDepthKey=pressureObservationKey(wellData,slurries,buffers,drillingFluid,displacementFluids,fractureGradient,volumes.displacementVolumeWithCompression,preComputed?.flushTimeMin??10,preComputed?.flushVolumeM3??0);
-  const freshObservation=pressureResult.observation?.sourceKey===selectedDepthKey?pressureResult.observation:undefined;
+
   if(freshObservation){const r=freshObservation,content:any[]=[sectionTitle('Давление и ЭЦП на выбранной глубине'),kvTable([{label:'Запрошенная глубина',value:r.request.valueM+' м '+r.request.coordinate},{label:'MD / TVD',value:r.depthMD===undefined?'Не определено':fmt(r.depthMD,4)+' / '+fmt(r.depthTVD!,4)+' м'},{label:'Состояние расчёта',value:r.status==='ready'?'Рассчитан временной ряд':'Не рассчитано'},{label:'Источник пластового давления',value:r.poreSource},{label:'ГРП/поглощение и допустимый предел',value:r.limitSource}]) as any,...r.issues.map(noteParagraph),noteParagraph(r.note)];if(r.status==='ready'){content.push(kvTable([{label:'Пластовое / ГРП / поглощение / предел 95%, МПа',value:[r.poreMPa,r.fractureMPa,r.absorptionMPa,r.limitMPa].map(v=>v===undefined?'Не задано':fmt(v,5)).join(' / ')},{label:'Кадров временного ряда',value:String(r.rows.length)},{label:'Максимальное давление в затрубье, МПа',value:fmt(Math.max(...r.rows.map(p=>p.pressureMPa)),6)},{label:'Максимальная ЭЦП, г/см³',value:r.rows.some(p=>p.ecdGcm3!==null)?fmt(Math.max(...r.rows.map(p=>p.ecdGcm3??0)),6):'Не определяется при TVD около нуля'}]) as any);if(reportIncludes(selection,'chartData'))content.push(gridTable(['Время, мин','Этап','Гидрост., МПа','Трение, МПа','Давление, МПа','ЭЦП, г/см³'],r.rows.map(p=>[fmt(p.timeMin,5),p.stage,fmt(p.hydrostaticMPa,6),fmt(p.frictionMPa,6),fmt(p.pressureMPa,6),p.ecdGcm3===null?'Не определяется':fmt(p.ecdGcm3,6)])) as any);}add('selectedDepth','Давление и ЭЦП на выбранной глубине',content);}
 
   add('woc','ОЗЦ',buildWOCPage(wellData,slurries));

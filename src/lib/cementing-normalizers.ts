@@ -1,3 +1,4 @@
+import {normalizeDepthChartSettings} from './depth-chart-settings';
 import {normalizePressureObservation} from './pressure-observation';
 import {normalizeStopStorage} from "./stop-storage";
 import { normalizeCentralizerDesign } from "./equipment-library-reference";
@@ -206,6 +207,7 @@ export function normalizeWellData(value: unknown): WellData {
   const caliperLog=normalizeCaliperLog(source.caliperLog);
   return {
     ...(caliperLog?{caliperLog}:{}),
+    ...(source.depthChartSettings!==undefined?{depthChartSettings:normalizeDepthChartSettings(source.depthChartSettings)}:{}),
     equipment: normalizeEquipment(source.equipment),
     ...(source.pressureObservation!==undefined?{pressureObservation:normalizePressureObservation(source.pressureObservation)}:{}),
     ...(normalizeStopStorage(source.stopStorage)?{stopStorage:normalizeStopStorage(source.stopStorage)}:{}),

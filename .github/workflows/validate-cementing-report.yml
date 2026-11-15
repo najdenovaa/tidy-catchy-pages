@@ -4,6 +4,11 @@ on:
     branches: [main]
     paths:
       - 'src/lib/*report*'
+      - 'src/lib/cementing-chart-data*'
+      - 'src/lib/depth-chart-settings*'
+      - 'src/lib/report-series-plot*'
+      - 'src/components/DepthPressureCharts*'
+      - 'src/components/CementingChartData*'
       - 'src/lib/centralizer-*'
       - 'src/lib/centralization-*'
       - 'src/lib/casing-running-*'
@@ -53,12 +58,13 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/centralization-report.docx" "$REPORT_QA_DIR/running-report.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/ab-centralization.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/chart-units.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
@@ -89,6 +95,14 @@ jobs:
               assert required in text and forbidden not in text and "SECRET-PASSPORT-NOTE" not in text
               assert any(p.get_image_info() for p in scoped), stem + " missing figures"
               assert all(abs(p.rect.width - 595.3) < 2 for p in scoped)
+          units = fitz.open(d / "chart-units.pdf")
+          units_text = " ".join(" ".join(p.get_text().split()) for p in units)
+          assert all(s in units_text for s in ["Глубина TVD, ft", "psi", "ppg (US)", "контрольной выборкой"]), units_text[:200]
+          assert sum(bool(p.get_image_info()) for p in units) >= 2
+          assert all(abs(p.rect.width - 595.3) < 2 for p in units)
+          unit_page = next(p for p in units if p.get_image_info())
+          unit_page.get_pixmap(matrix=fitz.Matrix(1,1), alpha=False).save(d / "chart-units-preview.png")
+          print("CHART_UNITS_QA_PNG=" + base64.b64encode((d / "chart-units-preview.png").read_bytes()).decode())
           ab = fitz.open(d / "ab-centralization.pdf")
           ab_text = " ".join(" ".join(p.get_text().split()) for p in ab)
           assert "Изделие Альфа" in ab_text and "Изделие Бета" in ab_text and "АБ" in ab_text
@@ -129,3 +143,6 @@ jobs:
             /tmp/cementing-report-qa/ab-centralization.docx
             /tmp/cementing-report-qa/ab-centralization.pdf
             /tmp/cementing-report-qa/ab-preview.png
+            /tmp/cementing-report-qa/chart-units.docx
+            /tmp/cementing-report-qa/chart-units.pdf
+            /tmp/cementing-report-qa/chart-units-preview.png
