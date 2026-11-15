@@ -1,6 +1,9 @@
+import CementingChartData from './CementingChartData';
+import type {DepthChartSettings} from '@/lib/depth-chart-settings';
+import type {StopStorageResult} from '@/lib/stop-storage';
 import SelectedDepthPressure from './SelectedDepthPressure';
 import type {PressureObservation,PressureObservationRequest} from '@/lib/pressure-observation';
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, AreaChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ReferenceArea } from "recharts";
 import type { PressurePoint, StageBoundary, DepthEnvelopePoint, ReservoirLayer } from "@/lib/cementing-calculations";
@@ -18,6 +21,7 @@ function ScrollableChart({ children, chartRef, height }: { children: React.React
 }
 
 interface Props {
+  depthChartSettings?:DepthChartSettings; onDepthChartSettingsChange?:(s:DepthChartSettings)=>void; stopStorage?:StopStorageResult;
   observation?:PressureObservation; observationRequest?:PressureObservationRequest; onObservationChange?:(r:PressureObservationRequest)=>void;
   pressureData: PressurePoint[];
   safeTime: number;
@@ -33,7 +37,7 @@ interface Props {
 
 const STAGE_COLORS = ["hsl(200, 50%, 55%)", "hsl(120, 40%, 45%)", "hsl(35, 70%, 50%)", "hsl(280, 50%, 55%)", "hsl(340, 50%, 50%)"];
 
-export default function ChartsSection({ observation,observationRequest,onObservationChange,pressureData, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, envelope, prevShoeMD = 0, casingDepthMD = 0, layers }: Props) {
+export default function ChartsSection({ depthChartSettings,onDepthChartSettingsChange,stopStorage,observation,observationRequest,onObservationChange,pressureData, safeTime, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, envelope, prevShoeMD = 0, casingDepthMD = 0, layers }: Props) {
   const chartRef1 = useRef<HTMLDivElement>(null);
   const chartRef2 = useRef<HTMLDivElement>(null);
   const chartRef3 = useRef<HTMLDivElement>(null);
@@ -41,6 +45,8 @@ export default function ChartsSection({ observation,observationRequest,onObserva
   const chartRef5 = useRef<HTMLDivElement>(null);
   const chartRef6 = useRef<HTMLDivElement>(null);
   const chartRefECD = useRef<HTMLDivElement>(null);
+
+  const numericResult=useMemo(()=>({points:pressureData,envelope:envelope??[],stageBoundaries,observation,stopStorage}),[pressureData,envelope,stageBoundaries,observation,stopStorage]);
 
   if (pressureData.length === 0) {
     return (
@@ -96,6 +102,7 @@ export default function ChartsSection({ observation,observationRequest,onObserva
         </CardContent>
       </Card>
 
+      <CementingChartData result={numericResult} settings={depthChartSettings}/>
       <SelectedDepthPressure result={observation} request={observationRequest} defaultMD={casingDepthMD} onChange={onObservationChange}/>
       {/* Совмещённый график */}
       <Card>
@@ -156,7 +163,7 @@ export default function ChartsSection({ observation,observationRequest,onObserva
       </Card>
 
       {envelope && envelope.length > 1 && (
-        <DepthPressureCharts envelope={envelope} prevShoeMD={prevShoeMD} casingDepthMD={casingDepthMD || envelope[envelope.length - 1].md} layers={layers} />
+        <DepthPressureCharts settings={depthChartSettings} onSettingsChange={onDepthChartSettingsChange} envelope={envelope} prevShoeMD={prevShoeMD} casingDepthMD={casingDepthMD || envelope[envelope.length - 1].md} layers={layers} />
       )}
 
       {/* ЭЦП — Эквивалентная циркуляционная плотность */}

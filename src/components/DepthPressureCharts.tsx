@@ -1,14 +1,14 @@
+import {normalizeDepthChartSettings,DEPTH_UNITS,PRESSURE_UNITS,DENSITY_UNITS,type DepthChartSettings} from '@/lib/depth-chart-settings';
 import { useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
 import type { DepthEnvelopePoint, ReservoirLayer } from "@/lib/cementing-calculations";
 import CopyImageButton from "./CopyImageButton";
 
-type Unit = "MPa" | "kgf";
-const UNIT: Record<Unit, { k: number; label: string; dec: number }> = { MPa: { k: 1, label: "МПа", dec: 1 }, kgf: { k: 10.197, label: "кгс/см²", dec: 0 } };
 const C = { max: "#dc2626", min: "#16a34a", hydro: "#2563eb", pore: "#fde68a", poreLine: "#ca8a04", fracBand: "#cbd5e1", frac: "#94a3b8" };
 
 interface Props {
+  settings?:DepthChartSettings;onSettingsChange?:(s:DepthChartSettings)=>void;
   envelope: DepthEnvelopePoint[];
   prevShoeMD: number;
   casingDepthMD: number;
@@ -20,10 +20,16 @@ interface Props {
 const tooltipStyle = { backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" };
 
 /** Давление и ЭЦП в затрубье по глубине за всю операцию — огибающие, пластовое давление и ГРП (как в зарубежных программах). */
-export default function DepthPressureCharts({ envelope, prevShoeMD, casingDepthMD, layers = [], safety = 0.95 }: Props) {
-  const [unit, setUnit] = useState<Unit>("MPa");
+export default function DepthPressureCharts({ settings,onSettingsChange,envelope, prevShoeMD, casingDepthMD, layers = [], safety = 0.95 }: Props) {
+  const [localSettings,setLocalSettings]=useState<DepthChartSettings>(()=>normalizeDepthChartSettings(settings));
+  const config=normalizeDepthChartSettings(onSettingsChange?settings:(settings??localSettings)),unit=config.pressureUnit;
+  const update=(patch:Partial<DepthChartSettings>)=>{const next={...config,...patch};setLocalSettings(next);onSettingsChange?.(next);};
+  const du=DEPTH_UNITS[config.depthUnit],density=DENSITY_UNITS[config.densityUnit];
+  const depthAt=(md:number)=>{if(config.coordinate==='MD')return md*du.k;for(let i=1;i<envelope.length;i++)if(md<=envelope[i].md){const a=envelope[i-1],b=envelope[i];return (a.tvd+(b.tvd-a.tvd)*(md-a.md)/Math.max(1e-12,b.md-a.md))*du.k;}return (envelope[envelope.length-1]?.tvd??0)*du.k;};
+  const depthMin=Math.min(0,...envelope.map(e=>(config.coordinate==='MD'?e.md:e.tvd)*du.k));
+  const depthMax=Math.max(1,...envelope.map(e=>(config.coordinate==='MD'?e.md:e.tvd)*du.k));
   const refP = useRef<HTMLDivElement>(null), refE = useRef<HTMLDivElement>(null);
-  const u = UNIT[unit];
+  const u = PRESSURE_UNITS[unit];
 
   const pData = useMemo(() => {
     const xMaxRaw = Math.max(...envelope.map((e) => Math.max(e.maxPressureMPa, e.fracPressureMPa ?? 0))) * u.k;
@@ -34,7 +40,7 @@ export default function DepthPressureCharts({ envelope, prevShoeMD, casingDepthM
       rows: envelope.map((e) => {
         const fr = e.fracPressureMPa !== null ? e.fracPressureMPa * u.k : null;
         return {
-          md: Math.round(e.md), tvd: Math.round(e.tvd),
+          depth:(config.coordinate==='MD'?e.md:e.tvd)*du.k,md:e.md,tvd:e.tvd,
           max: e.maxPressureMPa * u.k, min: e.minPressureMPa * u.k, hydro: e.minHydrostaticMPa * u.k, woc: e.wocHydrostaticMPa * u.k,
           pore: e.porePressureMPa !== null ? e.porePressureMPa * u.k : null,
           fBase: fr !== null ? fr * safety : null, fBand: fr !== null ? fr * (1 - safety) : null, fZone: fr !== null ? Math.max(0, xMax - fr) : null,
@@ -42,19 +48,19 @@ export default function DepthPressureCharts({ envelope, prevShoeMD, casingDepthM
         };
       }),
     };
-  }, [envelope, u.k, unit, safety]);
+  }, [envelope, u.k, unit, safety,config.coordinate,du.k]);
 
   const eData = useMemo(() => {
-    const ecd = (p: number | null, tvd: number) => (p !== null && tvd > 50 ? p / (0.00981 * tvd) : null);
-    const rows = envelope.filter((e) => e.tvd > 50).map((e) => {
+    const ecd = (p: number | null, tvd: number) => (p !== null && tvd > 50 ? p / (0.00981 * tvd)*density.k : null);
+    const rows = envelope.map((e) => {
       const fr = ecd(e.fracPressureMPa, e.tvd);
-      return { md: Math.round(e.md), tvd: Math.round(e.tvd), max: ecd(e.maxPressureMPa, e.tvd), min: ecd(e.minPressureMPa, e.tvd), hydro: ecd(e.minHydrostaticMPa, e.tvd), woc: ecd(e.wocHydrostaticMPa, e.tvd), pore: ecd(e.porePressureMPa, e.tvd), fr, stage: e.maxAtStage };
+      return { depth:(config.coordinate==='MD'?e.md:e.tvd)*du.k,md:e.md,tvd:e.tvd, max: ecd(e.maxPressureMPa, e.tvd), min: ecd(e.minPressureMPa, e.tvd), hydro: ecd(e.minHydrostaticMPa, e.tvd), woc: ecd(e.wocHydrostaticMPa, e.tvd), pore: ecd(e.porePressureMPa, e.tvd), fr, stage: e.maxAtStage };
     });
     const vals = rows.flatMap((r) => [r.max, r.min, r.hydro, r.woc, r.pore, r.fr].filter((x): x is number => x !== null));
-    const xMin = Math.floor((Math.min(...vals) - 0.04) * 10) / 10;
-    const xMax = Math.ceil((Math.max(...vals) + 0.1) * 10) / 10;
+    const xMin = Math.floor(((vals.length?Math.min(...vals):0) - 0.04) * 10) / 10;
+    const xMax = Math.ceil(((vals.length?Math.max(...vals):1) + 0.1) * 10) / 10;
     return { xMin, xMax, rows: rows.map((r) => ({ ...r, poreArea: r.pore, fBase: r.fr !== null ? r.fr * safety : null, fBand: r.fr !== null ? r.fr * (1 - safety) : null, fZone: r.fr !== null ? Math.max(0, xMax - r.fr) : null })) };
-  }, [envelope, safety]);
+  }, [envelope, safety,config.coordinate,du.k,density.k]);
 
   // проверки по огибающим
   const checks = useMemo(() => {
@@ -70,18 +76,18 @@ export default function DepthPressureCharts({ envelope, prevShoeMD, casingDepthM
   }, [envelope, safety]);
 
   const layerRefs = layers.filter((l) => l.topMD > 0 && l.topMD <= casingDepthMD);
-  const yTicks = useMemo(() => { const st = casingDepthMD > 3000 ? 500 : casingDepthMD > 1500 ? 250 : 100; const t: number[] = []; for (let d = 0; d <= casingDepthMD; d += st) t.push(d); return t; }, [casingDepthMD]);
+  const yTicks = useMemo(() => { const st = depthMax > 10000 ? 2000 : depthMax > 3000 ? 500 : depthMax > 1500 ? 250 : 100; const t: number[] = []; for (let d = Math.floor(depthMin/st)*st; d <= depthMax; d += st) t.push(d); return t; }, [depthMin,depthMax]);
   const fmt = (v: number, d = u.dec) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
   const common = (xDomain: [number, number], xLabel: string) => (
     <>
       <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.6} />
-      <YAxis dataKey="md" type="number" domain={[0, casingDepthMD]} ticks={yTicks} tick={{ fontSize: 11 }} width={52}
-        label={{ value: "Глубина по стволу, м", angle: -90, position: "insideLeft", offset: 4, fontSize: 12 }} />
+      <YAxis dataKey="depth" type="number" domain={[depthMin, depthMax]} ticks={yTicks} tick={{ fontSize: 11 }} width={52}
+        label={{ value: `Глубина ${config.coordinate}, ${du.label}`, angle: -90, position: "insideLeft", offset: 4, fontSize: 12 }} />
       <XAxis type="number" orientation="top" domain={xDomain} allowDataOverflow tick={{ fontSize: 11 }}
         label={{ value: xLabel, position: "insideTop", offset: -22, fontSize: 12 }} />
-      {prevShoeMD > 0 && <ReferenceLine y={prevShoeMD} stroke="#64748b" strokeDasharray="6 3" label={{ value: `башмак пред. колонны ${prevShoeMD} м`, position: "insideBottomLeft", fontSize: 10, fill: "#64748b" }} />}
-      {layerRefs.map((l) => <ReferenceLine key={l.name + l.topMD} y={l.topMD} stroke={C.poreLine} strokeDasharray="2 3" label={{ value: l.name || "пласт", position: "insideTopLeft", fontSize: 10, fill: C.poreLine }} />)}
+      {prevShoeMD > 0 && <ReferenceLine y={depthAt(prevShoeMD)} stroke="#64748b" strokeDasharray="6 3" label={{ value: `башмак ${depthAt(prevShoeMD).toFixed(1)} ${du.label} ${config.coordinate}`, position: "insideBottomLeft", fontSize: 10, fill: "#64748b" }} />}
+      {layerRefs.map((l) => <ReferenceLine key={l.name + l.topMD} y={depthAt(l.topMD)} stroke={C.poreLine} strokeDasharray="2 3" label={{ value: l.name || "пласт", position: "insideTopLeft", fontSize: 10, fill: C.poreLine }} />)}
     </>
   );
 
@@ -90,12 +96,16 @@ export default function DepthPressureCharts({ envelope, prevShoeMD, casingDepthM
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-lg">Давление и ЭЦП в затрубье по глубине — за всю операцию</CardTitle>
-          <div className="flex items-center gap-1 text-xs">
-            {(Object.keys(UNIT) as Unit[]).map((k) => <button key={k} onClick={() => setUnit(k)} className={`rounded px-2 py-1 border ${unit === k ? "bg-primary text-primary-foreground border-primary" : "border-border"}`}>{UNIT[k].label}</button>)}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <label>Координата<select aria-label="Координата глубинных графиков" value={config.coordinate} onChange={e=>update({coordinate:e.target.value as 'MD'|'TVD'})} className="border rounded bg-background p-1"><option>MD</option><option>TVD</option></select></label>
+            <label>Глубина<select aria-label="Единицы глубинных графиков" value={config.depthUnit} onChange={e=>update({depthUnit:e.target.value as 'm'|'ft'})} className="border rounded bg-background p-1">{Object.entries(DEPTH_UNITS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></label>
+            <label>Давление<select aria-label="Единицы давления по глубине" value={unit} onChange={e=>update({pressureUnit:e.target.value as DepthChartSettings['pressureUnit']})} className="border rounded bg-background p-1">{Object.entries(PRESSURE_UNITS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></label>
+            <label>ЭЦП<select aria-label="Единицы ЭЦП по глубине" value={config.densityUnit} onChange={e=>update({densityUnit:e.target.value as DepthChartSettings['densityUnit']})} className="border rounded bg-background p-1">{Object.entries(DENSITY_UNITS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></label>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        <p className="text-xs text-muted-foreground">Настройки глубинных графиков сохраняются в проекте и применяются к Word и XLSX. Временные графики сохраняют подписанные единицы. ЭЦП вычисляется по физической TVD, независимо от выбранной оси; одинаковые TVD не объединяются. При наложении точек в TVD используйте MD; в XLSX сохранены обе координаты.</p>
         <p className="text-xs text-muted-foreground">
           Для каждой глубины — огибающие за весь процесс (закачка буфера и цемента, продавка, остановки, СТОП): максимальное давление в затрубье, минимальное давление при циркуляции
           и минимальное гидростатическое давление (без трения). Пунктир — гидростатика после продавки при потере гидростатики цементом в ОЗЦ (цемент как столб воды затворения).
@@ -106,7 +116,7 @@ export default function DepthPressureCharts({ envelope, prevShoeMD, casingDepthM
           <div className={`rounded-md border p-2 ${checks.fracMargin < 0 ? "border-destructive/60 bg-destructive/5" : "border-border/60"}`}>
             <p className="text-muted-foreground">Мин. запас до ГРП × {safety}</p>
             <p className="text-base font-semibold">{Number.isFinite(checks.fracMargin) ? `${fmt(checks.fracMargin * u.k)} ${u.label}` : "ГРП не задан"}</p>
-            {Number.isFinite(checks.fracMargin) && <p className="text-muted-foreground">на {Math.round(checks.fracAt)} м</p>}
+            {Number.isFinite(checks.fracMargin) && <p className="text-muted-foreground">на MD {Math.round(checks.fracAt)} м</p>}
           </div>
           <div className={`rounded-md border p-2 ${checks.poreMarginDyn < 0 ? "border-destructive/60 bg-destructive/5" : "border-border/60"}`}>
             <p className="text-muted-foreground">Мин. превышение гидростатики над пластовым (пласты)</p>
@@ -115,10 +125,11 @@ export default function DepthPressureCharts({ envelope, prevShoeMD, casingDepthM
           <div className={`rounded-md border p-2 ${checks.poreMargin < 0 ? "border-amber-500/60 bg-amber-500/5" : "border-border/60"}`}>
             <p className="text-muted-foreground">То же при потере гидростатики цементом (ОЗЦ)</p>
             <p className="text-base font-semibold">{Number.isFinite(checks.poreMargin) ? `${fmt(checks.poreMargin * u.k)} ${u.label}` : "—"}</p>
-            {Number.isFinite(checks.poreMargin) && <p className="text-muted-foreground">{checks.poreMargin < 0 ? `риск притока / миграции газа на ${Math.round(checks.poreAt)} м — газоблок, расширение, противодавление` : `на ${Math.round(checks.poreAt)} м`}</p>}
+            {Number.isFinite(checks.poreMargin) && <p className="text-muted-foreground">{checks.poreMargin < 0 ? `риск притока / миграции газа на MD ${Math.round(checks.poreAt)} м — газоблок, расширение, противодавление` : `на MD ${Math.round(checks.poreAt)} м`}</p>}
           </div>
         </div>
 
+        {!eData.rows.some(r=>r.max!==null)&&<p className="text-xs text-amber-700">Нет рассчитанной глубинной ЭЦП при TVD больше 50 м. Пустые значения не заменены нулём.</p>}
         <div className="grid gap-4 xl:grid-cols-2">
           <div>
             <div className="flex items-center justify-between mb-1"><p className="text-sm font-semibold">Давление в кольцевом пространстве</p><CopyImageButton targetRef={refP} /></div>
@@ -126,7 +137,7 @@ export default function DepthPressureCharts({ envelope, prevShoeMD, casingDepthM
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart layout="vertical" data={pData.rows} margin={{ top: 34, right: 16, left: 8, bottom: 8 }}>
                   {common([0, pData.xMax], `Давление, ${u.label}`)}
-                  <Tooltip contentStyle={tooltipStyle} labelFormatter={(md) => `Глубина ${md} м`}
+                  <Tooltip contentStyle={tooltipStyle} labelFormatter={(md) => `Глубина ${Number(md).toFixed(2)} ${du.label} ${config.coordinate}`}
                     formatter={(v: number, n: string) => (["fBase", "fBand", "fZone"].includes(String(n)) ? null : [`${Number(v).toFixed(u.dec)} ${u.label}`, n]) as never} />
                   <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} verticalAlign="bottom" />
                   <Area dataKey="pore" name="Пластовое давление" type="linear" stroke={C.poreLine} strokeWidth={1} fill={C.pore} fillOpacity={0.6} connectNulls={false} isAnimationActive={false} />
@@ -147,9 +158,9 @@ export default function DepthPressureCharts({ envelope, prevShoeMD, casingDepthM
             <div className="overflow-x-auto"><div ref={refE} className="h-[560px] min-w-[520px] bg-card">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart layout="vertical" data={eData.rows} margin={{ top: 34, right: 16, left: 8, bottom: 8 }}>
-                  {common([eData.xMin, eData.xMax], "ЭЦП, г/см³")}
-                  <Tooltip contentStyle={tooltipStyle} labelFormatter={(md) => `Глубина ${md} м`}
-                    formatter={(v: number, n: string) => (["fBase", "fBand", "fZone", "poreArea"].includes(String(n)) ? null : [`${Number(v).toFixed(3)} г/см³`, n]) as never} />
+                  {common([eData.xMin, eData.xMax], `ЭЦП, ${density.label}`)}
+                  <Tooltip contentStyle={tooltipStyle} labelFormatter={(md) => `Глубина ${Number(md).toFixed(2)} ${du.label} ${config.coordinate}`}
+                    formatter={(v: number, n: string) => (["fBase", "fBand", "fZone", "poreArea"].includes(String(n)) ? null : [`${Number(v).toFixed(3)} ${density.label}`, n]) as never} />
                   <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} verticalAlign="bottom" />
                   <Area dataKey="poreArea" name="Экв. градиент пластового давления" type="linear" stroke={C.poreLine} strokeWidth={1} fill={C.pore} fillOpacity={0.6} isAnimationActive={false} baseValue={eData.xMin} />
                   <Area dataKey="fBase" stackId="f" stroke="none" fill="transparent" legendType="none" name="fBase" isAnimationActive={false} />

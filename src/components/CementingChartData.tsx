@@ -1,0 +1,17 @@
+import {useMemo,useState} from 'react';
+import * as XLSX from 'xlsx';
+import {Card,CardHeader,CardTitle,CardContent} from './ui/card';
+import {Button} from './ui/button';
+import {cementingNumericCharts,chartCoverage,cementingChartsWorkbook} from '@/lib/cementing-chart-data';
+import type {PressureProfileResult} from '@/lib/cementing-calculations';
+import type {DepthChartSettings} from '@/lib/depth-chart-settings';
+export default function CementingChartData({result,settings}:{result:Parameters<typeof cementingNumericCharts>[0];settings?:DepthChartSettings}){
+ const coverage=useMemo(()=>chartCoverage(cementingNumericCharts(result,settings)),[result,settings]);
+ const [error,setError]=useState('');
+ return <Card><CardHeader><CardTitle className="text-lg">Данные графиков и выгрузка XLSX</CardTitle></CardHeader><CardContent className="space-y-3">
+  <p className="text-xs text-muted-foreground">Основные гидравлические графики текущего расчёта, выбранная глубина и сжатие после посадки. Полные числовые ряды без прореживания; пустые значения сохраняются. Центрирование, дохождение, лаборатория и 3D в эту выгрузку не входят.</p>
+  <Button onClick={()=>{try{setError('');XLSX.writeFile(cementingChartsWorkbook(result,settings),'Данные-графиков-цементирования.xlsx');}catch(e){setError(e instanceof Error?e.message:String(e));}}}>Скачать данные графиков XLSX</Button>
+  {error&&<p role="alert" className="text-destructive text-xs">{error}</p>}
+  <details><summary className="text-sm cursor-pointer">Карта графиков: наличие данных и разделы Word</summary><div className="overflow-auto"><table className="text-xs w-full"><thead><tr><th className="text-left p-2">График / пункт Word</th><th>Состояние</th><th>Панелей</th><th>Строк</th></tr></thead><tbody>{coverage.map(r=><tr key={r.key}><td className="p-2">{r.label}</td><td>{r.status}</td><td>{r.ready.length}</td><td>{r.rows}</td></tr>)}</tbody></table></div></details>
+ </CardContent></Card>;
+}

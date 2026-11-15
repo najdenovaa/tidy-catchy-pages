@@ -179,6 +179,7 @@ export interface WellData {
   trajectory: TrajectoryPoint[];
   casingSections?: CasingSection[];
   cavernIntervals?: CavernInterval[];
+  depthChartSettings?: import('./depth-chart-settings').DepthChartSettings;
   caliperLog?: import("./well-geometry").CaliperLog;
   reservoirLayers?: ReservoirLayer[];
   ckodShearPressureMPa?: number; // давление среза пробки на ЦКОД, МПа (по умолчанию 1.5)
