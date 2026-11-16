@@ -5,6 +5,10 @@ on:
     paths:
       - 'src/lib/*report*'
       - 'src/lib/rheology-*'
+      - 'src/lib/basket-chart-data*'
+      - 'src/lib/cement-basket-stop*'
+      - 'src/components/BasketStopCard*'
+      - 'src/lib/__tests__/basket-chart-report.test.ts'
       - 'src/lib/__tests__/rheology-chart-report.test.ts'
       - 'src/lib/cementing-chart-data*'
       - 'src/lib/depth-chart-settings*'
@@ -63,7 +67,7 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
@@ -72,6 +76,7 @@ jobs:
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/chart-units.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/chart-presentation.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/rheology-coverage.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/basket-coverage.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
@@ -138,6 +143,19 @@ jobs:
           rheology_preview.save(d / "rheology-coverage-preview.png", optimize=True)
           print("RHEOLOGY_QA_PNG=" + base64.b64encode((d / "rheology-coverage-preview.png").read_bytes()).decode())
           print("Rheology report:", len(rheology), "pages;", sum(len(p.get_image_info()) for p in rheology), "images")
+          basket = fitz.open(d / "basket-coverage.pdf")
+          basket_text = " ".join(" ".join(p.get_text().split()) for p in basket)
+          assert "Глубина TVD, ft" in basket_text and "Давление, psi" in basket_text
+          assert "SECRET-PASSPORT" not in basket_text
+          assert all(abs(p.rect.width - 595.3) < 2 for p in basket)
+          assert sum(len(p.get_image_info()) for p in basket) >= 1
+          preview_basket = Image.new("RGB", (775*len(basket),1095), "white")
+          for i, page in enumerate(basket):
+              pix = page.get_pixmap(matrix=fitz.Matrix(1.3,1.3), alpha=False)
+              preview_basket.paste(Image.frombytes("RGB",(pix.width,pix.height),pix.samples),(i*775,0))
+          preview_basket.save(d / "basket-coverage-preview.png", optimize=True)
+          print("BASKET_COVERAGE_QA_PNG=" + base64.b64encode((d / "basket-coverage-preview.png").read_bytes()).decode())
+          print("Basket report:",len(basket),"pages")
           ab = fitz.open(d / "ab-centralization.pdf")
           ab_text = " ".join(" ".join(p.get_text().split()) for p in ab)
           assert "Изделие Альфа" in ab_text and "Изделие Бета" in ab_text and "АБ" in ab_text
@@ -187,3 +205,6 @@ jobs:
             /tmp/cementing-report-qa/rheology-coverage.docx
             /tmp/cementing-report-qa/rheology-coverage.pdf
             /tmp/cementing-report-qa/rheology-coverage-preview.png
+            /tmp/cementing-report-qa/basket-coverage.docx
+            /tmp/cementing-report-qa/basket-coverage.pdf
+            /tmp/cementing-report-qa/basket-coverage-preview.png

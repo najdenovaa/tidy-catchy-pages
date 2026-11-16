@@ -15,7 +15,7 @@ it('exports the selected modern fleet and basket comparison using current saved 
  const svgs=buildBasketStopReportSvgs(p.basketStop);
  expect(svgs).toHaveLength(1);expect(svgs[0].svg).not.toMatch(/NaN|Infinity/);
  const png=process.env.FLEET_QA_DIR+'/basket.png';
- const extras=existsSync(png)?{figures:[{title:svgs[0].title,dataUrl:'data:image/png;base64,'+readFileSync(png).toString('base64'),width:720,height:520}]}:undefined;
+ const extras=existsSync(png)?{figures:[{title:svgs[0].title,dataUrl:'data:image/png;base64,'+readFileSync(png).toString('base64'),width:svgs[0].width,height:svgs[0].height}]}:undefined;
  const blob=await exportToDocx(well,ex.drillingFluid,ex.slurries,ex.buffers,ex.displacementFluids,ex.fractureGradient,undefined,undefined,{volumes:v,pressureResult:p},{returnBlob:true,extras});
  const bytes=Buffer.from(await (blob as Blob).arrayBuffer()),zip=await JSZip.loadAsync(bytes),xml=await zip.file('word/document.xml')!.async('text');
  for(const text of ['SERVA','Паспорт QA-26','Цементовоз ЦТ-25','с тягачом','Корзины: давление после Стоп','AVRORA 500S QA','несущая способность','пластового давления'])expect(xml).toContain(text);

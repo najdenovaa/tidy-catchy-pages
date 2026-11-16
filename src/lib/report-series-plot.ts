@@ -1,7 +1,7 @@
 import type {ReportItem} from './cementing-report-options';
 import {resolveChartPresentation,type ChartPresentation} from './chart-presentation';
 export interface PlotSeries {name:string;color:string;values:(number|null|undefined)[];axis?:'left'|'right';dash?:string;curve?:'stepBefore';reference?:boolean;markersOnly?:boolean;}
-export interface PlotOptions {rightUnit?:string;depth?:boolean;stages?:{time:number;label:string}[];plotId?:string;presentation?:ChartPresentation;note?:string}
+export interface PlotOptions {rightUnit?:string;depth?:boolean;stages?:{time:number;label:string}[];plotId?:string;presentation?:ChartPresentation;note?:string;depthMarkers?:{depth:number;label:string}[]}
 const finite=(n:unknown):n is number=>typeof n==='number'&&Number.isFinite(n);
 const esc=(s:string)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function wrap(text:string,max:number){const lines:string[]=[];let line='';for(const word of text.split(/\s+/)){for(let offset=0;offset<word.length;offset+=max){const part=word.slice(offset,offset+max);if(line&&line.length+part.length+1>max){lines.push(line);line='';}line+=(line?' ':'')+part;}}if(line)lines.push(line);return lines;}
@@ -49,17 +49,18 @@ export function reportSeriesPlot(sourceTitle:string,item:ReportItem,xValues:numb
   if(s.markersOnly)svg+=markers;else svg+=`<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2.2" ${s.dash?'stroke-dasharray="'+s.dash+'"':''}/>`;
  }
  if(!opts.depth)for(const [i,stage]of (opts.stages??[]).entries())if(stage.time>=xr.min&&stage.time<=xr.max){svg+=`<path d="M${X(stage.time)} ${top}V${bottom}" stroke="#94a3b8" stroke-dasharray="3 5"/>`+text(stage.label.slice(0,30),X(stage.time)+3,top+12+(i%3)*14,Math.max(9,fontSize-3),'fill="#64748b"');}
+ if(opts.depth)for(const marker of opts.depthMarkers??[]){if(!finite(marker.depth)||marker.depth<xr.min||marker.depth>xr.max)continue;const yy=top+(marker.depth-xr.min)/(xr.max-xr.min)*(bottom-top);svg+=`<path d="M${left} ${yy}H${right}" stroke="#64748b" stroke-dasharray="3 4"/>`+text(marker.label,right-4,Math.max(top+12,yy-4),10,'text-anchor="end" fill="#475569"');}
  svg+='</g>';
  svg+=text(opts.depth?leftUnit:xUnit,(left+right)/2,bottom+58,fontSize+1,'text-anchor="middle"');
  svg+=text(opts.depth?xUnit:leftUnit,18,(top+bottom)/2,fontSize,`transform="rotate(-90 18 ${(top+bottom)/2})" text-anchor="middle"`);
  if(opts.rightUnit)svg+=text(opts.rightUnit,width-18,(top+bottom)/2,fontSize,`transform="rotate(90 ${width-18} ${(top+bottom)/2})" text-anchor="middle"`);
  if(outsideCount)svg+=text(`За пределами окна: ${outsideCount} значений. Полные ряды сохранены в XLSX.`,24,height-12,10,'fill="#b45309"');
  else if(style.ignored.length)svg+=text('Единицы или координата изменились: прежние пределы соответствующих шкал не применены.',24,height-12,10,'fill="#b45309"');
- return {title,plotId:opts.plotId??item,reportItem:item,width,height,svg:svg+'</svg>',data:{sourceTitle,xLabel:xUnit,leftLabel:leftUnit,rightLabel:opts.rightUnit,depth:!!opts.depth,stages:opts.stages,note:opts.note,presentation,ignoredRanges:style.ignored,outsideCount,ranges:{x:xr,left:lr,right:opts.rightUnit?rr:undefined},coordinates:undefined as {mdM:number;tvdM:number}[]|undefined,xValues:xValues.map(x=>finite(x)?x:null),series:series.map(s=>({...s,values:xValues.map((_,i)=>finite(s.values[i])?s.values[i] as number:null)}))}};
+ return {title,plotId:opts.plotId??item,reportItem:item,width,height,svg:svg+'</svg>',data:{sourceTitle,xLabel:xUnit,leftLabel:leftUnit,rightLabel:opts.rightUnit,depth:!!opts.depth,stages:opts.stages,note:opts.note,depthMarkers:opts.depthMarkers,presentation,ignoredRanges:style.ignored,outsideCount,ranges:{x:xr,left:lr,right:opts.rightUnit?rr:undefined},coordinates:undefined as {mdM:number;tvdM:number}[]|undefined,xValues:xValues.map(x=>finite(x)?x:null),series:series.map(s=>({...s,values:xValues.map((_,i)=>finite(s.values[i])?s.values[i] as number:null)}))}};
 }
 export function applyPlotPresentation<T extends ReturnType<typeof reportSeriesPlot>>(plot:T,presentation?:ChartPresentation):T {
  if(!presentation&&!plot.data.presentation)return plot;
- const d=plot.data,r=reportSeriesPlot(d.sourceTitle,plot.reportItem,d.xValues.map(x=>x??NaN),d.xLabel,d.leftLabel,d.series,{rightUnit:d.rightLabel,depth:d.depth,stages:d.stages,note:d.note,plotId:plot.plotId,presentation});
+ const d=plot.data,r=reportSeriesPlot(d.sourceTitle,plot.reportItem,d.xValues.map(x=>x??NaN),d.xLabel,d.leftLabel,d.series,{rightUnit:d.rightLabel,depth:d.depth,stages:d.stages,note:d.note,depthMarkers:d.depthMarkers,plotId:plot.plotId,presentation});
  return {...plot,...r,data:{...r.data,coordinates:d.coordinates}};
 }
 export function hasPlotNumbers(plot:ReturnType<typeof reportSeriesPlot>){return plot.data.xValues.some((x,i)=>x!==null&&plot.data.series.some(s=>!s.reference&&s.values[i]!==null));}

@@ -3,9 +3,9 @@ import { boreDiameterAtDepth } from "./well-geometry";
  * No basket credit is applied to the primary hydraulic/safety calculation. */
 import { getEffectiveTrajectory, interpolateTVD, type WellData } from './cementing-calculations';
 export interface StopColumnSegment { top: number; bot: number; rho: number; fluidType?: string }
-export interface BasketStopRow { md: number; tvd: number; withoutMPa: number; scenarioMPa: number; reductionMPa: number; poreMPa: number | null; limitMPa: number | null }
+export interface BasketStopRow { md: number; tvd: number; withoutMPa: number; scenarioMPa: number; reductionMPa: number; poreMPa: number | null; limitMPa: number | null; poreSource?: string; limitSource?: string }
 export interface BasketLoad { id: string; model: string; md: number; transferPct: number; potentialMPa: number; transferredMPa: number; reactionKN: number; capacityKN?: number; limited: boolean; notes: string[] }
-export interface BasketStopResult { elapsedMin: number; rows: BasketStopRow[]; baskets: BasketLoad[]; notes: string[] }
+export interface BasketStopResult { elapsedMin: number; rows: BasketStopRow[]; baskets: BasketLoad[]; notes: string[]; inputs?: {id:string;model:string;manufacturer:string;sourceUrl?:string;md:number;quantity:number;supportPct?:number;bridgeMin?:number;carrierDensity?:number;effectiveCarrierDensity:number;capacityKN?:number}[] }
 const g = .00981;
 export function evaluateBasketStop(w: WellData, column: StopColumnSegment[], fractureGradientKPaM: number): BasketStopResult {
   const traj = getEffectiveTrajectory(w), tvd = (md: number) => interpolateTVD(md, traj);
@@ -70,9 +70,9 @@ export function evaluateBasketStop(w: WellData, column: StopColumnSegment[], fra
     const pores=ls.filter(l=>l.porePressureGrad>0).map(l=>l.porePressureGrad*tvd(md)/1000);
     const limits=ls.flatMap(l=>[l.fracGrad,l.absorbGrad]).filter(n=>n>0).map(n=>n*tvd(md)/1000);
     if(md>=w.prevCasingDepth&&fractureGradientKPaM>0)limits.push(fractureGradientKPaM*tvd(md)/1000);
-    return {md,tvd:tvd(md),withoutMPa,scenarioMPa:withoutMPa-reductionMPa,reductionMPa,poreMPa:pores.length?Math.max(...pores):null,limitMPa:limits.length?Math.min(...limits):null};
+    return {md,tvd:tvd(md),withoutMPa,scenarioMPa:withoutMPa-reductionMPa,reductionMPa,poreMPa:pores.length?Math.max(...pores):null,limitMPa:limits.length?Math.min(...limits):null,poreSource:ls.filter(l=>l.porePressureGrad>0).map(l=>(l.name||'Пласт')+': заданный пластовый градиент '+l.porePressureGrad+' кПа/м TVD').join('; ')||'Не задано',limitSource:[...ls.flatMap(l=>[l.fracGrad>0?(l.name||'Пласт')+': ГРП '+l.fracGrad+' кПа/м TVD':'',l.absorbGrad>0?(l.name||'Пласт')+': поглощение '+l.absorbGrad+' кПа/м TVD':'']).filter(Boolean),...(md>=w.prevCasingDepth&&fractureGradientKPaM>0?['Общий заданный градиент ГРП '+fractureGradientKPaM+' кПа/м TVD']:[])].join('; ')||'Не задано'};
   });
-  return {elapsedMin,rows,baskets,notes:[
+  return {elapsedMin,rows,baskets,inputs:devices.map(e=>({id:e.id,model:e.model,manufacturer:e.manufacturer,sourceUrl:e.sourceUrl,md:e.depthMD!,quantity:e.quantity,supportPct:e.basketSupportPct,bridgeMin:e.basketBridgeMin,carrierDensity:e.basketCarrierDensityGcm3,effectiveCarrierDensity:e.basketCarrierDensityGcm3>0?e.basketCarrierDensityGcm3:1,capacityKN:e.basketCapacityKN})),notes:[
     'Сразу после остановки насосов гидростатика жидкого столба сохраняется, потери на трение исчезают. Посадочное давление пробки не добавляется автоматически к давлению на пласт.',
     'Корзина пропускает жидкость. Снижение давления возможно при передаче части веса цемента на сформировавшуюся перемычку, корзину и колонну. Время и степень передачи - параметры сценария, не прогноз седиментации.',
     'Непрерывная оценка чувствительности: доля избыточного веса передаётся твёрдым скелетом по поддерживаемому интервалу; скачка давления на проницаемой корзине нет. Ниже опоры сохраняется накопленное снижение. ΔP = доля передачи × g × интеграл (плотность цемента − плотность несущей жидкости) по TVD. Точный пороупругий процесс, фильтрация и обходные каналы не моделируются.',
