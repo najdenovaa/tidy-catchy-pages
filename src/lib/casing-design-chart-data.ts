@@ -7,7 +7,7 @@ import {calculateCasingRunning,normalizeRunningSettings,type CasingRunningAnalys
 import {interpolateTrajectory} from './centralization-calculations';
 import {runningBroomPlot} from './casing-running-plot';
 import {normalizeDepthChartSettings,DEPTH_UNITS} from './depth-chart-settings';
-import {reportSeriesPlot,type PlotSeries} from './report-series-plot';
+import {reportSeriesPlot,hasPlotNumbers,type PlotSeries} from './report-series-plot';
 import {REPORT_ITEMS,reportIncludes,type ReportItem,type ReportSelection} from './cementing-report-options';
 export type CasingChartScope='centralization'|'running';
 export function casingRunningResult(w:WellData,c:CentralizationReportData){if(!c.running)return undefined;return calculateCasingRunning({well:w,intervals:c.intervals,turbPoints:c.turbPoints,...c.running,settings:normalizeRunningSettings(w.runningSettings,c.running.frictionCased,c.running.frictionOpenhole)});}
@@ -25,8 +25,9 @@ export function casingDesignCharts(w:WellData,c:CentralizationReportData,scope:C
  if(scope==='running'&&c.running){const s=normalizeRunningSettings(w.runningSettings,c.running.frictionCased,c.running.frictionOpenhole),result=a??casingRunningResult(w,c)!;
   if(result.valid){const r=result.profile;plots.push(runningBroomPlot(result,s,w,cfg),depth('Профиль осевых сил по колонне','forceProfile','runningForce',r,'Глубина сечения','Осевое усилие, кН',[{name:'Спуск',color:'#15803d',values:r.map(p=>p.runInKN)},{name:'Подъём',color:'#dc2626',values:r.map(p=>p.pullOutKN)},{name:'Без трения',color:'#0369a1',values:r.map(p=>p.freeKN)}]),depth('Профиль сопротивлений вдоль колонны','forceProfile','runningDrag',r,'Глубина сечения','Накопленное сопротивление, кН',[{name:'Оснастка',color:'#7c3aed',values:r.map(p=>p.toolDragKN)},{name:'Вязкое',color:'#0284c7',values:r.map(p=>p.viscousDragKN)},{name:'Стенка',color:'#64748b',values:r.map(p=>p.wallDragKN)}]),depth('Момент при спуске: сухое вращение','torque','runningTorque',result.broom,'Глубина башмака','Момент, кН·м',[{name:'Сухое трение при вращении',color:'#7c3aed',values:result.broom.map(p=>p.torqueKNm)}]));}
  }
- return plots.filter(p=>reportIncludes(selection,p.reportItem)).map(p=>({...p,sourceKey:JSON.stringify([scope,p.plotId,p.data])}));
+ return plots.filter(p=>reportIncludes(selection,p.reportItem)&&hasPlotNumbers(p)).map(p=>({...p,sourceKey:JSON.stringify([scope,p.plotId,p.data])}));
 }
+export function missingCasingChartItems(plots:ReturnType<typeof casingDesignCharts>,scope:CasingChartScope,selection?:ReportSelection){return REPORT_ITEMS[scope].filter(([k])=>(scope==='centralization'?['standoff','loads']:['broom','forceProfile','torque']).includes(k)&&reportIncludes(selection,k)&&!plots.some(p=>p.reportItem===k));}
 export function casingChartRows(p:ReturnType<typeof casingDesignCharts>[number]){return [[p.data.xLabel,'MD, м (исходная)','TVD, м (исходная)',...p.data.series.map(s=>s.name+' ['+p.data.leftLabel+']')],...p.data.xValues.map((x,i)=>[x,p.data.coordinates[i].mdM,p.data.coordinates[i].tvdM,...p.data.series.map(s=>s.values[i])])];}
 /** Full current rows. No raw passport/note or attached document bodies are exported. */
 export function casingDesignWorkbook(w:WellData,c:CentralizationReportData,scope:CasingChartScope,selection?:ReportSelection,a?:CasingRunningAnalysis){
@@ -35,7 +36,7 @@ export function casingDesignWorkbook(w:WellData,c:CentralizationReportData,scope
  const book=XLSX.utils.book_new(),plots=casingDesignCharts(w,c,scope,selection,a),catalog:(string|number|null)[][]=[['Раздел Word','График','Лист XLSX','Координата','Значения','Строк','Статус']];
  const append=(name:string,rows:unknown[][])=>{if(rows.length>1048576)throw new Error('Превышен предел строк XLSX.');const sheet=XLSX.utils.aoa_to_sheet(rows);sheet['!cols']=rows[0].map(()=>({wch:28}));XLSX.utils.book_append_sheet(book,sheet,name);};
  plots.forEach((p,i)=>{const name='График '+(i+1);catalog.push([REPORT_ITEMS[scope].find(([k])=>k===p.reportItem)![1],p.title,name,p.data.xLabel,p.data.leftLabel,p.data.xValues.length,p.data.series.some(s=>s.values.some(v=>v!==null))?'Есть ряд':'Нет числовых значений']);append(name,casingChartRows(p));});
- for(const [key,title]of REPORT_ITEMS[scope].filter(([k])=>(scope==='centralization'?['standoff','loads']:['broom','forceProfile','torque']).includes(k)))if(reportIncludes(selection,key)&&!plots.some(p=>p.reportItem===key))catalog.push([title,'','','','',0,'Нет актуальных данных']);
+ for(const [,title]of missingCasingChartItems(plots,scope,selection))catalog.push([title,'','','','',0,'Нет актуальных числовых данных']);
  if(reportIncludes(selection,'chartData')){append('Карта графиков',catalog);book.SheetNames=['Карта графиков',...book.SheetNames.filter(x=>x!=='Карта графиков')];}
  if(reportIncludes(selection,'inputs')){append('Скважина',[['Параметр','Значение'],['Глубина башмака MD, м',w.casingDepthMD],['Наружный диаметр, мм',w.casingOD],['Стенка, мм',w.casingWall],['Ствол, мм',w.holeDiameter],['Башмак предыдущей колонны MD, м',w.prevCasingDepth],['Проход предыдущей колонны, мм',w.prevCasingID]]);append('Траектория',[['MD, м','TVD, м','Зенит, °','Азимут, °'],...getEffectiveTrajectory(w).map(p=>[p.md,p.tvd,p.zenith,p.azimuth])]);}
  if(reportIncludes(selection,'materials'))append('Оснастка',[['Наименование','Изготовитель','Количество, шт.'],...centralizerInventory(w.casingDepthMD,c.intervals).map(p=>[p.model,p.manufacturer,p.quantity])]);

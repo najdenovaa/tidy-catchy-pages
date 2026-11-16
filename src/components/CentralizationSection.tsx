@@ -531,6 +531,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
 
 
   const chartData:CentralizationReportData={mode,targetStandoff:mode==='auto'?targetStandoff:undefined,autoSpec,chartSettings,jointLength:autoJointLength,intervals:runningIntervals,results:results??[],turbPoints,autoResults:autoResults??undefined,selectedMD:selectedMD??undefined,calculated:!!results?.length,joints:jointSchedule??undefined};
+  const centerPlots=casingDesignCharts(wellData,chartData,'centralization');
   const exportCenter=async(selection:ReportSelection)=>{setReportBusy(true);setReportError('');try{if(exportKind==='xlsx')XLSX.writeFile(casingDesignWorkbook(wellData,chartData,'centralization',selection),'Центрирование-данные.xlsx');else await exportCasingDesignDocx(wellData,chartData,mudDensity,'centralization',selection);}catch(e){setReportError(e instanceof Error?e.message:String(e));}finally{setReportBusy(false);}};
   return (
     <div className="space-y-4">
@@ -958,7 +959,8 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             <CardContent>
               <div ref={standoffProfileRef}>
                 <CasingChartCoordinates settings={chartSettings} onChange={setChartSettings}/>
-                <CasingChartView plots={casingDesignCharts(wellData,chartData,'centralization')}/>
+                <CasingChartView plots={centerPlots}/>
+                {!centerPlots.some(p=>p.reportItem==='loads')&&<p role="status" className="text-sm text-muted-foreground">Боковая нагрузка и прогиб трубы: текущий расчёт не содержит отдельных числовых значений. Они не заменены нулём.</p>}
 
               </div>
             </CardContent>

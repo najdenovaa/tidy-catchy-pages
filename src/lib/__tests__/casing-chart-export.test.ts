@@ -23,7 +23,8 @@ describe('separate casing numeric chart contract',()=>{
   expect(broom.data.series[0].values.slice(0,a.broom.length)).toEqual(a.broom.map(p=>p.runIn));expect(broom.data.series.find(s=>s.name==='Спуск: μ ниже')!.values.slice(0,a.broom.length)).toEqual(a.broom.map(p=>p.runLow));
   expect(broom.data.series.find(s=>s.markersOnly)!.values.at(-1)).toBe(0);expect(broom.data.xValues).toHaveLength(a.broom.length+1);
   expect(plots.find(p=>p.plotId==='runningForce')!.data.series[0].values).toEqual(a.profile.map(p=>p.runInKN));expect(plots.find(p=>p.plotId==='runningDrag')!.data.series[0].values).toEqual(a.profile.map(p=>p.toolDragKN));
-  const sparse={...data,results:data.results.map(p=>({...p,lateralLoadKN:undefined}))};expect(casingDesignCharts(well,sparse,'centralization')[1].data.series[0].values.every(x=>x===null)).toBe(true);
+  const sparse={...data,results:data.results.map(p=>({...p,lateralLoadKN:undefined}))};expect(casingDesignCharts(well,sparse,'centralization').some(p=>p.plotId==='centralLoad')).toBe(false);
+  const legacy={...data,results:data.results.map(p=>({...p,lateralLoadKN:undefined,spanSagMM:undefined}))};expect(casingDesignCharts(well,legacy,'centralization')).toHaveLength(1);expect(JSON.stringify(casingDesignWorkbook(well,legacy,'centralization').Sheets['Карта графиков'])).toContain('Нет актуальных числовых данных');
   const book=casingDesignWorkbook(well,data,'running');expect(XLSX.utils.sheet_to_json(book.Sheets['Замеры'],{header:1,defval:null})).toEqual([['MD, м','Режим','Крюк, тс','В пределах расчётной глубины'],[150,'Спуск',0,'Да'],[250,'Подъём',1,'Нет']]);
  });
  it('honors section choices, rejects invalid calculations and refreshes forces when physical inputs change',()=>{
