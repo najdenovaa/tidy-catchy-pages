@@ -10,7 +10,7 @@ const result=()=>evaluateBasketStop(well,[{top:0,bot:1000,rho:1.9,fluidType:'cem
 const state=()=>({points:[],envelope:[],stageBoundaries:[],observation:undefined,stopStorage:undefined,basketStop:result()});
 it('uses exactly the same full profile in Word figure and XLSX while preserving duplicate TVD and original MD order',()=>{
  const s=state(),before=JSON.stringify(s),settings={...DEFAULT_DEPTH_CHART,coordinate:'TVD' as const,depthUnit:'ft' as const,pressureUnit:'psi' as const},p=basketStopCharts(s.basketStop,settings)[0];
- expect(cementingNumericCharts(s,settings)).toEqual([p]);expect(p.data.xValues).toHaveLength(s.basketStop.rows.length);
+ expect(cementingNumericCharts(s,settings)).toEqual([p]);expect(p.data.xValues).toHaveLength(s.basketStop.rows.length);expect(p.data.depthMarkers![0].depth).toBeCloseTo(700/.3048,10);expect(p.svg).toContain('Корзина: MD 700 м');
  p.data.xValues.forEach((x,i)=>expect(x).toBeCloseTo(s.basketStop.rows[i].tvd/.3048,10));expect(p.data.series[0].values[1]).toBeCloseTo(s.basketStop.rows[1].withoutMPa*145.03773773,6);
  expect(p.data.xValues.filter(x=>x===700/.3048).length).toBeGreaterThan(1);
  const w=cementingChartsWorkbook(s,settings),read=XLSX.read(XLSX.write(w,{type:'array',bookType:'xlsx'}),{type:'array'});

@@ -9,7 +9,7 @@ export function basketStopCharts(result:BasketStopResult|undefined,settings?:Dep
   {name:'Полный столб сразу после Стоп',color:'#2563eb',values:result.rows.map(r=>r.withoutMPa*p.k)},
   {name:'Сценарная передача нагрузки',color:'#ea580c',dash:'6 4',values:result.rows.map(r=>r.scenarioMPa*p.k)},
   {name:'Пластовое: заданное',color:'#a16207',reference:true,values:result.rows.map(r=>r.poreMPa===null?null:r.poreMPa*p.k)},
-  {name:'ГРП / поглощение: заданный предел',color:'#dc2626',reference:true,dash:'4 4',values:result.rows.map(r=>r.limitMPa===null?null:r.limitMPa*p.k)}],{depth:true,plotId:'basketStop',note:'Сценарий не уменьшает давления в основных проверках ГРП. Корзина не является герметичным пакером.'});
+  {name:'ГРП / поглощение: заданный предел',color:'#dc2626',reference:true,dash:'4 4',values:result.rows.map(r=>r.limitMPa===null?null:r.limitMPa*p.k)}],{depth:true,plotId:'basketStop',depthMarkers:result.baskets.flatMap(b=>{const row=result.rows.find(r=>r.md===b.md);return row?[{depth:(c.coordinate==='TVD'?row.tvd:row.md)*d.k,label:(b.model||'Корзина')+': MD '+b.md+' м'}]:[];}),note:'Сценарий не уменьшает давления в основных проверках ГРП. Корзина не является герметичным пакером.'});
  return [{...plot,data:{...plot.data,coordinates:result.rows.map(r=>({mdM:r.md,tvdM:r.tvd}))}}];
 }
 export function appendBasketSheets(w:XLSX.WorkBook,r:BasketStopResult){
