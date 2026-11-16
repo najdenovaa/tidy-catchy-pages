@@ -24,6 +24,12 @@ on:
       - 'src/lib/centralizer-*'
       - 'src/lib/centralization-*'
       - 'src/lib/casing-running-*'
+      - 'src/lib/casing-design-chart-data*'
+      - 'src/lib/__tests__/casing-chart-*'
+      - 'src/lib/__tests__/fixtures/casing-chart-fixture.ts'
+      - 'src/components/CasingChartView*'
+      - 'src/components/CasingRunningSection*'
+      - 'src/components/ReportContentsDialog*'
       - 'src/lib/export-docx.ts'
       - 'src/lib/cement-recipe-designer.ts'
       - 'src/lib/cement-mineral-extenders*'
@@ -71,7 +77,7 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts src/lib/__tests__/casing-chart-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
@@ -82,6 +88,7 @@ jobs:
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/rheology-coverage.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/basket-coverage.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/foam-coverage.docx" "$REPORT_QA_DIR/foam-main-coverage.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/casing-centralization-coverage.docx" "$REPORT_QA_DIR/casing-running-coverage.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
@@ -161,6 +168,20 @@ jobs:
           preview_basket.save(d / "basket-coverage-preview.png", optimize=True)
           print("BASKET_COVERAGE_QA_PNG=" + base64.b64encode((d / "basket-coverage-preview.png").read_bytes()).decode())
           print("Basket report:",len(basket),"pages")
+          for scope, count in [("centralization",3),("running",4)]:
+              scoped = fitz.open(d / ("casing-"+scope+"-coverage.pdf"))
+              scoped_text = " ".join(" ".join(p.get_text().split()) for p in scoped)
+              assert "Карта графиков и числовые выгрузки" in scoped_text and "TVD, ft" in scoped_text
+              assert "SECRET-PASSPORT" not in scoped_text
+              assert sum(len(p.get_image_info()) for p in scoped) == count
+              assert all(abs(p.rect.width-595.3)<2 for p in scoped)
+              preview_casing = Image.new("RGB", (600*len(scoped),850), "white")
+              for i,page in enumerate(scoped):
+                  pix=page.get_pixmap(matrix=fitz.Matrix(1,1),alpha=False)
+                  preview_casing.paste(Image.frombytes("RGB",(pix.width,pix.height),pix.samples),(i*600,0))
+              preview_casing.save(d / ("casing-"+scope+"-preview.png"),optimize=True)
+              print("CASING_"+scope.upper()+"_QA_PNG="+base64.b64encode((d / ("casing-"+scope+"-preview.png")).read_bytes()).decode())
+              print("Casing",scope,len(scoped),"pages;",count,"images")
           foam = fitz.open(d / "foam-coverage.pdf")
           foam_text = " ".join(" ".join(p.get_text().split()) for p in foam)
           assert all(t in foam_text for t in ["подача азота", "плотность в затрубье", "Глубина TVD, ft", "Давление абсолютное, psi"])

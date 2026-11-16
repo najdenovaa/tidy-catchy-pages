@@ -1,3 +1,7 @@
+import * as XLSX from 'xlsx';
+import {casingDesignCharts,casingDesignWorkbook} from '@/lib/casing-design-chart-data';
+import {normalizeDepthChartSettings} from '@/lib/depth-chart-settings';
+import CasingChartView,{CasingChartCoordinates} from './CasingChartView';
 import { CENTRALIZER_PATTERNS, centralizerAtResult, centralizerLayoutErrors, centralizerPlacementText } from '@/lib/centralizer-layout';
 import { centralizerMaterialGeometryKey } from "@/lib/materials-equipment-inventory";
 import { boreDiameterAtDepth } from "@/lib/well-geometry";
@@ -19,7 +23,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Trash2, Calculator, Target, Settings2, Wind } from "lucide-react";
 import CopyImageButton from "@/components/CopyImageButton";
 import type { WellData } from "@/lib/cementing-calculations";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
 import CasingRunningSection from "./CasingRunningSection";
 import {
   calculateCentralization,
@@ -284,6 +287,8 @@ function standoffBg(standoff: number): string {
 
 // ─── Main component ─────────────────────────────────────────────
 export default function CentralizationSection({ wellData, mudDensity, fluidPV = 25, fluidYP = 25, flowRateLps = 10, pipeWeightKgPerM, frictionCased = 0.25, frictionOpenhole = 0.35, onResultsChange, onIntervalsChange, externalIntervals, onReportChange, onWellDataChange }: Props) {
+  const [chartSettings,setChartSettings]=useState(()=>normalizeDepthChartSettings(wellData.depthChartSettings));
+  const [exportKind,setExportKind]=useState<'word'|'xlsx'>('word');
   const [reportOpen,setReportOpen]=useState(false),[reportBusy,setReportBusy]=useState(false),[reportError,setReportError]=useState('');
   const [mode, setMode] = useState<CalcMode>(wellData.centralizerDesign?.mode??"manual");
   const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => wellData.centralizerDesign?.intervals??[newInterval(wellData.casingDepthMD)]);
@@ -517,19 +522,21 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   }, [results, intervals, autoResults, autoJointLength, autoSpec, wellData.casingDepthMD]);
   useEffect(() => {
     onReportChange?.({
-      mode, targetStandoff, autoSpec, jointLength: autoJointLength,
+      mode, targetStandoff, autoSpec, chartSettings, jointLength: autoJointLength,
       running: {mudDensity, pv:fluidPV, yp:fluidYP, pipeWeightKgPerM, frictionCased, frictionOpenhole},
       intervals, results: results ?? [], turbPoints, autoResults: autoResults ?? undefined,
       selectedMD: selectedMD ?? undefined, calculated: !!results?.length, joints: jointSchedule ?? undefined,
     });
-  }, [onReportChange, mode, targetStandoff, autoSpec, autoJointLength, intervals, results, turbPoints, autoResults, selectedMD, jointSchedule, mudDensity, fluidPV, fluidYP, pipeWeightKgPerM, frictionCased, frictionOpenhole, wellData.runningSettings]);
+  }, [onReportChange, chartSettings, mode, targetStandoff, autoSpec, autoJointLength, intervals, results, turbPoints, autoResults, selectedMD, jointSchedule, mudDensity, fluidPV, fluidYP, pipeWeightKgPerM, frictionCased, frictionOpenhole, wellData.runningSettings]);
 
 
-  const exportCenter=async(selection:ReportSelection)=>{setReportBusy(true);setReportError('');try{await exportCasingDesignDocx(wellData,{mode,targetStandoff:mode==='auto'?targetStandoff:undefined,autoSpec,jointLength:autoJointLength,intervals:runningIntervals,results:results??[],turbPoints,autoResults:autoResults??undefined,selectedMD:selectedMD??undefined,calculated:!!results?.length,joints:jointSchedule??undefined},mudDensity,'centralization',selection);}catch(e){setReportError(e instanceof Error?e.message:String(e));}finally{setReportBusy(false);}};
+  const chartData:CentralizationReportData={mode,targetStandoff:mode==='auto'?targetStandoff:undefined,autoSpec,chartSettings,jointLength:autoJointLength,intervals:runningIntervals,results:results??[],turbPoints,autoResults:autoResults??undefined,selectedMD:selectedMD??undefined,calculated:!!results?.length,joints:jointSchedule??undefined};
+  const centerPlots=casingDesignCharts(wellData,chartData,'centralization');
+  const exportCenter=async(selection:ReportSelection)=>{setReportBusy(true);setReportError('');try{if(exportKind==='xlsx')XLSX.writeFile(casingDesignWorkbook(wellData,chartData,'centralization',selection),'Центрирование-данные.xlsx');else await exportCasingDesignDocx(wellData,chartData,mudDensity,'centralization',selection);}catch(e){setReportError(e instanceof Error?e.message:String(e));}finally{setReportBusy(false);}};
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={()=>setReportOpen(true)} disabled={!results?.length||reportBusy}>{reportBusy?'Формирование…':'Word: центрирование'}</Button><span className="text-xs text-muted-foreground">Отдельный отчёт центрирования без цементажа и дохождения.</span></div>
-      <ReportContentsDialog scope="centralization" open={reportOpen} onOpenChange={setReportOpen} onConfirm={exportCenter} busy={reportBusy}/>
+      <div className="flex flex-wrap items-center gap-3"><Button variant="outline" onClick={()=>{setExportKind('word');setReportOpen(true);}} disabled={!results?.length||reportBusy}>{reportBusy?'Формирование…':'Word: центрирование'}</Button><Button variant="outline" disabled={!results?.length||reportBusy} onClick={()=>{setExportKind('xlsx');setReportOpen(true);}}>XLSX: центрирование</Button><span className="text-xs text-muted-foreground">Отдельный отчёт центрирования без цементажа и дохождения.</span></div>
+      <ReportContentsDialog format={exportKind} scope="centralization" open={reportOpen} onOpenChange={setReportOpen} onConfirm={exportCenter} busy={reportBusy}/>
       {reportError&&<p role="alert" className="text-destructive">{reportError}</p>}
       {/* Mode switcher */}
       <div className="flex gap-2">
@@ -951,25 +958,10 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             </CardHeader>
             <CardContent>
               <div ref={standoffProfileRef}>
-                <div className="h-40 flex items-end gap-[1px] overflow-hidden">
-                  {results.map((r, i) => {
-                    const h = Math.max(1, r.standoff);
-                    const bg = standoffBg(r.standoff);
-                    return (
-                      <div
-                        key={i}
-                        className={`flex-1 min-w-[2px] ${bg} cursor-pointer opacity-80 hover:opacity-100 transition-opacity`}
-                        style={{ height: `${h}%` }}
-                        title={`${r.md}м: ${r.standoff}%`}
-                        onClick={() => setSelectedMD(r.md)}
-                      />
-                    );
-                  })}
-                </div>
-                <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-                  <span>0 м</span>
-                  <span>{wellData.casingDepthMD} м</span>
-                </div>
+                <CasingChartCoordinates settings={chartSettings} onChange={setChartSettings}/>
+                <CasingChartView plots={centerPlots}/>
+                {!centerPlots.some(p=>p.reportItem==='loads')&&<p role="status" className="text-sm text-muted-foreground">Боковая нагрузка и прогиб трубы: текущий расчёт не содержит отдельных числовых значений. Они не заменены нулём.</p>}
+
               </div>
             </CardContent>
           </Card>

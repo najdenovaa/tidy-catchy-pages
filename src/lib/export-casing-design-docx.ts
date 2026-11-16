@@ -1,5 +1,8 @@
 import { Document,Packer,Paragraph,TextRun,HeadingLevel,Header,AlignmentType } from 'docx';
 import { saveAs } from 'file-saver';
+import {casingDesignCharts,missingCasingChartItems} from './casing-design-chart-data';
+import {reportDataTable} from './report-layout';
+import {reportIncludes} from './cementing-report-options';
 import { reportPageProperties } from './report-layout';
 import type { WellData } from './cementing-calculations';
 import { resolveCentralizationReport,type CentralizationReportData,type ReportFigure } from './cementing-report-data';
@@ -15,8 +18,13 @@ export async function exportCasingDesignDocx(w:WellData,data:CentralizationRepor
    extras.warnings.push(...missingReportFigures(scope,selection,svgs));
    extras.figures=await rasterizeReportSvgs(svgs);
  }
+ const plots=casingDesignCharts(w,current,scope,selection);
+ const numericItems=new Set(plots.map(p=>p.reportItem));
+ extras.figures=extras.figures?.filter(f=>!numericItems.has(f.reportItem!)||plots.some(p=>p.sourceKey===f.sourceKey));
+ const missing=missingCasingChartItems(plots,scope,selection);
+ const map=reportIncludes(selection,'chartData')?[new Paragraph({text:'Карта графиков и числовые выгрузки',heading:HeadingLevel.HEADING_2}),new Paragraph({text:'XLSX из этого раздела содержит полные ряды тех же графиков без округления. 3D, сечения и формы планок включаются отдельно как иллюстрации.'}),...(plots.length?[reportDataTable(['График','Лист XLSX','Координата','Значения','Строк / точек'],plots.map((p,i)=>[p.title,'График '+(i+1),p.data.xLabel,p.data.leftLabel,String(p.data.xValues.length)+' / '+p.data.series.reduce((n,s)=>n+s.values.filter(v=>v!==null).length,0)]))]:[new Paragraph({text:'Нет выбранных актуальных числовых графиков.'})]),...missing.map(([,title])=>new Paragraph({text:title+': нет актуальных числовых данных; нули не подставлены.'}))]:[];
  const content=buildCementingReportExtras(w,extras,scope,selection);
- const doc=new Document({styles:{default:{document:{run:{font:'Calibri',size:20}}}},sections:[{properties:reportPageProperties(),headers:{default:new Header({children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:REPORT_SCOPE_TITLES[scope],size:16,color:'64748b'})]})]})},children:[new Paragraph({text:REPORT_SCOPE_TITLES[scope],heading:HeadingLevel.TITLE}),new Paragraph({text:`Колонна ${w.casingOD} × ${w.casingWall} мм, башмак MD ${w.casingDepthMD} м. ${new Date().toLocaleDateString('ru-RU')}`}),...content]}]});
+ const doc=new Document({styles:{default:{document:{run:{font:'Calibri',size:20}}}},sections:[{properties:reportPageProperties(),headers:{default:new Header({children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:REPORT_SCOPE_TITLES[scope],size:16,color:'64748b'})]})]})},children:[new Paragraph({text:REPORT_SCOPE_TITLES[scope],heading:HeadingLevel.TITLE}),new Paragraph({text:`Колонна ${w.casingOD} × ${w.casingWall} мм, башмак MD ${w.casingDepthMD} м. ${new Date().toLocaleDateString('ru-RU')}`}),...map,...content]}]});
  const blob=await Packer.toBlob(doc);if(options.returnBlob)return blob;
  saveAs(blob,scope==='centralization'?'Расчёт-центрирования.docx':'Расчёт-дохождения-колонны.docx');
 }

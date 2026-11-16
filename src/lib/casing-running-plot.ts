@@ -1,23 +1,18 @@
 import type { CasingRunningAnalysis, CasingRunningSettings } from './casing-running-analysis';
-/** Printable vector figure shared by screen and Word. Inputs contain only validated numbers. */
-export function runningBroomSVG(a:CasingRunningAnalysis,s:CasingRunningSettings) {
-  if(!a.final)return '';
-  const width=820,height=510,left=66,right=width-28,top=40,bottom=height-76;
-  const values=a.broom.flatMap(p=>[p.runIn,p.pullOut,p.runLow,p.runHigh,p.pullLow,p.pullHigh,p.noTools,p.free]);
-  values.push(...s.measurements.map(m=>m.hookTF));if(s.maxHookKN>0)values.push(s.maxHookKN/9.80665);
-  const min=Math.min(0,...values),max=Math.max(1,...values),pad=(max-min)*.06;
-  const xmin=min-pad,xmax=max+pad,x=(n:number)=>left+(n-xmin)/(xmax-xmin)*(right-left),y=(n:number)=>top+n/a.final!.md*(bottom-top);
-  const colors=['#15803d','#dc2626','#0369a1','#64748b'];
-  let out=`<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Веник: нагрузка на крюке по глубине башмака" width="${width}" height="${height}" style="display:block;width:100%;height:auto;font-family:Arial,sans-serif" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/>`;
-  out+=`<text x="${left}" y="20" font-size="12" fill="#334155">μ колонна / ствол: ${s.frictionCased.toFixed(2)} / ${s.frictionOpenhole.toFixed(2)}; штриховые ±${s.frictionSpread.toFixed(2)}; скорость ${s.speedMps.toFixed(2)} м/с</text>`;
-  for(let i=0;i<=5;i++){const d=a.final.md*i/5,load=xmin+(xmax-xmin)*i/5;
-    out+=`<path d="M${left} ${y(d)}H${right} M${x(load)} ${top}V${bottom}" stroke="#e2e8f0"/><text x="${left-9}" y="${y(d)+4}" text-anchor="end" font-size="12" fill="#334155">${d.toFixed(0)}</text><text x="${x(load)}" y="${bottom+18}" text-anchor="middle" font-size="12" fill="#334155">${load.toFixed(1)}</text>`;
-  }
-  const lines:[keyof CasingRunningAnalysis['broom'][number],string,string][]=[['runLow',colors[0],'5 4'],['runHigh',colors[0],'2 4'],['pullLow',colors[1],'5 4'],['pullHigh',colors[1],'2 4'],['runIn',colors[0],''],['pullOut',colors[1],''],['free',colors[2],''],['noTools',colors[3],'7 3']];
-  for(const [key,color,dash]of lines){const path=a.broom.map((p,i)=>`${i?'L':'M'}${x(p[key])} ${y(p.md)}`).join(' ');out+=`<path d="${path}" fill="none" stroke="${color}" stroke-width="${dash?1.5:2.5}" stroke-dasharray="${dash}"><title>${key}</title></path>`;}
-  if(s.maxHookKN>0)out+=`<path d="M${x(s.maxHookKN/9.80665)} ${top}V${bottom}" stroke="#991b1b" stroke-dasharray="9 4"/><text x="${x(s.maxHookKN/9.80665)-4}" y="${top-9}" text-anchor="end" font-size="12" fill="#991b1b">Предел крюка</text>`;
-  for(const m of s.measurements.filter(m=>m.md<=a.final!.md))out+=`<circle cx="${x(m.hookTF)}" cy="${y(m.md)}" r="5" fill="${m.mode==='runIn'?colors[0]:colors[1]}" stroke="black"><title>Замер MD ${m.md.toFixed(1)} м: ${m.hookTF.toFixed(2)} тс</title></circle>`;
-  out+=`<text x="${(left+right)/2}" y="${bottom+39}" text-anchor="middle" font-size="13" fill="#0f172a">Нагрузка на крюке, тс (с заданным весом блока)</text><text x="18" y="${(top+bottom)/2}" transform="rotate(-90 18 ${(top+bottom)/2})" text-anchor="middle" font-size="13" fill="#0f172a">Глубина башмака MD, м</text>`;
-  for(const [i,label]of ['Спуск','Подъём','Без трения','Спуск без оснастки'].entries())out+=`<path d="M${left+i*180} ${height-14}h22" stroke="${colors[i]}" stroke-width="3"/><text x="${left+28+i*180}" y="${height-10}" font-size="12" fill="#334155">${label}</text>`;
-  return out+'</svg>';
+import {getEffectiveTrajectory,type WellData} from './cementing-calculations';
+import {interpolateTrajectory} from './centralization-calculations';
+import {DEPTH_UNITS,normalizeDepthChartSettings,type DepthChartSettings} from './depth-chart-settings';
+import {reportSeriesPlot,type PlotSeries} from './report-series-plot';
+/** One numeric contract for screen, Word and workbook. Measurements keep their own rows. */
+export function runningBroomPlot(a:CasingRunningAnalysis,s:CasingRunningSettings,w?:WellData,settings?:DepthChartSettings){
+ const c=normalizeDepthChartSettings(settings),unit=DEPTH_UNITS[c.depthUnit],measurements=s.measurements.filter(m=>m.md<=(a.final?.md??0));
+ const md=[...a.broom.map(p=>p.md),...measurements.map(m=>m.md)],n=a.broom.length;
+ const coords=md.map(mdM=>({mdM,tvdM:w?interpolateTrajectory(getEffectiveTrajectory(w),mdM).tvd:mdM}));
+ const line=(name:string,color:string,key:keyof CasingRunningAnalysis['broom'][number],dash?:string):PlotSeries=>({name,color,dash,values:[...a.broom.map(p=>p[key]),...measurements.map(()=>null)]});
+ const series=[line('Спуск','#15803d','runIn'),line('Подъём','#dc2626','pullOut'),line('Без трения','#0369a1','free'),line('Спуск без оснастки','#64748b','noTools','7 3'),line('Спуск: μ ниже','#15803d','runLow','5 4'),line('Спуск: μ выше','#15803d','runHigh','2 4'),line('Подъём: μ ниже','#dc2626','pullLow','5 4'),line('Подъём: μ выше','#dc2626','pullHigh','2 4')];
+ for(const mode of ['runIn','pullOut'] as const)if(measurements.some(m=>m.mode===mode))series.push({name:'Замер MD: '+(mode==='runIn'?'спуск':'подъём'),color:mode==='runIn'?'#15803d':'#dc2626',markersOnly:true,values:md.map((_,i)=>i<n?null:measurements[i-n].mode===mode?measurements[i-n].hookTF:null)});
+ if(s.maxHookKN>0)series.push({name:'Предел крюка',color:'#991b1b',reference:true,dash:'9 4',values:md.map(()=>s.maxHookKN/9.80665)} as PlotSeries);
+ const plot=reportSeriesPlot('Спуск колонны: веник по глубине башмака','broom',coords.map(p=>(c.coordinate==='TVD'?p.tvdM:p.mdM)*unit.k),'Глубина башмака '+c.coordinate+', '+unit.label,'Нагрузка на крюке, тс',series,{depth:true,plotId:'runningBroom',note:`μ колонна / ствол: ${s.frictionCased.toFixed(2)} / ${s.frictionOpenhole.toFixed(2)}; штриховые ±${s.frictionSpread.toFixed(2)} - сценарии, не доверительный интервал. Скорость ${s.speedMps} м/с; вес блока ${s.blockWeightKN} кН. 1 тс = 9,80665 кН.`});
+ return {...plot,data:{...plot.data,coordinates:coords}};
 }
+export function runningBroomSVG(a:CasingRunningAnalysis,s:CasingRunningSettings){return a.final?runningBroomPlot(a,s).svg:'';}
