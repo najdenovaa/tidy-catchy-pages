@@ -976,8 +976,10 @@ export async function exportToDocx(
   if(basket&&reportIncludes(selection,"basket")){
     basketContent.push(sectionTitle('Корзины: давление после Стоп'),noteParagraph(`Сценарий через ${basket.elapsedMin} мин. Основная гидравлика сохраняет полный столб без разгрузки.`));
     const depths=new Set([wellData.casingDepthMD,...basket.baskets.map(b=>b.md),...(wellData.reservoirLayers??[]).flatMap(l=>[l.topMD,l.bottomMD])]);
-    basketContent.push(gridTable(['MD, м','Полный столб, МПа','Сценарий, МПа','Снижение, МПа','Пластовое, МПа','ГРП / потери, МПа'],basket.rows.filter(r=>depths.has(r.md)).map(r=>[fmt(r.md,1),fmt(r.withoutMPa),fmt(r.scenarioMPa),fmt(r.reductionMPa),r.poreMPa===null?'Не задано':fmt(r.poreMPa),r.limitMPa===null?'Не задано':fmt(r.limitMPa)])) as any);
+    basketContent.push(gridTable(['MD / TVD, м','Полный столб, МПа','Сценарий, МПа','Снижение, МПа','Пластовое, МПа','ГРП / потери, МПа'],basket.rows.filter(r=>depths.has(r.md)).map(r=>[fmt(r.md,1)+' / '+fmt(r.tvd,1),fmt(r.withoutMPa),fmt(r.scenarioMPa),fmt(r.reductionMPa),r.poreMPa===null?'Не задано':fmt(r.poreMPa),r.limitMPa===null?'Не задано':fmt(r.limitMPa)])) as any);
     for(const b of basket.baskets){basketContent.push(noteParagraph(`${b.model}: MD ${b.md} м; передача ${fmt(b.transferPct,0)}%; ΔP ${fmt(b.transferredMPa)} МПа; реакция ${fmt(b.reactionKN)} кН; несущая способность ${b.capacityKN===undefined?'не задана':fmt(b.capacityKN)+' кН'}.`));b.notes.forEach(n=>basketContent.push(noteParagraph(n)));}
+    if(basket.inputs)basketContent.push(gridTable(['Изделие / источник','MD, м','Передача / время','Плотность носителя: задано / применено','Способность, кН'],basket.inputs.map(b=>[b.model+'; '+b.manufacturer+'; '+(b.sourceUrl||'Источник изделия не указан'),fmt(b.md,1),(b.supportPct===undefined?'не задано':fmt(b.supportPct,1)+'%')+' / '+(b.bridgeMin===undefined?'не задано':fmt(b.bridgeMin,1)+' мин'),(b.carrierDensity===undefined?'не задано':fmt(b.carrierDensity,3))+' / '+fmt(b.effectiveCarrierDensity,3)+' г/см³',b.capacityKN===undefined?'не задана':fmt(b.capacityKN,2)])) as any);
+    basketContent.push(noteParagraph('Все строки профиля, снижение и источники пределов доступны в XLSX. Параметры передачи нагрузки являются заданным сценарием; ссылка изготовителя не подтверждает их.'));
     basket.notes.forEach(n=>basketContent.push(noteParagraph(n)));
   }
 
