@@ -1,3 +1,4 @@
+import {currentFoamReport,foamCharts} from '@/lib/foam-chart-data';
 import {buildProcessContract} from "@/lib/cementing-process";
 import {rheologyInputErrors} from "@/lib/cement-rheology";
 import {rheologyReportFigures} from "@/lib/rheology-report";
@@ -411,14 +412,14 @@ export default function Index() {
       setExportStatus("Подготовка схем и 3D-кадров");
       try {
         const config=normalizeLogisticsSettings(reportWell.logistics),fleet=planLogistics(pressure,mats,snap.slurries,config);
-        const figures=[...buildStopStorageReportSvgs(pressure.stopStorage,reportWell.chartPresentations),...rheologyReportFigures(snap),...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries,pressure.observation,reportWell.chartPresentations),...buildDepthPressureReportSvgs(pressure.envelope,selection,reportWell.depthChartSettings,reportWell.chartPresentations),...buildBasketStopReportSvgs(pressure.basketStop,reportWell.depthChartSettings),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),cementFleetLayoutFigure(fleet,config)].filter(x=>allowedReportFigure('cementing',selection,x));
+        const figures=[...foamCharts(currentFoamReport(foamReport,reportWell,snap.drillingFluid.density)),...buildStopStorageReportSvgs(pressure.stopStorage,reportWell.chartPresentations),...rheologyReportFigures(snap),...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries,pressure.observation,reportWell.chartPresentations),...buildDepthPressureReportSvgs(pressure.envelope,selection,reportWell.depthChartSettings,reportWell.chartPresentations),...buildBasketStopReportSvgs(pressure.basketStop,reportWell.depthChartSettings),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),cementFleetLayoutFigure(fleet,config)].filter(x=>allowedReportFigure('cementing',selection,x));
         extras.warnings!.push(...missingReportFigures("cementing",selection,figures));
         extras.figures=await rasterizeReportSvgs(figures);
       } catch(err){extras.warnings!.push('Часть изображений недоступна: '+(err instanceof Error?err.message:String(err)));}
       setExportStatus("Формирование Word");
       const blob = await exportToDocx(reportWell, snap.drillingFluid, snap.slurries, snap.buffers, snap.displacementFluids, snap.fractureGradient,
         undefined, cent?.results, { volumes: vol, pressureResult: pressure, materials: mats,
-          flushTimeMin: snap.flushTimeMin, flushVolumeM3: snap.flushVolumeM3 }, { extras, selection, returnBlob: true });
+          flushTimeMin: snap.flushTimeMin, flushVolumeM3: snap.flushVolumeM3 }, { foam:currentFoamReport(foamReport,reportWell,snap.drillingFluid.density),extras, selection, returnBlob: true });
       if (!blob) throw new Error("Документ не создан");
       const file = { url: URL.createObjectURL(blob), name: "Программа-цементирования.docx" };
       setExportFile(file);
@@ -819,7 +820,7 @@ export default function Index() {
             <TabsContent value="charts" forceMount>
               <div data-tab-content="charts">
                 {calcSnapshot && pressureResult ? (
-                  <ChartsSection basketStop={pressureResult.basketStop} rheologyInput={calcSnapshot} chartPresentations={wellData.chartPresentations} onChartPresentationsChange={chartPresentations=>setWellData(w=>({...w,chartPresentations}))} depthChartSettings={wellData.depthChartSettings} onDepthChartSettingsChange={depthChartSettings=>setWellData(w=>({...w,depthChartSettings}))} stopStorage={pressureResult.stopStorage} observation={pressureResult.observation} observationRequest={wellData.pressureObservation} onObservationChange={pressureObservation=>setWellData(w=>({...w,pressureObservation}))} pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin}
+                  <ChartsSection foam={currentFoamReport(foamReport,calcSnapshot.wellData,calcSnapshot.drillingFluid.density)} basketStop={pressureResult.basketStop} rheologyInput={calcSnapshot} chartPresentations={wellData.chartPresentations} onChartPresentationsChange={chartPresentations=>setWellData(w=>({...w,chartPresentations}))} depthChartSettings={wellData.depthChartSettings} onDepthChartSettingsChange={depthChartSettings=>setWellData(w=>({...w,depthChartSettings}))} stopStorage={pressureResult.stopStorage} observation={pressureResult.observation} observationRequest={wellData.pressureObservation} onObservationChange={pressureObservation=>setWellData(w=>({...w,pressureObservation}))} pressureData={pressureResult.points} safeTime={pressureResult.safeWorkingTimeMin} cementStartTime={pressureResult.cementStartTime} stopTime={pressureResult.stopTime} stageBoundaries={pressureResult.stageBoundaries} equilibriumTimeMin={pressureResult.equilibriumTimeMin}
                     envelope={pressureResult.envelope} prevShoeMD={snapWellData?.prevCasingDepth ?? 0} casingDepthMD={snapWellData?.casingDepthMD ?? 0} layers={snapWellData?.reservoirLayers} />
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>

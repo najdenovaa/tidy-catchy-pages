@@ -1,3 +1,4 @@
+import {currentFoamReport,foamReportKey} from './foam-chart-data';
 import {rheologyChartData} from './rheology-data';
 import {RPM_TO_SHEAR,DIAL_TO_PA} from './cement-rheology';
 import type {ChartPresentations} from './chart-presentation';
@@ -671,7 +672,7 @@ function buildImageParagraph(dataUrl: string, title: string, widthPx = 1400, hei
   }
 }
 
-function buildChartsDataPage(pressureResult: PressureProfileResult, chartImages?: Record<string, string>,settings?:DepthChartSettings,selection?:ReportSelection,presentations?:ChartPresentations,rheologyInput?:RheologyReportInput): Paragraph[] {
+function buildChartsDataPage(pressureResult: PressureProfileResult, chartImages?: Record<string, string>,settings?:DepthChartSettings,selection?:ReportSelection,presentations?:ChartPresentations,rheologyInput?:RheologyReportInput,foam?:FoamReportBundle): Paragraph[] {
   const content: Paragraph[] = [
     sectionTitle("14. Графики - диаграммы и данные"),
   ];
@@ -687,7 +688,7 @@ function buildChartsDataPage(pressureResult: PressureProfileResult, chartImages?
 
   content.push(noteParagraph('Карта выбранных основных гидравлических графиков и реологии жидкостей. Полные исходные ряды без прореживания выгружаются в XLSX из раздела «Графики». Таблица ниже является контрольной выборкой, а не полным набором отсчётов. Настройки MD/TVD и единиц применены к глубинным графикам; временные ряды и расчётные таблицы сохраняют подписанные единицы.'));
   if(presentations&&Object.keys(presentations).length)content.push(noteParagraph('Изображения используют сохранённые заголовки, шрифты и окна отображения. Значения вне окна могут не быть видны на рисунке; полный ряд сохраняется в XLSX. Это настройки представления, а не изменение расчёта.'));
-  const plots=cementingNumericCharts({...pressureResult,rheologyInput},settings,selection,presentations),coverage=chartCoverage(plots,selection);
+  const plots=cementingNumericCharts({...pressureResult,rheologyInput,foam},settings,selection,presentations),coverage=chartCoverage(plots,selection);
   content.push(gridTable(['Раздел Word / панели','Координата / шкала','Панелей / строк','Состояние'],coverage.map(c=>[[c.label,...c.ready.map(p=>p.title)].join(' / '),[...new Set(c.ready.map(p=>p.data.xLabel+'; '+p.data.leftLabel+(p.data.rightLabel?'; '+p.data.rightLabel:'')))].join(' / ')||'-',c.ready.length+' / '+c.rows,c.status])) as any);
 
   // Tabular data as fallback / supplement
@@ -990,7 +991,8 @@ export async function exportToDocx(
     riskContent = buildRiskPage(risk);
   } catch { riskContent = [noteParagraph("Оценка риска не выполнена; расчёт этого раздела недоступен.")]; }
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
-  const chartsDataContent = buildChartsDataPage({...pressureResult,observation:freshObservation}, images?.chartImages,wellData.depthChartSettings,selection,wellData.chartPresentations,{drillingFluid,buffers,slurries,displacementFluids});
+  const freshFoam=currentFoamReport(options?.foam,wellData,drillingFluid.density);
+  const chartsDataContent = buildChartsDataPage({...pressureResult,observation:freshObservation}, images?.chartImages,wellData.depthChartSettings,selection,wellData.chartPresentations,{drillingFluid,buffers,slurries,displacementFluids},freshFoam);
   const trajectoryContent = buildTrajectoryPage(wellData, images?.visualImages);
   const sections: {properties:ReturnType<typeof reportPageProperties>;headers?:{default:Header};children:any[]}[]=[{properties:reportPageProperties(),children:titlePage}];
   const add=(key:Parameters<typeof reportIncludes>[1],title:string,children:any[])=>{if(reportIncludes(selection,key)&&children.length)sections.push({properties:reportPageProperties(),headers:{default:new Header({children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:title,size:16,color:"999999",font:"Calibri"})]})]})},children});};
@@ -1027,9 +1029,10 @@ export async function exportToDocx(
 
   if(freshObservation){const r=freshObservation,content:any[]=[sectionTitle('Давление и ЭЦП на выбранной глубине'),kvTable([{label:'Запрошенная глубина',value:r.request.valueM+' м '+r.request.coordinate},{label:'MD / TVD',value:r.depthMD===undefined?'Не определено':fmt(r.depthMD,4)+' / '+fmt(r.depthTVD!,4)+' м'},{label:'Состояние расчёта',value:r.status==='ready'?'Рассчитан временной ряд':'Не рассчитано'},{label:'Источник пластового давления',value:r.poreSource},{label:'ГРП/поглощение и допустимый предел',value:r.limitSource}]) as any,...r.issues.map(noteParagraph),noteParagraph(r.note)];if(r.status==='ready'){content.push(kvTable([{label:'Пластовое / ГРП / поглощение / предел 95%, МПа',value:[r.poreMPa,r.fractureMPa,r.absorptionMPa,r.limitMPa].map(v=>v===undefined?'Не задано':fmt(v,5)).join(' / ')},{label:'Кадров временного ряда',value:String(r.rows.length)},{label:'Максимальное давление в затрубье, МПа',value:fmt(Math.max(...r.rows.map(p=>p.pressureMPa)),6)},{label:'Максимальная ЭЦП, г/см³',value:r.rows.some(p=>p.ecdGcm3!==null)?fmt(Math.max(...r.rows.map(p=>p.ecdGcm3??0)),6):'Не определяется при TVD около нуля'}]) as any);if(reportIncludes(selection,'chartData'))content.push(gridTable(['Время, мин','Этап','Гидрост., МПа','Трение, МПа','Давление, МПа','ЭЦП, г/см³'],r.rows.map(p=>[fmt(p.timeMin,5),p.stage,fmt(p.hydrostaticMPa,6),fmt(p.frictionMPa,6),fmt(p.pressureMPa,6),p.ecdGcm3===null?'Не определяется':fmt(p.ecdGcm3,6)])) as any);}add('selectedDepth','Давление и ЭЦП на выбранной глубине',content);}
 
+  if(reportIncludes(selection,'foam')&&(freshFoam||options?.foam))add('foam','Пеноцементирование',freshFoam?foamReportChildren(freshFoam):[noteParagraph('Нет актуального расчёта пеноцементирования. Пересчитайте модуль; прежние графики не включены.')]);
   add('woc','ОЗЦ',buildWOCPage(wellData,slurries));
   if(!freshObservation&&wellData.pressureObservation)add('selectedDepth','Давление и ЭЦП на выбранной глубине',[sectionTitle('Давление и ЭЦП на выбранной глубине'),noteParagraph('Нет актуального расчёта для выбранной глубины и исходных данных. Пересчитайте программу; прежние значения и рисунки исключены.')]);
-  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)}:undefined;
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
   const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});

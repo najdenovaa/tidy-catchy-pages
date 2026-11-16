@@ -1,14 +1,9 @@
+import FoamChartGallery from './FoamChartGallery';
+import {foamInputKey,foamChartsWorkbook} from '@/lib/foam-chart-data';
+import {normalizeDepthChartSettings} from '@/lib/depth-chart-settings';
+import * as XLSX from 'xlsx';
 import { useState, useEffect, useRef, useMemo } from "react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
+
 import type {
   WellData,
   SlurryInput,
@@ -87,49 +82,6 @@ function Field({
     </label>
   );
 }
-function Plot({
-  data,
-  series,
-  x = "time",
-  label,
-}: {
-  data: Record<string, unknown>[];
-  series: { key: string; name: string; color: string }[];
-  x?: string;
-  label: string;
-}) {
-  return (
-    <div className="h-72 min-w-0">
-      <p className="text-sm font-medium mb-2">{label}</p>
-      <ResponsiveContainer width="100%" height="90%">
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis
-            dataKey={x}
-            type="number"
-            domain={["dataMin", "dataMax"]}
-            tickFormatter={(v) => fmt(v, 0)}
-          />
-          <YAxis width={50} />
-          <Tooltip />
-          <Legend />
-          {series.map((s) => (
-            <Line
-              key={s.key}
-              type="linear"
-              dataKey={s.key}
-              name={s.name}
-              stroke={s.color}
-              dot={false}
-              connectNulls={false}
-              isAnimationActive={false}
-            />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
 function Panel({
   title,
   children,
@@ -189,6 +141,7 @@ export default function FoamCementSection({
         toc: number | null;
       }[]
     >([]);
+  const [chartSettings,setChartSettings]=useState(()=>normalizeDepthChartSettings(wellData.depthChartSettings));
   const worker = useRef<Worker | null>(null),
     request = useRef(0),
     loadedKey = useRef("");
@@ -202,7 +155,7 @@ export default function FoamCementSection({
   );
   const errors = useMemo(() => validateFoamJob(input), [input]);
   const stale =
-    !!result && JSON.stringify(input) !== JSON.stringify(result.input);
+    !!result && foamInputKey(input) !== foamInputKey(result.input);
   const fact = useMemo(
     () =>
       result && observations.length
@@ -213,10 +166,10 @@ export default function FoamCementSection({
   useEffect(() => {
     onReportChange?.(
       result && !stale
-        ? { simulation: result, observations, planFact: fact }
+        ? { simulation: result, observations, planFact: fact,frameIndex,chartSettings }
         : null,
     );
-  }, [result, stale, observations, fact, onReportChange]);
+  }, [result, stale, observations, fact, frameIndex, chartSettings, onReportChange]);
   useEffect(() => {
     worker.current?.terminate();
     setBusy("");
@@ -340,6 +293,7 @@ export default function FoamCementSection({
             ? importObservations(JSON.stringify(restored.observations))
             : [],
         );
+        setChartSettings(normalizeDepthChartSettings(restored.chartSettings));
         setOffset(Number.isFinite(restored.offset) ? restored.offset : 0);
         setNotice(
           "Параметры загружены. Конструкция и буровой раствор взяты из текущего проекта. Запустите новый расчёт.",
@@ -409,7 +363,7 @@ export default function FoamCementSection({
                     modelVersion: FOAM_MODEL_VERSION,
                     input,
                     observations,
-                    offset,
+                    offset,chartSettings,
                   },
                   null,
                   2,
@@ -1155,7 +1109,7 @@ export default function FoamCementSection({
                       simulation: result,
                       offset,
                       observations,
-                      planFact: fact,
+                      planFact: fact,frameIndex,chartSettings,
                     }),
                   )
                 }
@@ -1163,6 +1117,7 @@ export default function FoamCementSection({
                 Полный результат JSON
               </Button>
               <Button
+                disabled={stale||!!busy}
                 variant="outline"
                 onClick={async () => {
                   try {
@@ -1171,7 +1126,7 @@ export default function FoamCementSection({
                     await exportFoamReport({
                       simulation: result,
                       observations,
-                      planFact: fact,
+                      planFact: fact,frameIndex,chartSettings,
                     });
                   } catch (e) {
                     setError(`Отчёт не создан: ${String(e)}`);
@@ -1255,28 +1210,8 @@ export default function FoamCementSection({
               {frame.stage} · Qж {fmt(frame.liquidRateLps)} л/с · N₂{" "}
               {fmt(frame.n2RateStdM3Min)} м³ст/мин
             </p>
-            <div className="grid lg:grid-cols-2 gap-5">
+            <div className="max-w-3xl mx-auto">
               <FoamCement3D frame={frame} wellData={result.input.wellData} />
-              <div className="space-y-5">
-                <Plot
-                  label="Профиль давления выбранного кадра: MD, м / МПа абсолютного"
-                  data={frame.cells
-                    .filter((c) => c.leg === "annulus")
-                    .sort((a, b) => a.md - b.md)
-                    .map((c) => ({ md: c.md, pressure: c.pressureMPaAbs }))}
-                  x="md"
-                  series={[{ key: "pressure", name: "Pабс", color: "#2563eb" }]}
-                />
-                <Plot
-                  label="FQ выбранного кадра: MD, м / % газа"
-                  data={frame.cells
-                    .filter((c) => c.leg === "annulus")
-                    .map((c) => ({ md: c.md, fq: c.qualityPct }))
-                    .sort((a, b) => a.md - b.md)}
-                  x="md"
-                  series={[{ key: "fq", name: "FQ, %", color: "#d97706" }]}
-                />
-              </div>
             </div>
             <div className="grid sm:grid-cols-3 gap-2 text-sm">
               <p>Пена в затрубье: {fmt(frame.foamInAnnulusM3)} м³</p>
@@ -1284,60 +1219,10 @@ export default function FoamCementSection({
               <p>Возвращено N₂: {fmt(frame.returnedN2StdM3)} м³ст</p>
             </div>
           </div>
-          <div className="grid lg:grid-cols-2 gap-6 rounded-xl border bg-card p-4">
-            <Plot
-              label="Давления по времени: мин / МПа избыточного"
-              data={result.frames as unknown as Record<string, unknown>[]}
-              series={[
-                { key: "pumpPressureMPa", name: "Насос", color: "#2563eb" },
-                {
-                  key: "annulusBHPMPa",
-                  name: "Забой динамика",
-                  color: "#dc2626",
-                },
-                {
-                  key: "staticBHPMPa",
-                  name: "Забой гидростатика",
-                  color: "#16a34a",
-                },
-              ]}
-            />
-            <Plot
-              label="Эквивалентная плотность: мин / г/см³"
-              data={result.frames as unknown as Record<string, unknown>[]}
-              series={[
-                {
-                  key: "dynamicECD",
-                  name: "ECD динамическая",
-                  color: "#dc2626",
-                },
-                { key: "staticECD", name: "Статическая", color: "#16a34a" },
-              ]}
-            />
-            <Plot
-              label="Азот: мин / м³ст/мин"
-              data={result.frames as unknown as Record<string, unknown>[]}
-              series={[
-                { key: "n2RateStdM3Min", name: "Подача N₂", color: "#7c3aed" },
-              ]}
-            />
-            <Plot
-              label="Материальный баланс: мин / м³ст N₂"
-              data={result.frames as unknown as Record<string, unknown>[]}
-              series={[
-                {
-                  key: "cumulativeN2StdM3",
-                  name: "Закачано",
-                  color: "#2563eb",
-                },
-                {
-                  key: "retainedN2StdM3",
-                  name: "В скважине",
-                  color: "#d97706",
-                },
-                { key: "returnedN2StdM3", name: "Возврат", color: "#16a34a" },
-              ]}
-            />
+          <div className="space-y-3 border rounded p-4"><h3 className="font-semibold">Графики пеноцементирования и данные</h3><p className="text-xs">Выбор координаты и единиц ниже относится к профилям выбранного кадра; давление в профиле абсолютное, во временных рядах избыточное. XLSX сохраняет все кадры и оба пространства. Несошедшиеся кадры отмечены на листе времени.</p>
+            <div className="flex flex-wrap gap-2">{(['coordinate','depthUnit','pressureUnit','densityUnit'] as const).map(key=><select key={key} aria-label={'Пена: '+({coordinate:'координата глубины',depthUnit:'единица глубины',pressureUnit:'единица давления',densityUnit:'единица плотности'}[key])} className="border rounded p-2" value={chartSettings[key]} onChange={e=>setChartSettings(normalizeDepthChartSettings({...chartSettings,[key]:e.target.value}))}>{({coordinate:['MD','TVD'],depthUnit:['m','ft'],pressureUnit:['MPa','kgf','psi','bar'],densityUnit:['gcm3','ppg']}[key]).map(v=><option key={v} value={v}>{({m:'м',MPa:'МПа',kgf:'кгс/см²',gcm3:'г/см³',ppg:'ppg (US)'} as Record<string,string>)[v]??v}</option>)}</select>)}
+            <Button disabled={stale||!!busy} onClick={()=>{try{XLSX.writeFile(foamChartsWorkbook({simulation:result,observations,planFact:fact,frameIndex,chartSettings}),'Пеноцементирование-графики.xlsx');}catch(e){setError(String(e));}}}>Данные пеноцементирования XLSX</Button></div>
+            <FoamChartGallery bundle={{simulation:result,observations,planFact:fact,frameIndex,chartSettings}}/>
           </div>
           <Panel title="План-факт и калибровка">
             <div className="flex flex-wrap gap-2">
@@ -1385,15 +1270,6 @@ export default function FoamCementSection({
                   {fmt(fact.measuredN2StdM3)} / план{" "}
                   {fmt(fact.plannedN2SamePeriodStdM3)} м³ст на том же интервале.
                 </p>
-                <Plot
-                  label="План-факт давления: мин / МПа изб."
-                  data={fact.samples as unknown as Record<string, unknown>[]}
-                  x="timeMin"
-                  series={[
-                    { key: "observedPressure", name: "Факт", color: "#dc2626" },
-                    { key: "plannedPressure", name: "План", color: "#2563eb" },
-                  ]}
-                />
                 {fact.suggestedFrictionMultiplier !== null && (
                   <div className="space-y-2">
                     <p>

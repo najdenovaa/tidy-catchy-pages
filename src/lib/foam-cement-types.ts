@@ -251,6 +251,7 @@ export interface FoamCandidate {
   reasons: string[];
 }
 export interface FoamReportBundle {
+  frameIndex?:number;chartSettings?:import('./depth-chart-settings').DepthChartSettings;
   simulation: FoamSimulation;
   observations: FoamObservation[];
   planFact?: FoamPlanFact;

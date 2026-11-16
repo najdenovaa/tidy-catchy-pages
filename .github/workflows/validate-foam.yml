@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths:
       - 'src/lib/foam-cement*'
+      - 'src/lib/foam-chart-data*'
+      - 'src/components/FoamChartGallery*'
+      - 'src/lib/__tests__/foam-chart-*'
       - 'src/lib/__tests__/foam-cement*'
       - 'src/components/FoamCement*'
       - 'src/pages/Index.tsx'
@@ -20,5 +23,5 @@ jobs:
           node-version: '22'
       - run: npm install --legacy-peer-deps
       - run: npx tsc --noEmit -p tsconfig.app.json
-      - run: npx vitest run src/lib/__tests__/foam-cement-engine.test.ts src/lib/__tests__/foam-cement-data.test.ts src/lib/__tests__/foam-cement-report.test.ts src/components/FoamCementSection.test.tsx
+      - run: npx vitest run src/lib/__tests__/foam-cement-engine.test.ts src/lib/__tests__/foam-cement-data.test.ts src/lib/__tests__/foam-cement-report.test.ts src/components/FoamCementSection.test.tsx src/lib/__tests__/foam-chart-export.test.ts src/lib/__tests__/foam-chart-report.test.ts
       - run: npm run build

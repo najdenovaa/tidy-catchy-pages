@@ -87,11 +87,17 @@ describe("Foam engineering workflow", () => {
     expect(report.mock.calls.at(-1)?.[0]?.simulation.modelVersion).toContain(
       "foam-2",
     );
+    fireEvent.change(screen.getByLabelText('Пена: координата глубины'),{target:{value:'TVD'}});
+    fireEvent.change(screen.getByLabelText('Пена: единица давления'),{target:{value:'psi'}});
+    expect(report.mock.calls.at(-1)?.[0]?.chartSettings.pressureUnit).toBe('psi');
+    expect(screen.getByRole('button',{name:'Данные пеноцементирования XLSX'})).toBeEnabled();
     fireEvent.change(screen.getByLabelText("Целевое FQ, % объёма газа"), {
       target: { value: "40" },
     });
     expect(screen.getByText(/Исходные данные изменились/)).toBeInTheDocument();
     expect(report.mock.calls.at(-1)?.[0]).toBeNull();
+    expect(screen.getByRole('button',{name:'Данные пеноцементирования XLSX'})).toBeDisabled();
+    expect(screen.getByRole('button',{name:'Программа DOCX'})).toBeDisabled();
   });
   it("cancels worker without displaying an unfinished result", () => {
     render(

@@ -1,6 +1,9 @@
+import {foamCharts} from './foam-chart-data';
+import {rasterizeReportSvgs} from './cementing-report-figures';
+import type {ReportFigure} from './cementing-report-data';
 import { reportDataTable, reportPageProperties } from "./report-layout";
 import {
-  Document,
+  Document,ImageRun,AlignmentType,
   Packer,
   Paragraph,
   Table,
@@ -13,7 +16,7 @@ import { saveAs } from "file-saver";
 import type { FoamReportBundle } from "./foam-cement-types";
 const p = (s: string) => new Paragraph({ text: s, spacing: { after: 100 } });
 const table = (rows: (string | number)[][]) => reportDataTable(rows[0].map(String), rows.slice(1));
-export function foamReportChildren(bundle: FoamReportBundle) {
+export function foamReportChildren(bundle: FoamReportBundle,figures:ReportFigure[] = []) {
   const { simulation: r, planFact: fact } = bundle,
     s = r.input.settings;
   const children = [
@@ -21,15 +24,17 @@ export function foamReportChildren(bundle: FoamReportBundle) {
       text: "Программа пеноцементирования",
       heading: HeadingLevel.TITLE,
     }),
+    p('Отдельный сценарий пеноцементирования. Его ряды не подменяют результаты основной несжимаемой программы.'),
     p(`Расчёт ${r.createdAt}; модель ${r.modelVersion}.`),
+    table([['График','Координата / шкала','Строк'],...foamCharts(bundle).map(x=>[x.title,x.data.xLabel+'; '+x.data.leftLabel,x.data.xValues.length])]),
     p(
       "Инженерная оценка. Промысловая валидация и подтверждение устойчивости пены не выполнены автоматически.",
     ),
     p(
-      `Конструкция: MD ${r.input.wellData.casingDepthMD} м; OD ${r.input.wellData.casingOD} мм; ствол ${r.input.wellData.holeDiameter} мм; кровля по заданию ${s.cementTopMD} м.`,
+      `Конструкция: MD ${r.input.wellData.casingDepthMD} м; OD ${r.input.wellData.casingOD} × ${r.input.wellData.casingWall} мм; ствол ${r.input.wellData.holeDiameter} мм; кровля по заданию ${s.cementTopMD} м.`,
     ),
     p(
-      `FQ ${s.targetFoamQuality}% относится к ${s.referenceMode === "depth" ? `MD ${s.referenceMD} м` : `генератору при ${s.referencePressureMPa} МПа изб.`}; режим ${s.controlMode}. Стандартные условия N₂: ${s.standardTemperatureC} °C, 0,101325 МПа абс.`,
+      `FQ ${s.targetFoamQuality}% относится к ${s.referenceMode === "depth" ? `MD ${s.referenceMD} м` : `генератору при ${s.referencePressureMPa} МПа изб.`}; режим ${s.controlMode==='reference-quality'?'поддержание FQ в опорной точке':'постоянная плотность'}. Стандартные условия N₂: ${s.standardTemperatureC} °C, 0,101325 МПа абс.`,
     ),
     table([
       ["Показатель", "Значение"],
@@ -95,15 +100,17 @@ export function foamReportChildren(bundle: FoamReportBundle) {
       text: "Исходные параметры для воспроизведения",
       heading: HeadingLevel.HEADING_1,
     }),
-    p(JSON.stringify(r.input)),
+    table([['Параметр','Значение'],['Предыдущая колонна: башмак MD / внутренний диаметр',r.input.wellData.prevCasingDepth+' м / '+r.input.wellData.prevCasingID+' мм'],['Кавернозность по умолчанию',r.input.wellData.cavernCoeff],['Коэффициент объёма / рецепт',s.foamVolumeMultiplier+' / '+(s.recipeId==='custom'?'пользовательская':s.recipeId)],['PV/YP базы, мПа·с / Па',s.liquidPV+' / '+s.liquidYP],['PV/YP БР, мПа·с / Па',s.mudPV+' / '+s.mudYP],['Градиент ГРП / пластовый, кПа/м',s.fractureGradient+' / '+(s.poreGradient??'не задан')],['Плотность БР, г/см³',r.input.mudDensity],['Плотность базы, г/см³',s.baseDensity],['В/Ц',s.waterCementRatio],['Выход, м³/т',s.yieldM3PerTon],['Пенообразователь, % BWOC',s.foamerPctBWOC],['Расход жидкости, л/с',s.pumpRateLps],['Плотность по заданию, г/см³',s.targetDensity],['Противодавление, МПа изб.',s.backPressure],['Температура устья / забоя, °C',s.surfaceTemperature+' / '+s.bottomTemperature],['Температурный режим',s.temperatureMode==='static'?'Статический':'Циркуляционный'],['Тепловое время, мин',s.thermalResponseMin],['Пауза / выдержка, мин',s.pauseAfterFoamMin+' / '+s.finalHoldMin],['Множитель трения / шероховатость, мм',s.frictionMultiplier+' / '+s.roughnessMm],['Число пространственных ячеек / шаг, мин',s.spatialCells+' / '+s.timeStepMin],['Макс. давление / расход N₂ / давление N₂',s.maxPumpPressureMPa+' МПа / '+s.maxN2RateStdM3Min+' м³ст/мин / '+s.maxN2PressureMPa+' МПа'],['Макс. расход жидкости / доступный N₂',s.maxSlurryRateLps+' л/с / '+s.n2AvailableStdM3+' м³ст']]),
+    table([['MD, м','TVD, м','Зенит, °','Азимут, °'],...r.input.wellData.trajectory.map(x=>[x.md,x.tvd,x.zenith,x.azimuth])]),
+    ...(r.input.wellData.casingSections?.length?[table([['Секция от MD, м','До MD, м','Стенка, мм'],...r.input.wellData.casingSections.map(x=>[x.fromMD,x.toMD,x.wallThickness])])]:[]),
+    ...(r.input.wellData.cavernIntervals?.length?[table([['Интервал от MD, м','До MD, м','Кавернозность','Измеренный диаметр, мм'],...r.input.wellData.cavernIntervals.map(x=>[x.fromMD,x.toMD,x.coeff,x.diameterMm??'не задан'])])]:[]),
+    p('Полные сохранённые временные ряды, ячейки обоих пространств и числовые данные рисунков доступны в XLSX. Параметры проекта для повторного ввода сохраняются отдельным JSON. Паспортные документы в отчёт не включены.'),
+    ...figures.flatMap(f=>{const scale=Math.min(620/f.width,600/f.height,1);return [new Paragraph({text:f.title,heading:HeadingLevel.HEADING_2,keepNext:true}),new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:Uint8Array.from(atob(f.dataUrl.split(',')[1]),c=>c.charCodeAt(0)),transformation:{width:Math.round(f.width*scale),height:Math.round(f.height*scale)}})]})];}),
   ];
   return children;
 }
-export async function exportFoamReport(bundle: FoamReportBundle) {
-  saveAs(
-    await Packer.toBlob(
-      new Document({ sections: [{ properties: reportPageProperties(), children: foamReportChildren(bundle) }] }),
-    ),
-    "foam-cement-program.docx",
-  );
+export async function exportFoamReport(bundle:FoamReportBundle,options?:{returnBlob?:boolean;figures?:ReportFigure[]}){
+ const figures=options?.figures??await rasterizeReportSvgs(foamCharts(bundle));
+ const blob=await Packer.toBlob(new Document({sections:[{properties:reportPageProperties(),children:foamReportChildren(bundle,figures)}]}));
+ if(options?.returnBlob)return blob;saveAs(blob,'foam-cement-program.docx');
 }
