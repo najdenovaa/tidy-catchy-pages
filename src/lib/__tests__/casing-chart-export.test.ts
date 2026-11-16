@@ -28,7 +28,7 @@ describe('separate casing numeric chart contract',()=>{
  });
  it('honors section choices, rejects invalid calculations and refreshes forces when physical inputs change',()=>{
   const selection={...defaultReportSelection('running'),broom:false,forceProfile:false,torque:false,measurements:false,runningLoads:false,inputs:false,materials:false};
-  const book=casingDesignWorkbook(well,data,'running',selection);expect(casingDesignCharts(well,data,'running',selection)).toEqual([]);expect(book.SheetNames).toEqual(['Карта графиков','Условия']);
+  const book=casingDesignWorkbook(well,data,'running',selection);expect(casingDesignCharts(well,data,'running',selection)).toEqual([]);expect(book.SheetNames).toEqual(['Карта графиков','Условия']);expect(casingDesignWorkbook(well,data,'running',{...selection,chartData:false}).SheetNames).toEqual(['Условия']);
   expect(()=>casingDesignWorkbook(well,{...data,calculated:false},'centralization')).toThrow('актуальный');expect(()=>casingDesignWorkbook({...well,casingWall:200},data,'running')).toThrow('исходные');
   const a=casingDesignCharts(well,data,'running'),b=casingDesignCharts(well,{...data,running:{...data.running!,mudDensity:1300}},'running');expect(a[0].sourceKey).not.toBe(b[0].sourceKey);expect(a[0].data.series).not.toEqual(b[0].data.series);
   expect(buildCementingReportSvgs(well,{centralization:data},'cementing').some(p=>p.reportItem==='broom'||p.reportItem==='standoff')).toBe(false);
