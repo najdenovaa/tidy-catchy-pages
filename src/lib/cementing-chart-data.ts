@@ -1,3 +1,5 @@
+import {foamCharts,appendFoamSheets} from './foam-chart-data';
+import type {FoamReportBundle} from './foam-cement-types';
 import {basketStopCharts,appendBasketSheets} from './basket-chart-data';
 import {rheologyReportFigures,type RheologyReportInput} from './rheology-report';
 import {appendRheologySheets,rheologyCoverage} from './rheology-workbook';
@@ -10,9 +12,9 @@ import type {PressureProfileResult} from './cementing-calculations';
 import {normalizeDepthChartSettings,type DepthChartSettings} from './depth-chart-settings';
 export type NumericChart=ReturnType<typeof hydraulicReportCharts>[number];
 export const chartHasNumbers=hasPlotNumbers;
-export const NUMERIC_CHART_ITEMS=['basket','rheology','combined','pressures','rate','ecdTime','depthPressure','depthEcd','volumePressure','safeRate','flowRegime','annularFill','selectedDepth','stopStorage'] as const;
-export function cementingNumericCharts(r:Pick<PressureProfileResult,'points'|'envelope'|'stageBoundaries'|'observation'|'stopStorage'>&{basketStop?:PressureProfileResult['basketStop']}&{rheologyInput?:RheologyReportInput},settings?:DepthChartSettings,selection?:ReportSelection,presentations?:ChartPresentations):NumericChart[]{
- return [...basketStopCharts(r.basketStop,settings),...(r.rheologyInput&&reportIncludes(selection,'rheology')?rheologyReportFigures(r.rheologyInput):[]),...hydraulicReportCharts(r.points,selection,r.stageBoundaries,r.observation,presentations),...depthReportCharts(r.envelope,selection,settings,presentations),...stopStorageReportCharts(r.stopStorage,presentations)].filter(p=>reportIncludes(selection,p.reportItem));
+export const NUMERIC_CHART_ITEMS=['foam','basket','rheology','combined','pressures','rate','ecdTime','depthPressure','depthEcd','volumePressure','safeRate','flowRegime','annularFill','selectedDepth','stopStorage'] as const;
+export function cementingNumericCharts(r:Pick<PressureProfileResult,'points'|'envelope'|'stageBoundaries'|'observation'|'stopStorage'>&{basketStop?:PressureProfileResult['basketStop']}&{rheologyInput?:RheologyReportInput;foam?:FoamReportBundle},settings?:DepthChartSettings,selection?:ReportSelection,presentations?:ChartPresentations):NumericChart[]{
+ return [...foamCharts(r.foam),...basketStopCharts(r.basketStop,settings),...(r.rheologyInput&&reportIncludes(selection,'rheology')?rheologyReportFigures(r.rheologyInput):[]),...hydraulicReportCharts(r.points,selection,r.stageBoundaries,r.observation,presentations),...depthReportCharts(r.envelope,selection,settings,presentations),...stopStorageReportCharts(r.stopStorage,presentations)].filter(p=>reportIncludes(selection,p.reportItem));
 }
 export function chartCoverage(plots:NumericChart[],selection?:ReportSelection){
  return NUMERIC_CHART_ITEMS.filter(k=>reportIncludes(selection,k)).map(key=>{
@@ -39,6 +41,7 @@ export function cementingChartsWorkbook(r:Parameters<typeof cementingNumericChar
  }
  if(r.rheologyInput&&reportIncludes(selection,'rheology')){for(const f of rheologyCoverage(r.rheologyInput).filter(f=>!f.data.original.fit))catalog.push(['Реология: модели, замеры и графики',f.name,'','Скорость сдвига, с⁻¹','Па','',0,0,f.status]);appendRheologySheets(w,r.rheologyInput);}
  if(r.basketStop&&reportIncludes(selection,'basket'))appendBasketSheets(w,r.basketStop);
+ if(r.foam&&reportIncludes(selection,'foam'))appendFoamSheets(w,r.foam);
  const meta=XLSX.utils.aoa_to_sheet(catalog);meta['!cols']=[38,70,16,26,30,25,12,20,50].map(wch=>({wch}));XLSX.utils.book_append_sheet(w,meta,'Карта графиков');w.SheetNames=['Карта графиков',...w.SheetNames.filter(x=>x!=='Карта графиков')];
  XLSX.utils.book_append_sheet(w,XLSX.utils.aoa_to_sheet([['Время, мин','Граница этапа'],...(r.stageBoundaries??[]).map(s=>[s.time,s.label])]),'Этапы');
  const styleRows=[['Код графика','Исходный заголовок','Заголовок','Шрифт','Размер, px','Координата: мин','Координата: макс','Значения: мин','Значения: макс','Правая: мин','Правая: макс','Значений за окном','Не применены старые пределы'],...plots.map(p=>[p.plotId,p.data.sourceTitle,p.title,p.data.presentation?.fontFamily??'sans-serif',p.data.presentation?.fontSize??13,p.data.ranges.x.min,p.data.ranges.x.max,p.data.ranges.left.min,p.data.ranges.left.max,p.data.ranges.right?.min??null,p.data.ranges.right?.max??null,p.data.outsideCount,p.data.ignoredRanges.join(', ')])];

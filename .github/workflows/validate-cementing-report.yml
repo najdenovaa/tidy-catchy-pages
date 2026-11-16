@@ -6,6 +6,10 @@ on:
       - 'src/lib/*report*'
       - 'src/lib/rheology-*'
       - 'src/lib/basket-chart-data*'
+      - 'src/lib/foam-chart-data*'
+      - 'src/lib/foam-cement-report*'
+      - 'src/components/FoamChartGallery*'
+      - 'src/lib/__tests__/foam-chart-*'
       - 'src/lib/cement-basket-stop*'
       - 'src/components/BasketStopCard*'
       - 'src/lib/__tests__/basket-chart-report.test.ts'
@@ -67,7 +71,7 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
@@ -77,6 +81,7 @@ jobs:
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/chart-presentation.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/rheology-coverage.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/basket-coverage.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/foam-coverage.docx" "$REPORT_QA_DIR/foam-main-coverage.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
@@ -156,6 +161,22 @@ jobs:
           preview_basket.save(d / "basket-coverage-preview.png", optimize=True)
           print("BASKET_COVERAGE_QA_PNG=" + base64.b64encode((d / "basket-coverage-preview.png").read_bytes()).decode())
           print("Basket report:",len(basket),"pages")
+          foam = fitz.open(d / "foam-coverage.pdf")
+          foam_text = " ".join(" ".join(p.get_text().split()) for p in foam)
+          assert all(t in foam_text for t in ["подача азота", "плотность в затрубье", "Глубина TVD, ft", "Давление абсолютное, psi"])
+          assert "SECRET-PASSPORT" not in foam_text
+          assert sum(len(p.get_image_info()) for p in foam) == 7
+          assert all(abs(p.rect.width - 595.3) < 2 for p in foam)
+          foam_preview = Image.new("RGB", (600*len(foam),850), "white")
+          for i, page in enumerate(foam):
+              pix = page.get_pixmap(matrix=fitz.Matrix(1,1), alpha=False)
+              foam_preview.paste(Image.frombytes("RGB",(pix.width,pix.height),pix.samples),(i*600,0))
+          foam_preview.save(d / "foam-coverage-preview.png", optimize=True)
+          print("FOAM_COVERAGE_QA_PNG="+base64.b64encode((d / "foam-coverage-preview.png").read_bytes()).decode())
+          foam_main = fitz.open(d / "foam-main-coverage.pdf")
+          assert sum(len(p.get_image_info()) for p in foam_main) == 7
+          assert "SECRET-PASSPORT" not in " ".join(p.get_text() for p in foam_main)
+          print("Foam report:",len(foam),"pages; main:",len(foam_main),"pages; 7 images each")
           ab = fitz.open(d / "ab-centralization.pdf")
           ab_text = " ".join(" ".join(p.get_text().split()) for p in ab)
           assert "Изделие Альфа" in ab_text and "Изделие Бета" in ab_text and "АБ" in ab_text
@@ -208,3 +229,8 @@ jobs:
             /tmp/cementing-report-qa/basket-coverage.docx
             /tmp/cementing-report-qa/basket-coverage.pdf
             /tmp/cementing-report-qa/basket-coverage-preview.png
+            /tmp/cementing-report-qa/foam-coverage.docx
+            /tmp/cementing-report-qa/foam-coverage.pdf
+            /tmp/cementing-report-qa/foam-main-coverage.docx
+            /tmp/cementing-report-qa/foam-main-coverage.pdf
+            /tmp/cementing-report-qa/foam-coverage-preview.png
