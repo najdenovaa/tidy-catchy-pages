@@ -30,7 +30,7 @@ it('blocks invalid, insufficient or out-of-range selections without clipping or 
 });
 it('has finite plots/CSV from the same fits and does not extrapolate the plotted range',()=>{
  const input={...r,model:'hb' as const},fit=fitRheology(fann),figure=rheologyFigure(input,false,'<script>'),residual=rheologyFigure(input,true);
- expect(figure.svg).not.toMatch(/NaN|Infinity|<script>/);expect(figure.svg).toContain('&lt;script>');expect(residual.svg).toContain('Модель минус замер');
+ expect(figure.svg).not.toMatch(/NaN|Infinity|<script>/);expect(figure.svg).toContain('&lt;script&gt;');expect(residual.svg).toContain('Модель минус замер');
  const lines=rheologyCsv(input).split('\n');expect(lines).toHaveLength(9);const row=lines[3].split(';').map(Number);expect(row[5]).toBeCloseTo(rheologyMetrics(fit,'hb').pred(row[1]),10);expect(row[8]).toBeCloseTo(row[5]-row[2],10);
 });
 it('persists the model and source measurements through project and immutable library snapshots',()=>{
