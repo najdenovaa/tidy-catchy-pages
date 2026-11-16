@@ -1,14 +1,15 @@
 import {useEffect,useMemo,useState} from 'react';
 import {Button} from './ui/button';
 import {Input} from './ui/input';
-import {normalizeChartPresentations,resolveChartPresentation,validChartRange,type ChartPresentations,type ChartPresentation,type PresentationPlotId} from '@/lib/chart-presentation';
+import {PRESENTATION_PLOT_IDS,normalizeChartPresentations,resolveChartPresentation,validChartRange,type ChartPresentations,type ChartPresentation,type PresentationPlotId} from '@/lib/chart-presentation';
 import type {NumericChart} from '@/lib/cementing-chart-data';
 interface Draft {title:string;fontFamily:string;fontSize:string;xMin:string;xMax:string;leftMin:string;leftMax:string;rightMin:string;rightMax:string}
 function makeDraft(plot:NumericChart|undefined,stored:ChartPresentation|undefined):Draft{
  const p=resolveChartPresentation(stored,{x:plot?.data.xLabel??'',left:plot?.data.leftLabel??'',right:plot?.data.rightLabel});
  return {title:p.presentation?.title??'',fontFamily:p.presentation?.fontFamily??'sans-serif',fontSize:String(p.presentation?.fontSize??13),xMin:p.ranges.x?String(p.ranges.x.min):'',xMax:p.ranges.x?String(p.ranges.x.max):'',leftMin:p.ranges.left?String(p.ranges.left.min):'',leftMax:p.ranges.left?String(p.ranges.left.max):'',rightMin:p.ranges.right?String(p.ranges.right.min):'',rightMax:p.ranges.right?String(p.ranges.right.max):''};
 }
-export default function ChartPresentationEditor({plots,presentations,onChange}:{plots:NumericChart[];presentations?:ChartPresentations;onChange?:(s:ChartPresentations)=>void}){
+export default function ChartPresentationEditor({plots:allPlots,presentations,onChange}:{plots:NumericChart[];presentations?:ChartPresentations;onChange?:(s:ChartPresentations)=>void}){
+ const plots=allPlots.filter(p=>PRESENTATION_PLOT_IDS.includes(p.plotId as PresentationPlotId));
  const [selected,setSelected]=useState(''),p=plots.find(p=>p.plotId===selected)??plots[0];
  const stored=p?presentations?.[p.plotId as PresentationPlotId]:undefined,signature=JSON.stringify(stored??{}),context=JSON.stringify([p?.data.xLabel,p?.data.leftLabel,p?.data.rightLabel,p?.data.sourceTitle]);
  const [draft,setDraft]=useState<Draft>(()=>makeDraft(p,stored));

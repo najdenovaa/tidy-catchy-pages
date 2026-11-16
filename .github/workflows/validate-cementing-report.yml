@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'src/lib/*report*'
+      - 'src/lib/rheology-*'
+      - 'src/lib/__tests__/rheology-chart-report.test.ts'
       - 'src/lib/cementing-chart-data*'
       - 'src/lib/depth-chart-settings*'
       - 'src/lib/chart-presentation*'
@@ -61,7 +63,7 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
@@ -69,6 +71,7 @@ jobs:
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/ab-centralization.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/chart-units.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/chart-presentation.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/rheology-coverage.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
@@ -122,6 +125,19 @@ jobs:
           styled_preview.save(d / "chart-presentation-preview.png", optimize=True)
           print("CHART_PRESENTATION_QA_PNG=" + base64.b64encode((d / "chart-presentation-preview.png").read_bytes()).decode())
           print("Styled report:", len(styled), "pages;", sum(len(p.get_image_info()) for p in styled), "images")
+          rheology = fitz.open(d / "rheology-coverage.pdf")
+          rheology_text = " ".join(" ".join(p.get_text().split()) for p in rheology)
+          assert "Кривые не построены" in rheology_text and "не измерения" in rheology_text
+          assert all(abs(p.rect.width - 595.3) < 2 for p in rheology)
+          assert sum(len(p.get_image_info()) for p in rheology) >= 2
+          rheology_pages = [p for p in rheology if p.get_image_info()]
+          rheology_preview = Image.new("RGB", (775 * len(rheology_pages), 1095), "white")
+          for i, page in enumerate(rheology_pages):
+              pix = page.get_pixmap(matrix=fitz.Matrix(1.3,1.3), alpha=False)
+              rheology_preview.paste(Image.frombytes("RGB", (pix.width,pix.height),pix.samples), (i*775,0))
+          rheology_preview.save(d / "rheology-coverage-preview.png", optimize=True)
+          print("RHEOLOGY_QA_PNG=" + base64.b64encode((d / "rheology-coverage-preview.png").read_bytes()).decode())
+          print("Rheology report:", len(rheology), "pages;", sum(len(p.get_image_info()) for p in rheology), "images")
           ab = fitz.open(d / "ab-centralization.pdf")
           ab_text = " ".join(" ".join(p.get_text().split()) for p in ab)
           assert "Изделие Альфа" in ab_text and "Изделие Бета" in ab_text and "АБ" in ab_text
@@ -168,3 +184,6 @@ jobs:
             /tmp/cementing-report-qa/chart-presentation.docx
             /tmp/cementing-report-qa/chart-presentation.pdf
             /tmp/cementing-report-qa/chart-presentation-preview.png
+            /tmp/cementing-report-qa/rheology-coverage.docx
+            /tmp/cementing-report-qa/rheology-coverage.pdf
+            /tmp/cementing-report-qa/rheology-coverage-preview.png

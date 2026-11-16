@@ -1,9 +1,11 @@
+import {rheologyChartData} from './rheology-data';
+import {RPM_TO_SHEAR,DIAL_TO_PA} from './cement-rheology';
 import type {ChartPresentations} from './chart-presentation';
 import {cementingNumericCharts,chartCoverage} from './cementing-chart-data';
 import type {DepthChartSettings} from './depth-chart-settings';
 import {pressureObservationKey} from './pressure-observation';
 import {buildProcessContract,type ProcessContract} from "./cementing-process";
-import {rheologyReportFluids} from "./rheology-report";
+import {rheologyReportFluids,type RheologyReportInput} from "./rheology-report";
 import {rheologyDescription,rheologyResolution,rheologyMetrics} from "./cement-rheology";
 import { equipmentSignature } from "./equipment-library";
 import { equipmentReferenceText } from "./equipment-library-reference";
@@ -669,7 +671,7 @@ function buildImageParagraph(dataUrl: string, title: string, widthPx = 1400, hei
   }
 }
 
-function buildChartsDataPage(pressureResult: PressureProfileResult, chartImages?: Record<string, string>,settings?:DepthChartSettings,selection?:ReportSelection,presentations?:ChartPresentations): Paragraph[] {
+function buildChartsDataPage(pressureResult: PressureProfileResult, chartImages?: Record<string, string>,settings?:DepthChartSettings,selection?:ReportSelection,presentations?:ChartPresentations,rheologyInput?:RheologyReportInput): Paragraph[] {
   const content: Paragraph[] = [
     sectionTitle("14. Графики - диаграммы и данные"),
   ];
@@ -683,9 +685,9 @@ function buildChartsDataPage(pressureResult: PressureProfileResult, chartImages?
     if (chartImages.flowRegime) content.push(...buildImageParagraph(chartImages.flowRegime, "Режим потока в затрубном пространстве", 1400, 300));
   }
 
-  content.push(noteParagraph('Карта выбранных основных гидравлических графиков. Полные исходные ряды без прореживания выгружаются в XLSX из раздела «Графики». Таблица ниже является контрольной выборкой, а не полным набором отсчётов. Настройки MD/TVD и единиц применены к глубинным графикам; временные ряды и расчётные таблицы сохраняют подписанные единицы.'));
+  content.push(noteParagraph('Карта выбранных основных гидравлических графиков и реологии жидкостей. Полные исходные ряды без прореживания выгружаются в XLSX из раздела «Графики». Таблица ниже является контрольной выборкой, а не полным набором отсчётов. Настройки MD/TVD и единиц применены к глубинным графикам; временные ряды и расчётные таблицы сохраняют подписанные единицы.'));
   if(presentations&&Object.keys(presentations).length)content.push(noteParagraph('Изображения используют сохранённые заголовки, шрифты и окна отображения. Значения вне окна могут не быть видны на рисунке; полный ряд сохраняется в XLSX. Это настройки представления, а не изменение расчёта.'));
-  const plots=cementingNumericCharts(pressureResult,settings,selection,presentations),coverage=chartCoverage(plots,selection);
+  const plots=cementingNumericCharts({...pressureResult,rheologyInput},settings,selection,presentations),coverage=chartCoverage(plots,selection);
   content.push(gridTable(['Раздел Word / панели','Координата / шкала','Панелей / строк','Состояние'],coverage.map(c=>[[c.label,...c.ready.map(p=>p.title)].join(' / '),[...new Set(c.ready.map(p=>p.data.xLabel+'; '+p.data.leftLabel+(p.data.rightLabel?'; '+p.data.rightLabel:'')))].join(' / ')||'-',c.ready.length+' / '+c.rows,c.status])) as any);
 
   // Tabular data as fallback / supplement
@@ -986,15 +988,17 @@ export async function exportToDocx(
     riskContent = buildRiskPage(risk);
   } catch { riskContent = [noteParagraph("Оценка риска не выполнена; расчёт этого раздела недоступен.")]; }
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
-  const chartsDataContent = buildChartsDataPage({...pressureResult,observation:freshObservation}, images?.chartImages,wellData.depthChartSettings,selection,wellData.chartPresentations);
+  const chartsDataContent = buildChartsDataPage({...pressureResult,observation:freshObservation}, images?.chartImages,wellData.depthChartSettings,selection,wellData.chartPresentations,{drillingFluid,buffers,slurries,displacementFluids});
   const trajectoryContent = buildTrajectoryPage(wellData, images?.visualImages);
   const sections: {properties:ReturnType<typeof reportPageProperties>;headers?:{default:Header};children:any[]}[]=[{properties:reportPageProperties(),children:titlePage}];
   const add=(key:Parameters<typeof reportIncludes>[1],title:string,children:any[])=>{if(reportIncludes(selection,key)&&children.length)sections.push({properties:reportPageProperties(),headers:{default:new Header({children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:title,size:16,color:"999999",font:"Calibri"})]})]})},children});};
   add('inputs','Исходные данные',inputContent);
   const rheologyContent:any[]=[sectionTitle('Реология жидкостей'),noteParagraph('Конфигурация Fann R1-B1-F1. МНК Бингама - по напряжению; степенная и Гершель-Балкли - регрессия в логарифмах, для ГБ перебор предела текучести. Метрики рассчитаны в Па. Графики ограничены диапазоном измерений; вне него - экстраполяция. Подбор не подтверждает стабильность или совместимость.')];
   for(const f of rheologyReportFluids({drillingFluid,buffers,slurries,displacementFluids})){
-    const res=rheologyResolution(f.r);rheologyContent.push(noteParagraph(f.name+': '+rheologyDescription(f.appliedR)+(f.appliedR!==f.r?'; использованы модельные PV/YP по типу жидкости (не измерения)':'')));
-    if(res.fit){const fit=res.fit;rheologyContent.push(gridTable(['Модель','R²','RMSE, Па','Макс. ошибка, Па'],(['bingham','powerLaw','hb'] as const).map(m=>{const a=rheologyMetrics(fit,m);return [m,fmt(a.r2,5),fmt(a.rmse,4),fmt(a.maxError,4)];})) as any,gridTable(['об/мин','γ, с⁻¹','τ, Па'],fit.points.map(p=>[String(p.rpm),fmt(p.gamma,3),fmt(p.tau,4)])) as any);}
+    const res=rheologyResolution(f.r);rheologyContent.push(noteParagraph(f.name+': '+rheologyDescription(f.appliedR)+'; '+f.appliedSource));
+    if(!res.fit)rheologyContent.push(noteParagraph('Кривые не построены: недостаточные либо неизменяющиеся положительные показания Fann. Модельные PV/YP не являются лабораторными замерами.'));
+    if(res.fit){const fit=res.fit;rheologyContent.push(gridTable(['Модель','R²','RMSE, Па','Макс. ошибка, Па'],(['bingham','powerLaw','hb'] as const).map(m=>{const a=rheologyMetrics(fit,m);return [m,fmt(a.r2,5),fmt(a.rmse,4),fmt(a.maxError,4)];})) as any);}
+    const raw=rheologyChartData(f.r,f.appliedR).raw;if(raw.some(r=>r.value!==null))rheologyContent.push(gridTable(['об/мин','Показание Fann','γ, с⁻¹','τ из показания, Па','Статус'],raw.map(r=>[String(r.rpm),r.value===null?'Нет замера':fmt(r.value,4),fmt(r.rpm*RPM_TO_SHEAR,3),r.value===null?'-':fmt(r.value*DIAL_TO_PA,4),r.status])) as any);
   }
   add('rheology','Модели и измерения реологии',rheologyContent);
   add('hydraulics','Объёмы и гидравлика',hydraulicsContent);
