@@ -10,6 +10,13 @@ it('shows an actual broomstick and permits a saved running force scenario and fi
   const w={...ex.wellData,casingDepthMD:100,prevCasingDepth:0,trajectory:[{md:0,tvd:0,zenith:30,azimuth:0},{md:100,tvd:86.6,zenith:30,azimuth:0}],runningSettings:normalizeRunningSettings({})};
   render(<CasingRunningSection wellData={w} mudDensity={1100} intervals={[]} turbPoints={[]} pv={20} yp={5} frictionCased={.25} frictionOpenhole={.35} onSettingsChange={onSettingsChange}/>);
   expect(screen.getByRole('img',{name:/Веник:/})).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Координата графиков оснастки'),{target:{value:'TVD'}});
+  fireEvent.change(screen.getByLabelText('Единица глубины графиков оснастки'),{target:{value:'ft'}});
+  expect(screen.getAllByText(/Глубина башмака TVD, ft/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByText('XLSX: дохождение'));
+  expect(screen.getByRole('button',{name:'Сформировать XLSX'})).toBeInTheDocument();
+  expect(screen.queryByText('Объёмная проекция траектории')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText('Отмена'));
   expect(screen.getByText(/Грузоподъёмность не задана/)).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Сопротивление центратора без испытания, кН/шт.'),{target:{value:'0.45'}});
   expect(onSettingsChange.mock.calls.at(-1)[0].centralizerRunningKN).toBe(.45);

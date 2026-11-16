@@ -1,7 +1,6 @@
+import {casingDesignCharts} from './casing-design-chart-data';
 import { allowedReportFigure, type ReportScope, type ReportSelection, type ReportItem } from "./cementing-report-options";
 import { reportSeriesPlot } from "./report-series-plot";
-import { calculateCasingRunning, normalizeRunningSettings } from "./casing-running-analysis";
-import { runningBroomSVG } from "./casing-running-plot";
 import { centralizerShape, bladeCurve, bladeSection, bladeRadius, displayCentralizerPoint } from "./centralizer-shape";
 import * as THREE from "three";
 import { centralizerMesh, surveyTransform, type Vec3 } from "./centralizer-mesh";
@@ -30,13 +29,7 @@ function sceneSvg(title: string, polygons: Polygon[], width: number, height: num
 export function buildCementingReportSvgs(w: WellData, extras: CementingReportExtras, scope:ReportScope="cementing", selection?:ReportSelection): ReportSvg[] {
   const images: ReportSvg[] = [];
   const c=extras.centralization;
-  if(scope==='running'&&c?.running){
-    const settings=normalizeRunningSettings(w.runningSettings,c.running.frictionCased,c.running.frictionOpenhole);
-    const a=calculateCasingRunning({well:w,intervals:c.intervals,turbPoints:c.turbPoints,...c.running,settings});
-    if(a.valid){images.push(reportSeriesPlot('Профиль осевых сил по колонне','forceProfile',a.profile.map(p=>p.md),'MD сечения, м','Осевое усилие, кН',[{name:'Спуск',color:'#15803d',values:a.profile.map(p=>p.runInKN)},{name:'Подъём',color:'#dc2626',values:a.profile.map(p=>p.pullOutKN)}]),reportSeriesPlot('Момент при спуске: сухое вращение','torque',a.broom.map(p=>p.md),'Глубина башмака MD, м','Момент, кН·м',[{name:'Сухое трение при вращении',color:'#7c3aed',values:a.broom.map(p=>p.torqueKNm)}]));}
-    if(a.valid)images.push({title:"Спуск колонны: веник по глубине башмака",svg:runningBroomSVG(a,settings),width:820,height:510});
-  }
-  if(scope==='centralization'&&extras.centralization?.results.length)images.push(reportSeriesPlot('Профиль Standoff на опорах и в пролёте','standoff',extras.centralization.results.map(p=>p.md),'MD, м','Standoff, %',[{name:'В пролёте',color:'#dc2626',values:extras.centralization.results.map(p=>p.standoff)},{name:'На опоре',color:'#0284c7',values:extras.centralization.results.map(p=>100*(1-(p.supportEccentricity??p.eccentricity)))}]));
+  if(scope!=='cementing'&&c)images.push(...casingDesignCharts(w,c,scope,selection));
   if (scope==='centralization'&&extras.centralization) for (const s of centralizerReportSamples(w, extras.centralization)) {
     if (!s.geometry) continue;
     const g = centralizerShape(s.spec,w.casingOD,s.bore,s.result.supportEccentricity ?? s.result.eccentricity)! , gain = 6;

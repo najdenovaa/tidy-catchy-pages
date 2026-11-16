@@ -1,7 +1,9 @@
+import * as XLSX from 'xlsx';
+import {casingDesignCharts,casingDesignWorkbook} from '@/lib/casing-design-chart-data';
+import {normalizeDepthChartSettings} from '@/lib/depth-chart-settings';
+import CasingChartView,{CasingChartCoordinates} from './CasingChartView';
 import ReportContentsDialog from "./ReportContentsDialog";
 import { exportCasingDesignDocx } from "@/lib/export-casing-design-docx";
-import { buildCentralizerJointSchedule } from "@/lib/cementing-report-data";
-import { calculateCentralization } from "@/lib/centralization-calculations";
 import type { ReportSelection } from "@/lib/cementing-report-options";
 import { useMemo, useRef, useState } from 'react';
 import { Card,CardHeader,CardTitle,CardContent } from './ui/card';
@@ -11,8 +13,6 @@ import CopyImageButton from './CopyImageButton';
 import type { WellData } from '@/lib/cementing-calculations';
 import type { CentralizerInterval,TurbulatorPoint } from '@/lib/centralization-calculations';
 import { calculateCasingRunning, normalizeRunningSettings, RUNNING_SOURCES, type CasingRunningSettings, type RunningMeasurement } from '@/lib/casing-running-analysis';
-import { runningBroomSVG } from '@/lib/casing-running-plot';
-import { LineChart,Line,XAxis,YAxis,Tooltip,Legend,CartesianGrid,ResponsiveContainer,ReferenceLine } from 'recharts';
 export interface CasingRunningProps {
   wellData:WellData; mudDensity:number; intervals:CentralizerInterval[]; turbPoints:TurbulatorPoint[];
   pv:number; yp:number; frictionCased:number; frictionOpenhole:number; pipeWeightKgPerM?:number;
@@ -21,6 +21,8 @@ export interface CasingRunningProps {
 const G=9.80665;
 export default function CasingRunningSection(props:CasingRunningProps){
   const {wellData:w,mudDensity,intervals,turbPoints,pv,yp,pipeWeightKgPerM}=props;
+  const [chartSettings,setChartSettings]=useState(()=>normalizeDepthChartSettings(w.depthChartSettings));
+  const [exportKind,setExportKind]=useState<'word'|'xlsx'>('word');
   const [reportOpen,setReportOpen]=useState(false),[reportBusy,setReportBusy]=useState(false),[reportError,setReportError]=useState('');
   const [local,setLocal]=useState<CasingRunningSettings>();
   const settings=useMemo(()=>normalizeRunningSettings(w.runningSettings??local,props.frictionCased,props.frictionOpenhole),[w.runningSettings,local,props.frictionCased,props.frictionOpenhole]);
@@ -38,10 +40,13 @@ export default function CasingRunningSection(props:CasingRunningProps){
     ['blockWeightKN','Вес блока / подвески, кН',1],['maxHookKN','Предел нагрузки на крюк, кН (0 - не задан)',10],
     ['centralizerRunningKN','Сопротивление центратора без испытания, кН/шт.',.1],['turbulatorRunningKN','Сопротивление турбулизатора, кН/шт.',.1],
   ];
-  const exportRunning=async(selection:ReportSelection)=>{setReportBusy(true);setReportError('');try{await exportCasingDesignDocx({...w,runningSettings:settings},{mode:'manual',intervals,results:calculateCentralization(w,intervals,mudDensity),turbPoints,calculated:true,joints:buildCentralizerJointSchedule(w.casingDepthMD,intervals),running:{mudDensity,pv,yp,pipeWeightKgPerM,frictionCased:settings.frictionCased,frictionOpenhole:settings.frictionOpenhole}},mudDensity,'running',selection);}catch(e){setReportError(e instanceof Error?e.message:String(e));}finally{setReportBusy(false);}};
+  const chartData={mode:'manual' as const,chartSettings,intervals,results:[],turbPoints,calculated:result.valid,running:{mudDensity,pv,yp,pipeWeightKgPerM,frictionCased:settings.frictionCased,frictionOpenhole:settings.frictionOpenhole}};
+  const currentWell={...w,runningSettings:settings};
+  const plots=casingDesignCharts(currentWell,chartData,'running',undefined,result);
+  const exportRunning=async(selection:ReportSelection)=>{setReportBusy(true);setReportError('');try{if(exportKind==='xlsx')XLSX.writeFile(casingDesignWorkbook(currentWell,chartData,'running',selection,result),'Дохождение-данные.xlsx');else await exportCasingDesignDocx(currentWell,chartData,mudDensity,'running',selection);}catch(e){setReportError(e instanceof Error?e.message:String(e));}finally{setReportBusy(false);}};
   return <section data-testid="casing-running-analysis" className="space-y-4">
-    <div className="flex flex-wrap gap-3 items-center"><Button variant="outline" disabled={!result.valid||reportBusy} onClick={()=>setReportOpen(true)}>{reportBusy?'Формирование…':'Word: дохождение'}</Button><span className="text-xs text-muted-foreground">Отдельный отчёт спуска колонны: нагрузки, веник и замеры.</span></div>
-    <ReportContentsDialog scope="running" open={reportOpen} onOpenChange={setReportOpen} onConfirm={exportRunning} busy={reportBusy}/>{reportError&&<p role="alert" className="text-destructive">{reportError}</p>}
+    <div className="flex flex-wrap gap-3 items-center"><Button variant="outline" disabled={!result.valid||reportBusy} onClick={()=>{setExportKind('word');setReportOpen(true);}}>{reportBusy?'Формирование…':'Word: дохождение'}</Button><Button variant="outline" disabled={!result.valid||reportBusy} onClick={()=>{setExportKind('xlsx');setReportOpen(true);}}>XLSX: дохождение</Button><span className="text-xs text-muted-foreground">Отдельный отчёт спуска колонны: нагрузки, веник и замеры.</span></div>
+    <ReportContentsDialog format={exportKind} scope="running" open={reportOpen} onOpenChange={setReportOpen} onConfirm={exportRunning} busy={reportBusy}/>{reportError&&<p role="alert" className="text-destructive">{reportError}</p>}
     <Card><CardHeader><CardTitle>Спуск колонны: расчёт и график «веник»</CardTitle></CardHeader><CardContent className="space-y-4">
       <p className="text-sm text-muted-foreground">Каждая точка веника - отдельный расчёт нагрузки на крюке при текущей глубине башмака. Профиль усилий вдоль полностью спущенной колонны приведён отдельно.</p>
       <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">{fields.map(([key,label,step])=><label key={key} className="text-xs">{label}<Input aria-label={label} type="number" min="0" step={step} value={settings[key] as number} onChange={e=>patch({[key]:Number(e.target.value)})}/></label>)}</div>
@@ -60,7 +65,7 @@ export default function CasingRunningSection(props:CasingRunningProps){
           <p>{result.firstCompressionMD===null?'По модели осевое сжатие при спуске не выявлено.':`Осевое сжатие появляется к глубине башмака ${result.firstCompressionMD.toFixed(0)} м (шаг расчёта). Это сигнал для проверки устойчивости, а не доказательство прихвата.`}</p>
           <p>{settings.maxHookKN===0?'Грузоподъёмность не задана: запас по крюку не оценён.':result.firstCapacityMD===null?`Минимальный запас крюка при подъёме: ${((settings.maxHookKN-result.maxPullKN)/G).toFixed(1)} тс.`:`Предел крюка превышен к глубине башмака ${result.firstCapacityMD.toFixed(0)} м.`}</p>
         </div>
-        <div className="overflow-x-auto"><div ref={chart} className="bg-white rounded border min-w-[640px]" dangerouslySetInnerHTML={{__html:runningBroomSVG(result,settings)}}/></div>
+        <CasingChartCoordinates settings={chartSettings} onChange={setChartSettings}/><div ref={chart}><CasingChartView plots={plots.filter(p=>p.reportItem==='broom')}/></div>
         <CopyImageButton targetRef={chart} label="Копировать веник"/>
         <p className="text-xs text-muted-foreground">Сплошные линии - заданное трение μ={settings.frictionCased.toFixed(2)} / {settings.frictionOpenhole.toFixed(2)} (колонна / ствол). Штриховые - μ±{settings.frictionSpread.toFixed(2)} с ограничением 0-1. Это сценарии чувствительности, не доверительный интервал. Точки - фактические замеры. На узком экране график прокручивается по горизонтали. 1 тс = 9,80665 кН.</p>
         <label className="block text-sm">Контрольная глубина башмака: {row?.md.toFixed(0)} м<Input aria-label="Контрольная глубина башмака" type="range" min="0" max={w.casingDepthMD} step="1" value={selected??w.casingDepthMD} onChange={e=>setSelected(Number(e.target.value))}/></label>
@@ -81,11 +86,7 @@ export default function CasingRunningSection(props:CasingRunningProps){
       </CardContent></Card>
       <Card><CardHeader><CardTitle>Усилия вдоль колонны на проектной глубине</CardTitle></CardHeader><CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">Здесь MD - координата сечения трубы; на венике MD - текущая глубина башмака. Отрицательная осевая сила означает сжатие. Вес блока в профиль трубы не входит.</p>
-        <ResponsiveContainer width="100%" height={280}><LineChart data={result.profile}>
-          <CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="md" type="number" domain={[0,w.casingDepthMD]} tick={{fontSize:10}}/><YAxis unit=" кН" tick={{fontSize:10}}/><Tooltip/><Legend/><ReferenceLine y={0}/>
-          <Line dataKey="runInKN" name="Осевое усилие, спуск" stroke="#15803d" dot={false}/><Line dataKey="pullOutKN" name="Осевое усилие, подъём" stroke="#dc2626" dot={false}/>
-          <Line dataKey="toolDragKN" name="Накопленное сопротивление оснастки" stroke="#7c3aed" dot={false}/><Line dataKey="viscousDragKN" name="Накопленное вязкое сопротивление" stroke="#0284c7" dot={false}/>
-        </LineChart></ResponsiveContainer>
+        <CasingChartView plots={plots.filter(p=>p.reportItem!=='broom')}/>
         <div className="grid sm:grid-cols-3 gap-3 text-sm"><p>Макс. изгиб, оценка: <b>{result.maxBendingMPa.toFixed(1)} МПа</b></p><p>Осевое + изгиб, оценка: <b>{result.maxCombinedMPa.toFixed(1)} МПа</b> / текучесть {result.yieldMPa} МПа</p><p>Вместимость колонны: <b>{result.internalVolumeM3.toFixed(2)} м³</b>; объём стали: <b>{result.steelDisplacementM3.toFixed(2)} м³</b></p></div>
         <p className="text-xs text-muted-foreground">Вместимость - полный объём заполнения колонны, не автоматический долив. При спуске заполненной трубы объём стали вытесняет раствор в возврат; при закрытом конце баланс зависит от заполнения. Автоматического «долива на трубу» в этой модели нет.</p>
       </CardContent></Card>
