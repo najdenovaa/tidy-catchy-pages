@@ -4,7 +4,7 @@ import type {WellData} from './cementing-calculations';
 import {normalizeWellData} from './cementing-normalizers';
 import {normalizeDepthChartSettings,DEPTH_UNITS,PRESSURE_UNITS,DENSITY_UNITS,type DepthChartSettings} from './depth-chart-settings';
 import {reportSeriesPlot,type PlotSeries} from './report-series-plot';
-function physicalWell(w:WellData){const out={...normalizeWellData(w)};for(const k of ['chartPresentations','depthChartSettings','standoffProfile','annularStandoffPct'] as const)delete out[k];return out;}
+function physicalWell(w:WellData){const out={...normalizeWellData(w)};for(const k of ['chartPresentations','depthChartSettings','standoffProfile','annularStandoffPct','centralizerMaterials'] as const)delete out[k];return out;}
 export const foamInputKey=(input:FoamJobInput)=>JSON.stringify({...input,wellData:physicalWell(input.wellData)});
 export function currentFoamReport(b:FoamReportBundle|null|undefined,w:WellData,mudDensity:number){return b&&b.simulation.frames.length&&JSON.stringify(physicalWell(b.simulation.input.wellData))===JSON.stringify(physicalWell(w))&&Math.abs(b.simulation.input.mudDensity-(mudDensity>100?mudDensity/1000:mudDensity))<1e-9?b:undefined;}
 export function foamReportKey(b:FoamReportBundle){return JSON.stringify([b.simulation.modelVersion,b.simulation.createdAt,foamInputKey(b.simulation.input),foamFrameIndex(b),b.chartSettings,b.planFact,b.observations]);}
