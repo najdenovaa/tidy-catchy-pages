@@ -1,3 +1,4 @@
+import { displacementDepthHistory, HISTORY_NOTE } from './displacement-depth-history';
 import { centralizerAtResult, centralizerPlacementText, buildCentralizerJointSchedule } from './centralizer-layout';
 import {equipmentReferenceText,centralizerSignature} from "./equipment-library-reference";
 import { boreDiameterAtDepth } from "./well-geometry";
@@ -90,6 +91,18 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
      out.push(settings.measurements.length?reportDataTable(['MD, м','Режим','Крюк, тс'],settings.measurements.map(m=>[f(m.md,0),m.mode==='runIn'?'Спуск':'Подъём',f(m.hookTF)])):p('Фактические замеры не внесены.'));
      if(a.calibration)out.push(p(a.calibration.informative?'Поправка Δμ='+f(a.calibration.deltaMu)+'; RMSE='+f(a.calibration.rmseTF)+' тс. '+(a.calibration.atBoundary?'Граница поиска.':'Автоматически не применяется.'):'Трение не определяется: чувствительность замеров недостаточна.'));
    }
+ }
+ if(scope==='cementing'&&yes('displacementHistory')&&extras.displacement){
+   const d=extras.displacement,r=d.result,hist=displacementDepthHistory(r,d.selectedDepthMD??r.zCenters[Math.floor(r.nZ/2)]);
+   if(hist){
+     const frame=Math.max(0,Math.min(hist.rows.length-1,d.selectedFrame??hist.rows.length-1));
+     out.push(h('Доли жидкостей во времени на выбранной глубине'),p(HISTORY_NOTE),
+       p('Запрошенная MD '+f(hist.requestedMD,1)+' м; ячейка '+f(hist.topMD,1)+'-'+f(hist.bottomMD,1)+' м; центр '+f(hist.md,1)+' м. Выбранный кадр '+frame+', время вытеснения '+f(hist.rows[frame]?.timeS/60,2)+' мин. Начало вытеснения через '+f(d.meta.annulusStartS/60,2)+' мин от начала закачки.'));
+     for(let start=0;start<r.fluids.length;start+=4){
+       const fluids=r.fluids.slice(start,start+4);
+       out.push(reportDataTable(['Кадр','Время, мин',...fluids.map((fluid,i)=>(start+i+1)+'. '+fluid.name+', %')],hist.rows.map(row=>[String(row.frame),f(row.timeS/60,3),...fluids.map((_,i)=>row.fractions[start+i]===null?'Нет данных':f(row.fractions[start+i]!*100,2))])));
+     }
+   }else out.push(p('Доли во времени не представлены: выбранная глубина вне расчётного интервала.'));
  }
  const d=scope==='cementing'&&yes('displacementSummary')?extras.displacement:null;
   if (d) {

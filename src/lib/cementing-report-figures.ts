@@ -1,3 +1,4 @@
+import { displacementHistoryPlots } from './displacement-depth-history';
 import {casingDesignCharts} from './casing-design-chart-data';
 import { allowedReportFigure, type ReportScope, type ReportSelection, type ReportItem } from "./cementing-report-options";
 import { reportSeriesPlot } from "./report-series-plot";
@@ -74,7 +75,9 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
   const data = scope==='cementing'?extras.displacement:undefined;
   if (data?.result.snapshots.length) {
     const r = data.result, n = r.nTheta * r.nZ;
-    const indices = [...new Set([Math.round(r.pumpEndSnap / 2), r.pumpEndSnap, r.snapshots.length - 1])];
+    images.push(...displacementHistoryPlots(r, data.meta.colors, data.selectedDepthMD ?? r.zCenters[Math.floor(r.nZ / 2)]));
+    const selectedFrame = Math.max(0, Math.min(r.snapshots.length - 1, data.selectedFrame ?? r.snapshots.length - 1));
+    const indices = [...new Set([Math.round(r.pumpEndSnap / 2), r.pumpEndSnap, r.snapshots.length - 1, selectedFrame])];
     const ptsRaw = pathPoints(getEffectiveTrajectory(w), Array.from(r.zCenters));
     const origin = ptsRaw[0].clone(), span = Math.max(1, r.zCenters[r.nZ - 1] - r.zCenters[0]);
     const pts = ptsRaw.map(p => p.clone().sub(origin).multiplyScalar(10 / span)), fr = frames(pts);

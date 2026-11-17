@@ -1,3 +1,5 @@
+import { displacementDepthHistory } from '@/lib/displacement-depth-history';
+import D2DepthHistory from './D2DepthHistory';
 import { displacementReportKey, type DisplacementReportData, type DisplacementReportSettings } from "@/lib/cementing-report-data";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine } from "recharts";
@@ -58,7 +60,8 @@ export default function Displacement2DSection(p: {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState<string | null>(null);
-  const [snap, setSnap] = useState(0);
+  const [snap, setSnap] = useState(p.initialReport?.selectedFrame ?? 0);
+  const [selectedDepthMD, setSelectedDepthMD] = useState<number | undefined>(p.initialReport?.selectedDepthMD);
   const [playing, setPlaying] = useState(false);
   const [cut, setCut] = useState(true);
   const [fine, setFine] = useState(p.initialSettings?.fine ?? p.initialReport?.settings.fine ?? false);
@@ -74,8 +77,8 @@ export default function Displacement2DSection(p: {
   const [runKey, setRunKey] = useState<string | null>(p.initialReport?.inputKey ?? null);
   const stale = run && runKey !== inputKey;
   useEffect(() => {
-    if (run && !stale && runKey) p.onReportChange?.({ ...run, inputKey: runKey, settings: { rotationRpm: rpm, settleMin: settle, fine } });
-  }, [run, runKey, stale, rpm, settle, fine, p.onReportChange]);
+    if (run && !stale && runKey) p.onReportChange?.({ ...run, selectedDepthMD, selectedFrame: snap, inputKey: runKey, settings: { rotationRpm: rpm, settleMin: settle, fine } });
+  }, [run, runKey, stale, rpm, settle, fine, selectedDepthMD, snap, p.onReportChange]);
 
 
   useEffect(() => () => worker.current?.terminate(), []);
@@ -109,6 +112,8 @@ export default function Displacement2DSection(p: {
 
   const res = run?.result;
   const meta = run?.meta;
+  const historyCell = useMemo(() => res ? displacementDepthHistory(res, selectedDepthMD ?? res.zCenters[Math.floor(res.nZ / 2)]) : null, [res, selectedDepthMD]);
+  const historyMarkers = useMemo(() => historyCell ? [{md:historyCell.md,theta:0,label:`Состав: MD ${historyCell.md.toFixed(1)} м`}] : undefined, [historyCell]);
   const sn = res ? res.snapshots[Math.min(snap, res.snapshots.length - 1)] : null;
   const stageName = res && sn && run ? (sn.stage < 0 ? `выдержка, ${mmss(sn.t - res.summary.pumpTimeS)}` : res.fluids[run.stages[sn.stage]?.fluid ?? 0]?.name) : "";
   const fillTone = res ? (res.summary.cementFillPct >= 95 ? "text-emerald-600" : res.summary.cementFillPct >= 85 ? "text-amber-600" : "text-destructive") : "";
@@ -182,7 +187,7 @@ export default function Displacement2DSection(p: {
                   <p className="text-[11px] font-semibold flex items-center gap-1"><Box className="w-3.5 h-3.5" />3D: затрубье по траектории (радиус увеличен)</p>
                   <Button size="sm" variant={cut ? "default" : "outline"} className="h-6 text-[10px] px-2" onClick={() => setCut((x) => !x)}><Scissors className="w-3 h-3 mr-1" />разрез</Button>
                 </div>
-                <D2Annulus3D res={res} colors={meta.colors} snap={snap} trajectory={trajectory} cut={cut} />
+                <D2Annulus3D markers={historyMarkers} res={res} colors={meta.colors} snap={snap} trajectory={trajectory} cut={cut} />
                 <p className="mt-1 text-[10px] text-muted-foreground">Вращение — мышью, масштаб — колесом. Колонна прижата к нижней стенке; вырез показывает её и обе стороны затрубья.</p>
               </div>
               <div>
@@ -194,6 +199,9 @@ export default function Displacement2DSection(p: {
                 <ProfileChart res={res} designTop={meta.designCementTopMD} />
               </div>
             </div>
+            <D2DepthHistory res={res} colors={meta.colors} md={selectedDepthMD ?? res.zCenters[Math.floor(res.nZ / 2)]}
+              frame={Math.min(snap,res.snapshots.length-1)} annulusStartS={meta.annulusStartS} stale={!!stale}
+              onDepth={setSelectedDepthMD} onFrame={frame=>{setPlaying(false);setSnap(frame);}} />
             {res.summary.worst.length > 0 && (
               <div>
                 <p className="text-[11px] font-semibold mb-1">Интервалы с неполным вытеснением (цемент по окружности &lt; 75%)</p>
