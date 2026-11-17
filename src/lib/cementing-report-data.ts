@@ -1,3 +1,4 @@
+import type { PipeTransport, DisplacementFrame } from './displacement-pipe';
 import { buildCentralizerJointSchedule, type CentralizerJointRow } from './centralizer-layout';
 export { buildCentralizerJointSchedule } from './centralizer-layout';
 import { WELL_GEOMETRY_MODEL_VERSION } from "./well-geometry";
@@ -15,10 +16,11 @@ export interface CentralizationReportData {
   selectedMD?: number; calculated: boolean;
   joints?: (Omit<CentralizerJointRow,"placements"> & {placements?:CentralizerJointRow["placements"]})[];
 }
-export interface DisplacementReportSettings { rotationRpm: number; settleMin: number; fine: boolean; }
+export interface DisplacementReportSettings { rotationRpm: number; settleMin: number; fine: boolean; pipeEnabled?:boolean; annulusEnabled?:boolean; }
 export interface DisplacementReportData {
-  selectedDepthMD?: number; selectedFrame?: number;
-  inputKey: string; result: D2Result; meta: D2Meta; stages: D2Stage[]; settings: DisplacementReportSettings;
+  selectedDepthMD?: number; selectedFrame?: number; selectedGlobalFrame?:number;
+  pipe?:PipeTransport|null; timeline?:DisplacementFrame[];
+  inputKey: string; result: D2Result|null; meta: D2Meta; stages: D2Stage[]; settings: DisplacementReportSettings;
 }
 export type DisplacementReportInput = { flushTimeMin?:number;flushVolumeM3?:number;wellData: WellData; slurries: SlurryInput[]; buffers: BufferFluid[];
   drillingFluid: DrillingFluid; displacementFluids: DisplacementFluid[]; volumes: VolumeResults };
@@ -31,7 +33,7 @@ export interface CementingReportExtras {
   figures?: ReportFigure[]; supplements?: ReportSupplement[]; warnings?: string[];
 }
 export function displacementReportKey(p: DisplacementReportInput, settings: DisplacementReportSettings) {
-  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "process-contract-v1", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes,p.flushTimeMin??0,p.flushVolumeM3??0, settings]);
+  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "displacement-spaces-v2", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes,p.flushTimeMin??0,p.flushVolumeM3??0, {fine:settings.fine,rotationRpm:settings.rotationRpm,settleMin:settings.settleMin,pipeEnabled:settings.pipeEnabled!==false,annulusEnabled:settings.annulusEnabled!==false}]);
 }
 export function resolveCentralizationReport(data: CentralizationReportData | null, w: WellData, mudDensity: number) {
   if (!data?.calculated) return null;
@@ -55,7 +57,7 @@ export async function runDisplacementForReport(p: DisplacementReportInput, setti
       const m = e.data; if (m.progress !== undefined) return;
       done();
       if (m.error) reject(new Error(m.error));
-      else resolve({ inputKey: displacementReportKey(p, settings), result: m.result, meta: m.meta, stages: m.stages, settings });
+      else resolve({ inputKey: displacementReportKey(p, settings), result: m.result, pipe:m.pipe, timeline:m.timeline, meta: m.meta, stages: m.stages, settings });
     };
     worker.onerror = err => { done(); reject(new Error(err.message || "Не выполнен расчёт замещения")); };
     worker.postMessage({ id: 1, data: p, ...settings });

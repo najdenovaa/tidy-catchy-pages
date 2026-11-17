@@ -46,10 +46,12 @@ on:
       - 'src/lib/__tests__/report-scopes.test.ts'
       - 'src/lib/__tests__/chart-*report.test.ts'
       - 'src/lib/__tests__/cementing-complete-report.test.ts'
-      - 'src/lib/displacement-geometry.ts'
+      - 'src/lib/displacement-*'
+      - 'src/workers/displacement2d.worker.ts'
       - 'src/lib/displacement-*history*'
       - 'src/lib/displacement-history-*'
       - 'src/lib/__tests__/displacement-history-report.test.ts'
+      - 'src/lib/__tests__/pipe-spaces-report.test.ts'
       - 'src/components/displacement/**'
       - 'src/components/CentralizationSection.tsx'
       - 'src/pages/Index.tsx'
@@ -86,7 +88,7 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts src/lib/__tests__/casing-chart-report.test.ts src/lib/__tests__/hierarchy-chart-report.test.ts src/lib/__tests__/displacement-history-report.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts src/lib/__tests__/casing-chart-report.test.ts src/lib/__tests__/hierarchy-chart-report.test.ts src/lib/__tests__/displacement-history-report.test.ts src/lib/__tests__/pipe-spaces-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
@@ -100,10 +102,24 @@ jobs:
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/casing-centralization-coverage.docx" "$REPORT_QA_DIR/casing-running-coverage.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/hierarchy-coverage.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/displacement-history.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/pipe-spaces.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
           d = pathlib.Path(os.environ["REPORT_QA_DIR"])
+          spaces = fitz.open(d / "pipe-spaces.pdf")
+          spaces_text = " ".join(" ".join(p.get_text().split()) for p in spaces)
+          assert all(t in spaces_text for t in ["Трубное пространство", "концентрации и баланс", "поршневой перенос", "Продавочная вода", "0.000000"])
+          assert "3D-кадр" not in spaces_text
+          assert sum(len(p.get_image_info()) for p in spaces) == 1
+          assert all(abs(p.rect.width - 595.3) < 2 for p in spaces)
+          preview_spaces = Image.new("RGB", (600*len(spaces),850), "white")
+          for i,page in enumerate(spaces):
+              pix=page.get_pixmap(matrix=fitz.Matrix(1,1),alpha=False)
+              preview_spaces.paste(Image.frombytes("RGB",(pix.width,pix.height),pix.samples),(i*600,0))
+          preview_spaces.save(d / "pipe-spaces-preview.png",optimize=True)
+          print("F06_QA_PNG="+base64.b64encode((d / "pipe-spaces-preview.png").read_bytes()).decode())
+          print("Pipe spaces:",len(spaces),"pages; 1 image")
           history = fitz.open(d / "displacement-history.pdf")
           history_text = " ".join(" ".join(p.get_text().split()) for p in history)
           assert all(t in history_text for t in ["75.00", "25.00", "Цемент G", "1/255", "Доли жидкостей"])

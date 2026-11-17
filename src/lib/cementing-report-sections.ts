@@ -1,3 +1,4 @@
+import { pipeDepthComposition,pipeBalance,pipeHistory,displacementTimeline,PIPE_NOTE } from './displacement-pipe';
 import { displacementDepthHistory, HISTORY_NOTE } from './displacement-depth-history';
 import { centralizerAtResult, centralizerPlacementText, buildCentralizerJointSchedule } from './centralizer-layout';
 import {equipmentReferenceText,centralizerSignature} from "./equipment-library-reference";
@@ -92,7 +93,21 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
      if(a.calibration)out.push(p(a.calibration.informative?'Поправка Δμ='+f(a.calibration.deltaMu)+'; RMSE='+f(a.calibration.rmseTF)+' тс. '+(a.calibration.atBoundary?'Граница поиска.':'Автоматически не применяется.'):'Трение не определяется: чувствительность замеров недостаточна.'));
    }
  }
- if(scope==='cementing'&&yes('displacementHistory')&&extras.displacement){
+ if(scope==='cementing'&&extras.displacement){
+   const d=extras.displacement;
+   if(yes('pipeHistory')||yes('displacementHistory')||yes('displacementSummary'))out.push(p('Состав в трубе: '+(d.pipe?'рассчитан':'расчёт отключён или отсутствует')+'. Затрубное вытеснение: '+(d.result?'рассчитано':'расчёт отключён или отсутствует')+'.'));
+   if(yes('pipeHistory')&&d.pipe){
+     const pipe=d.pipe,frames=d.timeline??displacementTimeline(pipe,d.result,d.meta.annulusStartS,d.settings.settleMin),md=d.selectedDepthMD??pipe.segments[Math.floor(pipe.segments.length/2)].topMD;
+     const cell=pipeDepthComposition(pipe,md,0),frame=Math.max(0,Math.min(frames.length-1,d.selectedGlobalFrame??frames.length-1)),time=frames[frame]?.timeS??0;
+     out.push(h('Трубное пространство: концентрации и баланс'),p(PIPE_NOTE),p('Вместимость '+f(pipe.capacityM3,4)+' м³; время от начала закачки '+f(time/60,3)+' мин. При отключённом затрубье противодавление не рассчитывается; расход задан расписанием.'));
+     if(cell){out.push(p('Запрошенная MD '+f(md,2)+' м; ячейка '+f(cell.topMD,2)+'-'+f(cell.bottomMD,2)+' м.'));
+       const rows=pipeHistory(pipe,md,frames);
+       for(let start=0;start<pipe.fluids.length;start+=4)out.push(reportDataTable(['Кадр','От закачки, мин',...pipe.fluids.slice(start,start+4).map((f,i)=>(start+i+1)+'. '+f.name+', %')],rows.map(row=>[String(row.frame),f(row.timeS/60,3),...row.fractions.slice(start,start+4).map(x=>f(x*100,2))])));
+     }else out.push(p('Выбранная глубина вне трубы. Концентрации не представлены.'));
+     out.push(reportDataTable(['Жидкость','Исходно, м³','Вошло, м³','В трубе, м³','Башмак, м³','Невязка, м³'],pipeBalance(pipe,time).map(b=>[b.name,...[b.initialM3,b.injectedM3,b.insideM3,b.outletM3,b.residualM3].map(v=>f(v,6))])),p('Баланс трубы независим от выборки ячеек. Баланс затрубного 2D-решателя этим не подтверждается.'));
+   }
+ }
+ if(scope==='cementing'&&yes('displacementHistory')&&extras.displacement?.result){
    const d=extras.displacement,r=d.result,hist=displacementDepthHistory(r,d.selectedDepthMD??r.zCenters[Math.floor(r.nZ/2)]);
    if(hist){
      const frame=Math.max(0,Math.min(hist.rows.length-1,d.selectedFrame??hist.rows.length-1));
@@ -105,7 +120,7 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
    }else out.push(p('Доли во времени не представлены: выбранная глубина вне расчётного интервала.'));
  }
  const d=scope==='cementing'&&yes('displacementSummary')?extras.displacement:null;
-  if (d) {
+  if (d?.result) {
     const r = d.result, s = r.summary;
     out.push(h("Замещение в затрубье: 2D-расчёт и 3D-представление"),
       p("Расчётная сетка " + r.nZ + " × " + r.nTheta + "; " + (r.full ? "полная окружность" : "половина окружности с отражением") +
