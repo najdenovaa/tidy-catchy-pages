@@ -17,3 +17,8 @@ it('preserves blanks as missing measurements and warns instead of switching an i
  expect(screen.getByTestId('rheo')).not.toHaveTextContent('"r600"');expect(screen.getByTestId('rheo')).toHaveTextContent('"model":"hb"');
  fireEvent.change(screen.getByLabelText('Модель для гидравлики'),{target:{value:'pvyp'}});expect(screen.getByTestId('rheo')).toHaveTextContent('"pv":50');vi.useRealTimers();
 });
+it('records and clears conditions without assuming atmospheric pressure',()=>{
+ render(<Host/>);const t=screen.getByLabelText('Температура испытания реологии, °C'),p=screen.getByLabelText('Давление испытания реологии, МПа абс.');
+ expect(p).toHaveValue(null);fireEvent.change(t,{target:{value:'0'}});fireEvent.blur(t);fireEvent.change(p,{target:{value:'0'}});fireEvent.blur(p);expect(screen.getByTestId('rheo')).toHaveTextContent('"testTemperatureC":0');expect(screen.getByTestId('rheo')).toHaveTextContent('"testPressureMPaAbs":0');
+ fireEvent.change(p,{target:{value:''}});fireEvent.blur(p);expect(screen.getByTestId('rheo')).not.toHaveTextContent('testPressureMPaAbs');
+});

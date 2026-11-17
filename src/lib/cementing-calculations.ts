@@ -11,6 +11,9 @@ import type { EquipmentSelection } from "./cementing-equipment";
 import { hbFromFann, selectedRheology, rheologyInputErrors, hbFriction, flowIndexN, type FannReadings, type HBParams } from "./cement-rheology";
 
 export interface Rheology {
+  testTemperatureC?: number;
+  testPressureMPaAbs?: number;
+  testSource?: string;
   model?: import("./cement-rheology").RheologyModel;
   pv: number; // Пластическая вязкость, сПз
   yp: number; // ДНС (динамическое напряжение сдвига), Па

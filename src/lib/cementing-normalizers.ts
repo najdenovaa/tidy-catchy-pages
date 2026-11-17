@@ -112,6 +112,9 @@ function normalizeRheology(value: unknown, fallback: Rheology = { pv: 0, yp: 0 }
     : undefined;
   return {
     ...(typeof source.model==='string'?{model:source.model.slice(0,32) as Rheology['model']}:{ }),
+    ...(typeof source.testTemperatureC==='number'&&Number.isFinite(source.testTemperatureC)?{testTemperatureC:source.testTemperatureC}:{}),
+    ...(typeof source.testPressureMPaAbs==='number'&&Number.isFinite(source.testPressureMPaAbs)?{testPressureMPaAbs:source.testPressureMPaAbs}:{}),
+    ...(typeof source.testSource==='string'?{testSource:source.testSource.slice(0,2000)}:{}),
     pv: toNumber(source.pv, fallback.pv),
     yp: toNumber(source.yp, fallback.yp),
     ...(fann && Object.values(fann).some((v) => v > 0) ? { fann } : {}),
