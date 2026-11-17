@@ -401,7 +401,7 @@ export default function Index() {
         drillingFluid: snap.drillingFluid, displacementFluids: snap.displacementFluids, volumes: vol };
       const settings = displacementReportSettings;
       try {
-        if(reportIncludes(selection,'displacementHistory')||reportIncludes(selection,'displacementSummary')||reportIncludes(selection,'displacement3D')||reportIncludes(selection,'displacementMap')){
+        if(reportIncludes(selection,'pipeHistory')||reportIncludes(selection,'displacementHistory')||reportIncludes(selection,'displacementSummary')||reportIncludes(selection,'displacement3D')||reportIncludes(selection,'displacementMap')){
         const d = displacementReport?.inputKey === displacementReportKey(data, settings) ? displacementReport : await runDisplacementForReport(data, settings);
         extras.displacement = d; setDisplacementReport(d);
         }

@@ -1,3 +1,4 @@
+import { pipeHistoryPlots,displacementTimeline } from './displacement-pipe';
 import { displacementHistoryPlots } from './displacement-depth-history';
 import {rheologyHierarchy,rheologyHierarchyFigures} from './rheology-hierarchy';
 import {currentFoamReport,foamReportKey} from './foam-chart-data';
@@ -14,7 +15,7 @@ import { equipmentSignature } from "./equipment-library";
 import { equipmentReferenceText } from "./equipment-library-reference";
 import { fluidReferenceText } from "./fluid-library";
 import { cavernIntervalCoeff, boreDiameterAtDepth } from "./well-geometry";
-import { reportIncludes, type ReportSelection } from "./cementing-report-options";
+import { reportFigureItem, reportIncludes, type ReportSelection } from "./cementing-report-options";
 import { equipmentMaterialInventory, centralizerMaterialGeometryKey } from "./materials-equipment-inventory";
 import { centralizerInventory } from "./cementing-equipment";
 import { FLEET_SCHEMES } from "./cement-fleet-catalog";
@@ -1041,8 +1042,10 @@ export async function exportToDocx(
   if(!freshObservation&&wellData.pressureObservation)add('selectedDepth','Давление и ЭЦП на выбранной глубине',[sectionTitle('Давление и ЭЦП на выбранной глубине'),noteParagraph('Нет актуального расчёта для выбранной глубины и исходных данных. Пересчитайте программу; прежние значения и рисунки исключены.')]);
   const currentHierarchyKeys=new Set(rheologyHierarchyFigures({drillingFluid,buffers,slurries,displacementFluids,wellData}).map(p=>p.sourceKey));
   const historyData=options?.extras?.displacement;
-  const historyKeys=new Set(historyData?displacementHistoryPlots(historyData.result,historyData.meta.colors,historyData.selectedDepthMD??historyData.result.zCenters[Math.floor(historyData.result.nZ/2)]).map(p=>p.sourceKey):[]);
-  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='displacementHistory'||historyKeys.has(f.sourceKey!))&&(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
+  const historyKeys=new Set(historyData?.result?displacementHistoryPlots(historyData.result,historyData.meta.colors,historyData.selectedDepthMD??historyData.result.zCenters[Math.floor(historyData.result.nZ/2)]).map(p=>p.sourceKey):[]);
+  const pd=historyData?.pipe;
+  const pipeKeys=new Set(pd?pipeHistoryPlots(pd,historyData.meta.colors,historyData.selectedDepthMD??pd.segments[Math.floor(pd.segments.length/2)].topMD,historyData.timeline??displacementTimeline(pd,historyData.result,historyData.meta.annulusStartS,historyData.settings.settleMin)).map(p=>p.sourceKey):[]);
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(!!historyData?.result||!['displacement3D','displacementMap','displacementHistory'].includes(f.reportItem??reportFigureItem(f.title)??''))&&(f.reportItem!=='pipeHistory'||pipeKeys.has(f.sourceKey!))&&(f.reportItem!=='displacementHistory'||historyKeys.has(f.sourceKey!))&&(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
   const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});
