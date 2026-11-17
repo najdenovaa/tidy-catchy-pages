@@ -74,7 +74,7 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
 
   }
   const data = scope==='cementing'?extras.displacement:undefined;
-  if(data?.pipe){const pipe=data.pipe,frames=data.timeline??displacementTimeline(pipe,data.result,data.meta.annulusStartS,data.settings.settleMin);images.push(...pipeHistoryPlots(pipe,data.meta.colors,data.selectedDepthMD??pipe.segments[Math.floor(pipe.segments.length/2)].topMD,frames));}
+  if(data?.pipe){const pipe=data.pipe,frames=data.timeline??displacementTimeline(pipe,data.result,data.meta.annulusStartS,data.settings.settleMin,data.settings.frameIntervalS);images.push(...pipeHistoryPlots(pipe,data.meta.colors,data.selectedDepthMD??pipe.segments[Math.floor(pipe.segments.length/2)].topMD,frames));}
   if (data?.result?.snapshots.length) {
     const r = data.result, n = r.nTheta * r.nZ;
     images.push(...displacementHistoryPlots(r, data.meta.colors, data.selectedDepthMD ?? r.zCenters[Math.floor(r.nZ / 2)]));

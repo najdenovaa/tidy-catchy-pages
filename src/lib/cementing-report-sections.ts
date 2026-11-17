@@ -1,3 +1,4 @@
+import {timingRows} from './displacement-timing';
 import { pipeDepthComposition,pipeBalance,pipeHistory,displacementTimeline,PIPE_NOTE } from './displacement-pipe';
 import { displacementDepthHistory, HISTORY_NOTE } from './displacement-depth-history';
 import { centralizerAtResult, centralizerPlacementText, buildCentralizerJointSchedule } from './centralizer-layout';
@@ -95,9 +96,10 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
  }
  if(scope==='cementing'&&extras.displacement){
    const d=extras.displacement;
+   if(yes('pipeHistory')||yes('displacementHistory')||yes('displacementSummary'))out.push(h('Временные настройки вытеснения'),reportDataTable(['Параметр','Значение'],timingRows(d.settings,d.result?.summary?.timing).map(([a,b])=>[a,typeof b==='number'?String(Number(b.toPrecision(8))):b])));
    if(yes('pipeHistory')||yes('displacementHistory')||yes('displacementSummary'))out.push(p('Состав в трубе: '+(d.pipe?'рассчитан':'расчёт отключён или отсутствует')+'. Затрубное вытеснение: '+(d.result?'рассчитано':'расчёт отключён или отсутствует')+'.'));
    if(yes('pipeHistory')&&d.pipe){
-     const pipe=d.pipe,frames=d.timeline??displacementTimeline(pipe,d.result,d.meta.annulusStartS,d.settings.settleMin),md=d.selectedDepthMD??pipe.segments[Math.floor(pipe.segments.length/2)].topMD;
+     const pipe=d.pipe,frames=d.timeline??displacementTimeline(pipe,d.result,d.meta.annulusStartS,d.settings.settleMin,d.settings.frameIntervalS),md=d.selectedDepthMD??pipe.segments[Math.floor(pipe.segments.length/2)].topMD;
      const cell=pipeDepthComposition(pipe,md,0),frame=Math.max(0,Math.min(frames.length-1,d.selectedGlobalFrame??frames.length-1)),time=frames[frame]?.timeS??0;
      out.push(h('Трубное пространство: концентрации и баланс'),p(PIPE_NOTE),p('Вместимость '+f(pipe.capacityM3,4)+' м³; время от начала закачки '+f(time/60,3)+' мин. При отключённом затрубье противодавление не рассчитывается; расход задан расписанием.'));
      if(cell){out.push(p('Запрошенная MD '+f(md,2)+' м; ячейка '+f(cell.topMD,2)+'-'+f(cell.bottomMD,2)+' м.'));
@@ -125,7 +127,7 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
     out.push(h("Замещение в затрубье: 2D-расчёт и 3D-представление"),
       p("Расчётная сетка " + r.nZ + " × " + r.nTheta + "; " + (r.full ? "полная окружность" : "половина окружности с отражением") +
         "; вращение " + f(s.rotationRpm, 1) + " об/мин; выдержка " + f(s.settleS / 60, 1) + " мин."),
-      reportDataTable(["Показатель", "Конец продавки", "После выдержки"], [
+      reportDataTable(["Показатель", "Последнее состояние закачки", s.timing?.complete===false?"Последнее рассчитанное состояние":"После выдержки"], [
         ["Заполнение цементом, %", f(s.pumpEnd.cementFillPct, 1), f(s.cementFillPct, 1)],
         ["Остаточный раствор, %", f(s.pumpEnd.mudLeftPct, 1), f(s.mudLeftPct, 1)],
         ["Длина каналов, м", f(s.pumpEnd.channelM, 1), f(s.channelM, 1)],
