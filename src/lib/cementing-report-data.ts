@@ -1,3 +1,4 @@
+import type { DisplacementTimingSettings } from './displacement-timing';
 import type { PipeTransport, DisplacementFrame } from './displacement-pipe';
 import { buildCentralizerJointSchedule, type CentralizerJointRow } from './centralizer-layout';
 export { buildCentralizerJointSchedule } from './centralizer-layout';
@@ -16,7 +17,7 @@ export interface CentralizationReportData {
   selectedMD?: number; calculated: boolean;
   joints?: (Omit<CentralizerJointRow,"placements"> & {placements?:CentralizerJointRow["placements"]})[];
 }
-export interface DisplacementReportSettings { rotationRpm: number; settleMin: number; fine: boolean; pipeEnabled?:boolean; annulusEnabled?:boolean; }
+export interface DisplacementReportSettings extends DisplacementTimingSettings { rotationRpm: number; settleMin: number; fine: boolean; pipeEnabled?:boolean; annulusEnabled?:boolean; }
 export interface DisplacementReportData {
   selectedDepthMD?: number; selectedFrame?: number; selectedGlobalFrame?:number;
   pipe?:PipeTransport|null; timeline?:DisplacementFrame[];
@@ -33,7 +34,7 @@ export interface CementingReportExtras {
   figures?: ReportFigure[]; supplements?: ReportSupplement[]; warnings?: string[];
 }
 export function displacementReportKey(p: DisplacementReportInput, settings: DisplacementReportSettings) {
-  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "displacement-spaces-v2", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes,p.flushTimeMin??0,p.flushVolumeM3??0, {fine:settings.fine,rotationRpm:settings.rotationRpm,settleMin:settings.settleMin,pipeEnabled:settings.pipeEnabled!==false,annulusEnabled:settings.annulusEnabled!==false}]);
+  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "displacement-spaces-v3-timing", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes,p.flushTimeMin??0,p.flushVolumeM3??0, {maxTimeStepS:settings.maxTimeStepS||null,frameIntervalS:settings.frameIntervalS||null,fine:settings.fine,rotationRpm:settings.rotationRpm,settleMin:settings.settleMin,pipeEnabled:settings.pipeEnabled!==false,annulusEnabled:settings.annulusEnabled!==false}]);
 }
 export function resolveCentralizationReport(data: CentralizationReportData | null, w: WellData, mudDensity: number) {
   if (!data?.calculated) return null;

@@ -1,3 +1,5 @@
+import D2TimingControls from './D2TimingControls';
+import {normalizeDisplacementTiming,timingRows,type DisplacementTimingSettings} from '@/lib/displacement-timing';
 import { displacementTimeline, type PipeTransport, type DisplacementFrame } from '@/lib/displacement-pipe';
 import D2PipeSection from './D2PipeSection';
 import { displacementDepthHistory } from '@/lib/displacement-depth-history';
@@ -27,7 +29,7 @@ interface Run { pipe?:PipeTransport|null; timeline?:DisplacementFrame[]; result:
 
 function ProfileChart({ res, designTop }: { res: D2Result; designTop: number }) {
   const [ref, w] = useMeasuredWidth<HTMLDivElement>();
-  const settled = res.summary.settleS > 0;
+  const settled = (res.summary.timing?.actualSettleS??res.summary.settleS) > 0;
   const data = res.rows.map((r, i) => ({ md: Math.round(r.md), cem: +(r.cement * 100).toFixed(1), mud: +(r.mud * 100).toFixed(1), sp: +(r.spacer * 100).toFixed(1), so: +(r.standoff * 100).toFixed(0), cov: +(r.coverage * 100).toFixed(0), cov0: +((res.rowsPumpEnd[i]?.coverage ?? r.coverage) * 100).toFixed(0) }));
   return (
     <div ref={ref} className="h-[520px]">
@@ -71,24 +73,27 @@ export default function Displacement2DSection(p: {
   const [settle, setSettle] = useState(p.initialSettings?.settleMin ?? p.initialReport?.settings.settleMin ?? 30);
   const [pipeEnabled,setPipeEnabled]=useState(p.initialSettings?.pipeEnabled??p.initialReport?.settings.pipeEnabled??true);
   const [annulusEnabled,setAnnulusEnabled]=useState(p.initialSettings?.annulusEnabled??p.initialReport?.settings.annulusEnabled??true);
-  const timeline=useMemo(()=>run?.timeline??displacementTimeline(run?.pipe,run?.result,run?.meta.annulusStartS??0,settle),[run,settle]);
+  const [timeSettings,setTimeSettings]=useState<DisplacementTimingSettings>({maxTimeStepS:p.initialSettings?.maxTimeStepS??p.initialReport?.settings.maxTimeStepS??0,frameIntervalS:p.initialSettings?.frameIntervalS??p.initialReport?.settings.frameIntervalS??0,playbackMs:p.initialSettings?.playbackMs??p.initialReport?.settings.playbackMs??90});
+  let timingError='';try{normalizeDisplacementTiming(timeSettings);}catch(e){timingError=(e as Error).message;}
+  const timeline=useMemo(()=>run?.timeline??displacementTimeline(run?.pipe,run?.result,run?.meta.annulusStartS??0,settle,p.initialReport?.settings.frameIntervalS),[run,settle]);
   const annulusFrame=timeline[snap]?.annulusFrame??0;
   const worker = useRef<Worker | null>(null);
   const reqId = useRef(0);
   const trajectory: TrajectoryPoint[] = useMemo(() => getEffectiveTrajectory(p.wellData), [p.wellData]);
 
   // Входные данные изменились — результат устарел
-  useEffect(() => { p.onSettingsChange?.({ rotationRpm: rpm, settleMin: settle, fine, pipeEnabled,annulusEnabled }); }, [rpm, settle, fine, pipeEnabled,annulusEnabled,p.onSettingsChange]);
-  const inputKey = displacementReportKey(p, { rotationRpm: rpm, settleMin: settle, fine, pipeEnabled,annulusEnabled });
+  useEffect(() => { p.onSettingsChange?.({ ...timeSettings, rotationRpm: rpm, settleMin: settle, fine, pipeEnabled,annulusEnabled }); }, [rpm, settle, fine, pipeEnabled,annulusEnabled,timeSettings,p.onSettingsChange]);
+  const inputKey = displacementReportKey(p, { ...timeSettings, rotationRpm: rpm, settleMin: settle, fine, pipeEnabled,annulusEnabled });
   const [runKey, setRunKey] = useState<string | null>(p.initialReport?.inputKey ?? null);
   const stale = run && runKey !== inputKey;
   useEffect(() => {
-    if (run && !stale && runKey) p.onReportChange?.({ ...run, selectedDepthMD, selectedFrame: annulusFrame, selectedGlobalFrame:snap, inputKey: runKey, settings: { rotationRpm: rpm, settleMin: settle, fine, pipeEnabled,annulusEnabled } });
-  }, [run, runKey, stale, rpm, settle, fine, pipeEnabled,annulusEnabled,selectedDepthMD, snap, annulusFrame,p.onReportChange]);
+    if (run && !stale && runKey) p.onReportChange?.({ ...run, selectedDepthMD, selectedFrame: annulusFrame, selectedGlobalFrame:snap, inputKey: runKey, settings: { ...timeSettings, rotationRpm: rpm, settleMin: settle, fine, pipeEnabled,annulusEnabled } });
+  }, [run, runKey, stale, rpm, settle, fine, pipeEnabled,annulusEnabled,timeSettings,selectedDepthMD, snap, annulusFrame,p.onReportChange]);
 
 
   useEffect(() => () => worker.current?.terminate(), []);
   const start = () => {
+    if(timingError)return;
     worker.current?.terminate();
     const w = new Worker(new URL("../../workers/displacement2d.worker.ts", import.meta.url), { type: "module" });
     worker.current = w;
@@ -106,18 +111,19 @@ export default function Displacement2DSection(p: {
       w.terminate(); worker.current = null;
     };
     w.onerror = (e) => { setBusy(false); setErr(e.message || "Ошибка расчёта"); };
-    w.postMessage({ id, pipeEnabled,annulusEnabled,fine, rotationRpm: rpm, settleMin: settle, data: { wellData: p.wellData, slurries: p.slurries, buffers: p.buffers, drillingFluid: p.drillingFluid, displacementFluids: p.displacementFluids, volumes: p.volumes,flushTimeMin:p.flushTimeMin,flushVolumeM3:p.flushVolumeM3 } });
+    w.postMessage({ id, ...timeSettings,pipeEnabled,annulusEnabled,fine, rotationRpm: rpm, settleMin: settle, data: { wellData: p.wellData, slurries: p.slurries, buffers: p.buffers, drillingFluid: p.drillingFluid, displacementFluids: p.displacementFluids, volumes: p.volumes,flushTimeMin:p.flushTimeMin,flushVolumeM3:p.flushVolumeM3 } });
   };
 
   useEffect(() => {
     if (!playing || !run) return;
     const n = timeline.length;
-    const h = window.setInterval(() => setSnap((s) => { if (s >= n - 1) { setPlaying(false); return s; } return s + 1; }), 90);
+    const h = window.setInterval(() => setSnap((s) => { if (s >= n - 1) { setPlaying(false); return s; } return s + 1; }), timeSettings.playbackMs??90);
     return () => window.clearInterval(h);
-  }, [playing, run, timeline]);
+  }, [playing, run, timeline,timeSettings.playbackMs]);
 
   const res = run?.result;
   const meta = run?.meta;
+  const actualSettleS=res?.summary.timing?.actualSettleS??res?.summary.settleS??0;
   const historyCell = useMemo(() => res ? displacementDepthHistory(res, selectedDepthMD ?? res.zCenters[Math.floor(res.nZ / 2)]) : null, [res, selectedDepthMD]);
   const historyMarkers = useMemo(() => historyCell ? [{md:historyCell.md,theta:0,label:`Состав: MD ${historyCell.md.toFixed(1)} м`}] : undefined, [historyCell]);
   const sn = res ? res.snapshots[Math.min(annulusFrame, res.snapshots.length - 1)] : null;
@@ -138,7 +144,7 @@ export default function Displacement2DSection(p: {
                 {[0, 15, 30, 60].map((m) => <option key={m} value={m}>{m === 0 ? "нет" : `${m} мин`}</option>)}
               </select></label>
             <label className="flex items-center gap-1 text-[11px] font-normal text-muted-foreground"><input type="checkbox" checked={fine} onChange={(e) => setFine(e.target.checked)} />подробная сетка</label>
-            <Button size="sm" className="h-8 text-xs" onClick={start} disabled={busy||!pipeEnabled&&!annulusEnabled} data-testid="d2-run">{busy ? "Считаю…" : run ? "Пересчитать" : "Рассчитать вытеснение"}</Button>
+            <Button size="sm" className="h-8 text-xs" onClick={start} disabled={busy||!!timingError||!pipeEnabled&&!annulusEnabled} data-testid="d2-run">{busy ? "Считаю…" : run ? "Пересчитать" : "Рассчитать вытеснение"}</Button>
           </span>
         </CardTitle>
       </CardHeader>
@@ -149,6 +155,8 @@ export default function Displacement2DSection(p: {
           {!pipeEnabled&&!annulusEnabled&&<p role="alert">Включите хотя бы одно пространство.</p>}
           <p className="text-muted-foreground w-full">Отключение исключает расчёт состава выбранного пространства. При отключённой трубе подача у башмака остаётся заданной расписанием и вместимостью колонны. При отключённом затрубье расход из трубы считается заданным; противодавление затрубья не рассчитывается.</p>
         </div>
+        <D2TimingControls settings={timeSettings} onChange={setTimeSettings} annulusEnabled={annulusEnabled}/>
+        {run?.result?.summary.timing&&<div className="rounded border p-2 space-y-1">{timingRows({},run.result.summary.timing).slice(3).map(([name,value])=><p key={name}>{name}: {typeof value==='number'?Number(value.toPrecision(8)):value}</p>)}{!run.result.summary.timing.complete&&<p role="alert" className="text-destructive">Расчёт обрезан. Конечное состояние операции не достигнуто.</p>}</div>}
         {!run && !busy && (
           <p className="text-muted-foreground">
             Затрубье разворачивается в карту «глубина × окружность»; в каждой точке учитывается ширина зазора (колонна смещена к нижней стенке по расчёту центрирования),
@@ -158,7 +166,18 @@ export default function Displacement2DSection(p: {
         {busy && <div className="space-y-1"><Progress value={progress * 100} className="h-2" /><p className="text-muted-foreground">Расчёт вытеснения… {f(progress * 100)}%</p></div>}
         {err && <p className="text-destructive">Ошибка: {err}</p>}
         {stale && <p className="text-amber-700 dark:text-amber-500">Исходные данные изменились — нажмите «Пересчитать».</p>}
-        {run?.pipe&&<D2PipeSection pipe={run.pipe} colors={run.meta.colors} timeline={timeline} frame={Math.min(snap,timeline.length-1)} md={selectedDepthMD??run.pipe.segments[Math.floor(run.pipe.segments.length/2)]?.topMD??0} onDepth={setSelectedDepthMD} onFrame={i=>{setPlaying(false);setSnap(i);}} stale={!!stale} />}
+        {run && timeline.length>0 && <>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" className="h-7 w-7 p-0" aria-label={playing ? "Пауза" : "Воспроизвести"} onClick={() => { if (!playing && snap >= timeline.length - 1) setSnap(0); setPlaying((x) => !x); }}>
+                {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 w-7 p-0" aria-label="В начало" onClick={() => { setPlaying(false); setSnap(0); }}><RotateCcw className="w-3.5 h-3.5" /></Button>
+              <input type="range" min={0} max={timeline.length - 1} value={snap} onChange={(e) => { setPlaying(false); setSnap(+e.target.value); }} className="flex-1 min-w-[160px] accent-[hsl(var(--primary))]" aria-label="Время" />
+              <span className="tabular-nums text-muted-foreground w-56 text-right">от закачки {mmss(timeline[snap]?.timeS??0)}{sn?` · затрубье ${mmss(sn.t)} · ${stageName}`:' · труба'}</span>
+              {res && actualSettleS > 0 && <Button size="sm" variant="ghost" className="h-7 text-[10px] px-2" onClick={() => { setPlaying(false); setSnap(Math.max(0,timeline.findIndex(x=>x.annulusFrame===res.pumpEndSnap))); }}>конец продавки</Button>}
+            </div>
+        </>}
+        {run?.pipe&&<D2PipeSection pipe={run.pipe} colors={run.meta.colors} timeline={timeline} frame={Math.min(snap,timeline.length-1)} md={selectedDepthMD??run.pipe.segments[Math.floor(run.pipe.segments.length/2)]?.topMD??0} timingSettings={timeSettings} timingStats={run.result?.summary.timing} onDepth={setSelectedDepthMD} onFrame={i=>{setPlaying(false);setSnap(i);}} stale={!!stale} />}
         {run&&!run.pipe&&<p>Расчёт состава в трубе отключён. Трубные концентрации не представлены.</p>}
         {run&&!res&&<p>Расчёт затрубного пространства отключён. Затрубные концентрации и 3D-поле не представлены.</p>}
         {res && meta && sn && (
@@ -174,25 +193,16 @@ export default function Displacement2DSection(p: {
                 <div key={n} className="rounded-md border border-border/60 p-2"><p className="text-[10px] text-muted-foreground">{n}</p><p className={`text-base font-semibold ${c}`}>{v}</p><p className="text-[10px] text-muted-foreground">{s}</p></div>
               ))}
             </div>
-            {(res.summary.settleS > 0 || res.summary.rotationRpm > 0) && (
+            {(actualSettleS > 0 || res.summary.rotationRpm > 0) && (
               <div className="rounded-md border border-border/60 bg-muted/30 p-2 space-y-0.5">
                 {res.summary.rotationRpm > 0 && <p>Вращение колонны {f(res.summary.rotationRpm)} об/мин при закачке: считается вся окружность; вращение разрушает структуру раствора и уносит его с узкой стороны по окружности.</p>}
-                {res.summary.settleS > 0 && (
-                  <p>Выдержка {f(res.summary.settleS / 60)} мин после продавки: на конец продавки заполнение {f(res.summary.pumpEnd.cementFillPct, 1)}%, канал {f(res.summary.pumpEnd.channelM)} м →
+                {actualSettleS > 0 && (
+                  <p>Выдержка {f(actualSettleS / 60)} мин после продавки: на конец продавки заполнение {f(res.summary.pumpEnd.cementFillPct, 1)}%, канал {f(res.summary.pumpEnd.channelM)} м →
                     после выдержки {f(res.summary.cementFillPct, 1)}%, канал {f(res.summary.channelM)} м; {Math.abs(res.settleTopShiftM) < 0.05 ? "центр тяжести цемента практически не сместился." : `центр тяжести цемента сместился на ${f(Math.abs(res.settleTopShiftM), 1)} м ${res.settleTopShiftM > 0 ? "вниз" : "вверх"}.`}
                     {res.summary.channelM < res.summary.pumpEnd.channelM - 1 ? " Тяжёлый цемент стекает к нижней стенке и частично закрывает канал." : res.summary.channelM > res.summary.pumpEnd.channelM + 1 ? " Лёгкий раствор всплывает и вытесняет цемент с верхней стороны — канал растёт." : " Структура жидкостей удерживает распределение — существенных перетоков нет."}</p>
                 )}
               </div>
             )}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="outline" className="h-7 w-7 p-0" aria-label={playing ? "Пауза" : "Воспроизвести"} onClick={() => { if (!playing && snap >= timeline.length - 1) setSnap(0); setPlaying((x) => !x); }}>
-                {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-              </Button>
-              <Button size="sm" variant="outline" className="h-7 w-7 p-0" aria-label="В начало" onClick={() => { setPlaying(false); setSnap(0); }}><RotateCcw className="w-3.5 h-3.5" /></Button>
-              <input type="range" min={0} max={timeline.length - 1} value={snap} onChange={(e) => { setPlaying(false); setSnap(+e.target.value); }} className="flex-1 min-w-[160px] accent-[hsl(var(--primary))]" aria-label="Время" />
-              <span className="tabular-nums text-muted-foreground w-56 text-right">от закачки {mmss(timeline[snap]?.timeS??0)} · затрубье {mmss(sn.t)} · {stageName}</span>
-              {res.summary.settleS > 0 && <Button size="sm" variant="ghost" className="h-7 text-[10px] px-2" onClick={() => { setPlaying(false); setSnap(Math.max(0,timeline.findIndex(x=>x.annulusFrame===res.pumpEndSnap))); }}>конец продавки</Button>}
-            </div>
             <div className="flex flex-wrap gap-x-3 gap-y-1">
               {res.fluids.map((fl, i) => <span key={i} className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: meta.colors[i] }} />{fl.name} <span className="text-muted-foreground">{f(fl.density)} кг/м³, ДНС {f(fl.yp, 1)} Па</span></span>)}
             </div>
@@ -210,7 +220,7 @@ export default function Displacement2DSection(p: {
                 <D2Map res={res} colors={meta.colors} snap={annulusFrame} designTopMD={meta.designCementTopMD} />
               </div>
               <div>
-                <p className="text-[11px] font-semibold mb-1">Итог по глубине{res.summary.settleS > 0 ? " (после выдержки)" : " (после продавки)"}</p>
+                <p className="text-[11px] font-semibold mb-1">Итог по глубине{actualSettleS > 0 ? " (после выдержки)" : " (после продавки)"}</p>
                 <ProfileChart res={res} designTop={meta.designCementTopMD} />
               </div>
             </div>

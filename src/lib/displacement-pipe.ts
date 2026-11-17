@@ -1,3 +1,4 @@
+import {normalizeDisplacementTiming,validateFrameBudget} from './displacement-timing';
 import type { D2Fluid, D2Stage, D2Result } from './displacement-2d';
 import { reportSeriesPlot } from './report-series-plot';
 export interface PipeSegment { topMD:number; bottomMD:number; startM3:number; endM3:number }
@@ -54,14 +55,19 @@ export function pipeShoeStages(p:PipeTransport) {
   }
   return {stages,annulusStartS:startS??p.pumpTimeS};
 }
-export function displacementTimeline(pipe:PipeTransport|null|undefined,result:D2Result|null|undefined,annulusStartS:number,settleMin:number):DisplacementFrame[] {
+export function displacementTimeline(pipe:PipeTransport|null|undefined,result:D2Result|null|undefined,annulusStartS:number,settleMin:number,frameIntervalS?:number):DisplacementFrame[] {
+  const interval=normalizeDisplacementTiming({frameIntervalS}).frameIntervalS;
   if(result?.snapshots.length){
-    const before=pipe?Array.from({length:30},(_,i)=>annulusStartS*i/30).filter(t=>t<annulusStartS):[];
+    if(interval&&pipe)validateFrameBudget(annulusStartS,interval,result.snapshots.length+1);
+    const count=interval?Math.ceil(annulusStartS/interval):30;
+    const before=pipe?Array.from({length:count},(_,i)=>interval?i*interval:annulusStartS*i/30).filter(t=>t<annulusStartS):[];
     return [...before.map(timeS=>({timeS,annulusFrame:0})),...result.snapshots.map((s,i)=>({timeS:s.t+annulusStartS,annulusFrame:i}))];
   }
   if(!pipe)return [];
   const end=pipe.pumpTimeS+Math.max(0,settleMin)*60;
-  const times=[0,pipe.pumpTimeS,end,...pipe.stages.flatMap(s=>[s.startS,s.endS]),...Array.from({length:140},(_,i)=>end*i/139)];
+  if(interval)validateFrameBudget(end,interval,pipe.stages.length*2+4);
+  const count=interval?Math.ceil(end/interval):140;
+  const times=[0,pipe.pumpTimeS,end,...pipe.stages.flatMap(s=>[s.startS,s.endS]),...Array.from({length:count},(_,i)=>interval?i*interval:end*i/139)];
   return [...new Set(times)].sort((a,b)=>a-b).map(timeS=>({timeS,annulusFrame:0}));
 }
 export function pipeHistory(p:PipeTransport,md:number,frames:DisplacementFrame[]){return frames.map((frame,i)=>({frame:i,timeS:frame.timeS,...pipeDepthComposition(p,md,frame.timeS)}));}

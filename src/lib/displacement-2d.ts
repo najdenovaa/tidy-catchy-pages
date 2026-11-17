@@ -1,3 +1,4 @@
+import { normalizeDisplacementTiming,validateFrameBudget,validateTimingBudget,type DisplacementTimingStats } from './displacement-timing';
 /**
  * Двумерная (осреднённая по зазору) модель вытеснения в эксцентричном затрубье.
  *
@@ -74,6 +75,10 @@ export interface D2Input {
   nTheta?: number;
   nZ?: number;
   maxSnapshots?: number;
+  /** Верхний предел dt; критерий устойчивости может уменьшить шаг. 0/нет - авто. */
+  maxTimeStepS?:number;
+  /** Целевой интервал сохранения, не влияющий на шаг решателя. 0/нет - авто. */
+  frameIntervalS?:number;
   /** Вращение колонны при закачке, об/мин (0 — без вращения) */
   rotationRpm?: number;
   /** Выдержка после продавки, мин (0 — не считать) */
@@ -166,6 +171,7 @@ export interface D2Result {
     settleS: number;
     rotationRpm: number;
     steps: number;
+    timing?:DisplacementTimingStats;
     pumpEnd: D2Stats;
     /** Баланс объёмов: (вошло − вышло − прирост) / вошло, % */
     massBalanceErrPct: number;
@@ -237,6 +243,7 @@ function makeTriSolver(n: number) {
 export function simulateDisplacement2D(inp: D2Input): D2Result {
   const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
   const warnings: string[] = [];
+  const timing=normalizeDisplacementTiming(inp);
   const rpm = Math.max(0, inp.rotationRpm ?? 0);
   const sheet = !!inp.customGap;
   const full = rpm > 0 || !!inp.fullCircle;
@@ -616,7 +623,11 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const settleS = Math.max(0, inp.settleMin ?? 0) * 60;
   const totalT = pumpT + settleS;
   const maxSnap = inp.maxSnapshots ?? 140;
-  const snapDt = totalT / Math.max(1, maxSnap - 1);
+  if(!Number.isInteger(maxSnap)||maxSnap<2||maxSnap>2000)throw new Error('Число кадров должно быть целым от 2 до 2000.');
+  const snapDt = timing.frameIntervalS ?? totalT / Math.max(1, maxSnap - 1);
+  const frameLimit=Math.min(2000,Math.floor(64*1024*1024/Math.max(1,nF*N)));
+  validateFrameBudget(totalT,snapDt,3,frameLimit);
+  validateTimingBudget(pumpT,totalT,timing.maxTimeStepS);
   const snapshots: D2Snapshot[] = [];
   const snap = (t: number, st: number) => {
     const fr = new Uint8Array(nF * N);
@@ -628,7 +639,9 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const vol0 = V.reduce((a, b) => a + b, 0);
   snap(0, 0); nextSnap = snapDt;
   U = 1;
-  let aborted = false;
+  let aborted = false, minDt=Infinity,maxDt=0,sumDt=0,actualSettleS=0;
+  const recordStep=(dt:number)=>{minDt=Math.min(minDt,dt);maxDt=Math.max(maxDt,dt);sumDt+=dt;};
+  const saveDue=(stage:number)=>{if(snapDt>0&&t>=nextSnap-1e-9){snap(t,stage);nextSnap=(Math.floor((t+1e-9)/snapDt)+1)*snapDt;}};
   const timeProps = () => {
     if (!inp.fluidTime) return;
     for (let f = 0; f < nF; f++) { if (firstIn[f] < 0) continue; const m = inp.fluidTime(f, t - firstIn[f]); muMul[f] = m.mu; tyMul[f] = m.ty; }
@@ -660,14 +673,15 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
       timeProps(); mixProps();
       solvePressure(hold ? 0 : st.rateM3s * share, gInit ? (hold ? 2 : 1) : 6);
       gInit = true;
-      const dt = stepDt(Math.min(hold ? 60 : 30, hold ? left : left / st.rateM3s));
+      const dt = stepDt(Math.min(timing.maxTimeStepS??Infinity,hold ? 60 : 30, hold ? left : left / st.rateM3s));
+      recordStep(dt);
       transport(dt, hold ? -1 : st.fluid);
       accumulatePlug(dt);
       mixProps();
       t += dt; steps++;
       if (hold) left -= dt; else { left -= st.rateM3s * dt; inVol += st.rateM3s * share * dt; }
       outVol += outflow() * dt;
-      if (t >= nextSnap - 1e-9) { snap(t, si); nextSnap += snapDt; }
+      saveDue(si);
       if (steps % 20 === 0) inp.onProgress?.(Math.min(1, t / totalT));
       if (steps > 200000) { warnings.push("Превышено число шагов расчёта — результат обрезан."); aborted = true; break; }
     }
@@ -679,21 +693,23 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const cent0 = cementCentroid();
 
   // ── Выдержка: расход 0, вращение остановлено, структура растёт ──
-  if (settleS > 0) {
+  if (settleS > 0 && !aborted) {
     U = 0;
     let tS = 0;
     while (tS < settleS - 1e-6) {
       for (let f = 0; f < nF; f++) gelMul[f] = gelMultiplier(inp.fluids[f].kind, tS);
       mixProps();
       solvePressure(0, 2);
-      const dt = stepDt(Math.min(60, settleS - tS));
+      const dt = stepDt(Math.min(timing.maxTimeStepS??Infinity,60, settleS - tS));
+      recordStep(dt);
       transport(dt, -1);
       t += dt; tS += dt; steps++;
       outVol += outflow() * dt;
-      if (t >= nextSnap - 1e-9) { snap(t, -1); nextSnap += snapDt; }
+      saveDue(-1);
       if (steps % 20 === 0) inp.onProgress?.(Math.min(1, t / totalT));
-      if (steps > 260000) { warnings.push("Выдержка обрезана по числу шагов."); break; }
+      if (steps > 260000) { warnings.push("Выдержка обрезана по числу шагов."); aborted=true; break; }
     }
+    actualSettleS=tS;
     if (snapshots[snapshots.length - 1].t < t - 1e-6) snap(t, -1);
   }
   const fin = stats();
@@ -708,6 +724,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
     finalFrac: c.map((a) => Float32Array.from(a)), cementTopMD, settleTopShiftM,
     summary: {
       ...fin.s, totalTimeS: t, pumpTimeS, settleS, rotationRpm: rpm, steps, pumpEnd: atPumpEnd.s,
+      timing:{requestedMaxStepS:timing.maxTimeStepS??null,requestedFrameIntervalS:timing.frameIntervalS??null,targetFrameIntervalS:snapDt,minStepS:Number.isFinite(minDt)?minDt:0,maxStepS:maxDt,meanStepS:steps?sumDt/steps:0,frames:snapshots.length,complete:!aborted&&Math.abs(t-totalT)<1e-4,actualSettleS,plannedTotalS:totalT},
       massBalanceErrPct: mbe, computeMs: t1 - t0, pcgIters,
     },
     warnings,
