@@ -17,6 +17,7 @@ export interface CentralizationReportData {
 }
 export interface DisplacementReportSettings { rotationRpm: number; settleMin: number; fine: boolean; }
 export interface DisplacementReportData {
+  selectedDepthMD?: number; selectedFrame?: number;
   inputKey: string; result: D2Result; meta: D2Meta; stages: D2Stage[]; settings: DisplacementReportSettings;
 }
 export type DisplacementReportInput = { flushTimeMin?:number;flushVolumeM3?:number;wellData: WellData; slurries: SlurryInput[]; buffers: BufferFluid[];

@@ -1,3 +1,4 @@
+import { displacementHistoryPlots } from './displacement-depth-history';
 import {rheologyHierarchy,rheologyHierarchyFigures} from './rheology-hierarchy';
 import {currentFoamReport,foamReportKey} from './foam-chart-data';
 import {rheologyChartData} from './rheology-data';
@@ -1039,7 +1040,9 @@ export async function exportToDocx(
   add('woc','ОЗЦ',buildWOCPage(wellData,slurries));
   if(!freshObservation&&wellData.pressureObservation)add('selectedDepth','Давление и ЭЦП на выбранной глубине',[sectionTitle('Давление и ЭЦП на выбранной глубине'),noteParagraph('Нет актуального расчёта для выбранной глубины и исходных данных. Пересчитайте программу; прежние значения и рисунки исключены.')]);
   const currentHierarchyKeys=new Set(rheologyHierarchyFigures({drillingFluid,buffers,slurries,displacementFluids,wellData}).map(p=>p.sourceKey));
-  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
+  const historyData=options?.extras?.displacement;
+  const historyKeys=new Set(historyData?displacementHistoryPlots(historyData.result,historyData.meta.colors,historyData.selectedDepthMD??historyData.result.zCenters[Math.floor(historyData.result.nZ/2)]).map(p=>p.sourceKey):[]);
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='displacementHistory'||historyKeys.has(f.sourceKey!))&&(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
   const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});
