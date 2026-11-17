@@ -41,6 +41,6 @@ describe('F20 rheological hierarchy',()=>{
  it('preserves metadata in project and library snapshots and changes figure provenance when conditions change',()=>{
   const ex=getCementingExample(),slurry={...ex.slurries[0],rheology:r(80,8)},snapshot=normalizeCementingSnapshot(JSON.parse(JSON.stringify({...ex,slurries:[slurry]})));expect(snapshot.slurries[0].rheology).toEqual(slurry.rheology);
   const lib=saveFluidRevision(emptyFluidLibrary(),'slurry',fluidProperties('slurry',slurry),{source:'Протокол 17',basis:'laboratory',temperatureC:50,pressureMPa:20,notes:''}),restored=parseFluidLibrary(JSON.stringify(lib));expect(applyFluidRevision('slurry',slurry,restored.entries[0],1).rheology).toEqual(slurry.rheology);
-  const p=input(),a=rheologyHierarchyFigures(p);p.buffers[0].rheology.testTemperatureC=60;const b=rheologyHierarchyFigures(p);expect(a[0].data.series).toEqual(b[0].data.series);expect(a[0].sourceKey).not.toBe(b[0].sourceKey);expect(a[2].data.series[0].name).not.toBe(b[2].data.series[0].name);
+  const p=input(),a=rheologyHierarchyFigures(p),reordered={...p,buffers:p.buffers.map(f=>({...f,rheology:Object.fromEntries(Object.entries(f.rheology).reverse()) as unknown as Rheology}))};expect(rheologyHierarchyFigures(reordered)[0].sourceKey).toBe(a[0].sourceKey);p.buffers[0].rheology.testTemperatureC=60;const b=rheologyHierarchyFigures(p);expect(a[0].data.series).toEqual(b[0].data.series);expect(a[0].sourceKey).not.toBe(b[0].sourceKey);expect(a[2].data.series[0].name).not.toBe(b[2].data.series[0].name);
  });
 });

@@ -1,3 +1,4 @@
+import {rheologyHierarchyFigures} from '../rheology-hierarchy';
 import {rheologyReportFigures} from "../rheology-report";
 import {saveEquipmentRevision,emptyEquipmentLibrary,equipmentProperties,applyEquipmentRevision} from "../equipment-library";
 import {saveFluidRevision, emptyFluidLibrary, fluidProperties, applyFluidRevision} from "../fluid-library";
@@ -76,6 +77,9 @@ it("exports a complete report with a full-width A4 grid, actual clearances and d
   const reportSlurries = [applyFluidRevision("slurry",slurries[0],library.entries[0],1),...slurries.slice(1)];
   const eqLib=saveEquipmentRevision(emptyEquipmentLibrary(),equipmentProperties({id:"qa",kind:"shoe",model:"Башмак QA",manufacturer:"Завод QA",quantity:1,note:"SECRET-PASSPORT-CONTENT"}),{source:"Паспорт оснастки QA-056",basis:"passport",notes:"Без вложения паспорта"});
   reportWell.equipment=[...(reportWell.equipment??[]),applyEquipmentRevision({id:"qa",kind:"shoe",model:"",manufacturer:"",quantity:1},eqLib.entries[0],1)];
+  const currentHierarchy=rheologyHierarchyFigures({...dData,wellData:reportWell,slurries:reportSlurries});
+  const previousHierarchy=svg.filter(p=>p.title.startsWith('Реологическая иерархия:'));
+  expect(currentHierarchy.map(p=>p.sourceKey)).toEqual(previousHierarchy.map(p=>'sourceKey' in p?p.sourceKey:undefined));
   const b = await exportToDocx(reportWell, ex.drillingFluid, reportSlurries, buffers, ex.displacementFluids, ex.fractureGradient,
     undefined, cent.results, { volumes: volume, pressureResult: pressure }, { extras, returnBlob: true });
   if (!b) throw new Error("DOCX was not generated");

@@ -47,5 +47,5 @@ export function rheologyHierarchyFigures(input:RheologyReportInput){
  return [plot('Реологическая иерархия: выбранные модели','rheologyHierarchyStress','Напряжение сдвига, Па',h.fluids.map(f=>({name:f.label+(f.defaults?' (модельные PV/YP)':''),color:f.color,values:f.tau}))),
  plot('Реологическая иерархия: кажущаяся вязкость','rheologyHierarchyViscosity','Кажущаяся вязкость, мПа·с',h.fluids.map(f=>({name:f.label,color:f.color,values:f.tau.map((v,i)=>v===null?null:1000*v/h.x[i])})),'μкаж = 1000τ/γ, мПа·с; γ > 0. '),
  plot('Реологическая иерархия: соседние жидкости','rheologyHierarchyDelta','Δτ следующая минус предыдущая, Па',[...h.pairs.map((p,i)=>({name:p.label+'; '+p.conditions,color:colors[i%colors.length],values:p.delta})),{name:'Равные напряжения',color:'#94a3b8',reference:true,dash:'4 4',values:h.x.map(()=>0)}],'Пары в порядке закачки; знак на сетке не означает пригодность или несовместимость. ')]
- .filter(hasPlotNumbers).map(p=>({...p,sourceKey:JSON.stringify(['hierarchy-v1',p.plotId,p.data,h.fluids.map(f=>[f.id,f.r,f.appliedR,f.temperatureC,f.pressureMPaAbs,f.source])])}));
+ .filter(hasPlotNumbers).map(p=>({...p,sourceKey:JSON.stringify(['hierarchy-v1',p.plotId,p.data,h.fluids.map(f=>[f.id,f.data.applied.label,f.appliedSource,f.temperatureC,f.pressureMPaAbs,f.source])])}));
 }
