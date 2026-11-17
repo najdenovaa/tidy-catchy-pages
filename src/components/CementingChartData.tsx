@@ -1,3 +1,4 @@
+import RheologyHierarchy from './RheologyHierarchy';
 import {rheologyCoverage} from '@/lib/rheology-workbook';
 import ChartPresentationEditor from './ChartPresentationEditor';
 import type {ChartPresentations} from '@/lib/chart-presentation';
@@ -16,6 +17,7 @@ export default function CementingChartData({result,settings,presentations,onPres
   <p className="text-xs text-muted-foreground">Основные гидравлические графики текущего расчёта, выбранная глубина, сжатие после посадки и корзины после Стоп. Полные числовые ряды без прореживания; пустые значения сохраняются. При наличии актуального результата включено пеноцементирование. Включена реология жидкостей расчётного снимка: замеры, кривые и отклонения. Остальные лабораторные данные, центрирование, дохождение и 3D в эту выгрузку не входят.</p>
   <Button onClick={()=>{try{setError('');XLSX.writeFile(cementingChartsWorkbook(result,settings,undefined,presentations),'Данные-графиков-цементирования.xlsx');}catch(e){setError(e instanceof Error?e.message:String(e));}}}>Скачать данные графиков XLSX</Button>
   {error&&<p role="alert" className="text-destructive text-xs">{error}</p>}
+  {result.rheologyInput&&<RheologyHierarchy input={result.rheologyInput}/>}
   <ChartPresentationEditor plots={plots} presentations={presentations} onChange={onPresentationsChange}/>
   {result.rheologyInput&&<details><summary className="text-sm cursor-pointer">Реология: наличие замеров по жидкостям</summary><div className="overflow-auto"><table className="text-xs w-full"><thead><tr><th>Жидкость</th><th>Кривые</th><th>Применяется в гидравлике</th><th>Источник</th></tr></thead><tbody>{rheologyCoverage(result.rheologyInput).map(f=><tr key={f.id}><td className="p-2">{f.name}</td><td>{f.status}</td><td>{f.data.applied.label}{!f.data.applied.valid&&': '+f.data.applied.error}</td><td>{f.appliedSource}</td></tr>)}</tbody></table></div></details>}
   <details><summary className="text-sm cursor-pointer">Карта графиков: наличие данных и разделы Word</summary><div className="overflow-auto"><table className="text-xs w-full"><thead><tr><th className="text-left p-2">График / пункт Word</th><th>Состояние</th><th>Панелей</th><th>Строк</th></tr></thead><tbody>{coverage.map(r=><tr key={r.key}><td className="p-2">{r.label}</td><td>{r.status}</td><td>{r.ready.length}</td><td>{r.rows}</td></tr>)}</tbody></table></div></details>

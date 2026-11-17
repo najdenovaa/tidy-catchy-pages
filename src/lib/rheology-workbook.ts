@@ -1,3 +1,4 @@
+import {appendHierarchySheets} from './rheology-hierarchy-workbook';
 import * as XLSX from 'xlsx';
 import {DIAL_TO_PA,RPM_TO_SHEAR} from './cement-rheology';
 import {rheologyChartData} from './rheology-data';
@@ -16,4 +17,5 @@ export function appendRheologySheets(w:XLSX.WorkBook,input:RheologyReportInput){
   models.push([f.id,f.name,'Применяемая в гидравлике',d.applied.label,d.applied.valid&&!p?f.appliedR.pv:null,d.applied.valid?(p?.tau0??f.appliedR.yp):null,d.applied.valid?(p?.K??f.appliedR.pv/1000):null,d.applied.valid?(p?.n??1):null,null,null,null,null,d.applied.valid?f.appliedSource:d.applied.error]);
  }
  for(const [name,rows] of [['Реология - жидкости',catalog],['Реология - замеры',raw],['Реология - модели',models]] as const){const s=XLSX.utils.aoa_to_sheet(rows);s['!cols']=rows[0].map((_,i)=>({wch:i===1?40:26}));XLSX.utils.book_append_sheet(w,s,name);}
+ appendHierarchySheets(w,input);
 }

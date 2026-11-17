@@ -1,3 +1,4 @@
+import {rheologyHierarchy,rheologyHierarchyFigures} from './rheology-hierarchy';
 import {currentFoamReport,foamReportKey} from './foam-chart-data';
 import {rheologyChartData} from './rheology-data';
 import {RPM_TO_SHEAR,DIAL_TO_PA} from './cement-rheology';
@@ -992,12 +993,17 @@ export async function exportToDocx(
   } catch { riskContent = [noteParagraph("Оценка риска не выполнена; расчёт этого раздела недоступен.")]; }
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
   const freshFoam=currentFoamReport(options?.foam,wellData,drillingFluid.density);
-  const chartsDataContent = buildChartsDataPage({...pressureResult,observation:freshObservation}, images?.chartImages,wellData.depthChartSettings,selection,wellData.chartPresentations,{drillingFluid,buffers,slurries,displacementFluids},freshFoam);
+  const chartsDataContent = buildChartsDataPage({...pressureResult,observation:freshObservation}, images?.chartImages,wellData.depthChartSettings,selection,wellData.chartPresentations,{drillingFluid,buffers,slurries,displacementFluids,wellData},freshFoam);
   const trajectoryContent = buildTrajectoryPage(wellData, images?.visualImages);
   const sections: {properties:ReturnType<typeof reportPageProperties>;headers?:{default:Header};children:any[]}[]=[{properties:reportPageProperties(),children:titlePage}];
   const add=(key:Parameters<typeof reportIncludes>[1],title:string,children:any[])=>{if(reportIncludes(selection,key)&&children.length)sections.push({properties:reportPageProperties(),headers:{default:new Header({children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:title,size:16,color:"999999",font:"Calibri"})]})]})},children});};
   add('inputs','Исходные данные',inputContent);
   const rheologyContent:any[]=[sectionTitle('Реология жидкостей'),noteParagraph('Конфигурация Fann R1-B1-F1. МНК Бингама - по напряжению; степенная и Гершель-Балкли - регрессия в логарифмах, для ГБ перебор предела текучести. Метрики рассчитаны в Па. Графики ограничены диапазоном измерений; вне него - экстраполяция. Подбор не подтверждает стабильность или совместимость.')];
+  const hierarchy=rheologyHierarchy({drillingFluid,buffers,slurries,displacementFluids,wellData});
+  rheologyContent.push(sectionTitle('Реологическая иерархия закачиваемых жидкостей'),noteParagraph(hierarchy.sequenceSource+' '+hierarchy.rangeSource),noteParagraph(hierarchy.note),...hierarchy.issues.map(noteParagraph),
+    gridTable(['№ / жидкость','Модель и источник','T, °C / P, МПа абс.','Источник условий'],hierarchy.fluids.map(f=>[f.label,f.data.applied.label+'; '+f.appliedSource,(f.temperatureC===null?'Нет':fmt(f.temperatureC,2))+' / '+(f.pressureMPaAbs===null?'Нет':fmt(f.pressureMPaAbs,4)),f.source])) as any,
+    gridTable(['Предыдущая / следующая','Отношение на сетке','Условия T/P','Мин. / макс. Δτ, Па'],hierarchy.pairs.map(p=>[p.beforeName+' - '+p.afterName,p.ordering,p.conditions,(p.minDelta===null?'Нет':fmt(p.minDelta,4))+' / '+(p.maxDelta===null?'Нет':fmt(p.maxDelta,4))])) as any,
+    noteParagraph('В иерархии используется основная реология БР. Забойный набор БР не является отдельной закачанной жидкостью. Кажущаяся вязкость = 1000τ/γ, мПа·с. Смена знака проверена на общей сетке.'));
   for(const f of rheologyReportFluids({drillingFluid,buffers,slurries,displacementFluids})){
     const res=rheologyResolution(f.r);rheologyContent.push(noteParagraph(f.name+': '+rheologyDescription(f.appliedR)+'; '+f.appliedSource));
     if(!res.fit)rheologyContent.push(noteParagraph('Кривые не построены: недостаточные либо неизменяющиеся положительные показания Fann. Модельные PV/YP не являются лабораторными замерами.'));
@@ -1032,7 +1038,8 @@ export async function exportToDocx(
   if(reportIncludes(selection,'foam')&&(freshFoam||options?.foam))add('foam','Пеноцементирование',freshFoam?foamReportChildren(freshFoam):[noteParagraph('Нет актуального расчёта пеноцементирования. Пересчитайте модуль; прежние графики не включены.')]);
   add('woc','ОЗЦ',buildWOCPage(wellData,slurries));
   if(!freshObservation&&wellData.pressureObservation)add('selectedDepth','Давление и ЭЦП на выбранной глубине',[sectionTitle('Давление и ЭЦП на выбранной глубине'),noteParagraph('Нет актуального расчёта для выбранной глубины и исходных данных. Пересчитайте программу; прежние значения и рисунки исключены.')]);
-  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
+  const currentHierarchyKeys=new Set(rheologyHierarchyFigures({drillingFluid,buffers,slurries,displacementFluids,wellData}).map(p=>p.sourceKey));
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
   const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});
