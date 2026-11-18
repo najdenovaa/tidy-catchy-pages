@@ -1,6 +1,7 @@
 // Cement Quality Index (CQI) — расчёт качества цементирования по глубине
 import type { WellData, SlurryInput, BufferFluid, DrillingFluid, PressurePoint } from "./cementing-calculations";
-import { getCavernCoeffAtDepth } from "./cementing-calculations";
+import { resolveFlowRateSteps, slurryDesignVolume, getCavernCoeffAtDepth } from "./cementing-calculations";
+import { boreDiameterAtDepth } from "./well-geometry";
 import type { CentralizationResult } from "./centralization-calculations";
 
 export type BondGrade = 'A' | 'B' | 'C' | 'D' | 'F';
@@ -41,8 +42,9 @@ export interface CQISummary {
   densityHierarchyOK: boolean;
   rheologyHierarchyOK: boolean;   // YP_mud < YP_buf < YP_cem (API RP 65)
   bufDensity: number;             // kg/m³ (volume-weighted)
-  bufYP: number;                  // lbf/100ft²
+  bufYP: number;                  // Pa
   bufPV: number;                  // cp
+  standoffSource: 'centralization' | 'profile' | 'input' | 'assumed';
   criticalZones: { fromMD: number; toMD: number; cqi: number; reason: string }[];
 }
 
@@ -159,14 +161,8 @@ export function calculateCementQuality(input: CQIInput): {
     casingDepthMD, annVPM, prevCasingDepth, contactTimeByDepth } = input;
 
   const mudDensity = drillingFluid.density || 1100;
-  const mudYP = drillingFluid.rheology?.yp || 20;
-  const mudPV = drillingFluid.rheology?.pv || 25;
-
-  // Repr. cement (нижний — ближайший к забою)
-  const repCem = slurries.length > 0 ? slurries[slurries.length - 1] : undefined;
-  const cemDensity = repCem?.density ? repCem.density * 1000 : 1850;
-  const cemYP = repCem?.rheology?.yp || 30;
-  const cemPV = repCem?.rheology?.pv || 50;
+  const mudYP = drillingFluid.rheology?.yp ?? 20;
+  const mudPV = drillingFluid.rheology?.pv ?? 25;
 
   // Volume-weighted buffer rheology (несколько пачек)
   const bufTotalVol = buffers.reduce((s, b) => s + (b.volume || 0), 0);
@@ -179,26 +175,30 @@ export function calculateCementQuality(input: CQIInput): {
   const bufPV = bufTotalVol > 0
     ? buffers.reduce((s, b) => s + (b.volume || 0) * (b.rheology?.pv ?? 25), 0) / bufTotalVol
     : (buffers[0]?.rheology?.pv ?? 25);
-  const densityHierarchyOK = cemDensity > bufDensity && bufDensity > mudDensity;
-  const rheologyHierarchyOK = cemYP > bufYP && bufYP > mudYP;
+  const densityHierarchyOK = buffers.length > 0 && buffers.every(b => b.density > mudDensity)
+    && slurries.length > 0 && slurries.every(c => buffers.every(b => c.density * 1000 > b.density));
+  const rheologyHierarchyOK = buffers.length > 0 && buffers.every(b => (b.rheology?.yp ?? 25) > mudYP)
+    && slurries.length > 0 && slurries.every(c => buffers.every(b => (c.rheology?.yp ?? 30) > (b.rheology?.yp ?? 25)));
   const bufYpVsMud = bufYP / Math.max(1, mudYP);
-
-  const densityRatio = cemDensity / mudDensity;
-  const ypRatio = cemYP / Math.max(1, mudYP);
-  const pvRatio = cemPV / Math.max(1, mudPV);
-
-  // Flow rate (берём первый шаг закачки)
-  const flowLps = slurries[0]?.flowRateSteps?.[0]?.rateLps || 10;
-  const qM3s = flowLps / 1000;
-  const vMs = annVPM > 0 ? qM3s / annVPM : 0;
-
-  // Гидравл. диаметр (грубо)
-  const dHole = wellData.holeDiameter / 1000; // m
-  const dCas = wellData.casingOD / 1000;
-  const dHyd = Math.max(0.01, dHole - dCas);
-  // Эффективная вязкость (Bingham approx)
-  const muEff = (mudPV + mudYP * dHyd / Math.max(0.001, vMs)) / 1000; // Pa·s
-  const reynolds = mudDensity * vMs * dHyd / Math.max(1e-4, muEff);
+  const standoffProfile = [...(wellData.standoffProfile ?? [])].sort((a,b) => a.md-b.md);
+  const standoffSource: CQISummary['standoffSource'] = centralization?.length ? 'centralization'
+    : standoffProfile.length ? 'profile' : wellData.annularStandoffPct != null ? 'input' : 'assumed';
+  const standoffAt = (md: number) => {
+    if (!standoffProfile.length) return wellData.annularStandoffPct ?? 67;
+    if (md <= standoffProfile[0].md) return standoffProfile[0].standoffPct;
+    for(let i=1;i<standoffProfile.length;i++) {
+      const a=standoffProfile[i-1], b=standoffProfile[i];
+      if(md<=b.md) return a.standoffPct+(b.standoffPct-a.standoffPct)*(md-a.md)/Math.max(1e-9,b.md-a.md);
+    }
+    return standoffProfile[standoffProfile.length-1].standoffPct;
+  };
+  // Screening rate uses total pumped volume / pumping time for this slurry.
+  // It is not the instantaneous rate or the transient displacement solution.
+  const rateOf = (c: SlurryInput | undefined) => {
+    const steps=c ? resolveFlowRateSteps(c.flowRateSteps,slurryDesignVolume(wellData,slurries,slurries.indexOf(c))).filter(x=>x.rateLps>0 && x.volumeM3>0) : [];
+    if(steps.length) return steps.reduce((v,x)=>v+x.volumeM3,0)/steps.reduce((t,x)=>t+x.volumeM3/x.rateLps,0);
+    return c?.flowRateSteps?.find(x=>x.rateLps>0)?.rateLps ?? 0;
+  };
 
   // Build CQI points using centralization steps when available
   let steps: { md: number; tvd: number; zenith: number; standoff: number; ecc: number; hasTurbulizer: boolean }[] = [];
@@ -211,7 +211,7 @@ export function calculateCementQuality(input: CQIInput): {
     const N = 50;
     for (let i = 0; i <= N; i++) {
       const md = (i / N) * casingDepthMD;
-      steps.push({ md, tvd: md, zenith: 0, standoff: 70, ecc: 0.3, hasTurbulizer: false });
+      steps.push({ md, tvd: md, zenith: 0, standoff: standoffAt(md), ecc: 1-standoffAt(md)/100, hasTurbulizer: false });
     }
   }
 
@@ -228,7 +228,28 @@ export function calculateCementQuality(input: CQIInput): {
     return nearest.bufferContactMin;
   };
 
-  const points: CementQualityPoint[] = steps.map(s => {
+  const cementTop = Math.min(casingDepthMD, ...slurries.map(c => c.topDepthMD));
+  // Include material/geometry boundaries so short intervals are not skipped.
+  if(steps.length) for(const md of [cementTop,casingDepthMD,prevCasingDepth,...slurries.map(c=>c.topDepthMD),...(wellData.cavernIntervals ?? []).flatMap(c=>[c.fromMD,c.toMD])]) {
+    if(md<cementTop || md>casingDepthMD || steps.some(s=>s.md===md)) continue;
+    const sorted=[...steps].sort((a,b)=>a.md-b.md);
+    const a=[...sorted].reverse().find(s=>s.md<=md) ?? sorted[0], b=sorted.find(s=>s.md>=md) ?? sorted[sorted.length-1];
+    const t=b.md>a.md ? (md-a.md)/(b.md-a.md) : 0;
+    const standoff=a.standoff+(b.standoff-a.standoff)*t;
+    steps.push({...a,md,tvd:a.tvd+(b.tvd-a.tvd)*t,standoff,ecc:a.ecc+(b.ecc-a.ecc)*t});
+  }
+  const points: CementQualityPoint[] = steps.filter(s=>slurries.length>0 && s.md>=cementTop && s.md<=casingDepthMD).sort((a,b)=>a.md-b.md).map(s => {
+    const slurry = slurries.filter(c=>c.topDepthMD<=s.md).reduce<SlurryInput | undefined>((best,c)=>!best || c.topDepthMD>best.topDepthMD ? c : best, undefined);
+    const cemDensity=(slurry?.density ?? 1.85)*1000;
+    const cemYP=slurry?.rheology?.yp ?? 30, cemPV=slurry?.rheology?.pv ?? 50;
+    const densityRatio=cemDensity/mudDensity, ypRatio=cemYP/Math.max(1,mudYP), pvRatio=cemPV/Math.max(1,mudPV);
+    const dHole=boreDiameterAtDepth(wellData,s.md)/1000, dCas=wellData.casingOD/1000;
+    const area=Math.PI/4*Math.max(0,dHole*dHole-dCas*dCas);
+    const vMs=area>0 ? rateOf(slurry)/1000/area : 0;
+    const dHyd=Math.max(.01,dHole-dCas);
+    // Same Bingham apparent-viscosity convention as the hydraulic calculation: PV in cP, YP in Pa.
+    const muEff=mudPV/1000+mudYP*dHyd/(6*Math.max(.001,vMs));
+    const reynolds=mudDensity*vMs*dHyd/Math.max(1e-4,muEff);
     const isOpenHole = s.md > prevCasingDepth;
     const cavern = getCavernCoeffAtDepth(s.md, wellData.cavernCoeff, wellData.cavernIntervals,wellData.holeDiameter);
     const contactMin = lookupContact(s.md);
@@ -274,14 +295,16 @@ export function calculateCementQuality(input: CQIInput): {
 
   // Summary
   const cqis = points.map(p => p.cementQualityIndex);
-  const avgCQI = cqis.reduce((s, v) => s + v, 0) / Math.max(1, cqis.length);
-  const minCQI = Math.min(...cqis);
-  const maxCQI = Math.max(...cqis);
-  const badPoints = points.filter(p => p.bondGrade === 'D' || p.bondGrade === 'F');
-  const stepLen = points.length > 1 ? (points[points.length - 1].depthMD - points[0].depthMD) / (points.length - 1) : 10;
-  const badZonesLength = badPoints.length * stepLen;
-  const avgStandoff = points.reduce((s, p) => s + p.standoff, 0) / Math.max(1, points.length);
-  const avgContact = points.reduce((s, p) => s + p.contactTimeMin, 0) / Math.max(1, points.length);
+  const span=points.length>1 ? points[points.length-1].depthMD-points[0].depthMD : 0;
+  const depthMean=(value:(p:CementQualityPoint)=>number) => span>0
+    ? points.slice(1).reduce((sum,p,i)=>sum+value(points[i])*(p.depthMD-points[i].depthMD),0)/span
+    : points.length ? value(points[0]) : 0;
+  const avgCQI = depthMean(p=>p.cementQualityIndex);
+  const minCQI = cqis.length ? Math.min(...cqis) : 0;
+  const maxCQI = cqis.length ? Math.max(...cqis) : 0;
+  const badZonesLength = points.slice(1).reduce((length,p,i)=>length+(points[i].cementQualityIndex<55 ? p.depthMD-points[i].depthMD : 0),0);
+  const avgStandoff = depthMean(p=>p.standoff);
+  const avgContact = depthMean(p=>p.contactTimeMin);
 
   // Critical zones — group consecutive bad points
   const criticalZones: CQISummary['criticalZones'] = [];
@@ -293,7 +316,7 @@ export function calculateCementQuality(input: CQIInput): {
     const isBad = p.cementQualityIndex < 55;
     if (isBad) {
       if (curStart === null) { curStart = p.depthMD; curMinCqi = p.cementQualityIndex; }
-      if (p.cementQualityIndex < curMinCqi) {
+      if (p.cementQualityIndex <= curMinCqi) {
         curMinCqi = p.cementQualityIndex;
         const reasons: string[] = [];
         if (p.standoff < 50) reasons.push('низкий standoff');
@@ -322,7 +345,8 @@ export function calculateCementQuality(input: CQIInput): {
     badZonesLength,
     avgStandoff,
     avgContact,
-    avgFlowRegime: reynolds > 3000 ? 'turbulent' : reynolds > 2100 ? 'transitional' : 'laminar',
+    avgFlowRegime: points.some(p=>p.flowRegime==='laminar') ? 'laminar' : points.some(p=>p.flowRegime==='transitional') ? 'transitional' : 'turbulent',
+    standoffSource,
     densityHierarchyOK,
     rheologyHierarchyOK,
     bufDensity,
@@ -333,22 +357,23 @@ export function calculateCementQuality(input: CQIInput): {
 
   // Recommendations
   const recs: string[] = [];
+  if(standoffSource==='assumed') recs.push('Центрирование не задано: для предварительного CQI принято условное standoff 67%. Задайте профиль или выполните расчёт центрирования.');
   if (criticalZones.length > 0) {
     const worst = criticalZones.reduce((a, b) => a.cqi < b.cqi ? a : b);
     recs.push(`Критическая зона ${worst.fromMD.toFixed(0)}–${worst.toMD.toFixed(0)} м (CQI=${worst.cqi.toFixed(0)}%): ${worst.reason}`);
   }
-  const worstStandoff = points.reduce((a, b) => a.standoff < b.standoff ? a : b, points[0]);
+  const worstStandoff = points.length ? points.reduce((a, b) => a.standoff < b.standoff ? a : b) : undefined;
   if (worstStandoff && worstStandoff.standoff < 60) {
     recs.push(`Добавить центраторы возле ${worstStandoff.depthMD.toFixed(0)} м (standoff ${worstStandoff.standoff.toFixed(0)}%)`);
   }
   if (summary.avgFlowRegime === 'laminar') {
-    recs.push('Увеличить расход закачки или установить турбулизаторы — текущий режим ламинарный');
+    recs.push('Ламинарный режим учитывается в балльной оценке. Сам по себе он не доказывает плохое вытеснение; проверьте распределение жидкостей в модели замещения и допустимые давления.');
   }
   if (!densityHierarchyOK) {
-    recs.push(`Нарушена плотностная иерархия: ρ_цем=${(cemDensity/1000).toFixed(2)}, ρ_буф=${(bufDensity/1000).toFixed(2)}, ρ_бр=${(mudDensity/1000).toFixed(2)} г/см³ (API: ρ_цем > ρ_буф > ρ_бр)`);
+    recs.push(`Плотностная иерархия не подтверждена для всех пачек: буровой ${(mudDensity/1000).toFixed(2)} г/см³; буферы ${buffers.map(b=>(b.density/1000).toFixed(2)).join(', ') || 'нет'}; цементы ${slurries.map(c=>c.density.toFixed(2)).join(', ') || 'нет'}.`);
   }
   if (!rheologyHierarchyOK) {
-    recs.push(`Нарушена реологическая иерархия (API RP 65): YP_цем=${cemYP.toFixed(0)}, YP_буф=${bufYP.toFixed(0)}, YP_бр=${mudYP.toFixed(0)} lbf/100ft² — буфер должен иметь YP больше бурраствора, но меньше цемента`);
+    recs.push('Реологическая иерархия не подтверждена для всех пачек; сопоставьте свойства каждой жидкости и результаты модели замещения.');
   } else if (bufYpVsMud < 1.2) {
     recs.push(`Буфер слабо отличается по YP от бурраствора (${bufYpVsMud.toFixed(2)}×) — увеличить YP буфера для эффективного срыва глинистой корки`);
   }

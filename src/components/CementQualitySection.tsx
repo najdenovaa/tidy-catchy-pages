@@ -107,10 +107,12 @@ export default function CementQualitySection(props: Props) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <span className="inline-block w-3 h-3 rounded" style={{ background: gradeColor(summary.avgGrade) }} />
-            Индекс качества цементирования (CQI)
+            Предварительный индекс условий цементирования (CQI)
           </CardTitle>
         </CardHeader>
         <CardContent>
+          <p className="text-xs text-muted-foreground mb-3">CQI - балльная оценка условий в проектном интервале цементирования. Это не доля цемента, не результат 3D-модели замещения и не подтверждение сцепления или герметичности. Расход усреднён по времени закачки каждого раствора; режимы оцениваются по местному сечению.</p>
+          {summary.standoffSource === 'assumed' && <p className="text-xs text-amber-700 mb-3" role="status">Центрирование не задано. Условно принято standoff 67%; CQI предварительный.</p>}
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
             <BigStat label="Средний CQI" value={`${summary.avgCQI.toFixed(0)}%`} grade={summary.avgGrade} />
             <BigStat label="Мин CQI" value={`${summary.minCQI.toFixed(0)}%`} grade={getBondGrade(summary.minCQI)} />
@@ -146,12 +148,13 @@ export default function CementQualitySection(props: Props) {
       {/* === Polar Diagram + Slider === */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Поперечное сечение по глубине</CardTitle>
+          <CardTitle className="text-sm">Условная схема влияния эксцентриситета</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <PolarSection point={currentPoint} />
+              <p className="text-xs text-muted-foreground">Цвет показывает условный геометрический показатель по standoff и эксцентриситету. Состав жидкостей, время закачки и CQI в окраске не используются. Распределение жидкостей смотрите в модели замещения.</p>
             </div>
             <div className="space-y-3">
               <div>
@@ -167,7 +170,7 @@ export default function CementQualitySection(props: Props) {
                   onValueChange={(v) => setSliderIdx(v[0])}
                 />
                 <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-                  <span>0 м</span>
+                  <span>{points[0].depthMD.toFixed(0)} м</span>
                   <span>{casingDepthMD.toFixed(0)} м</span>
                 </div>
               </div>
@@ -178,7 +181,7 @@ export default function CementQualitySection(props: Props) {
                 <KV k="Эксцентр." v={currentPoint.eccentricity.toFixed(2)} />
                 <KV k="Зенит" v={`${currentPoint.zenith.toFixed(1)}°`} />
                 <KV k="Каверна k" v={currentPoint.cavernCoeff.toFixed(2)} />
-                <KV k="Замещение" v={`${currentPoint.displacementEfficiency.toFixed(0)}%`} />
+                <KV k="Балльная оценка замещения" v={`${currentPoint.displacementEfficiency.toFixed(0)}%`} />
                 <KV k="Re" v={currentPoint.reynolds.toFixed(0)} />
                 <KV k="V кольц." v={`${currentPoint.annularVelocity.toFixed(2)} м/с`} />
                 <KV k="Контакт буф." v={`${currentPoint.contactTimeMin.toFixed(1)} мин`} />
@@ -193,7 +196,7 @@ export default function CementQualitySection(props: Props) {
       {/* === Unwrapped Heatmap === */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Развёртка кольцевого пространства (CQI по углу × глубина)</CardTitle>
+          <CardTitle className="text-sm">Условная развёртка влияния эксцентриситета по глубине</CardTitle>
         </CardHeader>
         <CardContent>
           <UnwrappedHeatmap points={points} />
@@ -364,7 +367,7 @@ function PolarSection({ point }: { point: CementQualityPoint }) {
       {/* Метки */}
       <text x={cx} y={12} textAnchor="middle" fontSize="9" fill="currentColor" opacity={0.7}>верх (high side)</text>
       <text x={cx} y={297} textAnchor="middle" fontSize="9" fill="currentColor" opacity={0.7}>низ (low side) ↓ гравитация</text>
-      <text x={ccx} y={ccy + 4} textAnchor="middle" fontSize="9" fill="hsl(0,0%,85%)">ОК</text>
+      <text x={ccx} y={ccy + 4} textAnchor="middle" fontSize="9" fill="hsl(0,0%,85%)">Колонна</text>
     </svg>
   );
 }
@@ -497,7 +500,7 @@ function MiniBar({ value }: { value: number }) {
 
 function Legend() {
   const grades: ('A' | 'B' | 'C' | 'D' | 'F')[] = ['A', 'B', 'C', 'D', 'F'];
-  const labels = ['Отл. ≥85', 'Хор. 70-84', 'Удовл. 55-69', 'Слабо 40-54', 'Провал <40'];
+  const labels = ['≥85', '70-84', '55-69', '40-54', '<40'];
   return (
     <div className="flex flex-wrap gap-2 mt-2 text-[10px]">
       {grades.map((g, i) => (
@@ -565,7 +568,7 @@ function MonteCarloCard({ cqiInput }: { cqiInput: CQIInput }) {
       <CardContent>
         <p className="text-xs text-muted-foreground mb-3">
           Случайно варьируются: кавернозность ±15%, реология (ПВ, ДНС) ±20%, эксцентриситет ±0.10.
-          Получаем распределение средней CQI по N сценариям — P10/P50/P90 и вероятность успеха (CQI ≥ 70, грейд B+).
+          Получаем распределение средней CQI по N сценариям — P10/P50/P90 и долю сценариев с CQI ≥ 70 (грейд B+). Это не вероятность герметичности.
         </p>
 
         {!result && !running && (
@@ -589,7 +592,7 @@ function MonteCarloCard({ cqiInput }: { cqiInput: CQIInput }) {
               <MCStat label="P90 (оптим.)" value={result.p90.toFixed(0)} sub="верх. 10%" />
               <MCStat label="Среднее" value={result.mean.toFixed(0)} sub={`σ ${result.stdev.toFixed(1)}`} />
               <div className="rounded-lg border p-2">
-                <div className="text-[10px] text-muted-foreground">Вероятность успеха</div>
+                <div className="text-[10px] text-muted-foreground">Доля сценариев CQI ≥ 70</div>
                 <div className={`text-base font-bold font-mono ${successColor}`}>{successPct}%</div>
                 <div className="text-[10px] text-muted-foreground">CQI ≥ 70</div>
               </div>
