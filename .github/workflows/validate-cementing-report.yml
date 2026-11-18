@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'src/lib/*report*'
+      - 'src/lib/cement-quality-index*'
+      - 'src/components/CementQualitySection*'
       - 'src/lib/rheology-*'
       - 'src/lib/__tests__/hierarchy-chart-report.test.ts'
       - 'src/components/RheologyHierarchy*'
