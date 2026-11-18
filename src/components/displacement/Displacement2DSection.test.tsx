@@ -5,6 +5,7 @@ import {getCementingExample} from '@/lib/cementing-example';
 import {calculateVolumes} from '@/lib/cementing-calculations';
 import {displacementReportKey} from '@/lib/cementing-report-data';
 import {calculateDisplacementSpaces} from '@/lib/displacement-spaces';
+vi.mock('./D2Section3D',()=>({default:()=>null}));
 vi.mock('./D2Annulus3D',()=>({default:()=>{throw new Error('Disabled annular scene must not mount');}}));
 afterEach(()=>{cleanup();vi.useRealTimers();});
 it('renders pipe-only output, and requires recalculation when space settings change',()=>{

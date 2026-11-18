@@ -34,7 +34,7 @@ export interface CementingReportExtras {
   figures?: ReportFigure[]; supplements?: ReportSupplement[]; warnings?: string[];
 }
 export function displacementReportKey(p: DisplacementReportInput, settings: DisplacementReportSettings) {
-  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "displacement-spaces-v3-timing", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes,p.flushTimeMin??0,p.flushVolumeM3??0, {maxTimeStepS:settings.maxTimeStepS||null,frameIntervalS:settings.frameIntervalS||null,fine:settings.fine,rotationRpm:settings.rotationRpm,settleMin:settings.settleMin,pipeEnabled:settings.pipeEnabled!==false,annulusEnabled:settings.annulusEnabled!==false}]);
+  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "displacement-spaces-v4-section", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes,p.flushTimeMin??0,p.flushVolumeM3??0, {maxTimeStepS:settings.maxTimeStepS||null,frameIntervalS:settings.frameIntervalS||null,fine:settings.fine,rotationRpm:settings.rotationRpm,settleMin:settings.settleMin,pipeEnabled:settings.pipeEnabled!==false,annulusEnabled:settings.annulusEnabled!==false}]);
 }
 export function resolveCentralizationReport(data: CentralizationReportData | null, w: WellData, mudDensity: number) {
   if (!data?.calculated) return null;

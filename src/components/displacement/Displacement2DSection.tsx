@@ -1,3 +1,5 @@
+import D2CrossSection from './D2CrossSection';
+import {observationDepthMD} from '@/lib/displacement-section';
 import D2TimingControls from './D2TimingControls';
 import {normalizeDisplacementTiming,timingRows,type DisplacementTimingSettings} from '@/lib/displacement-timing';
 import { displacementTimeline, type PipeTransport, type DisplacementFrame } from '@/lib/displacement-pipe';
@@ -123,6 +125,7 @@ export default function Displacement2DSection(p: {
 
   const res = run?.result;
   const meta = run?.meta;
+  const observationMD=run?observationDepthMD(run,selectedDepthMD):0;
   const actualSettleS=res?.summary.timing?.actualSettleS??res?.summary.settleS??0;
   const historyCell = useMemo(() => res ? displacementDepthHistory(res, selectedDepthMD ?? res.zCenters[Math.floor(res.nZ / 2)]) : null, [res, selectedDepthMD]);
   const historyMarkers = useMemo(() => historyCell ? [{md:historyCell.md,theta:0,label:`Состав: MD ${historyCell.md.toFixed(1)} м`}] : undefined, [historyCell]);
@@ -177,7 +180,8 @@ export default function Displacement2DSection(p: {
               {res && actualSettleS > 0 && <Button size="sm" variant="ghost" className="h-7 text-[10px] px-2" onClick={() => { setPlaying(false); setSnap(Math.max(0,timeline.findIndex(x=>x.annulusFrame===res.pumpEndSnap))); }}>конец продавки</Button>}
             </div>
         </>}
-        {run?.pipe&&<D2PipeSection pipe={run.pipe} colors={run.meta.colors} timeline={timeline} frame={Math.min(snap,timeline.length-1)} md={selectedDepthMD??run.pipe.segments[Math.floor(run.pipe.segments.length/2)]?.topMD??0} timingSettings={timeSettings} timingStats={run.result?.summary.timing} onDepth={setSelectedDepthMD} onFrame={i=>{setPlaying(false);setSnap(i);}} stale={!!stale} />}
+        {run&&<D2CrossSection data={{...run,settings:{...timeSettings,fine,rotationRpm:rpm,settleMin:settle,pipeEnabled,annulusEnabled}}} md={observationMD} frame={Math.min(snap,timeline.length-1)} onDepth={setSelectedDepthMD} stale={!!stale}/>}
+        {run?.pipe&&<D2PipeSection pipe={run.pipe} colors={run.meta.colors} timeline={timeline} frame={Math.min(snap,timeline.length-1)} md={observationMD} timingSettings={timeSettings} timingStats={run.result?.summary.timing} onDepth={setSelectedDepthMD} onFrame={i=>{setPlaying(false);setSnap(i);}} stale={!!stale} />}
         {run&&!run.pipe&&<p>Расчёт состава в трубе отключён. Трубные концентрации не представлены.</p>}
         {run&&!res&&<p>Расчёт затрубного пространства отключён. Затрубные концентрации и 3D-поле не представлены.</p>}
         {res && meta && sn && (
@@ -224,7 +228,7 @@ export default function Displacement2DSection(p: {
                 <ProfileChart res={res} designTop={meta.designCementTopMD} />
               </div>
             </div>
-            <D2DepthHistory res={res} colors={meta.colors} md={selectedDepthMD ?? res.zCenters[Math.floor(res.nZ / 2)]}
+            <D2DepthHistory res={res} colors={meta.colors} md={observationMD}
               frame={Math.min(annulusFrame,res.snapshots.length-1)} annulusStartS={meta.annulusStartS} stale={!!stale}
               onDepth={setSelectedDepthMD} onFrame={frame=>{setPlaying(false);setSnap(Math.max(0,timeline.findIndex(x=>x.annulusFrame===frame&&x.timeS>=meta.annulusStartS)));}} />
             {res.summary.worst.length > 0 && (

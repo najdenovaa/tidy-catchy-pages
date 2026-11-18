@@ -1,3 +1,4 @@
+import {sectionState,observationDepthMD,SECTION_NOTE} from './displacement-section';
 import {timingRows} from './displacement-timing';
 import { pipeDepthComposition,pipeBalance,pipeHistory,displacementTimeline,PIPE_NOTE } from './displacement-pipe';
 import { displacementDepthHistory, HISTORY_NOTE } from './displacement-depth-history';
@@ -94,12 +95,23 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
      if(a.calibration)out.push(p(a.calibration.informative?'Поправка Δμ='+f(a.calibration.deltaMu)+'; RMSE='+f(a.calibration.rmseTF)+' тс. '+(a.calibration.atBoundary?'Граница поиска.':'Автоматически не применяется.'):'Трение не определяется: чувствительность замеров недостаточна.'));
    }
  }
+ if(scope==='cementing'&&yes('displacementSection')&&extras.displacement){
+   const d=extras.displacement,s=sectionState(d,d.selectedDepthMD,d.selectedGlobalFrame);
+   out.push(h('Сечение трубы и затрубного пространства'));
+   if('error' in s)out.push(p(s.error));else{
+     const g=s.geometry;
+     out.push(p('MD '+f(s.requestedMD,2)+' м; общий кадр '+s.frame+'; от начала закачки '+f(s.timeS/60,3)+' мин.'),p(SECTION_NOTE),p('Труба: '+s.pipeStatus+'. Затрубье: '+s.annulusStatus+'.'),
+       p('Ячейка трубы (верх / низ / центр), м: '+(s.pipeBounds?.map(x=>f(x,2)).join(' / ')??'нет')+'. Ячейка затрубья, м: '+(s.annulusBounds?.map(x=>f(x,2)).join(' / ')??'нет')+'.'),
+       reportDataTable(['Геометрия','Значение'],[['ОК OD / ID, мм',f(2*g.ro,2)+' / '+f(2*g.ri,2)],['Ствол, мм',f(2*g.rh,2)],['Смещение осей, мм',f(g.offset,3)],['Зазор min / max, мм',f(g.minGapMm,3)+' / '+f(g.maxGapMm,3)]]),
+       reportDataTable(['Жидкость','Труба, %','Затрубье, %'],s.fluids.map((fluid,i)=>[(i+1)+'. '+fluid.name,s.pipeFractions[i]===null?'Нет расчёта':f(s.pipeFractions[i]*100,3),s.annulusFractions[i]===null?'Нет расчёта':f(s.annulusFractions[i]*100,3)])));
+   }
+ }
  if(scope==='cementing'&&extras.displacement){
    const d=extras.displacement;
-   if(yes('pipeHistory')||yes('displacementHistory')||yes('displacementSummary'))out.push(h('Временные настройки вытеснения'),reportDataTable(['Параметр','Значение'],timingRows(d.settings,d.result?.summary?.timing).map(([a,b])=>[a,typeof b==='number'?String(Number(b.toPrecision(8))):b])));
-   if(yes('pipeHistory')||yes('displacementHistory')||yes('displacementSummary'))out.push(p('Состав в трубе: '+(d.pipe?'рассчитан':'расчёт отключён или отсутствует')+'. Затрубное вытеснение: '+(d.result?'рассчитано':'расчёт отключён или отсутствует')+'.'));
+   if(yes('displacementSection')||yes('pipeHistory')||yes('displacementHistory')||yes('displacementSummary'))out.push(h('Временные настройки вытеснения'),reportDataTable(['Параметр','Значение'],timingRows(d.settings,d.result?.summary?.timing).map(([a,b])=>[a,typeof b==='number'?String(Number(b.toPrecision(8))):b])));
+   if(yes('displacementSection')||yes('pipeHistory')||yes('displacementHistory')||yes('displacementSummary'))out.push(p('Состав в трубе: '+(d.pipe?'рассчитан':'расчёт отключён или отсутствует')+'. Затрубное вытеснение: '+(d.result?'рассчитано':'расчёт отключён или отсутствует')+'.'));
    if(yes('pipeHistory')&&d.pipe){
-     const pipe=d.pipe,frames=d.timeline??displacementTimeline(pipe,d.result,d.meta.annulusStartS,d.settings.settleMin,d.settings.frameIntervalS),md=d.selectedDepthMD??pipe.segments[Math.floor(pipe.segments.length/2)].topMD;
+     const pipe=d.pipe,frames=d.timeline??displacementTimeline(pipe,d.result,d.meta.annulusStartS,d.settings.settleMin,d.settings.frameIntervalS),md=observationDepthMD(d,d.selectedDepthMD);
      const cell=pipeDepthComposition(pipe,md,0),frame=Math.max(0,Math.min(frames.length-1,d.selectedGlobalFrame??frames.length-1)),time=frames[frame]?.timeS??0;
      out.push(h('Трубное пространство: концентрации и баланс'),p(PIPE_NOTE),p('Вместимость '+f(pipe.capacityM3,4)+' м³; время от начала закачки '+f(time/60,3)+' мин. При отключённом затрубье противодавление не рассчитывается; расход задан расписанием.'));
      if(cell){out.push(p('Запрошенная MD '+f(md,2)+' м; ячейка '+f(cell.topMD,2)+'-'+f(cell.bottomMD,2)+' м.'));
