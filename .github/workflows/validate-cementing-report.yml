@@ -53,6 +53,8 @@ on:
       - 'src/lib/__tests__/displacement-history-report.test.ts'
       - 'src/lib/__tests__/pipe-spaces-report.test.ts'
       - 'src/lib/__tests__/displacement-timing-report.test.ts'
+      - 'src/lib/__tests__/displacement-section-report.test.ts'
+      - 'src/lib/__tests__/fixtures/displacement-section-fixture.ts'
       - 'src/components/displacement/**'
       - 'src/components/CentralizationSection.tsx'
       - 'src/pages/Index.tsx'
@@ -89,7 +91,7 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts src/lib/__tests__/casing-chart-report.test.ts src/lib/__tests__/hierarchy-chart-report.test.ts src/lib/__tests__/displacement-history-report.test.ts src/lib/__tests__/pipe-spaces-report.test.ts src/lib/__tests__/displacement-timing-report.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts src/lib/__tests__/casing-chart-report.test.ts src/lib/__tests__/hierarchy-chart-report.test.ts src/lib/__tests__/displacement-history-report.test.ts src/lib/__tests__/pipe-spaces-report.test.ts src/lib/__tests__/displacement-timing-report.test.ts src/lib/__tests__/displacement-section-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
@@ -105,10 +107,23 @@ jobs:
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/displacement-history.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/pipe-spaces.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/displacement-timing.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/displacement-section.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
           d = pathlib.Path(os.environ["REPORT_QA_DIR"])
+          section_doc=fitz.open(d / "displacement-section.pdf")
+          section_text=" ".join(" ".join(p.get_text().split()) for p in section_doc)
+          assert all(t in section_text for t in ["Сечение трубы", "Смещение осей", "Зазор min / max", "3D", "вид сверху"])
+          assert sum(len(p.get_image_info()) for p in section_doc)==2
+          assert all(abs(p.rect.width-595.3)<2 for p in section_doc)
+          section_preview=Image.new("RGB",(600*len(section_doc),850),"white")
+          for i,page in enumerate(section_doc):
+              pix=page.get_pixmap(matrix=fitz.Matrix(1,1),alpha=False)
+              section_preview.paste(Image.frombytes("RGB",(pix.width,pix.height),pix.samples),(i*600,0))
+          section_preview.save(d / "displacement-section-preview.png",optimize=True)
+          print("F08_QA_PNG="+base64.b64encode((d / "displacement-section-preview.png").read_bytes()).decode())
+          print("Displacement section:",len(section_doc),"pages; 2 images")
           timing_doc = fitz.open(d / "displacement-timing.pdf")
           timing_text = " ".join(" ".join(p.get_text().split()) for p in timing_doc)
           assert all(t in timing_text for t in ["Временные настройки", "Фактический минимум", "Фактический максимум", "Средний шаг", "Расчёт завершён"])

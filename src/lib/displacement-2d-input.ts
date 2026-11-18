@@ -1,3 +1,4 @@
+import {distinctDisplacementColors} from './displacement-colors';
 import { buildPipeTransport, pipeShoeStages, type PipeTransport } from './displacement-pipe';
 import { totalPipeVolumeForRange } from './cementing-calculations';
 import {buildProcessContract} from "./cementing-process";
@@ -22,6 +23,8 @@ export const D2_COLORS = {
 };
 
 export interface D2Meta {
+  /** Immutable geometry inputs of the same calculation, never live edited inputs. */
+  sectionWell?:WellData;
   colors: string[];
   /** Время от начала закачки, когда первая порция выходит в затрубье, с */
   annulusStartS: number;
@@ -132,6 +135,6 @@ export function buildDisplacementInput(p: {
   return {
     pipe,
     input: { zTop, zBot: shoe, geom, fluids, stages, nTheta: 16 },
-    meta: { colors, annulusStartS: tStart, designCementTopMD: designTop, shoeMD: shoe, notes },
+    meta: { sectionWell:JSON.parse(JSON.stringify(w)),colors:distinctDisplacementColors(colors), annulusStartS: tStart, designCementTopMD: designTop, shoeMD: shoe, notes },
   };
 }
