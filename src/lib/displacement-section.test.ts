@@ -18,7 +18,9 @@ describe('common pipe/annulus section from saved results',()=>{
   const s=valid(),total=Math.PI*(s.geometry.rh**2-s.geometry.ro**2),front=s.faces.filter(f=>f.points.every(p=>p[2]===s.geometry.thickness/2));
   const triangleArea=(p:number[][])=>Math.abs((p[1][0]-p[0][0])*(p[2][1]-p[0][1])-(p[2][0]-p[0][0])*(p[1][1]-p[0][1]))/2;
   const cementArea=front.filter(f=>f.space==='annulus'&&f.color===s.colors[1]).reduce((v,f)=>v+triangleArea(f.points),0);
-  // Exclude the pipe disk by using the pure cement color; its cell is a mixed color.
+  // Count annular front faces only; the steel may share a palette color.
+  const cap=(z:number)=>s.faces.filter(f=>f.space==='metal'&&f.points.every(p=>p[2]===z)).reduce((v,f)=>v+triangleArea(f.points),0);
+  expect(cap(s.geometry.thickness/2)).toBeGreaterThan(0);expect(cap(-s.geometry.thickness/2)).toBeCloseTo(cap(s.geometry.thickness/2),8);
   expect(cementArea/total).toBeCloseTo(s.annulusFractions[1]!,4);
   expect(s.geometry.minGapMm/s.geometry.maxGapMm).toBeCloseTo(1/3,7);
   expect(s.sectors.reduce((v,x)=>v+x.areaMm2,0)).toBeCloseTo(total,8);

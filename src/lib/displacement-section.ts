@@ -64,6 +64,8 @@ export function displacementSection(d:SectionSource,md:number,frame:number){
  for(let i=0;i<180;i++){const a=i*2*Math.PI/180,b=(i+1)*2*Math.PI/180;
   quad(at(a,ri,z),at(a,ro,z),at(b,ro,z),at(b,ri,z),'#64748b','metal');
   quad(at(a,ri,z),at(b,ri,z),at(b,ri,-z),at(a,ri,-z),'#475569','metal');
+  quad(at(a,ri,-z),at(b,ri,-z),at(b,ro,-z),at(a,ro,-z),'#53657c','metal');
+  quad(at(a,ro,z),at(a,ro,-z),at(b,ro,-z),at(b,ro,z),'#475569','metal');
   tri([0,-offset,z],at(a,ri,z),at(b,ri,z),pipeColor,'pipe');
   tri([0,-offset,-z],at(b,ri,-z),at(a,ri,-z),darken(pipeColor,.8),'pipe');
  }
