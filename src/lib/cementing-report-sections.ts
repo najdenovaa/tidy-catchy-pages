@@ -1,3 +1,4 @@
+import {ANNULAR_BALANCE_NOTE} from './displacement-balance';
 import {displacementPlacement,PLACEMENT_NOTE} from './displacement-placement';
 import {sectionState,observationDepthMD,SECTION_NOTE} from './displacement-section';
 import {timingRows} from './displacement-timing';
@@ -138,6 +139,14 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
      }
    }else out.push(p('Доли во времени не представлены: выбранная глубина вне расчётного интервала.'));
  }
+ if(scope==='cementing'&&yes('displacementSummary')&&extras.displacement?.result){
+   const d=extras.displacement,r=d.result!,frame=r.snapshots.length-1,b=r.snapshots[frame]?.balance;
+   out.push(h('Покомпонентный баланс затрубья'),p(ANNULAR_BALANCE_NOTE));
+   if(!b)out.push(p('В сохранённом результате нет независимого баланса. Пересчитайте замещение.'));else{
+     out.push(p('Последний затрубный кадр '+frame+'; время от начала закачки '+f((r.snapshots[frame].t+d.meta.annulusStartS)/60,3)+' мин.'));
+     out.push(reportDataTable(['Жидкость','Исходно, м³','Источник, м³','Обратный приток, м³','Вышло, м³','Осталось, м³'],r.fluids.map((fluid,i)=>[fluid.name,...[b.initialM3,b.sourceInM3,b.boundaryInM3,b.outletM3,b.insideM3].map(a=>f(a[i],7))])),reportDataTable(['Жидкость','Невязка, м³','Обрезка, м³','Нормировка, м³','Необъяснено, м³','Округление 3D, м³'],r.fluids.map((fluid,i)=>[fluid.name,...[b.residualM3,b.clippingM3,b.normalizationM3,b.unexplainedM3,b.quantizationM3].map(a=>f(a[i],9))])));
+   }
+ }
  const d=scope==='cementing'&&yes('displacementSummary')?extras.displacement:null;
   if (d?.result) {
     const r = d.result, s = r.summary;
@@ -151,7 +160,7 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
         ["Неподвижный раствор, м", f(s.pumpEnd.staticM, 1), f(s.staticM, 1)],
       ]),
       p("Ноль времени кадров - начало вытеснения в затрубье, через " + f(d.meta.annulusStartS / 60, 1) + " мин от начала закачки."),
-      p("Баланс объёмов: " + f(s.massBalanceErrPct, 4) + "%; смещение кровли на выдержке " + f(r.settleTopShiftM, 2) + " м."),
+      p("Общий гидравлический баланс (не покомпонентный): " + f(s.massBalanceErrPct, 4) + "%; смещение кровли на выдержке " + f(r.settleTopShiftM, 2) + " м."),
       reportDataTable(["Жидкость", "Плотность, кг/м³", "ПВ, мПа·с", "ДНС, Па"], r.fluids.map(x =>
         [x.name, f(x.density, 1), f(x.pv * 1000, 2), f(x.yp, 2)])),
       reportDataTable(["Порция в затрубье", "Объём, м³", "Расход, л/с", "Выдержка, мин"], d.stages.map(x =>

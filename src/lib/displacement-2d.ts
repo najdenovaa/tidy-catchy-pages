@@ -1,3 +1,4 @@
+import {AnnularVolumeLedger,type AnnularBalanceFrame} from './displacement-balance';
 import { normalizeDisplacementTiming,validateFrameBudget,validateTimingBudget,type DisplacementTimingStats } from './displacement-timing';
 /**
  * Двумерная (осреднённая по зазору) модель вытеснения в эксцентричном затрубье.
@@ -104,6 +105,7 @@ export interface D2Input {
 }
 
 export interface D2Snapshot {
+  balance?: AnnularBalanceFrame;
   t: number;
   /** Доли жидкостей, квантованные 0…255: [fluid][cell], cell = j·nTheta + i */
   frac: Uint8Array;
@@ -142,6 +144,8 @@ export interface D2Stats {
 }
 
 export interface D2Result {
+  /** Actual full-domain capacities; includes custom storage gaps. */
+  cellVolumesM3?: Float64Array;
   /** Число ячеек по окружности в расчёте (на половину или на всю окружность) */
   nTheta: number;
   /** true — считалась вся окружность (с вращением) */
@@ -484,6 +488,8 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
     }
   };
 
+  const ledger = new AnnularVolumeLedger(V,c,1/share);
+
   // ── Перенос ──
   const minmod = (a: number, b: number) => (a * b <= 0 ? 0 : Math.abs(a) < Math.abs(b) ? a : b);
   const newC: Float64Array[] = Array.from({ length: nF }, () => new Float64Array(N));
@@ -507,11 +513,13 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
       }
       for (let i = 0; i < nT; i++) {
         const F = Ftop[i];
-        axNet[i] -= (F >= 0 ? F * cf[i] : F * (f === 0 ? 1 : 0)) * dt;
+        const topVolume=(F >= 0 ? F * cf[i] : F * (f === 0 ? 1 : 0)) * dt;
+        axNet[i] -= topVolume;
+        if(topVolume>=0)ledger.outlet[f]+=topVolume/share;else ledger.boundaryIn[f]-=topVolume/share;
         const kb = (nZ - 1) * nT + i, Fb = Fbot[i];
-        if (Fb !== 0) axNet[kb] -= (Fb >= 0 ? Fb * cf[kb] : Fb * (f === 0 ? 1 : 0)) * dt;
+        if (Fb !== 0) {const bottomVolume=(Fb >= 0 ? Fb * cf[kb] : Fb * (f === 0 ? 1 : 0)) * dt;axNet[kb]-=bottomVolume;if(bottomVolume>=0)ledger.outlet[f]+=bottomVolume/share;else ledger.boundaryIn[f]-=bottomVolume/share;}
       }
-      if (inFluid >= 0 && f === inFluid) for (const k of srcCells) axNet[k] += Qin[k] * dt;
+      if (inFluid >= 0 && f === inFluid) for (const k of srcCells) {axNet[k] += Qin[k] * dt;ledger.sourceIn[f]+=Qin[k]*dt/share;}
       // неявно по окружности (противопоточно), ряд за рядом
       for (let j = 0; j < nZ; j++) {
         const o = j * nT;
@@ -526,13 +534,13 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
           tr[i] = V[k] * cf[k] + axNet[k];
         }
         tri(ta, tb, tc, tr, tx, full);
-        for (let i = 0; i < nT; i++) out[o + i] = Math.min(1, Math.max(0, tx[i]));
+        for (let i = 0; i < nT; i++) {out[o+i]=Math.min(1,Math.max(0,tx[i]));ledger.clipping[f]+=(out[o+i]-tx[i])*V[o+i]/share;}
       }
     }
     for (let k = 0; k < N; k++) {
       let s = 0; for (let f = 0; f < nF; f++) s += newC[f][k];
       const inv = s > 1e-9 ? 1 / s : 0;
-      for (let f = 0; f < nF; f++) c[f][k] = s > 1e-9 ? newC[f][k] * inv : f === 0 ? 1 : 0;
+      for (let f = 0; f < nF; f++) {c[f][k]=s>1e-9?newC[f][k]*inv:f===0?1:0;ledger.normalization[f]+=(c[f][k]-newC[f][k])*V[k]/share;}
     }
   };
   const stepDt = (cap: number) => {
@@ -632,7 +640,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const snap = (t: number, st: number) => {
     const fr = new Uint8Array(nF * N);
     for (let f = 0; f < nF; f++) for (let k = 0; k < N; k++) fr[f * N + k] = Math.round(c[f][k] * 255);
-    snapshots.push({ t, frac: fr, stage: st });
+    snapshots.push({ t, frac: fr, stage: st, balance:ledger.snapshot(c,fr) });
   };
   mixProps();
   let t = 0, steps = 0, nextSnap = 0, inVol = 0, outVol = 0;
@@ -719,6 +727,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const mbe = inVol > 0 ? ((inVol - outVol - (volNow - vol0)) / inVol) * 100 : 0;
   const t1 = typeof performance !== "undefined" ? performance.now() : Date.now();
   return {
+    cellVolumesM3: Float64Array.from(V,v=>v/share),
     nTheta: nT, full, nZ, zCenters: zC, thetaCenters: thC, gap: h, fluids: inp.fluids, snapshots, pumpEndSnap,
     rows: fin.rows, rowsPumpEnd: atPumpEnd.rows,
     finalFrac: c.map((a) => Float32Array.from(a)), cementTopMD, settleTopShiftM,
