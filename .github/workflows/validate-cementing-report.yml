@@ -49,6 +49,8 @@ on:
       - 'src/lib/centralizer-*'
       - 'src/lib/centralization-*'
       - 'src/lib/casing-running-*'
+      - 'src/lib/casing-survey-mechanics*'
+      - 'src/lib/casing-mechanics-controls.test.ts'
       - 'src/lib/casing-design-chart-data*'
       - 'src/lib/__tests__/casing-chart-*'
       - 'src/lib/__tests__/fixtures/casing-chart-fixture.ts'

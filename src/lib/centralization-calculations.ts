@@ -1,3 +1,4 @@
+import {mechanicalSurvey,surveyCurvature,freeAxialWeight,normalLineLoad} from './casing-survey-mechanics';
 import { buildMixedSupportProfile } from './centralizer-mixed-response';
 import { createAnnularGeometry, boreDiameterAtDepth } from "./well-geometry";
 import { centralizerDeflection, centralizerModelNotes } from "./centralizer-response";
@@ -223,7 +224,7 @@ function casingWeightPerMeter(casingOD_mm: number, casingWall_mm: number): numbe
   const od = casingOD_mm / 1000;
   const id = (casingOD_mm - 2 * casingWall_mm) / 1000;
   const area = Math.PI / 4 * (od * od - id * id);
-  return area * STEEL_DENSITY * 9.81; // N/m
+  return area * STEEL_DENSITY * 9.80665; // N/m
 }
 
 /** Buoyant weight factor (simplified, mud density in kg/m³) */
@@ -245,54 +246,8 @@ function lateralForcePerMeter(
   return weightPerMeter_N * buoyancy * Math.sin(zenithDeg * Math.PI / 180);
 }
 
-/** DLS (dogleg severity) at given MD in °/30 м (2D — без азимута) */
-function calcDLS(traj: TrajectoryPoint[], md: number, stepM: number = 30): number {
-  if (!traj || traj.length < 2) return 0;
-  const p1 = interpolateTrajectory(traj, Math.max(0, md - stepM / 2));
-  const p2 = interpolateTrajectory(traj, md + stepM / 2);
-  const zen1 = p1.zenith * Math.PI / 180;
-  const zen2 = p2.zenith * Math.PI / 180;
-  const dogleg = Math.abs(zen2 - zen1); // рад на stepM метров
-  return (dogleg * 180 / Math.PI); // °/stepM == °/30 м при stepM=30
-}
-
-/**
- * Боковая сила с учётом веса и натяжения колонны на дог-леге:
- * F = sqrt(F_weight² + F_tension²),  F_tension = T · DLS(рад/м)
- */
-function lateralForceWithDLS(
-  weightPerMeter_N: number,
-  buoyancy: number,
-  zenithDeg: number,
-  tensionN: number,
-  dlsRadPerM: number,
-): number {
-  const Fw = weightPerMeter_N * buoyancy * Math.sin(zenithDeg * Math.PI / 180);
-  const Ft = tensionN * dlsRadPerM;
-  return Math.sqrt(Fw * Fw + Ft * Ft);
-}
-
-// ─── Interpolate trajectory ──────────────────────────────────────
-
-export function interpolateTrajectory(trajectory: TrajectoryPoint[], md: number): { tvd: number; zenith: number } {
-  if (trajectory.length === 0) return { tvd: md, zenith: 0 };
-  if (md <= trajectory[0].md) return { tvd: trajectory[0].tvd, zenith: trajectory[0].zenith };
-  if (md >= trajectory[trajectory.length - 1].md) {
-    const last = trajectory[trajectory.length - 1];
-    return { tvd: last.tvd, zenith: last.zenith };
-  }
-  for (let i = 0; i < trajectory.length - 1; i++) {
-    const a = trajectory[i], b = trajectory[i + 1];
-    if (md >= a.md && md <= b.md) {
-      const t = (md - a.md) / (b.md - a.md);
-      return {
-        tvd: a.tvd + t * (b.tvd - a.tvd),
-        zenith: a.zenith + t * (b.zenith - a.zenith),
-      };
-    }
-  }
-  return { tvd: md, zenith: 0 };
-}
+/** Shared survey interpolation: terminal angles continue below the last station. */
+export function interpolateTrajectory(trajectory:TrajectoryPoint[],md:number):{tvd:number;zenith:number}{return mechanicalSurvey(trajectory,md);}
 
 // ─── Main calculation ────────────────────────────────────────────
 
@@ -324,8 +279,8 @@ export function calculateCentralization(
   const mixed = intervals.some(x=>x.pattern) ? buildMixedSupportProfile(wellData.casingDepthMD, intervals, wellData.casingOD, EI,
     md => boreDiameterAtDepth(wellData,md), md => {
       const {zenith}=interpolateTrajectory(wellData.trajectory,md);
-      const tension=wpm*bf*Math.max(0,wellData.casingDepthMD-md)*Math.cos(zenith*Math.PI/180);
-      return lateralForceWithDLS(wpm,bf,zenith,tension,calcDLS(wellData.trajectory,md)*Math.PI/180/30);
+      const tension=freeAxialWeight(wellData.trajectory,md,wellData.casingDepthMD,wpm*bf);
+      return normalLineLoad(wpm*bf,zenith,tension,surveyCurvature(wellData.trajectory,md,wellData.casingDepthMD));
     }) : null;
   const depths=new Set<number>();
   for(let md=mdStart;md<=mdEnd;md+=step)depths.add(md);
@@ -366,11 +321,9 @@ export function calculateCentralization(
       spanLength = 12;
     }
 
-    // Натяжение колонны ниже данной точки (упрощённо: вес ниже × cos(зенита))
-    const tensionN = wpm * bf * Math.max(0, wellData.casingDepthMD - md) * Math.cos(zenith * Math.PI / 180);
-    const dlsDegPer30m = calcDLS(wellData.trajectory, md);
-    const dlsRadPerM = (dlsDegPer30m * Math.PI / 180) / 30;
-    const lateralF = lateralForceWithDLS(wpm, bf, zenith, tensionN, dlsRadPerM);
+    // Frictionless axial reference and signed 3D curvature; not a hard-string contact solve.
+    const tensionN=freeAxialWeight(wellData.trajectory,md,wellData.casingDepthMD,wpm*bf);
+    const lateralF=normalLineLoad(wpm*bf,zenith,tensionN,surveyCurvature(wellData.trajectory,md,wellData.casingDepthMD));
 
     let eccentricity: number;
     const support = hasCentralizer && interval?.spec.type === 'spring' && interval.spec.passport?.outerDiameter
@@ -424,7 +377,7 @@ export function calculateCentralization(
       standoff: Math.round(standoff * 10) / 10,
       centralizerRole: actual?.placement?.role,
       centralizerMD: actual?.placement?.md,
-      calculationAssumptions: actual?.notes ?? (support && interval ? centralizerModelNotes(interval.spec) : undefined),
+      calculationAssumptions: [...(actual?.notes ?? (support && interval ? centralizerModelNotes(interval.spec) : [])), 'Боковая нагрузка: знаковая 3D-кривизна, усреднение по окну 30 м; натяжение от интеграла осевого веса без трения. Направление прогиба и пространственный контакт не решены.'],
       supportEccentricity: actual ? actual.supportEccentricity : support ? support.supportMM / rc_mm_local : undefined,
       lateralLoadKN: actual?.loadKN ?? support?.loadKN,
       spanSagMM: actual?.sagMM ?? support?.sagMM,
@@ -520,31 +473,9 @@ export function autoPlaceCentralizers(
 
   const segmentSize = Math.max(jointLength, 10);
 
-  // Локальный 3D-DLS
-  function localDLS(md1: number, md2: number): number {
-    const p1 = interpolateTrajectory(wellData.trajectory, md1);
-    const p2 = interpolateTrajectory(wellData.trajectory, md2);
-    const azi = (md: number): number => {
-      const t = wellData.trajectory;
-      if (!t || t.length === 0) return 0;
-      if (md <= t[0].md) return t[0].azimuth;
-      if (md >= t[t.length - 1].md) return t[t.length - 1].azimuth;
-      for (let i = 0; i < t.length - 1; i++) {
-        if (md >= t[i].md && md <= t[i + 1].md) {
-          const f = (md - t[i].md) / (t[i + 1].md - t[i].md);
-          return t[i].azimuth + f * (t[i + 1].azimuth - t[i].azimuth);
-        }
-      }
-      return 0;
-    };
-    const i1 = p1.zenith * Math.PI / 180;
-    const i2 = p2.zenith * Math.PI / 180;
-    const a1 = azi(md1) * Math.PI / 180;
-    const a2 = azi(md2) * Math.PI / 180;
-    let cosA = Math.cos(i2 - i1) - Math.sin(i1) * Math.sin(i2) * (1 - Math.cos(a2 - a1));
-    cosA = Math.max(-1, Math.min(1, cosA));
-    const dMD = Math.max(1, md2 - md1);
-    return (Math.acos(cosA) * 180 / Math.PI) * (30 / dMD);
+  // Same shortest-arc survey as the mechanical load path, including north crossing.
+  function localDLS(md1:number,md2:number):number {
+    return surveyCurvature(wellData.trajectory,(md1+md2)/2,wellData.casingDepthMD,md2-md1).dlsDegPer30m;
   }
 
   interface RawSeg {

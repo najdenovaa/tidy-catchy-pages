@@ -1,5 +1,5 @@
 import { centralizerLayoutErrors } from './centralizer-layout';
-import { boreDiameterAtDepth } from "./well-geometry";
+import { boreDiameterAtDepth, createAnnularGeometry } from "./well-geometry";
 /** Casing running: each broomstick point is a NEW bottom-to-top equilibrium.
  * Soft-string force balance: Johancsik et al.; survey angles in radians, forces kN.
  * No hard-string, pressure-end force, surge/swab or buckling certification is implied.
@@ -181,6 +181,17 @@ export function calculateCasingRunning(input:CasingRunningInput):CasingRunningAn
   if(w.prevCasingDepth>0&&w.prevCasingDepth<w.casingDepthMD)depthSet.add(w.prevCasingDepth);
   const broom:RunningBroomPoint[]=[],block=s.blockWeightKN;
   let firstCompressionMD:number|null=null,firstCapacityMD:number|null=null,firstPassageConflictMD:number|null=null,maxPullKN=0,maxPullMD=0;
+  // A tool crosses every shallower interval on its way to targetMD. Checking
+  // only sampled broomstick positions can miss a short caliper restriction.
+  const passageGeometry=createAnnularGeometry(w,w.casingDepthMD);
+  for(const cell of passageGeometry.cells){
+    if(cell.diameterMm<=w.casingOD)firstPassageConflictMD=Math.min(firstPassageConflictMD??Infinity,cell.topMD);
+    for(const t of tools)if(cell.topMD<t.targetMD&&cell.diameterMm<=t.od){
+      const shoe=w.casingDepthMD-t.targetMD+cell.topMD;
+      firstPassageConflictMD=Math.min(firstPassageConflictMD??Infinity,shoe);
+    }
+  }
+  if(firstPassageConflictMD!==null)notes.push(`Непрерывный геометрический контроль пути: первое ограничение прохода при башмаке MD ${firstPassageConflictMD.toFixed(2)} м. Проверены все интервалы кавернометрии, а не только точки веника; деформация колец и продавливание через сужение не рассчитываются.`);
   for(const md of [...depthSet].sort((a,b)=>a-b)){
     const base=solve(input,md,tools),low=solve(input,md,tools,-s.frictionSpread),high=solve(input,md,tools,s.frictionSpread),bare=solve(input,md,tools,0,false,true);
     const p={md,runIn:(base.run+block)/G,pullOut:(base.pull+block)/G,free:(base.free+block)/G,
