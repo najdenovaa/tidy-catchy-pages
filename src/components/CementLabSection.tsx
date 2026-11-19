@@ -1,3 +1,4 @@
+import ProgramDisclosure from './ProgramDisclosure';
 import {rheologyFigure} from "@/lib/rheology-figure";
 import {rheologyDescription} from "@/lib/cement-rheology";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -47,13 +48,6 @@ export default function CementLabSection({ wellData, slurries, buffers, drilling
 
   return (
     <div className="space-y-4">
-      <LabTargetsPanel
-        input={protoInput}
-        targets={targets}
-        onTargetsChange={(i, t) => setTargets((arr) => { const n = slurries.map((_, j) => arr[j]); n[i] = t; return n; })}
-        onApplySlurries={onApplySlurries}
-      />
-      <LabProtocolPanel input={protoInput} onApplySlurries={onApplySlurries} />
       <TemperatureCard lab={lab} />
       {lab.slurries.map((p) => (
         <Card key={p.slurryName} className="p-4 space-y-3">
@@ -151,12 +145,25 @@ export default function CementLabSection({ wellData, slurries, buffers, drilling
         </Card>
       ))}
 
+      <div className="program-additional"><h3 className="program-additional-title">Параметры и протоколы исследований</h3>
+        <ProgramDisclosure title="Требования технолога и протоколы испытаний">
+      <LabTargetsPanel
+        input={protoInput}
+        targets={targets}
+        onTargetsChange={(i, t) => setTargets((arr) => { const n = slurries.map((_, j) => arr[j]); n[i] = t; return n; })}
+        onApplySlurries={onApplySlurries}
+      />
+      <LabProtocolPanel input={protoInput} onApplySlurries={onApplySlurries} />
+        </ProgramDisclosure>
+        <ProgramDisclosure title="Сравнение моделей реологии">
       <FlowCurvesCard fluids={[
         { name: `Раствор: ${drillingFluid.name || "буровой"}`, r: drillingFluid.rheology },
         ...buffers.map((b) => ({ name: `Буфер: ${b.name}`, r: b.rheology })),
         ...slurries.map((s) => ({ name: `Цемент: ${s.name}`, r: s.rheology })),
         ...displacementFluids.map((d) => ({ name: `Продавка: ${d.name}`, r: d.rheology })),
       ]} />
+        </ProgramDisclosure>
+      </div>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import ProgramDisclosure from './ProgramDisclosure';
 import type {FoamReportBundle} from '@/lib/foam-cement-types';
 import type {BasketStopResult} from '@/lib/cement-basket-stop';
 import type {RheologyReportInput} from '@/lib/rheology-report';
@@ -109,8 +110,6 @@ export default function ChartsSection({ foam,basketStop,rheologyInput,chartPrese
         </CardContent>
       </Card>
 
-      <CementingChartData result={numericResult} settings={depthChartSettings} presentations={chartPresentations} onPresentationsChange={onChartPresentationsChange}/>
-      <SelectedDepthPressure result={observation} request={observationRequest} defaultMD={casingDepthMD} onChange={onObservationChange}/>
       {/* Совмещённый график */}
       <Card>
         <CardHeader className="pb-4">
@@ -441,6 +440,14 @@ export default function ChartsSection({ foam,basketStop,rheologyInput,chartPrese
           </ScrollableChart>
         </CardContent>
       </Card>
+      <div className="program-additional"><h3 className="program-additional-title">Дополнительные графики и данные</h3>
+        <ProgramDisclosure title="Давление и ЭЦП на выбранной глубине">
+      <SelectedDepthPressure result={observation} request={observationRequest} defaultMD={casingDepthMD} onChange={onObservationChange}/>
+        </ProgramDisclosure>
+        <ProgramDisclosure title="Реология, оформление графиков и выгрузка данных">
+      <CementingChartData result={numericResult} settings={depthChartSettings} presentations={chartPresentations} onPresentationsChange={onChartPresentationsChange}/>
+        </ProgramDisclosure>
+      </div>
     </div>
   );
 }
