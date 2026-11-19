@@ -45,7 +45,7 @@ for(const width of [1440,390]){
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       await page.screenshot({path:`${out}/${width}-${id}-expanded-${j}.png`});
       const expandedWidth=await page.evaluate(()=>document.documentElement.scrollWidth);
-      if(expandedWidth>width+2)errors.push(`${width}/${id}: expanded panel ${j} overflow ${expandedWidth}`);
+      if(expandedWidth>width+2){const offenders=await panel.evaluate(el=>[...el.querySelectorAll('*')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.right>innerWidth+2&&!e.closest('.overflow-x-auto,.overflow-auto,.overflow-hidden');}).slice(0,12).map(e=>({tag:e.tagName,classes:e.className?.toString().slice(0,120),text:e.textContent?.slice(0,70)})));errors.push(`${width}/${id}: expanded panel ${j} overflow ${expandedWidth}: ${JSON.stringify(offenders)}`);}
       await summary.click();
     }
    }
