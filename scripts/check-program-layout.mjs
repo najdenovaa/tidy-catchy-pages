@@ -23,7 +23,7 @@ for(const width of [1440,390]){
   await page.getByRole('button',{name:new RegExp('^'+group)}).click();
   for(const[id,label]of tabs){
    if(id!=='optimizer')await page.getByRole('tab',{name:label,exact:true}).click();
-   const panel=page.locator(`[data-tab-content="${id}"]`);await panel.waitFor({state:'visible'});
+   const panel=page.locator(`[data-tab-content="${id}"]`);await panel.waitFor({state:'visible'});await page.keyboard.press('Control+Home');await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
    const metrics=await panel.evaluate(el=>{
     const headers=[...el.querySelectorAll('summary,.program-section-trigger')].filter(e=>e.getClientRects().length);
     return {font:getComputedStyle(el).fontFamily,headers:headers.map(e=>{const s=getComputedStyle(e);return {text:e.textContent.slice(0,100),font:s.fontFamily,size:s.fontSize,weight:s.fontWeight,padding:s.padding,background:s.backgroundColor};}),pageWidth:document.documentElement.scrollWidth,viewport:innerWidth,overflow:[...el.querySelectorAll('*')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.right>innerWidth+2&&!e.closest('.overflow-x-auto,.overflow-auto,.overflow-hidden');}).slice(0,15).map(e=>({tag:e.tagName,classes:e.className?.toString().slice(0,180),text:e.textContent?.slice(0,90)})),additional:[...el.querySelectorAll('.program-additional')].map(e=>({title:e.querySelector('h3')?.textContent,closed:[...e.querySelectorAll(':scope > details')].every(d=>!d.open)}))};
@@ -39,11 +39,15 @@ for(const width of [1440,390]){
     if(order.at(-1)!=='additional'||order.slice(0,-1).includes('additional'))errors.push(`${id}: primary/additional order`);
     await panel.locator('.program-additional').last().scrollIntoViewIfNeeded();
     await page.screenshot({path:`${out}/${width}-${id}-additional.png`});
-    const summary=panel.locator('.program-additional > details > summary').first();
-    await summary.click();await page.screenshot({path:`${out}/${width}-${id}-expanded.png`});
-    const expandedWidth=await page.evaluate(()=>document.documentElement.scrollWidth);
-    if(expandedWidth>width+2)errors.push(`${width}/${id}: expanded panel overflow ${expandedWidth}`);
-    await summary.click();
+    const summaries=panel.locator('.program-panel > summary');
+    for(let j=0;j<await summaries.count();j++){
+      const summary=summaries.nth(j);await summary.click();
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      await page.screenshot({path:`${out}/${width}-${id}-expanded-${j}.png`});
+      const expandedWidth=await page.evaluate(()=>document.documentElement.scrollWidth);
+      if(expandedWidth>width+2)errors.push(`${width}/${id}: expanded panel ${j} overflow ${expandedWidth}`);
+      await summary.click();
+    }
    }
   }
  }

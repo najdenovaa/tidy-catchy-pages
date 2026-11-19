@@ -661,7 +661,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
         <CardContent className="space-y-3">
           <div className="rounded border border-border p-3 space-y-2">
             <p className="text-xs">Из руководства ЦТГП-178/216: 4 лопасти, угол 55°, наружный диаметр не более 210 мм. Высота лопасти вычисляется как (210 − OD трубы) / 2. Обозначение «216» не является наружным диаметром. Эмпирический множитель потока не является паспортной характеристикой.</p>
-            <Button variant="outline" onClick={() => { setTurbBladesCount(4); setTurbBladeAngle(55); setTurbBladeHeight(Math.max(0, (210 - wellData.casingOD) / 2)); }}>Внести ЦТГП-178/216 для новых точек</Button>
+            <Button variant="outline" className="h-auto max-w-full whitespace-normal" onClick={() => { setTurbBladesCount(4); setTurbBladeAngle(55); setTurbBladeHeight(Math.max(0, (210 - wellData.casingOD) / 2)); }}>Внести ЦТГП-178/216 для новых точек</Button>
             {Math.abs(wellData.casingOD - 178) > 1 && <p className="text-xs text-destructive">ЦТГП из паспорта рассчитан на колонну 178 мм. Проверьте выбранную колонну.</p>}
             <p className="text-xs text-muted-foreground">Если изделие уже учтено в интервалах центрирования, не добавляйте его второй раз как отдельное изделие для оценки сопротивления спуску. Для HIGH SLICK 560 угол в паспорте не указан - запросите чертёж или данные изготовителя.</p>
           </div>

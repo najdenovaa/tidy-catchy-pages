@@ -88,7 +88,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
           </p>
         </div>
         {onApplySlurries && (
-          <Button size="sm" onClick={() => apply()} data-testid="apply-all-targets"><ArrowRightLeft className="h-4 w-4 mr-1" />Записать все рецептуры в программу</Button>
+          <Button size="sm" className="h-auto max-w-full whitespace-normal" onClick={() => apply()} data-testid="apply-all-targets"><ArrowRightLeft className="h-4 w-4 mr-1" />Записать все рецептуры в программу</Button>
         )}
       </div>
       {msg && <div className="text-xs text-green-700 dark:text-green-500">{msg}</div>}
@@ -112,7 +112,7 @@ export default function LabTargetsPanel({ input, targets, onTargetsChange, onApp
               <div className="font-medium text-sm">
                 Раствор {i + 1} «{recipeSlurryName(s, d.baseCementShort)}» · основа {d.baseCementShort} · {f(s.density, 2)} г/см³ · BHCT {f(conditions[i].bhctC, 0)} °C · кровля {f(conditions[i].tTopC, 0)} °C
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 max-w-full">
                 <Badge variant={pending || r.allOk ? "outline" : "destructive"} className={r.allOk && !pending ? "border-green-600 text-green-700" : ""}>
                   {pending ? "Требуется лабораторная проверка" : r.allOk ? "все требования выполнены (прогноз)" : `не выполнено: ${failed}`}
                 </Badge>

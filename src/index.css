@@ -297,3 +297,5 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
 }
+
+[data-cementing-program] canvas { max-width: 100%; }

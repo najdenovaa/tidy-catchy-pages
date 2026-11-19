@@ -130,9 +130,9 @@ export default function DepthPressureCharts({ settings,onSettingsChange,envelope
         </div>
 
         {!eData.rows.some(r=>r.max!==null)&&<p className="text-xs text-amber-700">Нет рассчитанной глубинной ЭЦП при TVD больше 50 м. Пустые значения не заменены нулём.</p>}
-        <div className="grid gap-4 xl:grid-cols-2">
-          <div>
-            <div className="flex items-center justify-between mb-1"><p className="text-sm font-semibold">Давление в кольцевом пространстве</p><CopyImageButton targetRef={refP} /></div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1"><p className="text-sm font-semibold">Давление в кольцевом пространстве</p><CopyImageButton targetRef={refP} /></div>
             <div className="overflow-x-auto"><div ref={refP} className="h-[560px] min-w-[520px] bg-card">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart layout="vertical" data={pData.rows} margin={{ top: 34, right: 16, left: 8, bottom: 8 }}>
@@ -153,8 +153,8 @@ export default function DepthPressureCharts({ settings,onSettingsChange,envelope
               </ResponsiveContainer>
             </div></div>
           </div>
-          <div>
-            <div className="flex items-center justify-between mb-1"><p className="text-sm font-semibold">ЭЦП при цементировании</p><CopyImageButton targetRef={refE} /></div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1"><p className="text-sm font-semibold">ЭЦП при цементировании</p><CopyImageButton targetRef={refE} /></div>
             <div className="overflow-x-auto"><div ref={refE} className="h-[560px] min-w-[520px] bg-card">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart layout="vertical" data={eData.rows} margin={{ top: 34, right: 16, left: 8, bottom: 8 }}>

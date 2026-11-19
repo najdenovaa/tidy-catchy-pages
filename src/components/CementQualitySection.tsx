@@ -545,7 +545,7 @@ function MonteCarloCard({ cqiInput }: { cqiInput: CQIInput }) {
 
   return (
     <Card>
-      <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+      <CardHeader className="pb-2 flex flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle className="text-sm flex items-center gap-2">
           <Dices className="h-4 w-4" />
           Анализ неопределённости (Monte Carlo)

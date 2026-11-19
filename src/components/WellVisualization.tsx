@@ -731,7 +731,7 @@ export default function WellVisualization(props: Props) {
     <div className="space-y-6">
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <CardTitle className="text-lg">3D профиль ствола скважины</CardTitle>
               <p className="text-xs text-muted-foreground">Глубины: ствол / вертикаль (м). Вращайте мышью для обзора.</p>
@@ -750,7 +750,7 @@ export default function WellVisualization(props: Props) {
 
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
              <CardTitle className="text-lg">Продольный разрез скважины</CardTitle>
               <p className="text-xs text-muted-foreground">Размещение жидкостей в кольцевом пространстве (вид сбоку)</p>

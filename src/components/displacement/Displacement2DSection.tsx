@@ -141,7 +141,7 @@ export default function Displacement2DSection(p: {
         <CardTitle className="text-sm flex items-center gap-2 flex-wrap">
           <Waves className="w-4 h-4" /> Вытеснение в затрубье: 2D-модель и 3D-вид
           <Badge variant="outline" className="text-[10px]">эксцентриситет · реология · плотности · наклон</Badge>
-          <span className="ml-auto flex items-center gap-2">
+          <span className="ml-auto flex w-full sm:w-auto flex-wrap items-center gap-2">
             <label className="flex items-center gap-1 text-[11px] font-normal text-muted-foreground">вращение
               <input type="number" min={0} max={60} step={5} value={rpm} onChange={(e) => setRpm(Math.max(0, Math.min(60, +e.target.value || 0)))} className="h-7 w-14 rounded border border-border bg-background px-1 text-xs" data-testid="d2-rpm" />об/мин</label>
             <label className="flex items-center gap-1 text-[11px] font-normal text-muted-foreground">выдержка

@@ -523,9 +523,9 @@ export default function Index() {
               <p className="text-xs text-muted-foreground/70">Расчёт обсадных колонн</p>
             </div>
           </div>
-          <div className="flex items-center sm:flex-col sm:items-end gap-3 sm:gap-6 w-full sm:w-auto">
+          <div className="flex flex-col items-center sm:items-end gap-3 sm:gap-6 w-full sm:w-auto">
             {loadingSavedCalc && <p className="text-xs text-muted-foreground">Загрузка сохранённого расчёта...</p>}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-center sm:justify-end gap-3">
               <Link
                 to="/"
                 className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs"
