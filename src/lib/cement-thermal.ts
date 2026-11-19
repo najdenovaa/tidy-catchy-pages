@@ -21,7 +21,7 @@ export function normalizeThermal(v:unknown):ThermalSettings|undefined {
  return out;
 }
 export function thermalDraft(s:CementingSnapshot):ThermalSettings {
- const c=buildProcessContract(s);return {source:'Типовой сценарий - требует подтверждения исходных свойств',surfaceC:20,initialBottomC:s.wellData.bottomTempStatic,rockK:2.5,rockRhoCp:2400000,outerRadiusM:5,steelK:45,steelRhoCp:3800000,hPipe:200,hAnnulus:150,hFormation:100,circulationMin:60,circulationLps:10,preHoldMin:0,wocMin:1440,cells:60,maxStepS:5,frameMin:30,fluids:c.fluids.filter(f=>f.kind!=='serviceWater').map(f=>({id:f.id,cp:f.kind==='cement'?1800:4000,inletC:20}))};
+ const c=buildProcessContract(s),surfaceC=s.wellData.surfaceTemp??20;return {source:'Типовой сценарий - требует подтверждения исходных свойств',surfaceC,initialBottomC:s.wellData.bottomTempStatic,rockK:2.5,rockRhoCp:2400000,outerRadiusM:5,steelK:45,steelRhoCp:3800000,hPipe:200,hAnnulus:150,hFormation:100,circulationMin:60,circulationLps:10,preHoldMin:0,wocMin:1440,cells:60,maxStepS:5,frameMin:30,fluids:c.fluids.filter(f=>f.kind!=='serviceWater').map(f=>({id:f.id,cp:f.kind==='cement'?1800:4000,inletC:surfaceC}))};
 }
 export function thermalKey(s:CementingSnapshot){const w={...s.wellData};delete w.depthChartSettings;delete w.chartPresentations;return JSON.stringify(['thermal-v1',{...s,wellData:w}],(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);}
 export interface ThermalFrame {timeS:number;phase:string;pipeC:number[];annulusC:number[];wallC:number[];fractions:number[][];balance:{storedJ:number;inJ:number;outJ:number;farFieldJ:number;residualJ:number}}

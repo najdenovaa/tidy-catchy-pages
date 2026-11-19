@@ -20,3 +20,5 @@ it('keeps distinct first/tail cement marker identities across several cements an
  expect(r.tags.map(t=>t.fluidId)).toEqual(['cement:0','cement:0','cement:1']);expect(r.tags[0].injectedM3).toBeLessThan(r.tags[1].injectedM3);expect(r.tags[1].injectedM3).toBeLessThan(r.tags[2].injectedM3);
  const hold=r.frames.filter(f=>f.phase==='Промывка ЛВД');expect(hold.length).toBeGreaterThan(0);expect(r.tags[0].history.length).toBe(r.frames.length);
 });
+
+it('initializes the thermal scenario from the entered surface temperature, including zero',()=>{const s=thermalFixture();s.wellData.surfaceTemp=0;const p=thermalDraft(s);expect(p.surfaceC).toBe(0);expect(p.fluids.every(f=>f.inletC===0)).toBe(true);});
