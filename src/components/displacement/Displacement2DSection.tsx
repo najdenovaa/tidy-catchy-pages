@@ -1,3 +1,4 @@
+import D2Placement from './D2Placement';
 import D2CrossSection from './D2CrossSection';
 import {observationDepthMD} from '@/lib/displacement-section';
 import D2TimingControls from './D2TimingControls';
@@ -181,6 +182,7 @@ export default function Displacement2DSection(p: {
             </div>
         </>}
         {run&&<D2CrossSection data={{...run,settings:{...timeSettings,fine,rotationRpm:rpm,settleMin:settle,pipeEnabled,annulusEnabled}}} md={observationMD} frame={Math.min(snap,timeline.length-1)} onDepth={setSelectedDepthMD} stale={!!stale}/>}
+        {run&&<D2Placement data={{...run,settings:{...timeSettings,fine,rotationRpm:rpm,settleMin:settle,pipeEnabled,annulusEnabled}}} frame={Math.min(snap,timeline.length-1)} onFrame={i=>{setPlaying(false);setSnap(i);}} stale={!!stale}/>}
         {run?.pipe&&<D2PipeSection pipe={run.pipe} colors={run.meta.colors} timeline={timeline} frame={Math.min(snap,timeline.length-1)} md={observationMD} timingSettings={timeSettings} timingStats={run.result?.summary.timing} onDepth={setSelectedDepthMD} onFrame={i=>{setPlaying(false);setSnap(i);}} stale={!!stale} />}
         {run&&!run.pipe&&<p>Расчёт состава в трубе отключён. Трубные концентрации не представлены.</p>}
         {run&&!res&&<p>Расчёт затрубного пространства отключён. Затрубные концентрации и 3D-поле не представлены.</p>}

@@ -1,3 +1,4 @@
+import {displacementPlacement,PLACEMENT_NOTE} from './displacement-placement';
 import {sectionState,observationDepthMD,SECTION_NOTE} from './displacement-section';
 import {timingRows} from './displacement-timing';
 import { pipeDepthComposition,pipeBalance,pipeHistory,displacementTimeline,PIPE_NOTE } from './displacement-pipe';
@@ -95,6 +96,10 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
      if(a.calibration)out.push(p(a.calibration.informative?'Поправка Δμ='+f(a.calibration.deltaMu)+'; RMSE='+f(a.calibration.rmseTF)+' тс. '+(a.calibration.atBoundary?'Граница поиска.':'Автоматически не применяется.'):'Трение не определяется: чувствительность замеров недостаточна.'));
    }
  }
+ if(scope==='cementing'&&yes('displacementPlacement')&&extras.displacement){
+   const state=displacementPlacement(extras.displacement);out.push(h('Конечное размещение жидкостей в общей скважине'));
+   if('error'in state)out.push(p(state.error));else out.push(p(PLACEMENT_NOTE),p('Последний сохранённый кадр '+state.frame+'; время от начала закачки '+f(state.timeS/60,3)+' мин. '+(state.completed?'Расчёт завершён.':'Расчёт неполный; плановый итог не достигнут.')),p('Труба: '+(state.pipeEnabled?'рассчитана':'отключена')+'. Затрубье: '+(state.annulusEnabled?'рассчитано':'отключено')+'. Интервалов: '+state.rows.length+'.'),reportDataTable(['Жидкость','В трубе, м³','Невязка профиля трубы, м³','В затрубном поле, м³'],state.fluids.map((fluid,i)=>[(i+1)+'. '+fluid.name,state.pipeInventory?f(state.pipeInventory[i],5):'Нет расчёта',state.pipeInventory&&state.pipeLedger?f(state.pipeInventory[i]-state.pipeLedger[i].insideM3,9):'Нет расчёта',state.annulusInventory?f(state.annulusInventory[i],5):'Нет расчёта'])));
+ }
  if(scope==='cementing'&&yes('displacementSection')&&extras.displacement){
    const d=extras.displacement,s=sectionState(d,d.selectedDepthMD,d.selectedGlobalFrame);
    out.push(h('Сечение трубы и затрубного пространства'));
@@ -108,8 +113,8 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
  }
  if(scope==='cementing'&&extras.displacement){
    const d=extras.displacement;
-   if(yes('displacementSection')||yes('pipeHistory')||yes('displacementHistory')||yes('displacementSummary'))out.push(h('Временные настройки вытеснения'),reportDataTable(['Параметр','Значение'],timingRows(d.settings,d.result?.summary?.timing).map(([a,b])=>[a,typeof b==='number'?String(Number(b.toPrecision(8))):b])));
-   if(yes('displacementSection')||yes('pipeHistory')||yes('displacementHistory')||yes('displacementSummary'))out.push(p('Состав в трубе: '+(d.pipe?'рассчитан':'расчёт отключён или отсутствует')+'. Затрубное вытеснение: '+(d.result?'рассчитано':'расчёт отключён или отсутствует')+'.'));
+   if(yes('displacementPlacement')||yes('displacementSection')||yes('pipeHistory')||yes('displacementHistory')||yes('displacementSummary'))out.push(h('Временные настройки вытеснения'),reportDataTable(['Параметр','Значение'],timingRows(d.settings,d.result?.summary?.timing).map(([a,b])=>[a,typeof b==='number'?String(Number(b.toPrecision(8))):b])));
+   if(yes('displacementPlacement')||yes('displacementSection')||yes('pipeHistory')||yes('displacementHistory')||yes('displacementSummary'))out.push(p('Состав в трубе: '+(d.pipe?'рассчитан':'расчёт отключён или отсутствует')+'. Затрубное вытеснение: '+(d.result?'рассчитано':'расчёт отключён или отсутствует')+'.'));
    if(yes('pipeHistory')&&d.pipe){
      const pipe=d.pipe,frames=d.timeline??displacementTimeline(pipe,d.result,d.meta.annulusStartS,d.settings.settleMin,d.settings.frameIntervalS),md=observationDepthMD(d,d.selectedDepthMD);
      const cell=pipeDepthComposition(pipe,md,0),frame=Math.max(0,Math.min(frames.length-1,d.selectedGlobalFrame??frames.length-1)),time=frames[frame]?.timeS??0;

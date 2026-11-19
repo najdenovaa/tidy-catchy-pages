@@ -56,6 +56,7 @@ on:
       - 'src/lib/__tests__/pipe-spaces-report.test.ts'
       - 'src/lib/__tests__/displacement-timing-report.test.ts'
       - 'src/lib/__tests__/displacement-section-report.test.ts'
+      - 'src/lib/__tests__/displacement-placement-report.test.ts'
       - 'src/lib/__tests__/fixtures/displacement-section-fixture.ts'
       - 'src/components/displacement/**'
       - 'src/components/CentralizationSection.tsx'
@@ -93,7 +94,7 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts src/lib/__tests__/casing-chart-report.test.ts src/lib/__tests__/hierarchy-chart-report.test.ts src/lib/__tests__/displacement-history-report.test.ts src/lib/__tests__/pipe-spaces-report.test.ts src/lib/__tests__/displacement-timing-report.test.ts src/lib/__tests__/displacement-section-report.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts src/lib/__tests__/casing-chart-report.test.ts src/lib/__tests__/hierarchy-chart-report.test.ts src/lib/__tests__/displacement-history-report.test.ts src/lib/__tests__/pipe-spaces-report.test.ts src/lib/__tests__/displacement-timing-report.test.ts src/lib/__tests__/displacement-section-report.test.ts src/lib/__tests__/displacement-placement-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
@@ -110,10 +111,25 @@ jobs:
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/pipe-spaces.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/displacement-timing.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/displacement-section.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/displacement-placement.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
           d = pathlib.Path(os.environ["REPORT_QA_DIR"])
+          placement_doc=fitz.open(d / "displacement-placement.pdf")
+          placement_text=" ".join(" ".join(p.get_text().split()) for p in placement_doc)
+          assert "Конечное размещение" in placement_text and "Невязка профиля трубы" in placement_text
+          assert sum(len(p.get_images()) for p in placement_doc)>=1
+          for p in placement_doc: assert 590<p.rect.width<600 and 835<p.rect.height<850
+          placement_pages=[]
+          for page in placement_doc:
+              pix=page.get_pixmap(matrix=fitz.Matrix(.7,.7),alpha=False)
+              placement_pages.append(Image.frombytes("RGB",(pix.width,pix.height),pix.samples))
+          placement_preview=Image.new("RGB",(sum(p.width for p in placement_pages),max(p.height for p in placement_pages)),"white")
+          off=0
+          for im in placement_pages: placement_preview.paste(im,(off,0));off+=im.width
+          placement_preview.save(d / "displacement-placement-preview.png",optimize=True)
+          print("F09_QA_PNG="+base64.b64encode((d / "displacement-placement-preview.png").read_bytes()).decode())
           section_doc=fitz.open(d / "displacement-section.pdf")
           section_text=" ".join(" ".join(p.get_text().split()) for p in section_doc)
           assert all(t in section_text for t in ["Сечение трубы", "Смещение осей", "Зазор min / max", "3D", "вид сверху"])

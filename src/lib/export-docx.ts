@@ -1,3 +1,4 @@
+import {displacementPlacement} from './displacement-placement';
 import {sectionState,observationDepthMD} from './displacement-section';
 import { pipeHistoryPlots,displacementTimeline } from './displacement-pipe';
 import { displacementHistoryPlots } from './displacement-depth-history';
@@ -1047,8 +1048,10 @@ export async function exportToDocx(
   const pd=historyData?.pipe;
   const pipeKeys=new Set(pd?pipeHistoryPlots(pd,historyData.meta.colors,observationDepthMD(historyData,historyData.selectedDepthMD),historyData.timeline??displacementTimeline(pd,historyData.result,historyData.meta.annulusStartS,historyData.settings.settleMin,historyData.settings.frameIntervalS)).map(p=>p.sourceKey):[]);
   const currentSection=historyData?sectionState(historyData,historyData.selectedDepthMD,historyData.selectedGlobalFrame):null;
+  const placement=historyData?displacementPlacement(historyData):null;
+  const placementKey=placement&&!('error'in placement)?placement.sourceKey:null;
   const currentSectionKey=currentSection&&!('error' in currentSection)?currentSection.sourceKey:null;
-  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='displacementSection'||!!currentSectionKey&&f.sourceKey===currentSectionKey)&&(!!historyData?.result||!['displacement3D','displacementMap','displacementHistory'].includes(f.reportItem??reportFigureItem(f.title)??''))&&(f.reportItem!=='pipeHistory'||pipeKeys.has(f.sourceKey!))&&(f.reportItem!=='displacementHistory'||historyKeys.has(f.sourceKey!))&&(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='displacementPlacement'||!!placementKey&&f.sourceKey===placementKey)&&(f.reportItem!=='displacementSection'||!!currentSectionKey&&f.sourceKey===currentSectionKey)&&(!!historyData?.result||!['displacement3D','displacementMap','displacementHistory'].includes(f.reportItem??reportFigureItem(f.title)??''))&&(f.reportItem!=='pipeHistory'||pipeKeys.has(f.sourceKey!))&&(f.reportItem!=='displacementHistory'||historyKeys.has(f.sourceKey!))&&(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
   const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});
