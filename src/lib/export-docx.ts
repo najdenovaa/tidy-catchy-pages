@@ -1,3 +1,5 @@
+import {fluidLabReport,REMOVAL_NOTE} from './fluid-lab-report';
+import {FLUID_LAB_NOTE} from './fluid-interaction-lab';
 import {displacementPlacement} from './displacement-placement';
 import {sectionState,observationDepthMD} from './displacement-section';
 import { pipeHistoryPlots,displacementTimeline } from './displacement-pipe';
@@ -1030,6 +1032,17 @@ export async function exportToDocx(
 
   add('materials','Ведомость материалов',materialsContent);
   add('lab','Рецептура и лабораторные требования',labContent);
+  const labAnalysis=fluidLabReport({wellData,slurries,buffers,drillingFluid,displacementFluids},options?.extras?.displacement);
+  if(reportIncludes(selection,'fluidLab')){
+    const data=labAnalysis,lab=data.lab,content:any[]=[sectionTitle('Совместимость смесей и вымываемость'),noteParagraph(FLUID_LAB_NOTE),noteParagraph(REMOVAL_NOTE),...data.issues.map(noteParagraph)];
+    content.push(kvTable([{label:'Температура / абсолютное давление сценария',value:(lab?.temperatureC??'Не задано')+' °C / '+(lab?.pressureMPaAbs??'Не задано')+' МПа'},{label:'Измеренные смеси в 2D',value:lab?.useMixtures?'Выбраны':'Выключены'},{label:'Время кадра состава / поля сдвига, с',value:(data.timeS??'Нет')+' / '+(data.shearTimeS??'Нет')}]) as any);
+    content.push(noteParagraph('Измеренные составы смесей'));
+    content.push(gridTable(['Протокол','T, °C','P, МПа абс.','Состав, об. доли','PV, сПз','ДНС, Па','Наблюдения'],(lab?.mixtures??[]).map(t=>[t.id+': '+t.source,String(t.temperatureC??'Нет'),String(t.pressureMPaAbs??'Нет'),t.fractions.map(f=>(data.fluids.find(x=>x.id===f.fluidId)?.name??f.fluidId)+': '+(f.share??'Нет')).join('; '),String(t.pvCp??'Нет'),String(t.ypPa??'Нет'),t.observation+'; '+t.notes])) as any);
+    if(data.coverage)content.push(noteParagraph('Покрытие на последнем поле: '+data.coverage.measuredCells+' из '+data.coverage.mixedCells+' смешанных ячеек; '+data.coverage.measuredVolumeM3.toFixed(6)+' из '+data.coverage.mixedVolumeM3.toFixed(6)+' м³. Лабораторная модель на последнем поле '+(data.coverage.activeAtFinal?'активна':'не активна')+'.'));
+    for(const p of data.profiles){content.push(noteParagraph(p.test.id+': '+p.test.source+'; промывка '+(data.fluids.find(f=>f.id===p.test.cleanerId)?.name??p.test.cleanerId)+'; интервал MD '+p.test.fromMD+'-'+p.test.toMD+' м; T/P '+p.test.temperatureC+' °C / '+p.test.pressureMPaAbs+' МПа абс.; критический сдвиг '+p.test.criticalPa+' Па; воздействие '+p.test.exposureS+' с; '+(p.error??'Привязан к сценарию')+'. '+p.test.notes));if(reportIncludes(selection,'chartData'))content.push(gridTable(['MD, м','TVD, м','Требуется, Па','Доступно min, Па','Доступно max, Па','Чистая промывка, %'],p.rows.map(r=>[r.md,r.tvd,r.requiredPa,r.availableMinPa,r.availableMaxPa,r.pureCoveragePct].map(v=>v===null?'Нет данных':v.toFixed(5)))) as any);}
+    add('fluidLab','Совместимость смесей и вымываемость',content);
+  }
+
   add('norms','Проверки ограничений',normsContent);
   add('logistics','Техника, персонал и график работ',logisticsContent);
   add('basket','Корзины: давление после Стоп',basketContent);
@@ -1051,7 +1064,7 @@ export async function exportToDocx(
   const placement=historyData?displacementPlacement(historyData):null;
   const placementKey=placement&&!('error'in placement)?placement.sourceKey:null;
   const currentSectionKey=currentSection&&!('error' in currentSection)?currentSection.sourceKey:null;
-  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='displacementPlacement'||!!placementKey&&f.sourceKey===placementKey)&&(f.reportItem!=='displacementSection'||!!currentSectionKey&&f.sourceKey===currentSectionKey)&&(!!historyData?.result||!['displacement3D','displacementMap','displacementHistory'].includes(f.reportItem??reportFigureItem(f.title)??''))&&(f.reportItem!=='pipeHistory'||pipeKeys.has(f.sourceKey!))&&(f.reportItem!=='displacementHistory'||historyKeys.has(f.sourceKey!))&&(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='fluidLab'||f.sourceKey===labAnalysis.sourceKey)&&(f.reportItem!=='displacementPlacement'||!!placementKey&&f.sourceKey===placementKey)&&(f.reportItem!=='displacementSection'||!!currentSectionKey&&f.sourceKey===currentSectionKey)&&(!!historyData?.result||!['displacement3D','displacementMap','displacementHistory'].includes(f.reportItem??reportFigureItem(f.title)??''))&&(f.reportItem!=='pipeHistory'||pipeKeys.has(f.sourceKey!))&&(f.reportItem!=='displacementHistory'||historyKeys.has(f.sourceKey!))&&(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
   const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});

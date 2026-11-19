@@ -1,9 +1,11 @@
+import FluidLabAnalysis from '@/components/FluidLabAnalysis';
+import FluidInteractionLab from '@/components/FluidInteractionLab';
 import {currentFoamReport,foamCharts} from '@/lib/foam-chart-data';
 import {buildProcessContract} from "@/lib/cementing-process";
 import {rheologyInputErrors} from "@/lib/cement-rheology";
 import {rheologyReportFigures} from "@/lib/rheology-report";
 import ReportContentsDialog from "@/components/ReportContentsDialog";
-import { allowedReportFigure, missingReportFigures, reportIncludes, type ReportSelection } from "@/lib/cementing-report-options";
+import { allowedReportFigure, missingReportFigures, reportIncludes, requiresDisplacementReport, type ReportSelection } from "@/lib/cementing-report-options";
 import { planLogistics, normalizeLogisticsSettings } from "@/lib/cement-logistics";
 import { cementFleetLayoutFigure } from "@/lib/cement-fleet-layout";
 import { centralizerInventory } from "@/lib/cementing-equipment";
@@ -401,7 +403,7 @@ export default function Index() {
         drillingFluid: snap.drillingFluid, displacementFluids: snap.displacementFluids, volumes: vol };
       const settings = displacementReportSettings;
       try {
-        if(reportIncludes(selection,'displacementSection')||reportIncludes(selection,'pipeHistory')||reportIncludes(selection,'displacementHistory')||reportIncludes(selection,'displacementSummary')||reportIncludes(selection,'displacement3D')||reportIncludes(selection,'displacementMap')){
+        if(requiresDisplacementReport(selection)){
         const d = displacementReport?.inputKey === displacementReportKey(data, settings) ? displacementReport : await runDisplacementForReport(data, settings);
         extras.displacement = d; setDisplacementReport(d);
         }
@@ -783,6 +785,8 @@ export default function Index() {
 
           <TabsContent value="lab">
             <div data-tab-content="lab">
+              {calcSnapshot&&<FluidInteractionLab input={calcSnapshot} data={calcSnapshot.wellData.fluidInteractionLab} onApply={lab=>{setWellData(prev=>({...prev,fluidInteractionLab:lab}));setCalcSnapshot(prev=>prev?{...prev,wellData:{...prev.wellData,fluidInteractionLab:lab}}:prev);}}/>}
+              {calcSnapshot&&<FluidLabAnalysis input={{...calcSnapshot,wellData:snapWellData??calcSnapshot.wellData}} displacement={displacementReport}/>}
               {calcSnapshot && volumes ? (
                 <CementLabSection
                   wellData={snapWellData ?? calcSnapshot.wellData}

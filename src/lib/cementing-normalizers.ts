@@ -1,3 +1,4 @@
+import {normalizeFluidLab} from './fluid-interaction-lab';
 import {normalizeChartPresentations} from './chart-presentation';
 import {normalizeDepthChartSettings} from './depth-chart-settings';
 import {normalizePressureObservation} from './pressure-observation';
@@ -211,6 +212,7 @@ export function normalizeWellData(value: unknown): WellData {
   const caliperLog=normalizeCaliperLog(source.caliperLog);
   return {
     ...(caliperLog?{caliperLog}:{}),
+    ...(source.fluidInteractionLab!==undefined?{fluidInteractionLab:normalizeFluidLab(source.fluidInteractionLab)}:{}),
     ...(source.chartPresentations!==undefined?{chartPresentations:normalizeChartPresentations(source.chartPresentations)}:{}),
     ...(source.depthChartSettings!==undefined?{depthChartSettings:normalizeDepthChartSettings(source.depthChartSettings)}:{}),
     equipment: normalizeEquipment(source.equipment),

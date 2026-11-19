@@ -7,6 +7,11 @@ on:
       - 'src/lib/cement-quality-index*'
       - 'src/components/CementQualitySection*'
       - 'src/lib/rheology-*'
+      - 'src/lib/fluid-*lab*'
+      - 'src/components/FluidInteractionLab*'
+      - 'src/components/FluidLabAnalysis*'
+      - 'src/lib/__tests__/fluid-lab-report.test.ts'
+      - 'src/lib/__tests__/fixtures/fluid-lab-fixture.ts'
       - 'src/lib/__tests__/hierarchy-chart-report.test.ts'
       - 'src/components/RheologyHierarchy*'
       - 'src/components/FannEditor*'
@@ -95,7 +100,7 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts src/lib/__tests__/casing-chart-report.test.ts src/lib/__tests__/hierarchy-chart-report.test.ts src/lib/__tests__/displacement-history-report.test.ts src/lib/__tests__/pipe-spaces-report.test.ts src/lib/__tests__/displacement-timing-report.test.ts src/lib/__tests__/displacement-section-report.test.ts src/lib/__tests__/displacement-placement-report.test.ts src/lib/__tests__/displacement-balance-report.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts src/lib/__tests__/casing-chart-report.test.ts src/lib/__tests__/hierarchy-chart-report.test.ts src/lib/__tests__/displacement-history-report.test.ts src/lib/__tests__/pipe-spaces-report.test.ts src/lib/__tests__/displacement-timing-report.test.ts src/lib/__tests__/displacement-section-report.test.ts src/lib/__tests__/displacement-placement-report.test.ts src/lib/__tests__/displacement-balance-report.test.ts src/lib/__tests__/fluid-lab-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
@@ -114,10 +119,23 @@ jobs:
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/displacement-section.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/displacement-placement.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/annular-balance.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/fluid-lab.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
           d = pathlib.Path(os.environ["REPORT_QA_DIR"])
+          lab_doc=fitz.open(d / "fluid-lab.pdf")
+          lab_text=" ".join(" ".join(p.get_text().split()) for p in lab_doc)
+          assert all(t in lab_text for t in ["Совместимость смесей", "Washer test protocol 12", "воздействие", "Вымываемость"])
+          assert sum(len(p.get_images()) for p in lab_doc)==3
+          assert all(abs(p.rect.width-595.3)<2 for p in lab_doc)
+          lab_preview=Image.new("RGB",(420*len(lab_doc),595),"white")
+          for i,page in enumerate(lab_doc):
+              pix=page.get_pixmap(matrix=fitz.Matrix(.7,.7),alpha=False)
+              lab_preview.paste(Image.frombytes("RGB",(pix.width,pix.height),pix.samples),(i*420,0))
+          lab_preview.save(d / "fluid-lab-preview.png",optimize=True)
+          print("F11F26_QA_PNG="+base64.b64encode((d / "fluid-lab-preview.png").read_bytes()).decode())
+          print("Fluid lab:",len(lab_doc),"pages; 3 figures")
           balance_doc=fitz.open(d / "annular-balance.pdf")
           balance_text=" ".join(" ".join(p.get_text().split()) for p in balance_doc)
           assert all(x in balance_text for x in ["Покомпонентный баланс затрубья","Обратный приток","Округление 3D"])

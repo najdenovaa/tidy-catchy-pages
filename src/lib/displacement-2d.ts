@@ -1,3 +1,4 @@
+import {createMixtureLookup,type CompiledMixture} from './fluid-interaction-lab';
 import {AnnularVolumeLedger,type AnnularBalanceFrame} from './displacement-balance';
 import { normalizeDisplacementTiming,validateFrameBudget,validateTimingBudget,type DisplacementTimingStats } from './displacement-timing';
 /**
@@ -64,6 +65,7 @@ export interface D2Geometry {
 }
 
 export interface D2Input {
+  labMixtures?:CompiledMixture[];
   /** Верх расчётной области (MD), м */
   zTop: number;
   /** Низ — башмак (MD), м */
@@ -105,6 +107,7 @@ export interface D2Input {
 }
 
 export interface D2Snapshot {
+  wallShearPa?:Float32Array;wallShearTimeS?:number;wallShearFluid?:Uint16Array;
   balance?: AnnularBalanceFrame;
   t: number;
   /** Доли жидкостей, квантованные 0…255: [fluid][cell], cell = j·nTheta + i */
@@ -144,6 +147,7 @@ export interface D2Stats {
 }
 
 export interface D2Result {
+  mixtureCoverage?:{enabled:boolean;activeAtFinal:boolean;measuredEvaluations:number;mixedCells:number;measuredCells:number;mixedVolumeM3:number;measuredVolumeM3:number};
   /** Actual full-domain capacities; includes custom storage gaps. */
   cellVolumesM3?: Float64Array;
   /** Число ячеек по окружности в расчёте (на половину или на всю окружность) */
@@ -261,6 +265,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const dz = L / nZ;
   const N = nT * nZ;
   const nF = inp.fluids.length;
+  if(inp.labMixtures?.some(p=>p.fractions.length!==nF||p.fractions.some(x=>!Number.isFinite(x)||x<0||x>1)||Math.abs(p.fractions.reduce((a,b)=>a+b,0)-1)>1e-6||!Number.isFinite(p.pv)||p.pv<0||!Number.isFinite(p.yp)||p.yp<0))throw new Error('Некорректные измеренные составы смесей для сетки жидкостей.');
   const EPS = 1e-4;
   const nTF = full ? nT : nT - 1; // θ-граней в ряду
   const nb = (i: number) => (i + 1) % nT;
@@ -296,11 +301,15 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const gelMul = new Float64Array(nF).fill(1), muMul = new Float64Array(nF).fill(1), tyMul = new Float64Array(nF).fill(1);
   const firstIn = new Float64Array(nF).fill(-1);
   const mob = new Float64Array(N).fill(1), S = new Float64Array(N);
+  const labLookup=createMixtureLookup(inp.labMixtures??[]);
+  let laboratoryActive=!!inp.labMixtures?.length,measuredEvaluations=0;
+  if(laboratoryActive&&inp.fluidTime)throw new Error('Измеренные смеси не объединяются с моделью старения fluidTime.');
   const mixProps = () => {
     for (let k = 0; k < N; k++) {
       let r = 0, m = 0, y = 0;
       for (let f = 0; f < nF; f++) { const w = c[f][k]; if (w <= 0) continue; const fl = inp.fluids[f]; r += w * fl.density; m += w * Math.log(Math.max(1e-4, fl.pv * muMul[f])); y += w * fl.yp * gelMul[f] * tyMul[f]; }
       rho[k] = r; mu[k] = Math.exp(m); ty[k] = y;
+      if(laboratoryActive&&inp.labMixtures?.length){const measured=labLookup(c,k);if(measured){measuredEvaluations++;mu[k]=Math.max(1e-4,measured.pv);ty[k]=measured.yp;}}
     }
   };
 
@@ -328,7 +337,9 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const r = new Float64Array(N), zv = new Float64Array(N), d = new Float64Array(N), Ad = new Float64Array(N);
   const ta = new Float64Array(nT), tb = new Float64Array(nT), tc = new Float64Array(nT), tr = new Float64Array(nT), tx = new Float64Array(nT);
   const tri = makeTriSolver(nT);
-  let gInit = false, pcgIters = 0;
+  let gInit = false, pcgIters = 0, hydraulicTimeS=0;
+  const hydraulicPureFluid=new Uint16Array(N);
+  const recordHydraulicFluid=()=>{for(let k=0;k<N;k++){hydraulicPureFluid[k]=0;for(let f=0;f<nF;f++)if(c[f][k]>=1-1e-6){hydraulicPureFluid[k]=f+1;break;}}};
   let U = 0; // множитель вращения (1 — при закачке, 0 — на выдержке)
 
   const faceGap = (k1: number, k2: number) => Math.sqrt(h[k1] * h[k2]);
@@ -633,14 +644,14 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const maxSnap = inp.maxSnapshots ?? 140;
   if(!Number.isInteger(maxSnap)||maxSnap<2||maxSnap>2000)throw new Error('Число кадров должно быть целым от 2 до 2000.');
   const snapDt = timing.frameIntervalS ?? totalT / Math.max(1, maxSnap - 1);
-  const frameLimit=Math.min(2000,Math.floor(64*1024*1024/Math.max(1,nF*N)));
+  const frameLimit=Math.min(2000,Math.floor(64*1024*1024/Math.max(1,(nF+6)*N+11*nF*8)));
   validateFrameBudget(totalT,snapDt,3,frameLimit);
   validateTimingBudget(pumpT,totalT,timing.maxTimeStepS);
   const snapshots: D2Snapshot[] = [];
   const snap = (t: number, st: number) => {
     const fr = new Uint8Array(nF * N);
     for (let f = 0; f < nF; f++) for (let k = 0; k < N; k++) fr[f * N + k] = Math.round(c[f][k] * 255);
-    snapshots.push({ t, frac: fr, stage: st, balance:ledger.snapshot(c,fr) });
+    snapshots.push({ t, frac: fr, stage: st, balance:ledger.snapshot(c,fr),...(gInit?{wallShearPa:Float32Array.from(h,(gap,k)=>gap*gAbs[k]/2),wallShearTimeS:hydraulicTimeS,wallShearFluid:Uint16Array.from(hydraulicPureFluid)}:{}) });
   };
   mixProps();
   let t = 0, steps = 0, nextSnap = 0, inVol = 0, outVol = 0;
@@ -680,7 +691,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
     while (left > 1e-9) {
       timeProps(); mixProps();
       solvePressure(hold ? 0 : st.rateM3s * share, gInit ? (hold ? 2 : 1) : 6);
-      gInit = true;
+      hydraulicTimeS=t;recordHydraulicFluid();gInit = true;
       const dt = stepDt(Math.min(timing.maxTimeStepS??Infinity,hold ? 60 : 30, hold ? left : left / st.rateM3s));
       recordStep(dt);
       transport(dt, hold ? -1 : st.fluid);
@@ -702,12 +713,13 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
 
   // ── Выдержка: расход 0, вращение остановлено, структура растёт ──
   if (settleS > 0 && !aborted) {
-    U = 0;
+    U = 0;laboratoryActive=false;
+    if(inp.labMixtures?.length)warnings.push('На заключительной выдержке лабораторная интерполяция смесей выключена; используется типовой рост структуры базовой модели.');
     let tS = 0;
     while (tS < settleS - 1e-6) {
       for (let f = 0; f < nF; f++) gelMul[f] = gelMultiplier(inp.fluids[f].kind, tS);
       mixProps();
-      solvePressure(0, 2);
+      solvePressure(0, 2);hydraulicTimeS=t;recordHydraulicFluid();
       const dt = stepDt(Math.min(timing.maxTimeStepS??Infinity,60, settleS - tS));
       recordStep(dt);
       transport(dt, -1);
@@ -725,8 +737,11 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
 
   const volNow = V.reduce((a, b) => a + b, 0);
   const mbe = inVol > 0 ? ((inVol - outVol - (volNow - vol0)) / inVol) * 100 : 0;
+  const mixtureCoverage={enabled:!!inp.labMixtures?.length,activeAtFinal:laboratoryActive,measuredEvaluations,mixedCells:0,measuredCells:0,mixedVolumeM3:0,measuredVolumeM3:0};
+  for(let k=0;k<N;k++){let active=0;for(let f=0;f<nF;f++)if(c[f][k]>1e-6)active++;if(active>1){mixtureCoverage.mixedCells++;mixtureCoverage.mixedVolumeM3+=V[k]/share;if(laboratoryActive&&inp.labMixtures?.length&&labLookup(c,k)){mixtureCoverage.measuredCells++;mixtureCoverage.measuredVolumeM3+=V[k]/share;}}}
   const t1 = typeof performance !== "undefined" ? performance.now() : Date.now();
   return {
+    mixtureCoverage,
     cellVolumesM3: Float64Array.from(V,v=>v/share),
     nTheta: nT, full, nZ, zCenters: zC, thetaCenters: thC, gap: h, fluids: inp.fluids, snapshots, pumpEndSnap,
     rows: fin.rows, rowsPumpEnd: atPumpEnd.rows,
