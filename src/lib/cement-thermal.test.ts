@@ -22,3 +22,5 @@ it('keeps distinct first/tail cement marker identities across several cements an
 });
 
 it('initializes the thermal scenario from the entered surface temperature, including zero',()=>{const s=thermalFixture();s.wellData.surfaceTemp=0;const p=thermalDraft(s);expect(p.surfaceC).toBe(0);expect(p.fluids.every(f=>f.inletC===0)).toBe(true);});
+
+it('retains a detailed imported bore geometry while keeping a zero-duration scenario finite',()=>{const s=thermalFixture();s.buffers=[];s.slurries=[];s.displacementFluids=[];s.flushTimeMin=0;s.wellData.ckodDepth=0;s.wellData.cavernIntervals=Array.from({length:520},(_,i)=>({fromMD:60*i/520,toMD:60*(i+1)/520,coeff:1.15}));Object.assign(s.wellData.thermal!,{circulationMin:0,wocMin:0});const r=simulateThermal(s);expect(r.md.length).toBeGreaterThan(500);expect(r.geometry.cells.length).toBe(r.md.length);expect(r.minStepS).toBe(0);expect(r.frames[0].balance.residualJ).toBe(0);});

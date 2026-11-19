@@ -42,7 +42,7 @@ export function simulateThermal(s:CementingSnapshot):ThermalResult {
  if(!valid(w.bottomTempStatic)||w.bottomTempStatic<=-273.15)throw Error('Недопустимая BHST');
  const n=cfg.cells,nf=fluids.length,L=w.casingDepthMD;if(!(L>0&&w.wellDepthTVD>0))throw Error('Нужна корректная глубина скважины');
  const boundaries=[...new Set([0,L,...Array.from({length:n+1},(_,i)=>L*i/n),...(w.casingSections??[]).flatMap(x=>[x.fromMD,x.toMD]),...(w.cavernIntervals??[]).flatMap(x=>[x.fromMD,x.toMD]),w.prevCasingDepth].filter(x=>x>=0&&x<=L))].sort((a,b)=>a-b).filter((x,i,a)=>i===0||x-a[i-1]>1e-6),nz=boundaries.length-1,N=2*nz,R=6;
- if(nz>500)throw Error('Слишком много границ геометрии для тепловой сетки');
+ if(nz>2000)throw Error('Слишком много границ геометрии для тепловой сетки');
  const traj=getEffectiveTrajectory(w),md=boundaries.slice(1).map((b,i)=>(b+boundaries[i])/2),tvd=md.map(z=>interpolateTVD(z,traj));
  const volumes=new Float64Array(N),wallCap=new Float64Array(nz),rockCap=new Float64Array(R*nz),temp=new Float64Array(N),wall=new Float64Array(nz),rock=new Float64Array(R*nz),far=tvd.map(z=>cfg.surfaceC+(w.bottomTempStatic-cfg.surfaceC)*z/w.wellDepthTVD);
  const geometry:ThermalResult['geometry']={bhstC:w.bottomTempStatic,bottomTVDM:w.wellDepthTVD,shoeMD:L,cells:[]};
