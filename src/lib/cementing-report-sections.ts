@@ -187,5 +187,8 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
    if(/центрир|дохожд|Torque|спуск колонн|паспорта/i.test(s.title))continue;
    out.push(h(s.title),...s.paragraphs.map(p));for(const t of s.tables){if(t.headers.length<=7)out.push(reportDataTable(t.headers,t.rows));else for(let start=1;start<t.headers.length;start+=6){const cols=[0,...Array.from({length:Math.min(6,t.headers.length-start)},(_,i)=>start+i)];out.push(reportDataTable(cols.map(i=>t.headers[i]),t.rows.map(row=>cols.map(i=>row[i]))));}}
  }
- return out;
+ // Adjacent Word tables are merged by renderers, which can repeat the wrong header.
+ const separated:typeof out=[];
+ for(const item of out){if(item instanceof Table && separated[separated.length-1] instanceof Table)separated.push(new Paragraph({spacing:{before:0,after:0},children:[new TextRun({text:'',size:2})]}));separated.push(item);}
+ return separated;
 }
