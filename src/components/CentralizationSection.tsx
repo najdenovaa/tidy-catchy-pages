@@ -1,3 +1,7 @@
+import Turbulator3DInspector from './Turbulator3DInspector';
+import { calculateTurbulatorFlow, turbulatorWellForResults, defaultTurbulatorDesign, normalizeTurbulatorDesign, swirlRatioAt, TURBULATOR_MODEL_NOTE, type TurbulatorFluid } from '@/lib/turbulator-flow';
+import { effectiveRheology, cementCategory, type DrillingFluid, type SlurryInput, type BufferFluid, type DisplacementFluid } from '@/lib/cementing-calculations';
+import { rheologyDescription } from '@/lib/cement-rheology';
 import * as XLSX from 'xlsx';
 import {casingDesignCharts,casingDesignWorkbook} from '@/lib/casing-design-chart-data';
 import {normalizeDepthChartSettings} from '@/lib/depth-chart-settings';
@@ -26,9 +30,8 @@ import type { WellData } from "@/lib/cementing-calculations";
 import CasingRunningSection from "./CasingRunningSection";
 import {
   calculateCentralization,
+  interpolateTrajectory,
   autoPlaceCentralizers,
-  autoPlaceTurbulators,
-  calcTurbulenceMultiplier,
   centralizerPresets,
   centralizerTypeLabels,
   placementZoneLabels,
@@ -37,7 +40,6 @@ import {
   type CentralizerSpec,
   type CentralizationResult,
   type AutoPlacementInterval,
-  type TurbulatorInterval,
   type TurbulatorPoint,
   type AutoTurbulatorResult,
 } from "@/lib/centralization-calculations";
@@ -50,6 +52,10 @@ interface Props {
   onReportChange?: (data: CentralizationReportData) => void;
   wellData: WellData;
   mudDensity: number;
+  drillingFluid?: DrillingFluid;
+  slurries?: SlurryInput[];
+  buffers?: BufferFluid[];
+  displacementFluids?: DisplacementFluid[];
   fluidPV?: number;
   fluidYP?: number;
   flowRateLps?: number;
@@ -286,7 +292,7 @@ function standoffBg(standoff: number): string {
 }
 
 // ─── Main component ─────────────────────────────────────────────
-export default function CentralizationSection({ wellData, mudDensity, fluidPV = 25, fluidYP = 25, flowRateLps = 10, pipeWeightKgPerM, frictionCased = 0.25, frictionOpenhole = 0.35, onResultsChange, onIntervalsChange, externalIntervals, onReportChange, onWellDataChange }: Props) {
+export default function CentralizationSection({ wellData, mudDensity, drillingFluid, slurries, buffers, displacementFluids, fluidPV = 25, fluidYP = 25, flowRateLps = 10, pipeWeightKgPerM, frictionCased = 0.25, frictionOpenhole = 0.35, onResultsChange, onIntervalsChange, externalIntervals, onReportChange, onWellDataChange }: Props) {
   const [chartSettings,setChartSettings]=useState(()=>normalizeDepthChartSettings(wellData.depthChartSettings));
   const [exportKind,setExportKind]=useState<'word'|'xlsx'>('word');
   const [reportOpen,setReportOpen]=useState(false),[reportBusy,setReportBusy]=useState(false),[reportError,setReportError]=useState('');
@@ -322,7 +328,32 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
     }
   }
   // Turbulizer state — point-based manual + auto
-  const [turbPoints, setTurbPoints] = useState<TurbulatorPoint[]>([]);
+  const [turbPoints, setTurbPoints] = useState<TurbulatorPoint[]>(()=>normalizeTurbulatorDesign(wellData.turbulatorDesign)?.points??[]);
+  const [turbSettings,setTurbSettings]=useState(()=>normalizeTurbulatorDesign(wellData.turbulatorDesign)??defaultTurbulatorDesign());
+  const [turbSelected,setTurbSelected]=useState('');
+  const incomingTurb=JSON.stringify(wellData.turbulatorDesign??null);
+  const [lastIncomingTurb,setLastIncomingTurb]=useState(incomingTurb);
+  if(incomingTurb!==lastIncomingTurb){
+    setLastIncomingTurb(incomingTurb);
+    const d=normalizeTurbulatorDesign(wellData.turbulatorDesign)??defaultTurbulatorDesign();
+    if(JSON.stringify({...turbSettings,points:turbPoints})!==JSON.stringify(d)){setTurbSettings(d);setTurbPoints(d.points);setTurbSelected('');}
+  }
+  const turbulatorDesign=useMemo(()=>({...turbSettings,points:turbPoints}),[turbSettings,turbPoints]);
+  const turbFluids=useMemo<TurbulatorFluid[]>(()=>[
+    {id:'mud',name:drillingFluid?.name||'Буровой раствор',density:mudDensity,rheology:effectiveRheology(drillingFluid?.rheology??{pv:fluidPV,yp:fluidYP},'mud')},
+    ...(drillingFluid?.rheologyBottomhole?[{id:'mud-bottomhole',name:(drillingFluid.name||'Буровой раствор')+' · забойная реология',density:mudDensity,rheology:effectiveRheology(drillingFluid.rheologyBottomhole,'mud')}]:[]),
+    ...(buffers??[]).map((f,i)=>({id:'buffer-'+i,name:f.name,density:f.density,rheology:effectiveRheology(f.rheology,'buffer'),rateLps:f.flowRateSteps?.[0]?.rateLps})),
+    ...(slurries??[]).map((f,i)=>({id:'slurry-'+i,name:f.name,density:f.density*1000,rheology:effectiveRheology(f.rheology,cementCategory(f.density)),rateLps:f.flowRateSteps?.[0]?.rateLps})),
+    ...(displacementFluids??[]).map((f,i)=>({id:'displacement-'+i,name:f.name,density:f.density,rheology:effectiveRheology(f.rheology,'displacement'),rateLps:f.flowRateSteps?.[0]?.rateLps})),
+  ],[drillingFluid,mudDensity,fluidPV,fluidYP,buffers,slurries,displacementFluids]);
+  const turbFluid=turbFluids.find(f=>f.id===turbSettings.fluidId);
+  const turbRate=turbSettings.rateLps??turbFluid?.rateLps??flowRateLps;
+  const turbWell=useMemo(()=>turbulatorWellForResults({...wellData,turbulatorDesign},results),[wellData,turbulatorDesign,results]);
+  const turbFlows=useMemo(()=>turbFluid?turbPoints.map(p=>calculateTurbulatorFlow(turbWell,p,turbRate,turbFluid,turbSettings)):[],[turbWell,turbPoints,turbRate,turbFluid,turbSettings]);
+  const selectedTurb=turbFlows.find(f=>f.point.id===turbSelected)??turbFlows[0];
+  const sharedResults=useMemo(()=>results?.map(r=>{const ratio=Math.max(0,...turbFlows.map(f=>swirlRatioAt(f,r.md)));return {...r,swirlRatio:ratio,hasTurbulizer:ratio>0,turbulenceMultiplier:1};})??null,[results,turbFlows]);
+  const resultsCallback=useRef(onResultsChange);resultsCallback.current=onResultsChange;
+  useEffect(()=>{if(sharedResults)resultsCallback.current?.(sharedResults);},[sharedResults]);
   const [autoTurbResults, setAutoTurbResults] = useState<AutoTurbulatorResult[] | null>(null);
   const [turbSpacing, setTurbSpacing] = useState(6);
   const [turbBladesCount, setTurbBladesCount] = useState(4);
@@ -348,13 +379,16 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
   }, []);
 
   const handleAutoTurbulators = useCallback(() => {
-    const { points, summary } = autoPlaceTurbulators(
-      wellData, mudDensity, fluidPV, fluidYP, flowRateLps,
-      turbBladesCount, turbBladeAngle, turbBladeHeight, turbSpacing
-    );
-    setTurbPoints(points);
-    setAutoTurbResults(summary);
-  }, [wellData, mudDensity, fluidPV, fluidYP, flowRateLps, turbBladesCount, turbBladeAngle, turbBladeHeight, turbSpacing]);
+    if(!turbFluid)return;
+    const points:TurbulatorPoint[]=[];
+    const step=Math.max(1,turbSpacing);
+    for(let md=step/2;md<=wellData.casingDepthMD&&points.length<2000;md+=step){
+      const p={id:makeId(),md:Number(md.toFixed(3)),bladesCount:turbBladesCount,bladeAngle:turbBladeAngle,bladeHeight:turbBladeHeight};
+      const r=calculateTurbulatorFlow(turbWell,p,turbRate,turbFluid,turbSettings);
+      if(r.valid&&r.regime<1&&r.ratio>turbSettings.threshold)points.push(p);
+    }
+    setTurbPoints(points);setAutoTurbResults([]);
+  }, [wellData,turbWell,turbFluid,turbRate,turbSettings,turbBladesCount,turbBladeAngle,turbBladeHeight,turbSpacing]);
 
 
   const geometryKey = JSON.stringify([centralizerMaterialGeometryKey(wellData), mudDensity]);
@@ -524,13 +558,13 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
     onReportChange?.({
       mode, targetStandoff, autoSpec, chartSettings, jointLength: autoJointLength,
       running: {mudDensity, pv:fluidPV, yp:fluidYP, pipeWeightKgPerM, frictionCased, frictionOpenhole},
-      intervals, results: results ?? [], turbPoints, autoResults: autoResults ?? undefined,
+      intervals, results: sharedResults ?? [], turbulatorDesign, turbulatorFluid:turbFluid, turbulatorRateLps:turbRate, turbulatorFlows:turbFlows, turbPoints, autoResults: autoResults ?? undefined,
       selectedMD: selectedMD ?? undefined, calculated: !!results?.length, joints: jointSchedule ?? undefined,
     });
-  }, [onReportChange, chartSettings, mode, targetStandoff, autoSpec, autoJointLength, intervals, results, turbPoints, autoResults, selectedMD, jointSchedule, mudDensity, fluidPV, fluidYP, pipeWeightKgPerM, frictionCased, frictionOpenhole, wellData.runningSettings]);
+  }, [onReportChange, sharedResults, turbulatorDesign, turbFluid, turbRate, turbFlows, chartSettings, mode, targetStandoff, autoSpec, autoJointLength, intervals, results, turbPoints, autoResults, selectedMD, jointSchedule, mudDensity, fluidPV, fluidYP, pipeWeightKgPerM, frictionCased, frictionOpenhole, wellData.runningSettings]);
 
 
-  const chartData:CentralizationReportData={mode,targetStandoff:mode==='auto'?targetStandoff:undefined,autoSpec,chartSettings,jointLength:autoJointLength,intervals:runningIntervals,results:results??[],turbPoints,autoResults:autoResults??undefined,selectedMD:selectedMD??undefined,calculated:!!results?.length,joints:jointSchedule??undefined};
+  const chartData:CentralizationReportData={mode,targetStandoff:mode==='auto'?targetStandoff:undefined,autoSpec,chartSettings,jointLength:autoJointLength,intervals:runningIntervals,results:sharedResults??[],turbulatorDesign,turbulatorFluid:turbFluid,turbulatorRateLps:turbRate,turbulatorFlows:turbFlows,turbPoints,autoResults:autoResults??undefined,selectedMD:selectedMD??undefined,calculated:!!results?.length,joints:jointSchedule??undefined};
   const centerPlots=casingDesignCharts(wellData,chartData,'centralization');
   const exportCenter=async(selection:ReportSelection)=>{setReportBusy(true);setReportError('');try{if(exportKind==='xlsx')XLSX.writeFile(casingDesignWorkbook(wellData,chartData,'centralization',selection),'Центрирование-данные.xlsx');else await exportCasingDesignDocx(wellData,chartData,mudDensity,'centralization',selection);}catch(e){setReportError(e instanceof Error?e.message:String(e));}finally{setReportBusy(false);}};
   return (
@@ -655,7 +689,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             </div>
           </CardTitle>
           <p className="text-[10px] text-muted-foreground mt-1">
-            Установите турбулизаторы на конкретных глубинах. «Авто» расставит их в зонах ламинарного потока с учётом реологии (PV={fluidPV} сПз, YP={fluidYP} Па, Q={flowRateLps} л/с).
+            Установите турбулизаторы на конкретных глубинах. «Авто» подбирает допустимые точки с заметной закруткой при нетурбулентном исходном режиме. Это оценка, а не гарантия турбулентности.
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -665,6 +699,13 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             {Math.abs(wellData.casingOD - 178) > 1 && <p className="text-xs text-destructive">ЦТГП из паспорта рассчитан на колонну 178 мм. Проверьте выбранную колонну.</p>}
             <p className="text-xs text-muted-foreground">Если изделие уже учтено в интервалах центрирования, не добавляйте его второй раз как отдельное изделие для оценки сопротивления спуску. Для HIGH SLICK 560 угол в паспорте не указан - запросите чертёж или данные изготовителя.</p>
           </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="text-xs">Жидкость и лабораторная реология<select aria-label="Жидкость турбулизатора" className="block w-full border rounded bg-background p-2" value={turbSettings.fluidId} onChange={e=>setTurbSettings(v=>({...v,fluidId:e.target.value}))}>{!turbFluid&&<option value={turbSettings.fluidId}>Жидкость удалена: выберите заново</option>}{turbFluids.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
+            <label className="text-xs">Расход, л/с<Input aria-label="Расход турбулизатора" type="number" min={0} step={.1} value={turbRate} onChange={e=>setTurbSettings(v=>({...v,rateLps:+e.target.value}))}/><button className="underline mt-1" onClick={()=>setTurbSettings(v=>({...v,rateLps:null}))}>Из выбранной ступени программы</button></label>
+          </div>
+          {!turbFluid&&<p role="alert" className="text-destructive text-xs">Выбранная жидкость отсутствует. Расчёт потока приостановлен.</p>}
+          {turbFluid&&<p className="text-xs text-muted-foreground">ρ {turbFluid.density} кг/м³ · {rheologyDescription(turbFluid.rheology)}{turbFluid.rheology.testTemperatureC!==undefined?` · лаборатория ${turbFluid.rheology.testTemperatureC} °C`:''}</p>}
+          <details className="border rounded p-3 text-xs"><summary>Порог закрутки и допущения</summary><p className="my-2">{TURBULATOR_MODEL_NOTE}</p><div className="grid grid-cols-2 gap-3"><label>Порог vθ/vz<Input aria-label="Порог закрутки" type="number" min={.001} max={.99} step={.01} value={turbSettings.threshold} onChange={e=>setTurbSettings(v=>({...v,threshold:+e.target.value}))}/></label><label>Передача закрутки (0–1)<Input aria-label="Передача закрутки" type="number" min={0} max={1} step={.05} value={turbSettings.turningEfficiency} onChange={e=>setTurbSettings(v=>({...v,turningEfficiency:+e.target.value}))}/></label></div><p className="mt-2">Нет стендовой калибровки. По умолчанию для формы: длина втулки 180 мм, ширина ребра 8 мм, толщина втулки 3 мм. Уточните размеры выбранного изделия ниже. Диаметр по вершинам рёбер: OD трубы + 2h. Наклон модели по инклинометрии.</p></details>
           {/* Auto-placement params */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div>
@@ -717,7 +758,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             </div>
           )}
           {autoTurbResults && autoTurbResults.length === 0 && (
-            <p className="text-xs text-green-400 text-center py-2">Поток уже турбулентный — турбулизаторы не требуются</p>
+            <p className="text-xs text-green-400 text-center py-2">Автоподбор завершён: {turbPoints.length} точек. Пропущены недопустимые геометрии и точки без заметной закрутки; отсутствие точек не доказывает турбулентность.</p>
           )}
 
           {turbPoints.length === 0 && !autoTurbResults && (
@@ -734,18 +775,17 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                     <TableHead className="text-[10px] px-2">Лопасти</TableHead>
                     <TableHead className="text-[10px] px-2">Угол, °</TableHead>
                     <TableHead className="text-[10px] px-2">Высота, мм</TableHead>
-                    <TableHead className="text-[10px] px-2">Модельный множ.</TableHead>
+                    <TableHead className="text-[10px] px-2">vθ/vz</TableHead>
                     <TableHead className="text-[10px] px-2 w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {turbPoints.map((tp) => {
-                    const annGap = (wellData.holeDiameter - wellData.casingOD) / 2;
-                    const mult = calcTurbulenceMultiplier(tp.bladesCount, tp.bladeAngle, tp.bladeHeight, annGap);
+                    const tf = turbFlows.find(f=>f.point.id===tp.id);
                     return (
-                    <TableRow key={tp.id}>
+                    <TableRow key={tp.id} onClick={()=>setTurbSelected(tp.id)} className={selectedTurb?.point.id===tp.id?"bg-primary/10":""}>
                       <TableCell className="px-1 py-0.5">
-                        <Input type="number" value={tp.md || ""} onChange={e => updateTurbPoint(tp.id, { md: +e.target.value })} className="h-7 text-xs w-28" />
+                        <Input aria-label={`Глубина турбулизатора ${tp.id}`} type="number" value={tp.md || ""} onChange={e => updateTurbPoint(tp.id, { md: +e.target.value })} className="h-7 text-xs w-28" />
                       </TableCell>
                       <TableCell className="px-1 py-0.5">
                         <Input type="number" min={2} max={8} value={tp.bladesCount} onChange={e => updateTurbPoint(tp.id, { bladesCount: +e.target.value })} className="h-7 text-xs w-14" />
@@ -757,7 +797,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                         <Input type="number" min={5} max={30} value={tp.bladeHeight} onChange={e => updateTurbPoint(tp.id, { bladeHeight: +e.target.value })} className="h-7 text-xs w-14" />
                       </TableCell>
                       <TableCell className="px-1 py-0.5 text-xs text-blue-400 font-medium">
-                        ×{mult}
+                        {tf?.valid?tf.ratio.toFixed(3):'Ошибка'}
                       </TableCell>
                       <TableCell className="px-1 py-0.5">
                         <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeTurbPoint(tp.id)}>
@@ -771,6 +811,17 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
               </Table>
             </div>
           )}
+          {selectedTurb&&<div className="space-y-3">
+            <p className="text-xs text-amber-600">Оценочная модель без стендовой калибровки. Длина - по вязкому затуханию; дополнительная турбулентная диссипация не решена.</p>
+            <label className="text-xs">Точка для 3D<select aria-label="Точка турбулизатора" className="block border rounded p-2 bg-background w-full" value={selectedTurb.point.id} onChange={e=>setTurbSelected(e.target.value)}>{turbPoints.map(p=><option key={p.id} value={p.id}>MD {p.md} м · {p.bladesCount} рёбер · {p.bladeAngle}°</option>)}</select></label>
+            <div className="grid grid-cols-3 gap-2 text-xs">{([['lengthMm','Длина втулки, мм',180],['bladeWidthMm','Ширина ребра, мм',8],['sleeveThicknessMm','Стенка втулки, мм',3]] as const).map(([key,label,value])=><label key={key}>{label}<Input aria-label={label} type="number" min={.1} value={selectedTurb.point[key]??value} onChange={e=>updateTurbPoint(selectedTurb.point.id,{[key]:+e.target.value})}/></label>)}</div>
+            {selectedTurb.issues.map((msg,i)=><p key={i} role={selectedTurb.valid?'status':'alert'} className="text-xs text-amber-600">{msg}</p>)}
+            {selectedTurb.valid&&<>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">{[['Осевой поток',selectedTurb.axialMs.toFixed(3)+' м/с'],['Окружная скорость',selectedTurb.tangentialMs.toFixed(3)+' м/с'],['L до порога',(selectedTurb.reachedThreshold?'':'≥ ')+selectedTurb.lengthM.toFixed(2)+' м MD'],['Местные потери',selectedTurb.pressureLossMPa.toFixed(5)+' МПа']].map(([a,b])=><div key={a} className="rounded border p-3">{a}<b className="block">{b}</b></div>)}</div>
+              <p className="text-xs">Re {selectedTurb.reynolds.toFixed(0)} · исходный режим: {selectedTurb.regime===0?'ламинарный':selectedTurb.regime===1?'турбулентный':'переходный'}. Закрутка не означает переход в турбулентный режим.</p>
+              <Turbulator3DInspector result={selectedTurb} pipeOD={wellData.casingOD} zenith={interpolateTrajectory(wellData.trajectory,selectedTurb.point.md).zenith} azimuth={trajectoryAzimuth(wellData.trajectory,selectedTurb.point.md)}/>
+            </>}
+          </div>}
           <p className="text-[10px] text-muted-foreground">Всего турбулизаторов: <span className="text-foreground font-medium">{turbPoints.length} шт.</span></p>
         </CardContent>
       </Card>
@@ -984,7 +1035,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                       <TableHead className="text-[10px] px-2">Зенит, °</TableHead>
                       <TableHead className="text-[10px] px-2">Эксц.</TableHead>
                       <TableHead className="text-[10px] px-2">Standoff, %</TableHead>
-                      <TableHead className="text-[10px] px-2">Турб.</TableHead>
+                      <TableHead className="text-[10px] px-2">vθ/vz</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1000,7 +1051,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
                         <TableCell className="text-xs px-2 py-1">{r.eccentricity.toFixed(3)}</TableCell>
                         <TableCell className={`text-xs px-2 py-1 font-medium ${standoffColor(r.standoff)}`}>{r.standoff.toFixed(1)}</TableCell>
                         <TableCell className="text-xs px-2 py-1">
-                          {r.hasTurbulizer ? <span className="text-blue-400 font-medium">×{r.turbulenceMultiplier.toFixed(1)}</span> : "—"}
+                          {(()=>{const ratio=sharedResults?.find(v=>v.md===r.md)?.swirlRatio??0;return ratio>0?<span className="text-blue-400 font-medium">{ratio.toFixed(3)}</span>:'—';})()}
                         </TableCell>
                       </TableRow>
                     ))}

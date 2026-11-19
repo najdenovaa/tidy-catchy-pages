@@ -65,6 +65,8 @@ export interface D2Geometry {
 }
 
 export interface D2Input {
+  /** Mean external swirl velocity from the common turbulator model, m/s; pure fluid index. */
+  swirlVelocity?: (md:number,rateM3s:number,fluid:number)=>number;
   labMixtures?:CompiledMixture[];
   /** Верх расчётной области (MD), м */
   zTop: number;
@@ -254,7 +256,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
   const timing=normalizeDisplacementTiming(inp);
   const rpm = Math.max(0, inp.rotationRpm ?? 0);
   const sheet = !!inp.customGap;
-  const full = rpm > 0 || !!inp.fullCircle;
+  const full = rpm > 0 || !!inp.fullCircle || !!inp.swirlVelocity;
   const nHalf = Math.max(6, Math.round(inp.nTheta ?? 16));
   const nT = full ? 2 * nHalf : nHalf;
   const span = full ? 2 * Math.PI : Math.PI;
@@ -344,9 +346,19 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
 
   const faceGap = (k1: number, k2: number) => Math.sqrt(h[k1] * h[k2]);
 
+  let swirlRate=-1;
+  const swirlPure=new Float64Array(nZ*nF);
   const assemble = (Qtot: number) => {
+    if(inp.swirlVelocity&&swirlRate!==Qtot){
+      swirlRate=Qtot;
+      for(let j=0;j<nZ;j++)for(let f=0;f<nF;f++)swirlPure[j*nF+f]=Qtot>0?inp.swirlVelocity(zC[j],Qtot/share,f):0;
+    }
     for (let j = 0; j < nZ; j++) {
       const Uj = Uw[j] * U;
+      // Concentration-weighted mean swirl, imposed as a conservative circumferential face flux.
+      // This is independent of wall rotation and stops immediately with Q=0.
+      let swirl=0;
+      if(inp.swirlVelocity)for(let f=0;f<nF;f++){let fraction=0;for(let i=0;i<nT;i++)fraction+=c[f][j*nT+i];swirl+=fraction/nT*swirlPure[j*nF+f];}
       for (let i = 0; i < nTF; i++) {
         const k = j * nT + i, k2 = j * nT + nb(i), fi = j * nTF + i;
         const hf = faceGap(k, k2), muf = Math.sqrt(mu[k] * mu[k2]), tyf = 0.5 * (ty[k] + ty[k2]), gf = 0.5 * (gAbs[k] + gAbs[k2]);
@@ -354,7 +366,7 @@ export function simulateDisplacement2D(inp: D2Input): D2Result {
         const T = (C * dz) / ds[j];
         const thF = ((i + 1) * span) / nT;
         Tt[fi] = T;
-        Bt[fi] = T * 0.5 * (rho[k] + rho[k2]) * G * sinB[j] * Math.sin(thF) * ds[j] + (Uj > 0 ? 0.5 * hf * Uj * dz * rotEff(hf, muf, tyf, Uj) : 0);
+        Bt[fi] = T * 0.5 * (rho[k] + rho[k2]) * G * sinB[j] * Math.sin(thF) * ds[j] + (Uj > 0 ? 0.5 * hf * Uj * dz * rotEff(hf, muf, tyf, Uj) : 0) + hf*swirl*dz;
       }
     }
     for (let j = 0; j < nZ - 1; j++) {

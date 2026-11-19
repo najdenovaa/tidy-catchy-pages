@@ -1,3 +1,4 @@
+import { TURBULATOR_MODEL_NOTE } from './turbulator-flow';
 import * as XLSX from 'xlsx';
 import {centralizerInventory} from './cementing-equipment';
 import {getEffectiveTrajectory,type WellData} from './cementing-calculations';
@@ -40,6 +41,11 @@ export function casingDesignWorkbook(w:WellData,c:CentralizationReportData,scope
  if(reportIncludes(selection,'chartData')){append('Карта графиков',catalog);book.SheetNames=['Карта графиков',...book.SheetNames.filter(x=>x!=='Карта графиков')];}
  if(reportIncludes(selection,'inputs')){append('Скважина',[['Параметр','Значение'],['Глубина башмака MD, м',w.casingDepthMD],['Наружный диаметр, мм',w.casingOD],['Стенка, мм',w.casingWall],['Ствол, мм',w.holeDiameter],['Башмак предыдущей колонны MD, м',w.prevCasingDepth],['Проход предыдущей колонны, мм',w.prevCasingID]]);append('Траектория',[['MD, м','TVD, м','Зенит, °','Азимут, °'],...getEffectiveTrajectory(w).map(p=>[p.md,p.tvd,p.zenith,p.azimuth])]);}
  if(reportIncludes(selection,'materials'))append('Оснастка',[['Наименование','Изготовитель','Количество, шт.'],...centralizerInventory(w.casingDepthMD,c.intervals).map(p=>[p.model,p.manufacturer,p.quantity])]);
+ if(scope==='centralization'&&reportIncludes(selection,'turbulatorFlow')&&c.turbulatorFlows?.length){
+  append('Турбулизаторы',[['MD, м','Жидкость','Q, л/с','Ствол, мм','vz, м/с','vθ, м/с','vθ/vz','Re','L, м MD','Порог достигнут','Δp, МПа','Статус'],...c.turbulatorFlows.map(r=>[r.point.md,c.turbulatorFluid?.name,c.turbulatorRateLps,r.boreMm,r.valid?r.axialMs:null,r.valid?r.tangentialMs:null,r.valid?r.ratio:null,r.valid?r.reynolds:null,r.valid?r.lengthM:null,r.valid?r.reachedThreshold:null,r.valid?r.pressureLossMPa:null,r.issues.join(' ')])]);
+  append('Затухание',[['MD установки, м','MD сечения, м','Выше изделия, м','vz, м/с','vθ, м/с','vθ/vz','Фаза, рад'],...c.turbulatorFlows.flatMap(r=>r.samples.map(v=>[r.point.md,v.md,v.distanceM,v.axialMs,v.tangentialMs,v.ratio,v.phase]))]);
+  append('Модель закрутки',[['Условие','Значение'],['Метод',TURBULATOR_MODEL_NOTE],['Порог',c.turbulatorDesign?.threshold],['Передача закрутки',c.turbulatorDesign?.turningEfficiency]]);
+ }
  if(scope==='centralization'){
   if(reportIncludes(selection,'loads')||reportIncludes(selection,'standoff'))append('Центрирование',[['MD, м','TVD, м','Зенит, °','Standoff в пролёте, %','Standoff опоры, %','Боковая нагрузка, кН','Прогиб трубы, мм','Пролёт, м','Перегрузка опоры','А/Б','MD опоры, м'],...c.results.map(p=>[p.md,p.tvd,p.zenith,p.standoff,100*(1-(p.supportEccentricity??p.eccentricity)),p.lateralLoadKN??null,p.spanSagMM??null,p.supportSpanM??null,p.supportOverloaded===undefined?null:p.supportOverloaded?'Да':'Нет',p.centralizerRole??null,p.centralizerMD??null])]);
   if(reportIncludes(selection,'placement'))append('Установка',[['№ участка','Кровля MD, м','Подошва MD, м','MD изделия, м','А/Б','Наименование','Изготовитель'],...buildCentralizerJointSchedule(w.casingDepthMD,c.intervals).flatMap(row=>row.placements.map(p=>[row.jointNum,row.topMD,row.bottomMD,p.md,p.role,p.spec.passport?.model??p.spec.type,p.spec.passport?.manufacturer??'Не задан']))]);

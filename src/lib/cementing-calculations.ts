@@ -1,3 +1,4 @@
+import { turbulatorLossBetween } from './turbulator-flow';
 import {pressureObservationKey,resolveObservationDepth,observationBounds,observationNote,type PressureObservation,type PressureObservationRequest} from './pressure-observation';
 import {evaluateStopStorage,type StopStorageResult} from "./stop-storage";
 import { FluidInventory, type InventorySummary } from "./fluid-inventory";
@@ -155,6 +156,7 @@ export interface ReservoirLayer {
 }
 
 export interface WellData {
+  turbulatorDesign?: import("./turbulator-flow").TurbulatorDesign;
   mechanics?:import("./cement-mechanics").MechanicsSettings;
   thermal?:import("./cement-thermal").ThermalSettings;
   fluidInteractionLab?:import("./fluid-interaction-lab").FluidInteractionLab;
@@ -1068,7 +1070,7 @@ export function calculateHydraulics(
         frAnnTotal+=r.pressureMPa*eccentricityFrictionFactor(standoffH,data.casingOD/cell.diameterMm,avgPv,avgYp,r.regime);
       }
     }
-    frictionAnn = frAnnTotal;
+    frictionAnn = frAnnTotal + turbulatorLossBetween(data,0,data.casingDepthMD,rate,{density:avgDensity,pv:avgPv,yp:avgYp});
   }
 
   const maxBHP = annulusPressure + frictionAnn;
@@ -1534,7 +1536,8 @@ export function calculatePressureProfile(
         z = zTop;
       }
     }
-    return { pressureMPa: p * kFriction, reynolds: re, regime };
+    const tools=segs.reduce((sum,sg)=>sum+turbulatorLossBetween(wellData,Math.max(0,sg.topMD),Math.min(depthMD,sg.bottomMD),flowRateM3min/.06,sg),0);
+    return { pressureMPa: p * kFriction + tools, reynolds: re, regime };
   }
 
   // Точки проверки: забой (общий градиент ГРП) + кровля и подошва каждого пласта (мин. из ГРП и поглощения)
@@ -1627,7 +1630,8 @@ export function calculatePressureProfile(
         z = zTop;
       }
     }
-    return p * kFriction;
+    const tools=segs.reduce((sum,sg)=>sum+turbulatorLossBetween(wellData,Math.max(fromMD,sg.topMD),Math.min(toMD,sg.bottomMD),rateM3min/.06,sg),0);
+    return p * kFriction + tools;
   }
   function trackEnvelope(rateM3min: number, segs: AnnSeg[], stage: string) {
     if (!ENV_N) return;

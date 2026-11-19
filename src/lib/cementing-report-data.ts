@@ -1,3 +1,4 @@
+import { calculateTurbulatorFlow, swirlRatioAt, turbulatorWellForResults, type TurbulatorDesign, type TurbulatorFluid, type TurbulatorFlowResult } from './turbulator-flow';
 import type { DisplacementTimingSettings } from './displacement-timing';
 import type { PipeTransport, DisplacementFrame } from './displacement-pipe';
 import { buildCentralizerJointSchedule, type CentralizerJointRow } from './centralizer-layout';
@@ -8,6 +9,10 @@ import { calculateCentralization, autoPlaceCentralizers, type CentralizationResu
 import type { D2Result, D2Stage } from "./displacement-2d";
 import type { D2Meta } from "./displacement-2d-input";
 export interface CentralizationReportData {
+  turbulatorDesign?: TurbulatorDesign;
+  turbulatorFluid?: TurbulatorFluid;
+  turbulatorRateLps?: number;
+  turbulatorFlows?: TurbulatorFlowResult[];
   chartSettings?: import("./depth-chart-settings").DepthChartSettings;
   running?: { mudDensity:number; pv:number; yp:number; pipeWeightKgPerM?:number; frictionCased:number; frictionOpenhole:number };
   mode: "manual" | "auto"; targetStandoff?: number;
@@ -36,7 +41,7 @@ export interface CementingReportExtras {
   figures?: ReportFigure[]; supplements?: ReportSupplement[]; warnings?: string[];
 }
 export function displacementReportKey(p: DisplacementReportInput, settings: DisplacementReportSettings) {
-  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "displacement-spaces-v6-fluid-lab", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes,p.flushTimeMin??0,p.flushVolumeM3??0, {maxTimeStepS:settings.maxTimeStepS||null,frameIntervalS:settings.frameIntervalS||null,fine:settings.fine,rotationRpm:settings.rotationRpm,settleMin:settings.settleMin,pipeEnabled:settings.pipeEnabled!==false,annulusEnabled:settings.annulusEnabled!==false}]);
+  return JSON.stringify([WELL_GEOMETRY_MODEL_VERSION, "displacement-spaces-v7-turbulator-flow", p.wellData, p.slurries, p.buffers, p.drillingFluid, p.displacementFluids, p.volumes,p.flushTimeMin??0,p.flushVolumeM3??0, {maxTimeStepS:settings.maxTimeStepS||null,frameIntervalS:settings.frameIntervalS||null,fine:settings.fine,rotationRpm:settings.rotationRpm,settleMin:settings.settleMin,pipeEnabled:settings.pipeEnabled!==false,annulusEnabled:settings.annulusEnabled!==false}]);
 }
 export function resolveCentralizationReport(data: CentralizationReportData | null, w: WellData, mudDensity: number) {
   if (!data?.calculated) return null;
@@ -47,7 +52,11 @@ export function resolveCentralizationReport(data: CentralizationReportData | nul
     intervals = autoResults.map((x, i) => ({ id: "report-" + i, fromMD: x.fromMD, toMD: x.toMD,
       centralizersPerJoint: x.centralizersPerJoint, jointLength: data.jointLength!, spec: data.autoSpec! }));
   }
-  return { ...data, intervals, autoResults, results: calculateCentralization(w, intervals, mudDensity, undefined, data.turbPoints),
+  const context=data.turbulatorFluid&&data.turbulatorDesign&&data.turbulatorRateLps!==undefined?{fluid:data.turbulatorFluid,settings:data.turbulatorDesign,rateLps:data.turbulatorRateLps}:undefined;
+  const mechanicalResults=calculateCentralization(w, intervals, mudDensity);
+  const flowWell=turbulatorWellForResults(w,mechanicalResults);
+  const turbulatorFlows=context?data.turbPoints.map(p=>calculateTurbulatorFlow(flowWell,p,context.rateLps,context.fluid,context.settings)):undefined;
+  return { ...data, intervals, autoResults, turbulatorFlows, results: mechanicalResults.map(r=>{const ratio=Math.max(0,...(turbulatorFlows??[]).map(f=>swirlRatioAt(f,r.md)));return {...r,swirlRatio:ratio,hasTurbulizer:ratio>0,turbulenceMultiplier:1};}),
     // Existing installation sheet is valid only for the geometry which generated it.
     joints: buildCentralizerJointSchedule(w.casingDepthMD, intervals) };
 }

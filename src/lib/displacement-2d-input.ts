@@ -1,3 +1,4 @@
+import { turbulatorVelocityAt, turbulatorFluidProperties, TURBULATOR_MODEL_NOTE } from './turbulator-flow';
 import {compileMixtures,labFluids,FLUID_LAB_NOTE} from './fluid-interaction-lab';
 import {distinctDisplacementColors} from './displacement-colors';
 import { buildPipeTransport, pipeShoeStages, type PipeTransport } from './displacement-pipe';
@@ -87,12 +88,15 @@ export function buildDisplacementInput(p: {
 
   // Жидкости
   const colors: string[] = [];
+  const swirlRheologies:import("./cementing-calculations").Rheology[]=[];
   const mudR = d2Rheology(effectiveRheology(mudIn.rheologyBottomhole && (mudIn.rheologyBottomhole.pv > 0 || mudIn.rheologyBottomhole.yp > 0 || !!mudIn.rheologyBottomhole.fann) ? mudIn.rheologyBottomhole : mudIn.rheology, "mud"));
   const fluids: D2Fluid[] = [{ name: mudIn.name || "Буровой раствор", density: mudIn.density, pv: mudR.pv / 1000, yp: mudR.yp, kind: "mud" }];
+  swirlRheologies.push(mudR);
   colors.push(D2_COLORS.mud[0]);
   const bufIdx = buffers.map((b, i) => {
     const r = d2Rheology(effectiveRheology(b.rheology, "buffer"));
     fluids.push({ name: b.name || `Буфер ${i + 1}`, density: b.density, pv: r.pv / 1000, yp: r.yp, kind: "spacer" });
+    swirlRheologies.push(r);
     colors.push(D2_COLORS.spacer[i % D2_COLORS.spacer.length]);
     return fluids.length - 1;
   });
@@ -100,6 +104,7 @@ export function buildDisplacementInput(p: {
     const rho = s.density < 10 ? s.density * 1000 : s.density;
     const r = d2Rheology(effectiveRheology(s.rheology, rho >= 1650 ? "heavy_cement" : "light_cement"));
     fluids.push({ name: s.name || `Цемент ${i + 1}`, density: rho, pv: r.pv / 1000, yp: r.yp, kind: "cement" });
+    swirlRheologies.push(r);
     colors.push(D2_COLORS.cement[i % D2_COLORS.cement.length]);
     return fluids.length - 1;
   });
@@ -107,6 +112,7 @@ export function buildDisplacementInput(p: {
   const dispIdx=displacementFluids.map((d,i)=>{
     const r=d2Rheology(effectiveRheology(d.rheology,'mud'));
     fluids.push({name:d.name||`Продавка ${i+1}`,density:d.density,pv:r.pv/1000,yp:r.yp,kind:'other'});
+    swirlRheologies.push(r);
     colors.push(D2_COLORS.other[i%D2_COLORS.other.length]);return fluids.length-1;
   });
   // Закачка у устья: буферы → растворы → продавка
@@ -137,9 +143,19 @@ export function buildDisplacementInput(p: {
   for (let md = shoe; md > 0; md -= 1) { acc += annPerM(md); top = md; if (acc >= inAnn * 1.1 + 0.5) break; }
   const designTop = slurries.length ? Math.min(...slurries.map((s) => s.topDepthMD)) : top;
   const zTop = Math.max(0, Math.min(top, designTop - 30));
+  const td=w.turbulatorDesign;
+  const hydraulicFluids=td?.points.length?fluids.map((f,i)=>turbulatorFluidProperties({id:String(i),name:f.name,density:f.density,rheology:swirlRheologies[i]})):[];
+  const velocityCache=new Map<string,number>();
+  const swirlVelocity=td?.points.length?(md:number,rateM3s:number,fluid:number)=>{
+    const key=md+'|'+rateM3s+'|'+fluid;
+    if(velocityCache.has(key))return velocityCache.get(key)!;
+    const value=Math.max(0,...td.points.map(p=>turbulatorVelocityAt(w,p,md,rateM3s*1000,hydraulicFluids[fluid],td)));
+    velocityCache.set(key,value);return value;
+  }:undefined;
+  if(swirlVelocity)notes.push(TURBULATOR_MODEL_NOTE,'2D: окружной поток турбулизаторов добавлен консервативным потоком через грани. Перекрытие зон - максимум, не сумма. Чистые жидкости рассчитываются отдельно; их окружные скорости осредняются по долям в ряду. Вращение трубы учитывается отдельно.');
   return {
     pipe,
-    input: { labMixtures:w.fluidInteractionLab?.useMixtures?laboratory.points:undefined, zTop, zBot: shoe, geom, fluids, stages, nTheta: 16 },
+    input: { swirlVelocity, labMixtures:w.fluidInteractionLab?.useMixtures?laboratory.points:undefined, zTop, zBot: shoe, geom, fluids, stages, nTheta: 16 },
     meta: {labFluids:labFluids(p), sectionWell:JSON.parse(JSON.stringify(w)),colors:distinctDisplacementColors(colors), annulusStartS: tStart, designCementTopMD: designTop, shoeMD: shoe, notes },
   };
 }

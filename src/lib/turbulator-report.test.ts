@@ -1,0 +1,21 @@
+import {it,expect} from 'vitest';
+import {getCementingExample} from './cementing-example';
+import {defaultTurbulatorDesign,calculateTurbulatorFlow} from './turbulator-flow';
+import {casingDesignWorkbook} from './casing-design-chart-data';
+import {buildCementingReportExtras} from './cementing-report-sections';
+import {buildCementingReportSvgs} from './cementing-report-figures';
+import {Document,Packer} from 'docx';
+import JSZip from 'jszip';
+import type {CentralizationReportData} from './cementing-report-data';
+it('exports current swirl numbers and decay plots with an independent report selection',async()=>{
+ const w={...getCementingExample().wellData,annularStandoffPct:100};
+ const design={...defaultTurbulatorDesign(),points:[{id:'a',md:1000,bladesCount:6,bladeAngle:55,bladeHeight:15,bladeWidthMm:15}]};
+ const fluid={id:'mud',name:'Контрольный БР',density:1200,rheology:{pv:25,yp:5}};
+ const result=calculateTurbulatorFlow(w,design.points[0],10,fluid,design);
+ const c:CentralizationReportData={mode:'manual',intervals:[],results:[{md:1000,tvd:980,zenith:20,eccentricity:0,standoff:100,hasCentralizer:false,hasTurbulizer:true,turbulenceMultiplier:1,intervalId:null}],turbPoints:design.points,calculated:true,turbulatorDesign:design,turbulatorFluid:fluid,turbulatorRateLps:10,turbulatorFlows:[result]};
+ const book=casingDesignWorkbook(w,c,'centralization');expect(book.SheetNames).toContain('Затухание');expect(book.Sheets['Турбулизаторы']['G2'].v).toBe(result.ratio);
+ const make=async(enabled:boolean)=>{const doc=new Document({sections:[{children:buildCementingReportExtras(w,{centralization:c},'centralization',{turbulatorFlow:enabled})}]});const zip=await JSZip.loadAsync(await Packer.toBuffer(doc));return zip.file('word/document.xml')!.async('string');};
+ expect(await make(true)).toContain('Контрольный БР');expect(await make(false)).not.toContain('Контрольный БР');
+ const figs=buildCementingReportSvgs(w,{centralization:c},'centralization');expect(figs.some(f=>f.reportItem==='turbulatorFlow')).toBe(true);
+ expect(buildCementingReportSvgs(w,{centralization:c},'centralization',{turbulatorFlow:false}).some(f=>f.reportItem==='turbulatorFlow')).toBe(false);
+});
