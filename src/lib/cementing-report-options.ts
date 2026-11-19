@@ -1,5 +1,6 @@
 export type ReportScope='cementing'|'centralization'|'running';
 const CEMENTING=[
+ ['fluidLab','Совместимость смесей и вымываемость: протоколы, кривые и числа'],
  ['foam','Пеноцементирование: графики, параметры и результаты'],
  ['selectedDepth','Давление и ЭЦП на выбранной глубине'],['stopStorage','Сжатие после посадки: расчёт и график'],['rheology','Реология: модели, замеры и графики'],['inputs','Исходные данные'],['hydraulics','Расчёт объёмов и гидравлики'],['schedule','Программа закачки'],['materials','Ведомость: цементы, химия, оснастка'],['lab','Рецептура и лабораторные требования'],['norms','Проверки ограничений'],['logistics','Техника, люди и график работ'],['risks','Вероятностная оценка риска'],['pressureTable','Таблица плана продавки'],['chartData','Карта графиков и контрольная числовая выборка'],['woc','ОЗЦ'],
  ['combined','Совмещённый график цементирования'],['pressures','Давления во времени'],['rate','Расход закачки и выход на устье'],['ecdTime','ЭЦП во времени: забой и башмак'],['depthPressure','Огибающие давления по глубине'],['depthEcd','ЭЦП по глубине'],['volumePressure','Объём и давление'],['safeRate','План продавки: давления и безопасный расход'],['flowRegime','Рейнольдс и режим потока'],['annularFill','Состав затрубного пространства'],['construction','Конструкция и интервалы цемента'],['trajectory','Объёмная проекция траектории'],['basket','Корзины после Стоп'],['fleetLayout','Схема расстановки техники'],['displacementPlacement','Конечное размещение жидкостей: общая 3D-скважина'],['displacementSection','Сечение трубы и затрубья: 3D, сверху и таблица'],['pipeHistory','Трубный перенос: доли и баланс'],['displacementHistory','Доли жидкостей на выбранной глубине во времени'],['displacementSummary','Таблицы и показатели замещения'],['displacement3D','3D-кадры замещения'],['displacementMap','Карты состава замещения'],['relatedModules','Дополнительные расчёты цементажа'],
@@ -23,8 +24,10 @@ export function allowedReportFigure(scope:ReportScope,selection:ReportSelection|
  const key=figure.reportItem??reportFigureItem(figure.title);return !!key&&REPORT_ITEMS[scope].some(([item])=>item===key)&&reportIncludes(selection,key);
 }
 
-const GRAPHICS=new Set<ReportItem>(['combined','pressures','rate','ecdTime','depthPressure','depthEcd','volumePressure','safeRate','flowRegime','annularFill','construction','trajectory','basket','fleetLayout','displacement3D','displacementMap','displacementPlacement','displacementSection','pipeHistory','displacementHistory','standoff','centralizer3D','centralizerSection','bladeProfile','broom','forceProfile','torque']);
+const GRAPHICS=new Set<ReportItem>(['fluidLab','combined','pressures','rate','ecdTime','depthPressure','depthEcd','volumePressure','safeRate','flowRegime','annularFill','construction','trajectory','basket','fleetLayout','displacement3D','displacementMap','displacementPlacement','displacementSection','pipeHistory','displacementHistory','standoff','centralizer3D','centralizerSection','bladeProfile','broom','forceProfile','torque']);
 export function missingReportFigures(scope:ReportScope,selection:ReportSelection|undefined,figures:{title:string;reportItem?:ReportItem}[]):string[]{
  const found=new Set(figures.map(f=>f.reportItem??reportFigureItem(f.title)));
  return REPORT_ITEMS[scope].filter(([key])=>GRAPHICS.has(key)&&reportIncludes(selection,key)&&!found.has(key)).map(([,label])=>label+': нет актуальных данных для изображения.');
 }
+
+export function requiresDisplacementReport(selection:ReportSelection){return (['fluidLab','displacementPlacement','displacementSection','pipeHistory','displacementHistory','displacementSummary','displacement3D','displacementMap'] as ReportItem[]).some(item=>reportIncludes(selection,item));}

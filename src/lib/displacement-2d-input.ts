@@ -1,3 +1,4 @@
+import {compileMixtures,labFluids,FLUID_LAB_NOTE} from './fluid-interaction-lab';
 import {distinctDisplacementColors} from './displacement-colors';
 import { buildPipeTransport, pipeShoeStages, type PipeTransport } from './displacement-pipe';
 import { totalPipeVolumeForRange } from './cementing-calculations';
@@ -25,6 +26,7 @@ export const D2_COLORS = {
 export interface D2Meta {
   /** Immutable geometry inputs of the same calculation, never live edited inputs. */
   sectionWell?:WellData;
+  labFluids?:import('./fluid-interaction-lab').LabFluid[];
   colors: string[];
   /** Время от начала закачки, когда первая порция выходит в затрубье, с */
   annulusStartS: number;
@@ -62,6 +64,9 @@ export function buildDisplacementInput(p: {
 }, options: { annulusEnabled?:boolean } = {}): { input: Omit<D2Input, "onProgress">; meta: D2Meta; pipe:PipeTransport } {
   const { wellData: w, slurries, buffers, drillingFluid: mudIn, displacementFluids, volumes } = p;
   const notes: string[] = [];
+  const laboratory=compileMixtures(w.fluidInteractionLab,labFluids(p));
+  notes.push(FLUID_LAB_NOTE,...laboratory.issues);
+  if(options.annulusEnabled!==false&&w.fluidInteractionLab?.useMixtures&&laboratory.issues.length)throw new Error('Лабораторная модель смесей не применима: '+laboratory.issues.join('; '));
   const inputRheologies=[mudIn.rheology,...(mudIn.rheologyBottomhole?[mudIn.rheologyBottomhole]:[]),...buffers.map(f=>f.rheology),...slurries.map(f=>f.rheology),...displacementFluids.map(f=>f.rheology)];
   if(options.annulusEnabled!==false)for(const r of inputRheologies){const resolved=rheologyResolution(r);if(!resolved.valid)throw new Error(resolved.error);if(r.model==='hb'||r.model==='powerLaw')throw new Error('2D-модель вытеснения использует закон Бингама и пока не поддерживает выбранную нелинейную модель. Основная гидравлика использует выбранную модель; 2D не подменяет её PV/YP.');}
   if(inputRheologies.some(r=>r.fann&&!r.model))notes.push('Прежний 2D-решатель использует PV/YP Бингама; Fann в этой модели не меняет закон течения.');
@@ -134,7 +139,7 @@ export function buildDisplacementInput(p: {
   const zTop = Math.max(0, Math.min(top, designTop - 30));
   return {
     pipe,
-    input: { zTop, zBot: shoe, geom, fluids, stages, nTheta: 16 },
-    meta: { sectionWell:JSON.parse(JSON.stringify(w)),colors:distinctDisplacementColors(colors), annulusStartS: tStart, designCementTopMD: designTop, shoeMD: shoe, notes },
+    input: { labMixtures:w.fluidInteractionLab?.useMixtures?laboratory.points:undefined, zTop, zBot: shoe, geom, fluids, stages, nTheta: 16 },
+    meta: {labFluids:labFluids(p), sectionWell:JSON.parse(JSON.stringify(w)),colors:distinctDisplacementColors(colors), annulusStartS: tStart, designCementTopMD: designTop, shoeMD: shoe, notes },
   };
 }
