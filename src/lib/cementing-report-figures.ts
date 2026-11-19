@@ -39,6 +39,13 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
   if(scope==='cementing'&&extras.mechanics)images.push(...mechanicsFigures(extras.mechanics,w));
   if(scope==='cementing'&&extras.thermal)images.push(...thermalFigures(extras.thermal,w));
   const c=extras.centralization;
+  if(scope!=='running'&&c?.turbulatorFlows&&selection?.turbulatorFlow!==false)for(const r of c.turbulatorFlows){
+    if(!r.valid||r.samples.length<2)continue;
+    images.push(reportSeriesPlot('Затухание закрутки · MD '+r.point.md+' м','turbulatorFlow',r.samples.map(s=>s.distanceM),'Выше изделия, м MD','vθ/vz',[
+      {name:'Интенсивность закрутки',color:'#0891b2',values:r.samples.map(s=>s.ratio)},
+      {name:'Порог',color:'#d97706',values:r.samples.map(()=>c.turbulatorDesign?.threshold??.01),dash:'5 4'}
+    ],{note:'Оценочная модель. Жидкость: '+c.turbulatorFluid?.name+'; Q '+c.turbulatorRateLps+' л/с. Закрутка не определяет режим турбулентности.'}));
+  }
   if(scope!=='cementing'&&c)images.push(...casingDesignCharts(w,c,scope,selection));
   if (scope==='centralization'&&extras.centralization) for (const s of centralizerReportSamples(w, extras.centralization)) {
     if (!s.geometry) continue;

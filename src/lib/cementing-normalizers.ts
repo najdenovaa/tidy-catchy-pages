@@ -1,3 +1,4 @@
+import { normalizeTurbulatorDesign } from './turbulator-flow';
 import {normalizeMechanics} from './cement-mechanics';
 import {normalizeThermal} from './cement-thermal';
 import {normalizeFluidLab} from './fluid-interaction-lab';
@@ -219,6 +220,7 @@ export function normalizeWellData(value: unknown): WellData {
     ...(source.fluidInteractionLab!==undefined?{fluidInteractionLab:normalizeFluidLab(source.fluidInteractionLab)}:{}),
     ...(source.chartPresentations!==undefined?{chartPresentations:normalizeChartPresentations(source.chartPresentations)}:{}),
     ...(source.depthChartSettings!==undefined?{depthChartSettings:normalizeDepthChartSettings(source.depthChartSettings)}:{}),
+    ...(normalizeTurbulatorDesign(source.turbulatorDesign)?{turbulatorDesign:normalizeTurbulatorDesign(source.turbulatorDesign)}:{}),
     equipment: normalizeEquipment(source.equipment),
     ...(source.pressureObservation!==undefined?{pressureObservation:normalizePressureObservation(source.pressureObservation)}:{}),
     ...(normalizeStopStorage(source.stopStorage)?{stopStorage:normalizeStopStorage(source.stopStorage)}:{}),

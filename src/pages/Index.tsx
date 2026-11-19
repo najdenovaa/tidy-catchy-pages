@@ -113,7 +113,7 @@ export default function Index() {
     setCentralizationReport(data);
     setWellData(w=>{
       const centralizerDesign={mode:data.mode,targetStandoff:data.targetStandoff??67,jointLength:data.jointLength??12,autoSpec:data.autoSpec??data.intervals[0]?.spec,intervals:data.intervals};
-      return JSON.stringify(w.centralizerDesign)===JSON.stringify(centralizerDesign)?w:{...w,centralizerDesign};
+      return JSON.stringify(w.centralizerDesign)===JSON.stringify(centralizerDesign)&&JSON.stringify(w.turbulatorDesign)===JSON.stringify(data.turbulatorDesign)?w:{...w,centralizerDesign,turbulatorDesign:data.turbulatorDesign};
     });
     if(!data.calculated){setCentralizationResults(null);return;}
     if(appliedMaterialResults.current===data.results)return;
@@ -990,9 +990,13 @@ export default function Index() {
                   onReportChange={handleCentralizationReport}
                   wellData={wellData}
                   mudDensity={drillingFluid.density}
-                  fluidPV={drillingFluid.rheology?.pv || 25}
-                  fluidYP={drillingFluid.rheology?.yp || 25}
-                  flowRateLps={slurries[0]?.flowRateSteps?.[0]?.rateLps || 10}
+                  drillingFluid={drillingFluid}
+                  slurries={slurries}
+                  buffers={buffers}
+                  displacementFluids={displacementFluids}
+                  fluidPV={drillingFluid.rheology?.pv ?? 25}
+                  fluidYP={drillingFluid.rheology?.yp ?? 25}
+                  flowRateLps={slurries[0]?.flowRateSteps?.[0]?.rateLps ?? 10}
                   onResultsChange={results=>{setCentralizationResults(results);if(!results)setWellData(w=>({...w,centralizerMaterials:undefined}));}}
                   onIntervalsChange={setCentralizerIntervals}
                   externalIntervals={externalCentralizers}

@@ -1,3 +1,4 @@
+import { TURBULATOR_MODEL_NOTE } from './turbulator-flow';
 import {ANNULAR_BALANCE_NOTE} from './displacement-balance';
 import {displacementPlacement,PLACEMENT_NOTE} from './displacement-placement';
 import {sectionState,observationDepthMD,SECTION_NOTE} from './displacement-section';
@@ -53,6 +54,9 @@ export function buildCementingReportExtras(w:WellData,extras:CementingReportExtr
  if(scope!=='cementing'&&c&&yes('inputs'))for(const iv of c.intervals){
    const products=[{role:'А',spec:iv.spec},...(iv.pattern&&iv.specB?[{role:'Б',spec:iv.specB}]:[])];
    for(const {role,spec} of products)if(spec.libraryReference)out.push(p(role+': '+(spec.passport?.model||spec.type)+'; MD '+f(iv.fromMD,1)+'-'+f(iv.toMD,1)+' м; '+equipmentReferenceText(spec.libraryReference,centralizerSignature(spec))));
+ }
+ if(scope!=='running'&&c?.turbulatorFlows?.length&&yes('turbulatorFlow')){
+   out.push(h('Турбулизаторы: поток и затухание закрутки'),p(TURBULATOR_MODEL_NOTE),p('Жидкость: '+(c.turbulatorFluid?.name??'не задана')+'; расход '+f(c.turbulatorRateLps)+' л/с; порог vθ/vz '+f(c.turbulatorDesign?.threshold,3)+'; передача закрутки '+f(c.turbulatorDesign?.turningEfficiency,3)+'. Размеры формы без паспорта: 180 / 8 / 3 мм (длина / ширина ребра / стенка втулки).'),reportDataTable(['MD, м','Ствол, мм','vz, м/с','vθ, м/с','vθ/vz','L, м MD','Δp, МПа','Статус'],c.turbulatorFlows.map(r=>[f(r.point.md,2),f(r.boreMm,2),r.valid?f(r.axialMs,4):'-',r.valid?f(r.tangentialMs,4):'-',r.valid?f(r.ratio,4):'-',r.valid?(r.reachedThreshold?'':'не менее ')+f(r.lengthM,3):'-',r.valid?f(r.pressureLossMPa,6):'-',r.issues.join(' ')||(r.valid?'Оценочный расчёт':'Ошибка')])));
  }
  if(scope==='centralization'&&c){
    if(yes('inputs'))out.push(h('Задание на центрирование'),p('Режим: '+(c.mode==='auto'?'по целевому Standoff':'ручная расстановка')+'; целевой Standoff '+(c.targetStandoff===undefined?'не задан':f(c.targetStandoff,1)+'%')+'. На опоре и в пролёте оцениваются разные значения.'));
