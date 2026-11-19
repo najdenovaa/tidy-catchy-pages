@@ -1,3 +1,4 @@
+import {thermalFigures} from './cement-thermal-report';
 import {fluidLabFigures} from './fluid-lab-report';
 import {displacementPlacementFigures} from './displacement-placement-figures';
 import {displacementSectionFigures} from './displacement-section-figures';
@@ -14,7 +15,7 @@ import { pathPoints, frames } from "./displacement-geometry";
 import { centralizerReportSamples } from "./cementing-report-sections";
 import { getEffectiveTrajectory, type WellData, type SlurryInput } from "./cementing-calculations";
 import type { CementingReportExtras, ReportFigure } from "./cementing-report-data";
-export interface ReportSvg { sourceKey?:string; reportItem?: ReportItem; title: string; svg: string; width: number; height: number; }
+export interface ReportSvg { plotId?:string; sourceKey?:string; reportItem?: ReportItem; title: string; svg: string; width: number; height: number; }
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 interface Polygon { v: number[][]; color: string; opacity?: number; }
 function sceneSvg(title: string, polygons: Polygon[], width: number, height: number, lines: number[][][] = [], boreLines:number[][][] = []) {
@@ -34,6 +35,7 @@ function sceneSvg(title: string, polygons: Polygon[], width: number, height: num
 }
 export function buildCementingReportSvgs(w: WellData, extras: CementingReportExtras, scope:ReportScope="cementing", selection?:ReportSelection): ReportSvg[] {
   const images: ReportSvg[] = [];
+  if(scope==='cementing'&&extras.thermal)images.push(...thermalFigures(extras.thermal,w));
   const c=extras.centralization;
   if(scope!=='cementing'&&c)images.push(...casingDesignCharts(w,c,scope,selection));
   if (scope==='centralization'&&extras.centralization) for (const s of centralizerReportSamples(w, extras.centralization)) {
