@@ -1,7 +1,7 @@
 import {chromium} from 'playwright';
 import {mkdirSync,writeFileSync} from 'node:fs';
 const out=process.env.LAYOUT_QA_DIR??'/tmp/program-layout';mkdirSync(out,{recursive:true});
-const browser=await chromium.launch({headless:true});
+const browser=await chromium.launch({headless:true,channel:'chrome'});
 const page=await browser.newPage();
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 page.on('dialog',d=>d.accept()); // This is the disposable documented example, never a user project.
@@ -35,7 +35,7 @@ for(const width of [1440,390]){
    await page.screenshot({path:`${out}/${width}-${id}.png`});
    if(['charts','hydraulics','lab'].includes(id)){
     // Verify the additional controls follow all primary content in DOM order.
-    const order=await panel.evaluate(el=>[...el.children].map(e=>e.classList.contains('program-additional')?'additional':'primary'));
+    const order=await panel.evaluate(el=>{const extra=el.querySelector(':scope > .program-additional')??el.querySelector(':scope > div > .program-additional');return extra?[...extra.parentElement.children].map(e=>e===extra?'additional':'primary'):[];});
     if(order.at(-1)!=='additional'||order.slice(0,-1).includes('additional'))throw Error(`${id}: primary/additional order`);
     await panel.locator('.program-additional').last().scrollIntoViewIfNeeded();
     await page.screenshot({path:`${out}/${width}-${id}-additional.png`});

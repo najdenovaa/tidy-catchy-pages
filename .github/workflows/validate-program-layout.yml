@@ -20,7 +20,7 @@ jobs:
           node-version: '22'
       - run: npm install --legacy-peer-deps
       - run: npm install --no-save --legacy-peer-deps playwright@1.51.1
-      - run: npx playwright install --with-deps chromium
+      - run: google-chrome --version
       - name: Inspect every program tab on desktop and mobile
         run: |
           npm run dev -- --host 127.0.0.1 > /tmp/program-vite.log 2>&1 &
