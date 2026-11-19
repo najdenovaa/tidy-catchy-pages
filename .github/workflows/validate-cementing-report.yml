@@ -127,7 +127,7 @@ jobs:
           lab_doc=fitz.open(d / "fluid-lab.pdf")
           lab_text=" ".join(" ".join(p.get_text().split()) for p in lab_doc)
           assert all(t in lab_text for t in ["Совместимость смесей", "Washer test protocol 12", "воздействие", "Вымываемость"])
-          assert sum(len(p.get_images()) for p in lab_doc)==3
+          assert sum(len(p.get_image_info()) for p in lab_doc)==3
           assert all(abs(p.rect.width-595.3)<2 for p in lab_doc)
           lab_preview=Image.new("RGB",(420*len(lab_doc),595),"white")
           for i,page in enumerate(lab_doc):
