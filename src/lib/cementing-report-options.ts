@@ -1,5 +1,7 @@
 export type ReportScope='cementing'|'centralization'|'running';
 const CEMENTING=[
+ ['axialHistory','Удлинение и нагрузки колонны во время цементажа'],
+ ['sheathHistory','Напряжения цементного камня при освоении'],
  ['thermal','Температура: циркуляция, жидкости по глубине и порции до конца ОЗЦ'],
  ['fluidLab','Совместимость смесей и вымываемость: протоколы, кривые и числа'],
  ['foam','Пеноцементирование: графики, параметры и результаты'],
@@ -25,7 +27,7 @@ export function allowedReportFigure(scope:ReportScope,selection:ReportSelection|
  const key=figure.reportItem??reportFigureItem(figure.title);return !!key&&REPORT_ITEMS[scope].some(([item])=>item===key)&&reportIncludes(selection,key);
 }
 
-const GRAPHICS=new Set<ReportItem>(['thermal','fluidLab','combined','pressures','rate','ecdTime','depthPressure','depthEcd','volumePressure','safeRate','flowRegime','annularFill','construction','trajectory','basket','fleetLayout','displacement3D','displacementMap','displacementPlacement','displacementSection','pipeHistory','displacementHistory','standoff','centralizer3D','centralizerSection','bladeProfile','broom','forceProfile','torque']);
+const GRAPHICS=new Set<ReportItem>(['axialHistory','sheathHistory','thermal','fluidLab','combined','pressures','rate','ecdTime','depthPressure','depthEcd','volumePressure','safeRate','flowRegime','annularFill','construction','trajectory','basket','fleetLayout','displacement3D','displacementMap','displacementPlacement','displacementSection','pipeHistory','displacementHistory','standoff','centralizer3D','centralizerSection','bladeProfile','broom','forceProfile','torque']);
 export function missingReportFigures(scope:ReportScope,selection:ReportSelection|undefined,figures:{title:string;reportItem?:ReportItem}[]):string[]{
  const found=new Set(figures.map(f=>f.reportItem??reportFigureItem(f.title)));
  return REPORT_ITEMS[scope].filter(([key])=>GRAPHICS.has(key)&&reportIncludes(selection,key)&&!found.has(key)).map(([,label])=>label+': нет актуальных данных для изображения.');

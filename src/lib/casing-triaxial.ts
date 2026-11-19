@@ -1,13 +1,13 @@
 // ============================================================================
 // CASING TRIAXIAL STRESS ANALYSIS — Part 7 audit
-// API TR 5C3 / Klever-Tamano · Von Mises Equivalent (VME)
+// Lamé / empirical collapse curves / Von Mises Equivalent (VME)
 //
 // Проверяет обсадную колонну на:
 //   • Burst (Barlow)        — внутреннее давление
 //   • Collapse (4 режима)   — внешнее давление
 //   • Axial yield           — осевая нагрузка
 //   • Triaxial VME          — комбинированное напряжённое состояние
-//   • Biaxial reduction     — взаимное снижение burst↔axial и collapse↔axial
+//   • Independent ratings plus VME; no separate biaxial reduction.
 // ============================================================================
 
 export type CasingGrade = "J-55" | "K-55" | "N-80" | "L-80" | "C-90" | "P-110" | "Q-125";
@@ -108,18 +108,19 @@ function barlowBurst(odMm: number, wallMm: number, yieldMPa: number): number {
 interface CollapseConsts { F1: number; F2: number; F3: number; F4: number; F5: number; }
 
 function collapseConstants(yieldMPa: number): CollapseConsts {
-  const Y = yieldMPa / 6.895; // psi
+  const Y = yieldMPa / 0.00689476; // psi
   const Aapi = 2.8762 + 0.10679e-5 * Y + 0.21301e-10 * Y * Y - 0.53132e-16 * Y * Y * Y;
   const Bapi = 0.026233 + 0.50609e-6 * Y;
   const Capi = -465.93 + 0.030867 * Y - 0.10483e-7 * Y * Y + 0.36989e-13 * Y * Y * Y;
-  const F = Math.pow(46.95e6 * Math.pow((3 * Bapi / Aapi) / (2 + Bapi / Aapi), 3), 0.5) / (Y * Math.pow(((3 * Bapi / Aapi) / (2 + Bapi / Aapi)) - (Bapi / Aapi), 2)) * (1 - (3 * Bapi / Aapi) / (2 + Bapi / Aapi));
+  const dTE=(2+Bapi/Aapi)/(3*Bapi/Aapi);
+  const F=46.95e6/(Y*(dTE-1)**2*(1-(Bapi/Aapi)*dTE));
   const G = F * Bapi / Aapi;
   return { F1: Aapi, F2: Bapi, F3: Capi, F4: F, F5: G };
 }
 
 function collapsePressureMPa(odMm: number, wallMm: number, yieldMPa: number): { p: number; regime: TriaxialLimits["collapseRegime"] } {
   const Dt = odMm / wallMm;
-  const Y = yieldMPa / 6.895; // psi (для границ режимов)
+  const Y = yieldMPa / 0.00689476; // psi (для границ режимов)
   const c = collapseConstants(yieldMPa);
 
   // Границы режимов (API)
@@ -148,9 +149,9 @@ function collapsePressureMPa(odMm: number, wallMm: number, yieldMPa: number): { 
 
 // ─── Lamé stresses ───────────────────────────────────────────────
 function lameHoopStress(pi: number, po: number, ri: number, ro: number): number {
-  // Внешняя поверхность критична при коллапсе, внутренняя при разрыве — берём ВНУТРЕННЮЮ как наиболее напряжённую
+  // Окружное напряжение на внутренней поверхности: A+B/r² (радиальное = A-B/r²).
   const r = ri;
-  const num = pi * ri * ri - po * ro * ro - (pi - po) * (ri * ri * ro * ro) / (r * r);
+  const num = pi * ri * ri - po * ro * ro + (pi - po) * (ri * ri * ro * ro) / (r * r);
   return num / (ro * ro - ri * ri);
 }
 
@@ -217,7 +218,7 @@ export function calculateTriaxial(input: TriaxialInput): TriaxialResult {
     weightPerMeterKgM: weightPerMeter,
   };
 
-  const warnings: string[] = [];
+  const warnings: string[] = ['Линейные напряжения Ламе и VME; отдельная двухосная коррекция допустимых давлений, дефекты, соединения и потеря устойчивости не проверены. Это не сертифицированный расчёт по API.'];
 
   const cases: TriaxialCaseResult[] = loadCases.map(lc => {
     const sigmaH = lameHoopStress(lc.internalPressureMPa, lc.externalPressureMPa, ri, ro);

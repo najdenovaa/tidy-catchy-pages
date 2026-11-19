@@ -30,6 +30,7 @@ export interface ReportSupplement {
 }
 export interface ReportFigure { sourceKey?:string; reportItem?: import("./cementing-report-options").ReportItem; title: string; dataUrl: string; width: number; height: number; }
 export interface CementingReportExtras {
+  mechanics?:import("./cement-mechanics").MechanicsResult;
   thermal?:import("./cement-thermal").ThermalResult;
   centralization?: CentralizationReportData | null; displacement?: DisplacementReportData | null;
   figures?: ReportFigure[]; supplements?: ReportSupplement[]; warnings?: string[];

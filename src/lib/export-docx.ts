@@ -1,3 +1,6 @@
+import {mechanicsKey,MECHANICS_NOTE,SHEATH_NOTE} from './cement-mechanics';
+import {mechanicsFigures} from './cement-mechanics-report';
+import {mechanicsDocRows} from './cement-mechanics-docx';
 import {thermalFigures} from './cement-thermal-report';
 import {thermalKey,THERMAL_NOTE,THERMAL_FIELDS} from './cement-thermal';
 import {fluidLabReport,REMOVAL_NOTE} from './fluid-lab-report';
@@ -1034,6 +1037,22 @@ export async function exportToDocx(
 
   add('materials','Ведомость материалов',materialsContent);
   add('lab','Рецептура и лабораторные требования',labContent);
+  const mechCandidate=options?.extras?.mechanics;
+  const mechInput={wellData,drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin:preComputed?.flushTimeMin??10,flushVolumeM3:preComputed?.flushVolumeM3??0};
+  const mechanical=mechCandidate?.key===mechanicsKey(mechInput)?mechCandidate:null;
+  const mechRows=mechanical?mechanicsDocRows(mechanical):null;
+  if(reportIncludes(selection,'axialHistory')){
+    const content:any[]=[sectionTitle('Удлинение колонны во время цементажа'),noteParagraph(MECHANICS_NOTE)];
+    if(!mechanical||!mechRows)content.push(noteParagraph('Нет актуального расчёта механики. Задайте условия в анализе гидравлики.'));
+    else{content.push(kvTable(mechRows.settings.map(([label,value])=>({label,value})))as any);content.push(noteParagraph('История относительно начального нагруженного состояния; неполные кадры не заменяются нулями.'));content.push(gridTable(['Время, мин','Стадия','Изменение длины, м','Сила устья, кН','Реакция, кН','VME max, МПа','Статус'],mechRows.history)as any);content.push(...mechanical.notes.slice(2).map(noteParagraph));}
+    add('axialHistory','Удлинение и осевые нагрузки колонны',content);
+  }
+  if(reportIncludes(selection,'sheathHistory')){
+    const content:any[]=[sectionTitle('Напряжения цементного камня при освоении'),noteParagraph(SHEATH_NOTE)];
+    if(!mechanical||!mechRows)content.push(noteParagraph('Нет актуального расчёта цементного камня. Неизвестное состояние схватывания не заменяется нулями.'));
+    else{content.push(...mechanical.sheath.errors.map(noteParagraph));content.push(kvTable(mechRows.state.map(([label,value])=>({label,value})))as any);content.push(noteParagraph('Сценарии освоения и отдельные температуры слоёв'));content.push(gridTable(['Сценарий','Время, мин','Pi, МПа','Po, МПа','T стали / цемента / породы, °C','Δεz, мкм/м'],mechRows.loads)as any);content.push(noteParagraph('Отдельные критерии цемента и радиальной связи'));content.push(gridTable(['Сценарий','Растяжение util','Мор-Кулон util','Связь внутри util','Связь снаружи util','Граница применимости'],mechRows.limits)as any);content.push(noteParagraph('Проверка непрерывности тяги и смещения'));content.push(gridTable(['Сценарий','Радиус, мм','Скачок тяги, МПа','Скачок Δu, м','Невязка системы'],mechRows.continuity)as any);if(reportIncludes(selection,'chartData')){content.push(noteParagraph('Числовые радиальные профили цементного камня'));content.push(gridTable(['Сценарий','r, мм','σr, МПа','σθ, МПа','σz, МПа','Δu, мм','VME, МПа'],mechRows.stresses)as any);}}
+    add('sheathHistory','Напряжения цементного камня при освоении',content);
+  }
   const thermalCandidate=options?.extras?.thermal;
   const thermalInput={wellData,drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin:preComputed?.flushTimeMin??10,flushVolumeM3:preComputed?.flushVolumeM3??0};
   const thermal=thermalCandidate?.key===thermalKey(thermalInput)?thermalCandidate:null;
@@ -1087,8 +1106,9 @@ export async function exportToDocx(
   const placement=historyData?displacementPlacement(historyData):null;
   const placementKey=placement&&!('error'in placement)?placement.sourceKey:null;
   const currentSectionKey=currentSection&&!('error' in currentSection)?currentSection.sourceKey:null;
+  const mechanicalFigureKeys=new Set(mechanical?mechanicsFigures(mechanical,wellData).map(p=>p.sourceKey):[]);
   const thermalFigureKeys=new Set(thermal?thermalFigures(thermal,wellData).map(p=>p.sourceKey):[]);
-  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='thermal'||thermalFigureKeys.has(f.sourceKey))&&(f.reportItem!=='fluidLab'||f.sourceKey===labAnalysis.sourceKey)&&(f.reportItem!=='displacementPlacement'||!!placementKey&&f.sourceKey===placementKey)&&(f.reportItem!=='displacementSection'||!!currentSectionKey&&f.sourceKey===currentSectionKey)&&(!!historyData?.result||!['displacement3D','displacementMap','displacementHistory'].includes(f.reportItem??reportFigureItem(f.title)??''))&&(f.reportItem!=='pipeHistory'||pipeKeys.has(f.sourceKey!))&&(f.reportItem!=='displacementHistory'||historyKeys.has(f.sourceKey!))&&(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(!['axialHistory','sheathHistory'].includes(f.reportItem??'')||mechanicalFigureKeys.has(f.sourceKey))&&(f.reportItem!=='thermal'||thermalFigureKeys.has(f.sourceKey))&&(f.reportItem!=='fluidLab'||f.sourceKey===labAnalysis.sourceKey)&&(f.reportItem!=='displacementPlacement'||!!placementKey&&f.sourceKey===placementKey)&&(f.reportItem!=='displacementSection'||!!currentSectionKey&&f.sourceKey===currentSectionKey)&&(!!historyData?.result||!['displacement3D','displacementMap','displacementHistory'].includes(f.reportItem??reportFigureItem(f.title)??''))&&(f.reportItem!=='pipeHistory'||pipeKeys.has(f.sourceKey!))&&(f.reportItem!=='displacementHistory'||historyKeys.has(f.sourceKey!))&&(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
   const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});

@@ -7,6 +7,13 @@ on:
       - 'src/lib/cement-quality-index*'
       - 'src/components/CementQualitySection*'
       - 'src/lib/rheology-*'
+      - 'src/lib/cement-mechanics*'
+      - 'src/lib/elastic-cylinder*'
+      - 'src/lib/casing-triaxial.ts'
+      - 'src/components/CementMechanicsSection*'
+      - 'src/workers/cementMechanics.worker.ts'
+      - 'src/lib/__tests__/mechanics-report.test.ts'
+      - 'src/lib/__tests__/fixtures/mechanics-fixture.ts'
       - 'src/lib/cement-thermal*'
       - 'src/components/CementThermalSection*'
       - 'src/workers/cementThermal.worker.ts'
@@ -105,7 +112,7 @@ jobs:
           for f in d.glob("*.svg"):
               cairosvg.svg2png(url=str(f), write_to=str(f.with_suffix(".png")), scale=1.5)
           PY
-          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts src/lib/__tests__/casing-chart-report.test.ts src/lib/__tests__/hierarchy-chart-report.test.ts src/lib/__tests__/displacement-history-report.test.ts src/lib/__tests__/pipe-spaces-report.test.ts src/lib/__tests__/displacement-timing-report.test.ts src/lib/__tests__/displacement-section-report.test.ts src/lib/__tests__/displacement-placement-report.test.ts src/lib/__tests__/displacement-balance-report.test.ts src/lib/__tests__/fluid-lab-report.test.ts src/lib/__tests__/thermal-report.test.ts
+          REPORT_QA_RASTER=1 npx vitest run src/lib/__tests__/cementing-complete-report.test.ts src/lib/__tests__/report-scopes.test.ts src/lib/centralizer-ab.test.ts src/lib/__tests__/chart-data-report.test.ts src/lib/__tests__/chart-presentation-report.test.ts src/lib/__tests__/rheology-chart-report.test.ts src/lib/__tests__/basket-chart-report.test.ts src/lib/__tests__/foam-chart-report.test.ts src/lib/__tests__/casing-chart-report.test.ts src/lib/__tests__/hierarchy-chart-report.test.ts src/lib/__tests__/displacement-history-report.test.ts src/lib/__tests__/pipe-spaces-report.test.ts src/lib/__tests__/displacement-timing-report.test.ts src/lib/__tests__/displacement-section-report.test.ts src/lib/__tests__/displacement-placement-report.test.ts src/lib/__tests__/displacement-balance-report.test.ts src/lib/__tests__/fluid-lab-report.test.ts src/lib/__tests__/thermal-report.test.ts src/lib/__tests__/mechanics-report.test.ts
       - name: Verify rendered page geometry and model pages
         run: |
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/cementing-report.docx"
@@ -126,10 +133,17 @@ jobs:
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/annular-balance.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/fluid-lab.docx"
           libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/thermal.docx"
+          libreoffice -env:UserInstallation=file:///tmp/cementing-lo --headless --convert-to pdf --outdir "$REPORT_QA_DIR" "$REPORT_QA_DIR/mechanics.docx"
           /tmp/cementing-report-venv/bin/python - <<'PY'
           import pathlib, os, base64, fitz
           from PIL import Image
           d = pathlib.Path(os.environ["REPORT_QA_DIR"])
+          mechanics_doc=fitz.open(d / "mechanics.pdf")
+          mechanics_text=" ".join(" ".join(p.get_text().split()) for p in mechanics_doc)
+          assert all(x in mechanics_text for x in ["Удлинение колонны", "Напряжения цементного камня", "Control setting protocol", "Мор-Кулон"])
+          assert sum(len(p.get_image_info()) for p in mechanics_doc)==8
+          assert all(abs(p.rect.width-595.3)<2 and abs(p.rect.height-841.9)<2 for p in mechanics_doc)
+          print("Mechanics report:",len(mechanics_doc),"A4 pages; 8 figures")
           thermal_doc=fitz.open(d / "thermal.pdf")
           thermal_text=" ".join(" ".join(p.get_text().split()) for p in thermal_doc)
           assert all(x in thermal_text for x in ["Итоговые порции", "Баланс энергии", "Истории порций", "Циркуляция"])
