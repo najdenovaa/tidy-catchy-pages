@@ -155,6 +155,7 @@ export interface ReservoirLayer {
 }
 
 export interface WellData {
+  mechanics?:import("./cement-mechanics").MechanicsSettings;
   thermal?:import("./cement-thermal").ThermalSettings;
   fluidInteractionLab?:import("./fluid-interaction-lab").FluidInteractionLab;
   pressureObservation?:PressureObservationRequest;
@@ -1281,6 +1282,7 @@ export interface DepthEnvelopePoint {
 }
 
 export interface PressureProfileResult {
+  mechanicalProfiles?:{depths:number[];frames:{timeMin:number;stage:string;pipeMPa:number[];pipeBelowMPa:number[];annulusMPa:number[];pipeFrictionMPa:number[];annulusFrictionMPa:number[];issues:string[]}[]};
   observation?:PressureObservation;
   stopStorage?:StopStorageResult;
   processContract?:ProcessContract;
@@ -1310,7 +1312,7 @@ export function calculatePressureProfile(
   flushTimeMin: number = 10,
   flushVolumeM3: number = 0,
   /** fast — без расчёта макс. безопасного расхода в каждой точке (для оптимизатора) */
-  opts: { fast?: boolean } = {},
+  opts: { fast?: boolean; mechanicalDepths?:number[] } = {},
 ): PressureProfileResult {
   const rheologyErrors=rheologyInputErrors({drillingFluid,slurries,buffers,displacementFluids});if(rheologyErrors.length)throw new Error(rheologyErrors.join("\n"));
   const observationSourceKey=wellData.pressureObservation&&!opts.fast?pressureObservationKey(wellData,slurries,buffers,drillingFluid,displacementFluids,fractureGradient,displacementVol,flushTimeMin,flushVolumeM3):undefined;
@@ -2016,7 +2018,31 @@ export function calculatePressureProfile(
       if(rows.some(r=>![r.timeMin,r.hydrostaticMPa,r.frictionMPa,r.pressureMPa,r.annularRateLps,...(r.ecdGcm3===null?[]:[r.ecdGcm3,r.staticEcdGcm3!])].every(Number.isFinite)))throw new Error('Нечисловое состояние наблюдения.');observation.rows=rows;observation.status='ready';
     }catch(e){observation.issues.push(e instanceof Error?e.message:String(e));}
   }
-  return { observation,stopStorage,inventory:inventoryResult,processContract,processAudit,processEvents, points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope,
+  let mechanicalProfiles:PressureProfileResult['mechanicalProfiles'];
+  if(opts.mechanicalDepths){
+    const depths=[...new Set(opts.mechanicalDepths)].sort((a,b)=>a-b);
+    if(depths.length>2000||depths.some(z=>!Number.isFinite(z)||z<0||z>wellData.casingDepthMD))throw Error('Недопустимая сетка механических давлений');
+    mechanicalProfiles={depths,frames:points.map(frame=>{
+      const issues:string[]=[],columns=frame.transportColumns;
+      if(traj.some((p,i)=>i>0&&p.tvd<traj[i-1].tvd))issues.push('Восходящий участок: гидростатика профиля механики не подтверждена');if(!columns)throw Error('Нет состава кадра для механики');
+      if((frame.pipeVoidM3??0)>1e-7)issues.push('Неполная труба: механический профиль давления не определён');
+      const props=(id:string)=>{const f=processContract.fluids.find(f=>f.id===id||id==='mud:initial'&&f.id==='mud:0');if(!f)throw Error('Неизвестная жидкость '+id);const r=effectiveRheology(f.rheology,f.kind==='cement'?cementCategory(f.densityKgM3/1000):f.kind==='buffer'?'buffer':f.kind==='displacement'?'displacement':'mud');return {density:f.densityKgM3,pv:r.pv,yp:r.yp,hb:hbOf(r)};};
+      const ann=columns.annulus.map(c=>({topMD:c.topMD,bottomMD:c.botMD,...props(c.fluidId)}));
+      const pipe=columns.pipe.filter(c=>c.fluidType!=='void').map(c=>({...c,...props(c.fluidId)}));
+      const hydro=(segs:{topMD:number;botMD:number;density:number}[],z:number)=>hydroFromColumn(segs.map(c=>({top:c.topMD,bot:c.botMD,rho:c.density/1000})),z);
+      const pf=(z:number)=>pipe.reduce((sum,c)=>{const len=c.botMD-c.topMD,L=Math.max(0,Math.min(z,c.botMD)-c.topMD);if(!(len>0&&L>0))return sum;const area=c.volumeM3/len;return sum+frictionLossWithRegime(frame.pumpRateLps*.06,L,Math.sqrt(4*area/Math.PI)*1000,c.pv,c.yp,area,c.density,'pipe',c.hb).pressureMPa*kFriction;},0);
+      const af=(z:number)=>annFrictionAbove((frame.shoeRateLps??0)*.06,z,ann).pressureMPa;
+      const post=frame.time>=stopTime&&frame.pumpRateLps===0&&plugLanded;
+      const hydroBottom=hydro(pipe,wellData.casingDepthMD);
+      const pipeFrictionMPa=depths.map(z=>post?0:pf(z)),annulusFrictionMPa=depths.map(af);
+      const annulusMPa=depths.map((z,i)=>hydro(ann.map(c=>({...c,botMD:c.bottomMD})),z)+annulusFrictionMPa[i]);
+      const pipeMPa=depths.map((z,i)=>post&&z>wellData.ckodDepth+1e-8?bottomHoleAtStop-hydroBottom+hydro(pipe,z):frame.surfacePressure+hydro(pipe,z)-pipeFrictionMPa[i]);
+      const pipeBelowMPa=depths.map((z,i)=>post&&z>=wellData.ckodDepth-1e-8?bottomHoleAtStop-hydroBottom+hydro(pipe,z):pipeMPa[i]);
+      if(pipeMPa.some(p=>p<-.1))issues.push('Профиль требует разрежения: полная жидкостная колонна не подтверждена');
+      return {timeMin:frame.time,stage:frame.stage,pipeMPa,pipeBelowMPa,annulusMPa,pipeFrictionMPa,annulusFrictionMPa,issues};
+    })};
+  }
+  return { mechanicalProfiles,observation,stopStorage,inventory:inventoryResult,processContract,processAudit,processEvents, points, safeWorkingTimeMin, cementStartTime, stopTime, stageBoundaries, equilibriumTimeMin, zoneChecks, envelope,
     basketStop: wellData.equipment?.some(e => e.kind === "basket" && e.quantity > 0) ? evaluateBasketStop(wellData, annColumn(), fractureGradient) : undefined };
 }
 

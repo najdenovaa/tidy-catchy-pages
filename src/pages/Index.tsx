@@ -38,7 +38,8 @@ import ContactTimeSection from "@/components/ContactTimeSection";
 import CementQualitySection from "@/components/CementQualitySection";
 import MudRemovalEfficiencyCard from "@/components/MudRemovalEfficiencyCard";
 import GasMigrationCard from "@/components/GasMigrationCard";
-import CementSheathIntegrityCard from "@/components/CementSheathIntegrityCard";
+import CementMechanicsSection from "@/components/CementMechanicsSection";
+import {runMechanics} from "@/lib/cement-mechanics-run";
 import TrajectorySection from "@/components/TrajectorySection";
 import WellboreStabilityCard from "@/components/WellboreStabilityCard";
 import DrillingHydraulicsSection from "@/components/DrillingHydraulicsSection";
@@ -411,6 +412,7 @@ export default function Index() {
         }
       } catch (err) { extras.warnings!.push("Замещение не рассчитано: " + (err instanceof Error ? err.message : String(err))); }
       if(reportIncludes(selection,'thermal')&&reportWell.thermal){try{setExportStatus('Расчёт температуры');extras.thermal=await runThermal({...snap,wellData:reportWell});}catch(e){extras.warnings!.push('Температура не рассчитана: '+(e instanceof Error?e.message:String(e)));}}
+      if((reportIncludes(selection,'axialHistory')||reportIncludes(selection,'sheathHistory'))&&reportWell.mechanics){try{setExportStatus('Расчёт механики');extras.mechanics=await runMechanics({...snap,wellData:reportWell},extras.thermal);}catch(e){extras.warnings!.push('Механика не рассчитана: '+(e instanceof Error?e.message:String(e)));}}
       // Give the mounted engineering tabs a render with the same fresh snapshot before collecting supplementary tables.
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       extras.supplements = collectCementingReportSupplements();
@@ -684,6 +686,7 @@ export default function Index() {
 
           <TabsContent value="hydraulics">
             <div data-tab-content="hydraulics">
+              {calcSnapshot&&<CementMechanicsSection input={calcSnapshot} onApply={mechanics=>{setWellData(w=>({...w,mechanics}));setCalcSnapshot(s=>s?{...s,wellData:{...s.wellData,mechanics}}:s);}}/>}
               {calcSnapshot&&<CementThermalSection input={calcSnapshot} onApply={thermal=>{setWellData(w=>({...w,thermal}));setCalcSnapshot(s=>s?{...s,wellData:{...s.wellData,thermal}}:s);}}/>}
               {calcSnapshot && volumes ? (
                 <HydraulicsSection
@@ -942,7 +945,7 @@ export default function Index() {
                       slurries={calcSnapshot.slurries}
                       annVPM={volumes.annularVolumePerMeter}
                     />
-                    <CementSheathIntegrityCard wellData={calcSnapshot.wellData} />
+
                   </>
                 ) : (
                   <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>

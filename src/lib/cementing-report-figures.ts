@@ -1,3 +1,4 @@
+import {mechanicsFigures} from './cement-mechanics-report';
 import {thermalFigures} from './cement-thermal-report';
 import {fluidLabFigures} from './fluid-lab-report';
 import {displacementPlacementFigures} from './displacement-placement-figures';
@@ -35,6 +36,7 @@ function sceneSvg(title: string, polygons: Polygon[], width: number, height: num
 }
 export function buildCementingReportSvgs(w: WellData, extras: CementingReportExtras, scope:ReportScope="cementing", selection?:ReportSelection): ReportSvg[] {
   const images: ReportSvg[] = [];
+  if(scope==='cementing'&&extras.mechanics)images.push(...mechanicsFigures(extras.mechanics,w));
   if(scope==='cementing'&&extras.thermal)images.push(...thermalFigures(extras.thermal,w));
   const c=extras.centralization;
   if(scope!=='cementing'&&c)images.push(...casingDesignCharts(w,c,scope,selection));

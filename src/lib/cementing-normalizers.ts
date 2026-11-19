@@ -1,3 +1,4 @@
+import {normalizeMechanics} from './cement-mechanics';
 import {normalizeThermal} from './cement-thermal';
 import {normalizeFluidLab} from './fluid-interaction-lab';
 import {normalizeChartPresentations} from './chart-presentation';
@@ -213,6 +214,7 @@ export function normalizeWellData(value: unknown): WellData {
   const caliperLog=normalizeCaliperLog(source.caliperLog);
   return {
     ...(caliperLog?{caliperLog}:{}),
+    ...(source.mechanics!==undefined?{mechanics:normalizeMechanics(source.mechanics)}:{}),
     ...(source.thermal!==undefined?{thermal:normalizeThermal(source.thermal)}:{}),
     ...(source.fluidInteractionLab!==undefined?{fluidInteractionLab:normalizeFluidLab(source.fluidInteractionLab)}:{}),
     ...(source.chartPresentations!==undefined?{chartPresentations:normalizeChartPresentations(source.chartPresentations)}:{}),
