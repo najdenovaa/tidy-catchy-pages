@@ -1,3 +1,4 @@
+import {addAnnularBalanceSheets} from './displacement-balance-workbook';
 import {timingRows,type DisplacementTimingStats} from './displacement-timing';
 import * as XLSX from 'xlsx';
 import { displacementDepthHistory, HISTORY_NOTE, type HistoryResult } from './displacement-depth-history';
@@ -10,9 +11,11 @@ export function displacementHistoryWorkbook(r: HistoryResult & {summary?:{timing
   XLSX.utils.book_append_sheet(w, XLSX.utils.aoa_to_sheet(rows), 'Доли во времени');
   XLSX.utils.book_append_sheet(w, XLSX.utils.aoa_to_sheet([
     ['Параметр', 'Значение'], ['Запрошенная MD, м', md], ['Граница ячейки сверху, м', h.topMD], ['Граница ячейки снизу, м', h.bottomMD],
+    ['Покомпонентный баланс', r.snapshots[selectedFrame]?.balance?'Накопленные потоки и численные поправки на отдельных листах':'Отсутствует в старом результате; требуется пересчёт'],
     ['Выбранный кадр (с 0)', selectedFrame], ['Смещение начала вытеснения, с', annulusStartS], ['Метод', HISTORY_NOTE],
     ...timingRows({maxTimeStepS:r.summary?.timing?.requestedMaxStepS??undefined,frameIntervalS:r.summary?.timing?.requestedFrameIntervalS??undefined},r.summary?.timing),
     ['Пустые значения', 'Недопустимая или отсутствующая запись состава; не заменяется нулём.'],
   ]), 'Условия');
+  addAnnularBalanceSheets(w,r,selectedFrame,annulusStartS);
   return w;
 }

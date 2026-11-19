@@ -27,7 +27,7 @@ export function displacementPlacement(d:SectionSource,frame=sectionTimeline(d).l
   const ri=pipeArea?Math.sqrt(pipeArea/Math.PI):getCasingIDAtDepth(md,w.casingOD,w.casingWall,w.casingSections)/2000;
   const meanGap=hist&&r?Array.from({length:r.nTheta},(_,i)=>r.gap[hist!.cell*r.nTheta+i]).reduce((a,b)=>a+b,0)/r.nTheta:null;
   const rh=meanGap===null?Math.max(ro+.003,boreDiameterAtDepth(w,md)/2000):ro+meanGap;
-  const annArea=meanGap===null?null:Math.PI*(rh*rh-ro*ro);
+  const annArea=hist&&r?.cellVolumesM3 ? Array.from({length:r.nTheta},(_,i)=>r.cellVolumesM3![hist!.cell*r.nTheta+i]).reduce((a,b)=>a+b,0)/dz : meanGap===null?null:Math.PI*(rh*rh-ro*ro);
   return {topMD,bottomMD,md,tvd:interpolateTVD(md,trajectory),pipeCell:pipe?.cell??null,annulusCell:hist?.cell??null,pipeFractions,annulusFractions,pipeColor:mixtureColor(pipeFractions,d.meta.colors),annulusColor:mixtureColor(annulusFractions,d.meta.colors),ro,ri,rh,pipeVolumeM3:pipeArea===null?null:pipeArea*(bottomMD-topMD),annulusVolumeM3:annArea===null?null:annArea*(bottomMD-topMD)};
  });
  const pipeLedger=p?pipeBalance(p,point.timeS):null;
