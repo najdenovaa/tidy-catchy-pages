@@ -1,5 +1,6 @@
 export type ReportScope='cementing'|'centralization'|'running';
 const CEMENTING=[
+ ['thermal','Температура: циркуляция, жидкости по глубине и порции до ОЗЦ'],
  ['fluidLab','Совместимость смесей и вымываемость: протоколы, кривые и числа'],
  ['foam','Пеноцементирование: графики, параметры и результаты'],
  ['selectedDepth','Давление и ЭЦП на выбранной глубине'],['stopStorage','Сжатие после посадки: расчёт и график'],['rheology','Реология: модели, замеры и графики'],['inputs','Исходные данные'],['hydraulics','Расчёт объёмов и гидравлики'],['schedule','Программа закачки'],['materials','Ведомость: цементы, химия, оснастка'],['lab','Рецептура и лабораторные требования'],['norms','Проверки ограничений'],['logistics','Техника, люди и график работ'],['risks','Вероятностная оценка риска'],['pressureTable','Таблица плана продавки'],['chartData','Карта графиков и контрольная числовая выборка'],['woc','ОЗЦ'],
@@ -24,7 +25,7 @@ export function allowedReportFigure(scope:ReportScope,selection:ReportSelection|
  const key=figure.reportItem??reportFigureItem(figure.title);return !!key&&REPORT_ITEMS[scope].some(([item])=>item===key)&&reportIncludes(selection,key);
 }
 
-const GRAPHICS=new Set<ReportItem>(['fluidLab','combined','pressures','rate','ecdTime','depthPressure','depthEcd','volumePressure','safeRate','flowRegime','annularFill','construction','trajectory','basket','fleetLayout','displacement3D','displacementMap','displacementPlacement','displacementSection','pipeHistory','displacementHistory','standoff','centralizer3D','centralizerSection','bladeProfile','broom','forceProfile','torque']);
+const GRAPHICS=new Set<ReportItem>(['thermal','fluidLab','combined','pressures','rate','ecdTime','depthPressure','depthEcd','volumePressure','safeRate','flowRegime','annularFill','construction','trajectory','basket','fleetLayout','displacement3D','displacementMap','displacementPlacement','displacementSection','pipeHistory','displacementHistory','standoff','centralizer3D','centralizerSection','bladeProfile','broom','forceProfile','torque']);
 export function missingReportFigures(scope:ReportScope,selection:ReportSelection|undefined,figures:{title:string;reportItem?:ReportItem}[]):string[]{
  const found=new Set(figures.map(f=>f.reportItem??reportFigureItem(f.title)));
  return REPORT_ITEMS[scope].filter(([key])=>GRAPHICS.has(key)&&reportIncludes(selection,key)&&!found.has(key)).map(([,label])=>label+': нет актуальных данных для изображения.');

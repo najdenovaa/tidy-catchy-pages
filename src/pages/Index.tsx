@@ -1,3 +1,5 @@
+import CementThermalSection from '@/components/CementThermalSection';
+import {runThermal} from '@/lib/cement-thermal-run';
 import FluidLabAnalysis from '@/components/FluidLabAnalysis';
 import FluidInteractionLab from '@/components/FluidInteractionLab';
 import {currentFoamReport,foamCharts} from '@/lib/foam-chart-data';
@@ -408,6 +410,7 @@ export default function Index() {
         extras.displacement = d; setDisplacementReport(d);
         }
       } catch (err) { extras.warnings!.push("Замещение не рассчитано: " + (err instanceof Error ? err.message : String(err))); }
+      if(reportIncludes(selection,'thermal')&&reportWell.thermal){try{setExportStatus('Расчёт температуры');extras.thermal=await runThermal({...snap,wellData:reportWell});}catch(e){extras.warnings!.push('Температура не рассчитана: '+(e instanceof Error?e.message:String(e)));}}
       // Give the mounted engineering tabs a render with the same fresh snapshot before collecting supplementary tables.
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       extras.supplements = collectCementingReportSupplements();
@@ -681,6 +684,7 @@ export default function Index() {
 
           <TabsContent value="hydraulics">
             <div data-tab-content="hydraulics">
+              {calcSnapshot&&<CementThermalSection input={calcSnapshot} onApply={thermal=>{setWellData(w=>({...w,thermal}));setCalcSnapshot(s=>s?{...s,wellData:{...s.wellData,thermal}}:s);}}/>}
               {calcSnapshot && volumes ? (
                 <HydraulicsSection
                   wellData={snapWellData ?? calcSnapshot.wellData}

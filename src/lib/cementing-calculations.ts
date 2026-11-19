@@ -155,6 +155,7 @@ export interface ReservoirLayer {
 }
 
 export interface WellData {
+  thermal?:import("./cement-thermal").ThermalSettings;
   fluidInteractionLab?:import("./fluid-interaction-lab").FluidInteractionLab;
   pressureObservation?:PressureObservationRequest;
   stopStorage?:import("./stop-storage").StopStorageSettings;

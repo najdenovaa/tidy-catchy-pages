@@ -1,3 +1,5 @@
+import {thermalFigures} from './cement-thermal-report';
+import {thermalKey,THERMAL_NOTE,THERMAL_FIELDS} from './cement-thermal';
 import {fluidLabReport,REMOVAL_NOTE} from './fluid-lab-report';
 import {FLUID_LAB_NOTE} from './fluid-interaction-lab';
 import {displacementPlacement} from './displacement-placement';
@@ -1032,6 +1034,27 @@ export async function exportToDocx(
 
   add('materials','Ведомость материалов',materialsContent);
   add('lab','Рецептура и лабораторные требования',labContent);
+  const thermalCandidate=options?.extras?.thermal;
+  const thermalInput={wellData,drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin:preComputed?.flushTimeMin??10,flushVolumeM3:preComputed?.flushVolumeM3??0};
+  const thermal=thermalCandidate?.key===thermalKey(thermalInput)?thermalCandidate:null;
+  if(reportIncludes(selection,'thermal')){
+    const content:any[]=[sectionTitle('Температура: циркуляция, цементаж и ОЗЦ'),noteParagraph(THERMAL_NOTE)];
+    if(!thermal)content.push(noteParagraph('Нет актуального теплового расчёта. Задайте условия в анализе гидравлики и пересчитайте.'));
+    else{
+      content.push(noteParagraph('BHST '+thermal.geometry.bhstC+' °C на TVD '+thermal.geometry.bottomTVDM+' м; башмак MD '+thermal.geometry.shoeMD+' м.'),noteParagraph('Источник: '+thermal.settings.source),...thermal.notes.slice(1).map(noteParagraph));
+      content.push(kvTable(THERMAL_FIELDS.map(([key,label])=>({label,value:String(thermal.settings[key])})))as any);
+      content.push(noteParagraph('Тепловые свойства жидкостей'));
+      content.push(gridTable(['Жидкость','Плотность, кг/м³','Cp, Дж/(кг К)','Вход, °C'],thermal.settings.fluids.map(f=>[thermal.names[thermal.ids.indexOf(f.id)]??f.id,String(thermal.densitiesKgM3[thermal.ids.indexOf(f.id)]),String(f.cp),String(f.inletC)]))as any);
+      content.push(noteParagraph('Начало цементажа '+(thermal.jobStartS/60).toFixed(3)+' мин; Стоп '+(thermal.stopS/60).toFixed(3)+' мин. Шагов '+thermal.steps+'; dt '+thermal.minStepS.toFixed(5)+'-'+thermal.maxStepS.toFixed(5)+' с. Отсчёт от начала теплового сценария.'));
+      content.push(noteParagraph('Итоговые порции - температура пересекаемой тепловой ячейки, точка до 1 мл от границы порции. Вышедшая жидкость не получает фиктивной температуры.'));
+      const space={pipe:'Труба',annulus:'Затрубье',outside:'Вне скважины','not-injected':'Не закачано'};
+      content.push(gridTable(['Порция','Положение','MD, м','Температура, °C'],thermal.tags.map(t=>{const h=t.history.at(-1)!;return [t.name,space[h.space],h.md?.toFixed(4)??'Нет',h.temperatureC?.toFixed(4)??'Нет'];}))as any);
+      content.push(noteParagraph('Баланс энергии по времени; невязка не является валидацией физической модели'));
+      content.push(gridTable(['Время, мин','Накоплено, МДж','Вход, МДж','Выход, МДж','Дальняя граница, МДж','Невязка, Дж'],thermal.frames.map(f=>[(f.timeS/60).toFixed(3),...[f.balance.storedJ,f.balance.inJ,f.balance.outJ,f.balance.farFieldJ].map(v=>(v/1e6).toFixed(5)),f.balance.residualJ.toExponential(4)]))as any);
+      if(reportIncludes(selection,'chartData')){content.push(noteParagraph('Все сохранённые истории порций; полные глубинные поля и состав доступны в XLSX.'));content.push(gridTable(['Время, мин','Порция','MD, м','Положение','Температура, °C'],thermal.tags.flatMap(t=>t.history.map(h=>[(h.timeS/60).toFixed(3),t.name,h.md?.toFixed(4)??'Нет',space[h.space],h.temperatureC?.toFixed(4)??'Нет'])))as any);}
+    }
+    add('thermal','Температура: циркуляция, цементаж и ОЗЦ',content);
+  }
   const labAnalysis=fluidLabReport({wellData,slurries,buffers,drillingFluid,displacementFluids},options?.extras?.displacement);
   if(reportIncludes(selection,'fluidLab')){
     const data=labAnalysis,lab=data.lab,content:any[]=[sectionTitle('Совместимость смесей и вымываемость'),noteParagraph(FLUID_LAB_NOTE),noteParagraph(REMOVAL_NOTE),...data.issues.map(noteParagraph)];
@@ -1064,7 +1087,8 @@ export async function exportToDocx(
   const placement=historyData?displacementPlacement(historyData):null;
   const placementKey=placement&&!('error'in placement)?placement.sourceKey:null;
   const currentSectionKey=currentSection&&!('error' in currentSection)?currentSection.sourceKey:null;
-  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='fluidLab'||f.sourceKey===labAnalysis.sourceKey)&&(f.reportItem!=='displacementPlacement'||!!placementKey&&f.sourceKey===placementKey)&&(f.reportItem!=='displacementSection'||!!currentSectionKey&&f.sourceKey===currentSectionKey)&&(!!historyData?.result||!['displacement3D','displacementMap','displacementHistory'].includes(f.reportItem??reportFigureItem(f.title)??''))&&(f.reportItem!=='pipeHistory'||pipeKeys.has(f.sourceKey!))&&(f.reportItem!=='displacementHistory'||historyKeys.has(f.sourceKey!))&&(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
+  const thermalFigureKeys=new Set(thermal?thermalFigures(thermal,wellData).map(p=>p.sourceKey):[]);
+  const reportExtras=options?.extras?{...options.extras,figures:options.extras.figures?.filter(f=>(f.reportItem!=='thermal'||thermalFigureKeys.has(f.sourceKey))&&(f.reportItem!=='fluidLab'||f.sourceKey===labAnalysis.sourceKey)&&(f.reportItem!=='displacementPlacement'||!!placementKey&&f.sourceKey===placementKey)&&(f.reportItem!=='displacementSection'||!!currentSectionKey&&f.sourceKey===currentSectionKey)&&(!!historyData?.result||!['displacement3D','displacementMap','displacementHistory'].includes(f.reportItem??reportFigureItem(f.title)??''))&&(f.reportItem!=='pipeHistory'||pipeKeys.has(f.sourceKey!))&&(f.reportItem!=='displacementHistory'||historyKeys.has(f.sourceKey!))&&(!f.title.startsWith('Реологическая иерархия:')||currentHierarchyKeys.has(f.sourceKey!))&&(f.reportItem!=='selectedDepth'||!!freshObservation&&f.sourceKey===selectedDepthKey)&&(f.reportItem!=='foam'||!!freshFoam&&f.sourceKey===foamReportKey(freshFoam)))}:undefined;
   const extraContent=buildCementingReportExtras(wellData,reportExtras,'cementing',selection);
   if(extraContent.length)sections.push({properties:reportPageProperties(),children:extraContent});
   const doc=new Document({styles:{default:{document:{run:{font:"Calibri",size:20}}}},sections});
