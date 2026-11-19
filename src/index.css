@@ -308,3 +308,6 @@
 }
 
 [data-cementing-program] fieldset { min-width: 0; }
+[data-cementing-program] [data-tab-content] details > :is(input, select, textarea) {
+  max-width: calc(100% - 2rem);
+}
