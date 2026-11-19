@@ -1,3 +1,4 @@
+import SectionHeader from './InputSectionHeader';
 import { useState } from "react";
 import { ExternalLink, Factory, Info, Layers, ChevronDown } from "lucide-react";
 
@@ -88,19 +89,8 @@ export default function ReadyCementAlternatives({ densityGcm3, temperatureC, cla
 
   return (
     <section className={`rounded-xl border border-primary/25 bg-primary/[0.025] overflow-hidden ${className}`} data-testid="ready-cement-alternatives">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between gap-3 p-3 text-left hover:bg-muted/30 transition-colors"
-      >
-        <span className="flex items-center gap-2 min-w-0">
-          <Factory className="h-4 w-4 shrink-0 text-primary" />
-          <span className="text-sm font-semibold">Готовые смеси «Нефтесервис»</span>
-          <span className="hidden sm:inline rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">Нефтесервис</span>
-        </span>
-        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
+      <SectionHeader title="Готовые смеси «Нефтесервис»" isOpen={open} onClick={()=>setOpen(v=>!v)}/>
+
       {open && (
         <div className="px-3 pb-3 space-y-3">
           <p className="text-xs text-muted-foreground">

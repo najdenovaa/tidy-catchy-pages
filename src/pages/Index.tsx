@@ -1,3 +1,4 @@
+import ProgramDisclosure from '@/components/ProgramDisclosure';
 import CementThermalSection from '@/components/CementThermalSection';
 import {runThermal} from '@/lib/cement-thermal-run';
 import FluidLabAnalysis from '@/components/FluidLabAnalysis';
@@ -496,7 +497,7 @@ export default function Index() {
   }, []);
 
   return (
-    <div className={`bg-background ${fromAnalysis ? 'flex' : ''}`}>
+    <div data-cementing-program className={`bg-background ${fromAnalysis ? 'flex' : ''}`}>
       {/* Persistent left chat panel for analysis sessions */}
       {fromAnalysis && (
         <div className="hidden md:block">
@@ -685,9 +686,7 @@ export default function Index() {
           </div>
 
           <TabsContent value="hydraulics">
-            <div data-tab-content="hydraulics">
-              {calcSnapshot&&<CementMechanicsSection input={calcSnapshot} onApply={mechanics=>{setWellData(w=>({...w,mechanics}));setCalcSnapshot(s=>s?{...s,wellData:{...s.wellData,mechanics}}:s);}}/>}
-              {calcSnapshot&&<CementThermalSection input={calcSnapshot} onApply={thermal=>{setWellData(w=>({...w,thermal}));setCalcSnapshot(s=>s?{...s,wellData:{...s.wellData,thermal}}:s);}}/>}
+            <div data-tab-content="hydraulics" className="space-y-6">
               {calcSnapshot && volumes ? (
                 <HydraulicsSection
                   wellData={snapWellData ?? calcSnapshot.wellData}
@@ -706,12 +705,23 @@ export default function Index() {
                   pressureData={pressureResult?.points}
                 />
               ) : null}
-              {calcSnapshot && pressureResult && <BasketStopCard settings={wellData.depthChartSettings} result={pressureResult.basketStop} well={calcSnapshot.wellData} />}
               {calcSnapshot && volumes && pressureResult ? (
                 <ZoneChecksCard zoneChecks={pressureResult.zoneChecks} standoffSource={standoffProfile ? "profile" : "default"} avgStandoffPct={avgStandoffPct} />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАССЧИТАТЬ» для получения результатов</div>
               )}
+              {calcSnapshot&&<div className="program-additional">
+                <h3 className="program-additional-title">Дополнительные расчёты</h3>
+                <ProgramDisclosure title="Корзины после остановки закачки">
+              {calcSnapshot && pressureResult && <BasketStopCard settings={wellData.depthChartSettings} result={pressureResult.basketStop} well={calcSnapshot.wellData} />}
+                </ProgramDisclosure>
+                <ProgramDisclosure title="Температура: циркуляция, цементаж и ОЗЦ">
+              {calcSnapshot&&<CementThermalSection input={calcSnapshot} onApply={thermal=>{setWellData(w=>({...w,thermal}));setCalcSnapshot(s=>s?{...s,wellData:{...s.wellData,thermal}}:s);}}/>}
+                </ProgramDisclosure>
+                <ProgramDisclosure title="Удлинение колонны и цементный камень">
+              {calcSnapshot&&<CementMechanicsSection input={calcSnapshot} onApply={mechanics=>{setWellData(w=>({...w,mechanics}));setCalcSnapshot(s=>s?{...s,wellData:{...s.wellData,mechanics}}:s);}}/>}
+                </ProgramDisclosure>
+              </div>}
             </div>
           </TabsContent>
 
@@ -791,9 +801,7 @@ export default function Index() {
           </TabsContent>
 
           <TabsContent value="lab">
-            <div data-tab-content="lab">
-              {calcSnapshot&&<FluidInteractionLab input={calcSnapshot} data={calcSnapshot.wellData.fluidInteractionLab} onApply={lab=>{setWellData(prev=>({...prev,fluidInteractionLab:lab}));setCalcSnapshot(prev=>prev?{...prev,wellData:{...prev.wellData,fluidInteractionLab:lab}}:prev);}}/>}
-              {calcSnapshot&&<FluidLabAnalysis input={{...calcSnapshot,wellData:snapWellData??calcSnapshot.wellData}} displacement={displacementReport}/>}
+            <div data-tab-content="lab" className="space-y-6">
               {calcSnapshot && volumes ? (
                 <CementLabSection
                   wellData={snapWellData ?? calcSnapshot.wellData}
@@ -808,6 +816,10 @@ export default function Index() {
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАСЧЁТ» для получения результатов</div>
               )}
+              {calcSnapshot&&<div className="program-additional"><h3 className="program-additional-title">Дополнительные исследования</h3><ProgramDisclosure title="Совместимость смесей и вымываемость">
+              {calcSnapshot&&<FluidInteractionLab input={calcSnapshot} data={calcSnapshot.wellData.fluidInteractionLab} onApply={lab=>{setWellData(prev=>({...prev,fluidInteractionLab:lab}));setCalcSnapshot(prev=>prev?{...prev,wellData:{...prev.wellData,fluidInteractionLab:lab}}:prev);}}/>}
+              {calcSnapshot&&<FluidLabAnalysis input={{...calcSnapshot,wellData:snapWellData??calcSnapshot.wellData}} displacement={displacementReport}/>}
+              </ProgramDisclosure></div>}
             </div>
           </TabsContent>
 

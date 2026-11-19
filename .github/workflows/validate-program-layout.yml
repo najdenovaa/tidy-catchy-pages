@@ -1,0 +1,35 @@
+name: Validate cementing program layout
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/components/**'
+      - 'src/pages/Index.tsx'
+      - 'src/index.css'
+      - 'scripts/check-program-layout.mjs'
+      - '.github/workflows/validate-program-layout.yml'
+  workflow_dispatch:
+jobs:
+  layout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --legacy-peer-deps
+      - run: npm install --no-save --legacy-peer-deps playwright@1.51.1
+      - run: npx playwright install --with-deps chromium
+      - name: Inspect every program tab on desktop and mobile
+        run: |
+          npm run dev -- --host 127.0.0.1 > /tmp/program-vite.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/ > /dev/null && break || sleep 1; done
+          node scripts/check-program-layout.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: program-layout-desktop-mobile
+          path: |
+            /tmp/program-layout/
+            /tmp/program-vite.log
