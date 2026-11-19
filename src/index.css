@@ -305,3 +305,6 @@
   height: auto;
   white-space: normal;
 }
+/* Recharts measures unwrapped text off-screen. Keep that measuring node out
+   of document overflow without constraining the measured label dimensions. */
+#recharts_measurement_span { position: fixed !important; }
