@@ -906,7 +906,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
             </Card>
           </div>
 
-          {results.some(r=>r.centralizerRole)&&<details className="border border-border rounded p-3 text-xs"><summary>А/Б: метод расчёта и ограничения</summary><ul className="space-y-1 mt-2">{[...new Set(results.flatMap(r=>r.calculationAssumptions??[]))].map(note=><li key={note}>{note}</li>)}</ul></details>}
+          {results.some(r=>r.calculationAssumptions?.length)&&<details className="border border-border rounded p-3 text-xs"><summary>{results.some(r=>r.centralizerRole)?'А/Б: метод расчёта и ограничения':'Метод расчёта и ограничения'}</summary><ul className="space-y-1 mt-2">{[...new Set(results.flatMap(r=>r.calculationAssumptions??[]))].map(note=><li key={note}>{note}</li>)}</ul></details>}
           {selectedResult && (() => {
             const supportResult=selectedResult.centralizerMD===undefined?selectedResult:results.find(r=>Math.abs(r.md-selectedResult.centralizerMD!)<1e-7)??selectedResult;
             const spec = autoResults ? autoSpec : centralizerAtResult(intervals,supportResult);
