@@ -45,7 +45,7 @@ for(const width of [1440,390]){
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       await page.screenshot({path:`${out}/${width}-${id}-expanded-${j}.png`});
       const expandedWidth=await page.evaluate(()=>document.documentElement.scrollWidth);
-      if(expandedWidth>width+2){const offenders=await panel.evaluate(el=>[...el.querySelectorAll('*')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.right>innerWidth+2&&!e.closest('.overflow-x-auto,.overflow-auto,.overflow-hidden');}).slice(0,12).map(e=>({tag:e.tagName,classes:e.className?.toString().slice(0,120),text:e.textContent?.slice(0,70)})));errors.push(`${width}/${id}: expanded panel ${j} overflow ${expandedWidth}: ${JSON.stringify(offenders)}`);}
+      if(expandedWidth>width+2){const offenders=await page.evaluate(()=>({scrollX,viewport:innerWidth,client:document.documentElement.clientWidth,nodes:[...document.querySelectorAll('body *')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.right+scrollX>innerWidth+1;}).slice(0,25).map(e=>({tag:e.tagName,classes:e.className?.toString().slice(0,100),right:e.getBoundingClientRect().right+scrollX,width:e.clientWidth,scrollWidth:e.scrollWidth,overflow:getComputedStyle(e).overflowX,text:e.textContent?.slice(0,40)}))}));errors.push(`${width}/${id}: expanded panel ${j} overflow ${expandedWidth}: ${JSON.stringify(offenders)}`);}
       await summary.click();
     }
    }
