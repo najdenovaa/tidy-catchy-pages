@@ -676,7 +676,7 @@ export default function Index() {
             </div>
           </TabsContent>
 
-          <div className={activeTab !== "trajectory" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "trajectory"}>
             <TabsContent value="trajectory" forceMount>
               <div data-tab-content="trajectory" className="space-y-4">
                 <TrajectorySection wellData={wellData} />
@@ -839,7 +839,7 @@ export default function Index() {
             </div>
           </TabsContent>
 
-          <div className={activeTab !== "charts" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "charts"}>
             <TabsContent value="charts" forceMount>
               <div data-tab-content="charts">
                 {calcSnapshot && pressureResult ? (
@@ -852,7 +852,7 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <div className={activeTab !== "animation" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "animation"}>
             <TabsContent value="animation" forceMount>
               <div data-tab-content="animation">
                 {calcSnapshot && pressureResult ? (
@@ -903,7 +903,7 @@ export default function Index() {
             </TabsContent>
           )}
 
-          <div className={activeTab !== "contact" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "contact"}>
             <TabsContent value="contact" forceMount>
               <div data-tab-content="contact">
                 {calcSnapshot && pressureResult && volumes ? (
@@ -925,7 +925,7 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <div className={activeTab !== "quality" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "quality"}>
             <TabsContent value="quality" forceMount>
               <div data-tab-content="quality" className="space-y-4">
                 {calcSnapshot && pressureResult && volumes ? (
@@ -967,7 +967,7 @@ export default function Index() {
           </div>
 
 
-          <div className={activeTab !== "visual" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "visual"}>
             <TabsContent value="visual" forceMount>
               <div data-tab-content="visual">
                 <WellVisualization
@@ -982,7 +982,7 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <div className={activeTab !== "centralization" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "centralization"}>
             <TabsContent value="centralization" forceMount>
               <div data-tab-content="centralization">
                 <CentralizationSection
@@ -1001,7 +1001,7 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <div className={activeTab !== "torquedrag" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "torquedrag"}>
             <TabsContent value="torquedrag" forceMount>
               <div data-tab-content="torquedrag">
               <TorqueDragSection
@@ -1017,7 +1017,7 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <div className={activeTab !== "drillhydr" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "drillhydr"}>
             <TabsContent value="drillhydr" forceMount>
               <div data-tab-content="drillhydr">
                 <DrillingHydraulicsSection
@@ -1029,7 +1029,7 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <div className={activeTab !== "foam" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "foam"}>
             <TabsContent value="foam" forceMount>
               <div data-tab-content="foam">
                 <FoamCementSection
@@ -1048,7 +1048,7 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <div className={activeTab !== "rotation" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "rotation"}>
             <TabsContent value="rotation" forceMount>
               <div data-tab-content="rotation">
                 <CasingRotationSection
@@ -1061,7 +1061,7 @@ export default function Index() {
             </TabsContent>
           </div>
 
-          <div className={activeTab !== "woc" ? "h-0 overflow-hidden" : ""}>
+          <div hidden={activeTab !== "woc"}>
             <TabsContent value="woc" forceMount>
               <div data-tab-content="woc" className="space-y-3">
                 <WOCFromProgram

@@ -539,7 +539,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
       <ReportContentsDialog format={exportKind} scope="centralization" open={reportOpen} onOpenChange={setReportOpen} onConfirm={exportCenter} busy={reportBusy}/>
       {reportError&&<p role="alert" className="text-destructive">{reportError}</p>}
       {/* Mode switcher */}
-      <div className="flex gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <Button
           variant={mode === "manual" ? "default" : "outline"}
           size="sm"
@@ -564,7 +564,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
       {mode === "manual" && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center justify-between">
+            <CardTitle className="text-sm flex flex-wrap items-center justify-between gap-2">
               <span>Интервалы установки центраторов</span>
               <Button size="sm" variant="outline" onClick={addInterval} className="text-xs gap-1">
                 <Plus className="w-3 h-3" /> Добавить интервал
@@ -643,7 +643,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
       {/* ═══════ TURBULIZERS — POINT-BASED ═══════ */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center justify-between">
+          <CardTitle className="text-sm flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-1.5"><Wind className="w-4 h-4" /> Турбулизаторы потока</span>
             <div className="flex gap-1">
               <Button size="sm" variant="outline" onClick={addTurbPoint} className="text-xs gap-1">
@@ -819,7 +819,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
         <Card>
           <CardHeader className="pb-2">
             {autoResults.some(r => r.standoffAchieved < (calculatedTarget ?? targetStandoff)) && <p role="alert" className="text-sm text-destructive">На части интервалов цель не достигается даже при предельной плотности установки. Проверьте достигнутый Standoff в таблице.</p>}
-            <CardTitle className="text-sm flex items-center justify-between">
+            <CardTitle className="text-sm flex flex-wrap items-center justify-between gap-2">
               <span>Расстановка центраторов · цель {calculatedTarget}%</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-normal text-muted-foreground">
@@ -918,7 +918,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
           {/* Cross-section preview */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center justify-between">
+              <CardTitle className="text-sm flex flex-wrap items-center justify-between gap-2">
                 <span>Поперечное сечение</span>
                 <CopyImageButton targetRef={crossSectionRef} label="Копировать" />
               </CardTitle>
@@ -951,7 +951,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
           {/* Standoff bar chart */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center justify-between">
+              <CardTitle className="text-sm flex flex-wrap items-center justify-between gap-2">
                 <span>Профиль Standoff по стволу</span>
                 <CopyImageButton targetRef={standoffProfileRef} label="Копировать" />
               </CardTitle>
@@ -969,7 +969,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
           {/* Data table */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center justify-between">
+              <CardTitle className="text-sm flex flex-wrap items-center justify-between gap-2">
                 <span>Таблица результатов</span>
                 <CopyImageButton targetRef={resultsTableRef} label="Копировать" />
               </CardTitle>
@@ -1014,7 +1014,7 @@ export default function CentralizationSection({ wellData, mudDensity, fluidPV = 
           {jointSchedule && jointSchedule.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center justify-between">
+                <CardTitle className="text-sm flex flex-wrap items-center justify-between gap-2">
                   <span>Таблица спуска — расстановка центраторов</span>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-normal text-muted-foreground">
