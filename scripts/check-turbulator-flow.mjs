@@ -39,6 +39,12 @@ const front=target.locator('[data-flow-tracer="0-0"][data-flow-layer="front"] an
 const back=target.locator('[data-flow-tracer="0-0"][data-flow-layer="back"] animateMotion');
 assert.equal(await front.getAttribute('dur'),await back.getAttribute('dur'));
 assert.equal(await front.getAttribute('path'),await back.getAttribute('path'));
+const tracer=target.locator('[data-flow-tracer="0-0"][data-flow-layer="front"]');
+const position=()=>tracer.evaluate(el=>{const m=el.getCTM();return [m.e,m.f];});
+const startPosition=await position();
+await page.waitForTimeout(125);
+const nextPosition=await position();
+assert.ok(Math.hypot(nextPosition[0]-startPosition[0],nextPosition[1]-startPosition[1])>1,'The browser must actually move the tracer, not only expose animation attributes');
 await page.getByRole('slider',{name:'Длина окна наблюдения'}).focus();await page.getByRole('slider',{name:'Длина окна наблюдения'}).press('End');
 assert.notEqual(await controller.locator('[data-turbulator-interval]').innerText(),initialInterval);
 await target.scrollIntoViewIfNeeded();await target.screenshot({path:'/tmp/turbulator-desktop.png'});
