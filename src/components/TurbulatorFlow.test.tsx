@@ -24,11 +24,11 @@ it('echoes saved points without a render loop, restores another project and remo
   expect(r.container.querySelector('[data-flow-metric="Скорость вверх"]')!.textContent).not.toBe(before);
   expect(r.container.querySelector('[data-turbulator-interval]')!.textContent).toBe(interval);
   expect(Number(r.container.querySelector('[data-flow-transit-s]')!.getAttribute('data-flow-transit-s'))).toBeLessThan(duration);
-  const velocity=r.container.querySelector('[data-flow-metric="Скорость закрутки"]')!.textContent;
-  const originalPath=Array.from(r.container.querySelectorAll('[data-flow-mean]')).map(e=>e.getAttribute('d')).join('|');
-  fireEvent.change(screen.getByLabelText('Масштаб закрутки'),{target:{value:'10'}});
-  expect(Array.from(r.container.querySelectorAll('[data-flow-mean]')).map(e=>e.getAttribute('d')).join('|')).not.toBe(originalPath);
-  expect(r.container.querySelector('[data-flow-metric="Скорость закрутки"]')!.textContent).toBe(velocity);
+  expect(screen.queryByLabelText('Масштаб закрутки')).toBeNull();
+  expect(screen.queryByLabelText('Передача закрутки')).toBeNull();
+  expect(screen.queryByLabelText('Порог закрутки')).toBeNull();
+  expect(r.container.querySelector('[data-calculated-swirl]')).toBeTruthy();
+  expect(screen.getByRole('region',{name:'Длина затухания вращения'})).toBeTruthy();
   fireEvent.change(screen.getByRole('slider',{name:'Длина окна наблюдения'}),{target:{value:'2'}});
   expect(r.container.querySelector('[data-turbulator-interval]')!.textContent).not.toBe(interval);
   fireEvent.click(screen.getByRole('button',{name:'Стоп насосов'}));

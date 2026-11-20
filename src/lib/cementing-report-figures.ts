@@ -41,9 +41,9 @@ export function buildCementingReportSvgs(w: WellData, extras: CementingReportExt
   const c=extras.centralization;
   if(scope!=='running'&&c?.turbulatorFlows&&selection?.turbulatorFlow!==false)for(const r of c.turbulatorFlows){
     if(!r.valid||r.samples.length<2)continue;
-    images.push(reportSeriesPlot('Затухание закрутки · MD '+r.point.md+' м','turbulatorFlow',r.samples.map(s=>s.distanceM),'Выше изделия, м MD','vθ/vz',[
-      {name:'Интенсивность закрутки',color:'#0891b2',values:r.samples.map(s=>s.ratio)},
-      {name:'Порог',color:'#d97706',values:r.samples.map(()=>c.turbulatorDesign?.threshold??.01),dash:'5 4'}
+    images.push(reportSeriesPlot('Затухание закрутки · MD '+r.point.md+' м','turbulatorFlow',r.samples.map(s=>s.distanceM),'Выше изделия, м MD','Остаток вращательного момента',[
+      {name:'Остаток момента',color:'#0891b2',values:r.samples.map(s=>s.remainingFraction??0)},
+      {name:'Остаток 0,1%',color:'#d97706',values:r.samples.map(()=>.001),dash:'5 4'}
     ],{note:'Оценочная модель. Жидкость: '+c.turbulatorFluid?.name+'; Q '+c.turbulatorRateLps+' л/с. Закрутка не определяет режим турбулентности.'}));
   }
   if(scope!=='cementing'&&c)images.push(...casingDesignCharts(w,c,scope,selection));

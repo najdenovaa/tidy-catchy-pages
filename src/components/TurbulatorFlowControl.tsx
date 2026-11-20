@@ -3,6 +3,7 @@ import { Gauge, Minus, Plus, Square } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import Turbulator3DInspector from './Turbulator3DInspector';
+import TurbulatorDecayPlot from './TurbulatorDecayPlot';
 import type { WellData } from '@/lib/cementing-calculations';
 import { interpolateTrajectory } from '@/lib/centralization-calculations';
 import { trajectoryAzimuth } from '@/lib/centralizer-mesh';
@@ -53,7 +54,7 @@ export default function TurbulatorFlowControl({well,result,fluid,rateLps,onRateC
         </div>
       </div>
     </section>
-    <div className="xl:col-start-2 xl:row-start-1 xl:row-span-3 min-w-0">
+    <div className="xl:col-start-2 xl:row-start-1 xl:row-span-4 min-w-0">
       <Turbulator3DInspector result={result} pipeOD={well.casingOD} zenith={survey.zenith} azimuth={azimuth} viewAboveM={upM} viewBelowM={downM} rateLps={rateLps}/>
     </div>
     <section className="xl:col-start-1 xl:row-start-2 rounded-xl border border-slate-700 bg-slate-950 p-3 text-slate-200 space-y-3 min-w-0" aria-label="Скорости и режим потока">
@@ -69,7 +70,14 @@ export default function TurbulatorFlowControl({well,result,fluid,rateLps,onRateC
         <p className="text-[11px] text-slate-400">Пороги рассчитаны общей моделью гидравлики по выбранной реологии и местному диаметру. Это режим осевого потока; рёбра создают закрутку и при ламинарном течении. Шкала задаёт локальный сценарий; расходы ступеней общей программы задаются в закачке. Диапазон шкалы задаётся для просмотра.</p>
       </div>
     </section>
-    <section className="xl:col-start-1 xl:row-start-3 rounded-xl border p-3 space-y-3 text-xs min-w-0" aria-label="Интервал наблюдения турбулизатора">
+    <section className="xl:col-start-1 xl:row-start-3 rounded-xl border p-3 space-y-3 text-xs min-w-0" aria-label="Длина затухания вращения">
+      <b>Затухание после турбулизатора</b>
+      <div className="grid grid-cols-3 gap-2">{([['90%',result.decay90M],['99%',result.decay99M],['99,9%',result.decay999M]] as const).map(([label,length])=><div key={label} className="rounded border p-2"><span>Потеря {label}</span><b className="block">{length===undefined?'не достигнуто':fmt(length)+' м'}</b></div>)}</div>
+      <p>Остаток вращательного момента на конце расчётного участка: <b>{fmt((result.residualFraction??0)*100,3)}%</b>. Расстояния отсчитываются вверх от MD {fmt(md)} м.</p>
+      <p className="text-muted-foreground">Практическое затухание — потеря 99,9% начального вращательного момента. Для точного нуля при плавном вязком затухании конечная длина не задаётся.</p>
+      <TurbulatorDecayPlot result={result}/>
+    </section>
+    <section className="xl:col-start-1 xl:row-start-4 rounded-xl border p-3 space-y-3 text-xs min-w-0" aria-label="Интервал наблюдения турбулизатора">
       <div className="flex flex-wrap justify-between gap-2"><b>Место наблюдения · MD {fmt(md)} м</b><span>TVD {fmt(survey.tvd)} м</span></div>
       <div className="grid grid-cols-2 gap-2">
         <p>Зенитный угол<b className="block">{fmt(survey.zenith,1)}°</b></p><p>Азимут<b className="block">{fmt(azimuth,1)}°</b></p>
