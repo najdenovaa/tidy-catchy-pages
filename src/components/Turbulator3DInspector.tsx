@@ -1,19 +1,22 @@
 import { surveyTransform } from '@/lib/centralizer-mesh';
 import { turbulatorMeanAt, turbulatorTrace } from '@/lib/turbulator-streamlines';
 import { useId, useMemo, useState } from 'react';
+import {turbulatorAnimationTrack} from '@/lib/turbulator-animation-track';
+import {swirlStats} from '@/lib/swirl-transport';
 import type { TurbulatorFlowResult } from '@/lib/turbulator-flow';
 import type { TurbulatorPoint } from '@/lib/centralization-calculations';
 
 type V = [number,number,number];
 /** Same lightweight SVG/painter renderer as Centralizer3DInspector. Metres internally. */
 export default function Turbulator3DInspector({result,pipeOD,zenith=0,azimuth=0,viewAboveM,viewBelowM,rateLps}:{result:TurbulatorFlowResult;pipeOD:number;zenith?:number;azimuth?:number;viewAboveM?:number;viewBelowM?:number;rateLps?:number}){
- const uid=useId().replace(/:/g,''),[orbit,setOrbit]=useState(25),[axial,setAxial]=useState(false),[wall,setWall]=useState(true),[flow,setFlow]=useState(true),[play,setPlay]=useState(true);
+ const uid=useId().replace(/:/g,''),[orbit,setOrbit]=useState(25),[axial,setAxial]=useState(false),[wall,setWall]=useState(true),[flow,setFlow]=useState(true),[play,setPlay]=useState(true),[transparent,setTransparent]=useState(true);
  const p=result.point,pr=pipeOD/2000,br=result.boreMm/2000;
  const offset=(br-pr)*(1-Math.max(0,Math.min(100,result.standoffPct))/100);
  const length=(p.lengthMm??180)/1000,thickness=(p.sleeveThicknessMm??3)/1000;
  const outer=pr+thickness,fin=pr+p.bladeHeight/1000;
  const visible=viewAboveM??Math.min(2,Math.max(.3,result.lengthM)),lo=-(viewBelowM??length+.18),hi=visible+(viewAboveM===undefined?.12:0);
  const color=result.axialMs===0?'#94a3b8':result.regime===1?'#f472b6':result.regime===0?'#22d3ee':'#fbbf24';
+ const surfaceLimited=!result.reachedThreshold&&Math.abs(result.lengthM-p.md)<1e-6;
  const regime=result.axialMs===0?'Стоп':result.regime===1?'Турбулентный':result.regime===0?'Ламинарный':'Переходный';
  const transform=(v:V):V=>{
   const raw=axial?v:surveyTransform(v,zenith,azimuth);
@@ -43,17 +46,22 @@ export default function Turbulator3DInspector({result,pipeOD,zenith=0,azimuth=0,
  // Camera and dimensions are the only mesh inputs.
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[p,pipeOD,orbit,axial,visible,result.boreMm,zenith,azimuth]);
- const paths:{d:string;meanD:string;front:boolean;id:string;seconds:number}[]=[];
+ const paths:{meanD:string;front:boolean;id:string}[]=[];
+ const tracks:NonNullable<ReturnType<typeof turbulatorAnimationTrack>>[]=[];
  let transitSeconds=0;
  const turnInWindow=turbulatorMeanAt(result,hi,pipeOD).phase*180/Math.PI;
+ const omega=result.outletProfile&&result.axialMs>0?swirlStats(result.outletProfile,result.axialMs*Math.PI*(br*br-pr*pr)).phaseGradient*result.axialMs:0;
+ const rpm=omega*60/(2*Math.PI),turnSeconds=omega>0?2*Math.PI/omega:Infinity;
  const pitch=result.ratio>0?2*Math.PI*(pipeOD+result.boreMm)/4000/result.ratio:Infinity;
  if(result.valid&&flow&&result.axialMs>0&&br>pr){
   for(let k=0;k<8;k++){
    const trace=turbulatorTrace(result,pipeOD,lo,hi,k*2*Math.PI/8);
    if(k===0)transitSeconds=trace.at(-1)?.travelS??0;
+   const track=turbulatorAnimationTrack(trace,xy,v=>transform(v)[2]>transform([0,0,v[2]])[2]);
+   if(track)tracks.push(track);
    let segment:typeof trace=[],front:boolean|undefined;
    const path=(points:V[])=>'M '+str(points).replace(/ /g,' L ');
-   const push=()=>{if(segment.length>1)paths.push({id:`${uid}-${k}-${paths.length}`,d:path(segment.map(v=>v.particle)),meanD:path(segment.map(v=>v.mean)),front:!!front,seconds:Math.max(.001,segment.at(-1)!.travelS-segment[0].travelS)});};
+   const push=()=>{if(segment.length>1)paths.push({id:`${uid}-${k}-${paths.length}`,meanD:path(segment.map(v=>v.mean)),front:!!front});};
    for(const sample of trace){
     const v=sample.particle,f=transform(v)[2]>transform([0,0,v[2]])[2];
     if(front!==undefined&&f!==front){segment.push(sample);push();segment=[sample];}else segment.push(sample);
@@ -64,29 +72,37 @@ export default function Turbulator3DInspector({result,pipeOD,zenith=0,azimuth=0,
  const drawPaths=(front:boolean)=>paths.filter(p=>p.front===front).map(p=><g key={p.id}>
   <path data-flow-mean="true" d={p.meanD} fill="none" stroke={color} strokeWidth="1.5" opacity={front?.85:.25}/>
 
-  {play&&[0,1,2].map(i=><circle key={i} className="turbulator-particle" r="2.4" fill={color}><animateMotion dur={`${p.seconds}s`} begin={`${-i*p.seconds/3}s`} calcMode="linear" repeatCount="indefinite" path={p.d}/></circle>)}
  </g>);
+ const drawParticles=(front:boolean)=>play&&tracks.flatMap((track,k)=>[0,1,2].map(i=>{
+  const begin=`${-(i/3+k/24)*track.seconds}s`,highlight=k===0&&i===0;
+  return <circle key={`${k}-${i}`} className="turbulator-particle" data-flow-tracer={`${k}-${i}`} data-flow-layer={front?'front':'back'} r={highlight?3.8:2.2} fill={highlight?'#ffffff':color} stroke={highlight?'#fbbf24':'none'} strokeWidth="1">
+   <animateMotion data-complete-track="true" dur={`${track.seconds}s`} begin={begin} calcMode="linear" keyTimes={track.keyTimes} keyPoints={track.keyPoints} repeatCount="indefinite" path={track.path}/>
+   <animate attributeName="opacity" values={front?track.frontOpacity:track.backOpacity} keyTimes={track.keyTimes} dur={`${track.seconds}s`} begin={begin} repeatCount="indefinite" calcMode="discrete"/>
+  </circle>;
+ }));
  return <section className="rounded-xl border border-border overflow-hidden" aria-label="3D турбулизатора и вихревого потока">
   <div className="p-3 border-b text-sm"><b>Турбулизатор · MD {p.md} м</b><p className="text-xs text-muted-foreground">Зенит {zenith.toFixed(1)}° · азимут {azimuth.toFixed(1)}° · Standoff {result.standoffPct.toFixed(1)}% · посадка на трубе без проточного зазора</p></div>
   <div className="bg-slate-950 text-slate-200 p-3">
    <div className="flex flex-wrap justify-between gap-2 px-1 pb-2 text-xs tabular-nums"><b style={{color}}>{regime} · Re {result.reynolds.toFixed(0)}</b><span>{rateLps!==undefined?`${rateLps.toFixed(1)} л/с · `:''}{result.axialMs.toFixed(3)} м/с</span></div>
-   <p className="text-[11px] text-slate-400 mb-2">MD {Math.max(0,p.md-hi).toFixed(2)}–{(p.md-lo).toFixed(2)} м · угол рёбер {p.bladeAngle}°</p>
+   <p className="text-[11px] text-slate-400 mb-2">Окно MD {Math.max(0,p.md-hi).toFixed(2)}–{(p.md-lo).toFixed(2)} м · угол рёбер {p.bladeAngle}°</p>
    <div className="rounded border border-slate-700 p-2 mb-2 text-xs space-y-2">
     <p data-flow-turn>Средний поворот в окне: {turnInWindow.toFixed(1)}° · шаг спирали на выходе: {Number.isFinite(pitch)&&result.axialMs>0?pitch.toFixed(1)+' м':'—'}</p>
-    <p className="text-slate-400">Линии и частицы следуют рассчитанному полю окружной скорости. Масштаб 1:1. Поворот, время прохода и затухание пересчитываются при изменении подачи.</p>
+    <p className="tabular-nums" data-flow-clock>Вращение на выходе: {rpm.toFixed(1)} об/мин · период на выходе: {Number.isFinite(turnSeconds)?turnSeconds.toFixed(2)+' с':'—'} · проход окна: {transitSeconds.toFixed(2)} с</p>
+    {!result.reachedThreshold&&result.lengthM>0&&<p role="status" className="text-amber-300" data-flow-surface-limit>Затухание 99,9% не достигнуто: {surfaceLimited?'расчёт ограничен устьем MD 0':'достигнут предел расчётного участка'}, длина {result.lengthM.toFixed(2)} м. Остаток момента {((result.residualFraction??0)*100).toFixed(1)}%.</p>}
+    <p className="text-slate-400">Линии и частицы следуют рассчитанному полю окружной скорости. Масштаб 1:1. Белая частица проходит всю траекторию непрерывно. Форма линии определяется отношением скоростей; частота вращения растёт с окружной скоростью.</p>
    </div>
    <style>{'@media (prefers-reduced-motion: reduce){.turbulator-particle{display:none}}'}</style>
    <svg data-flow-transit-s={transitSeconds} data-calculated-swirl="true" viewBox="0 0 600 560" className="w-full max-h-[620px]" role="img" aria-label="Красная втулка с наклонными рёбрами; поток снаружи, закрутка выше изделия">
     <defs><radialGradient id={`${uid}-bg`}><stop stopColor="#223149"/><stop offset="1" stopColor="#080f1d"/></radialGradient></defs>
     <rect width="600" height="560" rx="12" fill={`url(#${uid}-bg)`}/>
     {wall&&<g stroke="#64748b" opacity=".4" fill="none">{[lo,hi].map(z=><polyline key={z} points={str(wallRing(z))}/>)}{[0,1,2,3,4,5,6,7].map(k=><polyline key={k} points={str([[offset+br*Math.cos(k*Math.PI/4),br*Math.sin(k*Math.PI/4),lo],[offset+br*Math.cos(k*Math.PI/4),br*Math.sin(k*Math.PI/4),hi]])}/>)}</g>}
-    {drawPaths(false)}
-    {faces.map((f,i)=><polygon key={i} points={str(f.points)} fill={f.red?`rgb(${Math.round(145+100*f.light)},${Math.round(12+26*f.light)},${Math.round(30+32*f.light)})`:`hsl(215,10%,${28+30*f.light}%)`} stroke="none"/>)}
-    {drawPaths(true)}
-    <g fill="#cbd5e1" fontSize="12"><text x="20" y="28">{axial?'Вид вдоль оси':'Восходящий поток · к устью ↑'}</text><text x="20" y="526">Поток только снаружи втулки и трубы</text><text x="20" y="547">{result.lengthM>visible?`Окно ${visible.toFixed(1)} м; закрутка продолжается выше`:'Затухание вращательного момента рассчитано по длине'}</text></g>
-    {result.valid&&result.lengthM>0&&!axial&&<g stroke="#fbbf24" fill="#fbbf24" fontSize="12">{(()=>{const a=xy([br*1.35,0,0]),b=xy([br*1.35,0,Math.min(visible,result.lengthM)]);return <><line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}/><text x="20" y="52" stroke="none">L₉₉․₉ {result.reachedThreshold?'':'≥ '}{result.lengthM.toFixed(2)} м MD</text></>;})()}</g>}
+    {drawPaths(false)}{drawParticles(false)}
+    {faces.map((f,i)=><polygon key={i} points={str(f.points)} opacity={f.red?1:transparent?.18:1} fill={f.red?`rgb(${Math.round(145+100*f.light)},${Math.round(12+26*f.light)},${Math.round(30+32*f.light)})`:`hsl(215,10%,${28+30*f.light}%)`} stroke="none"/>)}
+    {drawPaths(true)}{drawParticles(true)}
+    <g fill="#cbd5e1" fontSize="12"><text x="20" y="28">{axial?'Вид вдоль оси':'Восходящий поток · к устью ↑'}</text><text x="20" y="526">Поток только снаружи втулки и трубы</text><text x="20" y="547">{result.lengthM>visible?`Показано ${visible.toFixed(1)} м из рассчитанных ${result.lengthM.toFixed(1)} м`:'Затухание вращательного момента рассчитано по длине'}</text></g>
+    {result.valid&&result.lengthM>0&&!axial&&<g stroke="#fbbf24" fill="#fbbf24" fontSize="12">{(()=>{const a=xy([br*1.35,0,0]),b=xy([br*1.35,0,Math.min(visible,result.lengthM)]);return <><line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}/><text x="20" y="52" stroke="none">{result.reachedThreshold?`L₉₉․₉ = ${result.lengthM.toFixed(2)} м`:`${surfaceLimited?'До устья':'Рассчитано'} ${result.lengthM.toFixed(2)} м; L₉₉․₉ не достигнуто`}</text></>;})()}</g>}
    </svg>
-   <div className="flex flex-wrap gap-4 text-xs my-2"><label><input type="checkbox" checked={wall} onChange={e=>setWall(e.target.checked)}/> Контур ствола</label><label><input type="checkbox" checked={flow} onChange={e=>setFlow(e.target.checked)}/> Поток</label><label><input type="checkbox" checked={play} onChange={e=>setPlay(e.target.checked)}/> Анимация</label><button className="underline" onClick={()=>setAxial(!axial)}>{axial?'Объёмный вид':'Вдоль оси'}</button></div>
+   <div className="flex flex-wrap gap-4 text-xs my-2"><label><input aria-label="Прозрачная труба" type="checkbox" checked={transparent} onChange={e=>setTransparent(e.target.checked)}/> Прозрачная труба</label><label><input type="checkbox" checked={wall} onChange={e=>setWall(e.target.checked)}/> Контур ствола</label><label><input type="checkbox" checked={flow} onChange={e=>setFlow(e.target.checked)}/> Поток</label><label><input type="checkbox" checked={play} onChange={e=>setPlay(e.target.checked)}/> Анимация</label><button className="underline" onClick={()=>setAxial(!axial)}>{axial?'Объёмный вид':'Вдоль оси'}</button></div>
    <label className="text-xs block">Обход вокруг трубы {orbit}°<input aria-label="Поворот турбулизатора" type="range" min="-180" max="180" value={orbit} onChange={e=>setOrbit(+e.target.value)} className="w-full"/></label>
    <p className="text-xs text-slate-400">Наклон по инклинометрии; камера вращается для обзора. Траектории вычислены по окружной скорости и времени прохода. Осесимметричное приближение локального затрубья.</p>
   </div>
