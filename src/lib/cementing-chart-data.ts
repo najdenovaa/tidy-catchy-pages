@@ -14,7 +14,7 @@ export type NumericChart=ReturnType<typeof hydraulicReportCharts>[number];
 export const chartHasNumbers=hasPlotNumbers;
 export const NUMERIC_CHART_ITEMS=['foam','basket','rheology','combined','pressures','rate','ecdTime','depthPressure','depthEcd','volumePressure','safeRate','flowRegime','annularFill','selectedDepth','stopStorage'] as const;
 export function cementingNumericCharts(r:Pick<PressureProfileResult,'points'|'envelope'|'stageBoundaries'|'observation'|'stopStorage'>&{basketStop?:PressureProfileResult['basketStop']}&{rheologyInput?:RheologyReportInput;foam?:FoamReportBundle},settings?:DepthChartSettings,selection?:ReportSelection,presentations?:ChartPresentations):NumericChart[]{
- return [...foamCharts(r.foam),...basketStopCharts(r.basketStop,settings),...(r.rheologyInput&&reportIncludes(selection,'rheology')?rheologyReportFigures(r.rheologyInput):[]),...hydraulicReportCharts(r.points,selection,r.stageBoundaries,r.observation,presentations),...depthReportCharts(r.envelope,selection,settings,presentations),...stopStorageReportCharts(r.stopStorage,presentations)].filter(p=>reportIncludes(selection,p.reportItem));
+ return [...foamCharts(r.foam,presentations),...basketStopCharts(r.basketStop,settings),...(r.rheologyInput&&reportIncludes(selection,'rheology')?rheologyReportFigures(r.rheologyInput):[]),...hydraulicReportCharts(r.points,selection,r.stageBoundaries,r.observation,presentations),...depthReportCharts(r.envelope,selection,settings,presentations),...stopStorageReportCharts(r.stopStorage,presentations)].filter(p=>reportIncludes(selection,p.reportItem));
 }
 export function chartCoverage(plots:NumericChart[],selection?:ReportSelection){
  return NUMERIC_CHART_ITEMS.filter(k=>reportIncludes(selection,k)).map(key=>{

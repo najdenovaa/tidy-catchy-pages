@@ -1003,7 +1003,8 @@ export async function exportToDocx(
     riskContent = buildRiskPage(risk);
   } catch { riskContent = [noteParagraph("Оценка риска не выполнена; расчёт этого раздела недоступен.")]; }
   const pressureProfileContent = buildPressureProfilePage(pressureResult);
-  const freshFoam=currentFoamReport(options?.foam,wellData,drillingFluid.density);
+  const currentFoam=currentFoamReport(options?.foam,wellData,drillingFluid.density);
+  const freshFoam=currentFoam?{...currentFoam,chartPresentations:wellData.chartPresentations??currentFoam.chartPresentations}:undefined;
   const chartsDataContent = buildChartsDataPage({...pressureResult,observation:freshObservation}, images?.chartImages,wellData.depthChartSettings,selection,wellData.chartPresentations,{drillingFluid,buffers,slurries,displacementFluids,wellData},freshFoam);
   const trajectoryContent = buildTrajectoryPage(wellData, images?.visualImages);
   const sections: {properties:ReturnType<typeof reportPageProperties>;headers?:{default:Header};children:any[]}[]=[{properties:reportPageProperties(),children:titlePage}];

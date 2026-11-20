@@ -2,7 +2,7 @@ import {describe,it,expect,beforeAll} from 'vitest';
 import * as XLSX from 'xlsx';
 import {normalizeWellData} from '../cementing-normalizers';
 import {simulateFoamJob,defaultFoamSettings} from '../foam-cement-engine';
-import {foamCharts,foamChartsWorkbook,currentFoamReport,foamInputKey} from '../foam-chart-data';
+import {foamCharts,foamChartsWorkbook,currentFoamReport,foamInputKey,foamReportKey} from '../foam-chart-data';
 import {cementingChartsWorkbook,cementingNumericCharts,numericChartRows} from '../cementing-chart-data';
 import {compareFoamFact} from '../foam-cement-data';
 import {DEFAULT_DEPTH_CHART} from '../depth-chart-settings';
@@ -20,6 +20,27 @@ describe('foam chart data contract',()=>{
   const fact=plots.at(-1)!;expect(fact.data.series[0].values).toEqual([0,null]);expect(JSON.stringify(bundle)).toBe(before);
   const state={points:[],envelope:[],stageBoundaries:[],observation:undefined,stopStorage:undefined,foam:bundle},common=cementingChartsWorkbook(state);
   expect(cementingNumericCharts(state)).toEqual(plots);expect(common.SheetNames).toContain('Пена - ячейки');expect(XLSX.utils.sheet_to_json(common.Sheets['График 01'],{header:1,defval:null})).toEqual(numericChartRows(plots[0]));
+ });
+ it('shares saved presentation across screen, common workbook and foam workbook without cropping numerical data or invalidating physics',()=>{
+  const original=foamCharts(bundle),base=original.find(p=>p.plotId==='foamDepthPressure')!;
+  const chartPresentations={foamDepthPressure:{title:'Контроль давления',fontFamily:'serif' as const,fontSize:20,basis:{x:base.data.xLabel,left:base.data.leftLabel},x:{min:0,max:1},left:{min:0,max:1}}};
+  const restored=normalizeWellData(JSON.parse(JSON.stringify({...well,chartPresentations})));
+  expect(restored.chartPresentations).toEqual(chartPresentations);
+  const styled={...bundle,chartPresentations:restored.chartPresentations},plots=foamCharts(styled),p=plots.find(p=>p.plotId==='foamDepthPressure')!;
+  expect(p.title).toBe('Контроль давления');expect(p.svg).toContain('DejaVu Serif');expect(p.data.presentation?.fontSize).toBe(20);expect(p.data.outsideCount).toBeGreaterThan(0);
+  expect(numericChartRows(p)).toEqual(numericChartRows(base));expect(plots[0].svg).toBe(original[0].svg);
+  expect(foamReportKey(styled)).not.toBe(foamReportKey(bundle));
+  expect(foamInputKey({...bundle.simulation.input,wellData:restored})).toBe(foamInputKey(bundle.simulation.input));
+  const state={points:[],envelope:[],stageBoundaries:[],observation:undefined,stopStorage:undefined,foam:bundle};
+  expect(cementingNumericCharts(state,undefined,undefined,chartPresentations)).toEqual(plots);
+  for(const w of [foamChartsWorkbook(styled),cementingChartsWorkbook({...state,foam:styled},undefined,undefined,chartPresentations)]){
+   const read=XLSX.read(XLSX.write(w,{type:'array',bookType:'xlsx'}),{type:'array'});
+   expect(JSON.stringify(XLSX.utils.sheet_to_json(read.Sheets['Оформление'],{header:1}))).toContain('Контроль давления');
+   const name=read.SheetNames.find(n=>/^График 0?5$/.test(n))!;
+   expect(XLSX.utils.sheet_to_json(read.Sheets[name],{header:1,defval:null})).toEqual(numericChartRows(base));
+  }
+  const changed=foamCharts({...styled,chartSettings:{...bundle.chartSettings!,coordinate:'MD',pressureUnit:'MPa'}}).find(p=>p.plotId==='foamDepthPressure')!;
+  expect(changed.title).toBe(p.title);expect(changed.data.ignoredRanges).toEqual(['x','left']);
  });
  it('retains all saved frame/cell rows, standard N2 conditions, diagnostics and both legs without inventing unsaved frames',()=>{
   const w=foamChartsWorkbook(bundle),r=bundle.simulation;

@@ -1,3 +1,4 @@
+import {normalizeChartPresentations,type ChartPresentations} from '@/lib/chart-presentation';
 import FoamChartGallery from './FoamChartGallery';
 import {foamInputKey,foamChartsWorkbook} from '@/lib/foam-chart-data';
 import {normalizeDepthChartSettings} from '@/lib/depth-chart-settings';
@@ -43,6 +44,7 @@ interface Props {
   fractureGradient?: number;
   scope?: string;
   active?: boolean;
+  onChartPresentationsChange?: (p:ChartPresentations) => void;
   onReportChange?: (report: FoamReportBundle | null) => void;
 }
 const fmt = (v: number | null | undefined, n = 2) =>
@@ -110,6 +112,7 @@ export default function FoamCementSection({
   scope = "unsaved",
   active = true,
   onReportChange,
+  onChartPresentationsChange,
 }: Props) {
   const storageKey = `deall-foam-v2:${scope}`;
   const initial = () => {
@@ -141,6 +144,7 @@ export default function FoamCementSection({
         toc: number | null;
       }[]
     >([]);
+  const chartPresentations=wellData.chartPresentations;
   const [chartSettings,setChartSettings]=useState(()=>normalizeDepthChartSettings(wellData.depthChartSettings));
   const worker = useRef<Worker | null>(null),
     request = useRef(0),
@@ -166,10 +170,10 @@ export default function FoamCementSection({
   useEffect(() => {
     onReportChange?.(
       result && !stale
-        ? { simulation: result, observations, planFact: fact,frameIndex,chartSettings }
+        ? { simulation: result, observations, planFact: fact,frameIndex,chartSettings,chartPresentations }
         : null,
     );
-  }, [result, stale, observations, fact, frameIndex, chartSettings, onReportChange]);
+  }, [result, stale, observations, fact, frameIndex, chartSettings, chartPresentations, onReportChange]);
   useEffect(() => {
     worker.current?.terminate();
     setBusy("");
@@ -294,6 +298,12 @@ export default function FoamCementSection({
             : [],
         );
         setChartSettings(normalizeDepthChartSettings(restored.chartSettings));
+        // Import only this module's styles, preserving other charts in the main project.
+        const importedStyles=normalizeChartPresentations(restored.chartPresentations??restored.input?.wellData?.chartPresentations);
+        const next={...normalizeChartPresentations(chartPresentations)};
+        for(const id of Object.keys(next) as (keyof ChartPresentations)[])if(id.startsWith('foam'))delete next[id];
+        for(const id of Object.keys(importedStyles) as (keyof ChartPresentations)[])if(id.startsWith('foam'))next[id]=importedStyles[id];
+        onChartPresentationsChange?.(next);
         setOffset(Number.isFinite(restored.offset) ? restored.offset : 0);
         setNotice(
           "Параметры загружены. Конструкция и буровой раствор взяты из текущего проекта. Запустите новый расчёт.",
@@ -363,7 +373,7 @@ export default function FoamCementSection({
                     modelVersion: FOAM_MODEL_VERSION,
                     input,
                     observations,
-                    offset,chartSettings,
+                    offset,chartSettings,chartPresentations,
                   },
                   null,
                   2,
@@ -1109,7 +1119,7 @@ export default function FoamCementSection({
                       simulation: result,
                       offset,
                       observations,
-                      planFact: fact,frameIndex,chartSettings,
+                      planFact: fact,frameIndex,chartSettings,chartPresentations,
                     }),
                   )
                 }
@@ -1126,7 +1136,7 @@ export default function FoamCementSection({
                     await exportFoamReport({
                       simulation: result,
                       observations,
-                      planFact: fact,frameIndex,chartSettings,
+                      planFact: fact,frameIndex,chartSettings,chartPresentations,
                     });
                   } catch (e) {
                     setError(`Отчёт не создан: ${String(e)}`);
@@ -1221,8 +1231,8 @@ export default function FoamCementSection({
           </div>
           <div className="space-y-3 border rounded p-4"><h3 className="font-semibold">Графики пеноцементирования и данные</h3><p className="text-xs">Выбор координаты и единиц ниже относится к профилям выбранного кадра; давление в профиле абсолютное, во временных рядах избыточное. XLSX сохраняет все кадры и оба пространства. Несошедшиеся кадры отмечены на листе времени.</p>
             <div className="flex flex-wrap gap-2">{(['coordinate','depthUnit','pressureUnit','densityUnit'] as const).map(key=><select key={key} aria-label={'Пена: '+({coordinate:'координата глубины',depthUnit:'единица глубины',pressureUnit:'единица давления',densityUnit:'единица плотности'}[key])} className="border rounded p-2" value={chartSettings[key]} onChange={e=>setChartSettings(normalizeDepthChartSettings({...chartSettings,[key]:e.target.value}))}>{({coordinate:['MD','TVD'],depthUnit:['m','ft'],pressureUnit:['MPa','kgf','psi','bar'],densityUnit:['gcm3','ppg']}[key]).map(v=><option key={v} value={v}>{({m:'м',MPa:'МПа',kgf:'кгс/см²',gcm3:'г/см³',ppg:'ppg (US)'} as Record<string,string>)[v]??v}</option>)}</select>)}
-            <Button disabled={stale||!!busy} onClick={()=>{try{XLSX.writeFile(foamChartsWorkbook({simulation:result,observations,planFact:fact,frameIndex,chartSettings}),'Пеноцементирование-графики.xlsx');}catch(e){setError(String(e));}}}>Данные пеноцементирования XLSX</Button></div>
-            <FoamChartGallery bundle={{simulation:result,observations,planFact:fact,frameIndex,chartSettings}}/>
+            <Button disabled={stale||!!busy} onClick={()=>{try{XLSX.writeFile(foamChartsWorkbook({simulation:result,observations,planFact:fact,frameIndex,chartSettings,chartPresentations}),'Пеноцементирование-графики.xlsx');}catch(e){setError(String(e));}}}>Данные пеноцементирования XLSX</Button></div>
+            <FoamChartGallery onPresentationsChange={onChartPresentationsChange} bundle={{simulation:result,observations,planFact:fact,frameIndex,chartSettings,chartPresentations}}/>
           </div>
           <Panel title="План-факт и калибровка">
             <div className="flex flex-wrap gap-2">
