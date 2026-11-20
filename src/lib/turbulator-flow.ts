@@ -32,6 +32,8 @@ export interface TurbulatorFlowResult {
   axialMs: number; tangentialMs: number; ratio: number; reynolds: number; regime: number;
   lengthM: number; reachedThreshold: boolean; pressureLossMPa: number; boreMm: number;
   standoffPct: number;
+  /** Local decay for continuous rendering below the reported influence threshold. */
+  outletDecayPerM?: number;
 }
 export function turbulatorFluidProperties(fluid:TurbulatorFluid):TurbulatorHydraulicFluid {
   const r=rheologyResolution(fluid.rheology);
@@ -92,7 +94,7 @@ export function calculateTurbulatorFlow(w:WellData,p:TurbulatorPoint,q:number,fl
   try{f=turbulatorFluidProperties(fluid);}catch(e){out.issues.push(e instanceof Error?e.message:String(e));return out;}
   if(out.issues.length)return out;
   const inlet=turbulatorOutlet(w,p,q,f,settings.turningEfficiency);
-  Object.assign(out,{valid:true,axialMs:inlet.u,tangentialMs:inlet.tangentialMs,ratio:inlet.ratio,reynolds:inlet.reynolds,regime:inlet.regime,pressureLossMPa:inlet.pressureLossMPa});
+  Object.assign(out,{valid:true,axialMs:inlet.u,tangentialMs:inlet.tangentialMs,ratio:inlet.ratio,reynolds:inlet.reynolds,regime:inlet.regime,pressureLossMPa:inlet.pressureLossMPa,outletDecayPerM:inlet.alpha});
   if(q===0||inlet.ratio<=settings.threshold){out.reachedThreshold=true;return out;}
   // Integrate UPWARD only. Exact cell boundaries; no ±3 m zone and no propagation below the device.
   const cells=createAnnularGeometry(w,w.casingDepthMD).cells;

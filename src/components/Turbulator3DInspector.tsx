@@ -1,4 +1,5 @@
 import { surveyTransform } from '@/lib/centralizer-mesh';
+import { turbulatorMeanAt, turbulatorTrace } from '@/lib/turbulator-streamlines';
 import { useId, useMemo, useState } from 'react';
 import type { TurbulatorFlowResult } from '@/lib/turbulator-flow';
 import type { TurbulatorPoint } from '@/lib/centralization-calculations';
@@ -6,7 +7,7 @@ import type { TurbulatorPoint } from '@/lib/centralization-calculations';
 type V = [number,number,number];
 /** Same lightweight SVG/painter renderer as Centralizer3DInspector. Metres internally. */
 export default function Turbulator3DInspector({result,pipeOD,zenith=0,azimuth=0,viewAboveM,viewBelowM,rateLps}:{result:TurbulatorFlowResult;pipeOD:number;zenith?:number;azimuth?:number;viewAboveM?:number;viewBelowM?:number;rateLps?:number}){
- const uid=useId().replace(/:/g,''),[orbit,setOrbit]=useState(25),[axial,setAxial]=useState(false),[wall,setWall]=useState(true),[flow,setFlow]=useState(true),[play,setPlay]=useState(true);
+ const uid=useId().replace(/:/g,''),[orbit,setOrbit]=useState(25),[axial,setAxial]=useState(false),[wall,setWall]=useState(true),[flow,setFlow]=useState(true),[play,setPlay]=useState(true),[swirlScale,setSwirlScale]=useState(1),[pulsations,setPulsations]=useState(true);
  const p=result.point,pr=pipeOD/2000,br=result.boreMm/2000;
  const offset=(br-pr)*(1-Math.max(0,Math.min(100,result.standoffPct))/100);
  const length=(p.lengthMm??180)/1000,thickness=(p.sleeveThicknessMm??3)/1000;
@@ -42,50 +43,53 @@ export default function Turbulator3DInspector({result,pipeOD,zenith=0,azimuth=0,
  // Camera and dimensions are the only mesh inputs.
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[p,pipeOD,orbit,axial,visible,result.boreMm,zenith,azimuth]);
- const paths:{d:string;front:boolean;id:string;seconds:number}[]=[];
+ const paths:{d:string;meanD:string;front:boolean;id:string;seconds:number}[]=[];
+ let transitSeconds=0;
+ const turnInWindow=turbulatorMeanAt(result,hi,pipeOD).phase*180/Math.PI;
+ const pitch=result.ratio>0?2*Math.PI*(pipeOD+result.boreMm)/4000/result.ratio:Infinity;
  if(result.valid&&flow&&result.axialMs>0&&br>pr){
   for(let k=0;k<8;k++){
-   let segment:V[]=[],front:boolean|undefined,elapsed=0,startTime=0;
-   const push=()=>{if(segment.length>1)paths.push({id:`${uid}-${k}-${paths.length}`,d:'M '+str(segment).replace(/ /g,' L '),front:!!front,seconds:Math.max(.001,elapsed-startTime)});};
-   for(let j=0;j<=220;j++){
-    const z=lo+(hi-lo)*j/220;
-    const samples=result.samples;
-    const exitPhase=length*Math.tan(p.bladeAngle*Math.PI/180)/Math.max(outer,1e-4);
-    let phase=z>0?exitPhase:0,axialMs=result.axialMs;
-    if(z>0&&samples.length){let n=1;while(n<samples.length&&samples[n].distanceM<z)n++;const b=samples[Math.min(n,samples.length-1)],a=samples[Math.max(0,n-1)],t=Math.max(0,Math.min(1,(z-a.distanceM)/(b.distanceM-a.distanceM||1)));phase=exitPhase+a.phase+t*(b.phase-a.phase);axialMs=a.axialMs+t*(b.axialMs-a.axialMs);}
-    if(j>0)elapsed+=(hi-lo)/220/Math.max(1e-9,axialMs);
-    // Inside the ribbed sleeve lines follow external helical channels, never its bore.
-    if(z<0&&z>-length)phase=(z+length)*Math.tan(p.bladeAngle*Math.PI/180)/Math.max(outer,1e-4);
-    const angle=k*2*Math.PI/8+phase;
-    // Distance from the actual pipe centre to the eccentric bore along this ray.
-    const wallRadius=offset*Math.cos(angle)+Math.sqrt(Math.max(0,br*br-offset*offset*Math.sin(angle)**2));
-    const rad=((z<=0&&z>=-length?fin:pr)+wallRadius)/2;
-    const v:V=[rad*Math.cos(angle),rad*Math.sin(angle),z],f=transform(v)[2]>transform([0,0,z])[2];
-    if(front!==undefined&&f!==front){segment.push(v);push();segment=[v];startTime=elapsed;}else segment.push(v);
+   const trace=turbulatorTrace(result,pipeOD,lo,hi,k*2*Math.PI/8,swirlScale,pulsations);
+   if(k===0)transitSeconds=trace.at(-1)?.travelS??0;
+   let segment:typeof trace=[],front:boolean|undefined;
+   const path=(points:V[])=>'M '+str(points).replace(/ /g,' L ');
+   const push=()=>{if(segment.length>1)paths.push({id:`${uid}-${k}-${paths.length}`,d:path(segment.map(v=>v.particle)),meanD:path(segment.map(v=>v.mean)),front:!!front,seconds:Math.max(.001,segment.at(-1)!.travelS-segment[0].travelS)});};
+   for(const sample of trace){
+    const v=sample.particle,f=transform(v)[2]>transform([0,0,v[2]])[2];
+    if(front!==undefined&&f!==front){segment.push(sample);push();segment=[sample];}else segment.push(sample);
     front=f;
    }push();
   }
  }
- const drawPaths=(front:boolean)=>paths.filter(p=>p.front===front).map(p=><g key={p.id}><path id={p.id} d={p.d} fill="none" stroke={color} strokeWidth="1.6" opacity={front?.9:.3}/>{play&&[0,1,2].map(i=><circle key={i} className="turbulator-particle" r="2.2" fill={color}><animateMotion dur={`${p.seconds}s`} begin={`${-i*p.seconds/3}s`} calcMode="linear" repeatCount="indefinite" path={p.d}/></circle>)}</g>);
+ const drawPaths=(front:boolean)=>paths.filter(p=>p.front===front).map(p=><g key={p.id}>
+  <path data-flow-mean="true" d={p.meanD} fill="none" stroke={color} strokeWidth="1" opacity={front?.35:.12}/>
+  {pulsations&&result.regime>0&&<path data-flow-pulsation="schematic" d={p.d} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="3 6" opacity={front?.65:.2}/>}
+  {play&&[0,1,2].map(i=><circle key={i} className="turbulator-particle" r="2.4" fill={color}><animateMotion dur={`${p.seconds}s`} begin={`${-i*p.seconds/3}s`} calcMode="linear" repeatCount="indefinite" path={p.d}/></circle>)}
+ </g>);
  return <section className="rounded-xl border border-border overflow-hidden" aria-label="3D турбулизатора и вихревого потока">
   <div className="p-3 border-b text-sm"><b>Турбулизатор · MD {p.md} м</b><p className="text-xs text-muted-foreground">Зенит {zenith.toFixed(1)}° · азимут {azimuth.toFixed(1)}° · Standoff {result.standoffPct.toFixed(1)}% · посадка на трубе без проточного зазора</p></div>
   <div className="bg-slate-950 text-slate-200 p-3">
    <div className="flex flex-wrap justify-between gap-2 px-1 pb-2 text-xs tabular-nums"><b style={{color}}>{regime} · Re {result.reynolds.toFixed(0)}</b><span>{rateLps!==undefined?`${rateLps.toFixed(1)} л/с · `:''}{result.axialMs.toFixed(3)} м/с</span></div>
    <p className="text-[11px] text-slate-400 mb-2">MD {Math.max(0,p.md-hi).toFixed(2)}–{(p.md-lo).toFixed(2)} м · угол рёбер {p.bladeAngle}°</p>
+   <div className="rounded border border-slate-700 p-2 mb-2 text-xs space-y-2">
+    <p data-flow-turn>Средний поворот в окне: {turnInWindow.toFixed(1)}° · шаг спирали на выходе: {Number.isFinite(pitch)&&result.axialMs>0?pitch.toFixed(1)+' м':'—'}</p>
+    <div className="flex flex-wrap gap-3 items-center"><label>Закрутка на экране <select aria-label="Масштаб закрутки" value={swirlScale} onChange={e=>setSwirlScale(+e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-1"><option value={1}>1:1 · расчётная</option><option value={10}>×10 · наглядно</option><option value={25}>×25 · наглядно</option></select></label><label><input aria-label="Пульсации потока" type="checkbox" checked={pulsations} onChange={e=>setPulsations(e.target.checked)}/> Пульсации (схема)</label></div>
+    <p className="text-slate-400">{swirlScale===1?'Средняя закрутка показана в расчётном масштабе.':'Угловое отклонение увеличено только на экране; числовые скорости и расчёты сохраняют физический масштаб.'} {pulsations&&result.regime>0?'Частицы и пунктир условно показывают пульсации режима; их амплитуда не рассчитана CFD.':''}</p>
+   </div>
    <style>{'@media (prefers-reduced-motion: reduce){.turbulator-particle{display:none}}'}</style>
-   <svg viewBox="0 0 600 560" className="w-full max-h-[620px]" role="img" aria-label="Красная втулка с наклонными рёбрами; поток снаружи, закрутка выше изделия">
+   <svg data-flow-transit-s={transitSeconds} data-swirl-scale={swirlScale} data-pulsations={pulsations&&result.regime>0} viewBox="0 0 600 560" className="w-full max-h-[620px]" role="img" aria-label="Красная втулка с наклонными рёбрами; поток снаружи, закрутка выше изделия">
     <defs><radialGradient id={`${uid}-bg`}><stop stopColor="#223149"/><stop offset="1" stopColor="#080f1d"/></radialGradient></defs>
     <rect width="600" height="560" rx="12" fill={`url(#${uid}-bg)`}/>
     {wall&&<g stroke="#64748b" opacity=".4" fill="none">{[lo,hi].map(z=><polyline key={z} points={str(wallRing(z))}/>)}{[0,1,2,3,4,5,6,7].map(k=><polyline key={k} points={str([[offset+br*Math.cos(k*Math.PI/4),br*Math.sin(k*Math.PI/4),lo],[offset+br*Math.cos(k*Math.PI/4),br*Math.sin(k*Math.PI/4),hi]])}/>)}</g>}
     {drawPaths(false)}
     {faces.map((f,i)=><polygon key={i} points={str(f.points)} fill={f.red?`rgb(${Math.round(145+100*f.light)},${Math.round(12+26*f.light)},${Math.round(30+32*f.light)})`:`hsl(215,10%,${28+30*f.light}%)`} stroke="none"/>)}
     {drawPaths(true)}
-    <g fill="#cbd5e1" fontSize="12"><text x="20" y="28">{axial?'Вид вдоль оси':'Восходящий поток · к устью ↑'}</text><text x="20" y="526">Поток только снаружи втулки и трубы</text><text x="20" y="547">{result.lengthM>visible?`Окно ${visible.toFixed(1)} м; закрутка продолжается выше`:'Длина и затухание по оценочной модели'}</text></g>
+    <g fill="#cbd5e1" fontSize="12"><text x="20" y="28">{axial?'Вид вдоль оси':`Восходящий поток · к устью ↑${swirlScale>1?' · закрутка ×'+swirlScale:''}`}</text><text x="20" y="526">Поток только снаружи втулки и трубы</text><text x="20" y="547">{result.lengthM>visible?`Окно ${visible.toFixed(1)} м; закрутка продолжается выше`:'Длина и затухание по оценочной модели'}</text></g>
     {result.valid&&result.lengthM>0&&!axial&&<g stroke="#fbbf24" fill="#fbbf24" fontSize="12">{(()=>{const a=xy([br*1.35,0,0]),b=xy([br*1.35,0,Math.min(visible,result.lengthM)]);return <><line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}/><text x="20" y="52" stroke="none">L {result.reachedThreshold?'':'≥ '}{result.lengthM.toFixed(2)} м MD</text></>;})()}</g>}
    </svg>
    <div className="flex flex-wrap gap-4 text-xs my-2"><label><input type="checkbox" checked={wall} onChange={e=>setWall(e.target.checked)}/> Контур ствола</label><label><input type="checkbox" checked={flow} onChange={e=>setFlow(e.target.checked)}/> Поток</label><label><input type="checkbox" checked={play} onChange={e=>setPlay(e.target.checked)}/> Анимация</label><button className="underline" onClick={()=>setAxial(!axial)}>{axial?'Объёмный вид':'Вдоль оси'}</button></div>
    <label className="text-xs block">Обход вокруг трубы {orbit}°<input aria-label="Поворот турбулизатора" type="range" min="-180" max="180" value={orbit} onChange={e=>setOrbit(+e.target.value)} className="w-full"/></label>
-   <p className="text-xs text-slate-400">Наклон по инклинометрии; камера вращается для обзора. Траектории и анимация осреднены по зазору.</p>
+   <p className="text-xs text-slate-400">Наклон по инклинометрии; камера вращается для обзора. Тонкие линии — средние траектории; движение частиц — проход потока. Пульсации показаны условно.</p>
   </div>
  </section>;
 }
