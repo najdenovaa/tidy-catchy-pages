@@ -420,7 +420,7 @@ export default function Index() {
       setExportStatus("Подготовка схем и 3D-кадров");
       try {
         const config=normalizeLogisticsSettings(reportWell.logistics),fleet=planLogistics(pressure,mats,snap.slurries,config);
-        const figures=[...foamCharts(currentFoamReport(foamReport,reportWell,snap.drillingFluid.density)),...buildStopStorageReportSvgs(pressure.stopStorage,reportWell.chartPresentations),...rheologyReportFigures(snap),...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries,pressure.observation,reportWell.chartPresentations),...buildDepthPressureReportSvgs(pressure.envelope,selection,reportWell.depthChartSettings,reportWell.chartPresentations),...buildBasketStopReportSvgs(pressure.basketStop,reportWell.depthChartSettings),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),cementFleetLayoutFigure(fleet,config)].filter(x=>allowedReportFigure('cementing',selection,x));
+        const figures=[...foamCharts(currentFoamReport(foamReport,reportWell,snap.drillingFluid.density),reportWell.chartPresentations),...buildStopStorageReportSvgs(pressure.stopStorage,reportWell.chartPresentations),...rheologyReportFigures(snap),...buildHydraulicReportSvgs(pressure.points,selection,pressure.stageBoundaries,pressure.observation,reportWell.chartPresentations),...buildDepthPressureReportSvgs(pressure.envelope,selection,reportWell.depthChartSettings,reportWell.chartPresentations),...buildBasketStopReportSvgs(pressure.basketStop,reportWell.depthChartSettings),...buildWellReportSvgs(reportWell,snap.slurries),...buildCementingReportSvgs(reportWell,extras,'cementing',selection),cementFleetLayoutFigure(fleet,config)].filter(x=>allowedReportFigure('cementing',selection,x));
         extras.warnings!.push(...missingReportFigures("cementing",selection,figures));
         extras.figures=await rasterizeReportSvgs(figures);
       } catch(err){extras.warnings!.push('Часть изображений недоступна: '+(err instanceof Error?err.message:String(err)));}
@@ -1037,6 +1037,7 @@ export default function Index() {
             <TabsContent value="foam" forceMount>
               <div data-tab-content="foam">
                 <FoamCementSection
+                  onChartPresentationsChange={p=>setWellData(w=>({...w,chartPresentations:p}))}
                   onReportChange={setFoamReport}
                   key={`foam-${calcId ?? selectedWellId ?? "unsaved"}`}
                   scope={calcId ?? selectedWellId ?? "unsaved"}

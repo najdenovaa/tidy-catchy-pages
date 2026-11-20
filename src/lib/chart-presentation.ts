@@ -1,5 +1,5 @@
 /** Presentation only: ranges never alter solver results or the exported sample arrays. */
-export const PRESENTATION_PLOT_IDS=['combined','combinedDensity','pressures','rate','ecdTime','depthPressure','depthEcd','volumePressure','safeRate','flowRegime','annularFill','selectedDepthPressure','selectedDepthEcd','stopStorage'] as const;
+export const PRESENTATION_PLOT_IDS=['combined','combinedDensity','pressures','rate','ecdTime','depthPressure','depthEcd','volumePressure','safeRate','flowRegime','annularFill','selectedDepthPressure','selectedDepthEcd','stopStorage','foamPressure','foamEcd','foamNitrogen','foamBalance','foamDepthPressure','foamDepthQuality','foamDepthDensity','foamPlanFact'] as const;
 export type PresentationPlotId=typeof PRESENTATION_PLOT_IDS[number];
 export interface ChartRange {min:number;max:number}
 export interface ChartPresentation {title?:string;fontFamily?:'sans-serif'|'serif'|'monospace';fontSize?:number;x?:ChartRange;left?:ChartRange;right?:ChartRange;basis?:{x:string;left:string;right?:string}}
