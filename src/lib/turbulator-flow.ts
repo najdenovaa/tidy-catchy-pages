@@ -1,6 +1,6 @@
 import type { Rheology, WellData } from './cementing-calculations';
 import type { TurbulatorPoint } from './centralization-calculations';
-import { hbFriction, rheologyResolution, type HBParams } from './cement-rheology';
+import { hbFriction, hbRegimeBounds, rheologyResolution, type HBParams } from './cement-rheology';
 import { boreDiameterAtDepth, createAnnularGeometry } from './well-geometry';
 
 export interface TurbulatorFluid { id: string; name: string; density: number; rheology: Rheology; rateLps?: number; }
@@ -145,4 +145,21 @@ export function turbulatorVelocityAt(w:WellData,p:TurbulatorPoint,md:number,q:nu
 /** Reuse the actual computed pipe eccentricity, not a second geometry input in the inspector. */
 export function turbulatorWellForResults(w:WellData,results:{md:number;standoff:number}[]|null):WellData{
   return results?.length?{...w,standoffProfile:results.map(r=>({md:r.md,standoffPct:r.standoff}))}:w;
+}
+
+/** Invert the existing bulk-flow regime criterion at the selected MD. No swirl bonus to Re. */
+export function turbulatorRegimeThresholds(w:WellData,md:number,fluid:TurbulatorFluid) {
+  const f=turbulatorFluidProperties(fluid);
+  if(!Number.isFinite(f.density)||f.density<=0||!Number.isFinite(md)||md<0||md>w.casingDepthMD)throw new Error('Проверьте глубину и плотность жидкости.');
+  if(boreDiameterAtDepth(w,md)<=w.casingOD)throw new Error('Нет проходного затрубного сечения.');
+  const bounds=hbRegimeBounds(f.hb??{tau0:f.yp,K:f.pv/1000,n:1});
+  const searchLimitLps=2000;
+  const solve=(target:number):number|null=>{
+    let lo=0,hi=1;
+    while(hi<searchLimitLps&&flowAt(w,md,hi,f).reynolds<target)hi=Math.min(searchLimitLps,hi*2);
+    if(flowAt(w,md,hi,f).reynolds<target)return null;
+    for(let i=0;i<48;i++){const mid=(lo+hi)/2;if(flowAt(w,md,mid,f).reynolds<target)lo=mid;else hi=mid;}
+    return hi;
+  };
+  return {transitionLps:solve(bounds.laminar),turbulentLps:solve(bounds.turbulent),reLaminar:bounds.laminar,reTurbulent:bounds.turbulent,searchLimitLps};
 }

@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {calculateTurbulatorFlow,defaultTurbulatorDesign,swirlRatioAt,turbulatorFluidProperties,turbulatorVelocityAt,turbulatorLossBetween,normalizeTurbulatorDesign} from './turbulator-flow';
+import {calculateTurbulatorFlow,defaultTurbulatorDesign,swirlRatioAt,turbulatorFluidProperties,turbulatorVelocityAt,turbulatorLossBetween,normalizeTurbulatorDesign,turbulatorRegimeThresholds,turbulatorOutlet} from './turbulator-flow';
 import {getCementingExample} from './cementing-example';
 import {normalizeWellData} from './cementing-normalizers';
 import {calculatePressureProfile,calculateVolumes} from './cementing-calculations';
@@ -8,6 +8,28 @@ const point={id:'a',md:150,bladesCount:6,bladeAngle:55,bladeHeight:20,lengthMm:1
 const fluid={id:'mud',name:'БР',density:1200,rheology:{pv:25,yp:5,model:'pvyp' as const}};
 const settings={...defaultTurbulatorDesign(),points:[point]};
 describe('common turbulator model',()=>{
+ it('inverts the shared regime boundaries, with an independent Newtonian annulus solution',()=>{
+  const f={...fluid,rheology:{pv:25,yp:0,model:'pvyp' as const}};
+  const t=turbulatorRegimeThresholds(well,point.md,f);
+  const area=Math.PI/4*(.25**2-.178**2),dh=.25-.178;
+  expect(t.transitionLps).toBeCloseTo(1.5*2100*.025*area/(1200*dh)*1000,8);
+  expect(t.turbulentLps).toBeCloseTo(1.5*2900*.025*area/(1200*dh)*1000,8);
+  const properties=turbulatorFluidProperties(f);
+  expect(turbulatorOutlet(well,point,t.transitionLps!*.999,properties).regime).toBe(0);
+  expect(turbulatorOutlet(well,point,(t.transitionLps!+t.turbulentLps!)/2,properties).regime).toBe(.5);
+  expect(turbulatorOutlet(well,point,t.turbulentLps!*1.001,properties).regime).toBe(1);
+  const viscous=turbulatorRegimeThresholds(well,point.md,{...f,rheology:{pv:50,yp:0}});
+  expect(viscous.turbulentLps).toBeCloseTo(2*t.turbulentLps!,8);
+ });
+ it('uses selected Fann rheology and local diameter for the operating thresholds',()=>{
+  const f={...fluid,rheology:{pv:35,yp:6,model:'hb' as const,fann:{r600:70,r300:44,r200:33,r100:23,r6:9,r3:8}}};
+  const t=turbulatorRegimeThresholds(well,point.md,f),props=turbulatorFluidProperties(f);
+  expect(turbulatorOutlet(well,point,t.turbulentLps!,props).reynolds).toBeCloseTo(t.reTurbulent,7);
+  expect(t.reTurbulent).not.toBe(2900);
+  const local={...well,cavernIntervals:[{fromMD:100,toMD:200,coeff:1,diameterMm:280}]};
+  expect(turbulatorRegimeThresholds(local,point.md,f).turbulentLps).not.toBe(t.turbulentLps);
+  expect(()=>turbulatorRegimeThresholds(well,point.md,{...fluid,rheology:{pv:25,yp:5,model:'hb'}})).toThrow();
+ });
  it('has no swirl or pressure loss at zero Q, zero turning or straight ribs',()=>{
   for(const [p,q,s] of [[point,0,settings],[{...point,bladeAngle:0},10,settings],[point,10,{...settings,turningEfficiency:0}]] as const){const r=calculateTurbulatorFlow(well,p,q,fluid,s);expect(r.valid).toBe(true);expect(r.lengthM).toBe(0);expect(r.tangentialMs).toBe(0);if(q===0)expect(r.pressureLossMPa).toBe(0);}
  });

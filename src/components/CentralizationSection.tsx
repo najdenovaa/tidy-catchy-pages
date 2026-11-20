@@ -1,4 +1,4 @@
-import Turbulator3DInspector from './Turbulator3DInspector';
+import TurbulatorFlowControl from './TurbulatorFlowControl';
 import { calculateTurbulatorFlow, turbulatorWellForResults, defaultTurbulatorDesign, normalizeTurbulatorDesign, swirlRatioAt, TURBULATOR_MODEL_NOTE, type TurbulatorFluid } from '@/lib/turbulator-flow';
 import { effectiveRheology, cementCategory, type DrillingFluid, type SlurryInput, type BufferFluid, type DisplacementFluid } from '@/lib/cementing-calculations';
 import { rheologyDescription } from '@/lib/cement-rheology';
@@ -30,7 +30,6 @@ import type { WellData } from "@/lib/cementing-calculations";
 import CasingRunningSection from "./CasingRunningSection";
 import {
   calculateCentralization,
-  interpolateTrajectory,
   autoPlaceCentralizers,
   centralizerPresets,
   centralizerTypeLabels,
@@ -819,7 +818,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
             {selectedTurb.valid&&<>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">{[['Осевой поток',selectedTurb.axialMs.toFixed(3)+' м/с'],['Окружная скорость',selectedTurb.tangentialMs.toFixed(3)+' м/с'],['L до порога',(selectedTurb.reachedThreshold?'':'≥ ')+selectedTurb.lengthM.toFixed(2)+' м MD'],['Местные потери',selectedTurb.pressureLossMPa.toFixed(5)+' МПа']].map(([a,b])=><div key={a} className="rounded border p-3">{a}<b className="block">{b}</b></div>)}</div>
               <p className="text-xs">Re {selectedTurb.reynolds.toFixed(0)} · исходный режим: {selectedTurb.regime===0?'ламинарный':selectedTurb.regime===1?'турбулентный':'переходный'}. Закрутка не означает переход в турбулентный режим.</p>
-              <Turbulator3DInspector result={selectedTurb} pipeOD={wellData.casingOD} zenith={interpolateTrajectory(wellData.trajectory,selectedTurb.point.md).zenith} azimuth={trajectoryAzimuth(wellData.trajectory,selectedTurb.point.md)}/>
+              {turbFluid&&<TurbulatorFlowControl well={turbWell} result={selectedTurb} fluid={turbFluid} rateLps={turbRate} onRateChange={rate=>setTurbSettings(v=>({...v,rateLps:rate}))}/>}
             </>}
           </div>}
           <p className="text-[10px] text-muted-foreground">Всего турбулизаторов: <span className="text-foreground font-medium">{turbPoints.length} шт.</span></p>
