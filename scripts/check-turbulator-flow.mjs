@@ -30,6 +30,15 @@ assert.equal(await page.getByLabel('Масштаб закрутки',{exact:true
 assert.equal(await page.getByLabel('Передача закрутки',{exact:true}).count(),0);
 assert.equal(await target.locator('[data-calculated-swirl]').count(),1);
 assert.equal(await page.getByRole('region',{name:'Длина затухания вращения'}).count(),1);
+const pointTable=page.locator('details[data-point-table="turbulator-points"]');
+assert.equal(await pointTable.evaluate(el=>el.open),true);
+await pointTable.locator('summary').click();
+assert.equal(await pointTable.evaluate(el=>el.open),false);
+assert.equal(await target.isVisible(),true);
+const front=target.locator('[data-flow-tracer="0-0"][data-flow-layer="front"] animateMotion');
+const back=target.locator('[data-flow-tracer="0-0"][data-flow-layer="back"] animateMotion');
+assert.equal(await front.getAttribute('dur'),await back.getAttribute('dur'));
+assert.equal(await front.getAttribute('path'),await back.getAttribute('path'));
 await page.getByRole('slider',{name:'Длина окна наблюдения'}).focus();await page.getByRole('slider',{name:'Длина окна наблюдения'}).press('End');
 assert.notEqual(await controller.locator('[data-turbulator-interval]').innerText(),initialInterval);
 await target.scrollIntoViewIfNeeded();await target.screenshot({path:'/tmp/turbulator-desktop.png'});

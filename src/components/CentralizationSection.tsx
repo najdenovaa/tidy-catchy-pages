@@ -330,6 +330,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
   const [turbPoints, setTurbPoints] = useState<TurbulatorPoint[]>(()=>normalizeTurbulatorDesign(wellData.turbulatorDesign)?.points??[]);
   const [turbSettings,setTurbSettings]=useState(()=>normalizeTurbulatorDesign(wellData.turbulatorDesign)??defaultTurbulatorDesign());
   const [turbSelected,setTurbSelected]=useState('');
+  const [turbTableOpen,setTurbTableOpen]=useState(false);
   const incomingTurb=JSON.stringify(wellData.turbulatorDesign??null);
   const [lastIncomingTurb,setLastIncomingTurb]=useState(incomingTurb);
   if(incomingTurb!==lastIncomingTurb){
@@ -360,6 +361,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
   const [turbBladeHeight, setTurbBladeHeight] = useState(15);
 
   const addTurbPoint = useCallback(() => {
+    setTurbTableOpen(true);
     setTurbPoints(prev => [...prev, {
       id: makeId(),
       md: 0,
@@ -386,7 +388,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
       const r=calculateTurbulatorFlow(turbWell,p,turbRate,turbFluid,turbSettings);
       if(r.valid&&r.regime<1&&r.ratio>turbSettings.threshold)points.push(p);
     }
-    setTurbPoints(points);setAutoTurbResults([]);
+    setTurbPoints(points);setAutoTurbResults([]);setTurbTableOpen(false);
   }, [wellData,turbWell,turbFluid,turbRate,turbSettings,turbBladesCount,turbBladeAngle,turbBladeHeight,turbSpacing]);
 
 
@@ -727,7 +729,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
 
           {/* Auto results summary */}
           {autoTurbResults && autoTurbResults.length > 0 && (
-            <div className="border border-border rounded-lg overflow-hidden">
+            <details data-point-table="turbulator-auto" className="border border-border rounded-lg overflow-hidden"><summary>Интервалы автоподбора турбулизаторов · {autoTurbResults.length}</summary><div className="program-panel-body"><div className="max-h-[400px] overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -754,7 +756,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
                   ))}
                 </TableBody>
               </Table>
-            </div>
+            </div></div></details>
           )}
           {autoTurbResults && autoTurbResults.length === 0 && (
             <p className="text-xs text-green-400 text-center py-2">Автоподбор завершён: {turbPoints.length} точек. Пропущены недопустимые геометрии и точки без заметной закрутки; отсутствие точек не доказывает турбулентность.</p>
@@ -766,7 +768,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
 
           {/* Manual points list */}
           {turbPoints.length > 0 && (
-            <div className="border border-border rounded-lg overflow-hidden">
+            <details data-point-table="turbulator-points" className="border border-border rounded-lg overflow-hidden" open={turbTableOpen} onToggle={e=>setTurbTableOpen(e.currentTarget.open)}><summary>Точки установки турбулизаторов · {turbPoints.length}</summary><div className="program-panel-body"><div className="max-h-[400px] overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -808,7 +810,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
                   })}
                 </TableBody>
               </Table>
-            </div>
+            </div></div></details>
           )}
           {selectedTurb&&<div className="space-y-3">
             <p className="text-xs text-amber-600">Расчётная модель переноса вращательного момента с вязким и турбулентным трением. Количественный прогноз для конкретного изделия требует проверки геометрии и стендовой валидации.</p>
@@ -875,7 +877,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
                 <span className="text-xs font-normal text-muted-foreground">
                   Всего: <span className="text-foreground font-medium">{totalCentralizers} шт.</span>
                 </span>
-                <CopyImageButton targetRef={placementTableRef} label="Копировать" />
+
               </div>
             </CardTitle>
           </CardHeader>
@@ -896,7 +898,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
               );
             })()}
 
-            <div ref={placementTableRef}>
+            <details data-point-table="centralizer-auto" className="border border-border rounded-lg overflow-hidden"><summary>Таблица интервалов расстановки · {autoResults.length}</summary><div className="program-panel-body"><div className="flex justify-end"><CopyImageButton targetRef={placementTableRef} label="Копировать" /></div><div ref={placementTableRef}>
 
               <Table>
                 <TableHeader>
@@ -926,7 +928,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
                   ))}
                 </TableBody>
               </Table>
-            </div>
+            </div></div></details>
           </CardContent>
         </Card>
       )}
@@ -1021,11 +1023,11 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex flex-wrap items-center justify-between gap-2">
                 <span>Таблица результатов</span>
-                <CopyImageButton targetRef={resultsTableRef} label="Копировать" />
+
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div ref={resultsTableRef} className="max-h-[400px] overflow-auto">
+              <details data-point-table="centralizer-results" className="border border-border rounded-lg overflow-hidden"><summary>Числовые точки центрирования · {results.length}</summary><div className="program-panel-body"><div className="flex justify-end"><CopyImageButton targetRef={resultsTableRef} label="Копировать" /></div><div ref={resultsTableRef} className="max-h-[400px] overflow-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1056,7 +1058,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
                     ))}
                   </TableBody>
                 </Table>
-              </div>
+              </div></div></details>
             </CardContent>
           </Card>
 
@@ -1071,13 +1073,13 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
                       Всего Ф: <span className="text-primary font-bold">{jointSchedule.reduce((n,j)=>n+j.centralizerDepths.length,0)} шт.</span>
                       {' '}/ {jointSchedule.length} участков; А: {jointSchedule.flatMap(j=>j.placements).filter(p=>p.role==='A').length}, Б: {jointSchedule.flatMap(j=>j.placements).filter(p=>p.role==='B').length}
                     </span>
-                    <CopyImageButton targetRef={jointScheduleTableRef} label="Копировать" />
+
                   </div>
                 </CardTitle>
                 <p className="text-[10px] text-muted-foreground">От устья к забою. А/Б и модель указаны у каждой глубины. Для смешанной расстановки строки разделяются на границах интервалов.</p>
               </CardHeader>
               <CardContent className="p-0">
-                <div ref={jointScheduleTableRef} className="max-h-[500px] overflow-auto">
+                <details data-point-table="centralizer-joints" className="border border-border rounded-lg overflow-hidden"><summary>Потрубная расстановка · {jointSchedule.length} участков</summary><div className="program-panel-body"><div className="flex justify-end"><CopyImageButton targetRef={jointScheduleTableRef} label="Копировать" /></div><div ref={jointScheduleTableRef} className="max-h-[500px] overflow-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1104,7 +1106,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
                       ))}
                     </TableBody>
                   </Table>
-                </div>
+                </div></div></details>
               </CardContent>
             </Card>
           )}

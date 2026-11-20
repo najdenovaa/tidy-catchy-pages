@@ -18,6 +18,13 @@ it('echoes saved points without a render loop, restores another project and remo
   const before=r.container.querySelector('[data-flow-metric="Скорость вверх"]')!.textContent;
   const interval=r.container.querySelector('[data-turbulator-interval]')!.textContent;
   const duration=Number(r.container.querySelector('[data-flow-transit-s]')!.getAttribute('data-flow-transit-s'));
+  const copies=r.container.querySelectorAll('[data-flow-tracer="0-0"]');
+  expect(copies).toHaveLength(2);
+  expect(copies[0].querySelector('animateMotion')!.getAttribute('path')).toBe(copies[1].querySelector('animateMotion')!.getAttribute('path'));
+  for(const copy of copies)expect(parseFloat(copy.querySelector('animateMotion')!.getAttribute('dur')!)).toBeCloseTo(duration,8);
+  expect(screen.getByLabelText('Прозрачная труба')).toBeChecked();
+  expect(r.container.querySelector('[data-flow-clock]')).toHaveTextContent('об/мин');
+  expect(r.container.querySelector('details[data-point-table="turbulator-points"]')).not.toHaveAttribute('open');
   fireEvent.change(screen.getByRole('slider',{name:'Производительность насосов'}),{target:{value:'20'}});
   expect(screen.getByLabelText('Расход турбулизатора',{exact:true})).toHaveValue(20);
   expect(report.mock.lastCall?.[0].turbulatorRateLps).toBe(20);
