@@ -25,12 +25,11 @@ assert.equal(await controller.locator('[data-turbulator-interval]').innerText(),
 assert.ok(Number(await target.locator('[data-flow-transit-s]').getAttribute('data-flow-transit-s'))<beforeDuration);
 const critical=Number(await controller.getAttribute('data-turbulent-lps'));
 if(critical<Number(await slider.getAttribute('max')))assert.equal(await controller.locator('[data-flow-regime]').innerText(),'Турбулентный');
-assert.ok(await target.locator('[data-flow-pulsation]').count()>0);
-const actualSpeed=await controller.locator('[data-flow-metric="Скорость закрутки"]').innerText();
-const meanPath=await target.locator('[data-flow-mean]').evaluateAll(es=>es.map(e=>e.getAttribute('d')).join('|'));
-await page.getByLabel('Масштаб закрутки',{exact:true}).selectOption('10');
-assert.notEqual(await target.locator('[data-flow-mean]').evaluateAll(es=>es.map(e=>e.getAttribute('d')).join('|')),meanPath);
-assert.equal(await controller.locator('[data-flow-metric="Скорость закрутки"]').innerText(),actualSpeed);
+assert.equal(await target.locator('[data-flow-pulsation]').count(),0);
+assert.equal(await page.getByLabel('Масштаб закрутки',{exact:true}).count(),0);
+assert.equal(await page.getByLabel('Передача закрутки',{exact:true}).count(),0);
+assert.equal(await target.locator('[data-calculated-swirl]').count(),1);
+assert.equal(await page.getByRole('region',{name:'Длина затухания вращения'}).count(),1);
 await page.getByRole('slider',{name:'Длина окна наблюдения'}).focus();await page.getByRole('slider',{name:'Длина окна наблюдения'}).press('End');
 assert.notEqual(await controller.locator('[data-turbulator-interval]').innerText(),initialInterval);
 await target.scrollIntoViewIfNeeded();await target.screenshot({path:'/tmp/turbulator-desktop.png'});

@@ -30,18 +30,19 @@ describe('common turbulator model',()=>{
   expect(turbulatorRegimeThresholds(local,point.md,f).turbulentLps).not.toBe(t.turbulentLps);
   expect(()=>turbulatorRegimeThresholds(well,point.md,{...fluid,rheology:{pv:25,yp:5,model:'hb'}})).toThrow();
  });
- it('has no swirl or pressure loss at zero Q, zero turning or straight ribs',()=>{
-  for(const [p,q,s] of [[point,0,settings],[{...point,bladeAngle:0},10,settings],[point,10,{...settings,turningEfficiency:0}]] as const){const r=calculateTurbulatorFlow(well,p,q,fluid,s);expect(r.valid).toBe(true);expect(r.lengthM).toBe(0);expect(r.tangentialMs).toBe(0);if(q===0)expect(r.pressureLossMPa).toBe(0);}
+ it('has no swirl or pressure loss at zero Q or straight ribs',()=>{
+  for(const [p,q,s] of [[point,0,settings],[{...point,bladeAngle:0},10,settings]] as const){const r=calculateTurbulatorFlow(well,p,q,fluid,s);expect(r.valid).toBe(true);expect(r.lengthM).toBe(0);expect(r.tangentialMs).toBe(0);if(q===0)expect(r.pressureLossMPa).toBe(0);}
  });
  it('propagates exclusively upward, decays monotonically, reaches exact threshold',()=>{
   const r=calculateTurbulatorFlow(well,point,10,fluid,settings);expect(r.valid).toBe(true);expect(r.lengthM).toBeGreaterThan(0);expect(r.reachedThreshold).toBe(true);expect(swirlRatioAt(r,151)).toBe(0);
   r.samples.forEach((p,i)=>{expect(p.md).toBeLessThanOrEqual(point.md);if(i)expect(p.tangentialMs).toBeLessThanOrEqual(r.samples[i-1].tangentialMs);});
-  expect(r.samples.at(-1)!.ratio).toBeCloseTo(settings.threshold,9);
-  const f=turbulatorFluidProperties(fluid);const md=150-r.lengthM/2;expect(turbulatorVelocityAt(well,point,md,10,f,settings)).toBeCloseTo(swirlRatioAt(r,md)*r.axialMs,4);
+  expect(r.samples.at(-1)!.remainingFraction).toBeCloseTo(.001,8);
+  expect(r.decay90M).toBeLessThan(r.decay99M!);expect(r.decay99M).toBeLessThan(r.decay999M!);
+  const f=turbulatorFluidProperties(fluid);const md=150-r.lengthM/2;expect(turbulatorVelocityAt(well,point,md,10,f,settings)).toBeCloseTo(swirlRatioAt(r,md)*r.axialMs,7);
  });
  it('responds to Q, viscosity, yield stress, Fann model, local caliper and geometry conflicts',()=>{
   const a=calculateTurbulatorFlow(well,point,10,fluid,settings);
-  const high=calculateTurbulatorFlow(well,point,20,fluid,settings);expect(high.axialMs).toBeCloseTo(a.axialMs*2);expect(high.lengthM).toBeGreaterThan(a.lengthM);expect(high.pressureLossMPa).toBeCloseTo(a.pressureLossMPa*4);
+  const high=calculateTurbulatorFlow(well,point,20,fluid,settings);expect(high.axialMs).toBeCloseTo(a.axialMs*2);expect(high.lengthM).toBeGreaterThan(a.lengthM);expect(high.pressureLossMPa).toBeGreaterThan(a.pressureLossMPa);
   expect(calculateTurbulatorFlow(well,point,10,{...fluid,rheology:{pv:100,yp:5}},settings).lengthM).toBeLessThan(a.lengthM);
   expect(calculateTurbulatorFlow(well,point,10,{...fluid,rheology:{pv:25,yp:30}},settings).lengthM).toBeLessThan(a.lengthM);
   expect(calculateTurbulatorFlow(well,point,10,{...fluid,rheology:{pv:25,yp:5,model:'hb'}},settings).valid).toBe(false);
@@ -54,6 +55,8 @@ describe('common turbulator model',()=>{
   expect(calculateTurbulatorFlow(well,{...point,lengthMm:-1},10,fluid,settings).valid).toBe(false);
   expect(normalizeWellData(JSON.parse(JSON.stringify({...well,turbulatorDesign:settings}))).turbulatorDesign).toEqual(settings);
   expect(normalizeTurbulatorDesign({points:[{id:'bad',md:NaN}]})!.points).toHaveLength(0);
+  expect(normalizeTurbulatorDesign({...settings,threshold:.9,turningEfficiency:0})).toEqual(settings);
+  expect(calculateTurbulatorFlow(well,point,10,fluid,{threshold:.9,turningEfficiency:0}).tangentialMs).toBe(calculateTurbulatorFlow(well,point,10,fluid,settings).tangentialMs);
  });
  it('adds each local loss once across segmented intervals and none during a stop',()=>{
   const w={...well,turbulatorDesign:settings},f=turbulatorFluidProperties(fluid);
