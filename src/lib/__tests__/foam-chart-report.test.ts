@@ -11,6 +11,7 @@ import {exportToDocx} from '../export-docx';
 import {defaultReportSelection} from '../cementing-report-options';
 import {DEFAULT_DEPTH_CHART} from '../depth-chart-settings';
 import {type WellData,calculateVolumes,calculatePressureProfile} from '../cementing-calculations';
+import type {FoamReportBundle} from '../foam-cement-types';
 import type {ReportFigure} from '../cementing-report-data';
 it('standalone and selected main Word export the same foam diagrams and reject stale figures/physics without exposing passport bodies',async()=>{
  const ex=getCementingExample(),well={...ex.wellData,equipment:[{id:'secret',kind:'basket' as const,manufacturer:'Производитель',model:'Изделие',quantity:1,passport:'SECRET-PASSPORT-CONTENT'}]};
@@ -24,7 +25,7 @@ it('standalone and selected main Word export the same foam diagrams and reject s
  if(dir)writeFileSync(join(dir,'foam-coverage.docx'),bytes);
  const selection=Object.fromEntries(Object.keys(defaultReportSelection('cementing')).map(k=>[k,false]));selection.foam=true;selection.chartData=true;
  const vol=calculateVolumes(well,ex.slurries),pressure=calculatePressureProfile(well,ex.slurries,ex.buffers,ex.drillingFluid,ex.displacementFluids,ex.fractureGradient,vol.displacementVolumeWithCompression);
- const main=async(w:WellData={...well,chartPresentations},foam=styledBundle,sel=selection,figs=figures)=>{const b=await exportToDocx(w,ex.drillingFluid,ex.slurries,ex.buffers,ex.displacementFluids,ex.fractureGradient,undefined,undefined,{volumes:vol,pressureResult:pressure},{returnBlob:true,selection:sel,foam,extras:{figures:figs}}) as Blob;const bytes=Buffer.from(await b.arrayBuffer()),z=await JSZip.loadAsync(bytes);return {bytes,xml:await z.file('word/document.xml')!.async('text'),images:Object.keys(z.files).filter(x=>x.startsWith('word/media/')&&!x.endsWith('/')).length};};
+ const main=async(w:WellData={...well,chartPresentations},foam:FoamReportBundle=styledBundle,sel=selection,figs=figures)=>{const b=await exportToDocx(w,ex.drillingFluid,ex.slurries,ex.buffers,ex.displacementFluids,ex.fractureGradient,undefined,undefined,{volumes:vol,pressureResult:pressure},{returnBlob:true,selection:sel,foam,extras:{figures:figs}}) as Blob;const bytes=Buffer.from(await b.arrayBuffer()),z=await JSZip.loadAsync(bytes);return {bytes,xml:await z.file('word/document.xml')!.async('text'),images:Object.keys(z.files).filter(x=>x.startsWith('word/media/')&&!x.endsWith('/')).length};};
  expect(xml).toContain(chartPresentations.foamDepthPressure.title);
  const ok=await main();expect(ok.xml).toContain(chartPresentations.foamDepthPressure.title);expect(ok.xml).not.toContain('SECRET-PASSPORT');expect(ok.xml.includes('Программа пеноцементирования')).toBe(true);if(dir)writeFileSync(join(dir,'foam-main-coverage.docx'),ok.bytes);
  const stale=await main({...well,holeDiameter:well.holeDiameter+1});expect(stale.xml.includes('Нет актуального расчёта пеноцементирования')).toBe(true);expect(stale.images).toBe(0);
