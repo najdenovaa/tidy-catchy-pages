@@ -53,7 +53,7 @@ export default function TurbulatorFlowControl({well,result,fluid,rateLps,onRateC
         </div>
       </div>
     </section>
-    <div className="xl:col-start-2 xl:row-start-1 xl:row-span-3 xl:sticky xl:top-4 min-w-0">
+    <div className="xl:col-start-2 xl:row-start-1 xl:row-span-3 min-w-0">
       <Turbulator3DInspector result={result} pipeOD={well.casingOD} zenith={survey.zenith} azimuth={azimuth} viewAboveM={upM} viewBelowM={downM} rateLps={rateLps}/>
     </div>
     <section className="xl:col-start-1 xl:row-start-2 rounded-xl border border-slate-700 bg-slate-950 p-3 text-slate-200 space-y-3 min-w-0" aria-label="Скорости и режим потока">
