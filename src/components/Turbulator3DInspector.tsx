@@ -5,13 +5,15 @@ import type { TurbulatorPoint } from '@/lib/centralization-calculations';
 
 type V = [number,number,number];
 /** Same lightweight SVG/painter renderer as Centralizer3DInspector. Metres internally. */
-export default function Turbulator3DInspector({result,pipeOD,zenith=0,azimuth=0}:{result:TurbulatorFlowResult;pipeOD:number;zenith?:number;azimuth?:number}){
+export default function Turbulator3DInspector({result,pipeOD,zenith=0,azimuth=0,viewAboveM,viewBelowM,rateLps}:{result:TurbulatorFlowResult;pipeOD:number;zenith?:number;azimuth?:number;viewAboveM?:number;viewBelowM?:number;rateLps?:number}){
  const uid=useId().replace(/:/g,''),[orbit,setOrbit]=useState(25),[axial,setAxial]=useState(false),[wall,setWall]=useState(true),[flow,setFlow]=useState(true),[play,setPlay]=useState(true);
  const p=result.point,pr=pipeOD/2000,br=result.boreMm/2000;
  const offset=(br-pr)*(1-Math.max(0,Math.min(100,result.standoffPct))/100);
  const length=(p.lengthMm??180)/1000,thickness=(p.sleeveThicknessMm??3)/1000;
  const outer=pr+thickness,fin=pr+p.bladeHeight/1000;
- const visible=Math.min(2,Math.max(.3,result.lengthM)),lo=-length-.18,hi=visible+.12;
+ const visible=viewAboveM??Math.min(2,Math.max(.3,result.lengthM)),lo=-(viewBelowM??length+.18),hi=visible+(viewAboveM===undefined?.12:0);
+ const color=result.axialMs===0?'#94a3b8':result.regime===1?'#f472b6':result.regime===0?'#22d3ee':'#fbbf24';
+ const regime=result.axialMs===0?'Стоп':result.regime===1?'Турбулентный':result.regime===0?'Ламинарный':'Переходный';
  const transform=(v:V):V=>{
   const raw=axial?v:surveyTransform(v,zenith,azimuth);
   const a=(orbit-(axial?0:azimuth))*Math.PI/180,c=Math.cos(a),s=Math.sin(a),x=raw[0]*c-raw[1]*s,y=raw[0]*s+raw[1]*c;
@@ -40,17 +42,18 @@ export default function Turbulator3DInspector({result,pipeOD,zenith=0,azimuth=0}
  // Camera and dimensions are the only mesh inputs.
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[p,pipeOD,orbit,axial,visible,result.boreMm,zenith,azimuth]);
- const paths:{d:string;front:boolean;id:string}[]=[];
+ const paths:{d:string;front:boolean;id:string;seconds:number}[]=[];
  if(result.valid&&flow&&result.axialMs>0&&br>pr){
   for(let k=0;k<8;k++){
-   let segment:V[]=[],front:boolean|undefined;
-   const push=()=>{if(segment.length>1)paths.push({id:`${uid}-${k}-${paths.length}`,d:'M '+str(segment).replace(/ /g,' L '),front:!!front});};
+   let segment:V[]=[],front:boolean|undefined,elapsed=0,startTime=0;
+   const push=()=>{if(segment.length>1)paths.push({id:`${uid}-${k}-${paths.length}`,d:'M '+str(segment).replace(/ /g,' L '),front:!!front,seconds:Math.max(.001,elapsed-startTime)});};
    for(let j=0;j<=220;j++){
     const z=lo+(hi-lo)*j/220;
     const samples=result.samples;
     const exitPhase=length*Math.tan(p.bladeAngle*Math.PI/180)/Math.max(outer,1e-4);
-    let phase=z>0?exitPhase:0;
-    if(z>0&&samples.length){let n=1;while(n<samples.length&&samples[n].distanceM<z)n++;const b=samples[Math.min(n,samples.length-1)],a=samples[Math.max(0,n-1)],t=Math.max(0,Math.min(1,(z-a.distanceM)/(b.distanceM-a.distanceM||1)));phase=exitPhase+a.phase+t*(b.phase-a.phase);}
+    let phase=z>0?exitPhase:0,axialMs=result.axialMs;
+    if(z>0&&samples.length){let n=1;while(n<samples.length&&samples[n].distanceM<z)n++;const b=samples[Math.min(n,samples.length-1)],a=samples[Math.max(0,n-1)],t=Math.max(0,Math.min(1,(z-a.distanceM)/(b.distanceM-a.distanceM||1)));phase=exitPhase+a.phase+t*(b.phase-a.phase);axialMs=a.axialMs+t*(b.axialMs-a.axialMs);}
+    if(j>0)elapsed+=(hi-lo)/220/Math.max(1e-9,axialMs);
     // Inside the ribbed sleeve lines follow external helical channels, never its bore.
     if(z<0&&z>-length)phase=(z+length)*Math.tan(p.bladeAngle*Math.PI/180)/Math.max(outer,1e-4);
     const angle=k*2*Math.PI/8+phase;
@@ -58,15 +61,17 @@ export default function Turbulator3DInspector({result,pipeOD,zenith=0,azimuth=0}
     const wallRadius=offset*Math.cos(angle)+Math.sqrt(Math.max(0,br*br-offset*offset*Math.sin(angle)**2));
     const rad=((z<=0&&z>=-length?fin:pr)+wallRadius)/2;
     const v:V=[rad*Math.cos(angle),rad*Math.sin(angle),z],f=transform(v)[2]>transform([0,0,z])[2];
-    if(front!==undefined&&f!==front){segment.push(v);push();segment=[v];}else segment.push(v);
+    if(front!==undefined&&f!==front){segment.push(v);push();segment=[v];startTime=elapsed;}else segment.push(v);
     front=f;
    }push();
   }
  }
- const drawPaths=(front:boolean)=>paths.filter(p=>p.front===front).map(p=><g key={p.id}><path id={p.id} d={p.d} fill="none" stroke="#22d3ee" strokeWidth="1.6" opacity={front?.9:.3}/>{play&&<circle className="turbulator-particle" r="2.2" fill="#a5f3fc"><animateMotion dur={`${Math.max(.6,Math.min(8,(hi-lo)/Math.max(.05,result.axialMs)))}s`} repeatCount="indefinite" path={p.d}/></circle>}</g>);
+ const drawPaths=(front:boolean)=>paths.filter(p=>p.front===front).map(p=><g key={p.id}><path id={p.id} d={p.d} fill="none" stroke={color} strokeWidth="1.6" opacity={front?.9:.3}/>{play&&[0,1,2].map(i=><circle key={i} className="turbulator-particle" r="2.2" fill={color}><animateMotion dur={`${p.seconds}s`} begin={`${-i*p.seconds/3}s`} calcMode="linear" repeatCount="indefinite" path={p.d}/></circle>)}</g>);
  return <section className="rounded-xl border border-border overflow-hidden" aria-label="3D турбулизатора и вихревого потока">
   <div className="p-3 border-b text-sm"><b>Турбулизатор · MD {p.md} м</b><p className="text-xs text-muted-foreground">Зенит {zenith.toFixed(1)}° · азимут {azimuth.toFixed(1)}° · Standoff {result.standoffPct.toFixed(1)}% · посадка на трубе без проточного зазора</p></div>
   <div className="bg-slate-950 text-slate-200 p-3">
+   <div className="flex flex-wrap justify-between gap-2 px-1 pb-2 text-xs tabular-nums"><b style={{color}}>{regime} · Re {result.reynolds.toFixed(0)}</b><span>{rateLps!==undefined?`${rateLps.toFixed(1)} л/с · `:''}{result.axialMs.toFixed(3)} м/с</span></div>
+   <p className="text-[11px] text-slate-400 mb-2">MD {Math.max(0,p.md-hi).toFixed(2)}–{(p.md-lo).toFixed(2)} м · угол рёбер {p.bladeAngle}°</p>
    <style>{'@media (prefers-reduced-motion: reduce){.turbulator-particle{display:none}}'}</style>
    <svg viewBox="0 0 600 560" className="w-full max-h-[620px]" role="img" aria-label="Красная втулка с наклонными рёбрами; поток снаружи, закрутка выше изделия">
     <defs><radialGradient id={`${uid}-bg`}><stop stopColor="#223149"/><stop offset="1" stopColor="#080f1d"/></radialGradient></defs>

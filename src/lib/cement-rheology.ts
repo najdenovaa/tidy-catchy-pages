@@ -131,6 +131,12 @@ export function hbFromFann(f: FannReadings | undefined): HBParams | undefined {
 
 export interface HBFrictionResult { pressureMPa: number; reynolds: number; regime: number; wallShearPa: number }
 
+/** Shared boundaries for the generalized Reynolds number used by hbFriction. */
+export function hbRegimeBounds(hb: HBParams) {
+  const n = Math.max(0.1, hb.n);
+  return { laminar: 3470 - 1370 * n, turbulent: 4270 - 1370 * n };
+}
+
 /**
  * Потери на трение для жидкости Гершеля–Балкли по API RP 13D (2010), СИ.
  * α = 0 — труба, α = 1 — кольцевой зазор (Dh = Do − Di).
@@ -151,7 +157,7 @@ export function hbFriction(
   const gw = (8 * G * velocityMs) / dHydM;
   const tw = Math.pow((4 - alpha) / (3 - alpha), n) * hb.tau0 + hb.K * Math.pow(gw, n);
   const Re = (8 * densityKgM3 * velocityMs * velocityMs) / Math.max(1e-9, tw);
-  const reLam = 3470 - 1370 * n, reTurb = 4270 - 1370 * n;
+  const { laminar: reLam, turbulent: reTurb } = hbRegimeBounds(hb);
   const fLam = 16 / Re;
   const fTr = (16 * Re) / (reLam * reLam);
   const a = (Math.log10(n) + 3.93) / 50, b = (1.75 - Math.log10(n)) / 7;
