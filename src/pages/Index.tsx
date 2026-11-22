@@ -796,6 +796,8 @@ export default function Index() {
             <div data-tab-content="optimizer">
               {calcSnapshot ? (
                 <ProgramOptimizerSection
+                  onChemicalBuffersChange={setBuffers}
+                  onDrillingFluidChange={setDrillingFluid}
                   input={{
                     wellData,
                     drillingFluid,

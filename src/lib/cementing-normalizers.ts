@@ -1,3 +1,4 @@
+import {normalizeChemicalRecipeRecord} from './chemical-wash-recipes';
 import {normalizeCleaningDesign} from './optimizer-cleaning-record';
 import { normalizeTurbulatorDesign } from './turbulator-flow';
 import {normalizeMechanics} from './cement-mechanics';
@@ -270,6 +271,7 @@ export function normalizeDrillingFluid(value: unknown): DrillingFluid {
   return {
     libraryReference: normalizeFluidLibraryReference(source.libraryReference),
     name: toString(source.name),
+    ...(['water','oil','synthetic'].includes(String(source.base))?{base:source.base as DrillingFluid['base']}:{}),
     density: toNumber(source.density, 0),
     rheology: normalizeRheology(
       isRecord(source.rheology) ? source.rheology : { pv: source.pv, yp: source.yp },
@@ -315,6 +317,7 @@ export function normalizeBufferFluid(value: unknown, index = 0): BufferFluid {
 
   return {
     libraryReference: normalizeFluidLibraryReference(source.libraryReference),
+    ...(normalizeChemicalRecipeRecord(source.chemicalRecipe)?{chemicalRecipe:normalizeChemicalRecipeRecord(source.chemicalRecipe)}:{}),
     name: toString(source.name, `Буфер ${index + 1}`),
     bufferType: normalizeBufferType(source.bufferType),
     density: toNumber(source.density, 0),

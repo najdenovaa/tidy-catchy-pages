@@ -1,3 +1,4 @@
+import {WASH_COMPONENTS} from './chemical-wash-recipes';
 /** Commercial product identity is separate from an engineering correlation and lot measurements. */
 export interface ProductIdentity {
   productId?: string;
@@ -10,13 +11,14 @@ export interface CementProduct {
   id: string; name: string; manufacturer: string; technicalSpec: string; sourceUrl: string;
   role: string; purpose: string; use: 'cement' | 'buffer';
   dosage: string; bwocRange?: readonly [number, number]; maxTemperatureC?: number;
-  note: string;
+  note: string; screeningBufferMassPct?:number;
 }
 const sourceUrl = 'https://igchem.ru/chemical';
 const manufacturer = 'IG chemical / Айсберг';
 const product = (id: string, name: string, tu: string, p: Omit<CementProduct, 'id' | 'name' | 'technicalSpec' | 'manufacturer' | 'sourceUrl'>): CementProduct =>
   ({ id, name, manufacturer, sourceUrl, technicalSpec: `ТУ 20.59.59-${tu}-30392090-2024`, ...p });
 export const CEMENT_PRODUCTS: readonly CementProduct[] = [
+  ...WASH_COMPONENTS.map(c=>({id:c.id,name:c.name,manufacturer:'Не указан: класс компонента',technicalSpec:'Класс вещества; коммерческий паспорт не задан',sourceUrl:c.sourceUrl,role:'wash',purpose:c.function,use:'buffer' as const,dosage:'Старт лабораторного скрининга: '+c.startPct+'% массы готового буфера (поставляемый продукт)',screeningBufferMassPct:c.startPct,note:c.note+' Это предложение для испытания, не паспортная норма и не подтверждённое смытие.'})),
   product('ig-retard', 'IG Retard', '001', { role: 'retarder', purpose: 'Замедлитель', use: 'cement', dosage: '0,1-0,7% от массы сухого цемента (BWOC)', bwocRange: [0.1, 0.7], maxTemperatureC: 100, note: 'Предел температуры относится к статическим условиям. Истинная плотность не опубликована.' }),
   product('ig-flice', 'IG FLice', '002', { role: 'fluidLoss', purpose: 'Понизитель водоотдачи', use: 'cement', dosage: '0,2-1% BWOC', bwocRange: [0.2, 1], note: 'Температурный диапазон на сайте указан неоднозначно (15-18 °C); требуется паспорт. Истинная плотность не опубликована.' }),
   product('ig-flex', 'IG Flex', '003', { role: 'dispersant', purpose: 'Поликарбоксилатный диспергатор', use: 'cement', dosage: '0,05-0,3% BWOC', bwocRange: [0.05, 0.3], maxTemperatureC: 160, note: 'Корреляция типового пластификатора не калибрована для этого продукта. Истинная плотность не опубликована.' }),
@@ -48,6 +50,6 @@ export function normalizeProductIdentity(source: Record<string, unknown>): Produ
 
 /** Program defaults are editable mass percentages, not conversions of supplier volume recommendations. */
 export function standardProductPercent(p:CementProduct):number {
- return p.bwocRange?.[0]??(({defoamer:.2,wash:.5,spacer:1,microsilica:10} as Record<string,number>)[p.role]??.1);
+ return p.screeningBufferMassPct??p.bwocRange?.[0]??(({defoamer:.2,wash:.5,spacer:1,microsilica:10} as Record<string,number>)[p.role]??.1);
 }
-export function productAdditive(p:CementProduct){return{...identityOf(p),name:p.name,percentage:standardProductPercent(p),percentageType:'bwoc' as const,massKg:0};}
+export function productAdditive(p:CementProduct){return{...identityOf(p),name:p.name,percentage:standardProductPercent(p),percentageType:p.use==='buffer'?'bwob' as const:'bwoc' as const,massKg:0};}

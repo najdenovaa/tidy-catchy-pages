@@ -18,7 +18,7 @@ export function normalizeFluidLab(x:unknown):FluidInteractionLab|undefined{
 }
 export const emptyFluidLab=():FluidInteractionLab=>({version:1,temperatureC:null,pressureMPaAbs:null,useMixtures:false,mixtures:[],removal:[]});
 export function labFluids(p:LabFluidsInput):LabFluid[]{
- const make=(id:string,f:any)=>({id,name:f.name||id,temperatureC:num((f.rheologyBottomhole??f.rheology)?.testTemperatureC),pressureMPaAbs:num((f.rheologyBottomhole??f.rheology)?.testPressureMPaAbs),key:JSON.stringify([id,f.name,f.bufferType,f.fluidLoss,f.density,f.rheology,f.rheologyBottomhole,f.additives,f.waterRatio,f.cementSG,f.libraryReference,f.labTargets],(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v)});
+ const make=(id:string,f:any)=>({id,name:f.name||id,temperatureC:num((f.rheologyBottomhole??f.rheology)?.testTemperatureC),pressureMPaAbs:num((f.rheologyBottomhole??f.rheology)?.testPressureMPaAbs),key:JSON.stringify([id,f.name,f.bufferType,f.fluidLoss,f.density,f.rheology,f.rheologyBottomhole,f.additives,f.waterRatio,f.cementSG,f.libraryReference,f.labTargets,...(f.base?[f.base]:[]),...(f.chemicalRecipe?[f.chemicalRecipe.id,f.chemicalRecipe.family,f.chemicalRecipe.waterSource]:[])],(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v)});
  return [make('mud:0',p.drillingFluid),...p.buffers.map((f,i)=>make('buffer:'+i,f)),...p.slurries.map((f,i)=>make('cement:'+i,f)),...p.displacementFluids.map((f,i)=>make('displacement:'+i,f))];
 }
 export function conditionsIssue(t:{source:string;temperatureC:number|null;pressureMPaAbs:number|null},lab:FluidInteractionLab){

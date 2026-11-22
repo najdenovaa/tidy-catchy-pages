@@ -1,3 +1,4 @@
+import {chemicalRecipeIssue,WASH_RECIPES,WASH_RECIPE_NOTE} from './chemical-wash-recipes';
 import {mechanicsKey,MECHANICS_NOTE,SHEATH_NOTE} from './cement-mechanics';
 import {mechanicsFigures} from './cement-mechanics-report';
 import {mechanicsDocRows} from './cement-mechanics-docx';
@@ -309,6 +310,7 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
   result.push(sectionTitle("2. Буровой раствор"));
   const fluidRows = [
     { label: "Тип бурового раствора", value: drillingFluid.name },
+    { label: "Основа БР", value: ({water:'Водная',oil:'Нефтяная / РУО',synthetic:'Синтетическая'}[drillingFluid.base??'']??'Не указана') },
     { label: "Плотность", value: `${drillingFluid.density} кг/м³` },
     { label: "Водоотдача", value: `${drillingFluid.fluidLoss ?? 0} мл/30мин` },
     { label: "PV (поверхность)", value: `${drillingFluid.rheology.pv} сПз` },
@@ -332,6 +334,7 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
       { label: "Объём", value: `${b.volume} м³` },
       { label: "PV / YP", value: `${b.rheology.pv} сПз / ${b.rheology.yp} Па` },
     ];
+    if(b.chemicalRecipe){bRows.push({label:'Химическая рецептура',value:WASH_RECIPES.find(r=>r.id===b.chemicalRecipe?.id)?.name??b.chemicalRecipe.id},{label:'Вода/рассол',value:b.chemicalRecipe.waterSource||'Не указаны'},{label:'Свойства рецептуры',value:chemicalRecipeIssue(b,drillingFluid)??('Подтверждены: '+b.chemicalRecipe.propertySource)});result.push(noteParagraph(WASH_RECIPE_NOTE));}
     if (b.libraryReference) bRows.push({ label: "Источник свойств / библиотека", value: fluidReferenceText("buffer", b) });
     result.push(kvTable(bRows) as any);
     // Flow rate steps

@@ -10,7 +10,7 @@ export const FLUID_LIBRARY_KEY = 'deallsoft.fluid-library.v1';
 export interface FluidConditions {source:string; basis:FluidLibraryReference['basis']; temperatureC?:number; pressureMPa?:number; notes:string}
 /** Canonical density is kg/m³ for every library kind. No well depths, volumes or pump schedule. */
 export interface FluidProperties {
-  name:string; density:number; rheology:Rheology;
+  name:string; density:number; rheology:Rheology; base?:DrillingFluid['base'];chemicalRecipe?:BufferFluid['chemicalRecipe'];
   rheologyBottomhole?:Rheology; fluidLoss?:number; bufferType?:BufferFluid['bufferType'];
   additives?:SlurryInput['additives']; thickeningTime30Bc?:number; thickeningTime50Bc?:number;
   waterRatio?:number; yieldPerTon?:number; cementSG?:number; labTargets?:SlurryInput['labTargets']; compressionCoeff?:number;
@@ -24,7 +24,7 @@ const normalizers = {mud:normalizeDrillingFluid,buffer:normalizeBufferFluid,slur
 export function fluidProperties(kind:FluidKind, fluid:ProjectFluid):FluidProperties {
   const f=normalizers[kind](fluid) as ProjectFluid;
   const props:FluidProperties={name:typeof fluid.name==='string'?fluid.name:f.name,density:kind==='slurry'?f.density*1000:f.density,rheology:f.rheology};
-  const keys:Record<FluidKind,string[]>={mud:['fluidLoss','rheologyBottomhole'],buffer:['bufferType','additives'],slurry:['additives','thickeningTime30Bc','thickeningTime50Bc','waterRatio','yieldPerTon','cementSG','labTargets'],displacement:['compressionCoeff']};
+  const keys:Record<FluidKind,string[]>={mud:['base','fluidLoss','rheologyBottomhole'],buffer:['bufferType','additives','chemicalRecipe'],slurry:['additives','thickeningTime30Bc','thickeningTime50Bc','waterRatio','yieldPerTon','cementSG','labTargets'],displacement:['compressionCoeff']};
   for(const key of keys[kind]) if(f[key as keyof ProjectFluid]!==undefined)(props as unknown as Record<string,unknown>)[key]=f[key as keyof ProjectFluid];
   // Absolute masses belong to the job volume, only percentages travel with the recipe.
   if(props.additives)props.additives=props.additives.map(a=>({...a,massKg:a.percentage>0?0:a.massKg}));
@@ -68,7 +68,7 @@ export function applyFluidRevision<T extends ProjectFluid>(kind:FluidKind,target
   const r=entry.revisions.find(r=>r.version===version);if(!r)throw new Error('Версия не найдена.');validateFluidRevision(r);
   const p=clone(r.properties), applied={...clone(target),...p,density:kind==='slurry'?p.density/1000:p.density} as T;
   // Missing optional properties must clear values inherited from a different material.
-  for(const key of ['rheologyBottomhole','bufferType','cementSG','labTargets'])if(!(key in p))delete (applied as unknown as Record<string,unknown>)[key];
+  for(const key of ['base','chemicalRecipe','rheologyBottomhole','bufferType','cementSG','labTargets'])if(!(key in p))delete (applied as unknown as Record<string,unknown>)[key];
   applied.libraryReference={entryId:entry.id,revision:r.version,name:p.name,source:r.source,notes:r.notes,basis:r.basis,temperatureC:r.temperatureC,pressureMPa:r.pressureMPa,appliedAt:new Date().toISOString(),signature:fluidSignature(kind,applied)};
   return applied;
 }

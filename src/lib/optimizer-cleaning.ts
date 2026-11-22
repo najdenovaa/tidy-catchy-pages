@@ -1,3 +1,4 @@
+import {chemicalRecipeIssue} from './chemical-wash-recipes';
 /** High-quality design. Laboratory removal is evidence, never a predicted cleaning percentage. */
 import {
  annularFrictionMPa, getEffectiveTrajectory, interpolateTVD, totalPipeVolumeForRange, hbOf,
@@ -170,14 +171,16 @@ export async function buildHighQualityScenario(p:ProgramInput,s:OptimizerSetting
  const rates:number[]=[];for(let q=s.minRateLps;q<=s.maxRateLps+1e-9;q+=s.rateStepLps){if(rates.length>200){out.issues.push('Слишком мелкий шаг расходов.');return out;}rates.push(q);}
  const cementRates=rates.filter(q=>q<=s.maxCementRateLps);
  const lab=p.wellData.fluidInteractionLab,fluids=labFluids(p),depths=cleaningDepths(w,t);
- const failures=new Set<string>();let best:HighQualityScenario|undefined,bestTest:RemovalTest|undefined;
+ const failures=new Set<string>(),pool:{scenario:HighQualityScenario;test?:RemovalTest}[]=[];
  for(const {b:chemical,i} of chemicals){
+  const chemistryIssue=chemicalRecipeIssue(chemical,p.drillingFluid);if(chemistryIssue){failures.add(chemical.name+': '+chemistryIssue);continue;}
   const tests=lab?.removal.filter(x=>x.cleanerId==='buffer:'+i&&!removalIssue(x,lab,fluids)&&typeof x.removalPct==='number'&&x.removalPct>=85&&x.fromMD!<=t.topMD&&x.toMD!>=t.bottomMD)??[];
-  const proof=tests.filter(x=>depths.every(md=>cleaningFlow(w,chemical,md,10).narrowShearPa>=x.criticalPa!)).sort((a,b)=>a.exposureS!-b.exposureS!)[0];
-  if(!proof)failures.add(chemical.name+': нет применимого протокола смытия ≥85% для текущих составов, T/P и всей зоны.');
+  const proofs=tests.filter(x=>depths.every(md=>cleaningFlow(w,chemical,md,10).narrowShearPa>=x.criticalPa!)).sort((a,b)=>b.removalPct!-a.removalPct!||a.exposureS!-b.exposureS!);
+  if(!proofs.length)failures.add(chemical.name+': нет применимого протокола смытия ≥85% для текущих составов, T/P и всей зоны.');
   if(depths.some(md=>cleaningFlow(w,chemical,md,10).regime!==0)){failures.add(chemical.name+': при 10 л/с течение не ламинарное во всей зоне.');continue;}
-  if(proof&&depths.some(md=>cleaningFlow(w,chemical,md,10).narrowShearPa<proof.criticalPa!)){failures.add(chemical.name+': сдвиг ниже испытанного условия.');continue;}
+  for(const proof of proofs.length?proofs:[undefined]){
   for(const heavy of heavies){
+   const heavyChemistryIssue=chemicalRecipeIssue(heavy,p.drillingFluid);if(heavyChemistryIssue){failures.add(heavy.name+': '+heavyChemistryIssue);continue;}
    const lead=p.slurries[0]?.density*1000;
    if(!(heavy.density>p.drillingFluid.density&&heavy.density<lead)){failures.add(heavy.name+': плотность должна быть выше БР и ниже первого цемента; рецептура автоматически не утяжеляется.');continue;}
    const g=(b:Pick<BufferFluid,'rheology'>)=>{const h=hbOf(b.rheology);return h?h.tau0+h.K*100**h.n:b.rheology.yp+b.rheology.pv*.1;};
@@ -196,24 +199,32 @@ export async function buildHighQualityScenario(p:ProgramInput,s:OptimizerSetting
      const v={q1:qCement,q2:qDisp,bufferVolumeM3:null,bufferDensity:null},ev=evaluate(program,v,plan,false);
      if(!ev.feasible){ev.violations.forEach(x=>failures.add(x));continue;}
      const design:CleaningDesign={version:1,target:t,targetRemovalPct:85,chemicalName:chemical.name,heavyName:heavy.name,chemicalVolumeM3:scheduled.chemical.volume,heavyVolumeM3:scheduled.heavy.volume,chemicalContactMin:scheduled.chemicalContactMin,heavyHighContactMin:scheduled.heavyHighContactMin,chemicalRateLps:10,heavyRateLps:qHeavy,cementRateLps:qCement,displacementRateLps:qDisp,switchVolumeM3:scheduled.change,heavyEndVolumeM3:scheduled.heavyEnd,...(proof?{proof:{id:proof.id,source:proof.source,removalPct:proof.removalPct!,exposureS:proof.exposureS!,criticalPa:proof.criticalPa!,temperatureC:proof.temperatureC!,pressureMPaAbs:proof.pressureMPaAbs!}}:{})};
-     if(!best||(!!proof&&!best.design?.proof)||!!proof===!!best.design?.proof&&(ev.minMarginMPa>best.evaluation!.minMarginMPa||ev.minMarginMPa===best.evaluation!.minMarginMPa&&ev.jobTimeMin<best.evaluation!.jobTimeMin)){
-      best={...out,design,program,centralization:plan,evaluation:ev,issues:proof?[]:[chemical.name+': цель смытия 85% не подтверждена протоколом.']};bestTest=proof;
-     }
+     pool.push({scenario:{...out,design,program,centralization:plan,evaluation:ev,issues:proof?[]:[chemical.name+': цель смытия 85% не подтверждена протоколом.']},test:proof});
     }catch(e){failures.add((e as Error).message);}
     if(out.candidates%4===0)await new Promise(r=>setTimeout(r,0));
    }
   }
  }
- if(!best){out.issues.push(...failures);return out;}
- let pressure:PressureProfileResult|undefined;
- const ev=evaluate(best.program!,best.evaluation!.variant,plan,true,r=>{pressure=r;});
- best.evaluation=ev;best.candidates=out.candidates;
- best.issues.push(...ev.violations);
- if(pressure){
-  const audit=auditCleaningTransit(best.program!,t,pressure,bestTest);
-  best.issues.push(...audit.issues);best.design!.chemicalContactMin=audit.chemicalContactMin;best.design!.heavyHighContactMin=audit.heavyHighContactMin;
  }
- else best.issues.push('Нет нативного результата для проверки прохода.');
- best.issues=[...new Set(best.issues)];best.ready=best.issues.length===0;
- return best;
+ if(!pool.length){out.issues.push(...failures);return out;}
+ pool.sort((a,b)=>(b.test?.removalPct??-1)-(a.test?.removalPct??-1)||b.scenario.evaluation!.minMarginMPa-a.scenario.evaluation!.minMarginMPa||a.scenario.evaluation!.jobTimeMin-b.scenario.evaluation!.jobTimeMin);
+ let rejected:HighQualityScenario|undefined;
+ for(const {scenario:best,test} of pool){
+  // Only one unconfirmed draft is useful; no untested recipe can become a ready scenario.
+  if(!test&&rejected)continue;
+  let pressure:PressureProfileResult|undefined;
+  try{
+   const ev=evaluate(best.program!,best.evaluation!.variant,plan,true,r=>{pressure=r;});
+   best.evaluation=ev;best.candidates=out.candidates;best.issues.push(...ev.violations);
+   if(pressure){
+    const audit=auditCleaningTransit(best.program!,t,pressure,test);
+    best.issues.push(...audit.issues);best.design!.chemicalContactMin=audit.chemicalContactMin;best.design!.heavyHighContactMin=audit.heavyHighContactMin;
+   }else best.issues.push('Нет нативного результата для проверки прохода.');
+  }catch(e){best.issues.push((e as Error).message);}
+  best.issues=[...new Set(best.issues)];best.ready=best.issues.length===0;
+  if(best.ready)return best;
+  rejected??=best;
+  await new Promise(r=>setTimeout(r,0));
+ }
+ return rejected!;
 }
