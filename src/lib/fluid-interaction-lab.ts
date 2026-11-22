@@ -1,7 +1,7 @@
 import type {DrillingFluid,BufferFluid,SlurryInput,DisplacementFluid} from './cementing-calculations';
 export interface LabFraction {fluidId:string;key:string;share:number|null}
 export interface MixtureTest {id:string;source:string;temperatureC:number|null;pressureMPaAbs:number|null;fractions:LabFraction[];pvCp:number|null;ypPa:number|null;observation:'unknown'|'no-anomaly'|'anomaly';notes:string}
-export interface RemovalTest {id:string;source:string;temperatureC:number|null;pressureMPaAbs:number|null;cleanerId:string;cleanerKey:string;mudKey:string;fromMD:number|null;toMD:number|null;criticalPa:number|null;exposureS:number|null;notes:string}
+export interface RemovalTest {removalPct?:number|null;id:string;source:string;temperatureC:number|null;pressureMPaAbs:number|null;cleanerId:string;cleanerKey:string;mudKey:string;fromMD:number|null;toMD:number|null;criticalPa:number|null;exposureS:number|null;notes:string}
 export interface FluidInteractionLab {version:1;temperatureC:number|null;pressureMPaAbs:number|null;useMixtures:boolean;mixtures:MixtureTest[];removal:RemovalTest[]}
 export interface LabFluid {id:string;name:string;key:string;temperatureC:number|null;pressureMPaAbs:number|null}
 export type LabFluidsInput={drillingFluid:DrillingFluid;buffers:BufferFluid[];slurries:SlurryInput[];displacementFluids:DisplacementFluid[]};
@@ -14,7 +14,7 @@ export function normalizeFluidLab(x:unknown):FluidInteractionLab|undefined{
  const conditions=(r:Record<string,any>)=>({id:str(r.id),source:str(r.source),temperatureC:num(r.temperatureC),pressureMPaAbs:num(r.pressureMPaAbs),notes:str(r.notes)});
  return {version:1,temperatureC:num(v.temperatureC),pressureMPaAbs:num(v.pressureMPaAbs),useMixtures:v.useMixtures===true,
  mixtures:(Array.isArray(v.mixtures)?v.mixtures:[]).slice(0,200).map((x:unknown)=>{const r=record(x);return {...conditions(r),pvCp:num(r.pvCp),ypPa:num(r.ypPa),observation:r.observation==='anomaly'?'anomaly':r.observation==='no-anomaly'?'no-anomaly':'unknown',fractions:(Array.isArray(r.fractions)?r.fractions:[]).slice(0,3).map((f:unknown)=>{const a=record(f);return {fluidId:str(a.fluidId),key:str(a.key),share:num(a.share)};})};}),
- removal:(Array.isArray(v.removal)?v.removal:[]).slice(0,200).map((x:unknown)=>{const r=record(x);return {...conditions(r),cleanerId:str(r.cleanerId),cleanerKey:str(r.cleanerKey),mudKey:str(r.mudKey),fromMD:num(r.fromMD),toMD:num(r.toMD),criticalPa:num(r.criticalPa),exposureS:num(r.exposureS)};})};
+ removal:(Array.isArray(v.removal)?v.removal:[]).slice(0,200).map((x:unknown)=>{const r=record(x);return {...conditions(r),cleanerId:str(r.cleanerId),cleanerKey:str(r.cleanerKey),mudKey:str(r.mudKey),fromMD:num(r.fromMD),toMD:num(r.toMD),criticalPa:num(r.criticalPa),exposureS:num(r.exposureS),...(r.removalPct!==undefined?{removalPct:num(r.removalPct)}:{})};})};
 }
 export const emptyFluidLab=():FluidInteractionLab=>({version:1,temperatureC:null,pressureMPaAbs:null,useMixtures:false,mixtures:[],removal:[]});
 export function labFluids(p:LabFluidsInput):LabFluid[]{
@@ -60,6 +60,7 @@ export function createMixtureLookup(points:CompiledMixture[]){
 export function measuredMixture(points:CompiledMixture[],c:ArrayLike<number>[],cell:number){return createMixtureLookup(points)(c,cell);}
 export function removalIssue(t:RemovalTest,lab:FluidInteractionLab,fluids:LabFluid[]){
  const condition=conditionsIssue(t,lab);if(condition)return condition;
+ if(t.removalPct!==undefined&&t.removalPct!==null&&(!finite(t.removalPct)||t.removalPct<0||t.removalPct>100))return 'Измеренное смытие должно быть от 0 до 100%';
  if(fluids.find(f=>f.id===t.cleanerId)?.key!==t.cleanerKey||fluids[0]?.key!==t.mudKey)return 'Состав промывки или бурового изменён';
  const cleaner=fluids.find(f=>f.id===t.cleanerId);if(cleaner?.temperatureC!==lab.temperatureC||cleaner.pressureMPaAbs!==lab.pressureMPaAbs||fluids[0].temperatureC!==lab.temperatureC||fluids[0].pressureMPaAbs!==lab.pressureMPaAbs)return 'T/P реологии промывки и бурового не совпадают со сценарием';
  if(t.cleanerId==='mud:0')return 'Выберите вытесняющую жидкость';

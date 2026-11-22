@@ -64,7 +64,7 @@ interface Props {
   onResultsChange?: (results: CentralizationResult[] | null) => void;
   onIntervalsChange?: (intervals: CentralizerInterval[]) => void;
   /** Расстановка извне (из автоподбора): при смене nonce записывается в интервалы и пересчитывается */
-  externalIntervals?: { nonce: number; intervals: CentralizerInterval[] } | null;
+  externalIntervals?: { nonce: number; turbulatorDesign?:import('@/lib/turbulator-flow').TurbulatorDesign; intervals: CentralizerInterval[] } | null;
 }
 
 type CalcMode = "manual" | "auto";
@@ -475,7 +475,10 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
     setMode("manual");
     setIntervals(ivs);
     setAutoResults(null);
-    setResults(calculateCentralization(wellData, ivs, mudDensity, undefined, turbPoints.length > 0 ? turbPoints : undefined));
+    const td=externalIntervals.turbulatorDesign;
+    if(td){setTurbPoints(td.points);setTurbSettings(td);}
+    const points=td?.points??turbPoints;
+    setResults(calculateCentralization({...wellData,...(td?{turbulatorDesign:td}:{})}, ivs, mudDensity, undefined, points.length > 0 ? points : undefined));
   }
 
   const handleCalculateAuto = useCallback(() => {

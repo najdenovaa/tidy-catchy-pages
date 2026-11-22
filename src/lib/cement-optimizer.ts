@@ -1,3 +1,5 @@
+import {buildHighQualityScenario,cleaningTarget,type HighQualityScenario} from './optimizer-cleaning';
+import {buildCentralizerJointSchedule} from './centralizer-layout';
 import { boreDiameterAtDepth } from "./well-geometry";
 /**
  * Автоподбор программы цементирования.
@@ -107,6 +109,7 @@ export interface CentralizerPlan {
 }
 
 export interface OptimizerResult {
+  highQuality?:HighQualityScenario;
   current: VariantEval;
   evaluations: VariantEval[];
   best: { label: string; hint: string; ev: VariantEval }[];
@@ -292,13 +295,15 @@ function effectiveAnnularRate(pr: PressureProfileResult, fallback: number): numb
 
 export function evaluateProgram(
   p: ProgramInput, v: ProgramVariant, settings: OptimizerSettings, vols?: VolumeResults, centr?: CentralizationResult[],
+  options?:{preserveSteps?:boolean;fast?:boolean;onPressure?:(p:PressureProfileResult)=>void},
 ): VariantEval {
-  const prog = applyVariant(p.buffers, p.slurries, p.displacementFluids, v);
+  const prog = options?.preserveSteps?{buffers:p.buffers,slurries:p.slurries,displacementFluids:p.displacementFluids}:applyVariant(p.buffers, p.slurries, p.displacementFluids, v);
   const volumes = vols ?? calculateVolumes(p.wellData, prog.slurries, prog.displacementFluids[0]?.compressionCoeff ?? 1);
   const pr = calculatePressureProfile(
     p.wellData, prog.slurries, prog.buffers, p.drillingFluid, prog.displacementFluids, p.fractureGradient,
-    volumes.displacementVolumeWithCompression, p.flushTimeMin, p.flushVolumeM3, { fast: true },
+    volumes.displacementVolumeWithCompression, p.flushTimeMin, p.flushVolumeM3, { fast: options?.fast??true },
   );
+  options?.onPressure?.(pr);
   const violations: Violation[] = [];
 
   // Запас по пластам
@@ -386,6 +391,7 @@ export function optimizerRates(s: OptimizerSettings): number[] {
 export async function runOptimizer(
   p: ProgramInput, settings: OptimizerSettings, onProgress?: (done: number, total: number) => void,
 ): Promise<OptimizerResult> {
+  if(![settings.minRateLps,settings.maxRateLps,settings.rateStepLps,settings.maxCementRateLps,settings.jointLengthM,settings.pumpPressureLimitMPa,settings.marginReqMPa].every(Number.isFinite)||settings.minRateLps<=0||settings.maxRateLps<settings.minRateLps||settings.rateStepLps<=0||settings.jointLengthM<=0||settings.maxCementRateLps<settings.minRateLps||(settings.maxRateLps-settings.minRateLps)/settings.rateStepLps>200)throw Error('Проверьте пределы расходов, положительный шаг и длину трубы; допускается до 201 значения расхода.');
   const rates = optimizerRates(settings);
   const rates1 = rates.filter((q) => q <= settings.maxCementRateLps + 1e-9);
   const bOpts = bufferOptions(p, settings);
@@ -393,6 +399,11 @@ export async function runOptimizer(
   const current = evaluateProgram(p, currentVariant(p), settings, undefined, centr);
 
   const plans = settings.optimizeCentralizers ? centralizerPlans(p, settings) : [];
+  const quality=async()=>{
+   let qualityPlan:CentralizerPlan|undefined;
+   try{qualityPlan=qualityCentralizerPlan(p,settings);}catch{/* Target/geometry errors are explained by the scenario builder. */}
+   return buildHighQualityScenario(p,settings,qualityPlan?[qualityPlan]:[],(pp,v,plan,full,onPressure)=>evaluateProgram(pp,v,settings,undefined,plan.profile,{preserveSteps:true,fast:!full,onPressure}));
+  };
   const stage1Total = bOpts.length * rates1.length * rates.length;
   let total = stage1Total + plans.length * Math.min(2, bOpts.length) * rates1.length * rates.length;
   let done = 0, computed = 0;
@@ -430,7 +441,7 @@ export async function runOptimizer(
   // Этап 1: расходы и буфер при текущем (или принятом) центрировании
   const stage1 = await grid(p, bOpts);
   if (!plans.length) {
-    return { current, evaluations: stage1, rates, rates1, bufferOptions: bOpts, best: pickVariants(stage1, settings), blocker: findBlocker(stage1) };
+    return { highQuality:await quality(),current, evaluations: stage1, rates, rates1, bufferOptions: bOpts, best: pickVariants(stage1, settings), blocker: findBlocker(stage1) };
   }
 
   // Этап 2: для каждой расстановки центраторов — повторный перебор расходов с лучшими буферами этапа 1
@@ -455,7 +466,7 @@ export async function runOptimizer(
     mapEvals = stage2.filter((e) => e.centralization === b0.centralization);
   }
   onProgress?.(total, total);
-  return { current, evaluations: mapEvals, rates, rates1, bufferOptions: bos, best, blocker: findBlocker(stage2), centralizerStudy };
+  return { highQuality:await quality(),current, evaluations: mapEvals, rates, rates1, bufferOptions: bos, best, blocker: findBlocker(stage2), centralizerStudy };
 }
 
 const CENTRALIZER_TARGETS = [55, 67, 75, 85];
@@ -557,7 +568,7 @@ export function pickVariants(evs: VariantEval[], settings: OptimizerSettings): O
   const api = pool.filter((e) => !e.centralization || e.centralization.minStandoffPct >= 66.5);
   if (api.length) pool = api;
   const top = [...pool].sort((a, b) => cnt(a) - cnt(b) || b.mrei - a.mrei || a.channelLengthM - b.channelLengthM || b.minMarginMPa - a.minMarginMPa)[0];
-  const out: OptimizerResult["best"] = [{ label: "Максимум качества", hint: "Наибольший индекс вытеснения (±2%) при соблюдении всех ограничений; при равном качестве — меньше центраторов", ev: top }];
+  const out: OptimizerResult["best"] = [{ label: "Лучшее вытеснение", hint: "Наибольший индекс вытеснения (±2%) при соблюдении всех ограничений; при равном качестве — меньше центраторов", ev: top }];
 
   const balMargin = Math.max(1.5, settings.marginReqMPa);
   const bal = byQuality.find((e) => e.minMarginMPa >= balMargin && e.thickeningReserveMin >= 30 && e.mrei >= bestQ * 0.9);
@@ -574,3 +585,13 @@ const sameRates = (a: VariantEval, b: VariantEval) =>
   a.variant.q1 === b.variant.q1 && a.variant.q2 === b.variant.q2 && a.variant.bufferVolumeM3 === b.variant.bufferVolumeM3 && a.variant.bufferDensity === b.variant.bufferDensity;
 const sameVariant = (a: VariantEval, b: VariantEval) =>
   a.centralization === b.centralization && a.variant.q1 === b.variant.q1 && a.variant.q2 === b.variant.q2 && a.variant.bufferVolumeM3 === b.variant.bufferVolumeM3 && a.variant.bufferDensity === b.variant.bufferDensity;
+
+
+/** Separate quality coverage may extend above the current cement roof. Always recomputed from the real geometry. */
+export function qualityCentralizerPlan(p:ProgramInput,s:OptimizerSettings):CentralizerPlan{
+ const t=cleaningTarget(p.wellData),preset=centralizerPresets[s.centralizerType];
+ const spec=p.wellData.centralizerDesign?.autoSpec??p.wellData.centralizerDesign?.intervals[0]?.spec??{type:s.centralizerType,bladesCount:preset.bladesCount??6,bladeHeight:preset.bladeHeight??25,restoringForce:preset.restoringForce??10,maxAxialLoad:preset.maxAxialLoad??200};
+ const intervals=placeForStandoff(p.wellData,spec,s.jointLengthM,85,p.drillingFluid.density,t.topMD),profile=calculateCentralization(p.wellData,intervals,p.drillingFluid.density);
+ const inside=profile.filter(x=>x.md>=t.topMD&&x.md<=t.bottomMD),items=buildCentralizerJointSchedule(p.wellData.casingDepthMD,intervals).flatMap(x=>x.placements);
+ return {targetPct:85,label:'цель 85% в зоне очистки',intervals,profile,totalCount:items.length,countInCement:items.filter(x=>x.md>=t.topMD&&x.md<=t.bottomMD).length,minStandoffPct:inside.length?Math.min(...inside.map(x=>x.standoff)):0,avgStandoffPct:inside.length?inside.reduce((n,x)=>n+x.standoff,0)/inside.length:0};
+}
