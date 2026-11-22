@@ -108,9 +108,9 @@ function placeCleaningTurbulators(w:WellData,t:CleaningTarget,heavy:BufferFluid,
  const template=w.turbulatorDesign?.points[0];
  if(!template)throw Error('Нет исходной геометрии турбулизатора. Задайте изделие в разделе центрации; размеры по фотографии не назначаются.');
  const points:TurbulatorPoint[]=(w.turbulatorDesign?.points??[]).filter(p=>p.md<t.topMD||p.md>t.bottomMD);
- let md=t.bottomMD,n=0;
+ let md=t.bottomMD;
  while(md>t.topMD+1e-6&&points.length<2000){
-  const p={...template,id:'quality-turb-'+n++,md};
+  const p={...template,id:'quality-turb-'+md.toFixed(6),md};
   const f=calculateTurbulatorFlow(w,p,q,{id:'quality-heavy',name:heavy.name,density:heavy.density,rheology:heavy.rheology});
   if(!f.valid||!(f.tangentialMs>0))throw Error('Турбулизатор MD '+md.toFixed(1)+': '+(f.issues.join('; ')||'не создаёт закрутку.'));
   points.push(p);

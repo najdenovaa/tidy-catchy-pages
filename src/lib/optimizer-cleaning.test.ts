@@ -48,6 +48,10 @@ describe('quality cleaning design',()=>{
   const p=withProof(input()),plan=qualityCentralizerPlan(p,settings);
   const r=await buildHighQualityScenario(p,settings,[plan],(pp,v,cp,full,onPressure)=>evaluateProgram(pp,v,settings,undefined,cp.profile,{preserveSteps:true,fast:!full,onPressure}));
   expect(r.ready).toBe(true);
+  const shifted={...p,wellData:{...p.wellData,turbulatorDesign:r.program!.wellData.turbulatorDesign,reservoirLayers:p.wellData.reservoirLayers!.map(l=>({...l,bottomMD:500}))}};
+  const next=await buildHighQualityScenario(shifted,settings,[qualityCentralizerPlan(shifted,settings)],(pp,v,cp,full,onPressure)=>evaluateProgram(pp,v,settings,undefined,cp.profile,{preserveSteps:true,fast:!full,onPressure}));
+  const ids=next.program!.wellData.turbulatorDesign!.points.map(x=>x.id);
+  expect(new Set(ids).size).toBe(ids.length);expect(next.program!.wellData.turbulatorDesign!.points.some(x=>x.md===550)).toBe(true);
   expect(r.design).toBeDefined();
   expect(r.program?.buffers[0].additives).toEqual(p.buffers[0].additives);
   expect(r.program?.wellData.turbulatorDesign?.points.length).toBeGreaterThan(1);
