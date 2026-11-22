@@ -16,9 +16,12 @@ export function normalizeCentralizerMaterials(v:unknown):CalculatedCentralizerMa
 }
 export function equipmentMaterialInventory(w:WellData):EquipmentMaterialItem[] {
  const calculated=w.centralizerMaterials?.geometryKey===centralizerMaterialGeometryKey(w)?w.centralizerMaterials.items:undefined;
+ const turbines=new Map<string,number>();
+ for(const p of w.turbulatorDesign?.points??[])if(Number.isFinite(p.md)&&p.md>=0&&p.md<=w.casingDepthMD){const label=p.bladesCount+' рёбер, '+p.bladeAngle+'°, вылет '+p.bladeHeight+' мм';turbines.set(label,(turbines.get(label)??0)+1);}
  const manual=(w.equipment??[]).filter(e=>Number.isInteger(e.quantity)&&e.quantity>0&&(!calculated||e.kind!=='centralizer'));
  return [
   ...manual.map((e:EquipmentSelection)=>({name:`${EQUIPMENT_LABELS[e.kind]}${e.model?' / '+e.model:''}`,amount:e.quantity,unit:'шт',manufacturer:e.manufacturer||'Не задан',details:equipmentDetails(e)+(e.passport?'':'; паспорт не подтверждён')+(e.note?'; '+e.note:''),sourceUrl:e.sourceUrl})),
+  ...[...turbines].map(([label,amount])=>({name:'Турбулизатор / '+label,amount,unit:'шт',details:'По точкам установки; производитель и паспорт не подтверждаются геометрией',calculated:true})),
   ...(calculated??[]).filter(x=>x.quantity>0).map(x=>({name:`Центратор / ${x.model}`,amount:x.quantity,unit:'шт',manufacturer:x.manufacturer,details:'Количество по рассчитанным точкам установки',sourceUrl:x.sourceUrl,calculated:true})),
  ];
 }

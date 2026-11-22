@@ -1024,6 +1024,12 @@ export async function exportToDocx(
   }
   add('rheology','Модели и измерения реологии',rheologyContent);
   add('hydraulics','Объёмы и гидравлика',hydraulicsContent);
+  if(wellData.optimizerCleaning){
+    const d=wellData.optimizerCleaning;
+    scheduleContent.push(noteParagraph('Сохранённый сценарий автоподбора «Высокое качество» на момент применения. После изменения исходных данных требуется повторный подбор; эти параметры не подтверждают текущее смытие в скважине.'));
+    scheduleContent.push(noteParagraph('Зона MD '+d.target.topMD.toFixed(2)+'–'+d.target.bottomMD.toFixed(2)+' м; TVD '+d.target.topTVD.toFixed(2)+'–'+d.target.bottomTVD.toFixed(2)+' м. Химбуфер '+d.chemicalName+': '+d.chemicalVolumeM3.toFixed(3)+' м³, 10 л/с; тяжёлый '+d.heavyName+': '+d.heavyVolumeM3.toFixed(3)+' м³, повышенная подача '+d.heavyRateLps+' л/с. Переключения при суммарной закачке '+d.switchVolumeM3.toFixed(3)+' / '+d.heavyEndVolumeM3.toFixed(3)+' м³.'));
+    scheduleContent.push(noteParagraph('Цель смытия 85%. '+(d.proof?'В лаборатории измерено '+d.proof.removalPct+'%; '+d.proof.source+'; '+d.proof.exposureS+' с, '+d.proof.temperatureC+' °C / '+d.proof.pressureMPaAbs+' МПа абс.':'Нет подтверждающего протокола.')+' Это результат испытания образца, не прогноз очистки всей скважины.'));
+  }
   add('schedule','Программа закачки',scheduleContent);
   if(pressureResult.stopStorage){
     const r=pressureResult.stopStorage,e=r.curve.at(-1),p=r.settings;
@@ -1082,7 +1088,7 @@ export async function exportToDocx(
     content.push(noteParagraph('Измеренные составы смесей'));
     content.push(gridTable(['Протокол','T, °C','P, МПа абс.','Состав, об.%','PV, сПз','ДНС, Па','Наблюдения'],(lab?.mixtures??[]).map(t=>[t.id+': '+t.source,String(t.temperatureC??'Нет'),String(t.pressureMPaAbs??'Нет'),t.fractions.map(f=>(data.fluids.find(x=>x.id===f.fluidId)?.name??f.fluidId)+': '+(f.share===null?'Нет':(f.share*100).toFixed(4)+'%')).join('; '),String(t.pvCp??'Нет'),String(t.ypPa??'Нет'),({'unknown':'Не подтверждены','no-anomaly':'Аномалий не отмечено','anomaly':'Отмечена аномалия'}[t.observation])+'; '+t.notes])) as any);
     if(data.coverage)content.push(noteParagraph('Покрытие на последнем поле: '+data.coverage.measuredCells+' из '+data.coverage.mixedCells+' смешанных ячеек; '+data.coverage.measuredVolumeM3.toFixed(6)+' из '+data.coverage.mixedVolumeM3.toFixed(6)+' м³. Лабораторная модель на последнем поле '+(data.coverage.activeAtFinal?'активна':'не активна')+'.'));
-    for(const p of data.profiles){content.push(noteParagraph(p.test.id+': '+p.test.source+'; промывка '+(data.fluids.find(f=>f.id===p.test.cleanerId)?.name??p.test.cleanerId)+'; интервал MD '+p.test.fromMD+'-'+p.test.toMD+' м; T/P '+p.test.temperatureC+' °C / '+p.test.pressureMPaAbs+' МПа абс.; критический сдвиг '+p.test.criticalPa+' Па; воздействие '+p.test.exposureS+' с; '+(p.error??'Привязан к сценарию')+'. '+p.test.notes));if(reportIncludes(selection,'chartData'))content.push(gridTable(['MD, м','TVD, м','Требуется, Па','Доступно min, Па','Доступно max, Па','Чистая промывка, %'],p.rows.map(r=>[r.md,r.tvd,r.requiredPa,r.availableMinPa,r.availableMaxPa,r.pureCoveragePct].map(v=>v===null?'Нет данных':v.toFixed(5)))) as any);}
+    for(const p of data.profiles){content.push(noteParagraph(p.test.id+': '+p.test.source+'; промывка '+(data.fluids.find(f=>f.id===p.test.cleanerId)?.name??p.test.cleanerId)+'; интервал MD '+p.test.fromMD+'-'+p.test.toMD+' м; T/P '+p.test.temperatureC+' °C / '+p.test.pressureMPaAbs+' МПа абс.; критический сдвиг '+p.test.criticalPa+' Па; воздействие '+p.test.exposureS+' с; измеренное смытие '+(p.test.removalPct??'не задано')+'%; '+(p.error??'Привязан к сценарию')+'. '+p.test.notes));if(reportIncludes(selection,'chartData'))content.push(gridTable(['MD, м','TVD, м','Требуется, Па','Доступно min, Па','Доступно max, Па','Чистая промывка, %'],p.rows.map(r=>[r.md,r.tvd,r.requiredPa,r.availableMinPa,r.availableMaxPa,r.pureCoveragePct].map(v=>v===null?'Нет данных':v.toFixed(5)))) as any);}
     add('fluidLab','Совместимость смесей и вымываемость',content);
   }
 

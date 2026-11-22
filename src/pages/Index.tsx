@@ -1,3 +1,4 @@
+import {cleaningInputKey,type HighQualityScenario} from '@/lib/optimizer-cleaning';
 import ProgramDisclosure from '@/components/ProgramDisclosure';
 import CementThermalSection from '@/components/CementThermalSection';
 import {runThermal} from '@/lib/cement-thermal-run';
@@ -112,7 +113,7 @@ export default function Index() {
   const handleCentralizationReport=useCallback((data:CentralizationReportData)=>{
     setCentralizationReport(data);
     setWellData(w=>{
-      const centralizerDesign={mode:data.mode,targetStandoff:data.targetStandoff??67,jointLength:data.jointLength??12,autoSpec:data.autoSpec??data.intervals[0]?.spec,intervals:data.intervals};
+      const centralizerDesign={mode:data.mode,targetStandoff:data.targetStandoff??w.centralizerDesign?.targetStandoff??67,jointLength:data.jointLength??12,autoSpec:data.autoSpec??data.intervals[0]?.spec,intervals:data.intervals};
       return JSON.stringify(w.centralizerDesign)===JSON.stringify(centralizerDesign)&&JSON.stringify(w.turbulatorDesign)===JSON.stringify(data.turbulatorDesign)?w:{...w,centralizerDesign,turbulatorDesign:data.turbulatorDesign};
     });
     if(!data.calculated){setCentralizationResults(null);return;}
@@ -263,7 +264,7 @@ export default function Index() {
     loadSavedCalculation();
   }, [calcId]);
 
-  const [externalCentralizers, setExternalCentralizers] = useState<{ nonce: number; intervals: import("@/lib/centralization-calculations").CentralizerInterval[] } | null>(null);
+  const [externalCentralizers, setExternalCentralizers] = useState<{ nonce: number; turbulatorDesign?:WellData["turbulatorDesign"]; intervals: import("@/lib/centralization-calculations").CentralizerInterval[] } | null>(null);
   const applyOptimizerVariant = useCallback((v: ProgramVariant, plan?: CentralizerPlan) => {
     if (plan && plan.intervals.length) {
       setExternalCentralizers({ nonce: Date.now(), intervals: plan.intervals });
@@ -279,6 +280,21 @@ export default function Index() {
       fractureGradient, flushTimeMin, flushVolumeM3,
     }));
   }, [buffers, slurries, displacementFluids, wellData, drillingFluid, fractureGradient, flushTimeMin, flushVolumeM3]);
+
+  const applyQualityCleaning=useCallback((plan:HighQualityScenario)=>{
+    const live={wellData,drillingFluid,buffers,slurries,displacementFluids,fractureGradient,flushTimeMin,flushVolumeM3,centralizerIntervals};
+    if(!plan.ready||!plan.program||!plan.design||!plan.centralization||plan.sourceKey!==cleaningInputKey(live)){
+      setExportError('Сценарий очистки устарел или не прошёл проверки. Повторите автоподбор.');return;
+    }
+    const cp=plan.centralization;
+    const nextWell={...plan.program.wellData,optimizerCleaning:plan.design,centralizerDesign:{mode:'manual' as const,targetStandoff:85,jointLength:cp.intervals[0]?.jointLength??12,autoSpec:cp.intervals[0]?.spec,intervals:cp.intervals}};
+    nextWell.centralizerMaterials={geometryKey:centralizerMaterialGeometryKey(nextWell),items:centralizerInventory(nextWell.casingDepthMD,cp.intervals)};
+    const next=normalizeCementingSnapshot({...plan.program,wellData:nextWell});
+    setWellData(next.wellData);setBuffers(next.buffers);setSlurries(next.slurries);setDisplacementFluids(next.displacementFluids);
+    setCentralizationResults(cp.profile);setCentralizerIntervals(cp.intervals);
+    setExternalCentralizers({nonce:Date.now(),intervals:cp.intervals,turbulatorDesign:next.wellData.turbulatorDesign});
+    setCalcSnapshot(next);
+  },[wellData,drillingFluid,buffers,slurries,displacementFluids,fractureGradient,flushTimeMin,flushVolumeM3,centralizerIntervals]);
 
   const applyProtocolSlurries = useCallback((next: SlurryInput[]) => {
     setSlurries(next);
@@ -781,18 +797,19 @@ export default function Index() {
               {calcSnapshot ? (
                 <ProgramOptimizerSection
                   input={{
-                    wellData: snapWellData ?? calcSnapshot.wellData,
-                    drillingFluid: calcSnapshot.drillingFluid,
-                    buffers: calcSnapshot.buffers,
-                    slurries: calcSnapshot.slurries,
-                    displacementFluids: calcSnapshot.displacementFluids,
-                    fractureGradient: calcSnapshot.fractureGradient,
-                    flushTimeMin: calcSnapshot.flushTimeMin,
-                    flushVolumeM3: calcSnapshot.flushVolumeM3,
+                    wellData,
+                    drillingFluid,
+                    buffers,
+                    slurries,
+                    displacementFluids,
+                    fractureGradient,
+                    flushTimeMin,
+                    flushVolumeM3,
                     centralization: centralizationResults ?? undefined,
                     centralizerIntervals,
                   }}
                   onApply={applyOptimizerVariant}
+                  onApplyQuality={applyQualityCleaning}
                 />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАСЧЁТ» для получения результатов</div>

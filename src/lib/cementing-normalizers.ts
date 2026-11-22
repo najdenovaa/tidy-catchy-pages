@@ -1,3 +1,4 @@
+import {normalizeCleaningDesign} from './optimizer-cleaning-record';
 import { normalizeTurbulatorDesign } from './turbulator-flow';
 import {normalizeMechanics} from './cement-mechanics';
 import {normalizeThermal} from './cement-thermal';
@@ -217,6 +218,7 @@ export function normalizeWellData(value: unknown): WellData {
     ...(caliperLog?{caliperLog}:{}),
     ...(source.mechanics!==undefined?{mechanics:normalizeMechanics(source.mechanics)}:{}),
     ...(source.thermal!==undefined?{thermal:normalizeThermal(source.thermal)}:{}),
+    ...(normalizeCleaningDesign(source.optimizerCleaning)?{optimizerCleaning:normalizeCleaningDesign(source.optimizerCleaning)}:{}),
     ...(source.fluidInteractionLab!==undefined?{fluidInteractionLab:normalizeFluidLab(source.fluidInteractionLab)}:{}),
     ...(source.chartPresentations!==undefined?{chartPresentations:normalizeChartPresentations(source.chartPresentations)}:{}),
     ...(source.depthChartSettings!==undefined?{depthChartSettings:normalizeDepthChartSettings(source.depthChartSettings)}:{}),

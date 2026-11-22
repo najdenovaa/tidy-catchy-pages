@@ -156,6 +156,7 @@ export interface ReservoirLayer {
 }
 
 export interface WellData {
+  optimizerCleaning?:import('./optimizer-cleaning').CleaningDesign;
   turbulatorDesign?: import("./turbulator-flow").TurbulatorDesign;
   mechanics?:import("./cement-mechanics").MechanicsSettings;
   thermal?:import("./cement-thermal").ThermalSettings;

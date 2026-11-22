@@ -1,3 +1,5 @@
+import {cleaningInputKey,type HighQualityScenario} from '@/lib/optimizer-cleaning';
+import QualityCleaningCard from './QualityCleaningCard';
 import { useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { Card } from "@/components/ui/card";
@@ -14,6 +16,7 @@ import { centralizerTypeLabels, type CentralizerType } from "@/lib/centralizatio
 
 interface Props {
   input: ProgramInput;
+  onApplyQuality?: (p:HighQualityScenario)=>void;
   onApply: (v: ProgramVariant, centralization?: CentralizerPlan) => void;
 }
 
@@ -33,8 +36,11 @@ const bufText = (e: VariantEval, base: { volume: number; density: number } | nul
   return `${f(vol, 1)} м³ · ${rho.toFixed(0)} кг/м³`;
 };
 
-export default function ProgramOptimizerSection({ input, onApply }: Props) {
+export default function ProgramOptimizerSection({ input, onApply,onApplyQuality }: Props) {
   const [settings, setSettings] = useState<OptimizerSettings>(DEFAULT_OPTIMIZER_SETTINGS);
+  const [error,setError]=useState('');
+  const [resultKey,setResultKey]=useState('');
+  const stale=!!resultKey&&resultKey!==cleaningInputKey(input);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<OptimizerResult | null>(null);
@@ -48,7 +54,7 @@ export default function ProgramOptimizerSection({ input, onApply }: Props) {
   // (например, 3D-сцены, которая грузит шрифт с CDN), иначе прогресс и результат «замерзают».
   const sync = (fn: () => void) => { try { flushSync(fn); } catch { fn(); } };
   const run = async () => {
-    sync(() => { setRunning(true); setProgress(0); setResult(null); setApplied(null); });
+    sync(() => { setRunning(true); setProgress(0); setResult(null); setApplied(null);setError('');setResultKey(cleaningInputKey(input)); });
     let lastPct = -1;
     try {
       const r = await runOptimizer(input, settings, (d, t) => {
@@ -57,7 +63,7 @@ export default function ProgramOptimizerSection({ input, onApply }: Props) {
       });
       const bestBuf = r.best[0] ? r.bufferOptions.findIndex((b) => b.volumeM3 === r.best[0].ev.variant.bufferVolumeM3 && b.density === r.best[0].ev.variant.bufferDensity) : 0;
       sync(() => { setResult(r); setBufIdx(Math.max(0, bestBuf)); });
-    } finally {
+    } catch(e){setError(e instanceof Error?e.message:String(e));} finally {
       sync(() => setRunning(false));
     }
   };
@@ -66,7 +72,7 @@ export default function ProgramOptimizerSection({ input, onApply }: Props) {
     <div className="space-y-1">
       <Label className="text-xs text-muted-foreground">{label}</Label>
       <Input
-        type="number" step={step} className="h-8 text-sm" value={String(settings[k])}
+        aria-label={label} type="number" step={step} className="h-8 text-sm" value={String(settings[k])}
         onChange={(e) => setSettings({ ...settings, [k]: parseFloat(e.target.value) || 0 })}
       />
     </div>
@@ -116,6 +122,9 @@ export default function ProgramOptimizerSection({ input, onApply }: Props) {
           </label>
           <div className="w-32">{num("jointLengthM", "Длина трубы, м")}</div>
         </div>
+        <p className="text-xs">«Высокое качество»: пласты и 150 м TVD выше; химбуфер 10 л/с с проверкой ламинарности и испытанным смытием ≥85%; затем тяжёлый буфер в переходном/турбулентном режиме, центраторы и турбулизаторы. Проверяется отдельно от обычного перебора.</p>
+        {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
+        {stale&&<p role="alert" className="text-sm text-amber-700">Исходные данные изменились. Повторите автоподбор перед применением.</p>}
         {running && <Progress value={progress} className="h-2" />}
       </Card>
 
@@ -128,8 +137,9 @@ export default function ProgramOptimizerSection({ input, onApply }: Props) {
             </Card>
           )}
 
+          {result.highQuality&&<QualityCleaningCard value={result.highQuality} disabled={stale||running||!onApplyQuality} onApply={()=>{if(!stale&&result.highQuality?.ready){onApplyQuality?.(result.highQuality);setApplied('Высокое качество');}}}/>}
           <Card className="p-4 space-y-3">
-            <h3 className="font-semibold">Сравнение вариантов</h3>
+            <h3 className="font-semibold">Стандартный перебор: сравнение вариантов</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="bg-muted/50">
@@ -179,7 +189,7 @@ export default function ProgramOptimizerSection({ input, onApply }: Props) {
                     {cols.map((c, i) => (
                       <td key={c.label} className="p-1.5">
                         {i > 0 && (
-                          <Button size="sm" variant={applied === c.label ? "secondary" : "default"} onClick={() => { onApply(c.ev.variant, c.ev.centralization); setApplied(c.label); }}>
+                          <Button disabled={stale||running} size="sm" variant={applied === c.label ? "secondary" : "default"} onClick={() => { onApply(c.ev.variant, c.ev.centralization); setApplied(c.label); }}>
                             {applied === c.label ? "Применено ✓" : "Применить"}
                           </Button>
                         )}

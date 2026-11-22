@@ -7,6 +7,7 @@ on:
       - 'src/pages/Index.tsx'
       - 'src/index.css'
       - 'scripts/check-program-layout.mjs'
+      - 'scripts/check-quality-cleaning.mjs'
       - '.github/workflows/validate-program-layout.yml'
   workflow_dispatch:
 jobs:
@@ -28,6 +29,7 @@ jobs:
           node scripts/check-program-layout.mjs
           node scripts/check-turbulator-flow.mjs
           node scripts/check-foam-presentation.mjs
+          node scripts/check-quality-cleaning.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -38,3 +40,4 @@ jobs:
             /tmp/turbulator-desktop.png
             /tmp/turbulator-mobile.png
             /tmp/foam-presentation/
+            /tmp/quality-cleaning/
