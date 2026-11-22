@@ -1,3 +1,4 @@
+import ChemicalWashRecipes from './ChemicalWashRecipes';
 import {StopStorageControls} from "./StopStorageSection";
 import SectionHeader from "./InputSectionHeader";
 import {rheologyInputErrors} from "@/lib/cement-rheology";
@@ -843,6 +844,7 @@ export default function InputSection(props: Props) {
         <SectionHeader title="💧 Буферные жидкости" isOpen={openSections.buffers} onClick={() => toggle("buffers")} />
         {openSections.buffers && (
           <CardContent className="pt-4 space-y-4">
+            <ChemicalWashRecipes mud={drillingFluid} buffers={buffers} onMudChange={onDrillingFluidChange} onBuffersChange={onBuffersChange}/>
             <div className="flex justify-end">
               <button onClick={() => onBuffersChange([...buffers, { name: `Буфер ${buffers.length + 1}`, density: 1000, volume: 1, rheology: { pv: 1, yp: 0 }, additives: [], flowRateSteps: [{ rateLps: 5, volumeM3: 0, volumeMode: "auto" }] }])} className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                 + Добавить буфер
@@ -856,6 +858,7 @@ export default function InputSection(props: Props) {
                   {buffers.length > 1 && <button onClick={() => onBuffersChange(buffers.filter((_, i) => i !== idx))} className="text-xs text-destructive hover:underline">Удалить</button>}
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  <label className="space-y-1 text-xs text-muted-foreground">Назначение буфера<select aria-label={`Назначение буфера ${idx+1}`} className="block w-full min-w-0 rounded border bg-background p-2 text-sm" value={b.bufferType??''} onChange={e=>{const u=[...buffers];u[idx]={...b,bufferType:e.target.value as BufferFluid['bufferType']||undefined};onBuffersChange(u);}}><option value="">Не указано</option><option value="chemical_wash">Химическая промывка</option><option value="weighted">Тяжёлый буфер</option><option value="elastic_spacer">Вязкий разделительный</option><option value="cement_wash">Цементная промывка</option><option value="water">Вода</option></select></label>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Название</Label><DebouncedInput value={b.name} onChange={(e) => handleBufferChange(idx, "name", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Плотность, кг/м³</Label><DebouncedInput type="number" value={b.density || ""} onChange={(e) => handleBufferChange(idx, "density", e.target.value)} className="h-8 text-sm" /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Объём, м³</Label><DebouncedInput type="number" step="0.1" value={b.volume || ""} onChange={(e) => handleBufferChange(idx, "volume", e.target.value)} className="h-8 text-sm" /></div>

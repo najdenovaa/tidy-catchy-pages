@@ -108,6 +108,7 @@ export function slurryDesignVolume(data: WellData, slurries: SlurryInput[], inde
 }
 
 export interface DrillingFluid {
+  base?:import('./chemical-wash-recipes').MudBase;
   libraryReference?: import("./fluid-library-reference").FluidLibraryReference;
   name: string;
   density: number; // кг/м³
@@ -291,6 +292,7 @@ export interface CementSlurry {
 }
 
 export interface BufferFluid {
+  chemicalRecipe?:import('./chemical-wash-recipes').ChemicalRecipeRecord;
   libraryReference?: import("./fluid-library-reference").FluidLibraryReference;
   name: string;
   bufferType?: 'chemical_wash' | 'elastic_spacer' | 'cement_wash' | 'water' | 'weighted';

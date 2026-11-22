@@ -1,3 +1,5 @@
+import ChemicalWashRecipes from './ChemicalWashRecipes';
+import type {BufferFluid,DrillingFluid} from '@/lib/cementing-calculations';
 import {cleaningInputKey,type HighQualityScenario} from '@/lib/optimizer-cleaning';
 import QualityCleaningCard from './QualityCleaningCard';
 import { useMemo, useState } from "react";
@@ -16,6 +18,7 @@ import { centralizerTypeLabels, type CentralizerType } from "@/lib/centralizatio
 
 interface Props {
   input: ProgramInput;
+  onChemicalBuffersChange?:(b:BufferFluid[])=>void;onDrillingFluidChange?:(m:DrillingFluid)=>void;
   onApplyQuality?: (p:HighQualityScenario)=>void;
   onApply: (v: ProgramVariant, centralization?: CentralizerPlan) => void;
 }
@@ -36,7 +39,7 @@ const bufText = (e: VariantEval, base: { volume: number; density: number } | nul
   return `${f(vol, 1)} м³ · ${rho.toFixed(0)} кг/м³`;
 };
 
-export default function ProgramOptimizerSection({ input, onApply,onApplyQuality }: Props) {
+export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,onChemicalBuffersChange,onDrillingFluidChange }: Props) {
   const [settings, setSettings] = useState<OptimizerSettings>(DEFAULT_OPTIMIZER_SETTINGS);
   const [error,setError]=useState('');
   const [resultKey,setResultKey]=useState('');
@@ -123,6 +126,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality 
           <div className="w-32">{num("jointLengthM", "Длина трубы, м")}</div>
         </div>
         <p className="text-xs">«Высокое качество»: пласты и 150 м TVD выше; химбуфер 10 л/с с проверкой ламинарности и испытанным смытием ≥85%; затем тяжёлый буфер в переходном/турбулентном режиме, центраторы и турбулизаторы. Проверяется отдельно от обычного перебора.</p>
+        <ChemicalWashRecipes mud={input.drillingFluid} buffers={input.buffers} onMudChange={onDrillingFluidChange} onBuffersChange={onChemicalBuffersChange}/>
         {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
         {stale&&<p role="alert" className="text-sm text-amber-700">Исходные данные изменились. Повторите автоподбор перед применением.</p>}
         {running && <Progress value={progress} className="h-2" />}

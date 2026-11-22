@@ -8,6 +8,7 @@ on:
       - 'src/index.css'
       - 'scripts/check-program-layout.mjs'
       - 'scripts/check-quality-cleaning.mjs'
+      - 'scripts/check-chemical-recipes.mjs'
       - '.github/workflows/validate-program-layout.yml'
   workflow_dispatch:
 jobs:
@@ -30,6 +31,7 @@ jobs:
           node scripts/check-turbulator-flow.mjs
           node scripts/check-foam-presentation.mjs
           node scripts/check-quality-cleaning.mjs
+          node scripts/check-chemical-recipes.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -41,3 +43,4 @@ jobs:
             /tmp/turbulator-mobile.png
             /tmp/foam-presentation/
             /tmp/quality-cleaning/
+            /tmp/chemical-recipes/
