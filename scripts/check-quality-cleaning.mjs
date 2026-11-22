@@ -32,6 +32,7 @@ const saved=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('cementing
 assert.equal(saved.buffers[0].bufferType,'chemical_wash');assert.equal(saved.buffers[1].bufferType,'weighted');
 assert.ok(saved.wellData.turbulatorDesign.points.length>1);
 assert.ok(saved.wellData.centralizerDesign.intervals.length>0);
+assert.equal(saved.wellData.centralizerDesign.targetStandoff,85);
 assert.ok(saved.wellData.centralizerMaterials.items.length>0);
 assert.equal(saved.wellData.optimizerCleaning.proof.removalPct,86);
 assert.ok(saved.slurries.some(s=>s.flowRateSteps.some(x=>x.rateLps===10)));

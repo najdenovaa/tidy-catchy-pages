@@ -113,7 +113,7 @@ export default function Index() {
   const handleCentralizationReport=useCallback((data:CentralizationReportData)=>{
     setCentralizationReport(data);
     setWellData(w=>{
-      const centralizerDesign={mode:data.mode,targetStandoff:data.targetStandoff??67,jointLength:data.jointLength??12,autoSpec:data.autoSpec??data.intervals[0]?.spec,intervals:data.intervals};
+      const centralizerDesign={mode:data.mode,targetStandoff:data.targetStandoff??w.centralizerDesign?.targetStandoff??67,jointLength:data.jointLength??12,autoSpec:data.autoSpec??data.intervals[0]?.spec,intervals:data.intervals};
       return JSON.stringify(w.centralizerDesign)===JSON.stringify(centralizerDesign)&&JSON.stringify(w.turbulatorDesign)===JSON.stringify(data.turbulatorDesign)?w:{...w,centralizerDesign,turbulatorDesign:data.turbulatorDesign};
     });
     if(!data.calculated){setCentralizationResults(null);return;}
