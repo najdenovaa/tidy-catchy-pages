@@ -31,6 +31,13 @@ interface Props {
   onApply: (v: ProgramVariant, centralization?: CentralizerPlan) => void;
 }
 
+interface OptimizerDiagnostic {
+  schemaVersion: 1; appVersion: string; createdAt: string; userAgent: string;
+  input: ProgramInput; settings: OptimizerSettings; catalog: ReturnType<typeof optimizerHardwareCatalog>;
+  status: 'not-started' | 'running' | 'completed' | 'failed' | 'cancelled';
+  progress: number; elapsedMs: number; message?: string; bestCount?: number;
+}
+
 const VIOL_CODE: Record<Violation, { code: string; label: string }> = {
   "ГРП/поглощение": { code: "Г", label: "превышен предел ГРП/поглощения" },
   "проявление": { code: "П", label: "давление ниже пластового" },
@@ -49,6 +56,7 @@ const bufText = (e: VariantEval, base: { volume: number; density: number } | nul
 
 export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,onApplyComplete,onChemicalBuffersChange,onDrillingFluidChange }: Props) {
   const controller = useRef<AbortController | null>(null);
+  const lastRun = useRef<OptimizerDiagnostic | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
   const [settings, setSettings] = useState<OptimizerSettings>(DEFAULT_OPTIMIZER_SETTINGS);
   const [error,setError]=useState('');
@@ -72,6 +80,21 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
   const lastBuf = originalLastBuf?bufferPlanningDefaults(originalLastBuf):undefined;
   const baseBuf = lastBuf ? { volume: lastBuf.volume, density: lastBuf.density } : null;
 
+  const diagnostic = (catalog: ReturnType<typeof optimizerHardwareCatalog>): OptimizerDiagnostic => ({
+    schemaVersion: 1, appVersion: import.meta.env.VITE_APP_VERSION || 'development',
+    createdAt: new Date().toISOString(), userAgent: navigator.userAgent,
+    input: structuredClone(input), settings: structuredClone(settings), catalog: structuredClone(catalog),
+    status: 'not-started', progress: 0, elapsedMs: 0,
+  });
+  const downloadInputs = () => {
+    try {
+      const data = lastRun.current ?? diagnostic(optimizerHardwareCatalog(readEquipmentLibrary(localStorage).library));
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type:'application/json'}));
+      const link=document.createElement('a');link.href=url;link.download='deallsoft-optimizer-input.json';
+      document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    } catch(e) { setError('Не удалось выгрузить исходные данные: '+(e instanceof Error?e.message:String(e))); }
+  };
+
   // Обновления — через flushSync: асинхронные setState не должны ждать посторонних «подвисших» обновлений
   // (например, 3D-сцены, которая грузит шрифт с CDN), иначе прогресс и результат «замерзают».
   const sync = (fn: () => void) => { try { flushSync(fn); } catch { fn(); } };
@@ -80,15 +103,21 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
     controller.current?.abort();
     const job = new AbortController(); controller.current = job;
     let lastPct = -1;
+    const started=performance.now();
+    let details:OptimizerDiagnostic | null=null;
     try {
       const hardware=optimizerHardwareCatalog(readEquipmentLibrary(localStorage).library);
+      details=diagnostic(hardware);details.status='running';lastRun.current=details;
       const r = await runOptimizerInWorker(input, settings, hardware, (d, t) => {
         const pct = Math.round((d / t) * 100);
+        details.progress=pct;details.elapsedMs=Math.round(performance.now()-started);
         if (pct !== lastPct) { lastPct = pct; sync(() => setProgress(pct)); }
       },job.signal);
+      details.status='completed';details.bestCount=r.best.length;details.message=r.blocker;
       const bestBuf = r.best[0] ? r.bufferOptions.findIndex((b) => b.volumeM3 === r.best[0].ev.variant.bufferVolumeM3 && b.density === r.best[0].ev.variant.bufferDensity) : 0;
       sync(() => { setResult(r); setBufIdx(Math.max(0, bestBuf)); });
-    } catch(e){if(!(e instanceof DOMException&&e.name==='AbortError'))setError(e instanceof Error?e.message:String(e));} finally {
+    } catch(e){const cancelled=e instanceof DOMException&&e.name==='AbortError';if(details){details.status=cancelled?'cancelled':'failed';details.message=e instanceof Error?e.message:String(e);}if(!cancelled)setError(e instanceof Error?e.message:String(e));} finally {
+      if(details)details.elapsedMs=Math.round(performance.now()-started);
       sync(() => setRunning(false));
     }
   };
@@ -118,6 +147,10 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
             </p>
           </div>
           <div className="flex gap-2">{running&&<Button variant="outline" onClick={()=>controller.current?.abort()}>Отменить</Button>}<Button onClick={run} disabled={running}>{running ? `Считаю… ${progress}%` : "Подобрать программу"}</Button></div>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button variant="outline" size="sm" onClick={downloadInputs}>Скачать данные автоподбора</Button>
+          <p className="text-xs text-muted-foreground">Полные исходные данные, настройки и оснастка для проверки расчёта. Повторно запускать подбор не требуется.</p>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {num("minRateLps", "Мин. расход, л/с")}
