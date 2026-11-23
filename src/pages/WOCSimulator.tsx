@@ -1,5 +1,8 @@
+import { loadCalculation } from '@/lib/calculation-archive';
+import { useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowLeft, Home, LayoutDashboard, LogOut, Send } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,6 +22,18 @@ export default function WOCSimulator() {
   const [cls, setCls] = useState<"G" | "H">("G");
   const [totalHours, setTotalHours] = useState<number>(48);
 
+  const [searchParams] = useSearchParams();
+  const archiveId = searchParams.get('archive');
+  const [archiveLoading, setArchiveLoading] = useState(Boolean(archiveId));
+  useEffect(() => {
+    if (!archiveId) return;
+    void loadCalculation(null, archiveId, 'cementing-woc').then(data => {
+      const p = data.calc_params as Record<string, any>;
+      setBhct(p.bhct); setBhst(p.bhst); setSlurryDensity(p.slurryDensity);
+      setTvd(p.tvd); setCls(p.cls); setTotalHours(p.totalHours);
+      setArchiveLoading(false);
+    }).catch(error => toast.error(error.message));
+  }, [archiveId]);
   const handleLogout = async () => { await supabase.auth.signOut(); navigate("/"); };
 
   return (
@@ -71,7 +86,7 @@ export default function WOCSimulator() {
           </CardContent>
         </Card>
 
-        <WOCAnimation
+        <WOCAnimation archive={!archiveLoading}
           bhct={bhct}
           bhst={bhst}
           slurryDensity={slurryDensity}

@@ -1,3 +1,4 @@
+import { loadCalculation, recordCalculation } from '@/lib/calculation-archive';
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Send, Home, Calculator, ArrowLeft, FileDown, Save, Loader2, LayoutDashboard, LogOut, RotateCcw, Plus, Trash2, AlertTriangle, ShieldCheck, ShieldAlert } from "lucide-react";
@@ -34,7 +35,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import TermsFooter from "@/components/TermsFooter";
 import PlugRecipeCard from "@/components/PlugRecipeCard";
-import RirModule, {type RirModuleHandle} from "@/components/rir/RirModule";
+import RirModule, {type RirArchiveState, type RirModuleHandle} from "@/components/rir/RirModule";
 import PlugPlanFactBar from "@/components/PlugPlanFactBar";
 import PlugPillCard, { type PillSettings } from "@/components/PlugPillCard";
 import { designPill, requiredPillGelPa, type PillDesign } from "@/lib/cement-plug-pill";
@@ -145,6 +146,7 @@ export default function CementPlug() {
   /* ── Dashboard integration ── */
   const [searchParams] = useSearchParams();
   const calcId = searchParams.get("calc");
+  const archiveId = searchParams.get("archive");
   const selectedWellId = searchParams.get("well");
   const fromDashboard = searchParams.get("from") === "dashboard";
   const [saving, setSaving] = useState(false);
@@ -186,6 +188,7 @@ export default function CementPlug() {
   const [viscousPadFluid, setViscousPadFluid] = useState<PlugFluid>(saved.viscousPadFluid || { name: "Вязкая пачка", density: 1.15, rheology: { pv: 30, yp: 15 }, gel10sec: 0, gel10min: 0 });
   const [viscousPadAdditives, setViscousPadAdditives] = useState<{ name: string; percent: number }[]>(saved.viscousPadAdditives || []);
   const [padPullUpAbove, setPadPullUpAbove] = useState(saved.padPullUpAbove ?? 5);
+  const [restoredRir, setRestoredRir] = useState<RirArchiveState | null>(null);
   const [placementMode, setPlacementMode] = useState<PlacementMode>(saved.placementMode || 'openhole');
   const [underDisplacement, setUnderDisplacement] = useState<number>(saved.underDisplacement ?? 0.2);
   const [excessPct, setExcessPct] = useState<number>(saved.excessPct ?? 10);
@@ -435,48 +438,32 @@ export default function CementPlug() {
   useEffect(() => { if (recalcTick > 0) calculate(); }, [recalcTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const calculate = () => {
-    if(placementMode==="rir"){const errors=rirHandle.current?.validationErrors();if(!errors){toast.error("Модуль РИР ещё не готов.");}else if(errors.length){toast.error(errors.join(" "));}else{toast.success("РИР пересчитан по текущим полям; смотрите результаты и ограничения ниже.");}return;}
+    if(placementMode==="rir"){const errors=rirHandle.current?.validationErrors();if(!errors){toast.error("Модуль РИР ещё не готов.");}else if(errors.length){toast.error(errors.join(" "));}else{const snapshot=rirHandle.current!.snapshot();recordCalculation({module:"cement-plug",title:"Ремонтно-изоляционные работы",well_data:well,calc_params:{placementMode:"rir",trajPoints:snapshot.state.inp.trajectory??[],rir:snapshot.state},results:{rir:snapshot.results}});toast.success("РИР пересчитан по текущим полям; смотрите результаты и ограничения ниже.");}return;}
     const inputs = buildInputs();
     const res = calculateBalancedPlug(inputs);
     setResults(res);
-    // Log calculation to backend
-    supabase.functions.invoke("log-activity", {
-      body: {
-        type: "calculation",
-        module: "cement-plug",
-        page_url: "/cement-plug",
-        well_data: {
-          wellDepthMD: inputs.well.wellDepthMD,
-          holeDiameter: inputs.well.holeDiameter,
-          casingOD: inputs.well.pipeOD,
-          plugTop: inputs.plug.topMD,
-          plugBottom: inputs.plug.bottomMD,
-        },
-        calc_params: {
-          cementDensity: inputs.cement.density,
-          spacerDensity: inputs.spacer.density,
-          spacerVolumeAbove: inputs.spacerVolumeAboveM3,
-          spacerVolumeBelow: inputs.spacerVolumeBelowM3,
-          wcRatio, slurryYield,
-        },
-      },
-    }).catch(() => {});
+    recordCalculation(buildPlugPayload(res));
   };
 
   /* ── Load saved calculation from dashboard ── */
   useEffect(() => {
-    if (!calcId) return;
+    if (!calcId && !archiveId) return;
     const loadSaved = async () => {
       setLoadingSavedCalc(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { alert("Войдите в аккаунт"); setLoadingSavedCalc(false); return; }
-      const { data, error } = await supabase.from("saved_calculations").select("*").eq("id", calcId).single();
+      const { data, error } = await loadCalculation(calcId, archiveId, "cement-plug").then(data => ({data, error: null})).catch(error => ({data: null, error}));
       if (error || !data) { alert("Не удалось загрузить расчёт"); setLoadingSavedCalc(false); return; }
       if (data.user_id !== session.user.id) { alert("Расчёт недоступен"); setLoadingSavedCalc(false); return; }
 
       const p = (data.calc_params ?? {}) as any;
       const w = (data.well_data ?? {}) as unknown as PlugWellData;
       setWell(w);
+      if (p.placementMode) setPlacementMode(p.placementMode);
+      if (p.rir) setRestoredRir(p.rir);
+      if (p.plugPurpose) setPlugPurpose(p.plugPurpose);
+      if (p.pillSettings) setPillSettings(p.pillSettings);
+      if (typeof p.complicationsOn === "boolean") setComplicationsOn(p.complicationsOn);
       if (p.plug) setPlug(p.plug);
       if (p.cement) setCement(p.cement);
       if (p.spacer) setSpacer(p.spacer);
@@ -509,6 +496,7 @@ export default function CementPlug() {
       setUnderDisplacement(typeof p.underDisplacement === "number" ? p.underDisplacement : 0);
       setExcessPct(typeof p.excessPct === "number" ? p.excessPct : 0);
       setPlugSupport(p.plugSupport ?? "auto");
+      if (typeof p.padPullUpAbove === "number") setPadPullUpAbove(p.padPullUpAbove);
 
       // Restore results if present
       if (data.results) {
@@ -518,18 +506,19 @@ export default function CementPlug() {
       setLoadingSavedCalc(false);
     };
     loadSaved();
-  }, [calcId]);
+  }, [calcId, archiveId]);
 
   /* ── Save to account ── */
-  const buildPlugPayload = useCallback((): SaveCalcPayload => {
-    const currentResults = results ?? calculateBalancedPlug(buildInputs());
+  const buildPlugPayload = useCallback((resultOverride?: PlugResults): SaveCalcPayload => {
+    const currentResults = resultOverride ?? results ?? calculateBalancedPlug(buildInputs());
     return {
       module: "cement-plug",
       title: `Мост ${new Date().toLocaleDateString("ru-RU")}`,
       well_data: well,
       calc_params: {
-        plug, cement, spacer, wellFluid,
-        spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours,
+        ...(placementMode === "rir" && rirHandle.current ? { rir: rirHandle.current.snapshot().state } : {}),
+        placementMode, plugPurpose, pillSettings, complicationsOn, plug, cement, spacer, wellFluid,
+        spacerVolumeAbove, spacerVolumeBelow, thickeningTime, settingTimeStartMin, settingTimeEndMin, wocTimeHours, padPullUpAbove,
         pullOutAbove, washType, washCycles, tripSpeed, trajPoints,
         wcRatio, slurryYield, additives, spacerAdditives,
         pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient,
@@ -540,7 +529,7 @@ export default function CementPlug() {
       },
       results: { plugResults: currentResults },
     };
-  }, [results, well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, underDisplacement, excessPct, plugSupport]);
+  }, [placementMode, plugPurpose, pillSettings, complicationsOn, settingTimeStartMin, settingTimeEndMin, padPullUpAbove, results, well, plug, cement, spacer, wellFluid, spacerVolumeAbove, spacerVolumeBelow, thickeningTime, wocTimeHours, pullOutAbove, washType, washCycles, tripSpeed, trajPoints, wcRatio, slurryYield, additives, spacerAdditives, pumpRateCement, pumpRateSpacer, pumpRateDisplacement, pumpRateWash, fracGradient, pipeSections, useViscousPad, viscousPadFluid, viscousPadAdditives, underDisplacement, excessPct, plugSupport]);
 
   const handleSaveToAccount = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -832,7 +821,7 @@ export default function CementPlug() {
             </Card>
 
         </div>
-        {placementMode === "rir" && <RirModule handleRef={rirHandle} trajectory={trajPoints.length > 1 ? trajPoints : undefined} />}
+        {placementMode === "rir" && <RirModule initialArchive={restoredRir} archiveWell={well} handleRef={rirHandle} trajectory={trajPoints.length > 1 ? trajPoints : undefined} />}
         <div className={placementMode === "rir" ? "hidden" : "space-y-4"}>
           {/* Inputs & results */}
           <div className="space-y-3">

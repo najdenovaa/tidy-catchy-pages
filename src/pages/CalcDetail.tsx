@@ -1,3 +1,4 @@
+import { archiveMetadata, archiveRoute, ARCHIVE_KEY } from '@/lib/calculation-archive';
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,7 +20,7 @@ export default function CalcDetail() {
         navigate("/admin-login");
         return;
       }
-      const { data: roles } = await supabase.from("user_roles").select("role").limit(1);
+      const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", session.user.id).eq("role", "admin").limit(1);
       if (!roles || roles.length === 0) {
         await supabase.auth.signOut();
         navigate("/admin-login");
@@ -92,6 +93,15 @@ export default function CalcDetail() {
           <p className="text-muted-foreground text-center py-12">Расчёт не найден</p>
         ) : (
           <>
+            <Card className="mb-4">
+              <CardContent className="pt-4 space-y-3">
+                {archiveRoute(log) ? <Link to={`${archiveRoute(log)}?archive=${encodeURIComponent(log.id)}`} target="_blank" rel="noopener noreferrer">
+                  <Button>Открыть расчёт в программе</Button>
+                </Link> : <p className="text-sm text-muted-foreground">В старой записи недостаточно исходных данных для восстановления расчёта.</p>}
+                <p className="text-xs text-muted-foreground">Откроется отдельная рабочая копия. Исходная запись останется в журнале. Пересчёт использует текущую версию программы; сохранённые результаты показаны ниже.</p>
+                <p className="text-xs">Пользователь: {archiveMetadata(log).userId ? String(archiveMetadata(log).userId) : 'Гость'} · Идентификатор гостя: {String(archiveMetadata(log).visitorId ?? 'не сохранён')} · Версия: {String(archiveMetadata(log).appVersion ?? 'не сохранена')}</p>
+              </CardContent>
+            </Card>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <Card>
                 <CardHeader className="py-2 px-4"><CardTitle className="text-xs text-muted-foreground">Дата</CardTitle></CardHeader>
@@ -112,7 +122,8 @@ export default function CalcDetail() {
             </div>
 
             {renderJson("Данные скважины (well_data)", log.well_data)}
-            {renderJson("Параметры расчёта (calc_params)", log.calc_params)}
+            {renderJson("Параметры расчёта (calc_params)", Object.fromEntries(Object.entries(log.calc_params ?? {}).filter(([key]) => key !== ARCHIVE_KEY)))}
+            {renderJson("Сохранённые результаты", archiveMetadata(log).results)}
 
             {log.page_url && (
               <Card className="mb-4">

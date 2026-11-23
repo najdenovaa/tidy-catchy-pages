@@ -9,7 +9,10 @@ import {
   calculateSolventTreatment, SOLVENT_LABEL, type SolventType, type SolventResult,
 } from "@/lib/stimulation-special";
 
+export interface SolventPanelInputs { solvent: SolventType; damageType: "asphaltene" | "paraffin"; penetrationR: number; satPct: number; surfaceT: number; tubingDepth: number; rate: number; tubingOD: number; }
 interface Props {
+  initialInputs?: SolventPanelInputs | null;
+  onInputsChange?: (inputs: SolventPanelInputs) => void;
   payZoneM: number;
   porosity: number;
   reservoirTempC: number;
@@ -17,15 +20,29 @@ interface Props {
   onResult?: (r: SolventResult & { penetrationRadiusM: number }) => void;
 }
 
-export default function SolventCalcPanel({ payZoneM, porosity, reservoirTempC, defaultDamage, onResult }: Props) {
-  const [solvent, setSolvent] = useState<SolventType>(defaultDamage === "asphaltene" ? "toluene" : "neftras");
-  const [damageType, setDamageType] = useState<"asphaltene" | "paraffin">(defaultDamage);
-  const [penetrationR, setPenetrationR] = useState(1.5);
-  const [satPct, setSatPct] = useState(15);
-  const [surfaceT, setSurfaceT] = useState(80);
-  const [tubingDepth, setTubingDepth] = useState(2200);
-  const [rate, setRate] = useState(0.15);
-  const [tubingOD, setTubingOD] = useState(73);
+export default function SolventCalcPanel({ payZoneM, porosity, reservoirTempC, defaultDamage, onResult, initialInputs, onInputsChange }: Props) {
+  const [solvent, setSolvent] = useState<SolventType>(initialInputs?.solvent ?? (defaultDamage === "asphaltene" ? "toluene" : "neftras"));
+  const [damageType, setDamageType] = useState<"asphaltene" | "paraffin">(initialInputs?.damageType ?? (defaultDamage));
+  const [penetrationR, setPenetrationR] = useState(initialInputs?.penetrationR ?? (1.5));
+  const [satPct, setSatPct] = useState(initialInputs?.satPct ?? (15));
+  const [surfaceT, setSurfaceT] = useState(initialInputs?.surfaceT ?? (80));
+  const [tubingDepth, setTubingDepth] = useState(initialInputs?.tubingDepth ?? (2200));
+  const [rate, setRate] = useState(initialInputs?.rate ?? (0.15));
+  const [tubingOD, setTubingOD] = useState(initialInputs?.tubingOD ?? (73));
+
+  useEffect(() => {
+    if (!initialInputs) return;
+    setSolvent(initialInputs.solvent);
+    setDamageType(initialInputs.damageType);
+    setPenetrationR(initialInputs.penetrationR);
+    setSatPct(initialInputs.satPct);
+    setSurfaceT(initialInputs.surfaceT);
+    setTubingDepth(initialInputs.tubingDepth);
+    setRate(initialInputs.rate);
+    setTubingOD(initialInputs.tubingOD);
+  }, [initialInputs]);
+  const panelInputs = useMemo(() => ({ solvent, damageType, penetrationR, satPct, surfaceT, tubingDepth, rate, tubingOD }), [solvent, damageType, penetrationR, satPct, surfaceT, tubingDepth, rate, tubingOD]);
+  useEffect(() => { onInputsChange?.(panelInputs); }, [panelInputs, onInputsChange]);
 
   const res = useMemo(() => calculateSolventTreatment({
     solvent, damageType, payZoneM, porosity,

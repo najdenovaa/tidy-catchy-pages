@@ -1,3 +1,4 @@
+import { recordCalculation, type CalculationSnapshot } from '@/lib/calculation-archive';
 import {normalizeChartPresentations,type ChartPresentations} from '@/lib/chart-presentation';
 import FoamChartGallery from './FoamChartGallery';
 import {foamInputKey,foamChartsWorkbook} from '@/lib/foam-chart-data';
@@ -36,6 +37,8 @@ import {
 import { Button } from "./ui/button";
 import FoamCement3D from "./FoamCement3D";
 interface Props {
+  archiveProgram?: Omit<CalculationSnapshot, "module" | "title" | "results">;
+  restoredArchive?: FoamReportBundle | null;
   wellData: WellData;
   slurries: SlurryInput[];
   buffers?: BufferFluid[];
@@ -103,6 +106,8 @@ function Panel({
   );
 }
 export default function FoamCementSection({
+  archiveProgram,
+  restoredArchive,
   wellData,
   slurries,
   buffers,
@@ -204,6 +209,13 @@ export default function FoamCementSection({
     return () => worker.current?.terminate();
   }, [storageKey]);
   useEffect(() => {
+    if (!restoredArchive) return;
+    setS(restoredArchive.simulation.input.settings);
+    setResult(restoredArchive.simulation);
+    setObservations(restoredArchive.observations ?? []);
+    setFrameIndex(restoredArchive.frameIndex ?? 0);
+  }, [restoredArchive, storageKey]);
+  useEffect(() => {
     if (loadedKey.current !== storageKey || errors.length) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(s));
@@ -261,6 +273,11 @@ export default function FoamCementSection({
       } else if (task === "simulate" || task === "size") {
         if (task === "size") setS(e.data.result.input.settings);
         setResult(e.data.result);
+        recordCalculation({ module: 'foam-cement', title: 'Пеноцементирование',
+          well_data: e.data.result.input.wellData,
+          calc_params: { ...(archiveProgram?.calc_params as object ?? {}), foamArchive: { observations, frameIndex: e.data.result.frames.length - 1 } },
+          results: { simulation: e.data.result, observations },
+        });
         setFrameIndex(e.data.result.frames.length - 1);
       } else if (task === "optimise") {
         setCandidates(e.data.result);

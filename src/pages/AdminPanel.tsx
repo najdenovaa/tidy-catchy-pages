@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import FleetConfigPanel from "@/components/FleetConfigPanel";
 
 interface CalcLog {
-  id: string; created_at: string; module: string; well_data: any; calc_params: any;
+  id: string; created_at: string; module: string; well_data: any; calc_params?: any;
   ip_address: string | null; user_agent: string | null; page_url: string | null; location: string | null;
 }
 interface VisitLog {
@@ -41,6 +41,7 @@ const moduleLabel = (m: string) => {
   if (m === "cementing-program") return "Программа цем.";
   if (m === "cementing-analysis") return "Анализ цем.";
   if (m === "cementing-woc") return "ОЗЦ-симулятор";
+  if (m === "foam-cement") return "Пеноцементирование";
   if (m === "cement-plug" || m === "cementing-plugs") return "Цем. мосты";
   if (m === "coiled-tubing") return "ГНКТ";
   if (m === "stimulation") return "Интенсификация";
@@ -169,7 +170,7 @@ export default function AdminPanel() {
     const [calcCount, visitCount, calcRes, visitRes, profilesRes, analysisRes, creditsRes, fleetRes] = await Promise.all([
       supabase.from("calculation_logs").select("id", { count: "exact", head: true }),
       supabase.from("visit_logs").select("id", { count: "exact", head: true }),
-      supabase.from("calculation_logs").select("*").order("created_at", { ascending: false }).limit(10000),
+      supabase.from("calculation_logs").select("id,created_at,module,well_data,ip_address,user_agent,page_url,location").order("created_at", { ascending: false }).limit(10000),
       supabase.from("visit_logs").select("*").order("created_at", { ascending: false }).limit(10000),
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("analysis_logs").select("*").order("created_at", { ascending: false }).limit(10000),

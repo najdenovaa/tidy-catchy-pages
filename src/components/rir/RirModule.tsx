@@ -1,3 +1,4 @@
+import { useLiveCalculationArchive } from '@/hooks/use-calculation-archive';
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +53,9 @@ import RirLeak3D from "./RirLeak3D";
 import { planRir, applyVariant } from "@/lib/rir-autodesign";
 import RirAutoDesignCard from "./RirAutoDesignCard";
 
+export interface RirArchiveState { technology: "packer" | "spot"; inp: RirInputs; mech: TubingMechInputs; }
 export interface RirModuleHandle {
+  snapshot: () => { state: RirArchiveState; results: unknown };
   exportDocx: () => Promise<void>;
   validationErrors: () => string[];
   resetInputs: () => void;
@@ -177,13 +180,17 @@ function RirLegacyModule({
   trajectory,
   technology,
   handleRef,
+  initialArchive,
+  archiveWell,
 }: {
   trajectory?: RirInputs["trajectory"];
   technology: "packer" | "spot";
   handleRef?: React.MutableRefObject<RirModuleHandle | null>;
+  initialArchive?: RirArchiveState | null;
+  archiveWell?: unknown;
 }) {
   const [inp, setInp] = useState<RirInputs>(() => {
-    const saved = load(technology);
+    const saved = initialArchive?.technology === technology ? initialArchive.inp : load(technology);
     return technology === "spot"
       ? { ...saved, tool: { ...saved.tool, kind: "bradenhead" } }
       : saved;
@@ -219,6 +226,7 @@ function RirLegacyModule({
   );
   const res = useMemo(() => calculateRir(full), [full]);
   const [mech, setMech] = useState<TubingMechInputs>(() => {
+    if (initialArchive?.technology === technology) return initialArchive.mech;
     try {
       return {
         ...DEFAULT_TUBING_MECH,
@@ -235,6 +243,12 @@ function RirLegacyModule({
       /* недоступно */
     }
   }, [mech]);
+  useEffect(() => {
+    if (initialArchive?.technology === technology) {
+      setInp(initialArchive.inp);
+      setMech(initialArchive.mech);
+    }
+  }, [initialArchive, technology]);
   // извлекаемый пакер закреплён на НКТ (якорь), ретейнер — стингер в уплотнении (свободный)
   const mechEff = useMemo<TubingMechInputs>(
     () => (inp.tool.kind === "packer" ? { ...mech, mode: "anchored" } : mech),
@@ -404,9 +418,14 @@ function RirLegacyModule({
     }
   };
 
+  useLiveCalculationArchive(() => ({ module: 'cement-plug', title: 'Ремонтно-изоляционные работы',
+    well_data: archiveWell ?? {}, calc_params: { placementMode: 'rir', trajPoints: full.trajectory ?? [], rir: { technology, inp: full, mech } },
+    results: { rir: { result: res, simulation: sim, composition: comp, mechanics: mechRes, workProgram } },
+  }));
   useEffect(() => {
     if (!handleRef) return;
     handleRef.current = {
+      snapshot: () => ({ state: { technology, inp: full, mech }, results: { result: res, simulation: sim, composition: comp, mechanics: mechRes, workProgram } }),
       exportDocx: async () => {
         if (sim.blocked) throw new Error((sim.blockReasons ?? []).join(" "));
         await exportProgram("docx");
@@ -1283,9 +1302,13 @@ function RirLegacyModule({
 export default function RirModule({
   trajectory,
   handleRef,
+  initialArchive,
+  archiveWell,
 }: {
   trajectory?: RirInputs["trajectory"];
   handleRef?: React.MutableRefObject<RirModuleHandle | null>;
+  initialArchive?: RirArchiveState | null;
+  archiveWell?: unknown;
 }) {
   const [technology, setTechnology] = useState<"packer" | "spot">(() => {
     try {
@@ -1296,6 +1319,7 @@ export default function RirModule({
       return "packer";
     }
   });
+  useEffect(() => { if (initialArchive) setTechnology(initialArchive.technology); }, [initialArchive]);
   const select = (value: "packer" | "spot") => {
     setTechnology(value);
     try {
@@ -1343,7 +1367,9 @@ export default function RirModule({
       </div>
       <RirLegacyModule
         handleRef={handleRef}
-        key={technology}
+        initialArchive={initialArchive}
+        archiveWell={archiveWell}
+        key={`${technology}-${initialArchive ? "archive" : "live"}`}
         trajectory={trajectory}
         technology={technology}
       />

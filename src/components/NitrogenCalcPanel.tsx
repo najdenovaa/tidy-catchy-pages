@@ -8,7 +8,10 @@ import {
   calculateNitrogenOperation, type NitrogenResult,
 } from "@/lib/stimulation-special";
 
+export interface NitrogenPanelInputs { wellDepth: number; tubingID: number; fluidDensity: number; surfaceT: number; targetBhp: number; foamQ: number; pumpRate: number; }
 interface Props {
+  initialInputs?: NitrogenPanelInputs | null;
+  onInputsChange?: (inputs: NitrogenPanelInputs) => void;
   reservoirPressureMPa: number;
   reservoirTempC: number;
   operationType: "n2_lift" | "n2_foam_lift" | "n2_cleanup";
@@ -17,15 +20,28 @@ interface Props {
 }
 
 export default function NitrogenCalcPanel({
-  reservoirPressureMPa, reservoirTempC, operationType, defaultFoamQuality, onResult,
+  reservoirPressureMPa, reservoirTempC, operationType, defaultFoamQuality, onResult, initialInputs, onInputsChange,
 }: Props) {
-  const [wellDepth, setWellDepth] = useState(2500);
-  const [tubingID, setTubingID] = useState(62);
-  const [fluidDensity, setFluidDensity] = useState(1050);
-  const [surfaceT, setSurfaceT] = useState(20);
-  const [targetBhp, setTargetBhp] = useState(Math.max(2, reservoirPressureMPa * 0.5));
-  const [foamQ, setFoamQ] = useState(defaultFoamQuality ?? 85);
-  const [pumpRate, setPumpRate] = useState(15); // м³/мин н.у.
+  const [wellDepth, setWellDepth] = useState(initialInputs?.wellDepth ?? (2500));
+  const [tubingID, setTubingID] = useState(initialInputs?.tubingID ?? (62));
+  const [fluidDensity, setFluidDensity] = useState(initialInputs?.fluidDensity ?? (1050));
+  const [surfaceT, setSurfaceT] = useState(initialInputs?.surfaceT ?? (20));
+  const [targetBhp, setTargetBhp] = useState(initialInputs?.targetBhp ?? (Math.max(2, reservoirPressureMPa * 0.5)));
+  const [foamQ, setFoamQ] = useState(initialInputs?.foamQ ?? (defaultFoamQuality ?? 85));
+  const [pumpRate, setPumpRate] = useState(initialInputs?.pumpRate ?? (15)); // м³/мин н.у.
+
+  useEffect(() => {
+    if (!initialInputs) return;
+    setWellDepth(initialInputs.wellDepth);
+    setTubingID(initialInputs.tubingID);
+    setFluidDensity(initialInputs.fluidDensity);
+    setSurfaceT(initialInputs.surfaceT);
+    setTargetBhp(initialInputs.targetBhp);
+    setFoamQ(initialInputs.foamQ);
+    setPumpRate(initialInputs.pumpRate);
+  }, [initialInputs]);
+  const panelInputs = useMemo(() => ({ wellDepth, tubingID, fluidDensity, surfaceT, targetBhp, foamQ, pumpRate }), [wellDepth, tubingID, fluidDensity, surfaceT, targetBhp, foamQ, pumpRate]);
+  useEffect(() => { onInputsChange?.(panelInputs); }, [panelInputs, onInputsChange]);
 
   const res = useMemo(() => calculateNitrogenOperation({
     operationType,

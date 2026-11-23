@@ -1,3 +1,4 @@
+import { loadCalculation, recordCalculation } from '@/lib/calculation-archive';
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Send, Gauge, Shield, Droplets, Activity, ChevronDown, ChevronRight, Calculator, Save, RotateCcw, FileDown, LogOut, User, Plus, Trash2, Home, Thermometer, LayoutDashboard } from "lucide-react";
@@ -215,11 +216,12 @@ export default function CoiledTubing() {
   // Открытие сохранённого расчёта из кабинета (?calc=…)
   useEffect(() => {
     const calcId = searchParams.get("calc");
-    if (!calcId) return;
+    const archiveId = searchParams.get("archive");
+    if (!calcId && !archiveId) return;
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const { data, error } = await supabase.from("saved_calculations").select("*").eq("id", calcId).eq("user_id", session.user.id).single();
+      const { data, error } = await loadCalculation(calcId, archiveId, "coiled-tubing").then(data => ({data, error: null})).catch(error => ({data: null, error}));
       if (error || !data) { toast.error("Не удалось загрузить расчёт"); return; }
       const wd = (data.well_data ?? {}) as Record<string, any>;
       const cp = (data.calc_params ?? {}) as Record<string, any>;
@@ -236,8 +238,13 @@ export default function CoiledTubing() {
       if (wd.stringPassport && Array.isArray(wd.stringPassport.journal)) setStringPassport(wd.stringPassport);
       if (Array.isArray(wd.actualData)) setActualData(wd.actualData);
       if (Array.isArray(cp.ctSections)) setCtSections(cp.ctSections);
-      setCalculated(false);
-      toast.success(`Загружен расчёт: ${data.title}. Нажмите «Расчёт».`);
+      const result = data.results as Record<string, any> | null;
+      if (archiveId && result?.forces && result?.limits && result?.hydraulics && result?.fatigue) {
+        setForces(result.forces); setLimits(result.limits); setHydraulics(result.hydraulics); setFatigue(result.fatigue);
+        setTempering(result.tempering ?? null); setRisks(result.risks ?? []); setHookLoadData(result.hookLoadData ?? []);
+        setCalculated(true);
+      } else setCalculated(false);
+      toast.success(`Загружен расчёт: ${data.title}`);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -341,12 +348,13 @@ export default function CoiledTubing() {
     setHookLoadData(hl);
     setCalculated(true);
 
-    supabase.functions.invoke("log-activity", {
-      body: { type: "calculation", module: "coiled-tubing", page_url: "/coiled-tubing" },
-    }).catch(() => {});
+    recordCalculation({ module: 'coiled-tubing', title: `ГНКТ ${ct.od}мм — MD ${well.md}м`,
+      well_data: { ct, well: wellWithTraj, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, surface, stringPassport, actualData },
+      calc_params: { ctSections }, results: { forces: f, limits: l, hydraulics: h, fatigue: ft, tempering: tp, risks: r, hookLoadData: hl },
+    });
 
     toast.success("Расчёт выполнен ✅");
-  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface, surfaceOpts, stringPassport]);
+  }, [ct, well, fluid, pump, tools, friction, reelSize, prevTrips, trajPoints, ctSections, surface, surfaceOpts, stringPassport, actualData]);
 
   const handleReset = useCallback(() => {
     setCT(defaultCT); setWell(defaultWell); setFluid(defaultFluid);

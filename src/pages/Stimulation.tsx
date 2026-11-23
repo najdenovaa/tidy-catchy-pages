@@ -1,3 +1,5 @@
+import { useLiveCalculationArchive } from '@/hooks/use-calculation-archive';
+import { loadCalculation } from '@/lib/calculation-archive';
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, AlertTriangle, FlaskConical, Sparkles, Calculator, ListChecks, TrendingUp, FileText, Activity } from "lucide-react";
@@ -35,8 +37,8 @@ import {
   type WellFluidType, type GasDamage,
 } from "@/lib/stimulation-gas-ipr";
 import { SharedWellCard } from "@/components/SharedWellCard";
-import SolventCalcPanel from "@/components/SolventCalcPanel";
-import NitrogenCalcPanel from "@/components/NitrogenCalcPanel";
+import SolventCalcPanel, { type SolventPanelInputs } from "@/components/SolventCalcPanel";
+import NitrogenCalcPanel, { type NitrogenPanelInputs } from "@/components/NitrogenCalcPanel";
 import type { SolventResult, NitrogenResult } from "@/lib/stimulation-special";
 import {
   calculateMatrixInjection, displacementVolumeM3, DEFAULT_CONSTRUCTION, injectivity, type WellConstruction,
@@ -392,6 +394,8 @@ export default function Stimulation() {
 
 
 
+  const [solventInputs, setSolventInputs] = useState<SolventPanelInputs | null>(null);
+  const [nitrogenInputs, setNitrogenInputs] = useState<NitrogenPanelInputs | null>(null);
   // Live results from sub-panels (solvent/nitrogen)
   const [solventResult, setSolventResult] = useState<(SolventResult & { penetrationRadiusM: number }) | null>(null);
   const [nitrogenResult, setNitrogenResult] = useState<(NitrogenResult & { targetBhpMPa: number }) | null>(null);
@@ -542,6 +546,8 @@ export default function Stimulation() {
 
   // ── Сохранение в кабинет / загрузка ──
   const calcId = searchParams.get("calc");
+  const archiveId = searchParams.get("archive");
+  const [archiveLoading, setArchiveLoading] = useState(Boolean(calcId || archiveId));
   const selectedWellId = searchParams.get("well");
   const [saveOpen, setSaveOpen] = useState(false);
   const buildPayload = (): SaveCalcPayload => ({
@@ -556,20 +562,21 @@ export default function Stimulation() {
       selectedMethodId, composition, plannedRateLpm, injFluidViscosity, fracMarginMPa,
       viOptCmMin, pvBtOpt, damageRadiusM, hfLiveRadiusM,
       srtPoints, srtPressureType, srtFluidDensity, pFracOverride,
-      pumpMaxLpm, wellFluidDensity, zones, diverterEff, econ,
+      pumpMaxLpm, wellFluidDensity, zones, diverterEff, econ, solventInputs, nitrogenInputs,
     },
     results: {
-      method: selected.nameRu, acidVolM3: acidVol, skinAfter: skinAfterTreatment, pFracMPa,
+      solventResult, nitrogenResult, method: selected.nameRu, acidVolM3: acidVol, skinAfter: skinAfterTreatment, pFracMPa,
       maxRateStartLpm: injection.maxRateStartLpm, maxSurfaceMPa: injection.maxSurfacePressureMPa,
       cumulativeDeltaM3: forecast[forecast.length - 1]?.cumulativeDeltaM3 ?? 0, npv: economics.npv,
     },
   });
+  useLiveCalculationArchive(buildPayload, !archiveLoading);
   useEffect(() => {
-    if (!calcId) return;
+    if (!calcId && !archiveId) return;
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { toast.error("Войдите в кабинет, чтобы открыть расчёт"); return; }
-      const { data, error } = await supabase.from("saved_calculations").select("*").eq("id", calcId).single();
+      const { data, error } = await loadCalculation(calcId, archiveId, "stimulation").then(data => ({data, error: null})).catch(error => ({data: null, error}));
       if (error || !data || data.user_id !== session.user.id) { toast.error("Не удалось загрузить расчёт"); return; }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const w = (data.well_data ?? {}) as any, p = (data.calc_params ?? {}) as any;
@@ -601,10 +608,13 @@ export default function Stimulation() {
       if (Array.isArray(p.srtPoints)) setSrtPoints(p.srtPoints);
       if (p.srtPressureType) setSrtPressureType(p.srtPressureType);
       if (Array.isArray(p.zones)) setZones(p.zones);
+      if (p.solventInputs) setSolventInputs(p.solventInputs);
+      if (p.nitrogenInputs) setNitrogenInputs(p.nitrogenInputs);
       if (p.econ) setEcon((x) => ({ ...x, ...p.econ }));
+      setArchiveLoading(false);
       toast.success(`Расчёт «${data.title}» загружен`);
     })();
-  }, [calcId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [calcId, archiveId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleExport() {
     try {
@@ -1305,7 +1315,7 @@ export default function Stimulation() {
             </Card>
 
             {selected.category === "solvent" && (
-              <SolventCalcPanel
+              <SolventCalcPanel initialInputs={solventInputs} onInputsChange={setSolventInputs}
                 payZoneM={reservoir.payZoneM}
                 porosity={reservoir.porosity}
                 reservoirTempC={reservoir.temperatureC}
@@ -1315,7 +1325,7 @@ export default function Stimulation() {
             )}
 
             {selected.category === "nitrogen" && (
-              <NitrogenCalcPanel
+              <NitrogenCalcPanel initialInputs={nitrogenInputs} onInputsChange={setNitrogenInputs}
                 reservoirPressureMPa={reservoir.reservoirPressureMPa}
                 reservoirTempC={reservoir.temperatureC}
                 operationType={selected.type === "n2_foam_lift" ? "n2_foam_lift" : "n2_lift"}

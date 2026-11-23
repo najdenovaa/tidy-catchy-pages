@@ -1,3 +1,5 @@
+import { useLiveCalculationArchive } from '@/hooks/use-calculation-archive';
+import { loadCalculation } from '@/lib/calculation-archive';
 import { createContext, useContext, memo, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -100,7 +102,7 @@ const DEFAULT_WELL: WorkoverWellData = {
 
 export default function Workover() {
  const [params]=useSearchParams();
- const scope=params.get('calc') ? `calc:${params.get('calc')}` : params.get('well') ? `well:${params.get('well')}` : 'new';
+ const scope=params.get('archive') ? `archive:${params.get('archive')}` : params.get('calc') ? `calc:${params.get('calc')}` : params.get('well') ? `well:${params.get('well')}` : 'new';
  return <WorkoverEditor key={scope} scope={scope}/>;
 }
 function WorkoverEditor({scope}:{scope:string}) {
@@ -324,6 +326,8 @@ function WorkoverEditor({scope}:{scope:string}) {
   // ──── Сохранение в кабинет / загрузка / отчёт ────
   const [searchParams] = useSearchParams();
   const calcId = searchParams.get("calc");
+  const archiveId = searchParams.get("archive");
+  const [archiveLoading, setArchiveLoading] = useState(Boolean(archiveId || (calcId && !restoredCabinetDraft.current)));
   const selectedWellId = searchParams.get("well");
   const [selectedOperations,setSelectedOperations]=useWorkoverDraft<Operation[]>(scope,'selectedOperations',[]);
   const [activeOperation,setActiveOperation]=useState<Operation>('packer');
@@ -354,12 +358,13 @@ function WorkoverEditor({scope}:{scope:string}) {
     },
   });
 
+  useLiveCalculationArchive(buildPayload, !archiveLoading);
   useEffect(() => {
-    if (!calcId || restoredCabinetDraft.current) return;
+    if ((!calcId && !archiveId) || (!archiveId && restoredCabinetDraft.current)) return;
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { toast.error("Войдите в кабинет, чтобы открыть расчёт"); return; }
-      const { data, error } = await supabase.from("saved_calculations").select("*").eq("id", calcId).single();
+      const { data, error } = await loadCalculation(calcId, archiveId, "workover").then(data => ({data, error: null})).catch(error => ({data: null, error}));
       if (error || !data || data.user_id !== session.user.id) { toast.error("Не удалось загрузить расчёт"); return; }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = (data.calc_params ?? {}) as any;
@@ -393,9 +398,10 @@ function WorkoverEditor({scope}:{scope:string}) {
       if(typeof p.usePill==='boolean') setUsePill(p.usePill);
       if (p.pill) setPill((x) => ({ ...x, ...p.pill }));
       try{localStorage.setItem(`workover_draft_v2:${scope}:cabinetLoaded`,'true');}catch{/* draft hook reports unavailable storage */}
+      setArchiveLoading(false);
       toast.success(`Расчёт «${data.title}» загружен`);
     })();
-  }, [calcId]);
+  }, [calcId, archiveId]);
 
   const f1 = (x: number, d = 1) => (Number.isFinite(x) ? x.toFixed(d) : "—");
   const openReport = () => {

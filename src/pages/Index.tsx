@@ -1,3 +1,4 @@
+import { loadCalculation, recordCalculation } from '@/lib/calculation-archive';
 import type {CompleteProgramPlan} from '@/lib/optimizer-turnkey';
 import {bufferPlanningDefaults} from '@/lib/chemical-wash-recipes';
 import {cleaningInputKey,type HighQualityScenario} from '@/lib/optimizer-cleaning';
@@ -108,6 +109,7 @@ export default function Index() {
   const [centralizationReport, setCentralizationReport] = useState<CentralizationReportData | null>(null);
   const [displacementReport, setDisplacementReport] = useState<DisplacementReportData | null>(null);
   const [displacementReportSettings, setDisplacementReportSettings] = useState<DisplacementReportSettings>({ fine: false, rotationRpm: 0, settleMin: 30 });
+  const [restoredFoam, setRestoredFoam] = useState<FoamReportBundle | null>(null);
   const [foamReport, setFoamReport] = useState<FoamReportBundle | null>(null);
   const [centralizationResults, setCentralizationResults] = useState<CentralizationResult[] | null>(null);
   const [centralizerIntervals, setCentralizerIntervals] = useState<import("@/lib/centralization-calculations").CentralizerInterval[]>([]);
@@ -133,6 +135,7 @@ export default function Index() {
   const [loadingSavedCalc, setLoadingSavedCalc] = useState(false);
   const [searchParams] = useSearchParams();
   const calcId = searchParams.get("calc");
+  const archiveId = searchParams.get("archive");
   const selectedWellId = searchParams.get("well");
   const fromDashboard = searchParams.get("from") === "dashboard";
 
@@ -209,7 +212,7 @@ export default function Index() {
   const [calcSnapshot, setCalcSnapshot] = useState<CalcSnapshot | null>(null);
 
   useEffect(() => {
-    if (!calcId) return;
+    if (!calcId && !archiveId) return;
 
     const loadSavedCalculation = async () => {
       setLoadingSavedCalc(true);
@@ -220,11 +223,7 @@ export default function Index() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("saved_calculations")
-        .select("*")
-        .eq("id", calcId)
-        .single();
+      const { data, error } = await loadCalculation(calcId, archiveId, "cementing").then(data => ({data, error: null})).catch(error => ({data: null, error}));
 
       if (error || !data) {
         alert("Не удалось загрузить сохранённый расчёт");
@@ -259,13 +258,18 @@ export default function Index() {
       setFlushTimeMin(snapshot.flushTimeMin);
       setFlushVolumeM3(snapshot.flushVolumeM3);
 
+      lastArchivedSnapshot.current = snapshot;
       setCalcSnapshot(snapshot);
-      setActiveTab("hydraulics");
+      if (params.foamArchive && data.results) {
+        const archivedResults = data.results as { simulation?: FoamReportBundle['simulation'] };
+        if (archivedResults.simulation) setRestoredFoam({ ...(params.foamArchive as Omit<FoamReportBundle, 'simulation'>), simulation: archivedResults.simulation });
+      }
+      setActiveTab(params.foamArchive ? "foam" : "hydraulics");
       setLoadingSavedCalc(false);
     };
 
     loadSavedCalculation();
-  }, [calcId]);
+  }, [calcId, archiveId]);
 
   const [externalCentralizers, setExternalCentralizers] = useState<{ nonce: number; turbulatorDesign?:WellData["turbulatorDesign"]; intervals: import("@/lib/centralization-calculations").CentralizerInterval[] } | null>(null);
   const applyOptimizerVariant = useCallback((v: ProgramVariant, plan?: CentralizerPlan) => {
@@ -343,26 +347,7 @@ export default function Index() {
     const contract=buildProcessContract(snapshot);if(!contract.canRun){alert(contract.issues.filter(x=>x.severity==='error').map(x=>x.message).join("\n"));return;}
     setCalcSnapshot(snapshot);
     setCalcCount(prev => prev + 1);
-    // Log calculation to backend
-    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/log-activity`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-      body: JSON.stringify({
-        type: "calculation",
-        module: "cementing",
-        well_data: snapshot.wellData,
-        calc_params: {
-          drillingFluid: snapshot.drillingFluid,
-          slurries: snapshot.slurries,
-          buffers: snapshot.buffers,
-          displacementFluids: snapshot.displacementFluids,
-          fractureGradient: snapshot.fractureGradient,
-          flushTimeMin: snapshot.flushTimeMin,
-          flushVolumeM3: snapshot.flushVolumeM3,
-        },
-        page_url: window.location.href,
-      }),
-    }).catch(() => {});
+
   }, [wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3]);
 
   const volumes = useMemo(() => calcSnapshot ? calculateVolumes(calcSnapshot.wellData, calcSnapshot.slurries, calcSnapshot.displacementFluids?.[0]?.compressionCoeff ?? 1.0) : null, [calcSnapshot]);
@@ -391,6 +376,17 @@ export default function Index() {
       : null,
     [calcSnapshot, volumes, snapWellData]
   );
+
+  const lastArchivedSnapshot = useRef<CalcSnapshot | null>(null);
+  useEffect(() => {
+    if (!calcSnapshot || !volumes || !pressureResult || lastArchivedSnapshot.current === calcSnapshot || loadingSavedCalc) return;
+    lastArchivedSnapshot.current = calcSnapshot;
+    const { wellData: archivedWell, ...params } = calcSnapshot;
+    recordCalculation({ module: 'cementing', title: 'Программа цементирования',
+      well_data: archivedWell, calc_params: params,
+      results: { volumes, materials, pressureResult },
+    });
+  }, [calcSnapshot, volumes, materials, pressureResult, loadingSavedCalc]);
 
   // Карта макс. BHP по этапам/режимам из динамической симуляции
   const dynamicBHPMap = useMemo(() => {
@@ -1072,10 +1068,12 @@ export default function Index() {
             <TabsContent value="foam" forceMount>
               <div data-tab-content="foam">
                 <FoamCementSection
+                  restoredArchive={restoredFoam}
+                  archiveProgram={{well_data:wellData,calc_params:{drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin,flushVolumeM3}}}
                   onChartPresentationsChange={p=>setWellData(w=>({...w,chartPresentations:p}))}
                   onReportChange={setFoamReport}
-                  key={`foam-${calcId ?? selectedWellId ?? "unsaved"}`}
-                  scope={calcId ?? selectedWellId ?? "unsaved"}
+                  key={`foam-${archiveId ?? calcId ?? selectedWellId ?? "unsaved"}`}
+                  scope={archiveId ?? calcId ?? selectedWellId ?? "unsaved"}
                   active={activeTab === "foam"}
                   wellData={wellData}
                   slurries={slurries}

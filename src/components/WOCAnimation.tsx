@@ -1,3 +1,4 @@
+import { useLiveCalculationArchive } from '@/hooks/use-calculation-archive';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import {
 } from "recharts";
 
 interface Props {
+  archive?: boolean;
   /** BHCT, °C — забойная циркуляционная температура (старт ОЗЦ) */
   bhct: number;
   /** Геостатическая (статическая) температура пласта, °C */
@@ -104,7 +106,7 @@ function shrinkageModel(t_h: number, cls: "G" | "H") {
 
 /* ────── Компонент ────── */
 
-export default function WOCAnimation({
+export default function WOCAnimation({ archive = false,
   bhct, bhst = bhct + 15, slurryDensity, tvd, cementClass = "G", totalHours = 48,
 }: Props) {
   const [t, setT] = useState(0);
@@ -169,6 +171,9 @@ export default function WOCAnimation({
   }, [bhct, bhst, slurryDensity, tvd, cementClass, totalHours]);
 
   // Текущая точка
+  useLiveCalculationArchive(() => ({ module: 'cementing-woc', title: 'Симулятор ОЗЦ',
+    well_data: { tvd }, calc_params: { bhct, bhst, slurryDensity, tvd, cls: cementClass, totalHours }, results: { series },
+  }), archive);
   const cur = useMemo(() => {
     const idx = Math.min(series.length - 1, Math.max(0, Math.round((t / totalHours) * (series.length - 1))));
     return series[idx];
