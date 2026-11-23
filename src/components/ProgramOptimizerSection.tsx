@@ -148,7 +148,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
           )}
 
 
-          <Card className="p-4 space-y-3">
+          <Card className="p-4 space-y-3" data-testid="optimizer-comparison">
             <h3 className="font-semibold">Сравнение программ цементирования</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">

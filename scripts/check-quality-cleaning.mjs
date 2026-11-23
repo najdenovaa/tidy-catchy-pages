@@ -16,9 +16,9 @@ const panel=page.locator('[data-tab-content="optimizer"]');
 for(const [label,value] of [['Мин. расход, л/с','10'],['Макс. расход продавки, л/с','30'],['Макс. расход затворения, л/с','30'],['Шаг, л/с','10'],['Предел на устье, МПа','100'],['Запас до ГРП, МПа','0']])await panel.getByLabel(label,{exact:true}).fill(value);
 await panel.getByLabel('Подбирать центрирование',{exact:true}).uncheck();
 await panel.getByRole('button',{name:'Подобрать программу',exact:true}).click();
-const card=panel.getByTestId('quality-cleaning-plan'),apply=panel.getByRole('button',{name:'Применить',exact:true}).first();
+const comparison=panel.getByTestId('optimizer-comparison'),card=panel.getByTestId('quality-cleaning-plan'),apply=comparison.getByRole('button',{name:'Применить',exact:true}).first();
 await apply.waitFor({timeout:120000});
-assert.equal(await panel.getByRole('columnheader').filter({hasText:'Лучшее качество'}).count(),1);
+assert.equal(await comparison.locator('thead th').filter({hasText:'Лучшее качество'}).count(),1);
 assert.equal((await panel.textContent()).includes('Лучшее вытеснение'),false);
 assert.ok((await panel.textContent()).includes('Качество цементирования CQI'));
 const enhanced=(await panel.getByTestId('buffer-boost-details').textContent()).includes('Усиление включено');
@@ -26,7 +26,7 @@ assert.ok((await card.textContent()).includes('Измеренное смытие
 assert.equal(await card.getByRole('button').count(),0,'Only the main result applies a program');
 mkdirSync('/tmp/quality-cleaning',{recursive:true});
 for(const width of [1440,390]){
- await page.setViewportSize({width,height:1000});await panel.getByRole('columnheader').filter({hasText:'Лучшее качество'}).scrollIntoViewIfNeeded();
+ await page.setViewportSize({width,height:1000});await comparison.locator('thead th').filter({hasText:'Лучшее качество'}).scrollIntoViewIfNeeded();
  await page.screenshot({path:`/tmp/quality-cleaning/${width}.png`});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),'Page overflow');
 }
