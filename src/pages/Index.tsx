@@ -292,7 +292,7 @@ export default function Index() {
     setCentralizationResults(cp.profile);setCentralizerIntervals(cp.intervals);
     setExternalCentralizers({nonce:Date.now(),intervals:cp.intervals,turbulatorDesign:next.wellData.turbulatorDesign});
     setCalcSnapshot(next);
-  },[wellData,drillingFluid,buffers,slurries,displacementFluids,fractureGradient,flushTimeMin,flushVolumeM3,centralizerIntervals]);
+  },[wellData,drillingFluid,buffers,slurries,displacementFluids,fractureGradient,flushTimeMin,flushVolumeM3,centralizerIntervals,setWellData,setDrillingFluid,setBuffers,setSlurries,setDisplacementFluids]);
 
   const applyQualityCleaning=useCallback((plan:HighQualityScenario)=>{
     const live={wellData,drillingFluid,buffers,slurries,displacementFluids,fractureGradient,flushTimeMin,flushVolumeM3,centralizerIntervals};

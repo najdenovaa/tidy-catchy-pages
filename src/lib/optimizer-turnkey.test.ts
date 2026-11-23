@@ -26,6 +26,7 @@ it('builds a complete catalogue-backed program with interval buffer rates, hardw
  const {input}=turnkeyFixture(),catalog=optimizerHardwareCatalog(),before=JSON.stringify(input),r=await runOptimizer(input,settings,undefined,catalog);
  
  expect(r.best.length,r.blocker).toBeGreaterThan(0);
+ const signatures=r.best.map(x=>JSON.stringify([x.complete.program.buffers,x.complete.program.slurries,x.complete.program.displacementFluids,x.complete.centralization.intervals,x.complete.program.wellData.turbulatorDesign],(k,v)=>k==='id'||k==='appliedAt'?undefined:v));expect(new Set(signatures).size).toBe(r.best.length);
  for(const item of r.best){const full=item.complete!;expect(full).toBeDefined();expect(full.program.wellData.optimizerProgram.variant).toBe(item.label);
   expect(full.record.transit.every(t=>t.coveredDepths===t.totalDepths&&t.minContactMin>0)).toBe(true);
   expect(full.record.transit[0].minRateLps).toBeCloseTo(10,1);expect(full.record.transit[0].maxRateLps).toBeCloseTo(10,1);

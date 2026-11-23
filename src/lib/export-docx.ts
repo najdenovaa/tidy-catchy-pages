@@ -971,7 +971,7 @@ export async function exportToDocx(
 
   const inputContent = buildInputPage(wellData, drillingFluid, slurries, buffers, displacementFluids, fractureGradient, preComputed?.flushTimeMin, preComputed?.flushVolumeM3);
   const hydraulicsContent = buildHydraulicsPage(wellData, slurries, volumes, displacementFluids, drillingFluid, fractureGradient, workTimeWithCement, pressureResult, buffers);
-  const scheduleContent = buildSchedulePage(pressureResult.processContract??buildProcessContract({wellData,drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin:preComputed?.flushTimeMin??10,flushVolumeM3:preComputed?.flushVolumeM3??0},volumes.displacementVolumeWithCompression));
+  const scheduleContent: (Paragraph | Table)[] = buildSchedulePage(pressureResult.processContract??buildProcessContract({wellData,drillingFluid,slurries,buffers,displacementFluids,fractureGradient,flushTimeMin:preComputed?.flushTimeMin??10,flushVolumeM3:preComputed?.flushVolumeM3??0},volumes.displacementVolumeWithCompression));
   if(pressureResult.processAudit){const a=pressureResult.processAudit;scheduleContent.push(kvTable([{label:'Моделирование: закачано до Стоп',value:fmt(a.pumpedVolumeM3,3)+' м³'},{label:'Разница с планом порций',value:fmt(a.differenceM3,3)+' м³'},{label:'Время Стоп в модели',value:fmt(pressureResult.stopTime,2)+' мин'}]) as any,noteParagraph(a.reason));}
 
   if(pressureResult.inventory){
@@ -1030,8 +1030,8 @@ export async function exportToDocx(
   if(wellData.optimizerProgram){
     const r=wellData.optimizerProgram;
     scheduleContent.push(noteParagraph('Полная программа автоподбора «'+r.variant+'» на момент применения: '+r.createdAt+'. CQI '+r.cqi.toFixed(1)+'; минимум '+r.minCqi.toFixed(1)+'. Зона MD '+r.targetFromMD.toFixed(2)+'–'+r.targetToMD.toFixed(2)+' м. После изменения исходных данных требуется повторный подбор.'));
-    scheduleContent.push(gridTable(['Буфер в целевой зоне','Расход, л/с','Контакт, мин','Проверенные глубины'],r.transit.map(t=>[t.name,t.minRateLps.toFixed(2)+'–'+t.maxRateLps.toFixed(2),t.minContactMin.toFixed(3),t.coveredDepths+'/'+t.totalDepths]))as any);
-    scheduleContent.push(gridTable(['Оснастка из справочника','Изготовитель','Количество','Источник / версия'],r.hardware.map(h=>[h.identity.model,h.identity.manufacturer,String(h.quantity),h.identity.source+' / v'+h.identity.revision]))as any);
+    scheduleContent.push(gridTable(['Буфер в целевой зоне','Расход, л/с','Контакт, мин','Проверенные глубины'],r.transit.map(t=>[t.name,t.minRateLps.toFixed(2)+'–'+t.maxRateLps.toFixed(2),t.minContactMin.toFixed(3),t.coveredDepths+'/'+t.totalDepths])));
+    scheduleContent.push(gridTable(['Оснастка из справочника','Изготовитель','Количество','Источник / версия'],r.hardware.map(h=>[h.identity.model,h.identity.manufacturer,String(h.quantity),h.identity.source+' / v'+h.identity.revision])));
     scheduleContent.push(...r.notes.map(noteParagraph));
   }
   if(wellData.optimizerCleaning){
