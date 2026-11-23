@@ -25,7 +25,7 @@ it('calculates with no buffers when their selection is disabled, without demandi
 it('automatically builds and applies a computable planning scenario without chemical properties or removal tests',async()=>{
  const p=qualityInput();p.buffers=[];const before=JSON.stringify(p);
  const r=await runOptimizer(p,{...settings,optimizeBuffer:true});
- expect(r.highQuality?.ready).toBe(true);expect(r.highQuality?.design?.proof).toBeUndefined();
+ expect(r.highQuality?.ready).toBe(true);expect(r.best[0].cleaning).toBe(r.highQuality);expect(r.highQuality?.design?.proof).toBeUndefined();
  expect(r.highQuality?.sourceKey).toBe(cleaningInputKey(p));
  expect(r.highQuality?.program?.buffers.map(b=>b.bufferType)).toEqual(['chemical_wash','weighted']);
  expect(r.highQuality?.program?.buffers[0].additives[0].percentage).toBe(.5);

@@ -406,3 +406,26 @@ export function efficiencyAtAngle(eccentricity: number, baseStandoff: number, an
   }
   return Math.max(0, Math.min(100, eff));
 }
+
+/** Shared contact estimate for quality analysis and optimizer; same saved hydraulic fronts. */
+export function qualityContactTimeByDepth(pressureData:PressurePoint[],casingDepthMD:number){
+    if (pressureData.length < 2 || casingDepthMD <= 0) return [];
+    const fronts = pressureData.map(pt => ({
+      timeMin: pt.time,
+      cementTopMD: pt.annCementHeightM > 0 ? casingDepthMD - pt.annCementHeightM : casingDepthMD,
+      bufferTopMD: pt.annBufferHeightM > 0 ? casingDepthMD - pt.annCementHeightM - pt.annBufferHeightM : casingDepthMD,
+    }));
+    const step = Math.max(10, casingDepthMD / 80);
+    const out: { depthMD: number; bufferContactMin: number }[] = [];
+    for (let d = 0; d <= casingDepthMD; d += step) {
+      let start = -1, end = -1;
+      for (const f of fronts) {
+        if (f.bufferTopMD <= d && f.cementTopMD >= d) {
+          if (start < 0) start = f.timeMin;
+          end = f.timeMin;
+        }
+      }
+      out.push({ depthMD: d, bufferContactMin: start >= 0 && end >= 0 ? end - start : 0 });
+    }
+    return out;
+}

@@ -222,7 +222,7 @@ export async function buildHighQualityScenario(p:ProgramInput,s:OptimizerSetting
  }
  }
  if(!pool.length){out.issues.push(...failures);return out;}
- pool.sort((a,b)=>(b.test?.removalPct??-1)-(a.test?.removalPct??-1)||b.scenario.evaluation!.minMarginMPa-a.scenario.evaluation!.minMarginMPa||a.scenario.evaluation!.jobTimeMin-b.scenario.evaluation!.jobTimeMin);
+ pool.sort((a,b)=>(b.scenario.evaluation?.cqi??0)-(a.scenario.evaluation?.cqi??0)||(b.scenario.evaluation?.minCqi??0)-(a.scenario.evaluation?.minCqi??0)||(a.scenario.evaluation?.badQualityLengthM??0)-(b.scenario.evaluation?.badQualityLengthM??0)||(b.test?.removalPct??-1)-(a.test?.removalPct??-1)||b.scenario.evaluation!.minMarginMPa-a.scenario.evaluation!.minMarginMPa||a.scenario.evaluation!.jobTimeMin-b.scenario.evaluation!.jobTimeMin);
  let rejected:HighQualityScenario|undefined;
  for(const {scenario:best,test} of pool){
   let pressure:PressureProfileResult|undefined;

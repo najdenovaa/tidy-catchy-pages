@@ -1,3 +1,4 @@
+import {calculateCementQuality,qualityContactTimeByDepth} from './cement-quality-index';
 import {buildHighQualityScenario,cleaningTarget,type HighQualityScenario} from './optimizer-cleaning';
 import {bufferPlanningDefaults} from './chemical-wash-recipes';
 import {buildCentralizerJointSchedule} from './centralizer-layout';
@@ -6,8 +7,8 @@ import { boreDiameterAtDepth } from "./well-geometry";
  * Автоподбор программы цементирования.
  * Перебор расходов (буфер+цемент / продавка) и параметров разделительного буфера (объём, плотность).
  * Каждый вариант прогоняется через полную симуляцию закачки (послойное трение, проверка по пластам),
- * качество вытеснения — индекс MREI (API 10TR4) по интервалу цементирования при фактическом расходе
- * в момент, когда буфер и цемент идут по затрубью.
+ * основная цель — действующая модель CQI; индекс вытеснения MREI — вспомогательная метрика
+ * по интервалу цементирования при расчётных условиях закачки.
  */
 import {
   calculatePressureProfile, calculateVolumes, getEffectiveTrajectory, interpolateTVD, annularVolumeForInterval,
@@ -80,6 +81,8 @@ export interface VariantEval {
   violations: Violation[];
   /** Индекс вытеснения по интервалу цементирования, % */
   mrei: number;
+  /** Same CQI model as the quality analysis tab; scores are not a measured cement bond. */
+  cqi?:number; minCqi?:number;badQualityLengthM?:number;
   /** Длина интервала, где буровой раствор на узкой стороне остаётся неподвижным, м */
   channelLengthM: number;
   minMarginMPa: number;
@@ -116,7 +119,7 @@ export interface OptimizerResult {
   highQuality?:HighQualityScenario;
   current: VariantEval;
   evaluations: VariantEval[];
-  best: { label: string; hint: string; ev: VariantEval }[];
+  best: { label: string; hint: string; ev: VariantEval; cleaning?:HighQualityScenario }[];
   rates: number[];
   /** Расходы буфера/цемента (с учётом предела затворения) */
   rates1: number[];
@@ -347,7 +350,9 @@ export function evaluateProgram(
     rotationRpm: settings.rotationRpm,
   }, centr ?? cementIntervalCentralization(p));
 
+  const quality=calculateCementQuality({wellData:p.wellData,drillingFluid:p.drillingFluid,slurries:prog.slurries,buffers:prog.buffers,centralization:centr??cementIntervalCentralization(p),pressureData:pr.points,casingDepthMD:p.wellData.casingDepthMD,annVPM:volumes.annularVolumePerMeter,prevCasingDepth:p.wellData.prevCasingDepth,contactTimeByDepth:qualityContactTimeByDepth(pr.points,p.wellData.casingDepthMD)}).summary;
   return {
+    cqi:quality.avgCQI,minCqi:quality.minCQI,badQualityLengthM:quality.badZonesLength,
     variant: v, feasible: violations.length === 0, violations, mrei: dei.index, channelLengthM: dei.channelLengthM,
     minMarginMPa: minMargin, minMarginAt, underbalanceMPa: underbalance, maxSurfaceMPa: maxSurface,
     jobTimeMin: jobTime, thickeningReserveMin: thickReserve, effAnnRateLps: effRate, limitingFactor: dei.limitingFactor,
@@ -412,6 +417,17 @@ export async function runOptimizer(
    catch(e){return {sourceKey:JSON.stringify(p),ready:false,issues:['Дополнительный сценарий очистки: '+(e as Error).message],warnings:[],candidates:0} as HighQualityScenario;}
   };
   const planningNotes=p.buffers.filter(b=>bufferPlanningDefaults(b)!==b).map(b=>b.name+': незаполненные свойства заменены стартовыми расчётными значениями: 1100 кг/м³ при отсутствии плотности, PV 20 сПз / YP 5 Па при отсутствии реологии. Их можно изменить во вводе.');
+  const finish=async(result:OptimizerResult)=>{
+    const booster=await quality();result.highQuality=booster;
+    if(booster?.ready&&booster.evaluation){
+      const ev={...booster.evaluation,centralization:booster.centralization};
+      if(!result.best.length||compareProgramQuality(ev,result.best[0].ev)<0){
+        result.centralizerStudy=undefined;result.blocker=undefined;
+        result.best=[{label:'Лучшее качество',hint:'Лучший CQI с дополнительным буферным усилением; учтены ступени подачи, контакт и оснастка.',ev,cleaning:booster},...result.best.slice(1)];
+      }
+    }
+    return result;
+  };
   const stage1Total = bOpts.length * rates1.length * rates.length;
   let total = stage1Total + plans.length * Math.min(2, bOpts.length) * rates1.length * rates.length;
   let done = 0, computed = 0;
@@ -449,7 +465,7 @@ export async function runOptimizer(
   // Этап 1: расходы и буфер при текущем (или принятом) центрировании
   const stage1 = await grid(p, bOpts);
   if (!plans.length) {
-    return { planningNotes,highQuality:await quality(),current, evaluations: stage1, rates, rates1, bufferOptions: bOpts, best: pickVariants(stage1, settings), blocker: findBlocker(stage1) };
+    return finish({ planningNotes,current, evaluations: stage1, rates, rates1, bufferOptions: bOpts, best: pickVariants(stage1, settings), blocker: findBlocker(stage1) });
   }
 
   // Этап 2: для каждой расстановки центраторов — повторный перебор расходов с лучшими буферами этапа 1
@@ -474,7 +490,7 @@ export async function runOptimizer(
     mapEvals = stage2.filter((e) => e.centralization === b0.centralization);
   }
   onProgress?.(total, total);
-  return { planningNotes,highQuality:await quality(),current, evaluations: mapEvals, rates, rates1, bufferOptions: bos, best, blocker: findBlocker(stage2), centralizerStudy };
+  return finish({ planningNotes,current, evaluations: mapEvals, rates, rates1, bufferOptions: bos, best, blocker: findBlocker(stage2), centralizerStudy });
 }
 
 const CENTRALIZER_TARGETS = [55, 67, 75, 85];
@@ -562,30 +578,27 @@ function findBlocker(evs: VariantEval[]): string | undefined {
   return top ? msg[top[0]] : undefined;
 }
 
+/** Lexicographic selection: existing CQI first, displacement is one supporting metric. No new weighted score. */
+export function compareProgramQuality(a:VariantEval,b:VariantEval){
+ return (b.cqi??0)-(a.cqi??0)||(b.minCqi??0)-(a.minCqi??0)||(a.badQualityLengthM??0)-(b.badQualityLengthM??0)||b.mrei-a.mrei||a.channelLengthM-b.channelLengthM||b.minMarginMPa-a.minMarginMPa||(a.centralization?.countInCement??0)-(b.centralization?.countInCement??0)||a.jobTimeMin-b.jobTimeMin;
+}
+
 /** Три варианта: максимум качества, баланс (запас ≥ 1.5 МПа и ≥ 30 мин по загустеванию), минимум риска. */
 export function pickVariants(evs: VariantEval[], settings: OptimizerSettings): OptimizerResult["best"] {
   const feas = evs.filter((e) => e.feasible);
   if (feas.length === 0) return [];
-  const q = (x: number) => Math.round(x * 2) / 2; // качество с точностью 0.5%
-  const byQuality = [...feas].sort((a, b) => q(b.mrei) - q(a.mrei) || a.channelLengthM - b.channelLengthM || b.minMarginMPa - a.minMarginMPa || a.jobTimeMin - b.jobTimeMin);
-  // При подборе центрирования: среди вариантов с качеством ≥ 98% от лучшего и отступом ≥ 67% (API RP 10D-2) —
-  // наименьшее число центраторов
-  const bestQ = byQuality[0].mrei;
-  const cnt = (e: VariantEval) => e.centralization?.countInCement ?? 0;
-  let pool = byQuality.filter((e) => e.mrei >= bestQ * 0.98);
-  const api = pool.filter((e) => !e.centralization || e.centralization.minStandoffPct >= 66.5);
-  if (api.length) pool = api;
-  const top = [...pool].sort((a, b) => cnt(a) - cnt(b) || b.mrei - a.mrei || a.channelLengthM - b.channelLengthM || b.minMarginMPa - a.minMarginMPa)[0];
-  const out: OptimizerResult["best"] = [{ label: "Лучшее вытеснение", hint: "Наибольший индекс вытеснения (±2%) при соблюдении всех ограничений; при равном качестве — меньше центраторов", ev: top }];
+  const byQuality = [...feas].sort(compareProgramQuality);
+  const top=byQuality[0],bestQ=top.cqi??0;
+  const out: OptimizerResult["best"] = [{label:'Лучшее качество',hint:'Наибольший CQI по действующей модели качества цементирования; далее минимум CQI, длина неблагоприятных зон и вытеснение. Гидравлические ограничения обязательны. Число центраторов учитывается только при равном качестве.',ev:top}];
 
   const balMargin = Math.max(1.5, settings.marginReqMPa);
-  const bal = byQuality.find((e) => e.minMarginMPa >= balMargin && e.thickeningReserveMin >= 30 && e.mrei >= bestQ * 0.9);
-  if (bal && !sameVariant(bal, top)) out.push({ label: "Сбалансированный", hint: `Запас по пластам ≥ ${balMargin} МПа и по загустеванию ≥ 30 мин, качество не ниже 90% от максимума`, ev: bal });
+  const bal = byQuality.find((e) => e.minMarginMPa >= balMargin && e.thickeningReserveMin >= 30 && (e.cqi??0) >= bestQ * 0.9);
+  if (bal && !sameVariant(bal, top)) out.push({ label: "Сбалансированный", hint: `Запас по пластам ≥ ${balMargin} МПа и по загустеванию ≥ 30 мин, CQI не ниже 90% от максимума`, ev: bal });
 
   const r1 = (x: number) => Math.round(x * 10) / 10;
-  const safe = [...feas].filter((e) => e.mrei >= bestQ * 0.85)
+  const safe = [...feas].filter((e) => (e.cqi??0) >= bestQ * 0.85)
     .sort((a, b) => r1(b.minMarginMPa) - r1(a.minMarginMPa) || Math.min(b.thickeningReserveMin, 600) - Math.min(a.thickeningReserveMin, 600) || b.mrei - a.mrei)[0];
-  if (safe && !out.some((o) => sameVariant(o.ev, safe))) out.push({ label: "Минимум риска", hint: "Наибольший запас до ГРП/поглощения при качестве не ниже 85% от максимума", ev: safe });
+  if (safe && !out.some((o) => sameVariant(o.ev, safe))) out.push({ label: "Минимум риска", hint: "Наибольший запас до ГРП/поглощения при CQI не ниже 85% от максимума", ev: safe });
   return out;
 }
 
