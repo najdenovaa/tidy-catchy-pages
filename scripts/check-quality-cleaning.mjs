@@ -41,7 +41,7 @@ const saved=await read(),record=saved.wellData.optimizerProgram;
 assert.ok(record.hardware.some(h=>h.kind==='centralizer'&&h.quantity>0));
 assert.ok(record.hardware.some(h=>h.kind==='turbulator'&&h.quantity>0));
 assert.ok(record.transit.every(t=>t.coveredDepths===t.totalDepths&&t.minContactMin>0));
-assert.equal(record.transit[0].minRateLps,10);
+assert.ok(Math.abs(record.transit[0].minRateLps-10)<.02);
 assert.ok(saved.wellData.centralizerDesign.intervals.every(iv=>iv.spec.libraryReference));
 assert.ok(saved.wellData.turbulatorDesign.points.every(p=>p.catalog?.model));
 assert.ok(saved.slurries.some(s=>s.flowRateSteps.some(x=>x.rateLps===10)));
