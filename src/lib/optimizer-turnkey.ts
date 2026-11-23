@@ -10,7 +10,7 @@ import {buildProcessContract} from './cementing-process';
 import {createAnnularGeometry} from './well-geometry';
 import {totalPipeVolumeForRange,interpolateTVD,getEffectiveTrajectory,type FlowRateStep,type PressureProfileResult} from './cementing-calculations';
 import {calculateCentralization,type TurbulatorPoint} from './centralization-calculations';
-import {defaultTurbulatorDesign,swirlRatioAt} from './turbulator-flow';
+import {defaultTurbulatorDesign} from './turbulator-flow';
 import {centralizerInventory} from './cementing-equipment';
 import {centralizerMaterialGeometryKey} from './materials-equipment-inventory';
 import type {OptimizerProgramRecord,BufferTransitRecord} from './optimizer-program-record';
@@ -71,7 +71,7 @@ function hardwareRecord(depth:number,cp:CentralizerPlan,product:CatalogTurbulato
  const central=[...groups.values()];
  return product&&points.length?[...central,{kind:'turbulator',quantity:points.length,identity:product.identity}]:central;
 }
-export async function completeOptimizerResults(p:ProgramInput,s:OptimizerSettings,catalog:OptimizerHardwareCatalog,result:OptimizerResult,candidates:VariantEval[],evaluate:CleaningEvaluator,apply:(b:ProgramInput['buffers'],c:ProgramInput['slurries'],d:ProgramInput['displacementFluids'],v:ProgramVariant)=>Pick<ProgramInput,'buffers'|'slurries'|'displacementFluids'>,choose:(ev:VariantEval[],s:OptimizerSettings)=>OptimizerResult['best'],progress?:(done:number,total:number)=>void):Promise<OptimizerResult>{
+export async function completeOptimizerResults(p:ProgramInput,s:OptimizerSettings,catalog:OptimizerHardwareCatalog,result:OptimizerResult,candidates:VariantEval[],evaluate:CleaningEvaluator,apply:(b:ProgramInput['buffers'],c:ProgramInput['slurries'],d:ProgramInput['displacementFluids'],v:ProgramVariant)=>Pick<ProgramInput,'buffers'|'slurries'|'displacementFluids'>,choose:(ev:VariantEval[],s:OptimizerSettings)=>OptimizerResult['best'],progress?:(done:number,total:number)=>void,shouldStop:()=>boolean=()=>false):Promise<OptimizerResult>{
  const failures=new Set<string>(),available=compatibleHardware(p.wellData,catalog);let target:CleaningTarget;
  try{target=programTarget(p);}catch(e){return {...result,best:[],blocker:(e as Error).message};}
  if(!available.centralizers.length)return {...result,best:[],blocker:'В справочнике нет подходящих центраторов для этой колонны.'};
@@ -79,7 +79,7 @@ export async function completeOptimizerResults(p:ProgramInput,s:OptimizerSetting
  const queue:VariantEval[]=[],seen=new Set<string>();const add=(e:VariantEval)=>{const key=JSON.stringify([e.variant,e.centralization?.intervals]);if(!seen.has(key)){seen.add(key);queue.push(e);}};
  for(const sorted of [byQ,byMargin,byTime])sorted.slice(0,3).forEach(add);
  const plans=new Set<CentralizerPlan>();for(const e of byQ)if(!plans.has(e.centralization)){plans.add(e.centralization);add(e);}
- if(!queue.length)return {...result,best:[],blocker:result.blocker??'Для полной программы нужна рассчитанная расстановка из справочника. Включите подбор центрирования.'};
+ if(!queue.length)return {...result,best:[],blocker:shouldStop()?'Достигнут лимит времени автоподбора. Полностью проверенные программы не найдены; исходные данные сохранены.':result.blocker??'Для полной программы нужна рассчитанная расстановка из справочника. Включите подбор центрирования.'};
  const seenPrograms=new Set<string>(),pool:VariantEval[]=[],records=new Map<VariantEval,CompleteProgramPlan>();
  const prepared=s.optimizeBuffer?prepareCleaningProgram(p):{program:p,notes:[]};
  const layoutCache=new Map<string,ReturnType<typeof placeProgramTurbulators>>();
@@ -90,7 +90,7 @@ export async function completeOptimizerResults(p:ProgramInput,s:OptimizerSetting
  for(const ev of queue)if(!seeds.includes(ev)&&seeds.length<Math.max(6,seedPlans.size+3))seeds.push(ev);
  const products:(CatalogTurbulator|undefined)[]=available.turbulators.length?available.turbulators:[undefined];
  let done=0;const total=seeds.length*products.length*(s.optimizeBuffer?2:1);
- for(const seed of seeds)for(const product of products)for(const boost of s.optimizeBuffer?[true,false]:[false]){done++;progress?.(done,total);try{
+ search: for(const seed of seeds)for(const product of products)for(const boost of s.optimizeBuffer?[true,false]:[false]){if(shouldStop())break search;done++;progress?.(done,total);try{
   const cp=seed.centralization,source=boost?prepared.program:p;
   const base={...source,...apply(source.buffers,source.slurries,source.displacementFluids,seed.variant)};
   const w={...base.wellData,standoffProfile:cp.profile.map(x=>({md:x.md,standoffPct:x.standoff}))};
@@ -98,8 +98,8 @@ export async function completeOptimizerResults(p:ProgramInput,s:OptimizerSetting
   // Prefer the highest allowed annular rate; surface mixing stages are independently capped below.
   const qHeavy=boost?rates.at(-1)!:seed.variant.q1;
   const key=JSON.stringify([product,cp.intervals,qHeavy,heavy.density,heavy.rheology]);let layout=layoutCache.get(key);
-  if(!layout){layout=product?placeProgramTurbulators(base,cp,target,product,heavy,qHeavy,s.jointLengthM):{design:defaultTurbulatorDesign(),flows:[],notes:['В справочнике нет подходящего турбулизатора; рассчитана программа с центраторами.']};layout.design.fluidId=base.buffers.includes(heavy)?'buffer-'+base.buffers.indexOf(heavy):'mud';layoutCache.set(key,layout);}
-  const profile=cp.profile.map(row=>({...row,hasTurbulizer:layout.flows.some(f=>swirlRatioAt(f,row.md)>0)})),centralization={...cp,profile};
+  if(!layout){layout=product?placeProgramTurbulators(base,cp,target,product,heavy,qHeavy,s.jointLengthM):{design:defaultTurbulatorDesign(),swirlDepths:new Set<number>(),notes:['В справочнике нет подходящего турбулизатора; рассчитана программа с центраторами.']};layout.design.fluidId=base.buffers.includes(heavy)?'buffer-'+base.buffers.indexOf(heavy):'mud';layoutCache.set(key,layout);}
+  const profile=cp.profile.map(row=>({...row,hasTurbulizer:layout.swirlDepths.has(row.md)})),centralization={...cp,profile};
   let program=scheduleIntervalProgram({...base,wellData:{...w,turbulatorDesign:layout.design}},target,qHeavy,seed.variant.q1,seed.variant.q2,boost,s.chemicalContactMin??10,s.maxCementRateLps);
   program={...program,wellData:{...program.wellData,fluidInteractionLab:remapCleaningLab(p,program)}};
   const contract=buildProcessContract(program);if(contract.stages.some(st=>(st.kind==='cement'||st.kind==='buffer')&&st.rateLps>s.maxCementRateLps+.001))throw Error('Ступень на буфере/цементе превышает заданную производительность затворения.');
@@ -114,5 +114,5 @@ export async function completeOptimizerResults(p:ProgramInput,s:OptimizerSetting
  }catch(e){failures.add((e as Error).message);}finally{if(done%2===0)await new Promise(r=>setTimeout(r,0));}}
  const withTools=pool.filter(ev=>records.get(ev)?.program.wellData.turbulatorDesign?.points.length);
  const best=choose(withTools.length?withTools:pool,s).map(item=>{const complete=records.get(item.ev);complete.record={...complete.record,variant:item.label};complete.program={...complete.program,wellData:{...complete.program.wellData,optimizerProgram:complete.record}};return {...item,complete,hint:item.hint+' Полная программа: интервальные расходы и оснастка из справочника.'};});
- return {...result,best,highQuality:undefined,centralizerStudy:undefined,planningNotes:[...(result.planningNotes??[]),...new Set(best.flatMap(x=>x.complete.record.notes.filter(n=>n.includes('не подтверждено')||n.includes('нет допустимых')||n.includes('нет подходящего')))),`Проверено полных вариантов: ${pool.length}. Источники оснастки и фактический проход буферов доступны у каждого результата.`],blocker:best.length?undefined:result.blocker??('Не удалось подтвердить полную программу. '+[...failures].slice(0,2).join('; '))};
+ return {...result,best,highQuality:undefined,centralizerStudy:undefined,planningNotes:[...(shouldStop()?['Поиск ограничен по времени. Показаны только полностью проверенные программы; оптимальность по всей сетке не подтверждена.']:[]),...(result.planningNotes??[]),...new Set(best.flatMap(x=>x.complete.record.notes.filter(n=>n.includes('не подтверждено')||n.includes('нет допустимых')||n.includes('нет подходящего')))),`Проверено полных вариантов: ${pool.length}. Источники оснастки и фактический проход буферов доступны у каждого результата.`],blocker:best.length?undefined:shouldStop()?'Достигнут лимит времени автоподбора. Полностью проверенные программы не найдены; исходные данные сохранены.':result.blocker??('Не удалось подтвердить полную программу. '+[...failures].slice(0,2).join('; '))};
 }

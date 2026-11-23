@@ -1,4 +1,4 @@
-import { turbulatorLossBetween } from './turbulator-flow';
+import { turbulatorLossBetween, createTurbulatorLossCalculator } from './turbulator-flow';
 import {pressureObservationKey,resolveObservationDepth,observationBounds,observationNote,type PressureObservation,type PressureObservationRequest} from './pressure-observation';
 import {evaluateStopStorage,type StopStorageResult} from "./stop-storage";
 import { FluidInventory, type InventorySummary } from "./fluid-inventory";
@@ -1318,10 +1318,13 @@ export function calculatePressureProfile(
   flushTimeMin: number = 10,
   flushVolumeM3: number = 0,
   /** fast — без расчёта макс. безопасного расхода в каждой точке (для оптимизатора) */
-  opts: { fast?: boolean; mechanicalDepths?:number[] } = {},
+  opts: { fast?: boolean; optimizer?: boolean; mechanicalDepths?:number[] } = {},
 ): PressureProfileResult {
+  // The optimizer needs actual pressures at all check points, not inverse-rate curves or report envelopes.
+  const diagnostics = !opts.fast && !opts.optimizer;
+  const toolLoss = createTurbulatorLossCalculator(wellData);
   const rheologyErrors=rheologyInputErrors({drillingFluid,slurries,buffers,displacementFluids});if(rheologyErrors.length)throw new Error(rheologyErrors.join("\n"));
-  const observationSourceKey=wellData.pressureObservation&&!opts.fast?pressureObservationKey(wellData,slurries,buffers,drillingFluid,displacementFluids,fractureGradient,displacementVol,flushTimeMin,flushVolumeM3):undefined;
+  const observationSourceKey=wellData.pressureObservation&&diagnostics?pressureObservationKey(wellData,slurries,buffers,drillingFluid,displacementFluids,fractureGradient,displacementVol,flushTimeMin,flushVolumeM3):undefined;
   const points: PressurePoint[] = [];
   slurries = slurries.map((s) => ({
     ...s,
@@ -1540,7 +1543,7 @@ export function calculatePressureProfile(
         z = zTop;
       }
     }
-    const tools=segs.reduce((sum,sg)=>sum+turbulatorLossBetween(wellData,Math.max(0,sg.topMD),Math.min(depthMD,sg.bottomMD),flowRateM3min/.06,sg),0);
+    const tools=segs.reduce((sum,sg)=>sum+toolLoss(Math.max(0,sg.topMD),Math.min(depthMD,sg.bottomMD),flowRateM3min/.06,sg),0);
     return { pressureMPa: p * kFriction + tools, reynolds: re, regime };
   }
 
@@ -1599,7 +1602,7 @@ export function calculatePressureProfile(
   }
 
   // ═══ Огибающие давления по глубине за всю операцию (макс./мин. давление в затрубье, мин. гидростатика) ═══
-  const ENV_N = opts.fast ? 0 : 80;
+  const ENV_N = diagnostics ? 80 : 0;
   // сетка глубин + границы пластов и башмак предыдущей колонны (чтобы интервалы отображались точно)
   const envMD = (() => {
     if (!ENV_N) return [0];
@@ -1634,7 +1637,7 @@ export function calculatePressureProfile(
         z = zTop;
       }
     }
-    const tools=segs.reduce((sum,sg)=>sum+turbulatorLossBetween(wellData,Math.max(fromMD,sg.topMD),Math.min(toMD,sg.bottomMD),rateM3min/.06,sg),0);
+    const tools=segs.reduce((sum,sg)=>sum+toolLoss(Math.max(fromMD,sg.topMD),Math.min(toMD,sg.bottomMD),rateM3min/.06,sg),0);
     return p * kFriction + tools;
   }
   function trackEnvelope(rateM3min: number, segs: AnnSeg[], stage: string) {
@@ -1762,7 +1765,7 @@ export function calculatePressureProfile(
           surfacePressure: surfP, surfaceStaticMPa: surfP, bottomholePressure: bhp, fracturePressure: fracP,
           cumulativeVolume: savedCumVol, pumpRateLps: 0, annularReturnRate: returnRateLps,
           flowRegimeAnn: pauseFriction.regime, reynoldsAnn: pauseFriction.reynolds,
-          maxSafeRateLps: opts.fast ? 0 : maxSafeRateNow(annularSegments()),
+          maxSafeRateLps: !diagnostics ? 0 : maxSafeRateNow(annularSegments()),
           densityGcm3: mudDensityGcm3,
           annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH,
           freefallSettledM3: currentFreefallSettled,
@@ -1869,7 +1872,7 @@ export function calculatePressureProfile(
         const frictionAtShoe = annFrictionAbove(shoeFlowM3min, prevShoe, segsNow).pressureMPa;
         ecdPrevShoe = (hydroAtShoe + frictionAtShoe) / (0.00981 * prevShoeTVD);
       }
-      points.push({ ...inventoryFrame(),shoeRateLps:shoeFlowM3min/0.06,stage: s.name, time: tNow, surfaceStaticMPa: Math.max(0, annHydro - pipeHydro), surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: opts.fast ? 0 : maxSafeRateNow(segsNow), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps, ecdAtBottomGcm3: ecdBottom, ecdStaticAtBottomGcm3: ecdStaticBottom, ecdAtPrevShoeGcm3: ecdPrevShoe, fracGradEcdGcm3, porePressureEcdGcm3 });
+      points.push({ ...inventoryFrame(),shoeRateLps:shoeFlowM3min/0.06,stage: s.name, time: tNow, surfaceStaticMPa: Math.max(0, annHydro - pipeHydro), surfacePressure: surfP, bottomholePressure: bhp, fracturePressure: fracP, cumulativeVolume: vNow, pumpRateLps: actualRateLps, annularReturnRate: totalAnnReturn, flowRegimeAnn: flowRegimeAnnNow, reynoldsAnn: reAnnNow, maxSafeRateLps: !diagnostics ? 0 : maxSafeRateNow(segsNow), densityGcm3: s.densityGcm3, annMudHeightM: annP.mudH, annBufferHeightM: annP.bufferH, annCementHeightM: annP.cementH, annDisplHeightM: annP.displH, freefallSettledM3: currentFreefallSettled, annularVelocityMps, ecdAtBottomGcm3: ecdBottom, ecdStaticAtBottomGcm3: ecdStaticBottom, ecdAtPrevShoeGcm3: ecdPrevShoe, fracGradEcdGcm3, porePressureEcdGcm3 });
 
       trackZones(shoeFlowM3min, segsNow, s.name, tNow);
       trackEnvelope(shoeFlowM3min, segsNow, s.name);
@@ -2009,7 +2012,7 @@ export function calculatePressureProfile(
   const stopStorage=evaluateStopStorage(wellData,points.at(-1)?.transportColumns,processContract.fluids,lastPoint?.fluidId,plugLanded&&Math.abs(cumDisplacementVol-geometricPlugVolume)<1e-6);
 
   let observation:PressureObservation|undefined;
-  if(!opts.fast&&wellData.pressureObservation){
+  if(diagnostics&&wellData.pressureObservation){
     observation={sourceKey:observationSourceKey!,status:'unavailable',request:wellData.pressureObservation,issues:[],rows:[],poreSource:'Не определено',limitSource:'Не определено',note:observationNote};
     try{
       const target=resolveObservationDepth(wellData.pressureObservation,wellData,traj);observation.depthMD=target.md;observation.depthTVD=target.tvd;Object.assign(observation,observationBounds(wellData,target.md,target.tvd,fractureGradient));

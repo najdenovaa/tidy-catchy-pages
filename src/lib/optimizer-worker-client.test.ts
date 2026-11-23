@@ -28,3 +28,20 @@ it('reports worker errors and releases the worker',async()=>{
  FakeWorker.instances[0].onmessage!({data:{type:'error',message:'Ошибка геометрии'}});
  await expect(promise).rejects.toThrow('Ошибка геометрии');expect(FakeWorker.instances[0].terminate).toHaveBeenCalledTimes(1);
 });
+it('stops an unresponsive worker after two minutes without depending on worker progress',async()=>{
+ vi.useFakeTimers();vi.stubGlobal('Worker',FakeWorker);
+ try{
+  const promise=runOptimizerInWorker(qualityInput(),qualitySettings,optimizerHardwareCatalog(),vi.fn(),new AbortController().signal);
+  const assertion=expect(promise).rejects.toThrow('превышен лимит 2 минуты');
+  await vi.advanceTimersByTimeAsync(120000);await assertion;
+  expect(FakeWorker.instances[0].terminate).toHaveBeenCalledTimes(1);
+ }finally{vi.useRealTimers();}
+});
+it('clears the watchdog after a successful response',async()=>{
+ vi.useFakeTimers();vi.stubGlobal('Worker',FakeWorker);
+ try{
+  const promise=runOptimizerInWorker(qualityInput(),qualitySettings,optimizerHardwareCatalog(),vi.fn(),new AbortController().signal);
+  FakeWorker.instances[0].onmessage!({data:{type:'result',result:{best:[]}}});await promise;
+  await vi.advanceTimersByTimeAsync(120000);expect(FakeWorker.instances[0].terminate).toHaveBeenCalledTimes(1);
+ }finally{vi.useRealTimers();}
+});

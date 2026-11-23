@@ -305,13 +305,13 @@ function effectiveAnnularRate(pr: PressureProfileResult, fallback: number): numb
 
 export function evaluateProgram(
   p: ProgramInput, v: ProgramVariant, settings: OptimizerSettings, vols?: VolumeResults, centr?: CentralizationResult[],
-  options?:{preserveSteps?:boolean;fast?:boolean;onPressure?:(p:PressureProfileResult)=>void},
+  options?:{preserveSteps?:boolean;fast?:boolean;optimizer?:boolean;onPressure?:(p:PressureProfileResult)=>void},
 ): VariantEval {
   const prog = options?.preserveSteps?{buffers:p.buffers,slurries:p.slurries,displacementFluids:p.displacementFluids}:applyVariant(p.buffers, p.slurries, p.displacementFluids, v);
   const volumes = vols ?? calculateVolumes(p.wellData, prog.slurries, prog.displacementFluids[0]?.compressionCoeff ?? 1);
   const pr = calculatePressureProfile(
     p.wellData, prog.slurries, prog.buffers, p.drillingFluid, prog.displacementFluids, p.fractureGradient,
-    volumes.displacementVolumeWithCompression, p.flushTimeMin, p.flushVolumeM3, { fast: options?.fast??true },
+    volumes.displacementVolumeWithCompression, p.flushTimeMin, p.flushVolumeM3, { fast: options?.fast??true, optimizer:options?.optimizer },
   );
   options?.onPressure?.(pr);
   const violations: Violation[] = [];
@@ -400,9 +400,13 @@ export function optimizerRates(s: OptimizerSettings): number[] {
 /**
  * Перебор. onProgress вызывается после каждой оценки; между пачками управление отдаётся браузеру.
  */
+export interface OptimizerRunControl { timeBudgetMs?:number; now?:()=>number; }
 export async function runOptimizer(
-  p: ProgramInput, settings: OptimizerSettings, onProgress?: (done: number, total: number) => void,catalog?:OptimizerHardwareCatalog,
+  p: ProgramInput, settings: OptimizerSettings, onProgress?: (done: number, total: number) => void,catalog?:OptimizerHardwareCatalog,control:OptimizerRunControl={},
 ): Promise<OptimizerResult> {
+  const now=control.now??(()=>performance.now()),started=now(),budget=control.timeBudgetMs??Infinity;
+  const expired=()=>now()-started>=budget;
+  const searchExpired=()=>now()-started>=budget*.55;
   if(![settings.minRateLps,settings.maxRateLps,settings.rateStepLps,settings.maxCementRateLps,settings.jointLengthM,settings.pumpPressureLimitMPa,settings.marginReqMPa].every(Number.isFinite)||settings.minRateLps<=0||settings.maxRateLps<settings.minRateLps||settings.rateStepLps<=0||settings.jointLengthM<=0||settings.maxCementRateLps<settings.minRateLps||(settings.maxRateLps-settings.minRateLps)/settings.rateStepLps>200)throw Error('Проверьте пределы расходов, положительный шаг и длину трубы; допускается до 201 значения расхода.');
   const rates = optimizerRates(settings);
   const rates1 = rates.filter((q) => q <= settings.maxCementRateLps + 1e-9);
@@ -422,7 +426,7 @@ export async function runOptimizer(
   };
   const planningNotes=p.buffers.filter(b=>bufferPlanningDefaults(b)!==b).map(b=>b.name+': незаполненные свойства заменены стартовыми расчётными значениями: 1100 кг/м³ при отсутствии плотности, PV 20 сПз / YP 5 Па при отсутствии реологии. Их можно изменить во вводе.');
   const finish=async(result:OptimizerResult,candidates:VariantEval[]=result.evaluations)=>{
-    if(catalog){const complete=await completeOptimizerResults(p,settings,catalog,result,candidates,(pp,v,cp,full,capture)=>evaluateProgram(pp,v,settings,undefined,cp.profile,{preserveSteps:true,fast:!full,onPressure:capture}),applyVariant,pickVariants,(d,t)=>onProgress?.(70+30*d/t,100));onProgress?.(100,100);return complete;}
+    if(catalog){const complete=await completeOptimizerResults(p,settings,catalog,result,candidates,(pp,v,cp,full,capture)=>evaluateProgram(pp,v,settings,undefined,cp.profile,{preserveSteps:true,fast:!full,optimizer:true,onPressure:capture}),applyVariant,pickVariants,(d,t)=>onProgress?.(70+30*d/t,100),expired);onProgress?.(100,100);return complete;}
     const booster=await quality();result.highQuality=booster;
     if(booster?.ready&&booster.evaluation){
       const ev={...booster.evaluation,centralization:booster.centralization};
@@ -446,10 +450,11 @@ export async function runOptimizer(
   const grid = async (pp: ProgramInput, bos: OptimizerResult["bufferOptions"], plan?: CentralizerPlan): Promise<VariantEval[]> => {
     const c = cementIntervalCentralization(pp);
     const out: VariantEval[] = [];
-    for (const bo of bos) for (const q1 of rates1) {
+    search: for (const bo of bos) for (const q1 of rates1) {
       // Давление растёт с расходом продавки: если при q2 превышен предел ГРП/устья, при больших q2 — тоже
       let frictionFail: VariantEval | null = null;
       for (const q2 of rates) {
+        if(searchExpired()) break search;
         const v: ProgramVariant = { q1, q2, bufferVolumeM3: bo.volumeM3, bufferDensity: bo.density };
         if (frictionFail) {
           out.push({ ...frictionFail, variant: v, pruned: true, mrei: NaN, centralization: plan });
@@ -483,6 +488,12 @@ export async function runOptimizer(
   const stage2: VariantEval[] = [];
   for (const plan of plans) {
     const pp: ProgramInput = { ...p, wellData: { ...p.wellData, standoffProfile: plan.profile.map((r) => ({ md: r.md, standoffPct: r.standoff })) }, centralization: plan.profile };
+    if(expired())break;
+    if(searchExpired()){
+      const seed=(pre[0]?.ev??current).variant;
+      stage2.push({...evaluateProgram(pp,seed,settings,undefined,plan.profile),centralization:plan});
+      break;
+    }
     stage2.push(...await grid(pp, bos, plan));
   }
   const best = pickVariants(stage2, settings);

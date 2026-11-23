@@ -57,6 +57,13 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
   const stale=!!resultKey&&(resultKey!==cleaningInputKey(input)||resultSettingsKey!==JSON.stringify(settings));
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(()=>{
+    if(!running)return;
+    const started=Date.now();setElapsed(0);
+    const timer=setInterval(()=>setElapsed(Math.floor((Date.now()-started)/1000)),1000);
+    return ()=>clearInterval(timer);
+  },[running]);
   const [result, setResult] = useState<OptimizerResult | null>(null);
   const [bufIdx, setBufIdx] = useState(0);
   const [applied, setApplied] = useState<string | null>(null);
@@ -148,7 +155,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
         {settings.optimizeBuffer&&<ChemicalWashRecipes mud={input.drillingFluid} buffers={input.buffers} onMudChange={onDrillingFluidChange} onBuffersChange={onChemicalBuffersChange}/>}
         {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
         {stale&&<p role="alert" className="text-sm text-amber-700">Исходные данные изменились. Повторите автоподбор перед применением.</p>}
-        {running && <Progress value={progress} className="h-2" />}
+        {running && <div className="space-y-2"><Progress value={progress} className="h-2" /><p role="status" className="text-xs text-muted-foreground">{progress<70?'Подбор расходов и центрирования':'Проверка полной программы и оснастки'} · {elapsed} с. Лимит ожидания — 2 минуты.</p></div>}
       </Card>
 
       {result && (
@@ -156,7 +163,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
           {result.planningNotes?.map(note=><p className="text-xs text-amber-700" key={note}>{note}</p>)}
           {result.blocker && (
             <Card className="p-4 border-destructive/60">
-              <div className="text-sm text-red-600 font-medium">Нет ни одного допустимого варианта</div>
+              <div className="text-sm text-red-600 font-medium">{result.blocker.startsWith('Достигнут лимит времени')?'Подбор остановлен по времени':'Нет ни одного допустимого варианта'}</div>
               <div className="text-xs mt-1">{result.blocker}</div>
             </Card>
           )}
