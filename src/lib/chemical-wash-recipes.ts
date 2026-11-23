@@ -20,6 +20,14 @@ export const WASH_RECIPES:readonly WashRecipe[]=[
  {id:'obm-mes-reference',name:'РУО/синтетика · MES для сравнения',family:'nonaqueous',purpose:'Отдельно оценить действие MES на вашем БР',components:[{id:'wash-mes',pct:.05}],note:'Не переносить литературный процент очистки на этот состав.'},
 ];
 export const washComponent=(id:string)=>WASH_COMPONENTS.find(x=>x.id===id);
+/** Editable planning assumptions, never laboratory measurements or predicted chemistry properties. */
+export function defaultChemicalProperties(mud?:DrillingFluid){return {density:1100,rheology:{pv:20,yp:5,model:'pvyp' as const,testTemperatureC:mud?.rheology.testTemperatureC??40,testPressureMPaAbs:mud?.rheology.testPressureMPaAbs??.101325}};}
+export function bufferPlanningDefaults(b:BufferFluid):BufferFluid{
+ const r=b.rheology,empty=(!Number.isFinite(r.pv)||r.pv<=0)&&(!Number.isFinite(r.yp)||r.yp<=0)&&!r.fann&&(!r.model||r.model==='pvyp');
+ const density=Number.isFinite(b.density)&&b.density>0?b.density:1100;
+ if(!empty&&density===b.density)return b;
+ return {...b,density,...(empty?{rheology:defaultChemicalProperties().rheology}:{})};
+}
 export function washFamily(base:DrillingFluid['base']):WashFamily|undefined{return base==='water'?'water':base==='oil'||base==='synthetic'?'nonaqueous':undefined;}
 export function normalizeChemicalRecipeRecord(v:unknown):ChemicalRecipeRecord|undefined{
  if(!v||typeof v!=='object')return;
@@ -60,8 +68,8 @@ export function applyChemicalRecipe(target:BufferFluid,recipe:WashRecipe,doses:R
  if(recipe.family!==washFamily(mud.base))throw Error('Сначала выберите основу БР и соответствующую ей рецептуру.');
  const batch=recipeBatch(recipe,doses,1000);
  return {...target,name:'Химбуфер · '+recipe.name,bufferType:'chemical_wash',libraryReference:undefined,
-  // Previous measurements belong to a different composition. No rheological prediction from chemical names.
-  rheology:{pv:0,yp:0,model:'pvyp'},chemicalRecipe:{version:1,id:recipe.id,family:recipe.family,waterSource:''},
+  // A new composition receives planning defaults, without carrying over previous measurements.
+  density:target.density>0?target.density:1100,rheology:defaultChemicalProperties(mud).rheology,chemicalRecipe:{version:1,id:recipe.id,family:recipe.family,waterSource:''},
   additives:batch.rows.map(x=>({productId:x.id,name:x.name,sourceUrl:x.sourceUrl,technicalSpec:'Класс компонента; марку, активность и партию уточнить',percentage:x.pct,percentageType:'bwob',massKg:0})),
  };
 }
