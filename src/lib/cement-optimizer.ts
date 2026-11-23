@@ -411,6 +411,7 @@ export async function runOptimizer(
   const current = evaluateProgram(p, currentVariant(p), settings, undefined, centr);
 
   const available=catalog?compatibleHardware(p.wellData,catalog):undefined;
+  if(catalog&&settings.optimizeCentralizers&&!available.centralizers.length) return {current,evaluations:[],rates,rates1,bufferOptions:bOpts,best:[],blocker:`В справочнике нет подходящего центратора для ОК ${p.wellData.casingOD} мм и минимального прохода ${available.minBore.toFixed(1)} мм.`};
   const plans = settings.optimizeCentralizers ? centralizerPlans(p, settings,available?.centralizers.map(x=>x.spec)) : [];
   const quality=async()=>{
    if(!settings.optimizeBuffer)return undefined;
@@ -521,7 +522,7 @@ export function placeForStandoff(
     const b = Math.min(w.casingDepthMD, a + seg);
     let chosen = CPJ_STEPS[CPJ_STEPS.length - 1];
     for (const cpj of CPJ_STEPS) {
-      const prof = calculateCentralization(w, [{ id: "t", fromMD: a, toMD: b, centralizersPerJoint: cpj, jointLength, spec }], mudDensity)
+      const prof = calculateCentralization(w, [{ id: "t", fromMD: a, toMD: b, centralizersPerJoint: cpj, jointLength, spec }], mudDensity, undefined, undefined, {fromMD:a,toMD:b})
         .filter((r) => r.md >= a && r.md <= b);
       if (prof.length && Math.min(...prof.map((r) => r.standoff)) >= target) { chosen = cpj; break; }
     }
@@ -566,7 +567,12 @@ export function centralizerPlans(p: ProgramInput, settings: OptimizerSettings,ca
     const profile = calculateCentralization(w, intervals, mud);
     plans.push(summarize(target, `${selected.passport?.model?selected.passport.model+' · ':''}цель ${target}%`, intervals, profile));
   }
-  return plans;
+  const unique = new Map<string, CentralizerPlan>();
+  for (const plan of plans) {
+    const key=JSON.stringify(plan.intervals.map(iv=>[iv.fromMD,iv.toMD,iv.centralizersPerJoint,iv.jointLength,iv.spec]));
+    unique.set(key,plan);
+  }
+  return [...unique.values()];
 }
 
 function findBlocker(evs: VariantEval[]): string | undefined {

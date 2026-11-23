@@ -1,3 +1,4 @@
+import {runOptimizerInWorker} from '@/lib/optimizer-worker-client';
 import {buildProcessContract} from '@/lib/cementing-process';
 import EquipmentLibrary from './EquipmentLibrary';
 import {readEquipmentLibrary} from '@/lib/equipment-library';
@@ -8,7 +9,7 @@ import ChemicalWashRecipes from './ChemicalWashRecipes';
 import type {BufferFluid,DrillingFluid} from '@/lib/cementing-calculations';
 import {cleaningInputKey,type HighQualityScenario} from '@/lib/optimizer-cleaning';
 import QualityCleaningCard from './QualityCleaningCard';
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ import { Progress } from "@/components/ui/progress";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
-  runOptimizer, DEFAULT_OPTIMIZER_SETTINGS, type OptimizerResult, type OptimizerSettings, type ProgramInput,
+  DEFAULT_OPTIMIZER_SETTINGS, type OptimizerResult, type OptimizerSettings, type ProgramInput,
   type ProgramVariant, type VariantEval, type Violation, type CentralizerPlan,
 } from "@/lib/cement-optimizer";
 import { centralizerTypeLabels, type CentralizerType } from "@/lib/centralization-calculations";
@@ -47,6 +48,8 @@ const bufText = (e: VariantEval, base: { volume: number; density: number } | nul
 };
 
 export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,onApplyComplete,onChemicalBuffersChange,onDrillingFluidChange }: Props) {
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => () => controller.current?.abort(), []);
   const [settings, setSettings] = useState<OptimizerSettings>(DEFAULT_OPTIMIZER_SETTINGS);
   const [error,setError]=useState('');
   const [resultKey,setResultKey]=useState('');
@@ -67,16 +70,18 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
   const sync = (fn: () => void) => { try { flushSync(fn); } catch { fn(); } };
   const run = async () => {
     sync(() => { setRunning(true); setProgress(0); setResult(null); setApplied(null);setError('');setResultKey(cleaningInputKey(input));setResultSettingsKey(JSON.stringify(settings)); });
+    controller.current?.abort();
+    const job = new AbortController(); controller.current = job;
     let lastPct = -1;
     try {
       const hardware=optimizerHardwareCatalog(readEquipmentLibrary(localStorage).library);
-      const r = await runOptimizer(input, settings, (d, t) => {
+      const r = await runOptimizerInWorker(input, settings, hardware, (d, t) => {
         const pct = Math.round((d / t) * 100);
         if (pct !== lastPct) { lastPct = pct; sync(() => setProgress(pct)); }
-      },hardware);
+      },job.signal);
       const bestBuf = r.best[0] ? r.bufferOptions.findIndex((b) => b.volumeM3 === r.best[0].ev.variant.bufferVolumeM3 && b.density === r.best[0].ev.variant.bufferDensity) : 0;
       sync(() => { setResult(r); setBufIdx(Math.max(0, bestBuf)); });
-    } catch(e){setError(e instanceof Error?e.message:String(e));} finally {
+    } catch(e){if(!(e instanceof DOMException&&e.name==='AbortError'))setError(e instanceof Error?e.message:String(e));} finally {
       sync(() => setRunning(false));
     }
   };
@@ -105,7 +110,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
               выбирается лучшее качество цементирования по существующей модели CQI. Вытеснение — отдельный показатель, а не общая оценка качества.
             </p>
           </div>
-          <Button onClick={run} disabled={running}>{running ? `Считаю… ${progress}%` : "Подобрать программу"}</Button>
+          <div className="flex gap-2">{running&&<Button variant="outline" onClick={()=>controller.current?.abort()}>Отменить</Button>}<Button onClick={run} disabled={running}>{running ? `Считаю… ${progress}%` : "Подобрать программу"}</Button></div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {num("minRateLps", "Мин. расход, л/с")}
@@ -178,7 +183,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
                     ["Расход продавки", (e: VariantEval) => `${f(e.variant.q2, 0)} л/с`],
                     ["Разделительный буфер", (e: VariantEval) => bufText(e, baseBuf)],
                     ["Центрирование", (e: VariantEval) => e.centralization ? `${e.centralization.label}: ${e.centralization.countInCement} шт. в интервале цементирования, мин. отступ ${f(e.centralization.minStandoffPct, 0)}%` : (input.centralization?.length ? "как в программе" : "не рассчитано (принят отступ 67%)")],
-                    ["Турбулизаторы", (e:VariantEval)=>{const c=result.best.find(x=>x.ev===e)?.complete;return c?c.record.hardware.filter(h=>h.kind==='turbulator').map(h=>h.identity.model+': '+h.quantity+' шт.').join('; '):'как в исходной программе';}],
+                    ["Турбулизаторы", (e:VariantEval)=>{const c=result.best.find(x=>x.ev===e)?.complete;return c?c.record.hardware.filter(h=>h.kind==='turbulator').map(h=>h.identity.model+': '+h.quantity+' шт.').join('; ')||'Не устанавливаются: нет допустимого изделия или места':'как в исходной программе';}],
                     ["Качество цементирования CQI, баллы", (e: VariantEval) => f(e.cqi, 1)],
                     ["Минимальный CQI по интервалу", (e: VariantEval) => f(e.minCqi, 1)],
                     ["Зоны низкого качества CQI < 55", (e: VariantEval) => `${f(e.badQualityLengthM, 0)} м`],
