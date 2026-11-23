@@ -13,7 +13,7 @@ it('exports current swirl numbers and decay plots with an independent report sel
  const fluid={id:'mud',name:'Контрольный БР',density:1200,rheology:{pv:25,yp:5}};
  const result=calculateTurbulatorFlow(w,design.points[0],10,fluid,design);
  const c:CentralizationReportData={mode:'manual',intervals:[],results:[{md:1000,tvd:980,zenith:20,eccentricity:0,standoff:100,hasCentralizer:false,hasTurbulizer:true,turbulenceMultiplier:1,intervalId:null}],turbPoints:design.points,calculated:true,turbulatorDesign:design,turbulatorFluid:fluid,turbulatorRateLps:10,turbulatorFlows:[result]};
- const book=casingDesignWorkbook(w,c,'centralization');expect(book.SheetNames).toContain('Затухание');expect(book.Sheets['Турбулизаторы']['G2'].v).toBe(result.ratio);
+ const book=casingDesignWorkbook(w,c,'centralization');expect(book.SheetNames).toContain('Затухание');expect(book.Sheets['Турбулизаторы']['H2'].v).toBe(result.ratio);
  const make=async(enabled:boolean)=>{const doc=new Document({sections:[{children:buildCementingReportExtras(w,{centralization:c},'centralization',{turbulatorFlow:enabled})}]});const zip=await JSZip.loadAsync(await Packer.toBuffer(doc));return zip.file('word/document.xml')!.async('string');};
  expect(await make(true)).toContain('Контрольный БР');expect(await make(false)).not.toContain('Контрольный БР');
  const figs=buildCementingReportSvgs(w,{centralization:c},'centralization');expect(figs.some(f=>f.reportItem==='turbulatorFlow')).toBe(true);

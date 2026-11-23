@@ -297,7 +297,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
   const [reportOpen,setReportOpen]=useState(false),[reportBusy,setReportBusy]=useState(false),[reportError,setReportError]=useState('');
   const [mode, setMode] = useState<CalcMode>(wellData.centralizerDesign?.mode??"manual");
   const [intervals, setIntervals] = useState<CentralizerInterval[]>(() => wellData.centralizerDesign?.intervals??[newInterval(wellData.casingDepthMD)]);
-  const [results, setResults] = useState<CentralizationResult[] | null>(null);
+  const [results, setResults] = useState<CentralizationResult[] | null>(() => wellData.optimizerProgram && wellData.centralizerDesign?.intervals.length ? calculateCentralization(wellData, wellData.centralizerDesign.intervals, mudDensity) : null);
   const [selectedMD, setSelectedMD] = useState<number | null>(null);
   const [autoResults, setAutoResults] = useState<AutoPlacementInterval[] | null>(null);
 
@@ -376,7 +376,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
   }, []);
 
   const updateTurbPoint = useCallback((id: string, patch: Partial<TurbulatorPoint>) => {
-    setTurbPoints(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+    setTurbPoints(prev => prev.map(t => t.id === id ? { ...t, ...patch, ...(['bladesCount','bladeAngle','bladeHeight','lengthMm','bladeWidthMm','sleeveThicknessMm'].some(k=>k in patch)?{catalog:undefined}:{}) } : t));
   }, []);
 
   const handleAutoTurbulators = useCallback(() => {
@@ -471,7 +471,10 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
   const [appliedNonce, setAppliedNonce] = useState<number | null>(null);
   if (externalIntervals && appliedNonce !== externalIntervals.nonce) {
     const ivs = externalIntervals.intervals.map((iv) => ({ ...iv }));
+    previousGeometryKey.current = geometryKey;
     setAppliedNonce(externalIntervals.nonce);
+    if(ivs[0]){setAutoSpec(ivs[0].spec);setAutoSpecType(ivs[0].spec.type);setAutoJointLength(ivs[0].jointLength);}
+    setTargetStandoff(wellData.centralizerDesign?.targetStandoff??67);
     setMode("manual");
     setIntervals(ivs);
     setAutoResults(null);
@@ -775,6 +778,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="text-[10px] px-2">Изделие</TableHead>
                     <TableHead className="text-[10px] px-2">Глубина, м</TableHead>
                     <TableHead className="text-[10px] px-2">Лопасти</TableHead>
                     <TableHead className="text-[10px] px-2">Угол, °</TableHead>
@@ -788,6 +792,7 @@ export default function CentralizationSection({ wellData, mudDensity, drillingFl
                     const tf = turbFlows.find(f=>f.point.id===tp.id);
                     return (
                     <TableRow key={tp.id} onClick={()=>setTurbSelected(tp.id)} className={selectedTurb?.point.id===tp.id?"bg-primary/10":""}>
+                      <TableCell className="px-2 text-xs">{tp.catalog?`${tp.catalog.model} · v${tp.catalog.revision}`:"Ручная геометрия"}</TableCell>
                       <TableCell className="px-1 py-0.5">
                         <Input aria-label={`Глубина турбулизатора ${tp.id}`} type="number" value={tp.md || ""} onChange={e => updateTurbPoint(tp.id, { md: +e.target.value })} className="h-7 text-xs w-28" />
                       </TableCell>

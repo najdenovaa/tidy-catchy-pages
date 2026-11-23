@@ -2,10 +2,10 @@ import { normalizeEquipmentReference, normalizeLibraryCentralizer } from "./equi
 import { buildCentralizerJointSchedule } from "./cementing-report-data";
 import type { CentralizerSpec, CentralizerInterval } from "./centralization-calculations";
 import type { WellData } from './cementing-calculations';
-export type EquipmentKind = 'shoe' | 'floatCollar' | 'checkValve' | 'lowerPlug' | 'upperPlug' | 'centralizer' | 'stopCollar' | 'stageCollar' | 'basket';
+export type EquipmentKind = 'shoe' | 'floatCollar' | 'checkValve' | 'lowerPlug' | 'upperPlug' | 'centralizer' | 'stopCollar' | 'stageCollar' | 'basket' | 'turbulator';
 export const EQUIPMENT_LABELS: Record<EquipmentKind, string> = {
   shoe: 'Башмак', floatCollar: 'Поплавковая муфта / ЦКОД', checkValve: 'Обратный клапан', lowerPlug: 'Нижняя пробка', upperPlug: 'Верхняя пробка',
-  centralizer: 'Центратор', stopCollar: 'Стопорное кольцо', stageCollar: 'Муфта ступенчатого цементирования', basket: 'Цементировочная корзина',
+  turbulator:'Турбулизатор', centralizer: 'Центратор', stopCollar: 'Стопорное кольцо', stageCollar: 'Муфта ступенчатого цементирования', basket: 'Цементировочная корзина',
 };
 export interface EquipmentProduct {
   id: string; kind: EquipmentKind; model: string; manufacturer: string; sourceUrl: string; note: string;
@@ -40,6 +40,7 @@ export const EQUIPMENT_PRODUCTS: readonly EquipmentProduct[] = [
 export interface EquipmentSelection {
   libraryReference?: import("./equipment-library-reference").EquipmentLibraryReference;
   centralizerSpec?: CentralizerSpec;
+  bladesCount?:number;bladeAngle?:number;bladeHeight?:number;lengthMm?:number;bladeWidthMm?:number;sleeveThicknessMm?:number;
   id: string; productId?: string; kind: EquipmentKind; model: string; manufacturer: string; sourceUrl?: string;
   quantity: number; casingOD?: number; outerDiameter?: number; passageID?: number; thread?: string;
   depthMD?: number; maxTemperatureC?: number; backpressureMPa?: number; membraneRuptureMPa?: number;
@@ -73,7 +74,7 @@ export function normalizeEquipment(value: unknown): EquipmentSelection[] {
       const out: EquipmentSelection = { id: typeof x.id === 'string' ? x.id : `equipment-${i}`, kind: x.kind as EquipmentKind,
         model: typeof x.model === 'string' ? x.model : '', manufacturer: typeof x.manufacturer === 'string' ? x.manufacturer : '', quantity: typeof x.quantity === 'number' && Number.isFinite(x.quantity) ? x.quantity : 1 };
       for (const k of ['productId', 'sourceUrl', 'thread', 'passport', 'note'] as const) if (typeof x[k] === 'string') out[k] = x[k];
-      for (const k of ['casingOD', 'outerDiameter', 'passageID', 'depthMD', 'maxTemperatureC', 'backpressureMPa', 'membraneRuptureMPa', 'stopPressureMPa', 'basketSupportPct', 'basketBridgeMin', 'basketCarrierDensityGcm3', 'basketCapacityKN'] as const)
+      for (const k of ['casingOD', 'outerDiameter', 'passageID', 'depthMD', 'maxTemperatureC', 'backpressureMPa', 'membraneRuptureMPa', 'stopPressureMPa', 'basketSupportPct', 'basketBridgeMin', 'basketCarrierDensityGcm3', 'basketCapacityKN','bladesCount','bladeAngle','bladeHeight','lengthMm','bladeWidthMm','sleeveThicknessMm'] as const)
         if (typeof x[k] === 'number' && Number.isFinite(x[k]) && x[k] >= 0) out[k] = x[k];
       const ref=normalizeEquipmentReference(x.libraryReference);if(ref)out.libraryReference=ref;
       const spec=normalizeLibraryCentralizer(x.centralizerSpec);if(spec&&out.kind==='centralizer')out.centralizerSpec=spec;

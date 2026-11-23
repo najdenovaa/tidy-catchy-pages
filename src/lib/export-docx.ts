@@ -1027,6 +1027,13 @@ export async function exportToDocx(
   }
   add('rheology','Модели и измерения реологии',rheologyContent);
   add('hydraulics','Объёмы и гидравлика',hydraulicsContent);
+  if(wellData.optimizerProgram){
+    const r=wellData.optimizerProgram;
+    scheduleContent.push(noteParagraph('Полная программа автоподбора «'+r.variant+'» на момент применения: '+r.createdAt+'. CQI '+r.cqi.toFixed(1)+'; минимум '+r.minCqi.toFixed(1)+'. Зона MD '+r.targetFromMD.toFixed(2)+'–'+r.targetToMD.toFixed(2)+' м. После изменения исходных данных требуется повторный подбор.'));
+    scheduleContent.push(gridTable(['Буфер в целевой зоне','Расход, л/с','Контакт, мин','Проверенные глубины'],r.transit.map(t=>[t.name,t.minRateLps.toFixed(2)+'–'+t.maxRateLps.toFixed(2),t.minContactMin.toFixed(3),t.coveredDepths+'/'+t.totalDepths]))as any);
+    scheduleContent.push(gridTable(['Оснастка из справочника','Изготовитель','Количество','Источник / версия'],r.hardware.map(h=>[h.identity.model,h.identity.manufacturer,String(h.quantity),h.identity.source+' / v'+h.identity.revision]))as any);
+    scheduleContent.push(...r.notes.map(noteParagraph));
+  }
   if(wellData.optimizerCleaning){
     const d=wellData.optimizerCleaning;
     scheduleContent.push(noteParagraph('Сохранённый сценарий автоподбора «Высокое качество» на момент применения. После изменения исходных данных требуется повторный подбор; эти параметры не подтверждают текущее смытие в скважине.'));

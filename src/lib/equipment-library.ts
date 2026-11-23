@@ -3,7 +3,7 @@ import type {CentralizerSpec} from './centralization-calculations';
 import {normalizeLibraryCentralizer,centralizerSignature,stableEquipmentValue,type EquipmentLibraryReference} from './equipment-library-reference';
 export const EQUIPMENT_LIBRARY_KEY='deallsoft.equipment-library.v1';
 export const EQUIPMENT_BASES={passport:'Паспорт поставки / испытаний',catalog:'Каталог изготовителя',user:'Ввод технолога'} as const;
-export const EQUIPMENT_PROPERTY_NUMBERS=['casingOD','outerDiameter','passageID','maxTemperatureC','backpressureMPa','membraneRuptureMPa','stopPressureMPa','basketCapacityKN'] as const;
+export const EQUIPMENT_PROPERTY_NUMBERS=['casingOD','outerDiameter','passageID','maxTemperatureC','backpressureMPa','membraneRuptureMPa','stopPressureMPa','basketCapacityKN','bladesCount','bladeAngle','bladeHeight','lengthMm','bladeWidthMm','sleeveThicknessMm'] as const;
 export const EQUIPMENT_PROPERTY_TEXT=['productId','model','manufacturer','sourceUrl','thread','passport','note'] as const;
 export type EquipmentProperties=Omit<EquipmentSelection,'id'|'quantity'|'depthMD'|'basketSupportPct'|'basketBridgeMin'|'basketCarrierDensityGcm3'|'libraryReference'>;
 export interface EquipmentRevision {version:number;createdAt:string;source:string;basis:EquipmentLibraryReference['basis'];notes:string;properties:EquipmentProperties}
@@ -35,6 +35,7 @@ function validateRevision(r:EquipmentRevision){
   if(normalized.passport?.model!==p.model||(normalized.passport?.manufacturer??'')!==p.manufacturer)throw new Error('Модель и изготовитель центратора должны совпадать с паспортом.');
   if(normalized.passport?.restoringStandoff!==undefined&&(normalized.passport.restoringStandoff<=0||normalized.passport.restoringStandoff>=100))throw new Error('Степень центрирования при испытании должна быть больше 0 и меньше 100%.');
  }
+ if(p.kind==='turbulator'&&(!(p.casingOD>0)||!(p.outerDiameter>p.casingOD)||!(p.passageID>p.casingOD&&p.passageID<p.outerDiameter)||!(p.lengthMm>0)||!Number.isInteger(p.bladesCount)||p.bladesCount<1||p.bladesCount>24||!(p.bladeAngle>0&&p.bladeAngle<=75)||!(p.bladeHeight>0)||Math.abs(p.outerDiameter-p.casingOD-2*p.bladeHeight)>1.5))throw new Error('Для турбулизатора нужны согласованные ОК, OD/ID, длина, число рёбер, угол и вылет.');
  if(p.kind==='centralizer'&&!p.centralizerSpec)throw new Error('Для центратора заполните расчётный паспорт во вкладке «Центрирование» и сохраните его оттуда.');
  const canonical=equipmentProperties(normalizeEquipment([{id:'check',quantity:1,...p}])[0]);
  if(stableEquipmentValue(canonical)!==stableEquipmentValue(p))throw new Error('Свойства не соответствуют схеме оснастки. Глубины, количество и сценарий корзины не входят в библиотечную запись.');

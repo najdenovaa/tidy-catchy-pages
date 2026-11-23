@@ -1,3 +1,4 @@
+import type {CompleteProgramPlan} from '@/lib/optimizer-turnkey';
 import {bufferPlanningDefaults} from '@/lib/chemical-wash-recipes';
 import {cleaningInputKey,type HighQualityScenario} from '@/lib/optimizer-cleaning';
 import ProgramDisclosure from '@/components/ProgramDisclosure';
@@ -118,6 +119,7 @@ export default function Index() {
       return JSON.stringify(w.centralizerDesign)===JSON.stringify(centralizerDesign)&&JSON.stringify(w.turbulatorDesign)===JSON.stringify(data.turbulatorDesign)?w:{...w,centralizerDesign,turbulatorDesign:data.turbulatorDesign};
     });
     if(!data.calculated){setCentralizationResults(null);return;}
+    setCentralizerIntervals(data.intervals);
     if(appliedMaterialResults.current===data.results)return;
     appliedMaterialResults.current=data.results;
     const intervals=data.mode==='auto'&&data.autoResults&&data.autoSpec?data.autoResults.map((x,i)=>({id:`materials-${i}`,fromMD:x.fromMD,toMD:x.toMD,centralizersPerJoint:x.centralizersPerJoint,jointLength:data.jointLength??12,spec:data.autoSpec!})):data.intervals;
@@ -281,6 +283,16 @@ export default function Index() {
       fractureGradient, flushTimeMin, flushVolumeM3,
     }));
   }, [buffers, slurries, displacementFluids, wellData, drillingFluid, fractureGradient, flushTimeMin, flushVolumeM3]);
+
+  const applyCompleteProgram=useCallback((plan:CompleteProgramPlan)=>{
+    const live={wellData,drillingFluid,buffers,slurries,displacementFluids,fractureGradient,flushTimeMin,flushVolumeM3,centralizerIntervals};
+    if(!plan.evaluation.feasible||plan.sourceKey!==cleaningInputKey(live)){setExportError('Полная программа устарела. Повторите автоподбор.');return;}
+    const next=normalizeCementingSnapshot(plan.program),cp=plan.centralization;
+    setWellData(next.wellData);setDrillingFluid(next.drillingFluid);setBuffers(next.buffers);setSlurries(next.slurries);setDisplacementFluids(next.displacementFluids);
+    setCentralizationResults(cp.profile);setCentralizerIntervals(cp.intervals);
+    setExternalCentralizers({nonce:Date.now(),intervals:cp.intervals,turbulatorDesign:next.wellData.turbulatorDesign});
+    setCalcSnapshot(next);
+  },[wellData,drillingFluid,buffers,slurries,displacementFluids,fractureGradient,flushTimeMin,flushVolumeM3,centralizerIntervals]);
 
   const applyQualityCleaning=useCallback((plan:HighQualityScenario)=>{
     const live={wellData,drillingFluid,buffers,slurries,displacementFluids,fractureGradient,flushTimeMin,flushVolumeM3,centralizerIntervals};
@@ -815,6 +827,7 @@ export default function Index() {
                   }}
                   onApply={applyOptimizerVariant}
                   onApplyQuality={applyQualityCleaning}
+                  onApplyComplete={applyCompleteProgram}
                 />
               ) : (
                 <div className="text-center py-12 text-muted-foreground">Нажмите «РАСЧЁТ» для получения результатов</div>

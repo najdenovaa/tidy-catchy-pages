@@ -1,0 +1,115 @@
+import {centralizerSignature} from './equipment-library-reference';
+import {buildCentralizerJointSchedule} from './centralizer-layout';
+import {centralizerModelNotes} from './centralizer-response';
+import type {ProgramInput,OptimizerSettings,OptimizerResult,VariantEval,ProgramVariant,CentralizerPlan} from './cement-optimizer';
+import {compatibleHardware,type OptimizerHardwareCatalog,type CatalogTurbulator} from './optimizer-hardware';
+import type {CleaningEvaluator,CleaningTarget} from './optimizer-cleaning';
+import {cleaningTarget,cleaningDepths,cleaningFlow,cleaningInputKey,prepareCleaningProgram,placeCleaningTurbulators,remapCleaningLab} from './optimizer-cleaning';
+import {buildProcessContract} from './cementing-process';
+import {createAnnularGeometry} from './well-geometry';
+import {totalPipeVolumeForRange,interpolateTVD,getEffectiveTrajectory,type FlowRateStep,type PressureProfileResult} from './cementing-calculations';
+import {calculateCentralization,type TurbulatorPoint} from './centralization-calculations';
+import {defaultTurbulatorDesign,swirlRatioAt,type TurbulatorFlowResult} from './turbulator-flow';
+import {centralizerInventory} from './cementing-equipment';
+import {centralizerMaterialGeometryKey} from './materials-equipment-inventory';
+import type {OptimizerProgramRecord,BufferTransitRecord} from './optimizer-program-record';
+export interface CompleteProgramPlan {sourceKey:string;program:ProgramInput;centralization:CentralizerPlan;evaluation:VariantEval;record:OptimizerProgramRecord}
+export function projectCentralizerPlan(p:ProgramInput,catalog:OptimizerHardwareCatalog):CentralizerPlan|undefined{
+ const intervals=p.wellData.centralizerDesign?.intervals??p.centralizerIntervals??[];
+ const matches=(spec:typeof intervals[number]['spec'])=>catalog.centralizers.some(c=>centralizerSignature(c.spec)===centralizerSignature(spec));
+ if(!intervals.length||intervals.some(iv=>!matches(iv.spec)||(iv.pattern&&(!iv.specB||!matches(iv.specB)))))return;
+ const profile=calculateCentralization(p.wellData,intervals,p.drillingFluid.density),toc=Math.min(...p.slurries.map(s=>s.topDepthMD)),inside=profile.filter(x=>x.md>=toc),points=buildCentralizerJointSchedule(p.wellData.casingDepthMD,intervals).flatMap(x=>x.placements);
+ return {targetPct:null,label:'Заданная расстановка из справочника',intervals,profile,totalCount:points.length,countInCement:points.filter(x=>x.md>=toc).length,minStandoffPct:Math.min(...inside.map(x=>x.standoff)),avgStandoffPct:inside.reduce((n,x)=>n+x.standoff,0)/Math.max(1,inside.length)};
+}
+export function programTarget(p:ProgramInput):CleaningTarget{
+ if(p.wellData.reservoirLayers?.length)return cleaningTarget(p.wellData);
+ const w=p.wellData,top=Math.min(...p.slurries.map(s=>s.topDepthMD)),bottom=w.casingDepthMD,traj=getEffectiveTrajectory(w);
+ if(!Number.isFinite(top)||top>=bottom)throw Error('Не задан положительный интервал цементирования.');
+ return {topMD:top,bottomMD:bottom,topTVD:interpolateTVD(top,traj),bottomTVD:interpolateTVD(bottom,traj),volumeM3:createAnnularGeometry(w,bottom).volume(top,bottom),aboveActualM:0,layers:['Интервал цементирования (пласты не заданы)']};
+}
+/** Surface material and material crossing the target may differ. All switches use cumulative pumped volume. */
+export function scheduleIntervalProgram(p:ProgramInput,t:CleaningTarget,qHeavy:number,qCement:number,qDisp:number,resize:boolean,contactMin:number):ProgramInput{
+ const geometry=createAnnularGeometry(p.wellData,p.wellData.casingDepthMD),pipe=totalPipeVolumeForRange(0,p.wellData.casingDepthMD,p.wellData.casingOD,p.wellData.casingWall,p.wellData.casingSections);
+ const buffers=p.buffers.map(b=>{let v=b.volume;if(resize&&b.bufferType==='chemical_wash')v=Math.max(v,t.volumeM3,.6*contactMin);if(resize&&(b.bufferType==='weighted'||b.bufferType==='elastic_spacer'))v=t.volumeM3+Math.max(v,.001);
+  if(Math.abs(v-b.volume)>1e-6&&b.additives.some(a=>a.percentage<=0&&a.massKg>0))throw Error(b.name+': абсолютные массы добавок не масштабируются. Задайте концентрации.');
+  const k=b.volume>0?v/b.volume:1;return {...b,volume:v,flowRateSteps:b.flowRateSteps.map(s=>({...s,volumeM3:s.volumeM3*k}))};});
+ let before=0;const windows=buffers.map((b,i)=>{const start=b.bufferType==='chemical_wash'?before:before+pipe+geometry.volume(t.bottomMD,p.wellData.casingDepthMD),end=before+b.volume+pipe+geometry.volume(t.topMD,p.wellData.casingDepthMD);before+=b.volume;return {i,b,start,end};});
+ const base={...p,buffers},contract=buildProcessContract(base);if(!contract.canRun)throw Error(contract.issues.filter(x=>x.severity==='error').map(x=>x.message).join('; '));
+ const limits=windows.flatMap(x=>[x.start,x.end]),steps=new Map<string,FlowRateStep[]>();let injected=0;
+ const original=p.displacementFluids.flatMap((d,i)=>d.flowRateSteps.map((s,j)=>({s,i,j}))),last=original.at(-1),landing=last&&original.length>1&&last.s.rateLps<Math.max(...original.slice(0,-1).map(x=>x.s.rateLps))?last:undefined;
+ for(const st of contract.stages){if(st.destination!=='well')continue;const end=injected+st.volumeM3,cuts=[injected,...limits.filter(v=>v>injected+1e-9&&v<end-1e-9),end].sort((a,b)=>a-b),out=steps.get(st.fluidId)??[];
+  for(let k=1;k<cuts.length;k++){const mid=(cuts[k]+cuts[k-1])/2,active=windows.filter(w=>mid>=w.start&&mid<w.end);let q=active.some(w=>w.b.bufferType==='chemical_wash')?10:active.some(w=>w.b.bufferType==='weighted'||w.b.bufferType==='elastic_spacer')?qHeavy:st.kind==='displacement'?qDisp:qCement;
+   if(st.kind==='displacement'&&landing&&st.fluidId==='displacement:'+landing.i&&st.stepIndex===landing.j)q=Math.min(q,landing.s.rateLps);
+   out.push({volumeM3:cuts[k]-cuts[k-1],rateLps:q,volumeMode:'manual'});
+  }steps.set(st.fluidId,out);injected=end;
+ }
+ if(windows.some(w=>w.end>injected+1e-6))throw Error('До Стоп хвост буфера не проходит целевую зону. Проверьте размещение цемента.');
+ return {...base,buffers:buffers.map((b,i)=>({...b,flowRateSteps:steps.get('buffer:'+i)??[]})),slurries:p.slurries.map((s,i)=>({...s,flowRateSteps:steps.get('cement:'+i)??[]})),displacementFluids:p.displacementFluids.map((d,i)=>({...d,flowRateSteps:steps.get('displacement:'+i)??[]}))};
+}
+export function auditProgramBuffers(p:ProgramInput,t:CleaningTarget,r:PressureProfileResult):{transit:BufferTransitRecord[];issues:string[]}{
+ const depths=cleaningDepths(p.wellData,t),issues=new Set<string>(),transit:BufferTransitRecord[]=[];
+ for(const [index,b] of p.buffers.entries()){
+  const id='buffer:'+index,seconds=depths.map(()=>0),heavySeconds=depths.map(()=>0),seen=new Set<number>();let lo=Infinity,hi=0,minRegime=Infinity,maxRegime=0;
+  for(let i=1;i<r.points.length;i++){const f=r.points[i],prev=r.points[i-1],dt=(f.time-prev.time)*60;if(!(dt>0))continue;
+   const at=(cols:typeof f.transportColumns.annulus,md:number)=>cols?.some(c=>c.fluidId===id&&md>=c.topMD-1e-7&&md<=c.botMD+1e-7);
+   for(let j=0;j<depths.length;j++){const md=depths[j];if(!at(f.transportColumns?.annulus,md))continue;seen.add(j);const q=f.annularReturnRate,flow=cleaningFlow(p.wellData,b,md,q);lo=Math.min(lo,q);hi=Math.max(hi,q);minRegime=Math.min(minRegime,flow.regime);maxRegime=Math.max(maxRegime,flow.regime);
+    if(b.bufferType==='chemical_wash'&&(Math.abs(q-10)>.02||flow.regime!==0))issues.add(b.name+': химбуфер должен проходить зону ламинарно при 10 л/с.');
+    if(at(prev.transportColumns?.annulus,md)){seconds[j]+=dt;if(flow.regime>=.5)heavySeconds[j]+=dt;}
+   }
+  }
+  if(seen.size!==depths.length||Math.min(...seconds)<=0)issues.add(b.name+': проход/контакт не подтверждён по всей целевой зоне нативными кадрами.');
+  if((b.bufferType==='weighted'||b.bufferType==='elastic_spacer')&&Math.min(...heavySeconds)<=0)issues.add(b.name+': нет переходного/турбулентного прохода всей целевой зоны.');
+  transit.push({name:b.name,fluidId:id,minRateLps:Number.isFinite(lo)?lo:0,maxRateLps:hi,minContactMin:Math.min(...seconds)/60,minRegime:Number.isFinite(minRegime)?minRegime:0,maxRegime,coveredDepths:seen.size,totalDepths:depths.length});
+ }
+ return {transit,issues:[...issues]};
+}
+function hardwareRecord(depth:number,cp:CentralizerPlan,product:CatalogTurbulator,points:TurbulatorPoint[]):OptimizerProgramRecord['hardware']{
+ const groups=new Map<string,OptimizerProgramRecord['hardware'][number]>();
+ for(const joint of buildCentralizerJointSchedule(depth,cp.intervals))for(const {spec} of joint.placements){const p=spec.passport,ref=spec.libraryReference,key=centralizerSignature(spec);const row=groups.get(key)??{kind:'centralizer' as const,quantity:0,identity:{id:ref?.entryId??p?.model??spec.type,model:p?.model??spec.type,manufacturer:p?.manufacturer??'Не указан',source:ref?.source??p?.source??'Паспорт проекта',sourceUrl:p?.sourceUrl,revision:ref?.revision??1,basis:ref?.basis??'catalog'}};row.quantity++;groups.set(key,row);}
+ const central=[...groups.values()];
+ return [...central,{kind:'turbulator',quantity:points.length,identity:product.identity}];
+}
+export async function completeOptimizerResults(p:ProgramInput,s:OptimizerSettings,catalog:OptimizerHardwareCatalog,result:OptimizerResult,candidates:VariantEval[],evaluate:CleaningEvaluator,apply:(b:ProgramInput['buffers'],c:ProgramInput['slurries'],d:ProgramInput['displacementFluids'],v:ProgramVariant)=>Pick<ProgramInput,'buffers'|'slurries'|'displacementFluids'>,choose:(ev:VariantEval[],s:OptimizerSettings)=>OptimizerResult['best'],progress?:(done:number,total:number)=>void):Promise<OptimizerResult>{
+ const failures=new Set<string>(),available=compatibleHardware(p.wellData,catalog);let target:CleaningTarget;
+ try{target=programTarget(p);}catch(e){return {...result,best:[],blocker:(e as Error).message};}
+ if(!available.centralizers.length||!available.turbulators.length)return {...result,best:[],blocker:`Полная программа: в справочнике нет подходящего ${!available.centralizers.length?'центратора':'турбулизатора'} для ОК ${p.wellData.casingOD} мм и минимального прохода ${available.minBore.toFixed(1)} мм. Добавьте паспорт/типоразмер в библиотеку оснастки.`};
+ const eligible=candidates.filter(e=>e.feasible&&!e.pruned&&e.centralization?.intervals.length),byQ=[...eligible].sort((a,b)=>(b.cqi??0)-(a.cqi??0)),byMargin=[...eligible].sort((a,b)=>b.minMarginMPa-a.minMarginMPa),byTime=[...eligible].sort((a,b)=>a.jobTimeMin-b.jobTimeMin);
+ const queue:VariantEval[]=[],seen=new Set<string>();const add=(e:VariantEval)=>{const key=JSON.stringify([e.variant,e.centralization?.intervals]);if(!seen.has(key)){seen.add(key);queue.push(e);}};
+ for(const sorted of [byQ,byMargin,byTime])sorted.slice(0,3).forEach(add);
+ const plans=new Set<CentralizerPlan>();for(const e of byQ)if(!plans.has(e.centralization)){plans.add(e.centralization);add(e);}
+ if(!queue.length)return {...result,best:[],blocker:result.blocker??'Для полной программы нужна рассчитанная расстановка из справочника. Включите подбор центрирования.'};
+ const pool:VariantEval[]=[],records=new Map<VariantEval,CompleteProgramPlan>(),prepared=s.optimizeBuffer?prepareCleaningProgram(p):{program:p,notes:[]},layoutCache=new Map<string,{design:ProgramInput['wellData']['turbulatorDesign'];flows:TurbulatorFlowResult[]}>();
+ const heavyRates:number[]=[];for(let q=s.minRateLps;q<=s.maxRateLps+1e-9;q+=s.rateStepLps)heavyRates.push(q);
+ let done=0;const total=queue.length*available.turbulators.length*heavyRates.length;
+ for(const seed of queue)for(const product of available.turbulators)for(const qHeavy of heavyRates){done++;progress?.(done,total);try{
+  const cp=seed.centralization,base={...prepared.program,...apply(prepared.program.buffers,prepared.program.slurries,prepared.program.displacementFluids,seed.variant)},w={...base.wellData,standoffProfile:cp.profile.map(x=>({md:x.md,standoffPct:x.standoff}))};
+  const hasHeavy=base.buffers.some(b=>b.bufferType==='weighted'||b.bufferType==='elastic_spacer');if(!hasHeavy&&qHeavy!==seed.variant.q1)continue;
+  const heavy=base.buffers.find(b=>b.bufferType==='weighted'||b.bufferType==='elastic_spacer')??base.buffers.at(-1)??{...p.drillingFluid,volume:0,additives:[],flowRateSteps:[]};
+  const key=JSON.stringify([product,cp.intervals,qHeavy,heavy.density,heavy.rheology]);let layout=layoutCache.get(key);
+  if(!layout){const centers=buildCentralizerJointSchedule(p.wellData.casingDepthMD,cp.intervals).flatMap(j=>j.placements),length=(product.point.lengthMm??180)/1000;
+   const freeMD=(wanted:number,previous?:TurbulatorPoint)=>{
+    const max=previous?previous.md-length-.02:p.wellData.casingDepthMD-length;
+    let md=Math.min(wanted,max);
+    const collision=(v:number)=>centers.find(c=>v<(c.md+(c.spec.passport?.length??0)/2000+.01)&&v+length>(c.md-(c.spec.passport?.length??0)/2000-.01));
+    for(let i=0;i<centers.length+1;i++){const hit=collision(md);if(!hit)return md;md=hit.md+(hit.spec.passport?.length??0)/2000+.02;if(md>max)break;}
+    if(!previous){md=Math.min(wanted,max);for(let i=0;i<centers.length+1;i++){const hit=collision(md);if(!hit&&md>target.topMD)return md;if(!hit)break;md=hit.md-(hit.spec.passport?.length??0)/2000-length-.02;}}
+    throw Error('Нет свободного места под турбулизатор в пределах расчётного шага.');
+   };
+   const flows:TurbulatorFlowResult[]=[],design=placeCleaningTurbulators({...w,turbulatorDesign:{...defaultTurbulatorDesign(),points:[{...product.point,id:'template',md:target.bottomMD}]}},target,heavy,qHeavy,s.jointLengthM,f=>flows.push(f),freeMD);if(design.points.some(t=>centers.some(c=>t.md<c.md+(c.spec.passport?.length??0)/2000+.01&&t.md+(t.lengthMm??180)/1000>c.md-(c.spec.passport?.length??0)/2000-.01)))throw Error('Выбранные центраторы и турбулизаторы перекрываются по длине.');
+   if(design.points.some((t,i)=>i>0&&t.md-design.points[i-1].md<(t.lengthMm??180)/1000+.01))throw Error('Расчётный шаг турбулизаторов меньше длины изделия.');
+   design.fluidId=base.buffers.includes(heavy)?'buffer-'+base.buffers.indexOf(heavy):'mud';layout={design,flows};layoutCache.set(key,layout);}
+  const profile=cp.profile.map(row=>({...row,hasTurbulizer:layout.flows.some(f=>swirlRatioAt(f,row.md)>0)})),centralization={...cp,profile};
+  let program=scheduleIntervalProgram({...base,wellData:{...w,turbulatorDesign:layout.design}},target,qHeavy,seed.variant.q1,seed.variant.q2,s.optimizeBuffer,s.chemicalContactMin??10);
+  program={...program,wellData:{...program.wellData,fluidInteractionLab:remapCleaningLab(p,program)}};
+  const contract=buildProcessContract(program);if(contract.stages.some(st=>(st.kind==='cement'||st.kind==='buffer')&&st.rateLps>s.maxCementRateLps+.001))throw Error('Ступень на буфере/цементе превышает заданную производительность затворения.');
+  let pressure:PressureProfileResult|undefined;const ev={...evaluate(program,seed.variant,centralization,true,r=>{pressure=r;}),centralization};
+  if(!ev.feasible){ev.violations.forEach(x=>failures.add(x));continue;}if(!pressure)throw Error('Нет нативного расчёта программы.');
+  const audit=auditProgramBuffers(program,target,pressure);if(audit.issues.length){audit.issues.forEach(x=>failures.add(x));continue;}
+  const nextWell={...program.wellData,optimizerCleaning:undefined,centralizerDesign:{mode:'manual' as const,targetStandoff:cp.targetPct??Math.max(10,Math.min(99,cp.minStandoffPct)),jointLength:s.jointLengthM,autoSpec:cp.intervals[0].spec,intervals:cp.intervals}};
+  nextWell.centralizerMaterials={geometryKey:centralizerMaterialGeometryKey(nextWell),items:centralizerInventory(nextWell.casingDepthMD,cp.intervals)};
+  const record:OptimizerProgramRecord={version:1,variant:'',createdAt:new Date().toISOString(),cqi:ev.cqi??0,minCqi:ev.minCqi??0,targetFromMD:target.topMD,targetToMD:target.bottomMD,bufferBoost:s.optimizeBuffer,transit:audit.transit,hardware:hardwareRecord(p.wellData.casingDepthMD,centralization,product,layout.design.points),notes:[...prepared.notes,...[...new Set(cp.intervals.flatMap(iv=>centralizerModelNotes(iv.spec)))],'CQI — расчётная оценка. Ступени и проход буферов проверены нативной гидравликой.','Источник оснастки сохранён по конкретной версии. Неуказанные в паспорте силовые/геометрические параметры остаются допущениями существующей модели.']};
+  program={...program,wellData:{...nextWell,optimizerProgram:record}};pool.push(ev);records.set(ev,{sourceKey:cleaningInputKey(p),program,centralization,evaluation:ev,record});
+ }catch(e){failures.add((e as Error).message);}finally{if(done%2===0)await new Promise(r=>setTimeout(r,0));}}
+ const best=choose(pool,s).map(item=>{const complete=records.get(item.ev);complete.record={...complete.record,variant:item.label};complete.program={...complete.program,wellData:{...complete.program.wellData,optimizerProgram:complete.record}};return {...item,complete,hint:item.hint+' Полная программа: интервальные расходы и оснастка из справочника.'};});
+ return {...result,best,highQuality:undefined,centralizerStudy:undefined,planningNotes:[...(result.planningNotes??[]),`Проверено полных вариантов: ${pool.length}. Источники оснастки и фактический проход буферов доступны у каждого результата.`],blocker:best.length?undefined:'Полная программа не найдена: '+[...failures].slice(0,8).join('; ')};
+}
