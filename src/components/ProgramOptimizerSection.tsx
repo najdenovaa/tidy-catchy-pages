@@ -95,7 +95,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
             <p className="text-xs text-muted-foreground max-w-3xl">
               Перебираются расходы буфера/цемента и продавки и параметры разделительного буфера. Каждый вариант прогоняется через полную
               симуляцию закачки: давление на каждом пласте и на забое, давление на устье, время загустевания, проявление. Из допустимых
-              выбирается лучшее вытеснение бурового раствора — по подвижности раствора на узкой стороне эксцентричного зазора.
+              выбирается лучшее качество цементирования по существующей модели CQI. Вытеснение — отдельный показатель, а не общая оценка качества.
             </p>
           </div>
           <Button onClick={run} disabled={running}>{running ? `Считаю… ${progress}%` : "Подобрать программу"}</Button>
@@ -110,7 +110,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
           {num("rotationRpm", "Вращение, об/мин")}
           <label className="flex items-end gap-2 text-xs pb-2">
             <input type="checkbox" checked={settings.optimizeBuffer} onChange={(e) => setSettings({ ...settings, optimizeBuffer: e.target.checked })} />
-            Подбирать буфер
+            Усилить качество подбором буферов
           </label>
         </div>
         <div className="flex flex-wrap items-end gap-3 text-xs">
@@ -128,9 +128,9 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
           </label>
           <div className="w-32">{num("jointLengthM", "Длина трубы, м")}</div>
         </div>
-        <p className="text-xs">«Высокое качество»: пласты и 150 м TVD выше; химбуфер 10 л/с с проверкой ламинарности и испытанным смытием ≥85%; затем тяжёлый буфер в переходном/турбулентном режиме, центраторы и турбулизаторы. Проверяется отдельно от обычного перебора.</p>
+        <p className="text-xs">Основной результат — «Лучшее качество» с учётом CQI, центрирования, условий контакта и гидравлических ограничений. Буферы — дополнительное усиление: пласты +150 м TVD, химическая и тяжёлая пачки, оснастка и ступенчатая подача. Оно включается в основной вариант, если улучшает расчётную оценку.</p>
         {settings.optimizeBuffer&&<div className="max-w-sm">{num('chemicalContactMin','Стартовое время контакта химбуфера, мин')}</div>}
-        <p className="text-xs text-muted-foreground">{settings.optimizeBuffer?'Недостающие параметры буферов заполняются стартовыми значениями. Лабораторные протоколы необязательны для расчёта.':'Подбор буферов и двухступенчатая очистка отключены. Считаются расходы на заданных буферах.'}</p>
+        <p className="text-xs text-muted-foreground">{settings.optimizeBuffer?'Недостающие параметры буферов заполняются стартовыми значениями. Лабораторные протоколы необязательны для расчёта.':'Буферное усиление отключено. Подбор лучшего качества продолжается на заданных буферах.'}</p>
         {settings.optimizeBuffer&&<ChemicalWashRecipes mud={input.drillingFluid} buffers={input.buffers} onMudChange={onDrillingFluidChange} onBuffersChange={onChemicalBuffersChange}/>}
         {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
         {stale&&<p role="alert" className="text-sm text-amber-700">Исходные данные изменились. Повторите автоподбор перед применением.</p>}
@@ -147,9 +147,9 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
             </Card>
           )}
 
-          {settings.optimizeBuffer&&result.highQuality&&<QualityCleaningCard value={result.highQuality} disabled={stale||running||!onApplyQuality} onApply={()=>{if(!stale&&result.highQuality?.ready){onApplyQuality?.(result.highQuality);setApplied('Высокое качество');}}}/>}
-          <Card className="p-4 space-y-3">
-            <h3 className="font-semibold">Стандартный перебор: сравнение вариантов</h3>
+
+          <Card className="p-4 space-y-3" data-testid="optimizer-comparison">
+            <h3 className="font-semibold">Сравнение программ цементирования</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="bg-muted/50">
@@ -169,18 +169,21 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
                     ["Расход продавки", (e: VariantEval) => `${f(e.variant.q2, 0)} л/с`],
                     ["Разделительный буфер", (e: VariantEval) => bufText(e, baseBuf)],
                     ["Центрирование", (e: VariantEval) => e.centralization ? `${e.centralization.label}: ${e.centralization.countInCement} шт. в интервале цементирования, мин. отступ ${f(e.centralization.minStandoffPct, 0)}%` : (input.centralization?.length ? "как в программе" : "не рассчитано (принят отступ 67%)")],
+                    ["Качество цементирования CQI, баллы", (e: VariantEval) => f(e.cqi, 1)],
+                    ["Минимальный CQI по интервалу", (e: VariantEval) => f(e.minCqi, 1)],
+                    ["Зоны низкого качества CQI < 55", (e: VariantEval) => `${f(e.badQualityLengthM, 0)} м`],
                     ["Индекс вытеснения", (e: VariantEval) => `${f(e.mrei, 0)}%`],
                     ["Застойный раствор на узкой стороне", (e: VariantEval) => `${f(e.channelLengthM, 0)} м`],
                     ["Мин. запас до ГРП/поглощения", (e: VariantEval) => `${f(e.minMarginMPa, 2)} МПа · ${e.minMarginAt}`],
                     ["Макс. давление на устье", (e: VariantEval) => `${f(e.maxSurfaceMPa, 1)} МПа`],
                     ["Время операции", (e: VariantEval) => `${f(e.jobTimeMin, 0)} мин`],
                     ["Запас по загустеванию", (e: VariantEval) => thick(e.thickeningReserveMin)],
-                    ["Ограничивает качество", (e: VariantEval) => e.limitingFactor],
+                    ["Ограничивает вытеснение", (e: VariantEval) => e.limitingFactor],
                   ].map(([label, fn]) => (
                     <tr key={label as string} className="border-t border-border/40">
                       <td className="p-1.5 text-muted-foreground">{label as string}</td>
                       {cols.map((c, i) => (
-                        <td key={c.label} className={`p-1.5 ${i > 0 ? "font-medium" : ""}`}>{(fn as (e: VariantEval) => string)(c.ev)}</td>
+                        <td key={c.label} className={`p-1.5 ${i > 0 ? "font-medium" : ""}`}>{c.cleaning?.program&&(label==='Расход буфера и цемента'||label==='Расход продавки')?[...new Set((label==='Расход продавки'?c.cleaning.program.displacementFluids:[...c.cleaning.program.buffers,...c.cleaning.program.slurries]).flatMap(x=>x.flowRateSteps.map(s=>s.rateLps)))].sort((a,b)=>a-b).join(' / ')+' л/с (ступени)':c.cleaning?.program&&label==='Разделительный буфер'?c.cleaning.program.buffers.map(b=>`${b.name}: ${f(b.volume,1)} м³ · ${f(b.density,0)} кг/м³`).join('; '):(fn as (e: VariantEval) => string)(c.ev)}</td>
                       ))}
                     </tr>
                   ))}
@@ -199,7 +202,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
                     {cols.map((c, i) => (
                       <td key={c.label} className="p-1.5">
                         {i > 0 && (
-                          <Button disabled={stale||running} size="sm" variant={applied === c.label ? "secondary" : "default"} onClick={() => { onApply(c.ev.variant, c.ev.centralization); setApplied(c.label); }}>
+                          <Button disabled={stale||running||!!c.cleaning&&!onApplyQuality} size="sm" variant={applied === c.label ? "secondary" : "default"} onClick={() => { if(c.cleaning)onApplyQuality?.(c.cleaning);else onApply(c.ev.variant, c.ev.centralization); setApplied(c.label); }}>
                             {applied === c.label ? "Применено ✓" : "Применить"}
                           </Button>
                         )}
@@ -217,6 +220,8 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
             ) : null}
           </Card>
 
+          <p className="text-xs text-muted-foreground">CQI — расчётная сравнительная оценка по действующей модели, не измеренное качество крепи и не процент смытия.</p>
+          {settings.optimizeBuffer&&result.highQuality&&<details className="rounded border" data-testid="buffer-boost-details"><summary>Дополнительное буферное усиление: расчёт и составы</summary><div className="p-3 space-y-2"><p className="text-xs">{result.best[0]?.cleaning?'Усиление включено в «Лучшее качество» и применяется общей кнопкой этого варианта.':result.highQuality.ready?'Буферный вариант проверен, но не улучшает общую оценку относительно выбранной программы.':'Буферный вариант не прошёл дополнительные проверки; основной подбор качества сохраняется.'}</p><QualityCleaningCard value={result.highQuality} disabled={true} onApply={()=>{}} detailsOnly/></div></details>}
           {result.centralizerStudy && <CentralizerStudyCard study={result.centralizerStudy} />}
 
           <RateMap result={result} bufIdx={bufIdx} setBufIdx={setBufIdx} />
@@ -236,15 +241,15 @@ function RateMap({ result, bufIdx, setBufIdx }: { result: OptimizerResult; bufId
     return m;
   }, [result, bo]);
   const feas = [...grid.values()].filter((e) => e.feasible);
-  const lo = feas.length ? Math.min(...feas.map((e) => e.mrei)) : 0;
-  const hi = feas.length ? Math.max(...feas.map((e) => e.mrei)) : 100;
-  const bestKeys = new Set(result.best.map((b) => `${b.ev.variant.q1}|${b.ev.variant.q2}|${b.ev.variant.bufferVolumeM3}|${b.ev.variant.bufferDensity}`));
+  const lo = feas.length ? Math.min(...feas.map((e) => e.cqi??0)) : 0;
+  const hi = feas.length ? Math.max(...feas.map((e) => e.cqi??0)) : 100;
+  const bestKeys = new Set(result.best.filter(b=>!b.cleaning).map((b) => `${b.ev.variant.q1}|${b.ev.variant.q2}|${b.ev.variant.bufferVolumeM3}|${b.ev.variant.bufferDensity}`));
   const cur = result.current.variant;
 
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="font-semibold">Карта допустимых расходов</h3>
+        <h3 className="font-semibold">Базовая карта качества CQI</h3>
         <div className="flex gap-1 flex-wrap">
           {result.bufferOptions.map((b, i) => (
             <button key={b.label} onClick={() => setBufIdx(i)}
@@ -271,9 +276,9 @@ function RateMap({ result, bufIdx, setBufIdx }: { result: OptimizerResult; bufId
                   if (!e) return <td key={q2} />;
                   const isBest = bestKeys.has(`${q1}|${q2}|${bo.volumeM3}|${bo.density}`);
                   const isCur = bufIdx === 0 && cur.q1 === q1 && cur.q2 === q2;
-                  const t = hi > lo ? (e.mrei - lo) / (hi - lo) : 1;
+                  const t = hi > lo ? ((e.cqi??0) - lo) / (hi - lo) : 1;
                   const title = e.feasible
-                    ? `Цемент ${q1} л/с, продавка ${q2} л/с\nИндекс вытеснения ${f(e.mrei, 0)}%\nЗапас ${f(e.minMarginMPa, 2)} МПа (${e.minMarginAt})\nУстье ${f(e.maxSurfaceMPa, 1)} МПа · ${f(e.jobTimeMin, 0)} мин`
+                    ? `Цемент ${q1} л/с, продавка ${q2} л/с\nКачество CQI ${f(e.cqi, 1)} баллов\nЗапас ${f(e.minMarginMPa, 2)} МПа (${e.minMarginAt})\nУстье ${f(e.maxSurfaceMPa, 1)} МПа · ${f(e.jobTimeMin, 0)} мин`
                     : `Цемент ${q1} л/с, продавка ${q2} л/с\nНедопустимо: ${e.violations.map((v) => VIOL_CODE[v].label).join("; ")}`;
                   return (
                     <td key={q2} title={title}
@@ -281,7 +286,7 @@ function RateMap({ result, bufIdx, setBufIdx }: { result: OptimizerResult; bufId
                       style={e.feasible
                         ? { background: `hsl(var(--primary) / ${0.15 + 0.75 * t})`, color: t > 0.55 ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))" }
                         : { background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }}>
-                      {e.feasible ? f(e.mrei, 0) : e.violations.map((v) => VIOL_CODE[v].code).join("")}
+                      {e.feasible ? f(e.cqi, 1) : e.violations.map((v) => VIOL_CODE[v].code).join("")}
                     </td>
                   );
                 })}
@@ -291,7 +296,7 @@ function RateMap({ result, bufIdx, setBufIdx }: { result: OptimizerResult; bufId
         </table>
       </div>
       <div className="text-[11px] text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
-        <span>Число в клетке — индекс вытеснения, %; темнее — лучше</span>
+        <span>Число в клетке — CQI, баллы; темнее — лучше. Карта базовых расходов без дополнительной ступенчатой программы.</span>
         <span><Badge variant="outline" className="text-[10px] px-1 py-0">Г</Badge> ГРП/поглощение</span>
         <span><Badge variant="outline" className="text-[10px] px-1 py-0">З</Badge> загустевание</span>
         <span><Badge variant="outline" className="text-[10px] px-1 py-0">У</Badge> давление на устье</span>

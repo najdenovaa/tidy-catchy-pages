@@ -11,7 +11,12 @@ await page.evaluate(async()=>{
 });
 await page.reload();await page.getByRole('button',{name:'РАСЧЁТ',exact:true}).click();
 await page.getByRole('button',{name:/^Автоподбор/}).click();
-const optimizer=page.locator('[data-tab-content="optimizer"]'),recipe=optimizer.getByTestId('chemical-wash-recipes');
+const optimizer=page.locator('[data-tab-content="optimizer"]'),recipe=optimizer.getByTestId('chemical-wash-recipes'),comparison=optimizer.getByTestId('optimizer-comparison');
+const applyBest=async()=>{
+ const before=await page.evaluate(()=>sessionStorage.getItem('cementing_session_v1'));
+ await comparison.getByRole('button',{name:'Применить',exact:true}).first().click();
+ await page.waitForFunction(old=>sessionStorage.getItem('cementing_session_v1')!==old,before,{timeout:30000});
+};
 await recipe.locator('summary').first().click();
 await recipe.getByLabel('Основа БР для подбора химии',{exact:true}).selectOption('oil');
 await recipe.getByLabel('Стартовая рецептура химбуфера',{exact:true}).selectOption('obm-mes-solvent');
@@ -40,10 +45,10 @@ for(const [label,value] of [['Мин. расход, л/с','30'],['Макс. р�
 await optimizer.getByLabel('Подбирать центрирование',{exact:true}).uncheck();
 await optimizer.getByRole('button',{name:'Подобрать программу',exact:true}).click();
 const card=optimizer.getByTestId('quality-cleaning-plan');
-await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="quality-cleaning-plan"] button');return !!button&&!button.disabled;},{},{timeout:120000});
+await comparison.getByRole('button',{name:'Применить',exact:true}).first().waitFor({timeout:120000});
 assert.ok((await card.textContent()).includes('91%'));
-await card.getByRole('button',{name:'Применить высокое качество',exact:true}).click();
-await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')??'{}').wellData?.optimizerCleaning?.proof?.removalPct===91,{},{timeout:15000});
+await applyBest();
+await page.waitForFunction(()=>document.querySelector('[data-tab-content="optimizer"]')?.textContent?.includes('Вариант «Лучшее качество» записан'),{},{timeout:15000});
 const saved=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')));
 assert.equal(saved.drillingFluid.base,'oil');
 assert.equal(saved.buffers[0].chemicalRecipe.id,'obm-mes-solvent');
@@ -60,13 +65,13 @@ const configure=async()=>{
  await optimizer.getByLabel('Подбирать центрирование',{exact:true}).uncheck();
 };
 await configure();await optimizer.getByRole('button',{name:'Подобрать программу',exact:true}).click();
-await page.waitForFunction(()=>{const b=document.querySelector('[data-testid="quality-cleaning-plan"] button');return b&&!b.disabled;},{},{timeout:120000});
-assert.ok((await card.textContent()).includes('готов к применению'));
+await comparison.getByRole('button',{name:'Применить',exact:true}).first().waitFor({timeout:120000});
+assert.ok((await card.textContent()).includes('Буферный вариант рассчитан'));
 assert.ok((await card.textContent()).includes('Фактическое смытие неизвестно'));
-await card.getByRole('button',{name:'Применить высокое качество',exact:true}).click();
+await applyBest();
 await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')??'{}').buffers?.length===2,{},{timeout:15000});
 const draft=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')));
-assert.equal(draft.wellData.optimizerCleaning.proof,undefined);
+assert.equal(draft.wellData.optimizerCleaning?.proof,undefined);
 assert.deepEqual(draft.buffers.map(b=>b.bufferType),['chemical_wash','weighted']);
 await page.screenshot({path:'/tmp/chemical-recipes/planning-mobile.png'});
 // Previously saved zero-PV chemical recipe; unchecked selection must never demand water/protocol.
@@ -80,17 +85,18 @@ await page.evaluate(async()=>{
 });
 await page.reload();await page.getByRole('button',{name:'РАСЧЁТ',exact:true}).click();
 await page.getByRole('button',{name:/^Автоподбор/}).click();await configure();
-await optimizer.getByLabel('Подбирать буфер',{exact:true}).uncheck();
+await optimizer.getByLabel('Усилить качество подбором буферов',{exact:true}).uncheck();
 await optimizer.getByRole('button',{name:'Подобрать программу',exact:true}).click();
-await optimizer.getByRole('button',{name:'Применить',exact:true}).first().waitFor({timeout:120000});
+await comparison.getByRole('button',{name:'Применить',exact:true}).first().waitFor({timeout:120000});
 assert.equal(await optimizer.getByTestId('quality-cleaning-plan').count(),0);
 assert.equal(await optimizer.getByTestId('chemical-wash-recipes').count(),0);
-await optimizer.getByRole('button',{name:'Применить',exact:true}).first().click();
+await applyBest();
 await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')??'{}').buffers?.[0]?.rheology?.pv===20,{},{timeout:15000});
 const unchanged=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')));
 assert.equal(unchanged.buffers.length,2);assert.equal(unchanged.buffers[0].density,1100);
 assert.deepEqual(unchanged.buffers[0].additives.map(a=>a.percentage),[.05,.5,2]);
 assert.equal(unchanged.wellData.optimizerCleaning,undefined);
+assert.equal(await comparison.locator('thead th').filter({hasText:'Лучшее качество'}).count(),1);
 await page.screenshot({path:'/tmp/chemical-recipes/buffer-disabled-mobile.png'});
 assert.equal(errors.length,0,errors.join('; '));
 console.log('CHEMICAL_RECIPES_OK: family, component recipe, new measurements, own removal evidence, native optimizer, application, desktop/mobile, planning defaults without laboratory, unchecked buffer bypass, legacy zero-PV recovery');

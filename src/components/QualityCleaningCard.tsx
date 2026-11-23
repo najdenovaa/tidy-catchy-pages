@@ -4,11 +4,11 @@ import {Button} from './ui/button';
 import {buildProcessContract} from '@/lib/cementing-process';
 import {CLEANING_NOTE,type HighQualityScenario} from '@/lib/optimizer-cleaning';
 const n=(v:number)=>Number.isFinite(v)?v.toFixed(2):'—';
-export default function QualityCleaningCard({value:v,disabled,onApply}:{value:HighQualityScenario;disabled:boolean;onApply:()=>void}){
+export default function QualityCleaningCard({value:v,disabled,onApply,detailsOnly=false}:{value:HighQualityScenario;disabled:boolean;onApply:()=>void;detailsOnly?:boolean}){
  const [applied,setApplied]=useState(false),d=v.design,t=v.target;
  return <Card className="p-4 space-y-3" data-testid="quality-cleaning-plan">
-  <h3 className="font-semibold">Высокое качество · двухступенчатая очистка</h3>
-  <p className={v.ready?'text-green-700':'text-amber-700'} role="status">{v.ready?(d?.proof?'Сценарий прошёл расчётные проверки; есть испытание смытия':'Расчётный сценарий готов к применению; свойства и рецепт можно поправить'):'Сценарий не прошёл расчётные ограничения'}</p>
+  <h3 className="font-semibold">Дополнительное буферное усиление · двухступенчатая очистка</h3>
+  <p className={v.ready?'text-green-700':'text-amber-700'} role="status">{v.ready?(d?.proof?'Сценарий прошёл расчётные проверки; есть испытание смытия':'Буферный вариант рассчитан; свойства и рецепт можно поправить'):'Сценарий не прошёл расчётные ограничения'}</p>
   {t&&<p className="text-sm">Пласты: {t.layers.join(', ')}. Зона MD {n(t.topMD)}–{n(t.bottomMD)} м; TVD {n(t.topTVD)}–{n(t.bottomTVD)} м. Расширение вверх {n(t.aboveActualM)} м TVD. Объём затрубья {n(t.volumeM3)} м³.</p>}
   {d&&<div className="overflow-x-auto"><table className="text-xs w-full"><thead><tr><th>Проход целевого интервала</th><th>Объём</th><th>Расход</th><th>Контакт по кадрам, не менее</th></tr></thead><tbody>
    <tr><td className="p-2">{d.chemicalName} · химический</td><td>{n(d.chemicalVolumeM3)} м³</td><td>10 л/с · проверка ламинарности</td><td>{n(d.chemicalContactMin)} мин</td></tr>
@@ -26,6 +26,6 @@ export default function QualityCleaningCard({value:v,disabled,onApply}:{value:Hi
    <p className="text-xs">Повышение подачи после {n(d!.switchVolumeM3)} м³ закачки в скважину — когда хвост химбуфера прошёл кровлю целевой зоны. Окончание повышенной подачи после {n(d!.heavyEndVolumeM3)} м³. Материал на устье в этот момент может быть уже другим.</p>
    <div className="overflow-x-auto"><table className="text-xs w-full"><thead><tr><th>Жидкость на устье</th><th>Объём, м³</th><th>Расход, л/с</th><th>Начало, мин</th></tr></thead><tbody>{buildProcessContract(v.program).stages.map(s=><tr key={s.id}><td className="p-1">{s.name}</td><td>{n(s.volumeM3)}</td><td>{n(s.rateLps)}</td><td>{s.startMin===null?'—':n(s.startMin)}</td></tr>)}</tbody></table></div>
   </div></details>}
-  <Button disabled={disabled||!v.ready} onClick={()=>{onApply();setApplied(true);}}>{applied?'Применено':'Применить высокое качество'}</Button>
+  {!detailsOnly&&<Button disabled={disabled||!v.ready} onClick={()=>{onApply();setApplied(true);}}>{applied?'Применено':'Применить буферное усиление'}</Button>}
  </Card>;
 }
