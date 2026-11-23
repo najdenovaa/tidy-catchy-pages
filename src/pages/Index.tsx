@@ -1,3 +1,4 @@
+import {bufferPlanningDefaults} from '@/lib/chemical-wash-recipes';
 import {cleaningInputKey,type HighQualityScenario} from '@/lib/optimizer-cleaning';
 import ProgramDisclosure from '@/components/ProgramDisclosure';
 import CementThermalSection from '@/components/CementThermalSection';
@@ -324,6 +325,8 @@ export default function Index() {
       flushTimeMin,
       flushVolumeM3,
     });
+    snapshot.buffers=snapshot.buffers.map(bufferPlanningDefaults);
+    setBuffers(snapshot.buffers);
     const errors=rheologyInputErrors(snapshot);if(errors.length){alert(errors.join("\n"));return;}
     const contract=buildProcessContract(snapshot);if(!contract.canRun){alert(contract.issues.filter(x=>x.severity==='error').map(x=>x.message).join("\n"));return;}
     setCalcSnapshot(snapshot);

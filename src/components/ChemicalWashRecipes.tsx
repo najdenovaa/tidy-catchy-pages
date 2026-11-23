@@ -8,25 +8,27 @@ export function ChemicalPropertyConfirm({buffer:b,mud,onChange}:{buffer:BufferFl
  if(!b.chemicalRecipe)return null;
  const field=(label:string,value:number|undefined,change:(v:number|undefined)=>void)=><label className="text-xs">{label}<input className={cls} aria-label={label} type="number" step="any" value={value??''} onChange={e=>change(e.target.value===''?undefined:Number(e.target.value))}/></label>;
  return <div className="space-y-2 border rounded p-3" data-chemical-measurements>
-  <p className="text-xs font-medium">Замеры нового химбуфера · PV/YP или выбранная модель Fann</p>
+  <p className="text-xs font-medium">Расчётные свойства химбуфера · можно изменить</p>
   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-   {field('Измеренная плотность химбуфера, кг/м³',b.density,v=>onChange({...b,density:v??0}))}
-   {field('Измеренный PV химбуфера, сПз',b.rheology.pv,v=>onChange({...b,rheology:{...b.rheology,model:'pvyp',pv:v??0}}))}
-   {field('Измеренный YP химбуфера, Па',b.rheology.yp,v=>onChange({...b,rheology:{...b.rheology,model:'pvyp',yp:v??0}}))}
-   {field('T замеров химбуфера, °C',b.rheology.testTemperatureC,v=>onChange({...b,rheology:{...b.rheology,testTemperatureC:v}}))}
-   {field('P замеров химбуфера, МПа абс.',b.rheology.testPressureMPaAbs,v=>onChange({...b,rheology:{...b.rheology,testPressureMPaAbs:v}}))}
+   {field('Плотность химбуфера, кг/м³',b.density,v=>onChange({...b,density:v??0}))}
+   {field('PV химбуфера, сПз',b.rheology.pv,v=>onChange({...b,rheology:{...b.rheology,model:'pvyp',pv:v??0}}))}
+   {field('YP химбуфера, Па',b.rheology.yp,v=>onChange({...b,rheology:{...b.rheology,model:'pvyp',yp:v??0}}))}
+   {field('Температура химбуфера, °C',b.rheology.testTemperatureC,v=>onChange({...b,rheology:{...b.rheology,testTemperatureC:v}}))}
+   {field('Давление химбуфера, МПа абс.',b.rheology.testPressureMPaAbs,v=>onChange({...b,rheology:{...b.rheology,testPressureMPaAbs:v}}))}
   </div>
   <p className="text-xs">Ввод PV/YP выбирает модель Бингама. Для аппроксимации Fann используйте редактор реологии в карточке буфера.</p>
+  <details><summary>Лабораторные сведения (необязательно)</summary>
   <label className="text-xs block">Вода/рассол и минерализация<input aria-label="Вода химбуфера и минерализация" className={cls} value={b.chemicalRecipe.waterSource??''} onChange={e=>onChange({...b,chemicalRecipe:{...b.chemicalRecipe!,waterSource:e.target.value}})}/></label>
   <label className="text-xs block">Протокол замеров свойств<input aria-label="Протокол замеров свойств химбуфера" className={cls} value={b.chemicalRecipe.propertySource??''} onChange={e=>onChange({...b,chemicalRecipe:{...b.chemicalRecipe!,propertySource:e.target.value}})}/></label>
   <Button variant="outline" onClick={()=>{try{onChange(confirmChemicalProperties(b,b.chemicalRecipe?.propertySource??''));setError('');}catch(e){setError((e as Error).message);}}}>Подтвердить замеры химбуфера</Button>
-  <p role="status" className="text-xs text-amber-700">{chemicalRecipeIssue(b,mud)??'Свойства этого состава подтверждены введённым протоколом. Для цели 85% отдельно требуется испытание смытия.'}</p>
+  <p role="status" className="text-xs text-amber-700">{chemicalRecipeIssue(b,mud)?'Стартовые расчётные свойства; лабораторное подтверждение не требуется для расчёта программы.':'Свойства этого состава подтверждены введённым протоколом. Для цели 85% отдельно требуется испытание смытия.'}</p>
   {error&&<p role="alert" className="text-xs text-destructive">{error}</p>}
+  </details>
  </div>;
 }
 export default function ChemicalWashRecipes({mud,buffers,onMudChange,onBuffersChange}:{mud:DrillingFluid;buffers:BufferFluid[];onMudChange?:(m:DrillingFluid)=>void;onBuffersChange?:(b:BufferFluid[])=>void}){
  const [selected,setSelected]=useState(''),[target,setTarget]=useState(()=>String(buffers.findIndex(b=>b.bufferType==='chemical_wash'))),[doses,setDoses]=useState<Record<string,number>>({}),[mass,setMass]=useState(1000),[error,setError]=useState(''),[notice,setNotice]=useState('');
- const family=washFamily(mud.base),recipes=WASH_RECIPES.filter(r=>!family||r.family===family),recipe=recipes.find(r=>r.id===selected)??recipes[0];
+ const family=washFamily(mud.base??'water'),recipes=WASH_RECIPES.filter(r=>!family||r.family===family),recipe=recipes.find(r=>r.id===selected)??recipes[0];
  useEffect(()=>{setDoses({});setError('');},[recipe.id]);
  const rows=recipe.components.map(x=>{const c=washComponent(x.id)!,pct=doses[x.id]??x.pct;return {...c,pct,massKg:mass*pct/100};});
  const index=Number(target),b=index>=0&&buffers[index]?.bufferType==='chemical_wash'?buffers[index]:undefined;
@@ -35,15 +37,17 @@ export default function ChemicalWashRecipes({mud,buffers,onMudChange,onBuffersCh
  const apply=()=>{
   try{
    const old=b??{name:'Химбуфер',density:0,volume:1,rheology:{pv:0,yp:0},additives:[],flowRateSteps:[{volumeM3:1,rateLps:10,volumeMode:'manual' as const}]};
-   const next=applyChemicalRecipe(old,recipe,doses,mud),all=[...buffers];
+   const next=applyChemicalRecipe(old,recipe,doses,{...mud,base:mud.base??'water'}),all=[...buffers];
    const i=b?index:all.length;if(b)all[i]=next;else all.push(next);
-   onBuffersChange?.(all);setTarget(String(i));setNotice('Рецепт внесён. Измерьте плотность и реологию, затем испытайте смытие и совместимость.');setError('');
+   if(!mud.base)onMudChange?.({...mud,base:'water'});
+   onBuffersChange?.(all);setTarget(String(i));setNotice('Рецепт и стартовые расчётные свойства внесены. Программа готова к расчёту; при необходимости поправьте плотность, PV и YP.');setError('');
   }catch(e){setError((e as Error).message);}
  };
  return <details className="border rounded" data-testid="chemical-wash-recipes"><summary>Химия буфера и стартовые рецептуры</summary><div className="p-3 space-y-3">
-  <p className="text-xs">{WASH_RECIPE_NOTE}</p>
+  <p className="text-xs">Стартовые значения: плотность 1100 кг/м³, PV 20 сПз, YP 5 Па, 40 °C / 0,101325 МПа при отсутствии заданных T/P. Основа БР по умолчанию водная. Все параметры можно изменить; это расчётные допущения, не результаты замеров.</p>
+  <details><summary>Основания рецептур</summary><p className="p-3 text-xs">{WASH_RECIPE_NOTE}</p></details>
   <div className="grid sm:grid-cols-2 gap-3">
-   <label className="text-xs">Основа БР<select aria-label="Основа БР для подбора химии" className={cls} value={mud.base??''} disabled={!onMudChange} onChange={e=>onMudChange?.({...mud,base:e.target.value as DrillingFluid['base']||undefined})}><option value="">Не указана</option><option value="water">Водная</option><option value="oil">Нефтяная / РУО</option><option value="synthetic">Синтетическая</option></select></label>
+   <label className="text-xs">Основа БР<select aria-label="Основа БР для подбора химии" className={cls} value={mud.base??'water'} disabled={!onMudChange} onChange={e=>onMudChange?.({...mud,base:e.target.value as DrillingFluid['base']||undefined})}><option value="">Не указана</option><option value="water">Водная</option><option value="oil">Нефтяная / РУО</option><option value="synthetic">Синтетическая</option></select></label>
    <label className="text-xs">Рецептура<select aria-label="Стартовая рецептура химбуфера" className={cls} value={recipe.id} onChange={e=>setSelected(e.target.value)}>{recipes.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
   </div>
   <p className="text-xs">{recipe.purpose}. {recipe.note}</p>

@@ -1,4 +1,5 @@
 import {buildHighQualityScenario,cleaningTarget,type HighQualityScenario} from './optimizer-cleaning';
+import {bufferPlanningDefaults} from './chemical-wash-recipes';
 import {buildCentralizerJointSchedule} from './centralizer-layout';
 import { boreDiameterAtDepth } from "./well-geometry";
 /**
@@ -38,11 +39,13 @@ export interface OptimizerSettings {
   optimizeCentralizers: boolean;
   centralizerType: CentralizerType;
   jointLengthM: number;
+  /** Planning contact time when no matching removal test is available. */
+  chemicalContactMin?:number;
 }
 
 export const DEFAULT_OPTIMIZER_SETTINGS: OptimizerSettings = {
   minRateLps: 6, maxRateLps: 30, maxCementRateLps: 20, rateStepLps: 4, pumpPressureLimitMPa: 25, marginReqMPa: 0.5, optimizeBuffer: true, rotationRpm: 0,
-  optimizeCentralizers: true, centralizerType: "rigid", jointLengthM: 12,
+  optimizeCentralizers: true, centralizerType: "rigid", jointLengthM: 12,chemicalContactMin:10,
 };
 
 export interface ProgramInput {
@@ -109,6 +112,7 @@ export interface CentralizerPlan {
 }
 
 export interface OptimizerResult {
+  planningNotes?:string[];
   highQuality?:HighQualityScenario;
   current: VariantEval;
   evaluations: VariantEval[];
@@ -132,7 +136,8 @@ export function applyVariant(
   buffers: BufferFluid[], slurries: SlurryInput[], disps: DisplacementFluid[], v: ProgramVariant,
 ): { buffers: BufferFluid[]; slurries: SlurryInput[]; displacementFluids: DisplacementFluid[] } {
   const lastBuf = buffers.length - 1;
-  const nb = buffers.map((b, i) => {
+  const nb = buffers.map((original, i) => {
+    const b=bufferPlanningDefaults(original);
     let steps = setRate(b.flowRateSteps, v.q1);
     let volume = b.volume;
     let density = b.density;
@@ -356,7 +361,7 @@ export function evaluateProgram(
 export function bufferOptions(p: ProgramInput, settings: OptimizerSettings): OptimizerResult["bufferOptions"] {
   const opts: OptimizerResult["bufferOptions"] = [{ volumeM3: null, density: null, label: "как задан" }];
   if (!settings.optimizeBuffer || p.buffers.length === 0 || p.slurries.length === 0) return opts;
-  const b = p.buffers[p.buffers.length - 1];
+  const b = bufferPlanningDefaults(p.buffers[p.buffers.length - 1]);
   const lead = p.slurries[0];
   const mudRho = p.drillingFluid.density;
   const leadRho = lead.density * 1000;
@@ -400,10 +405,13 @@ export async function runOptimizer(
 
   const plans = settings.optimizeCentralizers ? centralizerPlans(p, settings) : [];
   const quality=async()=>{
+   if(!settings.optimizeBuffer)return undefined;
    let qualityPlan:CentralizerPlan|undefined;
    try{qualityPlan=qualityCentralizerPlan(p,settings);}catch{/* Target/geometry errors are explained by the scenario builder. */}
-   return buildHighQualityScenario(p,settings,qualityPlan?[qualityPlan]:[],(pp,v,plan,full,onPressure)=>evaluateProgram(pp,v,settings,undefined,plan.profile,{preserveSteps:true,fast:!full,onPressure}));
+   try{return await buildHighQualityScenario(p,settings,qualityPlan?[qualityPlan]:[],(pp,v,plan,full,onPressure)=>evaluateProgram(pp,v,settings,undefined,plan.profile,{preserveSteps:true,fast:!full,onPressure}));}
+   catch(e){return {sourceKey:JSON.stringify(p),ready:false,issues:['Дополнительный сценарий очистки: '+(e as Error).message],warnings:[],candidates:0} as HighQualityScenario;}
   };
+  const planningNotes=p.buffers.filter(b=>bufferPlanningDefaults(b)!==b).map(b=>b.name+': незаполненные свойства заменены стартовыми расчётными значениями: 1100 кг/м³ при отсутствии плотности, PV 20 сПз / YP 5 Па при отсутствии реологии. Их можно изменить во вводе.');
   const stage1Total = bOpts.length * rates1.length * rates.length;
   let total = stage1Total + plans.length * Math.min(2, bOpts.length) * rates1.length * rates.length;
   let done = 0, computed = 0;
@@ -441,7 +449,7 @@ export async function runOptimizer(
   // Этап 1: расходы и буфер при текущем (или принятом) центрировании
   const stage1 = await grid(p, bOpts);
   if (!plans.length) {
-    return { highQuality:await quality(),current, evaluations: stage1, rates, rates1, bufferOptions: bOpts, best: pickVariants(stage1, settings), blocker: findBlocker(stage1) };
+    return { planningNotes,highQuality:await quality(),current, evaluations: stage1, rates, rates1, bufferOptions: bOpts, best: pickVariants(stage1, settings), blocker: findBlocker(stage1) };
   }
 
   // Этап 2: для каждой расстановки центраторов — повторный перебор расходов с лучшими буферами этапа 1
@@ -466,7 +474,7 @@ export async function runOptimizer(
     mapEvals = stage2.filter((e) => e.centralization === b0.centralization);
   }
   onProgress?.(total, total);
-  return { highQuality:await quality(),current, evaluations: mapEvals, rates, rates1, bufferOptions: bos, best, blocker: findBlocker(stage2), centralizerStudy };
+  return { planningNotes,highQuality:await quality(),current, evaluations: mapEvals, rates, rates1, bufferOptions: bos, best, blocker: findBlocker(stage2), centralizerStudy };
 }
 
 const CENTRALIZER_TARGETS = [55, 67, 75, 85];

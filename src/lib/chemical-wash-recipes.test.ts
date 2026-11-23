@@ -25,7 +25,7 @@ it('does not infer a mud base or carry measurements from the old recipe',()=>{
  const p=qualityInput();expect(()=>applyChemicalRecipe(p.buffers[0],recipe,{},p.drillingFluid)).toThrow('основу');
  expect(()=>applyChemicalRecipe(p.buffers[0],recipe,{}, {...p.drillingFluid,base:'water'})).toThrow('основу');
  const b=applyChemicalRecipe(p.buffers[0],recipe,{}, {...p.drillingFluid,base:'oil'});
- expect(b.rheology.pv).toBe(0);expect(b.rheology.testTemperatureC).toBeUndefined();
+ expect(b.rheology.pv).toBe(20);expect(b.rheology.testTemperatureC).toBe(40);
  expect(b.chemicalRecipe?.propertySignature).toBeUndefined();expect(b.additives.every(x=>x.percentageType==='bwob')).toBe(true);
  expect(()=>confirmChemicalProperties(b,'')).toThrow('протокол');
 });
@@ -68,11 +68,9 @@ it('selects the highest measured removal within constraints and falls back if th
  const r=await run(false);expect(r.ready).toBe(true);expect(r.design?.proof?.id).toBe('R94');
  const fallback=await run(true);expect(fallback.ready).toBe(true);expect(fallback.design?.proof?.id).toBe('R85');
 },60000);
-it('requires new-recipe property evidence before optimizer evaluation even if an unrelated 85% measurement is present',async()=>{
- const p=withQualityProof(qualityInput()),mud={...p.drillingFluid,base:'oil' as const};
- const b=applyChemicalRecipe(p.buffers[0],recipe,{},mud);
- const next={...p,drillingFluid:mud,buffers:[b,p.buffers[1]]};
- const r=await buildHighQualityScenario(next,qualitySettings,[qualityCentralizerPlan(next,qualitySettings)],()=>{throw Error('Unmeasured recipe must not be evaluated');});
- expect(r.ready).toBe(false);expect(r.issues.join(' ')).toContain('воду/рассол');
+it('calculates an unmeasured recipe with planning properties without inventing a removal test',async()=>{
+ const p=qualityInput(),mud={...p.drillingFluid,base:'oil' as const},b=applyChemicalRecipe(p.buffers[0],recipe,{},mud),next={...p,drillingFluid:mud,buffers:[b,p.buffers[1]]};
+ const r=await buildHighQualityScenario(next,qualitySettings,[qualityCentralizerPlan(next,qualitySettings)],(pp,v,cp,full,onPressure)=>evaluateProgram(pp,v,qualitySettings,undefined,cp.profile,{preserveSteps:true,fast:!full,onPressure}));
+ expect(r.ready).toBe(true);expect(r.design?.proof).toBeUndefined();expect(r.warnings.join(' ')).toContain('фактический процент неизвестен');
  expect(normalizeBufferFluid(b).chemicalRecipe?.id).toBe(recipe.id);
-});
+},60000);

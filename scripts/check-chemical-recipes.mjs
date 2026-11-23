@@ -16,8 +16,9 @@ await recipe.locator('summary').click();
 await recipe.getByLabel('Основа БР для подбора химии',{exact:true}).selectOption('oil');
 await recipe.getByLabel('Стартовая рецептура химбуфера',{exact:true}).selectOption('obm-mes-solvent');
 await recipe.getByRole('button',{name:'Внести химическую рецептуру',exact:true}).click();
-assert.equal(await recipe.getByLabel('Измеренный PV химбуфера, сПз',{exact:true}).inputValue(),'0');
-for(const [label,value] of [['Измеренная плотность химбуфера, кг/м³','1100'],['Измеренный PV химбуфера, сПз','20'],['Измеренный YP химбуфера, Па','5'],['T замеров химбуфера, °C','40'],['P замеров химбуфера, МПа абс.','5'],['Вода химбуфера и минерализация','CI: контрольная вода 0,2 г/л'],['Протокол замеров свойств химбуфера','CI: синтетический контроль свойств']])await recipe.getByLabel(label,{exact:true}).fill(value);
+assert.equal(await recipe.getByLabel('PV химбуфера, сПз',{exact:true}).inputValue(),'20');
+await recipe.getByText('Лабораторные сведения (необязательно)').click();
+for(const [label,value] of [['Плотность химбуфера, кг/м³','1100'],['PV химбуфера, сПз','20'],['YP химбуфера, Па','5'],['Температура химбуфера, °C','40'],['Давление химбуфера, МПа абс.','5'],['Вода химбуфера и минерализация','CI: контрольная вода 0,2 г/л'],['Протокол замеров свойств химбуфера','CI: синтетический контроль свойств']])await recipe.getByLabel(label,{exact:true}).fill(value);
 await recipe.getByRole('button',{name:'Подтвердить замеры химбуфера',exact:true}).click();
 await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')??'{}').buffers?.[0]?.chemicalRecipe?.propertySignature,{},{timeout:15000});
 mkdirSync('/tmp/chemical-recipes',{recursive:true});
@@ -47,6 +48,50 @@ const saved=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('cementing
 assert.equal(saved.drillingFluid.base,'oil');
 assert.equal(saved.buffers[0].chemicalRecipe.id,'obm-mes-solvent');
 assert.deepEqual(saved.buffers[0].additives.map(x=>x.percentage),[.05,.5,2]);
+// No recipe, no laboratory data: a single click must prepare usable planning buffers.
+await page.evaluate(async()=>{
+ const {qualityInput}=await import('/src/lib/__tests__/fixtures/optimizer-cleaning-fixture.ts');
+ const s=qualityInput();s.buffers=[];sessionStorage.setItem('cementing_session_v1',JSON.stringify(s));
+});
+await page.reload();await page.getByRole('button',{name:'РАСЧЁТ',exact:true}).click();
+await page.getByRole('button',{name:/^Автоподбор/}).click();
+const configure=async()=>{
+ for(const [label,value] of [['Мин. расход, л/с','30'],['Макс. расход продавки, л/с','30'],['Макс. расход затворения, л/с','30'],['Шаг, л/с','10'],['Предел на устье, МПа','100'],['Запас до ГРП, МПа','0']])await optimizer.getByLabel(label,{exact:true}).fill(value);
+ await optimizer.getByLabel('Подбирать центрирование',{exact:true}).uncheck();
+};
+await configure();await optimizer.getByRole('button',{name:'Подобрать программу',exact:true}).click();
+await page.waitForFunction(()=>{const b=document.querySelector('[data-testid="quality-cleaning-plan"] button');return b&&!b.disabled;},{},{timeout:120000});
+assert.ok((await card.textContent()).includes('готов к применению'));
+assert.ok((await card.textContent()).includes('Фактическое смытие неизвестно'));
+await card.getByRole('button',{name:'Применить высокое качество',exact:true}).click();
+await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')??'{}').buffers?.length===2,{},{timeout:15000});
+const draft=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')));
+assert.equal(draft.wellData.optimizerCleaning.proof,undefined);
+assert.deepEqual(draft.buffers.map(b=>b.bufferType),['chemical_wash','weighted']);
+await page.screenshot({path:'/tmp/chemical-recipes/planning-mobile.png'});
+// Previously saved zero-PV chemical recipe; unchecked selection must never demand water/protocol.
+await page.evaluate(async()=>{
+ const {qualityInput}=await import('/src/lib/__tests__/fixtures/optimizer-cleaning-fixture.ts');
+ const {applyChemicalRecipe,WASH_RECIPES}=await import('/src/lib/chemical-wash-recipes.ts');
+ const s=qualityInput();s.drillingFluid.base='oil';
+ s.buffers[0]=applyChemicalRecipe(s.buffers[0],WASH_RECIPES.find(r=>r.id==='obm-mes-solvent'),{},s.drillingFluid);
+ s.buffers[0].rheology={pv:0,yp:0,model:'pvyp'};
+ sessionStorage.setItem('cementing_session_v1',JSON.stringify(s));
+});
+await page.reload();await page.getByRole('button',{name:'РАСЧЁТ',exact:true}).click();
+await page.getByRole('button',{name:/^Автоподбор/}).click();await configure();
+await optimizer.getByLabel('Подбирать буфер',{exact:true}).uncheck();
+await optimizer.getByRole('button',{name:'Подобрать программу',exact:true}).click();
+await optimizer.getByRole('button',{name:'Применить',exact:true}).first().waitFor({timeout:120000});
+assert.equal(await optimizer.getByTestId('quality-cleaning-plan').count(),0);
+assert.equal(await optimizer.getByTestId('chemical-wash-recipes').count(),0);
+await optimizer.getByRole('button',{name:'Применить',exact:true}).first().click();
+await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')??'{}').buffers?.[0]?.rheology?.pv===20,{},{timeout:15000});
+const unchanged=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')));
+assert.equal(unchanged.buffers.length,2);assert.equal(unchanged.buffers[0].density,1100);
+assert.deepEqual(unchanged.buffers[0].additives.map(a=>a.percentage),[.05,.5,2]);
+assert.equal(unchanged.wellData.optimizerCleaning,undefined);
+await page.screenshot({path:'/tmp/chemical-recipes/buffer-disabled-mobile.png'});
 assert.equal(errors.length,0,errors.join('; '));
-console.log('CHEMICAL_RECIPES_OK: family, component recipe, new measurements, own removal evidence, native optimizer, application, desktop/mobile');
+console.log('CHEMICAL_RECIPES_OK: family, component recipe, new measurements, own removal evidence, native optimizer, application, desktop/mobile, planning defaults without laboratory, unchecked buffer bypass, legacy zero-PV recovery');
 await browser.close();

@@ -334,7 +334,7 @@ function buildInputPage(wellData: WellData, drillingFluid: DrillingFluid, slurri
       { label: "Объём", value: `${b.volume} м³` },
       { label: "PV / YP", value: `${b.rheology.pv} сПз / ${b.rheology.yp} Па` },
     ];
-    if(b.chemicalRecipe){bRows.push({label:'Химическая рецептура',value:WASH_RECIPES.find(r=>r.id===b.chemicalRecipe?.id)?.name??b.chemicalRecipe.id},{label:'Вода/рассол',value:b.chemicalRecipe.waterSource||'Не указаны'},{label:'Свойства рецептуры',value:chemicalRecipeIssue(b,drillingFluid)??('Подтверждены: '+b.chemicalRecipe.propertySource)});result.push(noteParagraph(WASH_RECIPE_NOTE));}
+    if(b.chemicalRecipe){bRows.push({label:'Химическая рецептура',value:WASH_RECIPES.find(r=>r.id===b.chemicalRecipe?.id)?.name??b.chemicalRecipe.id},{label:'Вода/рассол',value:b.chemicalRecipe.waterSource||'Не указаны'},{label:'Свойства рецептуры',value:chemicalRecipeIssue(b,drillingFluid)?'Расчётные свойства; лабораторная запись отсутствует или устарела.':('Подтверждены: '+b.chemicalRecipe.propertySource)});result.push(noteParagraph(WASH_RECIPE_NOTE));}
     if (b.libraryReference) bRows.push({ label: "Источник свойств / библиотека", value: fluidReferenceText("buffer", b) });
     result.push(kvTable(bRows) as any);
     // Flow rate steps

@@ -60,8 +60,8 @@ describe('quality cleaning design',()=>{
   const saved=normalizeWellData(JSON.parse(JSON.stringify({...r.program!.wellData,optimizerCleaning:r.design})));
   expect(saved.optimizerCleaning).toEqual(r.design);
   const missing=input(),unconfirmed=await buildHighQualityScenario(missing,settings,[qualityCentralizerPlan(missing,settings)],(pp,v,cp,full,onPressure)=>evaluateProgram(pp,v,settings,undefined,cp.profile,{preserveSteps:true,fast:!full,onPressure}));
-  expect(unconfirmed.design).toBeDefined();expect(unconfirmed.ready).toBe(false);
-  expect(unconfirmed.issues.join(';')).toContain('85% не подтверждена');
+  expect(unconfirmed.design).toBeDefined();expect(unconfirmed.ready).toBe(true);
+  expect(unconfirmed.design?.proof).toBeUndefined();expect(unconfirmed.warnings.join(';')).toContain('фактический процент неизвестен');
 
  },60000);
  it('rejects a short or incomplete actual transit, independently of the planned volume',()=>{

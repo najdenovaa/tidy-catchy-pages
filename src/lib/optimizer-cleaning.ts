@@ -1,4 +1,4 @@
-import {chemicalRecipeIssue} from './chemical-wash-recipes';
+import {chemicalRecipeIssue,bufferPlanningDefaults,applyChemicalRecipe,WASH_RECIPES} from './chemical-wash-recipes';
 /** High-quality design. Laboratory removal is evidence, never a predicted cleaning percentage. */
 import {
  annularFrictionMPa, getEffectiveTrajectory, interpolateTVD, totalPipeVolumeForRange, hbOf,
@@ -13,7 +13,7 @@ import type {TurbulatorPoint} from './centralization-calculations';
 import type {ProgramInput,OptimizerSettings,CentralizerPlan,ProgramVariant,VariantEval} from './cement-optimizer';
 
 export const CLEANING_RATE_LPS=10, CLEANING_ABOVE_TVD_M=150, CLEANING_TARGET_PCT=85;
-export const CLEANING_NOTE='85% — измеренный результат конкретной рецептуры и образца при T/P, времени и сдвиге протокола, не прогноз смытия в скважине. Расстановка и сдвиг оценочные. Режим осевого потока не заменяется наличием закрутки. Переключения подачи рассчитаны по несжимаемому поршневому переносу; дополнительно проверены сохранённые кадры нативной гидравлики. Между кадрами и на неучтённых неоднородностях очистка не подтверждается.';
+export const CLEANING_NOTE='Расчёт допускается со стартовыми редактируемыми свойствами без лабораторного протокола. Цель 85% не является прогнозом: измеренный процент показывается только при наличии подходящего испытания. Расстановка и сдвиг оценочные. Режим осевого потока не заменяется наличием закрутки. Переключения подачи рассчитаны по несжимаемому поршневому переносу и проверены по сохранённым кадрам нативной гидравлики.';
 export interface CleaningTarget {topMD:number;bottomMD:number;topTVD:number;bottomTVD:number;volumeM3:number;layers:string[];aboveActualM:number}
 export interface CleaningProof {id:string;source:string;removalPct:number;exposureS:number;criticalPa:number;temperatureC:number;pressureMPaAbs:number}
 export interface CleaningDesign {
@@ -29,6 +29,22 @@ export interface HighQualityScenario {
 }
 export type CleaningEvaluator=(p:ProgramInput,v:ProgramVariant,plan:CentralizerPlan,full:boolean,capture?:(r:PressureProfileResult)=>void)=>VariantEval;
 export function cleaningInputKey(p:ProgramInput){return JSON.stringify([p.wellData,p.drillingFluid,p.buffers,p.slurries,p.displacementFluids,p.fractureGradient,p.flushTimeMin,p.flushVolumeM3,p.centralizerIntervals??[]]);}
+/** Explicit planning defaults; supplied nonempty properties remain unchanged. */
+export function prepareCleaningProgram(p:ProgramInput):{program:ProgramInput;notes:string[]}{
+ const notes:string[]=[],buffers=p.buffers.map(b=>{const next=bufferPlanningDefaults(b);if(next!==b)notes.push(b.name+': заполнены стартовые расчётные свойства.');return next;});
+ if(!buffers.some(b=>b.bufferType==='chemical_wash')){
+  const base=p.drillingFluid.base??'water',recipe=WASH_RECIPES.find(r=>r.id===(base==='water'?'wbm-wetting':'obm-mes-solvent'))!;
+  buffers.unshift(applyChemicalRecipe({name:'Химбуфер',density:1100,volume:6,rheology:{pv:20,yp:5},additives:[],flowRateSteps:[{rateLps:10,volumeM3:6,volumeMode:'manual'}]},recipe,{}, {...p.drillingFluid,base}));
+  notes.push('Добавлен химбуфер: '+recipe.name+'; плотность 1100 кг/м³, PV 20 сПз, YP 5 Па. Это редактируемые расчётные допущения.');
+  if(!p.drillingFluid.base)notes.push('Для стартовой химии принята водная основа БР; при РУО/синтетике измените основу и рецепт.');
+ }
+ if(!buffers.some(b=>b.bufferType==='weighted'||b.bufferType==='elastic_spacer')){
+  const index=buffers.map(b=>b.bufferType!=='chemical_wash').lastIndexOf(true),rho=Math.round((p.drillingFluid.density+(p.slurries[0]?.density??1.8)*1000)/2),r=p.drillingFluid.rheology;
+  if(index>=0){buffers[index]={...buffers[index],bufferType:'weighted',density:rho,rheology:{pv:Math.max(21,r.pv*1.2),yp:Math.max(6,r.yp*1.2),model:'pvyp'}};notes.push(buffers[index].name+': принят как тяжёлый разделительный буфер со стартовыми плотностью и реологией; можно поправить после применения.');}
+  else{buffers.push({name:'Тяжёлый буфер · стартовый',bufferType:'weighted',density:rho,volume:5,rheology:{pv:Math.max(21,r.pv*1.2),yp:Math.max(6,r.yp*1.2),model:'pvyp'},additives:[],flowRateSteps:[{volumeM3:5,rateLps:20,volumeMode:'manual'}]});notes.push('Добавлен стартовый тяжёлый буфер: плотность между БР и головным цементом, PV/YP не ниже 1,2 × БР; свойства можно изменить.');}
+ }
+ return {program:{...p,buffers},notes};
+}
 
 /** Cover all entered formation intervals plus 150 vertical metres above the shallowest roof, including gaps. */
 export function cleaningTarget(w:WellData):CleaningTarget {
@@ -152,6 +168,7 @@ export function auditCleaningTransit(p:ProgramInput,t:CleaningTarget,r:PressureP
 }
 export async function buildHighQualityScenario(p:ProgramInput,s:OptimizerSettings,plans:CentralizerPlan[],evaluate:CleaningEvaluator):Promise<HighQualityScenario>{
  const out:HighQualityScenario={sourceKey:cleaningInputKey(p),ready:false,issues:[],warnings:[CLEANING_NOTE],candidates:0};
+ const prepared=prepareCleaningProgram(p);p=prepared.program;out.warnings.push(...prepared.notes);
  let t:CleaningTarget;
  try{t=cleaningTarget(p.wellData);}catch(e){out.issues.push(String((e as Error).message));return out;}
  if((p.wellData.reservoirLayers??[]).some(l=>!(l.porePressureGrad>0)||!(l.fracGrad>0||l.absorbGrad>0||p.fractureGradient>0))){out.issues.push('Для высокого качества задайте пластовые давления и пределы ГРП/поглощения всех пластов.');return out;}
@@ -173,14 +190,12 @@ export async function buildHighQualityScenario(p:ProgramInput,s:OptimizerSetting
  const lab=p.wellData.fluidInteractionLab,fluids=labFluids(p),depths=cleaningDepths(w,t);
  const failures=new Set<string>(),pool:{scenario:HighQualityScenario;test?:RemovalTest}[]=[];
  for(const {b:chemical,i} of chemicals){
-  const chemistryIssue=chemicalRecipeIssue(chemical,p.drillingFluid);if(chemistryIssue){failures.add(chemical.name+': '+chemistryIssue);continue;}
+  const chemistryIssue=chemicalRecipeIssue(chemical,p.drillingFluid);if(chemistryIssue&&!out.warnings.includes('Свойства химии приняты для планирования; подтверждение замеров необязательно для расчёта.'))out.warnings.push('Свойства химии приняты для планирования; подтверждение замеров необязательно для расчёта.');
   const tests=lab?.removal.filter(x=>x.cleanerId==='buffer:'+i&&!removalIssue(x,lab,fluids)&&typeof x.removalPct==='number'&&x.removalPct>=85&&x.fromMD!<=t.topMD&&x.toMD!>=t.bottomMD)??[];
   const proofs=tests.filter(x=>depths.every(md=>cleaningFlow(w,chemical,md,10).narrowShearPa>=x.criticalPa!)).sort((a,b)=>b.removalPct!-a.removalPct!||a.exposureS!-b.exposureS!);
-  if(!proofs.length)failures.add(chemical.name+': нет применимого протокола смытия ≥85% для текущих составов, T/P и всей зоны.');
   if(depths.some(md=>cleaningFlow(w,chemical,md,10).regime!==0)){failures.add(chemical.name+': при 10 л/с течение не ламинарное во всей зоне.');continue;}
   for(const proof of proofs.length?proofs:[undefined]){
   for(const heavy of heavies){
-   const heavyChemistryIssue=chemicalRecipeIssue(heavy,p.drillingFluid);if(heavyChemistryIssue){failures.add(heavy.name+': '+heavyChemistryIssue);continue;}
    const lead=p.slurries[0]?.density*1000;
    if(!(heavy.density>p.drillingFluid.density&&heavy.density<lead)){failures.add(heavy.name+': плотность должна быть выше БР и ниже первого цемента; рецептура автоматически не утяжеляется.');continue;}
    const g=(b:Pick<BufferFluid,'rheology'>)=>{const h=hbOf(b.rheology);return h?h.tau0+h.K*100**h.n:b.rheology.yp+b.rheology.pv*.1;};
@@ -192,14 +207,14 @@ export async function buildHighQualityScenario(p:ProgramInput,s:OptimizerSetting
    for(const qCement of cementRates)for(const qDisp of rates){
     out.candidates++;
     try{
-     const scheduled=scheduleCleaning({...p,wellData:{...w,turbulatorDesign:tools}},chemical,heavy,t,proof?.exposureS??0,qHeavy,qCement,qDisp);
+     const scheduled=scheduleCleaning({...p,wellData:{...w,turbulatorDesign:tools}},chemical,heavy,t,proof?.exposureS??Math.max(0,s.chemicalContactMin??10)*60,qHeavy,qCement,qDisp);
      const program=scheduled.program;program.wellData={...program.wellData,fluidInteractionLab:remapCleaningLab(p,program)};
      const currentFluids=labFluids(program),badMixture=program.wellData.fluidInteractionLab?.mixtures.some(x=>x.observation==='anomaly'&&x.temperatureC===lab?.temperatureC&&x.pressureMPaAbs===lab?.pressureMPaAbs&&x.fractions.every(f=>currentFluids.find(g=>g.id===f.fluidId)?.key===f.key));
      if(badMixture){failures.add('Для выбранных жидкостей лабораторией отмечена несовместимость.');continue;}
      const v={q1:qCement,q2:qDisp,bufferVolumeM3:null,bufferDensity:null},ev=evaluate(program,v,plan,false);
      if(!ev.feasible){ev.violations.forEach(x=>failures.add(x));continue;}
      const design:CleaningDesign={version:1,target:t,targetRemovalPct:85,chemicalName:chemical.name,heavyName:heavy.name,chemicalVolumeM3:scheduled.chemical.volume,heavyVolumeM3:scheduled.heavy.volume,chemicalContactMin:scheduled.chemicalContactMin,heavyHighContactMin:scheduled.heavyHighContactMin,chemicalRateLps:10,heavyRateLps:qHeavy,cementRateLps:qCement,displacementRateLps:qDisp,switchVolumeM3:scheduled.change,heavyEndVolumeM3:scheduled.heavyEnd,...(proof?{proof:{id:proof.id,source:proof.source,removalPct:proof.removalPct!,exposureS:proof.exposureS!,criticalPa:proof.criticalPa!,temperatureC:proof.temperatureC!,pressureMPaAbs:proof.pressureMPaAbs!}}:{})};
-     pool.push({scenario:{...out,design,program,centralization:plan,evaluation:ev,issues:proof?[]:[chemical.name+': цель смытия 85% не подтверждена протоколом.']},test:proof});
+     pool.push({scenario:{...out,warnings:[...out.warnings,...(proof?[]:['Расчётный сценарий без испытания смытия: 85% — цель, фактический процент неизвестен.'])],design,program,centralization:plan,evaluation:ev,issues:[]},test:proof});
     }catch(e){failures.add((e as Error).message);}
     if(out.candidates%4===0)await new Promise(r=>setTimeout(r,0));
    }
@@ -210,8 +225,6 @@ export async function buildHighQualityScenario(p:ProgramInput,s:OptimizerSetting
  pool.sort((a,b)=>(b.test?.removalPct??-1)-(a.test?.removalPct??-1)||b.scenario.evaluation!.minMarginMPa-a.scenario.evaluation!.minMarginMPa||a.scenario.evaluation!.jobTimeMin-b.scenario.evaluation!.jobTimeMin);
  let rejected:HighQualityScenario|undefined;
  for(const {scenario:best,test} of pool){
-  // Only one unconfirmed draft is useful; no untested recipe can become a ready scenario.
-  if(!test&&rejected)continue;
   let pressure:PressureProfileResult|undefined;
   try{
    const ev=evaluate(best.program!,best.evaluation!.variant,plan,true,r=>{pressure=r;});

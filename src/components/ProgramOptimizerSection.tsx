@@ -1,3 +1,4 @@
+import {bufferPlanningDefaults} from '@/lib/chemical-wash-recipes';
 import ChemicalWashRecipes from './ChemicalWashRecipes';
 import type {BufferFluid,DrillingFluid} from '@/lib/cementing-calculations';
 import {cleaningInputKey,type HighQualityScenario} from '@/lib/optimizer-cleaning';
@@ -43,21 +44,23 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
   const [settings, setSettings] = useState<OptimizerSettings>(DEFAULT_OPTIMIZER_SETTINGS);
   const [error,setError]=useState('');
   const [resultKey,setResultKey]=useState('');
-  const stale=!!resultKey&&resultKey!==cleaningInputKey(input);
+  const [resultSettingsKey,setResultSettingsKey]=useState('');
+  const stale=!!resultKey&&(resultKey!==cleaningInputKey(input)||resultSettingsKey!==JSON.stringify(settings));
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<OptimizerResult | null>(null);
   const [bufIdx, setBufIdx] = useState(0);
   const [applied, setApplied] = useState<string | null>(null);
 
-  const lastBuf = input.buffers[input.buffers.length - 1];
+  const originalLastBuf = input.buffers[input.buffers.length - 1];
+  const lastBuf = originalLastBuf?bufferPlanningDefaults(originalLastBuf):undefined;
   const baseBuf = lastBuf ? { volume: lastBuf.volume, density: lastBuf.density } : null;
 
   // Обновления — через flushSync: асинхронные setState не должны ждать посторонних «подвисших» обновлений
   // (например, 3D-сцены, которая грузит шрифт с CDN), иначе прогресс и результат «замерзают».
   const sync = (fn: () => void) => { try { flushSync(fn); } catch { fn(); } };
   const run = async () => {
-    sync(() => { setRunning(true); setProgress(0); setResult(null); setApplied(null);setError('');setResultKey(cleaningInputKey(input)); });
+    sync(() => { setRunning(true); setProgress(0); setResult(null); setApplied(null);setError('');setResultKey(cleaningInputKey(input));setResultSettingsKey(JSON.stringify(settings)); });
     let lastPct = -1;
     try {
       const r = await runOptimizer(input, settings, (d, t) => {
@@ -126,7 +129,9 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
           <div className="w-32">{num("jointLengthM", "Длина трубы, м")}</div>
         </div>
         <p className="text-xs">«Высокое качество»: пласты и 150 м TVD выше; химбуфер 10 л/с с проверкой ламинарности и испытанным смытием ≥85%; затем тяжёлый буфер в переходном/турбулентном режиме, центраторы и турбулизаторы. Проверяется отдельно от обычного перебора.</p>
-        <ChemicalWashRecipes mud={input.drillingFluid} buffers={input.buffers} onMudChange={onDrillingFluidChange} onBuffersChange={onChemicalBuffersChange}/>
+        {settings.optimizeBuffer&&<div className="max-w-sm">{num('chemicalContactMin','Стартовое время контакта химбуфера, мин')}</div>}
+        <p className="text-xs text-muted-foreground">{settings.optimizeBuffer?'Недостающие параметры буферов заполняются стартовыми значениями. Лабораторные протоколы необязательны для расчёта.':'Подбор буферов и двухступенчатая очистка отключены. Считаются расходы на заданных буферах.'}</p>
+        {settings.optimizeBuffer&&<ChemicalWashRecipes mud={input.drillingFluid} buffers={input.buffers} onMudChange={onDrillingFluidChange} onBuffersChange={onChemicalBuffersChange}/>}
         {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
         {stale&&<p role="alert" className="text-sm text-amber-700">Исходные данные изменились. Повторите автоподбор перед применением.</p>}
         {running && <Progress value={progress} className="h-2" />}
@@ -134,6 +139,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
 
       {result && (
         <>
+          {result.planningNotes?.map(note=><p className="text-xs text-amber-700" key={note}>{note}</p>)}
           {result.blocker && (
             <Card className="p-4 border-destructive/60">
               <div className="text-sm text-red-600 font-medium">Нет ни одного допустимого варианта</div>
@@ -141,7 +147,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
             </Card>
           )}
 
-          {result.highQuality&&<QualityCleaningCard value={result.highQuality} disabled={stale||running||!onApplyQuality} onApply={()=>{if(!stale&&result.highQuality?.ready){onApplyQuality?.(result.highQuality);setApplied('Высокое качество');}}}/>}
+          {settings.optimizeBuffer&&result.highQuality&&<QualityCleaningCard value={result.highQuality} disabled={stale||running||!onApplyQuality} onApply={()=>{if(!stale&&result.highQuality?.ready){onApplyQuality?.(result.highQuality);setApplied('Высокое качество');}}}/>}
           <Card className="p-4 space-y-3">
             <h3 className="font-semibold">Стандартный перебор: сравнение вариантов</h3>
             <div className="overflow-x-auto">
