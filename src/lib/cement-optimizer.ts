@@ -423,7 +423,7 @@ export async function runOptimizer(
       const ev={...booster.evaluation,centralization:booster.centralization};
       if(!result.best.length||compareProgramQuality(ev,result.best[0].ev)<0){
         result.centralizerStudy=undefined;result.blocker=undefined;
-        result.best=[{label:'Лучшее качество',hint:'Лучший CQI с дополнительным буферным усилением; учтены ступени подачи, контакт и оснастка.',ev,cleaning:booster},...result.best.slice(1)];
+        result.best=[{label:'Лучшее качество',hint:'Лучший CQI с дополнительным буферным усилением; учтены ступени подачи, контакт и оснастка.',ev,cleaning:booster},...result.best.slice(1).filter(x=>(x.ev.cqi??0)>=(ev.cqi??0)*(x.label==='Сбалансированный'?.9:.85))];
       }
     }
     return result;
