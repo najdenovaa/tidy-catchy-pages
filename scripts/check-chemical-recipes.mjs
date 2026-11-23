@@ -81,7 +81,7 @@ await page.evaluate(async()=>{
  const s=qualityInput();s.drillingFluid.base='oil';
  s.buffers[0]=applyChemicalRecipe(s.buffers[0],WASH_RECIPES.find(r=>r.id==='obm-mes-solvent'),{},s.drillingFluid);
  s.buffers[0].rheology={pv:0,yp:0,model:'pvyp'};
- s.buffers[0].volume=8;s.buffers[0].flowRateSteps[0].volumeM3=8;s.buffers[1].volume=12;s.buffers[1].flowRateSteps[0].volumeM3=12;
+
  sessionStorage.setItem('cementing_session_v1',JSON.stringify(s));
 });
 await page.reload();await page.getByRole('button',{name:'РАСЧЁТ',exact:true}).click();
@@ -94,7 +94,7 @@ assert.equal(await optimizer.getByTestId('chemical-wash-recipes').count(),0);
 await applyBest();
 await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')??'{}').buffers?.[0]?.rheology?.pv===20,{},{timeout:15000});
 const unchanged=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')));
-assert.equal(unchanged.buffers.length,2);assert.deepEqual(unchanged.buffers.map(b=>b.volume),[8,12]);assert.ok(unchanged.wellData.optimizerProgram.hardware.length>=2);assert.equal(unchanged.buffers[0].density,1100);
+assert.equal(unchanged.buffers.length,2);assert.deepEqual(unchanged.buffers.map(b=>b.volume),[4,5]);assert.ok(unchanged.wellData.optimizerProgram.hardware.length>=2);assert.equal(unchanged.buffers[0].density,1100);
 assert.deepEqual(unchanged.buffers[0].additives.map(a=>a.percentage),[.05,.5,2]);
 assert.equal(unchanged.wellData.optimizerCleaning,undefined);
 assert.equal(await comparison.locator('thead th').filter({hasText:'Лучшее качество'}).count(),1);

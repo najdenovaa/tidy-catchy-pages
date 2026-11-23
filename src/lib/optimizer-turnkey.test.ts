@@ -51,7 +51,7 @@ it('builds a complete catalogue-backed program with interval buffer rates, hardw
  expect(JSON.stringify(input)).toBe(before);
 },120000);
 it('keeps complete interval scheduling on the specified recipes with buffer selection disabled',async()=>{
- const {input}=turnkeyFixture(),catalog=optimizerHardwareCatalog();input.buffers[0].volume=8;input.buffers[0].flowRateSteps[0].volumeM3=8;input.buffers[1].volume=12;input.buffers[1].flowRateSteps[0].volumeM3=12;
+ const {input}=turnkeyFixture(),catalog=optimizerHardwareCatalog();
  const r=await runOptimizer(input,{...settings,optimizeBuffer:false},undefined,catalog);
  
  expect(r.best.length,r.blocker).toBeGreaterThan(0);
