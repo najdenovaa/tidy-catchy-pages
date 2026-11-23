@@ -157,6 +157,7 @@ export interface ReservoirLayer {
 }
 
 export interface WellData {
+  optimizerProgram?:import('./optimizer-program-record').OptimizerProgramRecord;
   optimizerCleaning?:import('./optimizer-cleaning').CleaningDesign;
   turbulatorDesign?: import("./turbulator-flow").TurbulatorDesign;
   mechanics?:import("./cement-mechanics").MechanicsSettings;

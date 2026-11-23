@@ -1,3 +1,4 @@
+import {normalizeOptimizerProgramRecord} from './optimizer-program-record';
 import {normalizeChemicalRecipeRecord} from './chemical-wash-recipes';
 import {normalizeCleaningDesign} from './optimizer-cleaning-record';
 import { normalizeTurbulatorDesign } from './turbulator-flow';
@@ -219,6 +220,7 @@ export function normalizeWellData(value: unknown): WellData {
     ...(caliperLog?{caliperLog}:{}),
     ...(source.mechanics!==undefined?{mechanics:normalizeMechanics(source.mechanics)}:{}),
     ...(source.thermal!==undefined?{thermal:normalizeThermal(source.thermal)}:{}),
+    ...(normalizeOptimizerProgramRecord(source.optimizerProgram)?{optimizerProgram:normalizeOptimizerProgramRecord(source.optimizerProgram)}:{}),
     ...(normalizeCleaningDesign(source.optimizerCleaning)?{optimizerCleaning:normalizeCleaningDesign(source.optimizerCleaning)}:{}),
     ...(source.fluidInteractionLab!==undefined?{fluidInteractionLab:normalizeFluidLab(source.fluidInteractionLab)}:{}),
     ...(source.chartPresentations!==undefined?{chartPresentations:normalizeChartPresentations(source.chartPresentations)}:{}),

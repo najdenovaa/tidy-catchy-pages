@@ -50,3 +50,21 @@ it('А/Б требует второго изделия, передаёт его 
   await select('Последовательность интервала 1','AB');expect(computed.mock.lastCall![0]).toBeNull();expect(host.textContent).not.toContain('А/Б: метод расчёта');
  }finally{await act(async()=>root.unmount());host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();}
 });
+
+it('retains an externally applied catalogue layout after geometry changes and restores its calculation on reload',async()=>{
+ vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
+ vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(null);
+ const {turnkeyFixture}=await import('@/lib/__tests__/fixtures/optimizer-turnkey-fixture'),{input,catalog}=turnkeyFixture();
+ const spec=catalog.centralizers.find(c=>c.spec.passport?.casingOD===168)!.spec;
+ const intervals=[{id:'saved',fromMD:0,toMD:input.wellData.casingDepthMD,centralizersPerJoint:1,jointLength:12,spec}];
+ const well={...input.wellData,holeDiameter:input.wellData.holeDiameter+1,centralizerDesign:{mode:'manual' as const,targetStandoff:85,jointLength:12,autoSpec:spec,intervals},optimizerProgram:{version:1} as WellData['optimizerProgram']};
+ const computed=vi.fn(),report=vi.fn(),host=document.createElement('div');document.body.append(host);let root=createRoot(host);
+ try{
+  await act(async()=>root.render(<CentralizationSection wellData={input.wellData} mudDensity={1100} onResultsChange={computed} onReportChange={report}/>));
+  await act(async()=>root.render(<CentralizationSection wellData={well} mudDensity={1100} onResultsChange={computed} onReportChange={report} externalIntervals={{nonce:1,intervals}}/>));
+  expect(computed.mock.lastCall?.[0]?.length).toBeGreaterThan(0);expect(report.mock.lastCall?.[0].autoSpec).toEqual(spec);expect(report.mock.lastCall?.[0].calculated).toBe(true);
+  await act(async()=>root.unmount());root=createRoot(host);computed.mockClear();
+  await act(async()=>root.render(<CentralizationSection wellData={well} mudDensity={1100} onResultsChange={computed} onReportChange={report}/>));
+  expect(computed.mock.lastCall?.[0]?.length).toBeGreaterThan(0);expect(report.mock.lastCall?.[0].intervals).toEqual(intervals);
+ }finally{await act(async()=>root.unmount());host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();}
+});

@@ -121,16 +121,17 @@ export function remapCleaningLab(old:ProgramInput,next:ProgramInput):FluidIntera
  for(const f of before){const matches=after.filter(g=>signature(g.key)===signature(f.key));if(matches.length===1)map.set(f.id,matches[0]);}
  return {...lab,mixtures:lab.mixtures.map(t=>({...t,fractions:t.fractions.map(f=>{const m=map.get(f.fluidId);return m&&before.find(b=>b.id===f.fluidId)?.key===f.key?{...f,fluidId:m.id,key:m.key}:f;})})),removal:lab.removal.map(t=>{const m=map.get(t.cleanerId);return m&&before.find(b=>b.id===t.cleanerId)?.key===t.cleanerKey?{...t,cleanerId:m.id,cleanerKey:m.key}:t;})};
 }
-function placeCleaningTurbulators(w:WellData,t:CleaningTarget,heavy:BufferFluid,q:number,joint:number){
+export function placeCleaningTurbulators(w:WellData,t:CleaningTarget,heavy:BufferFluid,q:number,joint:number,capture?:(r:ReturnType<typeof calculateTurbulatorFlow>)=>void,placeMD?:(md:number,previous?:TurbulatorPoint)=>number){
  const template=w.turbulatorDesign?.points[0];
  if(!template)throw Error('Нет исходной геометрии турбулизатора. Задайте изделие в разделе центрации; размеры по фотографии не назначаются.');
  const points:TurbulatorPoint[]=(w.turbulatorDesign?.points??[]).filter(p=>p.md<t.topMD||p.md>t.bottomMD);
  let md=t.bottomMD;
  while(md>t.topMD+1e-6&&points.length<2000){
+  md=placeMD?.(md,points.at(-1))??md;
   const p={...template,id:'quality-turb-'+md.toFixed(6),md};
   const f=calculateTurbulatorFlow(w,p,q,{id:'quality-heavy',name:heavy.name,density:heavy.density,rheology:heavy.rheology});
   if(!f.valid||!(f.tangentialMs>0))throw Error('Турбулизатор MD '+md.toFixed(1)+': '+(f.issues.join('; ')||'не создаёт закрутку.'));
-  points.push(p);
+  capture?.(f);points.push(p);
   // Cover with successive model L90 wakes, capped by one casing joint. Not a cleaning-efficiency correlation.
   const distance=Math.min(joint,f.decay90M??f.lengthM);
   if(!(distance>.01))throw Error('Расчётная закрутка затухает слишком быстро для автоматической расстановки.');

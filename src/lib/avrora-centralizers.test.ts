@@ -4,8 +4,8 @@ import {passportExamples,passportWarnings,passportAssumptions} from './centraliz
 import {inspectCentralizer} from './centralizer-clearance';
 import {centralizerMesh} from './centralizer-mesh';
 it('сохраняет все 40 исполнений и уникальные ключи',()=>{
- expect(avroraCentralizers).toHaveLength(40);expect(passportExamples).toHaveLength(74);
- expect(new Set(passportExamples.map(p=>p.id)).size).toBe(74);
+ expect(avroraCentralizers).toHaveLength(40);expect(passportExamples).toHaveLength(78);
+ expect(new Set(passportExamples.map(p=>p.id)).size).toBe(78);
 });
 it('переносит размеры 205 и различает два исполнения ОК 508',()=>{
  const spec=avroraCentralizers.find(p=>p.id==='avrora205-178-240')!.spec;

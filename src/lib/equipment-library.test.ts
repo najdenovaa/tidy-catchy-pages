@@ -61,3 +61,11 @@ it('does not overwrite another tab, corrupt storage, or data after quota failure
  expect(()=>writeEquipmentLibrary({getItem:()=>raw,setItem:()=>{throw new Error('quota');}},emptyEquipmentLibrary(),raw)).toThrow('quota');expect(raw).toBe(before);
  raw='broken';expect(()=>readEquipmentLibrary(storage)).toThrow();expect(raw).toBe('broken');
 });
+it('keeps versioned turbulator geometry and validates catalogue dimensions',()=>{
+ const properties={kind:'turbulator' as const,model:'Т-168',manufacturer:'CI',casingOD:168,outerDiameter:184,passageID:172,lengthMm:180,bladesCount:4,bladeAngle:45,bladeHeight:8,bladeWidthMm:8,sleeveThicknessMm:2,maxTemperatureC:120};
+ const lib=saveEquipmentRevision(emptyEquipmentLibrary(),properties,meta);
+ const revised=saveEquipmentRevision(lib,{...properties,bladeAngle:55},meta,lib.entries[0].id);
+ const restored=parseEquipmentLibrary(JSON.stringify(revised));
+ expect(restored.entries[0].revisions.map(r=>r.properties.bladeAngle)).toEqual([45,55]);
+ for(const patch of [{passageID:160},{bladeHeight:20},{lengthMm:0},{bladesCount:2.5},{bladeAngle:90}])expect(()=>saveEquipmentRevision(emptyEquipmentLibrary(),{...properties,...patch},meta)).toThrow();
+});

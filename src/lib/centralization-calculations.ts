@@ -45,6 +45,7 @@ export interface TurbulatorInterval {
 
 /** Single turbulizer point placed manually at exact MD */
 export interface TurbulatorPoint {
+  catalog?:import('./optimizer-hardware').HardwareIdentity;
   lengthMm?: number;
   bladeWidthMm?: number;
   sleeveThicknessMm?: number;

@@ -1,3 +1,8 @@
+import {buildProcessContract} from '@/lib/cementing-process';
+import EquipmentLibrary from './EquipmentLibrary';
+import {readEquipmentLibrary} from '@/lib/equipment-library';
+import {optimizerHardwareCatalog} from '@/lib/optimizer-hardware';
+import type {CompleteProgramPlan} from '@/lib/optimizer-turnkey';
 import {bufferPlanningDefaults} from '@/lib/chemical-wash-recipes';
 import ChemicalWashRecipes from './ChemicalWashRecipes';
 import type {BufferFluid,DrillingFluid} from '@/lib/cementing-calculations';
@@ -20,6 +25,7 @@ import { centralizerTypeLabels, type CentralizerType } from "@/lib/centralizatio
 interface Props {
   input: ProgramInput;
   onChemicalBuffersChange?:(b:BufferFluid[])=>void;onDrillingFluidChange?:(m:DrillingFluid)=>void;
+  onApplyComplete?:(p:CompleteProgramPlan)=>void;
   onApplyQuality?: (p:HighQualityScenario)=>void;
   onApply: (v: ProgramVariant, centralization?: CentralizerPlan) => void;
 }
@@ -40,7 +46,7 @@ const bufText = (e: VariantEval, base: { volume: number; density: number } | nul
   return `${f(vol, 1)} м³ · ${rho.toFixed(0)} кг/м³`;
 };
 
-export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,onChemicalBuffersChange,onDrillingFluidChange }: Props) {
+export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,onApplyComplete,onChemicalBuffersChange,onDrillingFluidChange }: Props) {
   const [settings, setSettings] = useState<OptimizerSettings>(DEFAULT_OPTIMIZER_SETTINGS);
   const [error,setError]=useState('');
   const [resultKey,setResultKey]=useState('');
@@ -63,10 +69,11 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
     sync(() => { setRunning(true); setProgress(0); setResult(null); setApplied(null);setError('');setResultKey(cleaningInputKey(input));setResultSettingsKey(JSON.stringify(settings)); });
     let lastPct = -1;
     try {
+      const hardware=optimizerHardwareCatalog(readEquipmentLibrary(localStorage).library);
       const r = await runOptimizer(input, settings, (d, t) => {
         const pct = Math.round((d / t) * 100);
         if (pct !== lastPct) { lastPct = pct; sync(() => setProgress(pct)); }
-      });
+      },hardware);
       const bestBuf = r.best[0] ? r.bufferOptions.findIndex((b) => b.volumeM3 === r.best[0].ev.variant.bufferVolumeM3 && b.density === r.best[0].ev.variant.bufferDensity) : 0;
       sync(() => { setResult(r); setBufIdx(Math.max(0, bestBuf)); });
     } catch(e){setError(e instanceof Error?e.message:String(e));} finally {
@@ -91,7 +98,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
       <Card className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h3 className="font-semibold">Автоподбор программы цементирования</h3>
+            <h3 className="font-semibold">Автоподбор полной программы цементирования</h3>
             <p className="text-xs text-muted-foreground max-w-3xl">
               Перебираются расходы буфера/цемента и продавки и параметры разделительного буфера. Каждый вариант прогоняется через полную
               симуляцию закачки: давление на каждом пласте и на забое, давление на устье, время загустевания, проявление. Из допустимых
@@ -119,7 +126,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
             Подбирать центрирование
           </label>
           <label className="space-y-1">
-            <div className="text-muted-foreground">Тип центраторов</div>
+            <div className="text-muted-foreground">Предпочтительный тип центраторов</div>
             <select value={settings.centralizerType} disabled={!settings.optimizeCentralizers}
               onChange={(e) => setSettings({ ...settings, centralizerType: e.target.value as CentralizerType })}
               className="h-8 rounded border border-border bg-background px-2 text-sm">
@@ -128,9 +135,11 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
           </label>
           <div className="w-32">{num("jointLengthM", "Длина трубы, м")}</div>
         </div>
-        <p className="text-xs">Основной результат — «Лучшее качество» с учётом CQI, центрирования, условий контакта и гидравлических ограничений. Буферы — дополнительное усиление: пласты +150 м TVD, химическая и тяжёлая пачки, оснастка и ступенчатая подача. Оно включается в основной вариант, если улучшает расчётную оценку.</p>
+        <p className="text-xs">Основной результат — «Лучшее качество» с учётом CQI, центрирования, условий контакта и гидравлических ограничений. Буферы — дополнительное усиление: пласты +150 м TVD, химическая и тяжёлая пачки, оснастка и ступенчатая подача. Каждый предлагаемый вариант проверяется как полная программа с оснасткой и интервальным графиком.</p>
         {settings.optimizeBuffer&&<div className="max-w-sm">{num('chemicalContactMin','Стартовое время контакта химбуфера, мин')}</div>}
         <p className="text-xs text-muted-foreground">{settings.optimizeBuffer?'Недостающие параметры буферов заполняются стартовыми значениями. Лабораторные протоколы необязательны для расчёта.':'Буферное усиление отключено. Подбор лучшего качества продолжается на заданных буферах.'}</p>
+        <EquipmentLibrary/>
+        <p className="text-xs text-muted-foreground">Оснастка выбирается из встроенных паспортов и пользовательской библиотеки. Версии и параметры копируются в выбранную программу. Если типоразмер отсутствует, добавьте запись в библиотеку оснастки.</p>
         {settings.optimizeBuffer&&<ChemicalWashRecipes mud={input.drillingFluid} buffers={input.buffers} onMudChange={onDrillingFluidChange} onBuffersChange={onChemicalBuffersChange}/>}
         {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
         {stale&&<p role="alert" className="text-sm text-amber-700">Исходные данные изменились. Повторите автоподбор перед применением.</p>}
@@ -169,6 +178,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
                     ["Расход продавки", (e: VariantEval) => `${f(e.variant.q2, 0)} л/с`],
                     ["Разделительный буфер", (e: VariantEval) => bufText(e, baseBuf)],
                     ["Центрирование", (e: VariantEval) => e.centralization ? `${e.centralization.label}: ${e.centralization.countInCement} шт. в интервале цементирования, мин. отступ ${f(e.centralization.minStandoffPct, 0)}%` : (input.centralization?.length ? "как в программе" : "не рассчитано (принят отступ 67%)")],
+                    ["Турбулизаторы", (e:VariantEval)=>{const c=result.best.find(x=>x.ev===e)?.complete;return c?c.record.hardware.filter(h=>h.kind==='turbulator').map(h=>h.identity.model+': '+h.quantity+' шт.').join('; '):'как в исходной программе';}],
                     ["Качество цементирования CQI, баллы", (e: VariantEval) => f(e.cqi, 1)],
                     ["Минимальный CQI по интервалу", (e: VariantEval) => f(e.minCqi, 1)],
                     ["Зоны низкого качества CQI < 55", (e: VariantEval) => `${f(e.badQualityLengthM, 0)} м`],
@@ -183,7 +193,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
                     <tr key={label as string} className="border-t border-border/40">
                       <td className="p-1.5 text-muted-foreground">{label as string}</td>
                       {cols.map((c, i) => (
-                        <td key={c.label} className={`p-1.5 ${i > 0 ? "font-medium" : ""}`}>{c.cleaning?.program&&(label==='Расход буфера и цемента'||label==='Расход продавки')?[...new Set((label==='Расход продавки'?c.cleaning.program.displacementFluids:[...c.cleaning.program.buffers,...c.cleaning.program.slurries]).flatMap(x=>x.flowRateSteps.map(s=>s.rateLps)))].sort((a,b)=>a-b).join(' / ')+' л/с (ступени)':c.cleaning?.program&&label==='Разделительный буфер'?c.cleaning.program.buffers.map(b=>`${b.name}: ${f(b.volume,1)} м³ · ${f(b.density,0)} кг/м³`).join('; '):(fn as (e: VariantEval) => string)(c.ev)}</td>
+                        <td key={c.label} className={`p-1.5 ${i > 0 ? "font-medium" : ""}`}>{(c.complete?.program??c.cleaning?.program)&&(label==='Расход буфера и цемента'||label==='Расход продавки')?[...new Set((label==='Расход продавки'?(c.complete?.program??c.cleaning.program).displacementFluids:[...(c.complete?.program??c.cleaning.program).buffers,...(c.complete?.program??c.cleaning.program).slurries]).flatMap(x=>x.flowRateSteps.map(s=>s.rateLps)))].sort((a,b)=>a-b).join(' / ')+' л/с (ступени)':(c.complete?.program??c.cleaning?.program)&&label==='Разделительный буфер'?(c.complete?.program??c.cleaning.program).buffers.map(b=>`${b.name}: ${f(b.volume,1)} м³ · ${f(b.density,0)} кг/м³`).join('; '):(fn as (e: VariantEval) => string)(c.ev)}</td>
                       ))}
                     </tr>
                   ))}
@@ -202,7 +212,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
                     {cols.map((c, i) => (
                       <td key={c.label} className="p-1.5">
                         {i > 0 && (
-                          <Button disabled={stale||running||!!c.cleaning&&!onApplyQuality} size="sm" variant={applied === c.label ? "secondary" : "default"} onClick={() => { if(c.cleaning)onApplyQuality?.(c.cleaning);else onApply(c.ev.variant, c.ev.centralization); setApplied(c.label); }}>
+                          <Button disabled={stale||running||!!c.cleaning&&!onApplyQuality||!!c.complete&&!onApplyComplete} size="sm" variant={applied === c.label ? "secondary" : "default"} onClick={() => { if(c.complete)onApplyComplete?.(c.complete);else if(c.cleaning)onApplyQuality?.(c.cleaning);else onApply(c.ev.variant, c.ev.centralization); setApplied(c.label); }}>
                             {applied === c.label ? "Применено ✓" : "Применить"}
                           </Button>
                         )}
@@ -220,6 +230,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
             ) : null}
           </Card>
 
+          {result.best.some(x=>x.complete)&&<details className="border rounded" data-testid="complete-program-details"><summary>Полная программа: проход буферов, оснастка и график каждого варианта</summary><div className="p-3 space-y-4">{result.best.filter(x=>x.complete).map(x=><section key={x.label} data-complete-variant={x.label}><h4 className="font-semibold">{x.label}</h4><p className="text-xs">Целевая зона MD {f(x.complete.record.targetFromMD)}–{f(x.complete.record.targetToMD)} м. Расходы ниже относятся к буферам в этой зоне.</p>{x.complete.record.transit.map(t=><p className="text-xs" key={t.fluidId}>{t.name}: {f(t.minRateLps)}–{f(t.maxRateLps)} л/с; контакт не менее {f(t.minContactMin)} мин; проверено глубин {t.coveredDepths}/{t.totalDepths}.</p>)}{x.complete.record.hardware.map(h=><p className="text-xs" key={h.kind+h.identity.id}>{h.kind==='centralizer'?'Центратор':'Турбулизатор'}: {h.identity.model} · {h.quantity} шт. · {h.identity.manufacturer} · {h.identity.source} · v{h.identity.revision}</p>)}<details><summary>Ступени закачки на устье</summary><div className="p-2 text-xs">{buildProcessContract(x.complete.program).stages.map(st=><p key={st.id}>{st.name}: {f(st.volumeM3)} м³ · {f(st.rateLps)} л/с · с {f(st.startMin)} мин</p>)}</div></details>{x.complete.record.notes.map((n,i)=><p className="text-xs text-muted-foreground" key={i}>{n}</p>)}</section>)}</div></details>}
           <p className="text-xs text-muted-foreground">CQI — расчётная сравнительная оценка по действующей модели, не измеренное качество крепи и не процент смытия.</p>
           {settings.optimizeBuffer&&result.highQuality&&<details className="rounded border" data-testid="buffer-boost-details"><summary>Дополнительное буферное усиление: расчёт и составы</summary><div className="p-3 space-y-2"><p className="text-xs">{result.best[0]?.cleaning?'Усиление включено в «Лучшее качество» и применяется общей кнопкой этого варианта.':result.highQuality.ready?'Буферный вариант проверен, но не улучшает общую оценку относительно выбранной программы.':'Буферный вариант не прошёл дополнительные проверки; основной подбор качества сохраняется.'}</p><QualityCleaningCard value={result.highQuality} disabled={true} onApply={()=>{}} detailsOnly/></div></details>}
           {result.centralizerStudy && <CentralizerStudyCard study={result.centralizerStudy} />}

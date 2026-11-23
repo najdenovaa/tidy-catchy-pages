@@ -1,3 +1,4 @@
+import {normalizeHardwareIdentity} from './optimizer-hardware-identity';
 import {generateSwirl,advanceSwirl,remapSwirl,swirlStats,swirlStepSize,SWIRL_RESIDUAL,type SwirlState} from './swirl-transport';
 import type { Rheology, WellData } from './cementing-calculations';
 import type { TurbulatorPoint } from './centralization-calculations';
@@ -24,7 +25,7 @@ export function normalizeTurbulatorDesign(v: unknown): TurbulatorDesign | undefi
     threshold:base.threshold,
     turningEfficiency:base.turningEfficiency,
     // Preserve bad engineering values for visible validation; drop malformed records only.
-    points:Array.isArray(d.points)?d.points.filter(p=>p&&typeof p.id==='string'&&[p.md,p.bladesCount,p.bladeAngle,p.bladeHeight].every(finite)).slice(0,2000):[]};
+    points:Array.isArray(d.points)?d.points.filter(p=>p&&typeof p.id==='string'&&[p.md,p.bladesCount,p.bladeAngle,p.bladeHeight].every(finite)).slice(0,2000).map(p=>({...p,catalog:normalizeHardwareIdentity(p.catalog)})):[]};
 }
 export interface TurbulatorHydraulicFluid { density: number; pv: number; yp: number; hb?: HBParams; }
 export interface SwirlSample { md: number; distanceM: number; axialMs: number; tangentialMs: number; ratio: number; phase: number; boreMm: number; profile?:SwirlState; remainingFraction?:number; }
