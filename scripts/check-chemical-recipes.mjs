@@ -12,7 +12,7 @@ await page.evaluate(async()=>{
 await page.reload();await page.getByRole('button',{name:'РАСЧЁТ',exact:true}).click();
 await page.getByRole('button',{name:/^Автоподбор/}).click();
 const optimizer=page.locator('[data-tab-content="optimizer"]'),recipe=optimizer.getByTestId('chemical-wash-recipes');
-await recipe.locator('summary').click();
+await recipe.locator('summary').first().click();
 await recipe.getByLabel('Основа БР для подбора химии',{exact:true}).selectOption('oil');
 await recipe.getByLabel('Стартовая рецептура химбуфера',{exact:true}).selectOption('obm-mes-solvent');
 await recipe.getByRole('button',{name:'Внести химическую рецептуру',exact:true}).click();
