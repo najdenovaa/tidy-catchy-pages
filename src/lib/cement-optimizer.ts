@@ -20,7 +20,7 @@ import {
 } from "./cementing-calculations";
 import { buildLabProgram } from "./cement-program";
 import {
-  autoPlaceCentralizers, calculateCentralization, centralizerPresets,
+  autoPlaceCentralizers, calculateCentralization, centralizerPresets, createCentralizationContext, type CentralizationContext,
   type CentralizationResult, type CentralizerInterval, type CentralizerSpec, type CentralizerType,
 } from "./centralization-calculations";
 
@@ -400,7 +400,7 @@ export function optimizerRates(s: OptimizerSettings): number[] {
 /**
  * Перебор. onProgress вызывается после каждой оценки; между пачками управление отдаётся браузеру.
  */
-export interface OptimizerRunControl { timeBudgetMs?:number; now?:()=>number; }
+export interface OptimizerRunControl { timeBudgetMs?:number; now?:()=>number; onConfirmed?:(result:OptimizerResult)=>void; }
 export async function runOptimizer(
   p: ProgramInput, settings: OptimizerSettings, onProgress?: (done: number, total: number) => void,catalog?:OptimizerHardwareCatalog,control:OptimizerRunControl={},
 ): Promise<OptimizerResult> {
@@ -417,6 +417,46 @@ export async function runOptimizer(
   const available=catalog?compatibleHardware(p.wellData,catalog):undefined;
   if(catalog&&settings.optimizeCentralizers&&!available.centralizers.length) return {current,evaluations:[],rates,rates1,bufferOptions:bOpts,best:[],blocker:`В справочнике нет подходящего центратора для ОК ${p.wellData.casingOD} мм и минимального прохода ${available.minBore.toFixed(1)} мм.`};
   const plans = settings.optimizeCentralizers ? centralizerPlans(p, settings,available?.centralizers.map(x=>x.spec)) : [];
+  let latestConfirmed:OptimizerResult|undefined;
+  const mergeConfirmed=(result:OptimizerResult):OptimizerResult=>{
+    const unique=new Map<string,OptimizerResult['best'][number]>();
+    for(const entry of [...(latestConfirmed?.best??[]),...result.best]){
+      if(!entry.complete)continue;
+      const c=entry.complete,key=JSON.stringify([c.program.buffers,c.program.slurries,c.program.displacementFluids,c.centralization.intervals,c.program.wellData.turbulatorDesign],(k,v)=>k==='id'||k==='appliedAt'?undefined:v);
+      unique.set(key,entry);
+    }
+    const candidates=[...unique.values()],withTools=candidates.filter(x=>x.complete?.program.wellData.turbulatorDesign?.points.length),all=withTools.length?withTools:candidates,byEval=new Map(all.map(x=>[x.ev,x]));
+    const best=pickVariants(all.map(x=>x.ev),settings).map(item=>{
+      const source=byEval.get(item.ev)!,record={...source.complete!.record,variant:item.label};
+      return {...source,label:item.label,hint:item.hint,complete:{...source.complete!,record,program:{...source.complete!.program,wellData:{...source.complete!.program.wellData,optimizerProgram:record}}}};
+    });
+    const planningNotes=[...(result.planningNotes??[]),...(best.length&&result.blocker?.startsWith('Достигнут лимит времени')?['Поиск ограничен по времени. Сохранена ранее полностью проверенная программа; оптимальность по всей сетке не подтверждена.']:[])];
+    latestConfirmed={...result,best,planningNotes,blocker:best.length?undefined:result.blocker};return latestConfirmed;
+  };
+  const publishConfirmed=(result:OptimizerResult)=>{const merged=mergeConfirmed(result);control.onConfirmed?.(merged);};
+  if(catalog&&!expired()){
+    const warmPlans=(plans.length?[...plans].sort((a,b)=>b.minStandoffPct-a.minStandoffPct||a.totalCount-b.totalCount):[projectCentralizerPlan(p,catalog)].filter(Boolean)).slice(0,3);
+    const nearest=(values:number[],q:number)=>values.reduce((best,value)=>Math.abs(value-q)<Math.abs(best-q)?value:best,values[0]);
+    const q1=nearest(rates1,current.variant.q1),q2=nearest(rates,current.variant.q2),high1=rates1.at(-1)!;
+    const variants=[{q1,q2},{q1:high1,q2:nearest(rates,high1)},{q1:high1,q2:rates.at(-1)!}];
+    const warm:VariantEval[]=[];
+    for(const plan of warmPlans)for(const rates of variants){
+      if(expired())break;
+      if(warm.some(x=>x.centralization===plan&&x.variant.q1===rates.q1&&x.variant.q2===rates.q2))continue;
+      const variant={...rates,bufferVolumeM3:null,bufferDensity:null};
+      const pp={...p,wellData:{...p.wellData,standoffProfile:plan.profile.map(r=>({md:r.md,standoffPct:r.standoff}))},centralization:plan.profile};
+      warm.push({...evaluateProgram(pp,variant,settings,undefined,plan.profile),centralization:plan});
+    }
+    if(warm.some(e=>e.feasible)){
+      const base={current,evaluations:warm,rates,rates1,bufferOptions:bOpts,best:[]};
+      const first=await completeOptimizerResults(p,{...settings,optimizeBuffer:false},catalog,base,warm,(pp,v,cp,full,capture)=>evaluateProgram(pp,v,settings,undefined,cp.profile,{preserveSteps:true,fast:!full,optimizer:true,onPressure:capture}),applyVariant,pickVariants,undefined,expired,undefined,true);
+      if(first.best.length){
+        const ready={...first,planningNotes:['Первая полная программа проверена. Поиск лучшего качества и дополнительного буферного усиления продолжается.']};
+        for(const entry of ready.best)entry.complete!.record.notes=entry.complete!.record.notes.map(n=>n.startsWith('Подбор буферов отключён')?'Первый проверенный вариант на заданных составах и объёмах буферов.':n);
+        const confirmed=mergeConfirmed(ready);control.onConfirmed?.(confirmed);
+      }
+    }
+  }
   const quality=async()=>{
    if(!settings.optimizeBuffer)return undefined;
    let qualityPlan:CentralizerPlan|undefined;
@@ -426,7 +466,9 @@ export async function runOptimizer(
   };
   const planningNotes=p.buffers.filter(b=>bufferPlanningDefaults(b)!==b).map(b=>b.name+': незаполненные свойства заменены стартовыми расчётными значениями: 1100 кг/м³ при отсутствии плотности, PV 20 сПз / YP 5 Па при отсутствии реологии. Их можно изменить во вводе.');
   const finish=async(result:OptimizerResult,candidates:VariantEval[]=result.evaluations)=>{
-    if(catalog){const complete=await completeOptimizerResults(p,settings,catalog,result,candidates,(pp,v,cp,full,capture)=>evaluateProgram(pp,v,settings,undefined,cp.profile,{preserveSteps:true,fast:!full,optimizer:true,onPressure:capture}),applyVariant,pickVariants,(d,t)=>onProgress?.(70+30*d/t,100),expired);onProgress?.(100,100);return complete;}
+    if(catalog){const complete=await completeOptimizerResults(p,settings,catalog,result,candidates,(pp,v,cp,full,capture)=>evaluateProgram(pp,v,settings,undefined,cp.profile,{preserveSteps:true,fast:!full,optimizer:true,onPressure:capture}),applyVariant,pickVariants,(d,t)=>onProgress?.(70+30*d/t,100),expired,publishConfirmed);
+      const merged=mergeConfirmed(complete);
+      onProgress?.(100,100);return merged;}
     const booster=await quality();result.highQuality=booster;
     if(booster?.ready&&booster.evaluation){
       const ev={...booster.evaluation,centralization:booster.centralization};
@@ -519,23 +561,33 @@ const CPJ_STEPS = [0.1, 0.2, 0.25, 0.34, 0.5, 1, 1.5, 2, 3];
  * пространственной кривизны): для каждого участка в 2 трубы — минимальная плотность установки, при которой
  * отступ на всём участке не ниже цели. Выше интервала цементирования — авторасстановка (для спуска).
  */
+interface PlacementTrials {
+ context:CentralizationContext;
+ above:Map<number,{fromMD:number;toMD:number;cpj:number}[]>;
+ minima:Map<string,number>;
+}
 export function placeForStandoff(
-  w: WellData, spec: CentralizerSpec, jointLength: number, target: number, mudDensity: number, toc: number,
+  w: WellData, spec: CentralizerSpec, jointLength: number, target: number, mudDensity: number, toc: number, trials?:PlacementTrials,
 ): CentralizerInterval[] {
-  const above = toc > 1
-    ? autoPlaceCentralizers({ ...w, casingDepthMD: w.casingDepthMD }, spec, jointLength, Math.min(target, 67), mudDensity, { pumpZoneTop: w.pumpZoneTop, pumpZoneBottom: w.pumpZoneBottom })
-      .filter((pl) => pl.fromMD < toc)
-      .map((pl) => ({ fromMD: pl.fromMD, toMD: Math.min(pl.toMD, toc - 0.001), cpj: pl.centralizersPerJoint }))
-    : [];
+  const upperTarget=Math.min(target,67);
+  let above=trials?.above.get(upperTarget);
+  if(!above){above=toc>1?autoPlaceCentralizers(w,spec,jointLength,upperTarget,mudDensity,{pumpZoneTop:w.pumpZoneTop,pumpZoneBottom:w.pumpZoneBottom,context:trials?.context})
+    .filter(pl=>pl.fromMD<toc).map(pl=>({fromMD:pl.fromMD,toMD:Math.min(pl.toMD,toc-.001),cpj:pl.centralizersPerJoint})):[];
+    trials?.above.set(upperTarget,above);
+  }
   const seg = jointLength * 2;
   const below: { fromMD: number; toMD: number; cpj: number }[] = [];
   for (let a = Math.max(0, toc); a < w.casingDepthMD - 1e-6; a += seg) {
     const b = Math.min(w.casingDepthMD, a + seg);
     let chosen = CPJ_STEPS[CPJ_STEPS.length - 1];
     for (const cpj of CPJ_STEPS) {
-      const prof = calculateCentralization(w, [{ id: "t", fromMD: a, toMD: b, centralizersPerJoint: cpj, jointLength, spec }], mudDensity, undefined, undefined, {fromMD:a,toMD:b})
-        .filter((r) => r.md >= a && r.md <= b);
-      if (prof.length && Math.min(...prof.map((r) => r.standoff)) >= target) { chosen = cpj; break; }
+      const key=`${a}|${b}|${cpj}`;
+      let minimum=trials?.minima.get(key);
+      if(minimum===undefined){
+        const prof=calculateCentralization(w,[{id:'t',fromMD:a,toMD:b,centralizersPerJoint:cpj,jointLength,spec}],mudDensity,undefined,undefined,{fromMD:a,toMD:b},undefined,trials?.context);
+        minimum=prof.length?Math.min(...prof.map(r=>r.standoff)):-Infinity;trials?.minima.set(key,minimum);
+      }
+      if(minimum>=target){chosen=cpj;break;}
     }
     below.push({ fromMD: a, toMD: b, cpj: chosen });
   }
@@ -573,16 +625,21 @@ export function centralizerPlans(p: ProgramInput, settings: OptimizerSettings,ca
   if (!catalogSpecs&&p.centralization && p.centralization.length) {
     plans.push(summarize(null, "как в программе", p.centralizerIntervals ?? [], p.centralization));
   }
-  for (const selected of catalogSpecs?[...catalogSpecs].sort((a,b)=>Number(a.type!==settings.centralizerType)-Number(b.type!==settings.centralizerType)):[spec]) for (const target of catalogSpecs?[67,75,85,90,95]:CENTRALIZER_TARGETS) {
-    const intervals = placeForStandoff(w, selected, settings.jointLengthM, target, mud, toc);
-    const profile = calculateCentralization(w, intervals, mud);
-    plans.push(summarize(target, `${selected.passport?.model?selected.passport.model+' · ':''}цель ${target}%`, intervals, profile));
+  const context=createCentralizationContext(w,mud),unique=new Map<string,CentralizerPlan>();
+  for(const plan of plans)unique.set(JSON.stringify(plan.intervals.map(iv=>[iv.fromMD,iv.toMD,iv.centralizersPerJoint,iv.jointLength,iv.spec])),plan);
+  for (const selected of catalogSpecs?[...catalogSpecs].sort((a,b)=>Number(a.type!==settings.centralizerType)-Number(b.type!==settings.centralizerType)):[spec]) {
+    const trials:PlacementTrials={context,above:new Map(),minima:new Map()};
+    for(const target of catalogSpecs?[67,75,85,90,95]:CENTRALIZER_TARGETS){
+      const intervals=placeForStandoff(w,selected,settings.jointLengthM,target,mud,toc,trials);
+      const key=JSON.stringify(intervals.map(iv=>[iv.fromMD,iv.toMD,iv.centralizersPerJoint,iv.jointLength,iv.spec]));
+      const label=`${selected.passport?.model?selected.passport.model+' · ':''}цель ${target}%`;
+      const previous=unique.get(key);
+      if(previous){unique.set(key,{...previous,targetPct:target,label,intervals});continue;}
+      const profile=calculateCentralization(w,intervals,mud,undefined,undefined,undefined,undefined,context);
+      unique.set(key,summarize(target,label,intervals,profile));
+    }
   }
-  const unique = new Map<string, CentralizerPlan>();
-  for (const plan of plans) {
-    const key=JSON.stringify(plan.intervals.map(iv=>[iv.fromMD,iv.toMD,iv.centralizersPerJoint,iv.jointLength,iv.spec]));
-    unique.set(key,plan);
-  }
+
   return [...unique.values()];
 }
 

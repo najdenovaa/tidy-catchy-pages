@@ -45,3 +45,28 @@ it('clears the watchdog after a successful response',async()=>{
   await vi.advanceTimersByTimeAsync(120000);expect(FakeWorker.instances[0].terminate).toHaveBeenCalledTimes(1);
  }finally{vi.useRealTimers();}
 });
+it('returns the last fully checked program on timeout rather than discarding it',async()=>{
+ vi.useFakeTimers();vi.stubGlobal('Worker',FakeWorker);
+ const ready={best:[{ev:{feasible:true},complete:{record:{}}}],planningNotes:[]};
+ try{
+  const confirmed=vi.fn();const promise=runOptimizerInWorker(qualityInput(),qualitySettings,optimizerHardwareCatalog(),vi.fn(),new AbortController().signal,confirmed);
+  FakeWorker.instances[0].onmessage!({data:{type:'confirmed',result:ready}});
+  expect(confirmed).toHaveBeenCalledWith(ready);
+  await vi.advanceTimersByTimeAsync(120000);const result=await promise;
+  expect(result.best).toEqual(ready.best);expect(result.planningNotes.join(' ')).toContain('лимит времени');expect(FakeWorker.instances[0].terminate).toHaveBeenCalledTimes(1);
+ }finally{vi.useRealTimers();}
+});
+it('keeps a checked candidate when the user cancels further improvement',async()=>{
+ vi.stubGlobal('Worker',FakeWorker);const controller=new AbortController();
+ const promise=runOptimizerInWorker(qualityInput(),qualitySettings,optimizerHardwareCatalog(),vi.fn(),controller.signal);
+ const ready={best:[{ev:{feasible:true},complete:{record:{}}}]};FakeWorker.instances[0].onmessage!({data:{type:'confirmed',result:ready}});
+ controller.abort();const result=await promise;expect(result.best).toEqual(ready.best);expect(result.planningNotes.join(' ')).toContain('остановлен пользователем');
+});
+it('never treats an unverified preliminary candidate as a checked fallback',async()=>{
+ vi.useFakeTimers();vi.stubGlobal('Worker',FakeWorker);
+ try{
+  const promise=runOptimizerInWorker(qualityInput(),qualitySettings,optimizerHardwareCatalog(),vi.fn(),new AbortController().signal);
+  FakeWorker.instances[0].onmessage!({data:{type:'confirmed',result:{best:[{ev:{feasible:true}}]}}});
+  const assertion=expect(promise).rejects.toThrow('превышен лимит 2 минуты');await vi.advanceTimersByTimeAsync(120000);await assertion;
+ }finally{vi.useRealTimers();}
+});

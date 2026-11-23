@@ -35,7 +35,7 @@ interface OptimizerDiagnostic {
   schemaVersion: 1; appVersion: string; createdAt: string; userAgent: string;
   input: ProgramInput; settings: OptimizerSettings; catalog: ReturnType<typeof optimizerHardwareCatalog>;
   status: 'not-started' | 'running' | 'completed' | 'failed' | 'cancelled';
-  progress: number; elapsedMs: number; message?: string; bestCount?: number;
+  progress: number; elapsedMs: number; firstConfirmedMs?:number; message?: string; bestCount?: number;
 }
 
 const VIOL_CODE: Record<Violation, { code: string; label: string }> = {
@@ -112,7 +112,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
         const pct = Math.round((d / t) * 100);
         details.progress=pct;details.elapsedMs=Math.round(performance.now()-started);
         if (pct !== lastPct) { lastPct = pct; sync(() => setProgress(pct)); }
-      },job.signal);
+      },job.signal,ready=>{if(details){details.firstConfirmedMs??=Math.round(performance.now()-started);details.bestCount=ready.best.length;}sync(()=>setResult(ready));});
       details.status='completed';details.bestCount=r.best.length;details.message=r.blocker;
       const bestBuf = r.best[0] ? r.bufferOptions.findIndex((b) => b.volumeM3 === r.best[0].ev.variant.bufferVolumeM3 && b.density === r.best[0].ev.variant.bufferDensity) : 0;
       sync(() => { setResult(r); setBufIdx(Math.max(0, bestBuf)); });
@@ -188,7 +188,7 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
         {settings.optimizeBuffer&&<ChemicalWashRecipes mud={input.drillingFluid} buffers={input.buffers} onMudChange={onDrillingFluidChange} onBuffersChange={onChemicalBuffersChange}/>}
         {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
         {stale&&<p role="alert" className="text-sm text-amber-700">Исходные данные изменились. Повторите автоподбор перед применением.</p>}
-        {running && <div className="space-y-2"><Progress value={progress} className="h-2" /><p role="status" className="text-xs text-muted-foreground">{progress<70?'Подбор расходов и центрирования':'Проверка полной программы и оснастки'} · {elapsed} с. Лимит ожидания — 2 минуты.</p></div>}
+        {running && <div className="space-y-2">{result?.best.length>0&&<p className="text-sm text-green-700">Есть полностью проверенная программа. Можно применить её или дождаться завершения поиска.</p>}<Progress value={progress} className="h-2" /><p role="status" className="text-xs text-muted-foreground">{progress<70?'Подбор расходов и центрирования':'Проверка полной программы и оснастки'} · {elapsed} с. Лимит ожидания — 2 минуты.</p></div>}
       </Card>
 
       {result && (
@@ -257,8 +257,8 @@ export default function ProgramOptimizerSection({ input, onApply,onApplyQuality,
                     {cols.map((c, i) => (
                       <td key={c.label} className="p-1.5">
                         {i > 0 && (
-                          <Button disabled={stale||running||!!c.cleaning&&!onApplyQuality||!!c.complete&&!onApplyComplete} size="sm" variant={applied === c.label ? "secondary" : "default"} onClick={() => { if(c.complete)onApplyComplete?.(c.complete);else if(c.cleaning)onApplyQuality?.(c.cleaning);else onApply(c.ev.variant, c.ev.centralization); setApplied(c.label); }}>
-                            {applied === c.label ? "Применено ✓" : "Применить"}
+                          <Button disabled={stale||!!c.cleaning&&!onApplyQuality||!!c.complete&&!onApplyComplete} size="sm" variant={applied === c.label ? "secondary" : "default"} onClick={() => { controller.current?.abort(); if(c.complete)onApplyComplete?.(c.complete);else if(c.cleaning)onApplyQuality?.(c.cleaning);else onApply(c.ev.variant, c.ev.centralization); setApplied(c.label); }}>
+                            {applied === c.label ? "Применено ✓" : running ? "Применить и остановить" : "Применить"}
                           </Button>
                         )}
                       </td>

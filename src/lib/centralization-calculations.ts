@@ -186,6 +186,14 @@ export function interpolateTrajectory(trajectory:TrajectoryPoint[],md:number):{t
 
 // ─── Main calculation ────────────────────────────────────────────
 
+/** Per-design immutable survey cache, shared only while evaluating one well and mud density. */
+export interface CentralizationContext {
+  well:WellData; mudDensity:number; geometry:ReturnType<typeof createAnnularGeometry>;
+  tension:Map<number,number>; curvature:Map<number,ReturnType<typeof surveyCurvature>>;
+}
+export function createCentralizationContext(well:WellData,mudDensity:number):CentralizationContext {
+  return {well,mudDensity,geometry:createAnnularGeometry(well,well.casingDepthMD),tension:new Map(),curvature:new Map()};
+}
 export function calculateCentralization(
   wellData: WellData,
   intervals: CentralizerInterval[],
@@ -195,12 +203,16 @@ export function calculateCentralization(
   /** Считать только точки в диапазоне MD (для проверки отдельных участков) */
   range?: { fromMD: number; toMD: number },
   flow?: { fluid: TurbulatorFluid; rateLps: number; settings: TurbulatorDesign },
+  prepared?:CentralizationContext,
 ): CentralizationResult[] {
   const results: CentralizationResult[] = [];
   const step = 5;
   const wpm = casingWeightPerMeter(wellData.casingOD, wellData.casingWall);
   const bf = buoyancyFactor(mudDensity);
-  const geometry=createAnnularGeometry(wellData,wellData.casingDepthMD);
+  const context=prepared?.well===wellData&&prepared.mudDensity===mudDensity?prepared:undefined;
+  const geometry=context?.geometry??createAnnularGeometry(wellData,wellData.casingDepthMD);
+  const tensionAt=(md:number)=>{let value=context?.tension.get(md);if(value===undefined){value=freeAxialWeight(wellData.trajectory,md,wellData.casingDepthMD,wpm*bf);context?.tension.set(md,value);}return value;};
+  const curvatureAt=(md:number)=>{let value=context?.curvature.get(md);if(value===undefined){value=surveyCurvature(wellData.trajectory,md,wellData.casingDepthMD);context?.curvature.set(md,value);}return value;};
   const EI = STEEL_E * casingMomentOfInertia(wellData.casingOD, wellData.casingWall);
 
   // Pre-sort turbulator points for fast lookup
@@ -215,8 +227,8 @@ export function calculateCentralization(
   const mixed = intervals.some(x=>x.pattern) ? buildMixedSupportProfile(wellData.casingDepthMD, intervals, wellData.casingOD, EI,
     md => boreDiameterAtDepth(wellData,md), md => {
       const {zenith}=interpolateTrajectory(wellData.trajectory,md);
-      const tension=freeAxialWeight(wellData.trajectory,md,wellData.casingDepthMD,wpm*bf);
-      return normalLineLoad(wpm*bf,zenith,tension,surveyCurvature(wellData.trajectory,md,wellData.casingDepthMD));
+      const tension=tensionAt(md);
+      return normalLineLoad(wpm*bf,zenith,tension,curvatureAt(md));
     }) : null;
   const depths=new Set<number>();
   for(let md=mdStart;md<=mdEnd;md+=step)depths.add(md);
@@ -256,8 +268,8 @@ export function calculateCentralization(
     }
 
     // Frictionless axial reference and signed 3D curvature; not a hard-string contact solve.
-    const tensionN=freeAxialWeight(wellData.trajectory,md,wellData.casingDepthMD,wpm*bf);
-    const lateralF=normalLineLoad(wpm*bf,zenith,tensionN,surveyCurvature(wellData.trajectory,md,wellData.casingDepthMD));
+    const tensionN=tensionAt(md);
+    const lateralF=normalLineLoad(wpm*bf,zenith,tensionN,curvatureAt(md));
 
     let eccentricity: number;
     const support = hasCentralizer && interval?.spec.type === 'spring' && interval.spec.passport?.outerDiameter
@@ -359,6 +371,7 @@ export interface AutoPlacementInterval {
 }
 
 export interface AutoPlacementOptions {
+  context?:CentralizationContext;
   pumpZoneTop?: number;       // верх зоны ГНО, MD
   pumpZoneBottom?: number;    // низ зоны ГНО, MD
   wellheadDepth?: number;     // глубина устьевой зоны (по умолч. 50 м)
@@ -447,7 +460,7 @@ export function autoPlaceCentralizers(
     const prof = calculateCentralization(
       wellData,
       [{ id: "verify", fromMD: seg.fromMD, toMD: seg.toMD, centralizersPerJoint: cpj, jointLength, spec }],
-      mudDensity, undefined, undefined, { fromMD: seg.fromMD, toMD: seg.toMD },
+      mudDensity, undefined, undefined, { fromMD: seg.fromMD, toMD: seg.toMD }, undefined, options.context,
     );
     return prof.length ? Math.min(...prof.map((r) => r.standoff)) : 100;
   };

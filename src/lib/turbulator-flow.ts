@@ -130,6 +130,9 @@ export function calculateTurbulatorFlow(w:WellData,p:TurbulatorPoint,q:number,fl
   if(out.valid&&out.reachedThreshold&&firstCell?.diameterMm===inlet.bore&&out.lengthM<=p.md-firstCell.topMD){if(uniformWakeCache.size>128)uniformWakeCache.delete(uniformWakeCache.keys().next().value!);uniformWakeCache.set(wakeKey,out);}
   return out;
 }
+// Exact scalar closure cache shared by candidate simulations. Unlike radial visualization
+// profiles, these values are small enough to retain across the repeated rate/fluid grid.
+const scalarLossCache=new Map<string,number>();
 /** Immutable per-simulation index: equal products in equal bores share the SAME outlet closure.
  * Binary range counts assign each device to one segment without rescanning the string at every depth. */
 export function createTurbulatorLossCalculator(w:WellData) {
@@ -140,15 +143,16 @@ export function createTurbulatorLossCalculator(w:WellData) {
     const group=groups.get(key)??{point,depths:[]};group.depths.push(point.md);groups.set(key,group);
   }
   for(const group of groups.values())group.depths.sort((a,b)=>a-b);
-  const losses=new Map<string,number>();
   const upper=(depths:number[],md:number)=>{let lo=0,hi=depths.length;while(lo<hi){const mid=(lo+hi)>>>1;if(depths[mid]<=md)lo=mid+1;else hi=mid;}return lo;};
   return (top:number,bottom:number,q:number,f:TurbulatorHydraulicFluid):number=>{
     if(!(q>0&&bottom>top))return 0;
     let sum=0;
     for(const [key,group] of groups){
       const count=upper(group.depths,bottom)-upper(group.depths,top);if(!count)continue;
-      const cacheKey=JSON.stringify([key,q,f.density,f.pv,f.yp,f.hb]);let loss=losses.get(cacheKey);
-      if(loss===undefined){loss=turbulatorOutlet(w,group.point,q,f).pressureLossMPa;if(losses.size>=4096)losses.delete(losses.keys().next().value!);losses.set(cacheKey,loss);}
+      const cacheKey=JSON.stringify([w.casingOD,key,q,f.density,f.pv,f.yp,f.hb]);let loss=scalarLossCache.get(cacheKey);
+      if(loss===undefined){loss=turbulatorOutlet(w,group.point,q,f).pressureLossMPa;if(scalarLossCache.size>=8192)scalarLossCache.delete(scalarLossCache.keys().next().value!);}
+      else scalarLossCache.delete(cacheKey);
+      scalarLossCache.set(cacheKey,loss);
       sum+=count*loss;
     }
     return sum;
