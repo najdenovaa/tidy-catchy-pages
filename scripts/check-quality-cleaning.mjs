@@ -30,7 +30,9 @@ for(const width of [1440,390]){
  await page.screenshot({path:`/tmp/quality-cleaning/${width}.png`});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),'Page overflow');
 }
+const beforeApply=await page.evaluate(()=>sessionStorage.getItem('cementing_session_v1'));
 await apply.click();
+await page.waitForFunction(old=>sessionStorage.getItem('cementing_session_v1')!==old,beforeApply,{timeout:30000});
 await page.waitForFunction(()=>document.querySelector('[data-tab-content="optimizer"]')?.textContent?.includes('Вариант «Лучшее качество» записан'),{},{timeout:30000});
 const saved=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('cementing_session_v1')));
 assert.equal(saved.buffers[0].bufferType,'chemical_wash');assert.equal(saved.buffers[1].bufferType,'weighted');
