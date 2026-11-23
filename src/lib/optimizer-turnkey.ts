@@ -16,7 +16,7 @@ import type {OptimizerProgramRecord,BufferTransitRecord} from './optimizer-progr
 export interface CompleteProgramPlan {sourceKey:string;program:ProgramInput;centralization:CentralizerPlan;evaluation:VariantEval;record:OptimizerProgramRecord}
 export function projectCentralizerPlan(p:ProgramInput,catalog:OptimizerHardwareCatalog):CentralizerPlan|undefined{
  const intervals=p.wellData.centralizerDesign?.intervals??p.centralizerIntervals??[];
- const matches=(spec:typeof intervals[number]['spec'])=>catalog.centralizers.some(c=>centralizerSignature(c.spec)===centralizerSignature(spec));
+ const matches=(spec:typeof intervals[number]['spec'])=>catalog.centralizers.some(c=>(!spec.libraryReference||(c.identity.id===spec.libraryReference.entryId&&c.identity.revision===spec.libraryReference.revision))&&centralizerSignature(c.spec)===centralizerSignature(spec));
  if(!intervals.length||intervals.some(iv=>!matches(iv.spec)||(iv.pattern&&(!iv.specB||!matches(iv.specB)))))return;
  const profile=calculateCentralization(p.wellData,intervals,p.drillingFluid.density),toc=Math.min(...p.slurries.map(s=>s.topDepthMD)),inside=profile.filter(x=>x.md>=toc),points=buildCentralizerJointSchedule(p.wellData.casingDepthMD,intervals).flatMap(x=>x.placements);
  return {targetPct:null,label:'Заданная расстановка из справочника',intervals,profile,totalCount:points.length,countInCement:points.filter(x=>x.md>=toc).length,minStandoffPct:Math.min(...inside.map(x=>x.standoff)),avgStandoffPct:inside.reduce((n,x)=>n+x.standoff,0)/Math.max(1,inside.length)};
@@ -65,7 +65,7 @@ export function auditProgramBuffers(p:ProgramInput,t:CleaningTarget,r:PressurePr
 }
 function hardwareRecord(depth:number,cp:CentralizerPlan,product:CatalogTurbulator,points:TurbulatorPoint[]):OptimizerProgramRecord['hardware']{
  const groups=new Map<string,OptimizerProgramRecord['hardware'][number]>();
- for(const joint of buildCentralizerJointSchedule(depth,cp.intervals))for(const {spec} of joint.placements){const p=spec.passport,ref=spec.libraryReference,key=centralizerSignature(spec);const row=groups.get(key)??{kind:'centralizer' as const,quantity:0,identity:{id:ref?.entryId??p?.model??spec.type,model:p?.model??spec.type,manufacturer:p?.manufacturer??'Не указан',source:ref?.source??p?.source??'Паспорт проекта',sourceUrl:p?.sourceUrl,revision:ref?.revision??1,basis:ref?.basis??'catalog'}};row.quantity++;groups.set(key,row);}
+ for(const joint of buildCentralizerJointSchedule(depth,cp.intervals))for(const {spec} of joint.placements){const p=spec.passport,ref=spec.libraryReference,key=centralizerSignature(spec)+'|'+(ref?.entryId??'')+'|'+(ref?.revision??'');const row=groups.get(key)??{kind:'centralizer' as const,quantity:0,identity:{id:ref?.entryId??p?.model??spec.type,model:p?.model??spec.type,manufacturer:p?.manufacturer??'Не указан',source:ref?.source??p?.source??'Паспорт проекта',sourceUrl:p?.sourceUrl,revision:ref?.revision??1,basis:ref?.basis??'catalog'}};row.quantity++;groups.set(key,row);}
  const central=[...groups.values()];
  return [...central,{kind:'turbulator',quantity:points.length,identity:product.identity}];
 }

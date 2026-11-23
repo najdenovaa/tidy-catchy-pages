@@ -36,6 +36,7 @@ it('builds a complete catalogue-backed program with interval buffer rates, hardw
   const centers=buildCentralizerJointSchedule(input.wellData.casingDepthMD,full.centralization.intervals).flatMap(j=>j.placements);
   for(const t of full.program.wellData.turbulatorDesign.points)expect(centers.some(c=>t.md<c.md+c.spec.passport.length/2000&&t.md+t.lengthMm/1000>c.md-c.spec.passport.length/2000)).toBe(false);
   expect(projectCentralizerPlan(full.program,catalog)).toBeDefined();
+  const wrongVersion=structuredClone(full.program);wrongVersion.wellData.centralizerDesign.intervals[0].spec.libraryReference.revision=999;expect(projectCentralizerPlan(wrongVersion,catalog)).toBeUndefined();
   const edited=structuredClone(full.program);edited.wellData.centralizerDesign.intervals[0].spec.bladeHeight+=1;expect(projectCentralizerPlan(edited,catalog)).toBeUndefined();
   const restored=normalizeCementingSnapshot(JSON.parse(JSON.stringify(full.program)));
   expect(restored.wellData.optimizerProgram).toEqual(full.record);
