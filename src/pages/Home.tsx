@@ -131,48 +131,51 @@ export default function Home() {
           </div>
         </header>
 
-        <IcebergBillboard />
+        <div className="home-module-stage relative isolate flex-1">
+          <IcebergBillboard />
 
-        <main className="flex-1 max-w-5xl mx-auto px-4 pt-4 pb-10 sm:pb-16 w-full">
-          <div className="flex items-center justify-center gap-6 text-[11px] text-muted-foreground/70 mb-6">
-            <span>👁 Посещений: <span className="font-semibold text-muted-foreground">{visitCount}</span></span>
-            <span>🧮 Расчётов: <span className="font-semibold text-muted-foreground">{calcCount}</span></span>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-semibold text-foreground mb-8 text-center">
-            Выберите модуль
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {modules.map((m) =>
-              m.available ? (
-                <Link
-                  key={m.to}
-                  to={m.to}
-                  className="group rounded-xl border border-border bg-card p-6 sm:p-8 flex flex-col items-center text-center gap-4 hover:border-primary/50 hover:shadow-lg transition-all"
-                >
-                  <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                    <m.icon className="w-7 h-7 text-primary" />
+          <main className="flex-1 max-w-5xl mx-auto px-4 pt-4 pb-10 sm:pb-16 w-full">
+            <div className="flex items-center justify-center gap-6 text-[11px] text-muted-foreground/70 mb-6">
+              <span>👁 Посещений: <span className="font-semibold text-muted-foreground">{visitCount}</span></span>
+              <span>🧮 Расчётов: <span className="font-semibold text-muted-foreground">{calcCount}</span></span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-semibold text-foreground mb-8 text-center">
+              Выберите модуль
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {modules.map((m) =>
+                m.available ? (
+                  <Link
+                    key={m.to}
+                    to={m.to}
+                    data-cementing-entry={m.to === "/cementing" ? "" : undefined}
+                    className="group rounded-xl border border-border bg-card p-6 sm:p-8 flex flex-col items-center text-center gap-4 hover:border-primary/50 hover:shadow-lg transition-all"
+                  >
+                    <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                      <m.icon className="w-7 h-7 text-primary" />
+                    </div>
+                    <h3 className="text-base sm:text-lg font-semibold text-foreground">{m.title}</h3>
+                    <p className="text-xs sm:text-sm text-muted-foreground">{m.description}</p>
+                  </Link>
+                ) : (
+                  <div
+                    key={m.to}
+                    className="rounded-xl border border-border bg-card/50 p-6 sm:p-8 flex flex-col items-center text-center gap-4 opacity-60 cursor-not-allowed"
+                  >
+                    <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center">
+                      <m.icon className="w-7 h-7 text-muted-foreground" />
+                    </div>
+                    <h3 className="text-base sm:text-lg font-semibold text-muted-foreground">{m.title}</h3>
+                    <p className="text-xs sm:text-sm text-muted-foreground">{m.description}</p>
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 bg-muted px-2 py-0.5 rounded">
+                      В разработке
+                    </span>
                   </div>
-                  <h3 className="text-base sm:text-lg font-semibold text-foreground">{m.title}</h3>
-                  <p className="text-xs sm:text-sm text-muted-foreground">{m.description}</p>
-                </Link>
-              ) : (
-                <div
-                  key={m.to}
-                  className="rounded-xl border border-border bg-card/50 p-6 sm:p-8 flex flex-col items-center text-center gap-4 opacity-60 cursor-not-allowed"
-                >
-                  <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center">
-                    <m.icon className="w-7 h-7 text-muted-foreground" />
-                  </div>
-                  <h3 className="text-base sm:text-lg font-semibold text-muted-foreground">{m.title}</h3>
-                  <p className="text-xs sm:text-sm text-muted-foreground">{m.description}</p>
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 bg-muted px-2 py-0.5 rounded">
-                    В разработке
-                  </span>
-                </div>
-              )
-            )}
-          </div>
-        </main>
+                )
+              )}
+            </div>
+          </main>
+        </div>
 
         <footer className="w-full">
           <div className="bg-card border-t border-border py-6">
