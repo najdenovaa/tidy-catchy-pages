@@ -1,3 +1,4 @@
+import { officeAliases, fontLabel, installOfficeFonts, restoreOfficeFonts } from './office-fonts.js';
 import { createSessionStore, validSession } from './local-session.js';
 import { PdfEngine, kinds } from './pdf.js';
 import { icon } from './icons.js';
@@ -134,6 +135,7 @@ function status(message) {
 function syncControls() {
   const ready = !!state.engine?.count && !state.busy;
   for (const id of mainControls) $(id).disabled = !ready;
+  $('fonts-open').disabled = state.busy || !state.engine;
   $('open').disabled = state.busy || !state.engine || !sessionReady;
   $('upload-document').disabled = $('open').disabled;
   $('demo').disabled = state.busy || !state.engine;
@@ -1674,6 +1676,7 @@ new ResizeObserver(() => {
 
 syncControls();
 try {
+  await restoreOfficeFonts();
   [state.engine] = await Promise.all([PdfEngine.create(), ...coreFonts.flatMap(family => ['', 'italic '].flatMap(style => [400, 700]
     .map(weight => document.fonts.load(`${style}${weight} 14px "${family}"`))))]);
   try {
@@ -1709,3 +1712,41 @@ try {
 // Flush pending inline text/table edits when leaving; committed changes are saved immediately.
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void saveSession(); });
 window.addEventListener('pagehide', () => { void saveSession(); });
+
+function showFonts() {
+  $('fonts-list').replaceChildren(...Object.keys(officeAliases).map(family => {
+    const item = document.createElement('li'); item.textContent = fontLabel(family); return item;
+  }));
+  $('fonts-local').hidden = typeof window.queryLocalFonts !== 'function';
+  $('fonts-help').textContent = typeof window.queryLocalFonts === 'function'
+    ? 'Для подключения браузер запросит доступ к установленным шрифтам.'
+    : 'В этом браузере выберите файлы TTF вручную. Например, из папки шрифтов Windows.';
+}
+async function connectFonts(read) {
+  if (!state.engine || state.busy || !editor.finish()) return;
+  state.busy = true; syncControls();
+  $('fonts-local').disabled = $('fonts-files').disabled = true;
+  $('fonts-status').textContent = 'Подключаем шрифты…';
+  try {
+    const buffers = await read();
+    if (!buffers.length) throw new Error('Указанные офисные шрифты не найдены. Можно выбрать файлы TTF вручную.');
+    const result = await installOfficeFonts(buffers);
+    for (const { family } of result.records) state.engine.invalidateFont(family);
+    showFonts();
+    $('fonts-status').textContent = `Подключено начертаний: ${result.records.length}. ` + (result.persisted ? 'Сохранены в этом браузере.' : 'Работают до закрытия страницы; сохранить их в браузере не удалось.');
+  } catch (error) { $('fonts-status').textContent = error.message || 'Шрифты не подключены.'; }
+  finally { state.busy = false; syncControls(); $('fonts-local').disabled = $('fonts-files').disabled = false; }
+}
+$('fonts-open').addEventListener('click', () => { showFonts(); $('fonts-dialog').showModal(); });
+$('fonts-close').addEventListener('click', () => $('fonts-dialog').close());
+$('fonts-files').addEventListener('click', () => $('font-input').click());
+$('font-input').addEventListener('change', event => {
+  const files = [...event.target.files]; event.target.value = '';
+  if (files.length) void connectFonts(() => Promise.all(files.map(file => file.arrayBuffer())));
+});
+$('fonts-local').addEventListener('click', () => connectFonts(async () => {
+  const available = await window.queryLocalFonts();
+  const wanted = new Set(Object.keys(officeAliases).map(name => name.toLowerCase()));
+  const matches = available.filter(font => wanted.has(font.family.toLowerCase()) && !/light|black|medium|semibold/i.test(font.style));
+  return Promise.all(matches.map(async font => (await font.blob()).arrayBuffer()));
+}));

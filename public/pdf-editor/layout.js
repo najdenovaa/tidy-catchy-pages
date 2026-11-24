@@ -1,8 +1,9 @@
+import { officeAliases } from './office-fonts.js';
 export const coreFonts = ['Noto Sans', 'Noto Serif', 'Liberation Sans', 'Liberation Serif', 'Liberation Mono'];
 export const fonts = [...coreFonts,
   'Carlito', 'PT Sans', 'PT Serif', 'Roboto', 'Open Sans', 'Fira Sans', 'IBM Plex Sans',
   'Source Sans 3', 'Ubuntu', 'Rubik', 'Montserrat', 'Noto Sans Display', 'Noto Serif Display',
-  'Cormorant Garamond', 'Literata', 'Lora', 'Merriweather', 'Playfair Display', 'Spectral',
+  'Cormorant Garamond', 'Literata', 'Lora', 'Merriweather', 'Playfair Display', 'Spectral', 'Roboto Condensed', ...Object.keys(officeAliases),
 ];
 
 export function matchingFont(name = '') {

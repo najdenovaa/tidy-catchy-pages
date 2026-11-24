@@ -1,3 +1,4 @@
+import { officeAliases, fontLabel } from './office-fonts.js';
 import { fonts, matchingFont, textBlock, wrapText } from './layout.js';
 import { icon } from './icons.js';
 import { borderCSS, borderPatterns, edgeStyle, tableStyle } from './table-style.js';
@@ -5,9 +6,9 @@ import { borderCSS, borderPatterns, edgeStyle, tableStyle } from './table-style.
 const sum = values => values.reduce((total, value) => total + value, 0);
 const colorHex = color => '#' + color.slice(0, 3).map(channel => channel.toString(16).padStart(2, '0')).join('');
 const colorArray = color => [...color.slice(1).match(/../g).map(channel => parseInt(channel, 16)), 255];
-const officeFonts = ['Carlito', 'Liberation Sans', 'Liberation Serif', 'Liberation Mono', 'PT Sans', 'PT Serif'];
-const fontOptions = [['Офисные', officeFonts], ['Остальные', fonts.filter(family => !officeFonts.includes(family)).sort()]]
-  .map(([group, families]) => `<optgroup label="${group}">${families.map(family => `<option>${family}</option>`).join('')}</optgroup>`).join('');
+const officeFonts = [...Object.keys(officeAliases), 'Carlito', 'Liberation Sans', 'Liberation Serif', 'Liberation Mono', 'PT Sans', 'PT Serif'];
+const fontOptions = () => [['Офисные', officeFonts], ['Остальные', fonts.filter(family => !officeFonts.includes(family)).sort()]]
+  .map(([group, families]) => `<optgroup label="${group}">${families.map(family => `<option value="${family}">${fontLabel(family)}</option>`).join('')}</optgroup>`).join('');
 const styleButtons = [
   ['bold', 'Ж', 'Полужирный'], ['italic', 'К', 'Курсив'],
   ['underline', 'П', 'Подчёркнутый'], ['strike', 'З', 'Зачёркнутый'],
@@ -144,7 +145,7 @@ export class InlineEditor {
     this.stylebar.hidden = true;
     this.stylebar.replaceChildren();
     this.toolbar.innerHTML = draft.mode === 'text'
-      ? `<label>Шрифт <select name="font" aria-label="Шрифт">${fontOptions}</select></label>
+      ? `<label>Шрифт <select name="font" aria-label="Шрифт">${fontOptions()}</select></label>
         <label>Размер <input name="size" aria-label="Размер шрифта" type="number" min="1" max="120" step="1"></label>
         <div class="font-styles">${styleButtons.map(([name, glyph, label]) =>
           `<button type="button" class="icon-button font-${name}" data-action="${name}" title="${label}" aria-label="${label}" aria-pressed="${!!draft[name]}">${glyph}</button>`
@@ -152,7 +153,7 @@ export class InlineEditor {
         <label class="inline-color"><input name="color" aria-label="Цвет текста" type="color"></label>`
       : `<div class="inline-table-actions">
           <button type="button" class="button outlined" data-action="table-style" aria-pressed="false">Границы и заливка</button>
-          <label>Шрифт <select name="font" aria-label="Шрифт таблицы">${fontOptions}</select></label>
+          <label>Шрифт <select name="font" aria-label="Шрифт таблицы">${fontOptions()}</select></label>
           <button type="button" class="button outlined" data-action="row" title="Добавить строку под выбранной">Строка +</button>
           <button type="button" class="button outlined" data-action="col" title="Добавить столбец справа">Столбец +</button>
           <button type="button" class="button ghost" data-action="drop-row">Удалить строку</button>

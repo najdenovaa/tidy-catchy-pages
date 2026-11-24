@@ -1,3 +1,4 @@
+import { officeAliases, officeFace } from './office-fonts.js';
 import { init } from './vendor/index.browser.js';
 import { coreFonts, fonts as fontFamilies } from './layout.js';
 import { edgeStyle, rgb, sameBorder, tableStyle } from './table-style.js';
@@ -16,7 +17,7 @@ async function asset(path) {
 }
 
 function fontAssets(family) {
-  return Promise.all(weights.map(weight => asset(`fonts/${family.replaceAll(' ', '')}-${weight}.ttf`)));
+  return Promise.all(weights.map(weight => officeFace(family, weight) ?? asset(`fonts/${(officeAliases[family] ?? family).replaceAll(' ', '')}-${weight}.ttf`)));
 }
 
 function check(value, message) {
@@ -254,6 +255,18 @@ export class PdfEngine {
       return objects;
     } finally {
       if (textPage) a.FPDFText_ClosePage(textPage);
+    }
+  }
+
+  invalidateFont(family) {
+    const offset = fontFamilies.indexOf(family) * weights.length;
+    if (offset < 0) return;
+    for (let i = 0; i < 4; i++) {
+      const index = offset + i;
+      if (this.fontHandles.has(index)) this.api.FPDFFont_Close(this.fontHandles.get(index));
+      this.fontHandles.delete(index);
+      this.metrics.delete(index);
+      this.fonts[index] = undefined;
     }
   }
 

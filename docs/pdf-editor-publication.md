@@ -15,3 +15,11 @@ A new browser starts with a centered upload button; the demo only opens when exp
 Sessions are isolated by browser profile and origin, including guests. No IP identifier, account lookup or document upload is used. People sharing the same browser profile share its local session; a different device/profile has separate storage. Clearing browser site data removes the session. A session is a recovery copy, not a replacement for downloading the PDF.
 
 Validate the storage behavior with `npx vitest run src/lib/pdf-editor-session.test.ts`, covering reopen, profile isolation, ordered writes, failed-write recovery, unavailable storage and invalid records.
+
+## Office fonts
+
+The office group now exposes Times New Roman, Arial, Arial Narrow, Calibri and Courier New. Each option explicitly identifies its actual substitute until original local font files are connected: Liberation Serif, Liberation Sans, Roboto Condensed, Carlito and Liberation Mono respectively. Roboto Condensed is a narrow visual alternative, not an exact Arial Narrow metrics match. Existing font indices are preserved for saved PDF metadata and sessions.
+
+The Fonts dialog can connect installed fonts through the browser's user-initiated Local Font Access permission or selected TTF files. Originals stay in the browser's separate IndexedDB store and are loaded before session restoration; they are not uploaded or distributed by the server. The same face bytes are used for CSS measurement and PDF embedding, with per-style labels when only part of a family is available. Restricted embedding flags and unsupported formats are rejected. Connecting a family invalidates its previous engine face/metrics cache without altering existing PDF objects.
+
+Roboto Condensed static faces were instantiated at weights 400 and 700 from Google Fonts variable fonts (upright and italic), with the upstream OFL notice included. `check-office-fonts.mjs` checks all 20 office family/style combinations with Cyrillic after PDF save/reopen. `pdf-office-fonts.test.ts` covers original font import, persistence, partial family labels, restricted embedding and malformed/unsupported inputs.

@@ -1,3 +1,4 @@
+import { officeAliases } from '../../public/pdf-editor/office-fonts.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { PdfEngine } from '../../public/pdf-editor/pdf.js';
@@ -5,7 +6,7 @@ import { fonts, textBlock } from '../../public/pdf-editor/layout.js';
 
 const root = new URL('../../public/pdf-editor/', import.meta.url);
 const assets = await Promise.all(fonts.flatMap(family => ['Regular', 'Bold', 'Italic', 'BoldItalic']
-  .map(weight => readFile(new URL(`fonts/${family.replaceAll(' ', '')}-${weight}.ttf`, root)))));
+  .map(weight => readFile(new URL(`fonts/${(officeAliases[family] ?? family).replaceAll(' ', '')}-${weight}.ttf`, root)))));
 const engine = await PdfEngine.initialize(await readFile(new URL('vendor/pdfium.wasm', root)), assets);
 engine.open(await readFile(new URL('demo.pdf', root)));
 const view = () => engine.render(0, 100, 145, true);

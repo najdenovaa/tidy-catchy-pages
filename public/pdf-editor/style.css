@@ -427,3 +427,29 @@ svg { width: 18px; height: 18px; display: block; flex: none; }
 #session-status { overflow: hidden; text-overflow: ellipsis; }
 #status-detail { max-width: 62%; }
 #status-detail.save-error { color: #a32727; }
+
+@font-face { font-family: "Times New Roman"; src: url("fonts/LiberationSerif-Regular.ttf"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Times New Roman"; src: url("fonts/LiberationSerif-Bold.ttf"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Times New Roman"; src: url("fonts/LiberationSerif-Italic.ttf"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Times New Roman"; src: url("fonts/LiberationSerif-BoldItalic.ttf"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "Arial"; src: url("fonts/LiberationSans-Regular.ttf"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Arial"; src: url("fonts/LiberationSans-Bold.ttf"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Arial"; src: url("fonts/LiberationSans-Italic.ttf"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Arial"; src: url("fonts/LiberationSans-BoldItalic.ttf"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "Arial Narrow"; src: url("fonts/RobotoCondensed-Regular.ttf"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Arial Narrow"; src: url("fonts/RobotoCondensed-Bold.ttf"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Arial Narrow"; src: url("fonts/RobotoCondensed-Italic.ttf"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Arial Narrow"; src: url("fonts/RobotoCondensed-BoldItalic.ttf"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "Calibri"; src: url("fonts/Carlito-Regular.ttf"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Calibri"; src: url("fonts/Carlito-Bold.ttf"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Calibri"; src: url("fonts/Carlito-Italic.ttf"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Calibri"; src: url("fonts/Carlito-BoldItalic.ttf"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "Courier New"; src: url("fonts/LiberationMono-Regular.ttf"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Courier New"; src: url("fonts/LiberationMono-Bold.ttf"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Courier New"; src: url("fonts/LiberationMono-Italic.ttf"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Courier New"; src: url("fonts/LiberationMono-BoldItalic.ttf"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "Roboto Condensed"; src: url("fonts/RobotoCondensed-Regular.ttf"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Roboto Condensed"; src: url("fonts/RobotoCondensed-Bold.ttf"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Roboto Condensed"; src: url("fonts/RobotoCondensed-Italic.ttf"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Roboto Condensed"; src: url("fonts/RobotoCondensed-BoldItalic.ttf"); font-weight: 700; font-style: italic; font-display: swap; }
+#fonts-list { line-height: 1.8; }
