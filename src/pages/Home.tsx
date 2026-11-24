@@ -7,6 +7,7 @@ import nefteservisLogo from "@/assets/nefteservis-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
 import HelpLink from "@/components/HelpLink";
+import IcebergBillboard from "@/components/IcebergBillboard";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -130,7 +131,9 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="flex-1 max-w-5xl mx-auto px-4 py-10 sm:py-16 w-full">
+        <IcebergBillboard />
+
+        <main className="flex-1 max-w-5xl mx-auto px-4 pt-4 pb-10 sm:pb-16 w-full">
           <div className="flex items-center justify-center gap-6 text-[11px] text-muted-foreground/70 mb-6">
             <span>👁 Посещений: <span className="font-semibold text-muted-foreground">{visitCount}</span></span>
             <span>🧮 Расчётов: <span className="font-semibold text-muted-foreground">{calcCount}</span></span>

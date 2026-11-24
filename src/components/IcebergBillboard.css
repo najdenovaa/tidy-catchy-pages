@@ -1,0 +1,54 @@
+.iceberg-placement {
+  width: 100%;
+}
+
+.iceberg-billboard {
+  position: relative;
+  display: block;
+  width: min(540px, 100%);
+  aspect-ratio: 3 / 2;
+  color: hsl(var(--muted-foreground));
+  /* Feathered alpha in the artwork blends into the actual page, including dark mode. */
+  isolation: isolate;
+}
+
+.iceberg-billboard:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+.iceberg-billboard__scene {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.iceberg-billboard__logo {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  width: clamp(74px, 9vw, 88px);
+  height: auto;
+}
+
+.iceberg-billboard__caption {
+  position: absolute;
+  bottom: 7px;
+  left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 540px) {
+  .iceberg-billboard__logo {
+    top: 10px;
+    left: 12px;
+  }
+
+  .iceberg-billboard__caption {
+    bottom: 2px;
+    left: 12px;
+  }
+}
