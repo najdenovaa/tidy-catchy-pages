@@ -61,7 +61,7 @@ export function textBlock(selected, page, excluded) {
     const first = members.find(object => object.blockSpec);
     if (first) {
       const spec = first.blockSpec;
-      const bounds = members.map(object => rect(object, page));
+      const bounds = members.filter(object => object.kind === 1).map(object => rect(object, page));
       const baseline = first.baseline * page.pageHeight - spec.first * spec.lineHeight;
       return {
         ...spec, id: selected.blockId, x: first.origin * page.pageWidth, y: Math.min(...bounds.map(box => box.y)),

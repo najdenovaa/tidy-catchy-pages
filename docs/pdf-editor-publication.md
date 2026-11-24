@@ -23,3 +23,9 @@ The office group now exposes Times New Roman, Arial, Arial Narrow, Calibri and C
 The Fonts dialog can connect installed fonts through the browser's user-initiated Local Font Access permission or selected TTF files. Originals stay in the browser's separate IndexedDB store and are loaded before session restoration; they are not uploaded or distributed by the server. The same face bytes are used for CSS measurement and PDF embedding, with per-style labels when only part of a family is available. Restricted embedding flags and unsupported formats are rejected. Connecting a family invalidates its previous engine face/metrics cache without altering existing PDF objects.
 
 Roboto Condensed static faces were instantiated at weights 400 and 700 from Google Fonts variable fonts (upright and italic), with the upstream OFL notice included. `check-office-fonts.mjs` checks all 20 office family/style combinations with Cyrillic after PDF save/reopen. `pdf-office-fonts.test.ts` covers original font import, persistence, partial family labels, restricted embedding and malformed/unsupported inputs.
+
+## Text field geometry
+
+Inline text fields, including OCR scan replacements, have a move grip, a horizontal resize handle, a width input in millimeters, and an expand-to-right-margin action. Arrow keys on the handles support movement/width adjustment (Shift increases the step). Height follows the wrapped text. Changes remain part of the serializable inline draft, so session recovery retains them before Apply.
+
+Moving a recognised scan replacement changes its origin/baseline but preserves the original raster erasure rectangle. The edit preview masks that old region separately. On PDF reopen, the layout bounds come from text objects, excluding the old erasure path, so repeated movements do not jump back to the original scan location. Geometry and native save/reopen checks are in `pdf-text-box.test.ts` and `check-text-box-geometry.mjs`.

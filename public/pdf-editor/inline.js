@@ -1,3 +1,4 @@
+import { resizeTextBox, moveTextBox, pointsPerMillimeter } from './text-box.js';
 import { officeAliases, fontLabel } from './office-fonts.js';
 import { fonts, matchingFont, textBlock, wrapText } from './layout.js';
 import { icon } from './icons.js';
@@ -17,14 +18,15 @@ const maxRows = 65;
 const maxColumns = 12;
 
 export class InlineEditor {
-  constructor({ layer, toolbar, stylebar, getPage, render, commit, message, loadFont, changed = () => {} }) {
-    Object.assign(this, { layer, toolbar, stylebar, getPage, render, commit, message, loadFont, changed });
+  constructor({ layer, toolbar, stylebar, getPage, render, commit, message, loadFont, changed = () => {}, scanRect = () => null }) {
+    Object.assign(this, { layer, toolbar, stylebar, getPage, render, commit, message, loadFont, changed, scanRect });
     this.fillColor = '#fff2a8';
     this.stylebar.addEventListener('input', event => this.styleInput(event));
     this.stylebar.addEventListener('click', event => this.action(event));
     this.draft = null;
     this.measurer = document.createElement('canvas').getContext('2d');
     this.toolbar.addEventListener('input', event => this.format(event));
+    this.toolbar.addEventListener('focusout', event => { if (event.target.name === 'text-width') this.position(); });
     this.toolbar.addEventListener('click', event => this.action(event));
     this.layer.addEventListener('keydown', event => this.key(event));
     this.layer.addEventListener('focusin', event => this.focusCell(event));
@@ -46,6 +48,7 @@ export class InlineEditor {
       input.spellcheck = false;
       input.value = draft.text;
       this.layer.replaceChildren(input);
+      this.textControls();
     } else this.renderTable();
     this.updateDraft();
   }
@@ -79,10 +82,32 @@ export class InlineEditor {
     input.spellcheck = false;
     input.value = data.text;
     this.layer.replaceChildren(input);
+    this.textControls();
     this.updateDraft();
     input.focus({ preventScroll: true });
     const caret = point ? this.caretAt(point) : data.text.length;
     input.setSelectionRange(caret, caret);
+  }
+
+  textControls() {
+    const grip = document.createElement('button');
+    grip.type = 'button'; grip.className = 'text-grip';
+    grip.title = 'Переместить текстовое поле'; grip.setAttribute('aria-label', grip.title);
+    grip.innerHTML = icon('move');
+    const resize = document.createElement('button');
+    resize.type = 'button'; resize.className = 'text-resize';
+    resize.title = 'Изменить ширину текстового поля'; resize.setAttribute('aria-label', resize.title);
+    if (this.draft.scanCover) {
+      const mask = document.createElement('div'); mask.className = 'scan-edit-mask';
+      mask.setAttribute('aria-hidden', 'true'); this.layer.append(mask);
+    }
+    this.layer.append(grip, resize);
+  }
+
+  resizeTo(width) {
+    if (this.draft?.mode !== 'text') return;
+    resizeTextBox(this.draft, width, this.getPage());
+    this.updateDraft();
   }
 
   caretAt({ x, y }) {
@@ -159,6 +184,9 @@ export class InlineEditor {
           <button type="button" class="button ghost" data-action="drop-row">Удалить строку</button>
           <button type="button" class="button ghost" data-action="drop-col">Удалить столбец</button>
         </div>`;
+    if (draft.mode === 'text') this.toolbar.insertAdjacentHTML('beforeend', `
+      <label>Ширина, мм <input name="text-width" type="number" min="1" step="1" aria-label="Ширина текстового поля, мм"></label>
+      <button type="button" class="button outlined" data-action="expand-text" title="Расширить поле до правого края страницы">Расширить поле</button>`);
     this.toolbar.insertAdjacentHTML('beforeend', `
       <label class="shift-control"><input name="shift" type="checkbox" checked>Сдвигать содержимое ниже</label>
       <button type="button" class="button primary" data-action="apply">Готово</button>
@@ -326,6 +354,20 @@ export class InlineEditor {
         textDecorationLine: [plan.underline && 'underline', plan.strike && 'line-through'].filter(Boolean).join(' ') || 'none',
         lineHeight: `${line}px`, color: this.draft.color, backgroundColor: plan.scanCover?.color ?? 'transparent',
       });
+      const left = parseFloat(node.style.left), top = parseFloat(node.style.top);
+      const width = parseFloat(node.style.width), height = parseFloat(node.style.height);
+      Object.assign(this.layer.querySelector('.text-grip').style, { left: `${left}px`, top: `${Math.max(0, top - 26)}px` });
+      Object.assign(this.layer.querySelector('.text-resize').style, { left: `${left + width - 5}px`, top: `${top + height / 2 - 12}px` });
+      const field = this.toolbar.querySelector('[name="text-width"]');
+      if (document.activeElement !== field) field.value = String(Math.round(plan.width / pointsPerMillimeter * 10) / 10);
+      field.max = String(Math.floor((this.getPage().pageWidth - plan.x - 3) / pointsPerMillimeter));
+      const mask = this.layer.querySelector('.scan-edit-mask');
+      const box = mask && this.scanRect(plan.scanCover);
+      if (box) Object.assign(mask.style, {
+        left: `${(box.x * this.getPage().pageWidth - 1) * scale}px`, top: `${(box.y * this.getPage().pageHeight - .65) * scale}px`,
+        width: `${(box.w * this.getPage().pageWidth + 2) * scale}px`, height: `${(box.h * this.getPage().pageHeight + 1.3) * scale}px`,
+        background: plan.scanCover.color,
+      });
       return;
     }
     const table = this.layer.firstElementChild;
@@ -416,6 +458,7 @@ export class InlineEditor {
     const draft = this.draft;
     if (!draft) return;
     const { name, value, checked, valueAsNumber } = event.target;
+    if (name === 'text-width') { this.resizeTo(valueAsNumber * pointsPerMillimeter); return; }
     if (name === 'shift') draft.shift = checked;
     if (name === 'font' || name === 'color') draft[name] = value;
     if (name === 'font') this.prepareFont();
@@ -443,6 +486,7 @@ export class InlineEditor {
         this.updateDraft();
         return;
       }
+      case 'expand-text': this.resizeTo(this.getPage().pageWidth - draft.x - 3); return;
       case 'cancel': this.cancel(); return;
       case 'bold': case 'italic': case 'underline': case 'strike': {
         const name = button.dataset.action;
@@ -504,31 +548,40 @@ export class InlineEditor {
     } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       this.finish();
-    } else if (event.target.closest('.table-grip') && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+    } else if (event.target.closest('.table-grip, .text-grip, .text-resize') && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
       event.preventDefault();
       const [dx, dy] = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
       const step = event.shiftKey ? 12 : 2;
-      this.moveTo(this.draft.x + dx * step, this.draft.y + dy * step);
+      if (event.target.closest('.text-resize')) this.resizeTo(this.draft.width + dx * step);
+      else this.moveTo(this.draft.x + dx * step, this.draft.y + dy * step);
     }
   }
 
   grab(event) {
-    const button = event.target.closest('.table-grip');
+    const button = event.target.closest('.table-grip, .text-grip, .text-resize');
     if (!button || event.button !== 0) return;
+    event.preventDefault();
+    button.focus({ preventScroll: true });
     button.setPointerCapture(event.pointerId);
-    this.dragStart = { x: event.clientX, y: event.clientY, left: this.draft.x, top: this.draft.y };
+    this.dragStart = { x: event.clientX, y: event.clientY, left: this.draft.x, top: this.draft.y, width: this.draft.width, resize: button.classList.contains('text-resize') };
   }
 
   drag(event) {
     if (!this.dragStart) return;
     const start = this.dragStart;
     const scale = this.layer.clientWidth / this.getPage().pageWidth;
-    this.moveTo(start.left + (event.clientX - start.x) / scale, start.top + (event.clientY - start.y) / scale);
+    if (start.resize) this.resizeTo(start.width + (event.clientX - start.x) / scale);
+    else this.moveTo(start.left + (event.clientX - start.x) / scale, start.top + (event.clientY - start.y) / scale);
   }
 
   moveTo(x, y) {
     const page = this.getPage();
     const draft = this.draft;
+    if (draft.mode === 'text') {
+      const plan = this.plan();
+      moveTextBox(draft, x, y, page, Math.max(1, plan.lines.length) * plan.lineHeight);
+      this.updateDraft(); return;
+    }
     draft.x = Math.max(3, Math.min(x, page.pageWidth - sum(draft.widths) - 3));
     draft.y = Math.max(3, Math.min(y, page.pageHeight - 30));
     draft.dirty = true;

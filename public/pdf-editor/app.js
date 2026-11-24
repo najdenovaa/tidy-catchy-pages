@@ -94,6 +94,7 @@ function notice(message, error = false) {
 
 const editor = new InlineEditor({
   changed: scheduleSession,
+  scanRect: cover => state.engine.page(state.index, page => state.engine.displayRect(page, cover.raw)),
   layer: $('editor-layer'), toolbar: $('formatbar'), stylebar: $('table-formatbar'), getPage: () => state.page,
   render: () => renderSafely(), message: notice, loadFont: async family => {
     await Promise.all([state.engine.ensureFont(family), ...['', 'italic '].flatMap(style => [400, 700]

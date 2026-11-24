@@ -453,3 +453,11 @@ svg { width: 18px; height: 18px; display: block; flex: none; }
 @font-face { font-family: "Roboto Condensed"; src: url("fonts/RobotoCondensed-Italic.ttf"); font-weight: 400; font-style: italic; font-display: swap; }
 @font-face { font-family: "Roboto Condensed"; src: url("fonts/RobotoCondensed-BoldItalic.ttf"); font-weight: 700; font-style: italic; font-display: swap; }
 #fonts-list { line-height: 1.8; }
+
+.inline-text { z-index: 1; }
+.scan-edit-mask { position: absolute; pointer-events: none; z-index: 0; }
+.text-grip, .text-resize { position: absolute; z-index: 2; pointer-events: auto; touch-action: none; background: white; color: var(--accent-dark); border: 1px solid var(--accent); padding: 3px; }
+.text-grip { cursor: move; width: 27px; height: 24px; border-radius: 5px; display: grid; place-items: center; }
+.text-grip svg { width: 16px; height: 16px; }
+.text-resize { cursor: ew-resize; width: 10px; height: 24px; border-radius: 4px; }
+.formatbar input[name="text-width"] { width: 68px; }
