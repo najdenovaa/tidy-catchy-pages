@@ -10,6 +10,7 @@ import { Home, LogOut, RefreshCw, Search, Users, Eye, ExternalLink, Globe, Calcu
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import FleetConfigPanel from "@/components/FleetConfigPanel";
+import AdminAdClicks from "@/components/AdminAdClicks";
 
 interface CalcLog {
   id: string; created_at: string; module: string; well_data: any; calc_params?: any;
@@ -371,9 +372,14 @@ export default function AdminPanel() {
               <TabsTrigger value="calculations">📊 Расчёты ({totalCalculations})</TabsTrigger>
               <TabsTrigger value="users">👤 Пользователи ({profiles.length})</TabsTrigger>
               <TabsTrigger value="analyses">🔬 Анализы ({analysisLogs.length})</TabsTrigger>
+              <TabsTrigger value="ads">Реклама</TabsTrigger>
               <TabsTrigger value="lookup">🔍 Поиск</TabsTrigger>
             </TabsList>
           </div>
+
+          <TabsContent value="ads">
+            <AdminAdClicks />
+          </TabsContent>
 
           {/* ВИЗИТЫ */}
           <TabsContent value="visits">
