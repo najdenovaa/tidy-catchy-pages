@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { recordAdBannerClick } from "@/lib/ad-banner-clicks";
 import "./IcebergBillboard.css";
 
 /** Decorative streams terminate at the existing module card; partner logos retain their links. */
@@ -58,6 +59,8 @@ export default function IcebergBillboard() {
       </svg>
       <aside ref={placementRef} className="iceberg-placement" aria-label="Химия и сервис цементирования">
         <a className="iceberg-billboard" href="https://igchem.ru/" target="_blank"
+          onClick={() => recordAdBannerClick("iceberg")}
+          onAuxClick={event => { if (event.button === 1) recordAdBannerClick("iceberg"); }}
           rel="noopener noreferrer sponsored" aria-label="Айсберг — химия и материалы для бурения и цементирования скважин. Открыть igchem.ru в новой вкладке">
           <img className="iceberg-billboard__scene" src="/ads/iceberg-cementing.webp" width="1080" height="720"
             alt="Рабочий засыпает реагент из мешка в смесительную воронку на буровой" fetchPriority="high" decoding="async" />
@@ -65,6 +68,8 @@ export default function IcebergBillboard() {
           <span className="iceberg-billboard__caption">Химия и материалы для бурения и цементирования скважин</span>
         </a>
         <a className="iceberg-billboard sts-billboard" href="https://stskzn.com/" target="_blank"
+          onClick={() => recordAdBannerClick("sts")}
+          onAuxClick={event => { if (event.button === 1) recordAdBannerClick("sts"); }}
           rel="noopener noreferrer sponsored" aria-label="СпецТехСервис — сервисные услуги цементирования скважин. Открыть stskzn.com в новой вкладке">
           <svg className="iceberg-billboard__scene" viewBox="0 0 1080 720" role="img" aria-label="Цементировочный агрегат на трёхосном шасси КамАЗ на буровой">
             <defs>
