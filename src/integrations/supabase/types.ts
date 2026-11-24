@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      ad_banner_clicks: {
+        Row: {
+          banner: string
+          clicked_at: string
+          id: string
+          ip_address: string | null
+        }
+        Insert: {
+          banner: string
+          clicked_at?: string
+          id?: string
+          ip_address?: string | null
+        }
+        Update: {
+          banner?: string
+          clicked_at?: string
+          id?: string
+          ip_address?: string | null
+        }
+        Relationships: []
+      }
       analysis_jobs: {
         Row: {
           completed_at: string | null
@@ -598,6 +619,7 @@ export type Database = {
     }
     Functions: {
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      record_ad_banner_click: { Args: { p_banner: string }; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "user"
