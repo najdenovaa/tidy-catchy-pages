@@ -14,7 +14,6 @@ export function recordSiteClick(target: ClickTarget) {
   // Keep the partner link native and let the request finish if the visitor leaves.
   void fetch(AD_ANALYTICS_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ target }),
     keepalive: true,
   }).catch(() => undefined);
