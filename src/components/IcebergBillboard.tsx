@@ -58,14 +58,14 @@ export default function IcebergBillboard() {
       </svg>
       <aside ref={placementRef} className="iceberg-placement" aria-label="Химия и сервис цементирования">
         <a className="iceberg-billboard" href="https://igchem.ru/" target="_blank"
-          rel="noopener noreferrer sponsored" aria-label="Айсберг — химия для цементирования. Открыть igchem.ru в новой вкладке">
+          rel="noopener noreferrer sponsored" aria-label="Айсберг — химия и материалы для цементирования скважин. Открыть igchem.ru в новой вкладке">
           <img className="iceberg-billboard__scene" src="/ads/iceberg-cementing.webp" width="1080" height="720"
             alt="Рабочий засыпает реагент из мешка в смесительную воронку на буровой" fetchPriority="high" decoding="async" />
           <img className="iceberg-billboard__logo" src="/ads/iceberg-logo.webp" width="280" height="142" alt="Айсберг · IG chemical" />
-          <span className="iceberg-billboard__caption">Реклама · igchem.ru</span>
+          <span className="iceberg-billboard__caption">Химия и материалы для цементирования скважин</span>
         </a>
         <a className="iceberg-billboard sts-billboard" href="https://stskzn.com/" target="_blank"
-          rel="noopener noreferrer sponsored" aria-label="СпецТехСервис — цементирование скважин. Открыть stskzn.com в новой вкладке">
+          rel="noopener noreferrer sponsored" aria-label="СпецТехСервис — сервисные услуги цементирования скважин. Открыть stskzn.com в новой вкладке">
           <svg className="iceberg-billboard__scene" viewBox="0 0 1080 720" role="img" aria-label="Цементировочный агрегат на трёхосном шасси КамАЗ на буровой">
             <defs>
               <mask id="sts-corner-mask" style={{ maskType: "alpha" }}>
@@ -75,6 +75,7 @@ export default function IcebergBillboard() {
             <image href="/ads/sts-cementing-v2.webp" x="240" y="-28" width="840" height="560" mask="url(#sts-corner-mask)" />
           </svg>
           <img className="sts-billboard__logo" src="/ads/sts-logo.png" width="492" height="117" alt="СпецТехСервис" />
+          <span className="iceberg-billboard__caption">Сервисные услуги цементирования скважин</span>
         </a>
       </aside>
     </>
