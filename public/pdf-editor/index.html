@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8fc">
+  <meta name="description" content="Редактирование текста, объектов и страниц PDF в браузере.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <title>PDF-редактор — Лист PDF | DeAllSoft</title>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Лист PDF"><span class="brand-icon" data-icon="brand"></span><span>Лист<span class="brand-accent"> PDF</span></span></a>
+      <div class="document-name"><span class="filename-icon" data-icon="file"></span><div><strong id="filename">Коммерческое предложение.pdf</strong><span id="document-meta">Демонстрационный документ</span></div></div>
+      <div class="top-actions">
+        <a class="button ghost" href="/" title="На главную DeAllSoft" aria-label="На главную DeAllSoft">DeAllSoft</a>
+        <button id="demo" class="button ghost" title="Открыть демонстрационный документ"><span data-icon="beaker"></span><span>Пример</span></button>
+        <button id="convert" class="button ghost" aria-label="Конвертация" title="Конвертация PDF, Word и Excel"><span data-icon="convert"></span><span>Конвертация</span></button>
+        <button id="open" class="button outlined" title="Открыть PDF, изображение, Word или Excel"><span data-icon="folder"></span><span>Открыть файл</span></button>
+        <button id="export" class="button primary" disabled><span data-icon="download"></span><span>Скачать PDF</span></button>
+      </div>
+    </header>
+
+    <nav class="toolbar" aria-label="Инструменты редактирования">
+      <div class="tool-group tool-group-panels">
+        <button id="pages-toggle" class="icon-button mobile-only" data-icon="panels" title="Страницы" aria-label="Страницы" aria-expanded="false"></button>
+        <button id="undo" class="icon-button" data-icon="undo" title="Отменить (Ctrl+Z)" aria-label="Отменить" disabled></button>
+        <button id="redo" class="icon-button" data-icon="redo" title="Повторить (Ctrl+Shift+Z)" aria-label="Повторить" disabled></button>
+      </div>
+      <div class="tool-group modes">
+        <button id="select" class="button mode active" data-mode="select" aria-pressed="true" title="Выбор объекта"><span data-icon="cursor"></span><span>Выбор</span></button>
+        <button id="select-area" class="button mode" data-mode="area" aria-pressed="false" aria-label="Выделить область" title="Выделить область рамкой"><span data-icon="area"></span><span>Область</span></button>
+        <button id="add-text" class="button mode" data-mode="text" aria-pressed="false" title="Добавить текст"><span data-icon="text"></span><span>Текст</span></button>
+        <button id="add-image" class="button mode" data-mode="image" aria-pressed="false" title="Добавить изображение"><span data-icon="image"></span><span>Изображение</span></button>
+        <button id="add-shape" class="button mode" data-mode="shape" aria-pressed="false" title="Добавить прямоугольник"><span data-icon="rectangle"></span><span>Фигура</span></button>
+        <button id="add-table" class="button mode" data-mode="table" aria-pressed="false" aria-label="Таблица" title="Добавить таблицу или выделить существующую"><span data-icon="table"></span><span>Таблица</span></button>
+        <button id="ocr" class="button mode extra-tool" aria-label="Распознать скан" title="Распознать текст в скане и фото"><span data-icon="ocr"></span><span>Распознать</span></button>
+        <button id="clipboard" class="button mode extra-tool" aria-label="Копирование и вставка" title="Копирование и вставка"><span data-icon="clipboard"></span><span>Буфер</span></button>
+        <button id="marker" class="button mode extra-tool" aria-label="Маркер" title="Выделить слово цветом" aria-pressed="false"><span data-icon="marker"></span><span>Маркер</span></button>
+        <button id="watermark" class="button mode extra-tool" aria-label="Водяной знак" title="Водяной знак"><span data-icon="watermark"></span><span>Водяной знак</span></button>
+        <button id="sign" class="button mode extra-tool" aria-label="Подпись и печать" title="Подпись, печать и инициалы"><span data-icon="signature"></span><span>Подпись</span></button>
+        <button id="comment" class="button mode extra-tool" data-mode="comment" aria-label="Комментарий" title="Добавить комментарий к слову или объекту" aria-pressed="false"><span data-icon="comment"></span><span>Комментарий</span></button>
+      </div>
+      <div class="local-label"><span data-icon="shield"></span><span>Файлы остаются на устройстве</span></div>
+      <button id="properties-toggle" class="icon-button mobile-only" data-icon="sliders" title="Свойства" aria-label="Свойства" aria-expanded="false"></button>
+    </nav>
+
+    <main class="workspace">
+      <aside class="pages sidebar" aria-label="Страницы PDF">
+        <div class="panel-head"><div class="panel-title"><span data-icon="pages"></span><h2>Страницы</h2><span id="page-count" class="count"></span></div><button id="add-page" class="icon-button panel-action" data-icon="plus" title="Добавить пустую страницу" aria-label="Добавить пустую страницу" disabled></button></div>
+        <div id="thumbnails" class="thumbnails"></div>
+        <div class="page-tools" aria-label="Операции со страницей">
+          <button id="rotate-page" class="icon-button" data-icon="rotate" title="Повернуть страницу на 90°" aria-label="Повернуть страницу" disabled></button>
+          <button id="duplicate-page" class="icon-button" data-icon="copy" title="Дублировать страницу" aria-label="Дублировать страницу" disabled></button>
+          <button id="move-up" class="icon-button" data-icon="up" title="Переместить страницу вверх" aria-label="Переместить страницу вверх" disabled></button>
+          <button id="move-down" class="icon-button" data-icon="down" title="Переместить страницу вниз" aria-label="Переместить страницу вниз" disabled></button>
+          <button id="delete-page" class="icon-button danger-icon" data-icon="trash" title="Удалить страницу" aria-label="Удалить страницу" disabled></button>
+        </div>
+      </aside>
+
+      <section class="viewer" aria-label="Документ">
+        <div id="formatbar" class="formatbar" role="toolbar" aria-label="Правка на странице" hidden></div>
+        <div id="table-formatbar" class="formatbar table-formatbar" role="toolbar" aria-label="Границы и заливка таблицы" hidden></div>
+        <div id="stage" class="stage" tabindex="0" aria-label="Область просмотра PDF">
+          <div id="paper" class="paper" hidden>
+            <canvas id="document-canvas" aria-label="Страница PDF"></canvas>
+            <div id="overlay" class="overlay"></div>
+            <div id="editor-layer" class="editor-layer" hidden></div>
+            <div id="annotation-layer" class="annotation-layer"></div>
+            <button type="button" id="area-actions" class="area-actions" aria-label="Действия с областью" aria-haspopup="menu" aria-expanded="false" title="Действия с областью" hidden>•••</button>
+          </div>
+          <div id="welcome" class="welcome" role="status"><span class="empty-icon" data-icon="file"></span><p>Открываем документ…</p></div>
+          <div id="drop-target" class="drop-target" hidden><span class="empty-icon" data-icon="folder"></span><strong>Перетащите PDF, фото, DOCX или XLSX сюда</strong></div>
+        </div>
+        <div class="viewer-bar">
+          <div class="page-navigation">
+            <button id="prev-page" class="icon-button" title="Предыдущая страница" aria-label="Предыдущая страница" data-icon="left" disabled></button>
+            <span id="page-position" aria-live="polite">—</span>
+            <button id="next-page" class="icon-button" title="Следующая страница" aria-label="Следующая страница" data-icon="right" disabled></button>
+          </div>
+          <div class="zoom">
+            <button id="zoom-out" class="icon-button" data-icon="minus" title="Уменьшить масштаб" aria-label="Уменьшить масштаб" disabled></button>
+            <button id="fit" class="zoom-value" title="Вписать страницу в окно" aria-label="Вписать страницу в окно" disabled>—</button>
+            <button id="zoom-in" class="icon-button" data-icon="plus" title="Увеличить масштаб" aria-label="Увеличить масштаб" disabled></button>
+            <button id="fit-icon" class="icon-button fit-icon" data-icon="scan" title="Вписать страницу в окно" aria-label="Вписать страницу в окно" disabled></button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="properties sidebar" aria-label="Свойства объекта">
+        <div class="panel-head"><div class="panel-title"><span data-icon="sliders"></span><h2>Свойства</h2></div><div class="side-actions"><button id="comments-toggle" class="icon-button" data-icon="comment" title="Комментарии" aria-label="Комментарии" aria-pressed="false"></button><button id="properties-close" class="icon-button mobile-only" data-icon="close" title="Закрыть свойства" aria-label="Закрыть свойства"></button></div></div>
+        <div id="properties-body" class="properties-body">
+          <div id="inspector"></div>
+          <section class="object-section">
+            <div class="object-heading"><h3>Объекты страницы</h3><span id="object-count" class="count"></span></div>
+            <div class="filters" aria-label="Фильтр объектов">
+              <button type="button" data-filter="all" class="filter active" aria-pressed="true">Все</button>
+              <button type="button" data-filter="1" class="filter" aria-pressed="false">Текст</button>
+              <button type="button" data-filter="graphics" class="filter" aria-pressed="false">Графика</button>
+            </div>
+            <div id="objects" class="objects"></div>
+          </section>
+        </div>
+        <div id="comments-panel" class="properties-body comments-panel" hidden></div>
+      </aside>
+      <button id="backdrop" class="backdrop" type="button" aria-label="Закрыть панель" hidden></button>
+      <div id="notice" class="notice" role="status" hidden></div>
+    </main>
+
+    <footer class="statusbar">
+      <span><span class="status-dot"></span><span id="status">Загрузка редактора</span></span>
+      <span id="status-detail"><span data-icon="shield"></span>Локальная обработка</span>
+    </footer>
+    <input id="file-input" type="file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" hidden>
+    <input id="image-input" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" hidden>
+  </div>
+  <dialog id="ocr-dialog" class="tool-dialog" aria-labelledby="ocr-title">
+    <div class="dialog-head"><h2 id="ocr-title">Распознавание скана</h2><button type="button" class="icon-button" data-close data-icon="close" aria-label="Закрыть"></button></div>
+    <div class="dialog-body">
+      <p class="tool-note">Распознаёт русский и английский текст. Исходная страница сохраняет внешний вид, а распознанный текст можно копировать и править. Сомнительные символы отмечаются звёздочкой (*).</p>
+      <label>Страницы <select id="ocr-scope"><option value="current">Текущая страница</option><option value="all">Все страницы без текста</option></select></label>
+      <div class="dialog-action-row">
+        <button id="run-ocr" type="button" class="button primary">Распознать текст</button>
+        <button id="prepare-ocr" type="button" class="button outlined">Подготовить офлайн</button>
+      </div>
+      <p id="ocr-status" class="tool-note" role="status">При первом запуске загрузятся компоненты OCR. После подготовки распознавание работает без сети в этой вкладке.</p>
+    </div>
+  </dialog>
+  <dialog id="clipboard-dialog" class="tool-dialog" aria-labelledby="clipboard-title">
+    <div class="dialog-head"><h2 id="clipboard-title">Копирование и вставка</h2><button type="button" class="icon-button" data-close data-icon="close" aria-label="Закрыть"></button></div>
+    <div class="dialog-body clipboard-actions">
+      <button id="copy-selection" type="button" class="button outlined">Копировать выделенное</button>
+      <button id="copy-page-text" type="button" class="button outlined">Копировать текст страницы</button>
+      <button id="copy-page" type="button" class="button outlined">Копировать страницу</button>
+      <button id="paste-selection" type="button" class="button primary">Вставить из буфера редактора</button>
+      <button id="paste-system" type="button" class="button outlined">Вставить из буфера устройства</button>
+      <p id="clipboard-status" class="tool-note" role="status"></p>
+    </div>
+  </dialog>
+  <dialog id="marker-dialog" class="tool-dialog" aria-labelledby="marker-title">
+    <div class="dialog-head"><h2 id="marker-title">Маркер текста</h2><button type="button" class="icon-button" data-close data-icon="close" aria-label="Закрыть"></button></div>
+    <div class="dialog-body">
+      <p class="tool-note">Выберите цвет и нажмите на нужное слово на странице или в таблице.</p>
+      <div class="marker-palette" aria-label="Готовые цвета">
+        <button type="button" data-marker-color="#ffe36a" aria-label="Жёлтый маркер" style="--swatch:#ffe36a"></button>
+        <button type="button" data-marker-color="#82df9e" aria-label="Зелёный маркер" style="--swatch:#82df9e"></button>
+        <button type="button" data-marker-color="#82c7ff" aria-label="Голубой маркер" style="--swatch:#82c7ff"></button>
+        <button type="button" data-marker-color="#ff99bf" aria-label="Розовый маркер" style="--swatch:#ff99bf"></button>
+        <button type="button" data-marker-color="#ffc38b" aria-label="Оранжевый маркер" style="--swatch:#ffc38b"></button>
+        <button type="button" data-marker-color="#c1a8ff" aria-label="Фиолетовый маркер" style="--swatch:#c1a8ff"></button>
+      </div>
+      <div class="dialog-action-row">
+        <label>Свой цвет <input id="marker-custom" type="color" value="#ffe36a"></label>
+        <button id="use-marker" type="button" class="button primary">Использовать цвет</button>
+      </div>
+      <div class="dialog-action-row"><button id="erase-marker" type="button" class="button outlined">Снять выделение</button><button id="leave-marker" type="button" class="button ghost" hidden>Завершить выделение</button></div>
+    </div>
+  </dialog>
+  <dialog id="watermark-dialog" class="tool-dialog" aria-labelledby="watermark-title">
+    <div class="dialog-head"><h2 id="watermark-title">Водяной знак</h2><button type="button" class="icon-button" data-close data-icon="close" aria-label="Закрыть"></button></div>
+    <div class="dialog-body">
+      <label>Текст <input id="watermark-text" maxlength="64" value="КОНФИДЕНЦИАЛЬНО" autocomplete="off"></label>
+      <div class="dialog-fields">
+        <label>Цвет <input type="color" id="watermark-color" value="#43506d"></label>
+        <label>Непрозрачность, % <input type="number" id="watermark-opacity" min="5" max="90" value="20"></label>
+        <label>Размер, пт <input type="number" id="watermark-size" min="8" max="250" value="64"></label>
+        <label>Наклон, ° <input type="number" id="watermark-angle" min="-90" max="90" value="35"></label>
+      </div>
+      <label>Страницы <select id="watermark-scope"><option value="all">Все страницы</option><option value="current">Текущая страница</option></select></label>
+      <button id="apply-watermark" type="button" class="button primary">Добавить знак</button>
+    </div>
+  </dialog>
+  <dialog id="sign-dialog" class="tool-dialog" aria-labelledby="sign-title">
+    <div class="dialog-head"><h2 id="sign-title">Подпись и печать</h2><button type="button" class="icon-button" data-close data-icon="close" aria-label="Закрыть"></button></div>
+    <div class="dialog-body">
+      <p class="tool-note">Загрузите свои изображения PNG или JPEG. После выбора нажмите на нужное место на странице.</p>
+      <div class="asset-row"><div><strong>Подпись</strong><span id="signature-name">Файл не выбран</span></div><button id="pick-signature" class="button outlined" type="button">Загрузить</button><button id="place-signature" class="button primary" type="button" disabled>Вставить</button></div>
+      <div class="asset-row"><div><strong>Печать</strong><span id="seal-name">Файл не выбран</span></div><button id="pick-seal" class="button outlined" type="button">Загрузить</button><button id="place-seal" class="button primary" type="button" disabled>Вставить</button></div>
+      <label class="inline-check"><input id="stamp-remove-white" type="checkbox"> Сделать белый фон прозрачным</label>
+      <div class="dialog-action-row">
+        <label>Инициалы <input id="initials" maxlength="22" placeholder="А. А." autocomplete="off"></label>
+        <button id="place-initials" type="button" class="button outlined">Вставить инициалы</button>
+      </div>
+      <p id="sign-status" class="tool-note" role="status"></p><p class="tool-note">Изображения размещаются в PDF как графические объекты.</p>
+    </div>
+  </dialog>
+  <dialog id="convert-dialog" class="tool-dialog" aria-labelledby="convert-title">
+    <div class="dialog-head"><h2 id="convert-title">Конвертация файлов</h2><button type="button" class="icon-button" data-close data-icon="close" aria-label="Закрыть"></button></div>
+    <div class="dialog-body">
+      <section class="conversion-option">
+        <strong>Word и Excel в PDF</strong>
+        <p>Откройте DOCX или XLSX как PDF либо добавьте страницы в текущий документ.</p>
+        <label class="inline-check"><input id="convert-append" type="checkbox"> Добавить в текущий PDF</label>
+        <button id="pick-office" type="button" class="button primary">Выбрать DOCX или XLSX</button>
+      </section>
+      <section class="conversion-option">
+        <strong>Текущий PDF в Word или Excel</strong>
+        <p>Word получает редактируемый текст и таблицы. Excel получает таблицы и текст по строкам.</p>
+        <div class="dialog-action-row"><button id="export-docx" type="button" class="button outlined">Скачать DOCX</button><button id="export-xlsx" type="button" class="button outlined">Скачать XLSX</button></div>
+      </section>
+      <p id="convert-status" class="tool-note" role="status">Файлы обрабатываются на устройстве. Сложная вёрстка и формулы могут отличаться.</p>
+    </div>
+  </dialog>
+  <input id="markup-file" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" hidden>
+  <input id="office-file" type="file" accept=".docx,.xlsx" hidden>
+  <script type="module" src="./app.js"></script>
+  <div id="page-menu" class="page-menu" role="menu" aria-label="Действия на странице" hidden></div>
+</body>
+</html>

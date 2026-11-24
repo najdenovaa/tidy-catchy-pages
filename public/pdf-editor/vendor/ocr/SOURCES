@@ -1,0 +1,1 @@
+Tesseract.js 6.0.1 and Tesseract.js Core 6.0.0 (Apache 2.0). Russian and English language data: https://github.com/tesseract-ocr/tessdata (Apache 2.0). The bundled files were rebuilt from tessdata 4.0.0 to retain the legacy OCR components only.

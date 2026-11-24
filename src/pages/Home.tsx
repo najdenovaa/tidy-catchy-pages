@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Send, Mail, Phone, ChevronDown, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench } from "lucide-react";
+import { Send, Mail, Phone, ChevronDown, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench, FilePenLine } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
 import geoladLogo from "@/assets/geolad-logo.png";
 import nefteservisLogo from "@/assets/nefteservis-logo.png";
@@ -183,6 +183,11 @@ export default function Home() {
                 <a href="https://www.rustore.ru/catalog/app/app.rork.w7r61ukk1hg2jt8ys7bgb" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
                   <AndroidIcon className="w-3.5 h-3.5" />
                   Приложение Android
+                </a>
+                <span className="text-border" aria-hidden="true">|</span>
+                <a href="/pdf-editor/" className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
+                  <FilePenLine className="w-3.5 h-3.5" aria-hidden="true" />
+                  PDF-редактор
                 </a>
               </div>
               <div className="pt-2 border-t border-border/50">
