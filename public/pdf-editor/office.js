@@ -256,9 +256,19 @@ export function readXlsx(bytes) {
   return sheets;
 }
 
+export function wordFontName(font = '') {
+  const name = String(font).replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (/arialnarrow|robotocondensed/.test(name)) return 'Arial Narrow';
+  if (/calibri|carlito/.test(name)) return 'Calibri';
+  if (/courier|mono|consolas/.test(name)) return 'Courier New';
+  if (/times|serif|georgia|cambria|caladea|literata|lora|merriweather|playfair|spectral|cormorant/.test(name)) return 'Times New Roman';
+  return 'Arial';
+}
+
 function wordRun(text, { size, bold, italic, underline, strike, font, color } = {}) {
   const points = Number.isFinite(size) ? Math.min(150, Math.max(6, Math.round(size * 2))) : 22;
-  return `<w:r><w:rPr><w:sz w:val="${points}"/>${bold ? '<w:b/>' : ''}${italic ? '<w:i/>' : ''}${underline ? '<w:u w:val="single"/>' : ''}${strike ? '<w:strike/>' : ''}${font ? `<w:rFonts w:ascii="${escape(font)}" w:hAnsi="${escape(font)}" w:cs="${escape(font)}"/>` : ''}${color ? `<w:color w:val="${escape(color)}"/>` : ''}</w:rPr>` +
+  const family = wordFontName(font);
+  return `<w:r><w:rPr><w:rFonts w:ascii="${family}" w:hAnsi="${family}" w:eastAsia="${family}" w:cs="${family}"/>${bold ? '<w:b/>' : ''}${italic ? '<w:i/>' : ''}${underline ? '<w:u w:val="single"/>' : ''}${strike ? '<w:strike/>' : ''}<w:sz w:val="${points}"/><w:szCs w:val="${points}"/><w:lang w:val="ru-RU"/>${color ? `<w:color w:val="${escape(color)}"/>` : ''}</w:rPr>` +
     String(text).split('\n').map(line => `<w:t xml:space="preserve">${escape(line)}</w:t>`).join('<w:br/>') + '</w:r>';
 }
 
@@ -300,9 +310,11 @@ export function writeDocx(pages) {
     return drawing(id, block.width * scale, block.height * scale);
   }).join('')).join('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
   files['[Content_Types].xml'] = types([...baseTypes, ['png', 'image/png']],
-    [['word/document.xml', openXml + 'wordprocessingml.document.main+xml']]);
+    [['word/document.xml', openXml + 'wordprocessingml.document.main+xml'], ['word/styles.xml', openXml + 'wordprocessingml.styles+xml'], ['word/fontTable.xml', openXml + 'wordprocessingml.fontTable+xml']]);
   files['_rels/.rels'] = relations([['rId1', 'officeDocument', 'word/document.xml']]);
-  if (media.length) files['word/_rels/document.xml.rels'] = relations(media);
+  files['word/_rels/document.xml.rels'] = relations([...media, ['rIdStyles', 'styles', 'styles.xml'], ['rIdFonts', 'fontTable', 'fontTable.xml']]);
+  files['word/styles.xml'] = xmlHeader + `<w:styles xmlns:w="${wns}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="ru-RU"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>`;
+  files['word/fontTable.xml'] = xmlHeader + `<w:fonts xmlns:w="${wns}">` + ['Arial', 'Arial Narrow', 'Times New Roman', 'Calibri', 'Courier New'].map(name => `<w:font w:name="${name}"><w:family w:val="${name === 'Courier New' ? 'modern' : name === 'Times New Roman' ? 'roman' : 'swiss'}"/></w:font>`).join('') + '</w:fonts>';
   files['word/document.xml'] = xmlHeader + `<w:document xmlns:w="${wns}" xmlns:r="${rns}" xmlns:wp="${imageNS}/wordprocessingDrawing" xmlns:a="${imageNS}/main" xmlns:pic="${imageNS}/picture"><w:body>` +
     content + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="960" w:right="960" w:bottom="960" w:left="960"/></w:sectPr></w:body></w:document>';
   return archive(files);

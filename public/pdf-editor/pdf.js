@@ -213,7 +213,9 @@ export class PdfEngine {
     const [x, baseline] = this.screenPoint(page, matrix[4], matrix[5]);
     const [right, down] = this.screenPoint(page, matrix[4] + matrix[0] * size, matrix[5] + matrix[1] * size);
     const { width, height } = this.dimensions(page);
+    const [verticalX, verticalY] = this.screenPoint(page, matrix[4] + matrix[2] * size, matrix[5] + matrix[3] * size);
     return {
+      verticalSize: Math.hypot((verticalX - x) * width, (verticalY - baseline) * height),
       text, size, bold: Boolean(bold), italic: Boolean(font && (/italic|oblique/i.test(fontName) || this.memory(4, ptr =>
         a.FPDFFont_GetItalicAngle(font, ptr) && a.pdfium.getValue(ptr, 'i32') !== 0))), fontName, color: this.getColor(object), baseline, origin: x,
       visualSize: Math.hypot((right - x) * width, (down - baseline) * height),

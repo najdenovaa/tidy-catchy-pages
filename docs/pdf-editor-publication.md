@@ -29,3 +29,11 @@ Roboto Condensed static faces were instantiated at weights 400 and 700 from Goog
 Inline text fields, including OCR scan replacements, have a move grip, a horizontal resize handle, a width input in millimeters, and an expand-to-right-margin action. Arrow keys on the handles support movement/width adjustment (Shift increases the step). Height follows the wrapped text. Changes remain part of the serializable inline draft, so session recovery retains them before Apply.
 
 Moving a recognised scan replacement changes its origin/baseline but preserves the original raster erasure rectangle. The edit preview masks that old region separately. On PDF reopen, the layout bounds come from text objects, excluding the old erasure path, so repeated movements do not jump back to the original scan location. Geometry and native save/reopen checks are in `pdf-text-box.test.ts` and `check-text-box-geometry.mjs`.
+
+## DOCX Cyrillic and OCR font sizes
+
+Word export maps browser font families to standard office families (Arial, Times New Roman, Calibri, Courier New or Arial Narrow), with explicit Unicode run font assignments, Russian language, default styles and a font table. This avoids depending on a recipient having the editor's web fonts installed. Font shapes can differ from the PDF; this is still an editable, reflowing Word conversion rather than a layout-identical reconstruction.
+
+OCR font size comes from its stored scan-cover nominal size. Other PDF text uses the vertical matrix scale rather than horizontal glyph stretching. Native OCR normally stretches glyphs to fit recognition boxes; interpreting that horizontal scale as Word font height made signatures and short lines excessively large.
+
+`pdf-word-export.test.ts` checks Unicode, office declarations, OCR size and stretched ordinary text. `check-word-export.mjs` reproduces the issue with a native stretched PDFium OCR layer and validates DOCX output. Optional `PDF_WORD_QA_DIR` writes a synthetic test DOCX for LibreOffice rendering. The resulting rendered test has readable Cyrillic, one page and 9pt text. Microsoft Word and the user's original PDF were not available for that visual check.

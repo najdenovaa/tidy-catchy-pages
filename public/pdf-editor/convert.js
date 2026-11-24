@@ -215,7 +215,7 @@ export async function pdfToOffice(engine, type) {
       const color = object.color?.slice(0, 3).map(channel => channel.toString(16).padStart(2, '0')).join('');
       blocks.push({
         type: 'text', text: block.text, y: block.y, left: clamp(block.x - 47, 0, 170),
-        size: object.visualSize || object.size, bold: object.bold, italic: object.italic, underline: block.underline, strike: block.strike, font: block.font ?? matchingFont(object.fontName), color,
+        size: block.scanCover?.size || object.verticalSize || object.visualSize || object.size, bold: object.bold, italic: object.italic, underline: block.underline, strike: block.strike, font: block.font ?? matchingFont(object.fontName), color,
       });
     }
     for (const object of page.objects.filter(object => object.kind === kinds.image)) {

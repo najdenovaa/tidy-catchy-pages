@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { PdfEngine } from '../../public/pdf-editor/pdf.js';
+import { coreFonts } from '../../public/pdf-editor/layout.js';
+import { pdfToOffice } from '../../public/pdf-editor/convert.js';
+import { unzipSync, strFromU8 } from '../../public/pdf-editor/vendor/fflate.js';
+const root = new URL('../../public/pdf-editor/', import.meta.url);
+const assets = await Promise.all(coreFonts.flatMap(family => ['Regular', 'Bold', 'Italic', 'BoldItalic'].map(face => readFile(new URL(`fonts/${family.replaceAll(' ', '')}-${face}.ttf`, root)))));
+const engine = await PdfEngine.initialize(await readFile(new URL('vendor/pdfium.wasm', root)), assets);
+engine.createDocument(); engine.addPage(0, 595, 842);
+const text = ['АКТ ПРИЁМА-ПЕРЕДАЧИ', 'Мы, нижеподписавшиеся, подтверждаем передачу материалов.', 'Портландцемент тампонажный — 10 тонн.', 'Ускоритель сроков схватывания CaCl₂ — 1 тонна.', 'Замедлитель IG Retarder — 1 тонна.', 'Подпись: Иванов'];
+engine.addScanLayer(0, text.map((line, i) => ({ text: line, box: [.1, .15 + i * .065, .85, .162 + i * .065], background: [255,255,255] })));
+engine.open(engine.save());
+const page = engine.render(0, 20, 20, true);
+const signature = page.objects.find(object => object.text === text.at(-1));
+assert.ok(signature.visualSize > signature.blockSpec.scanCover.size * 2, 'fixture reproduces horizontally enlarged OCR glyph metrics');
+assert.ok(Math.abs(signature.verticalSize - signature.blockSpec.scanCover.size) < .1);
+const docx = await pdfToOffice(engine, 'docx');
+const files = unzipSync(docx), xml = strFromU8(files['word/document.xml']);
+for (const line of text) assert.ok(xml.includes(line), line);
+assert.ok(!xml.includes('□'));
+assert.ok(!xml.includes('Noto Sans'));
+const sizes = [...xml.matchAll(/<w:sz w:val="(\d+)"/g)].map(match => Number(match[1]));
+assert.ok(sizes.every(size => size >= 16 && size <= 22), 'OCR text stays near its original 9pt size');
+if (process.env.PDF_WORD_QA_DIR) {
+  await mkdir(process.env.PDF_WORD_QA_DIR, { recursive: true });
+  await writeFile(process.env.PDF_WORD_QA_DIR + '/editor-export.docx', docx);
+}
+engine.clear();
+console.log('Native stretched OCR layer exports Cyrillic Unicode and correct font heights to DOCX with office font declarations.');
