@@ -1,1 +1,10 @@
-project_id = "bqidvaqvtxoptcfehooe"
+project_id = "voeqxqtglzrsjkocctag"
+
+[functions.ad-clicks]
+verify_jwt = false
+
+[functions.get-stats]
+verify_jwt = false
+
+[functions.log-activity]
+verify_jwt = false

@@ -7,6 +7,7 @@ import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
 import HelpLink from "@/components/HelpLink";
 import IcebergBillboard from "@/components/IcebergBillboard";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { recordSiteClick } from "@/lib/ad-banner-clicks";
 import { supabase } from "@/integrations/supabase/client";
 
 const AppleIcon = ({ className }: { className?: string }) => (
@@ -182,17 +183,17 @@ export default function Home() {
           <div className="bg-card border-t border-border py-6">
             <div className="max-w-5xl mx-auto px-4 text-center space-y-3">
               <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-                <a href="https://apps.apple.com/ru/app/deallsoft/id6793684019" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
+                <a href="https://apps.apple.com/ru/app/deallsoft/id6793684019" onClick={() => recordSiteClick("ios_app")} onAuxClick={event => { if (event.button === 1) recordSiteClick("ios_app"); }} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
                   <AppleIcon className="w-3.5 h-3.5" />
                   Приложение в App Store
                 </a>
                 <span className="text-border">|</span>
-                <a href="https://www.rustore.ru/catalog/app/app.rork.w7r61ukk1hg2jt8ys7bgb" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
+                <a href="https://www.rustore.ru/catalog/app/app.rork.w7r61ukk1hg2jt8ys7bgb" onClick={() => recordSiteClick("android_app")} onAuxClick={event => { if (event.button === 1) recordSiteClick("android_app"); }} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
                   <AndroidIcon className="w-3.5 h-3.5" />
                   Приложение Android
                 </a>
                 <span className="text-border" aria-hidden="true">|</span>
-                <a href="/pdf-editor/" className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
+                <a href="/pdf-editor/" onClick={() => recordSiteClick("pdf_editor")} onAuxClick={event => { if (event.button === 1) recordSiteClick("pdf_editor"); }} className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
                   <FilePenLine className="w-3.5 h-3.5" aria-hidden="true" />
                   PDF-редактор
                 </a>

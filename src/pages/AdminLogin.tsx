@@ -20,13 +20,16 @@ export default function AdminLogin() {
     e.preventDefault();
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+      if (!data.user) throw new Error("Сессия входа не создана");
 
       // Check if user is admin
       const { data: roles, error: rolesError } = await supabase
         .from("user_roles")
         .select("role")
+        .eq("user_id", data.user.id)
+        .eq("role", "admin")
         .limit(1)
         .abortSignal(AbortSignal.timeout(10_000));
 
@@ -85,7 +88,10 @@ export default function AdminLogin() {
               {loading ? "Вход..." : "Войти"}
             </Button>
           </form>
-          <div className="mt-4 text-center">
+          <div className="mt-4 space-y-3 text-center">
+            <Link to="/auth?mode=signup" className="block text-sm text-primary hover:underline">
+              Создать аккаунт в новой базе
+            </Link>
             <Link to="/" className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
               <Home className="w-3 h-3" /> На главную
             </Link>

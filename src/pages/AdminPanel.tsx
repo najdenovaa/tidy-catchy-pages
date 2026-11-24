@@ -163,7 +163,7 @@ export default function AdminPanel() {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) throw sessionError;
         if (!session) { navigate("/admin-login"); return; }
-        const { data: roles, error: rolesError } = await supabase.from("user_roles").select("role").limit(1)
+        const { data: roles, error: rolesError } = await supabase.from("user_roles").select("role").eq("user_id", session.user.id).eq("role", "admin").limit(1)
           .abortSignal(AbortSignal.timeout(10_000));
         if (rolesError) throw rolesError;
         if (!roles || roles.length === 0) {
@@ -307,7 +307,7 @@ export default function AdminPanel() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {/* Общая статистика */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
-          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">📊 Всего расчётов</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{calcLogs.length}</p></CardContent></Card>
+          <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">📊 Всего расчётов</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{totalCalculations}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">👁️ Всего посещений</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{totalVisits}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">👤 Пользователей</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{profiles.length}</p></CardContent></Card>
           <Card><CardHeader className="py-3 px-4"><CardTitle className="text-sm text-muted-foreground">🌐 Уникальных IP</CardTitle></CardHeader><CardContent className="px-4 pb-3"><p className="text-2xl font-bold">{new Set([...calcLogs, ...visitLogs].map(l => l.ip_address).filter(Boolean)).size}</p></CardContent></Card>
@@ -397,7 +397,7 @@ export default function AdminPanel() {
               <TabsTrigger value="calculations">📊 Расчёты ({totalCalculations})</TabsTrigger>
               <TabsTrigger value="users">👤 Пользователи ({profiles.length})</TabsTrigger>
               <TabsTrigger value="analyses">🔬 Анализы ({analysisLogs.length})</TabsTrigger>
-              <TabsTrigger value="ads">Реклама</TabsTrigger>
+              <TabsTrigger value="ads">Клики</TabsTrigger>
               <TabsTrigger value="lookup">🔍 Поиск</TabsTrigger>
             </TabsList>
           </div>

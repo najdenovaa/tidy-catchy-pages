@@ -1,18 +1,20 @@
-export const AD_BANNERS = {
+export const CLICK_TARGETS = {
   iceberg: "Айсберг",
   sts: "СТС",
+  pdf_editor: "PDF-редактор",
+  ios_app: "App Store · iPhone",
+  android_app: "RuStore · Android",
 } as const;
 
-export type AdBanner = keyof typeof AD_BANNERS;
+export type ClickTarget = keyof typeof CLICK_TARGETS;
 
-export const AD_ANALYTICS_URL = "https://voeqxqtglzrsjkocctag.supabase.co/functions/v1/ad-clicks";
+export const AD_ANALYTICS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ad-clicks`;
 
-export function recordAdBannerClick(banner: AdBanner) {
+export function recordSiteClick(target: ClickTarget) {
   // Keep the partner link native and let the request finish if the visitor leaves.
   void fetch(AD_ANALYTICS_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ banner }),
+    body: JSON.stringify({ target }),
     keepalive: true,
   }).catch(() => undefined);
 }

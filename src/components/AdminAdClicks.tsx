@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/integrations/supabase/client";
-import { AD_ANALYTICS_URL, AD_BANNERS, type AdBanner } from "@/lib/ad-banner-clicks";
+import { AD_ANALYTICS_URL, CLICK_TARGETS, type ClickTarget } from "@/lib/ad-banner-clicks";
 
 const PAGE_SIZE = 50;
 const dateFormat = new Intl.DateTimeFormat("ru-RU", {
@@ -14,10 +14,10 @@ const dateFormat = new Intl.DateTimeFormat("ru-RU", {
 });
 const numberFormat = new Intl.NumberFormat("ru-RU");
 
-type Click = { id: string; banner: AdBanner; clicked_at: string; ip_address: string | null };
+type Click = { id: string; target: ClickTarget; clicked_at: string; ip_address: string | null };
 type ClickReport = {
   clicks: Click[];
-  totals: { all: number } & Record<AdBanner, number>;
+  totals: { all: number } & Record<ClickTarget, number>;
 };
 
 export default function AdminAdClicks() {
@@ -59,8 +59,10 @@ export default function AdminAdClicks() {
 
   const counters = [
     { label: "Всего кликов", count: totals?.all },
-    { label: AD_BANNERS.iceberg, count: totals?.iceberg },
-    { label: AD_BANNERS.sts, count: totals?.sts },
+    ...(Object.entries(CLICK_TARGETS) as [ClickTarget, string][]).map(([target, label]) => ({
+      label,
+      count: totals?.[target],
+    })),
   ];
   const pages = Math.ceil((totals?.all ?? 0) / PAGE_SIZE);
 
@@ -95,7 +97,7 @@ export default function AdminAdClicks() {
             <TableHeader>
               <TableRow>
                 <TableHead>Дата и время (ЕКБ)</TableHead>
-                <TableHead>Баннер</TableHead>
+                <TableHead>Ссылка</TableHead>
                 <TableHead>IP-адрес</TableHead>
               </TableRow>
             </TableHeader>
@@ -109,7 +111,7 @@ export default function AdminAdClicks() {
               ) : clicks.map(click => (
                 <TableRow key={click.id}>
                   <TableCell className="whitespace-nowrap">{dateFormat.format(new Date(click.clicked_at))}</TableCell>
-                  <TableCell>{AD_BANNERS[click.banner]}</TableCell>
+                  <TableCell>{CLICK_TARGETS[click.target]}</TableCell>
                   <TableCell className="whitespace-nowrap font-mono text-xs">{click.ip_address ?? "—"}</TableCell>
                 </TableRow>
               ))}

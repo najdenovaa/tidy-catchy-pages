@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
@@ -22,15 +23,21 @@ serve(async (req) => {
       supabase.from("calculation_logs").select("id", { count: "exact", head: true }),
     ]);
 
+    if (visitsRes.error || calcsRes.error || visitsRes.count === null || calcsRes.count === null) {
+      return new Response(JSON.stringify({ error: "Statistics unavailable" }), {
+        status: 503,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     return new Response(JSON.stringify({
-      visits: visitsRes.count ?? 0,
-      calculations: calcsRes.count ?? 0,
+      visits: visitsRes.count,
+      calculations: calcsRes.count,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("get-stats error:", e);
-    return new Response(JSON.stringify({ visits: 0, calculations: 0 }), {
+    return new Response(JSON.stringify({ error: "Statistics unavailable" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
