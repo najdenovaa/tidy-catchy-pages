@@ -32,26 +32,33 @@ const modules = [
 ];
 
 export default function Home() {
-  const [visitCount, setVisitCount] = useState(0);
-  const [calcCount, setCalcCount] = useState(0);
+  const [stats, setStats] = useState<{ visits: number; calculations: number } | null>(null);
+  const [statsUnavailable, setStatsUnavailable] = useState(false);
 
-  const fetchStats = useCallback(() => {
-    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-stats`, {
-      headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-    })
-      .then(r => r.json())
-      .then(data => {
-        setVisitCount(data.visits ?? 0);
-        setCalcCount(data.calculations ?? 0);
-      })
-      .catch(() => {});
+  const fetchStats = useCallback(async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-stats`, {
+        headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) throw new Error("Statistics unavailable");
+      const { visits, calculations } = await response.json();
+      if (!Number.isSafeInteger(visits) || visits < 0 ||
+          !Number.isSafeInteger(calculations) || calculations < 0) {
+        throw new Error("Invalid statistics");
+      }
+      setStats({ visits, calculations });
+      setStatsUnavailable(false);
+    } catch {
+      setStatsUnavailable(true);
+    }
   }, []);
 
   useEffect(() => {
     supabase.functions.invoke("log-activity", {
       body: { type: "visit", module: "home", page_url: "/" },
-    }).then(() => fetchStats()).catch(() => {});
-    fetchStats();
+    }).then(({ error }) => { if (!error) void fetchStats(); }).catch(() => {});
+    void fetchStats();
   }, [fetchStats]);
 
   return (
@@ -125,9 +132,14 @@ export default function Home() {
 
           <main className="flex-1 max-w-5xl mx-auto px-4 pt-2 pb-10 sm:pb-16 w-full">
             <div className="flex items-center justify-center gap-6 text-[11px] text-muted-foreground/70 mb-3">
-              <span>👁 Посещений: <span className="font-semibold text-muted-foreground">{visitCount}</span></span>
-              <span>🧮 Расчётов: <span className="font-semibold text-muted-foreground">{calcCount}</span></span>
+              <span>👁 Посещений: <span className="font-semibold text-muted-foreground">{stats?.visits ?? "—"}</span></span>
+              <span>🧮 Расчётов: <span className="font-semibold text-muted-foreground">{stats?.calculations ?? "—"}</span></span>
             </div>
+            {statsUnavailable && (
+              <p role="status" className="mb-3 text-center text-xs text-muted-foreground">
+                Статистика временно недоступна
+              </p>
+            )}
             <h2 className="text-xl sm:text-2xl font-semibold text-foreground mb-5 text-center">
               Выберите модуль
             </h2>
