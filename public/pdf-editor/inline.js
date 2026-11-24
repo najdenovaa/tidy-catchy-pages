@@ -16,8 +16,8 @@ const maxRows = 65;
 const maxColumns = 12;
 
 export class InlineEditor {
-  constructor({ layer, toolbar, stylebar, getPage, render, commit, message, loadFont }) {
-    Object.assign(this, { layer, toolbar, stylebar, getPage, render, commit, message, loadFont });
+  constructor({ layer, toolbar, stylebar, getPage, render, commit, message, loadFont, changed = () => {} }) {
+    Object.assign(this, { layer, toolbar, stylebar, getPage, render, commit, message, loadFont, changed });
     this.fillColor = '#fff2a8';
     this.stylebar.addEventListener('input', event => this.styleInput(event));
     this.stylebar.addEventListener('click', event => this.action(event));
@@ -32,6 +32,21 @@ export class InlineEditor {
     this.layer.addEventListener('pointermove', event => this.drag(event));
     this.layer.addEventListener('pointerup', () => { this.dragStart = null; });
     this.layer.addEventListener('pointercancel', () => { this.dragStart = null; });
+  }
+
+  restoreDraft(snapshot) {
+    const draft = structuredClone(snapshot);
+    this.open(draft);
+    if (draft.mode === 'text') {
+      const input = document.createElement('textarea');
+      input.className = 'inline-text';
+      input.setAttribute('aria-label', 'Текст на странице');
+      input.maxLength = 12000;
+      input.spellcheck = false;
+      input.value = draft.text;
+      this.layer.replaceChildren(input);
+    } else this.renderTable();
+    this.updateDraft();
   }
 
   selectText(object, excluded, point) {
@@ -279,6 +294,7 @@ export class InlineEditor {
   }
 
   updateDraft() {
+    this.changed();
     this.position();
     const delta = this.plan().delta;
     if (this.lastDelta === delta) return;
@@ -515,6 +531,7 @@ export class InlineEditor {
     draft.x = Math.max(3, Math.min(x, page.pageWidth - sum(draft.widths) - 3));
     draft.y = Math.max(3, Math.min(y, page.pageHeight - 30));
     draft.dirty = true;
+    this.changed();
     this.position();
   }
 
@@ -548,6 +565,7 @@ export class InlineEditor {
   }
 
   close() {
+    this.changed();
     this.layer.hidden = true;
     this.toolbar.hidden = true;
     this.stylebar.hidden = true;

@@ -419,3 +419,11 @@ svg { width: 18px; height: 18px; display: block; flex: none; }
 }
 .page-menu button:is(:hover, :focus-visible) { background: #eeebff; outline: none; }
 @media (max-width: 1400px) { #sign span:last-child, #comment span:last-child { display: none; } }
+
+.welcome h1 { font-size: 1.4rem; margin: 12px 0 20px; color: var(--ink); }
+.welcome #upload-document { min-height: 48px; font-size: 1rem; padding: 0 24px; }
+.welcome p { margin: 16px 16px 10px; max-width: 420px; }
+.welcome small { font-size: .8rem; margin: 0 16px; }
+#session-status { overflow: hidden; text-overflow: ellipsis; }
+#status-detail { max-width: 62%; }
+#status-detail.save-error { color: #a32727; }

@@ -14,7 +14,7 @@
   <div class="app">
     <header class="topbar">
       <a class="brand" href="./" aria-label="Лист PDF"><span class="brand-icon" data-icon="brand"></span><span>Лист<span class="brand-accent"> PDF</span></span></a>
-      <div class="document-name"><span class="filename-icon" data-icon="file"></span><div><strong id="filename">Коммерческое предложение.pdf</strong><span id="document-meta">Демонстрационный документ</span></div></div>
+      <div class="document-name"><span class="filename-icon" data-icon="file"></span><div><strong id="filename">PDF-редактор</strong><span id="document-meta">Документ не открыт</span></div></div>
       <div class="top-actions">
         <a class="button ghost" href="/" title="На главную DeAllSoft" aria-label="На главную DeAllSoft">DeAllSoft</a>
         <button id="demo" class="button ghost" title="Открыть демонстрационный документ"><span data-icon="beaker"></span><span>Пример</span></button>
@@ -72,7 +72,7 @@
             <div id="annotation-layer" class="annotation-layer"></div>
             <button type="button" id="area-actions" class="area-actions" aria-label="Действия с областью" aria-haspopup="menu" aria-expanded="false" title="Действия с областью" hidden>•••</button>
           </div>
-          <div id="welcome" class="welcome" role="status"><span class="empty-icon" data-icon="file"></span><p>Открываем документ…</p></div>
+          <div id="welcome" class="welcome"><span class="empty-icon" data-icon="file"></span><h1>Откройте документ</h1><button id="upload-document" class="button primary" type="button" disabled><span data-icon="folder"></span>Загрузить документ</button><p id="welcome-message" role="status">Запускаем редактор…</p><small>PDF, PNG, JPEG, DOCX или XLSX · до 65 МБ</small></div>
           <div id="drop-target" class="drop-target" hidden><span class="empty-icon" data-icon="folder"></span><strong>Перетащите PDF, фото, DOCX или XLSX сюда</strong></div>
         </div>
         <div class="viewer-bar">
@@ -112,7 +112,7 @@
 
     <footer class="statusbar">
       <span><span class="status-dot"></span><span id="status">Загрузка редактора</span></span>
-      <span id="status-detail"><span data-icon="shield"></span>Локальная обработка</span>
+      <span id="status-detail" role="status"><span data-icon="shield"></span><span id="session-status">Документы остаются в этом браузере</span></span>
     </footer>
     <input id="file-input" type="file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" hidden>
     <input id="image-input" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" hidden>

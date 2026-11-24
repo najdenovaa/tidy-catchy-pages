@@ -1,3 +1,4 @@
+import { createSessionStore, validSession } from './local-session.js';
 import { PdfEngine, kinds } from './pdf.js';
 import { icon } from './icons.js';
 import { coreFonts, detectTables, tableFromRegion } from './layout.js';
@@ -30,6 +31,38 @@ const state = {
   history: [], revision: 0, saved: null,
   busy: false, hover: null, drag: null, suppressClickUntil: 0, panel: null, imageTarget: null,
 };
+const sessionStore = createSessionStore();
+let sessionReady = false;
+let saveTimer, firstPendingSave = 0, sessionGeneration = 0;
+function sessionStatus(message, error = false) {
+  $('session-status').textContent = message;
+  $('status-detail').classList.toggle('save-error', error);
+}
+function scheduleSession() {
+  if (!sessionReady || !state.history.length) return;
+  firstPendingSave ||= Date.now();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveSession, Math.min(300, Math.max(0, 1500 - (Date.now() - firstPendingSave))));
+}
+async function saveSession() {
+  clearTimeout(saveTimer);
+  firstPendingSave = 0;
+  if (!sessionReady || !state.history.length) return;
+  const generation = ++sessionGeneration;
+  const entry = state.history[state.revision];
+  const snapshot = {
+    version: 1, name: state.name, bytes: entry.bytes, page: state.index, zoom: state.zoom,
+    saved: entry.bytes === state.saved, updatedAt: Date.now(),
+    draft: editor.draft?.dirty ? structuredClone(editor.draft) : null,
+  };
+  sessionStatus('Сохраняем сессию…');
+  try {
+    await sessionStore.write(snapshot);
+    if (generation === sessionGeneration) sessionStatus('Сессия сохранена в этом браузере');
+  } catch {
+    if (generation === sessionGeneration) sessionStatus('Сессия не сохранена. Скачайте PDF', true);
+  }
+}
 const labels = {
   [kinds.text]: ['Текст', 'text'],
   [kinds.path]: ['Векторная фигура', 'rectangle'],
@@ -59,6 +92,7 @@ function notice(message, error = false) {
 }
 
 const editor = new InlineEditor({
+  changed: scheduleSession,
   layer: $('editor-layer'), toolbar: $('formatbar'), stylebar: $('table-formatbar'), getPage: () => state.page,
   render: () => renderSafely(), message: notice, loadFont: async family => {
     await Promise.all([state.engine.ensureFont(family), ...['', 'italic '].flatMap(style => [400, 700]
@@ -100,7 +134,8 @@ function status(message) {
 function syncControls() {
   const ready = !!state.engine?.count && !state.busy;
   for (const id of mainControls) $(id).disabled = !ready;
-  $('open').disabled = state.busy || !state.engine;
+  $('open').disabled = state.busy || !state.engine || !sessionReady;
+  $('upload-document').disabled = $('open').disabled;
   $('demo').disabled = state.busy || !state.engine;
   $('convert').disabled = state.busy || !state.engine;
   $('comments-toggle').disabled = !ready;
@@ -113,7 +148,7 @@ function syncControls() {
   $('delete-page').disabled = !ready || count <= 1;
   $('page-position').textContent = count ? `${state.index + 1} из ${count}` : '—';
   $('page-count').textContent = count || '';
-  const changed = state.history[state.revision]?.bytes !== state.saved;
+  const changed = state.history[state.revision]?.bytes !== state.saved || editor.draft?.dirty;
   $('document-meta').textContent = count ? changed ? 'Есть несохранённые правки' : state.demo ? 'Демонстрационный документ' : 'Документ открыт' : 'Документ не открыт';
 }
 
@@ -423,6 +458,7 @@ function setPage(index) {
   state.expanded = false;
   stage.scrollTo(0, 0);
   refresh();
+  scheduleSession();
 }
 
 function pruneHistory() {
@@ -460,6 +496,7 @@ function mutate(change, { page = state.index, message, select = false, inline = 
   refresh(true);
   if (select && mobile.matches && !imageLike(getSelected())) setPanel('properties');
   if (message) notice(message);
+  void saveSession();
   return true;
 }
 
@@ -477,6 +514,7 @@ function restoreHistory(delta) {
     state.selected = null;
     refresh(true);
     notice(delta < 0 ? 'Действие отменено' : 'Действие повторено');
+    void saveSession();
   } catch (error) {
     report(error);
   }
@@ -578,6 +616,7 @@ function removeSelected() {
 function updateZoom(direction) {
   state.zoom = direction ? Math.min(6, Math.max(0.12, Number($('fit').dataset.scale) * 1.22 ** direction)) : null;
   renderSafely();
+  scheduleSession();
 }
 
 function download(bytes, name, format) {
@@ -598,6 +637,7 @@ function exportFile() {
   state.saved = bytes;
   syncControls();
   notice('PDF подготовлен к скачиванию');
+  void saveSession();
 }
 
 async function exportOffice(format) {
@@ -645,6 +685,7 @@ function loadDocument(bytes, name, demo) {
   setPanel(null);
   stage.scrollTo(0, 0);
   refresh(true);
+  void saveSession();
 }
 
 async function openFile(file, append = false, fromDialog = false) {
@@ -1100,6 +1141,7 @@ bindPinch(stage, paper, {
   scale: () => Number($('fit').dataset.scale) || 1,
   zoom: value => {
     state.zoom = value;
+    scheduleSession();
     paper.style.width = `${state.page.pageWidth * value}px`;
     paper.style.height = `${state.page.pageHeight * value}px`;
     $('fit').textContent = `${Math.round(value * 100)}%`;
@@ -1491,6 +1533,7 @@ $('export-docx').addEventListener('click', () => exportOffice('docx'));
 $('export-xlsx').addEventListener('click', () => exportOffice('xlsx'));
 
 $('open').addEventListener('click', openPicker);
+$('upload-document').addEventListener('click', openPicker);
 $('demo').addEventListener('click', () => { if (confirmOpen()) openDemo(); });
 $('export').addEventListener('click', exportFile);
 $('file-input').addEventListener('change', event => {
@@ -1633,9 +1676,36 @@ syncControls();
 try {
   [state.engine] = await Promise.all([PdfEngine.create(), ...coreFonts.flatMap(family => ['', 'italic '].flatMap(style => [400, 700]
     .map(weight => document.fonts.load(`${style}${weight} 14px "${family}"`))))]);
-  await openDemo();
+  try {
+    const saved = await sessionStore.read();
+    if (validSession(saved)) {
+      loadDocument(saved.bytes, saved.name, false);
+      state.saved = saved.saved ? state.history[0].bytes : null;
+      state.index = Number.isInteger(saved.page) ? Math.max(0, Math.min(saved.page, state.engine.count - 1)) : 0;
+      state.zoom = Number.isFinite(saved.zoom) && saved.zoom >= .12 && saved.zoom <= 6 ? saved.zoom : null;
+      refresh(true);
+      if (saved.draft && ['text', 'table'].includes(saved.draft.mode)) {
+        try { editor.restoreDraft(saved.draft); } catch { editor.cancel(); notice('Документ восстановлен. Незавершённую правку восстановить не удалось.', true); }
+      }
+      sessionStatus('Предыдущая сессия восстановлена');
+      status('Готово к редактированию');
+    } else {
+      $('welcome-message').textContent = 'Или перетащите файл в это окно';
+      status('Загрузите документ');
+    }
+  } catch {
+    $('welcome-message').textContent = 'Или перетащите файл в это окно';
+    sessionStatus('Автосохранение недоступно в этом браузере', true);
+    status('Загрузите документ');
+  }
+  sessionReady = true;
+  syncControls();
 } catch (error) {
   $('welcome').querySelector('p').textContent = 'Не удалось запустить редактор. Обновите страницу.';
   status('Редактор недоступен');
   report(error);
 }
+
+// Flush pending inline text/table edits when leaving; committed changes are saved immediately.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void saveSession(); });
+window.addEventListener('pagehide', () => { void saveSession(); });
