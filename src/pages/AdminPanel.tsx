@@ -147,6 +147,8 @@ export default function AdminPanel() {
   const [creditEdits, setCreditEdits] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
+  const [accessCheckFailed, setAccessCheckFailed] = useState(false);
+  const [accessCheckAttempt, setAccessCheckAttempt] = useState(0);
   const [searchUserId, setSearchUserId] = useState("");
   const [userCalcs, setUserCalcs] = useState<SavedCalc[]>([]);
   const [viewingUser, setViewingUser] = useState<Profile | null>(null);
@@ -156,15 +158,27 @@ export default function AdminPanel() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { navigate("/admin-login"); return; }
-      const { data: roles } = await supabase.from("user_roles").select("role").limit(1);
-      if (!roles || roles.length === 0) { await supabase.auth.signOut(); navigate("/admin-login"); return; }
-      setAuthenticated(true);
-      fetchData();
+      setAccessCheckFailed(false);
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        if (!session) { navigate("/admin-login"); return; }
+        const { data: roles, error: rolesError } = await supabase.from("user_roles").select("role").limit(1)
+          .abortSignal(AbortSignal.timeout(10_000));
+        if (rolesError) throw rolesError;
+        if (!roles || roles.length === 0) {
+          await supabase.auth.signOut();
+          navigate("/admin-login");
+          return;
+        }
+        setAuthenticated(true);
+        void fetchData();
+      } catch {
+        setAccessCheckFailed(true);
+      }
     };
-    checkAuth();
-  }, [navigate]);
+    void checkAuth();
+  }, [navigate, accessCheckAttempt]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -265,7 +279,18 @@ export default function AdminPanel() {
     return { calcsCount: 0 }; // will be fetched on demand
   };
 
-  if (!authenticated) return null;
+  if (!authenticated) {
+    return (
+      <main className="mx-auto max-w-lg space-y-3 px-4 py-8">
+        {accessCheckFailed ? (
+          <>
+            <p role="alert">Сервис временно недоступен. Не удалось проверить права администратора.</p>
+            <Button onClick={() => setAccessCheckAttempt(attempt => attempt + 1)}>Повторить</Button>
+          </>
+        ) : <p role="status">Проверяем права администратора…</p>}
+      </main>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

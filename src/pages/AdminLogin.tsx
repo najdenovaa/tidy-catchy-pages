@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -26,17 +27,26 @@ export default function AdminLogin() {
       const { data: roles, error: rolesError } = await supabase
         .from("user_roles")
         .select("role")
-        .limit(1);
+        .limit(1)
+        .abortSignal(AbortSignal.timeout(10_000));
 
-      if (rolesError || !roles || roles.length === 0) {
+      if (rolesError) {
+        toast({ title: "Сервис недоступен", description: "Не удалось проверить права администратора. Повторите вход позже.", variant: "destructive" });
+        return;
+      }
+
+      if (!roles || roles.length === 0) {
         await supabase.auth.signOut();
         toast({ title: "Доступ запрещён", description: "У вас нет прав администратора", variant: "destructive" });
         return;
       }
 
       navigate("/admin");
-    } catch (err: any) {
-      toast({ title: "Ошибка входа", description: err.message, variant: "destructive" });
+    } catch (err) {
+      const description = isAuthRetryableFetchError(err)
+        ? "Сервис входа временно недоступен. Повторите попытку позже."
+        : err instanceof Error ? err.message : "Не удалось войти";
+      toast({ title: "Ошибка входа", description, variant: "destructive" });
     } finally {
       setLoading(false);
     }
