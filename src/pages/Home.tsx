@@ -2,8 +2,6 @@ import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Send, Mail, Phone, ChevronDown, FlaskConical, Droplets, Zap, Shield, UserCircle, Cable, Ruler, Wrench, FilePenLine } from "lucide-react";
 import deallsoftLogo from "@/assets/deallsoft-logo.png";
-import geoladLogo from "@/assets/geolad-logo.png";
-import nefteservisLogo from "@/assets/nefteservis-logo.png";
 import drillingBanner from "@/assets/drilling-banner.jpg";
 import engineeringGraphBg from "@/assets/engineering-graph-bg.mp4";
 import HelpLink from "@/components/HelpLink";
@@ -67,29 +65,20 @@ export default function Home() {
       <div className="absolute inset-0 bg-background/75" />
       <div className="relative z-10 min-h-screen flex flex-col">
         <header className="border-b border-border bg-card">
-          <div className="max-w-5xl mx-auto px-4 py-1 sm:py-2 flex items-center justify-between">
-            <div className="flex flex-col items-start gap-0">
-              <Link to="/" className="flex flex-col items-start gap-0">
-                <div className="flex items-center gap-3 -mt-1 sm:-mt-1">
-                  <img src={deallsoftLogo} alt="DeAllsoft" className="h-20 sm:h-28 w-auto object-contain -ml-2 sm:-ml-5" />
-                  <p className="text-lg sm:text-2xl font-normal tracking-tight text-foreground uppercase">
-                    Инженерные расчёты
-                  </p>
-                </div>
-              </Link>
-              <div className="flex flex-col items-start leading-none">
-                <span className="text-[10px] sm:text-xs text-muted-foreground italic mb-0.5">при поддержке</span>
-                <div className="flex items-center gap-3">
-                  <a href="http://geolad.ru/" target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition-opacity">
-                    <img src={geoladLogo} alt="Геолад" className="h-7 sm:h-9 w-auto object-contain" />
-                  </a>
-                  <a href="https://nefteserv.ru/" target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition-opacity">
-                    <img src={nefteservisLogo} alt="Нефтесервис" className="h-6 sm:h-7 w-auto object-contain" />
-                  </a>
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:gap-3">
+          <div className="max-w-5xl mx-auto px-4 py-2.5 sm:py-3 flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
+            <Link to="/" className="flex items-center gap-2.5 sm:gap-4 self-start md:self-auto">
+              <span className="relative block w-[102px] h-8 sm:w-32 sm:h-9 shrink-0 overflow-hidden">
+                <img
+                  src={deallsoftLogo}
+                  alt="DeAllsoft"
+                  className="absolute left-1/2 top-1/2 w-[140px] sm:w-[176px] max-w-none -translate-x-1/2 -translate-y-1/2"
+                />
+              </span>
+              <p className="text-sm sm:text-lg lg:text-xl font-normal tracking-tight text-foreground uppercase">
+                Инженерные расчёты
+              </p>
+            </Link>
+            <nav aria-label="Навигация по сайту" className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 sm:justify-start sm:gap-x-4">
               <HelpLink />
               <DropdownMenu>
                 <DropdownMenuTrigger
@@ -127,19 +116,19 @@ export default function Home() {
               <Link to="/admin-login" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-xs sm:text-sm">
                 <Shield className="w-4 h-4" /><span>Админ</span>
               </Link>
-            </div>
+            </nav>
           </div>
         </header>
 
         <div className="home-module-stage relative isolate flex-1">
           <IcebergBillboard />
 
-          <main className="flex-1 max-w-5xl mx-auto px-4 pt-4 pb-10 sm:pb-16 w-full">
-            <div className="flex items-center justify-center gap-6 text-[11px] text-muted-foreground/70 mb-6">
+          <main className="flex-1 max-w-5xl mx-auto px-4 pt-2 pb-10 sm:pb-16 w-full">
+            <div className="flex items-center justify-center gap-6 text-[11px] text-muted-foreground/70 mb-3">
               <span>👁 Посещений: <span className="font-semibold text-muted-foreground">{visitCount}</span></span>
               <span>🧮 Расчётов: <span className="font-semibold text-muted-foreground">{calcCount}</span></span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-semibold text-foreground mb-8 text-center">
+            <h2 className="text-xl sm:text-2xl font-semibold text-foreground mb-5 text-center">
               Выберите модуль
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
