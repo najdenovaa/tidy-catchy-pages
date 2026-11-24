@@ -37,3 +37,11 @@ Word export maps browser font families to standard office families (Arial, Times
 OCR font size comes from its stored scan-cover nominal size. Other PDF text uses the vertical matrix scale rather than horizontal glyph stretching. Native OCR normally stretches glyphs to fit recognition boxes; interpreting that horizontal scale as Word font height made signatures and short lines excessively large.
 
 `pdf-word-export.test.ts` checks Unicode, office declarations, OCR size and stretched ordinary text. `check-word-export.mjs` reproduces the issue with a native stretched PDFium OCR layer and validates DOCX output. Optional `PDF_WORD_QA_DIR` writes a synthetic test DOCX for LibreOffice rendering. The resulting rendered test has readable Cyrillic, one page and 9pt text. Microsoft Word and the user's original PDF were not available for that visual check.
+
+## Fragmented paragraphs and font recovery
+
+Paragraph grouping normalizes PDF subset prefixes in internal font names while preserving style and size boundaries. A font subset and its full-name counterpart can therefore belong to the same paragraph; all old word objects are removed when the paragraph is replaced. Downstream reflow includes both added text height and manual vertical movement of the text field.
+
+Browser text measurement loads FontFace objects from the same bytes used for PDF embedding. Office aliases reuse already loaded core font faces instead of issuing duplicate asset requests. A failed selected font explicitly switches to its bundled substitute when possible; otherwise the toolbar offers retry without losing the draft. Stale font requests cannot overwrite a later selection.
+
+Regression checks cover fragmented fonts, style boundaries, field reflow, exact font bytes, failed-font recovery and retry. A private two-page source also passed native PDF save/reopen: the whole fragmented paragraph was replaced without remnants and the following text moved down by the added height. The private source and generated output are excluded from the repository.

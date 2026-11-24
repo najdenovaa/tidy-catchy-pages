@@ -53,6 +53,10 @@ export function rect(object, page) {
   return { x: object.x * w, y: object.y * h, w: object.w * w, h: object.h * h };
 }
 
+export function fontIdentity(name = '') {
+  return name.replace(/^[A-Z]{6}\+/, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+
 export function textBlock(selected, page, excluded) {
   const size = selected.visualSize || selected.size || 14;
   const base = rect(selected, page);
@@ -73,7 +77,8 @@ export function textBlock(selected, page, excluded) {
   const same = page.objects
     .filter(object => object.kind === 1 && object.text?.trim() && !excluded.has(object.index)
       && object.bold === selected.bold && Math.abs((object.visualSize || object.size) - size) < 0.45
-      && object.fontName === selected.fontName && object.horizontal && !object.blockId)
+      && fontIdentity(object.fontName) === fontIdentity(selected.fontName)
+      && object.italic === selected.italic && object.horizontal && !object.blockId)
     .map(object => ({ ...rect(object, page), object, baseline: object.baseline * page.pageHeight }))
     .sort((a, b) => a.baseline - b.baseline || a.x - b.x);
   const rows = [];

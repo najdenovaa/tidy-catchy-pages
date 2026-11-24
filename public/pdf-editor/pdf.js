@@ -16,8 +16,11 @@ async function asset(path) {
   return response.arrayBuffer();
 }
 
-function fontAssets(family) {
-  return Promise.all(weights.map(weight => officeFace(family, weight) ?? asset(`fonts/${(officeAliases[family] ?? family).replaceAll(' ', '')}-${weight}.ttf`)));
+function fontAssets(family, cached = []) {
+  const source = officeAliases[family] ?? family;
+  const offset = fontFamilies.indexOf(source) * weights.length;
+  return Promise.all(weights.map((weight, index) => officeFace(family, weight)
+    ?? cached[offset + index] ?? asset(`fonts/${source.replaceAll(' ', '')}-${weight}.ttf`)));
 }
 
 function check(value, message) {
@@ -274,9 +277,10 @@ export class PdfEngine {
 
   async ensureFont(family) {
     const offset = fontFamilies.indexOf(family) * weights.length;
-    if (offset < 0 || this.fonts[offset]) return;
+    if (offset < 0) throw new Error('Неизвестный шрифт.');
+    if (weights.every((_, index) => this.fonts[offset + index])) return;
     if (!this.fontLoads.has(family)) {
-      const promise = fontAssets(family).then(faces => {
+      const promise = fontAssets(family, this.fonts).then(faces => {
         faces.forEach((face, index) => { this.fonts[offset + index] = new Uint8Array(face); });
       }).finally(() => this.fontLoads.delete(family));
       this.fontLoads.set(family, promise);

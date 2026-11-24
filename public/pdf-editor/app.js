@@ -1,3 +1,4 @@
+import { prepareBrowserFont } from './browser-fonts.js';
 import { officeAliases, fontLabel, installOfficeFonts, restoreOfficeFonts } from './office-fonts.js';
 import { createSessionStore, validSession } from './local-session.js';
 import { PdfEngine, kinds } from './pdf.js';
@@ -96,10 +97,7 @@ const editor = new InlineEditor({
   changed: scheduleSession,
   scanRect: cover => state.engine.page(state.index, page => state.engine.displayRect(page, cover.raw)),
   layer: $('editor-layer'), toolbar: $('formatbar'), stylebar: $('table-formatbar'), getPage: () => state.page,
-  render: () => renderSafely(), message: notice, loadFont: async family => {
-    await Promise.all([state.engine.ensureFont(family), ...['', 'italic '].flatMap(style => [400, 700]
-      .map(weight => document.fonts.load(`${style}${weight} 14px "${family}"`)))]);
-  },
+  render: () => renderSafely(), message: notice, loadFont: family => prepareBrowserFont(state.engine, family),
   commit: plan => {
     const oldHeight = state.page.pageHeight;
     const ok = mutate(engine => plan.mode === 'text' ? engine.writeBlock(state.index, plan) : engine.writeTable(state.index, plan), { inline: true });
@@ -1678,8 +1676,8 @@ new ResizeObserver(() => {
 syncControls();
 try {
   await restoreOfficeFonts();
-  [state.engine] = await Promise.all([PdfEngine.create(), ...coreFonts.flatMap(family => ['', 'italic '].flatMap(style => [400, 700]
-    .map(weight => document.fonts.load(`${style}${weight} 14px "${family}"`))))]);
+  state.engine = await PdfEngine.create();
+  await Promise.all(coreFonts.map(family => prepareBrowserFont(state.engine, family)));
   try {
     const saved = await sessionStore.read();
     if (validSession(saved)) {

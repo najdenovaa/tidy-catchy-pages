@@ -163,6 +163,8 @@ export class InlineEditor {
   }
 
   open(draft) {
+    draft.font = fonts.includes(draft.font) ? draft.font : matchingFont(draft.font);
+    if (draft.mode === 'text') draft.originalBaseline ??= draft.baseline;
     this.draft = draft;
     this.lastDelta = undefined;
     this.layer.hidden = false;
@@ -189,6 +191,7 @@ export class InlineEditor {
       <button type="button" class="button outlined" data-action="expand-text" title="Расширить поле до правого края страницы">Расширить поле</button>`);
     this.toolbar.insertAdjacentHTML('beforeend', `
       <label class="shift-control"><input name="shift" type="checkbox" checked>Сдвигать содержимое ниже</label>
+      <button type="button" class="button outlined" data-action="retry-font" hidden>Повторить загрузку шрифта</button>
       <button type="button" class="button primary" data-action="apply">Готово</button>
       <button type="button" class="icon-button" data-action="cancel" title="Отменить правку (Esc)" aria-label="Отменить правку">${icon('close')}</button>`);
     this.toolbar.querySelector('[name="shift"]').checked = draft.shift;
@@ -205,21 +208,38 @@ export class InlineEditor {
     const draft = this.draft;
     const { font } = draft;
     const action = this.toolbar.querySelector('[data-action="apply"]');
+    const retry = this.toolbar.querySelector('[data-action="retry-font"]');
     const request = {};
+    const current = () => this.draft === draft && draft.fontRequest === request;
     draft.fontRequest = request;
     draft.fontReady = false;
     action.disabled = true;
     action.title = 'Загрузка шрифта…';
-    this.loadFont(font).then(() => {
-      if (this.draft !== draft || draft.fontRequest !== request) return;
+    retry.hidden = true;
+    const prepare = async () => {
+      try { await this.loadFont(font); }
+      catch (error) {
+        if (!current()) return;
+        const fallback = officeAliases[font] ?? 'Noto Sans';
+        if (fallback === font) throw error;
+        await this.loadFont(fallback);
+        if (!current()) return;
+        draft.font = fallback;
+        this.toolbar.querySelector('[name="font"]').value = fallback;
+        this.message(`Шрифт ${font} не загрузился. Для сохранения подключён ${fallback}.`);
+      }
+    };
+    prepare().then(() => {
+      if (!current()) return;
       draft.fontReady = true;
       action.disabled = false;
       action.title = '';
       this.updateDraft();
     }).catch(() => {
-      if (this.draft !== draft || draft.fontRequest !== request) return;
-      action.title = 'Шрифт недоступен. Выберите другой.';
-      this.message('Шрифт недоступен. Выберите другой.', true);
+      if (!current()) return;
+      action.title = 'Повторите загрузку шрифта или выберите другой.';
+      retry.hidden = false;
+      this.message('Не удалось загрузить шрифт. Повторите загрузку или выберите другой. Правка остаётся в сессии.', true);
     });
   }
 
@@ -307,7 +327,7 @@ export class InlineEditor {
       const baseline = draft.baseline + (draft.size - draft.originalSize) * .76;
       const oldSpace = draft.rows ? (draft.rows - 1) * draft.lineHeight + draft.originalSize : 0;
       const newSpace = lines.length ? (lines.length - 1) * lineHeight + draft.size : 0;
-      return { ...draft, lineHeight, lines, baseline, color: [...colorArray(draft.color).slice(0, 3), draft.alpha ?? 255], delta: draft.dirty && draft.shift ? newSpace - oldSpace : 0 };
+      return { ...draft, lineHeight, lines, baseline, color: [...colorArray(draft.color).slice(0, 3), draft.alpha ?? 255], delta: draft.dirty && draft.shift ? newSpace - oldSpace + draft.baseline - (draft.originalBaseline ?? draft.baseline) : 0 };
     }
     const lines = draft.rows.map((row, rowIndex) => row.map((value, colIndex) => wrapText(value, draft.widths[colIndex] - 12,
       text => this.measure(text, draft.boldHeader && !rowIndex))));
@@ -486,6 +506,7 @@ export class InlineEditor {
         this.updateDraft();
         return;
       }
+      case 'retry-font': this.prepareFont(); return;
       case 'expand-text': this.resizeTo(this.getPage().pageWidth - draft.x - 3); return;
       case 'cancel': this.cancel(); return;
       case 'bold': case 'italic': case 'underline': case 'strike': {
