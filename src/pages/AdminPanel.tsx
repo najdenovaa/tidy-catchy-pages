@@ -6,11 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Home, LogOut, RefreshCw, Search, Users, Eye, ExternalLink, Globe, Calculator, MapPin, FlaskConical, Plus, Minus, Save } from "lucide-react";
+import { Home, LogOut, RefreshCw, Search, Users, Eye, ExternalLink, Globe, Calculator, FlaskConical, Plus, Minus, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import FleetConfigPanel from "@/components/FleetConfigPanel";
 import AdminAdClicks from "@/components/AdminAdClicks";
+import IpNetworkDetails, { IpDirectoryCredit } from "@/components/IpNetworkDetails";
 
 interface CalcLog {
   id: string; created_at: string; module: string; well_data: any; calc_params?: any;
@@ -408,6 +409,7 @@ export default function AdminPanel() {
 
           {/* ВИЗИТЫ */}
           <TabsContent value="visits">
+            <IpDirectoryCredit />
             <p className="text-xs text-muted-foreground mb-2">Всего: {totalVisits}. Ниже последние {visitLogs.length} записей, доступных через лимит выдачи сервера.</p>
             <Card><CardContent className="p-0 overflow-x-auto">
               <Table>
@@ -415,12 +417,11 @@ export default function AdminPanel() {
                   <TableHead className="w-[140px]">Дата/время</TableHead>
                   <TableHead>Куда зашёл</TableHead>
                   <TableHead>Устройство</TableHead>
-                  <TableHead>IP</TableHead>
-                  <TableHead><MapPin className="w-3 h-3 inline mr-1"/>Регион</TableHead>
+                  <TableHead>IP / сеть</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {visitLogs.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
                   ) : visitLogs.map(log => (
                     <TableRow key={log.id}>
                       <TableCell className="whitespace-nowrap text-xs">{formatShortDate(log.created_at)}</TableCell>
@@ -433,8 +434,7 @@ export default function AdminPanel() {
                       <TableCell className="text-xs">
                         {getDeviceFromUA(log.user_agent)} {getBrowserFromUA(log.user_agent)}
                       </TableCell>
-                      <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
-                      <TableCell className="text-xs">{log.location || "—"}</TableCell>
+                      <TableCell><IpNetworkDetails address={log.ip_address} fallbackLocation={log.location} /></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -444,6 +444,7 @@ export default function AdminPanel() {
 
           {/* РАСЧЁТЫ */}
           <TabsContent value="calculations">
+            <IpDirectoryCredit />
             <p className="text-xs text-muted-foreground mb-2">Всего: {totalCalculations}. Ниже последние {calcLogs.length} записей, доступных через лимит выдачи сервера.</p>
             <Card><CardContent className="p-0 overflow-x-auto">
               <Table>
@@ -452,13 +453,12 @@ export default function AdminPanel() {
                   <TableHead>Модуль</TableHead>
                   <TableHead>Данные скважины</TableHead>
                   <TableHead>Устройство</TableHead>
-                  <TableHead>IP</TableHead>
-                  <TableHead><MapPin className="w-3 h-3 inline mr-1"/>Регион</TableHead>
+                  <TableHead>IP / сеть</TableHead>
                   <TableHead>Действия</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {calcLogs.length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
                   ) : calcLogs.map(log => (
                     <TableRow key={log.id}>
                       <TableCell className="whitespace-nowrap text-xs">{formatShortDate(log.created_at)}</TableCell>
@@ -471,8 +471,7 @@ export default function AdminPanel() {
                       <TableCell className="text-xs">
                         {getDeviceFromUA(log.user_agent)} {getBrowserFromUA(log.user_agent)}
                       </TableCell>
-                      <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
-                      <TableCell className="text-xs">{log.location || "—"}</TableCell>
+                      <TableCell><IpNetworkDetails address={log.ip_address} fallbackLocation={log.location} /></TableCell>
                       <TableCell className="text-xs space-x-1">
                         <Link to={`/admin/calc/${log.id}`}>
                           <Button variant="ghost" size="sm" className="h-6 text-xs px-2">
@@ -561,6 +560,7 @@ export default function AdminPanel() {
 
           {/* АНАЛИЗЫ */}
           <TabsContent value="analyses">
+            <IpDirectoryCredit />
             <Card><CardContent className="p-0 overflow-x-auto">
               <Table>
                 <TableHeader><TableRow>
@@ -570,12 +570,11 @@ export default function AdminPanel() {
                   <TableHead>Документы</TableHead>
                   <TableHead>Названия файлов</TableHead>
                   <TableHead>Устройство</TableHead>
-                  <TableHead>IP</TableHead>
-                  <TableHead><MapPin className="w-3 h-3 inline mr-1"/>Регион</TableHead>
+                  <TableHead>IP / сеть</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {analysisLogs.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Нет данных</TableCell></TableRow>
                   ) : analysisLogs.map(log => (
                     <TableRow key={log.id}>
                       <TableCell className="whitespace-nowrap text-xs">{formatShortDate(log.created_at)}</TableCell>
@@ -602,8 +601,7 @@ export default function AdminPanel() {
                       <TableCell className="text-xs">
                         {getDeviceFromUA(log.user_agent)} {getBrowserFromUA(log.user_agent)}
                       </TableCell>
-                      <TableCell className="text-xs font-mono">{log.ip_address || "—"}</TableCell>
-                      <TableCell className="text-xs">{log.location || "—"}</TableCell>
+                      <TableCell><IpNetworkDetails address={log.ip_address} fallbackLocation={log.location} /></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -28,6 +28,24 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Determine IP directory month
+        id: ip-directory-month
+        run: date -u '+month=%Y-%m' >> "$GITHUB_OUTPUT"
+
+      - name: Cache built IP directory
+        uses: actions/cache@v4
+        with:
+          path: .cache/ip-directory
+          key: ip-directory-${{ steps.ip-directory-month.outputs.month }}-${{ hashFiles('scripts/build-ip-directory.py') }}
+
+      - name: Bundle IP directory
+        continue-on-error: true
+        run: |
+          if [ ! -f .cache/ip-directory/catalog.json ]; then
+            python3 scripts/build-ip-directory.py .cache/ip-directory
+          fi
+          cp -a .cache/ip-directory dist/
+
       - name: Configure SSH
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -43,7 +61,11 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          rsync -avz --delete --omit-dir-times \
+          preserve_ip_directory=()
+          if [ ! -f dist/ip-directory/catalog.json ]; then
+            preserve_ip_directory=(--filter='protect /ip-directory/***')
+          fi
+          rsync -avz --delete --omit-dir-times "${preserve_ip_directory[@]}" \
             -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes" \
             dist/ "${DEPLOY_USER}@${DEPLOY_HOST}:/var/www/deallsoft/dist/"
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes \

@@ -2,6 +2,7 @@ import { archiveMetadata, archiveRoute, ARCHIVE_KEY } from '@/lib/calculation-ar
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import IpNetworkDetails, { IpDirectoryCredit } from "@/components/IpNetworkDetails";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Home } from "lucide-react";
@@ -112,8 +113,11 @@ export default function CalcDetail() {
                 <CardContent className="px-4 pb-2"><p className="text-sm font-medium">{log.module}</p></CardContent>
               </Card>
               <Card>
-                <CardHeader className="py-2 px-4"><CardTitle className="text-xs text-muted-foreground">IP</CardTitle></CardHeader>
-                <CardContent className="px-4 pb-2"><p className="text-sm font-mono">{log.ip_address || "—"}</p></CardContent>
+                <CardHeader className="py-2 px-4"><CardTitle className="text-xs text-muted-foreground">IP / сеть</CardTitle></CardHeader>
+                <CardContent className="px-4 pb-2">
+                  <IpNetworkDetails address={log.ip_address} fallbackLocation={log.location} />
+                  <IpDirectoryCredit />
+                </CardContent>
               </Card>
               <Card>
                 <CardHeader className="py-2 px-4"><CardTitle className="text-xs text-muted-foreground">User-Agent</CardTitle></CardHeader>
