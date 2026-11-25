@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import IpNetworkDetails, { IpDirectoryCredit } from "@/components/IpNetworkDetails";
 import { supabase } from "@/integrations/supabase/client";
 import { AD_ANALYTICS_URL, CLICK_TARGETS, type ClickTarget } from "@/lib/ad-banner-clicks";
 
@@ -98,7 +99,7 @@ export default function AdminAdClicks() {
               <TableRow>
                 <TableHead>Дата и время (ЕКБ)</TableHead>
                 <TableHead>Ссылка</TableHead>
-                <TableHead>IP-адрес</TableHead>
+                <TableHead>IP / сеть</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -112,7 +113,7 @@ export default function AdminAdClicks() {
                 <TableRow key={click.id}>
                   <TableCell className="whitespace-nowrap">{dateFormat.format(new Date(click.clicked_at))}</TableCell>
                   <TableCell>{CLICK_TARGETS[click.target]}</TableCell>
-                  <TableCell className="whitespace-nowrap font-mono text-xs">{click.ip_address ?? "—"}</TableCell>
+                  <TableCell><IpNetworkDetails address={click.ip_address} /></TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -128,6 +129,7 @@ export default function AdminAdClicks() {
           )}
         </CardContent>
       </Card>
+      <IpDirectoryCredit />
     </div>
   );
 }
