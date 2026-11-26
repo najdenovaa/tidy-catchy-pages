@@ -1479,26 +1479,39 @@ $('qr').addEventListener('click', () => {
   $('place-qr').disabled = !state.engine?.count || state.busy;
   $('qr-dialog').showModal();
 });
-$('qr-text').addEventListener('input', () => {
+function clearQrPreview() {
   state.qr = null;
   $('qr-preview').hidden = $('qr-actions').hidden = $('qr-status').hidden = true;
+}
+$('qr-text').addEventListener('input', clearQrPreview);
+$('qr-images').addEventListener('change', event => {
+  $('clear-qr-images').hidden = !event.target.files.length;
+  clearQrPreview();
+});
+$('clear-qr-images').addEventListener('click', () => {
+  $('qr-images').value = '';
+  $('clear-qr-images').hidden = true;
+  $('qr-images').focus();
+  clearQrPreview();
 });
 $('qr-form').addEventListener('submit', async event => {
   event.preventDefault();
   const field = $('qr-text');
+  const images = $('qr-images');
+  const clearImages = $('clear-qr-images');
   const button = $('generate-qr');
   const preview = $('qr-preview');
   const feedback = $('qr-status');
-  button.disabled = field.readOnly = true;
-  feedback.hidden = true;
+  button.disabled = images.disabled = clearImages.disabled = field.readOnly = true;
+  clearQrPreview();
   try {
-    state.qr = await makeQr(preview, field.value);
+    state.qr = await makeQr(preview, field.value, Array.from(images.files));
     preview.hidden = $('qr-actions').hidden = false;
   } catch (error) {
     feedback.textContent = error.message || 'Не удалось создать QR-код.';
     feedback.hidden = false;
   } finally {
-    button.disabled = field.readOnly = false;
+    button.disabled = images.disabled = clearImages.disabled = field.readOnly = false;
   }
 });
 $('download-qr').addEventListener('click', () => {

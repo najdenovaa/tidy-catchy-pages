@@ -165,6 +165,11 @@
     <div class="dialog-head"><h2 id="qr-title">QR-код</h2><button type="button" class="icon-button" data-close data-icon="close" aria-label="Закрыть"></button></div>
     <form id="qr-form" class="dialog-body">
       <label>Ссылка или текст <textarea id="qr-text" rows="3" maxlength="1000" required placeholder="https://example.com"></textarea></label>
+      <div class="dialog-action-row">
+        <label>Картинки для мозаики <input id="qr-images" type="file" accept="image/png,image/jpeg,image/webp" multiple aria-describedby="qr-image-note"></label>
+        <button id="clear-qr-images" type="button" class="button outlined" hidden>Очистить</button>
+      </div>
+      <p class="tool-note" id="qr-image-note">Необязательно. До четырёх файлов PNG, JPEG или WebP.</p>
       <button id="generate-qr" type="submit" class="button primary">Создать QR-код</button>
       <canvas id="qr-preview" role="img" aria-label="Предпросмотр QR-кода" hidden></canvas>
       <div id="qr-actions" class="dialog-action-row" hidden>
