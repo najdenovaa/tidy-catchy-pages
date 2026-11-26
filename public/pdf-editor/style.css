@@ -358,9 +358,17 @@ svg { width: 18px; height: 18px; display: block; flex: none; }
 
 .side-actions { display: flex; align-items: center; gap: 5px; }
 #comments-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-dark); }
-.overlay[data-mode="comment"] { cursor: crosshair; }
+.overlay[data-mode="comment"] { cursor: text; touch-action: none; }
 .annotation-layer { position: absolute; inset: 0; pointer-events: none; }
 .note-highlight { position: absolute; outline: 1px solid #7956e6; border-radius: 2px; background: #d3b9ff52; }
+.note-drawing { position: absolute; inset: 0; width: 100%; height: 100%; }
+.note-target { fill: #dabdff66; }
+.note-leader { fill: none; stroke: #7452ca; stroke-width: 1.15; stroke-linecap: round; stroke-linejoin: round; }
+.note-bubble, .note-elbow { position: absolute; pointer-events: auto; touch-action: none; cursor: grab; }
+.note-bubble { z-index: 1; border: 1px solid #7452ca; border-radius: 6px; background: #faf7ff; color: #302255; font-family: sans-serif; text-align: left; white-space: pre; overflow: hidden; }
+.note-bubble[aria-pressed="true"] { box-shadow: 0 0 0 1px #7452ca; }
+.note-elbow { z-index: 2; width: 15px; height: 15px; transform: translate(-50%, -50%); background: white; border: 2px solid #7452ca; border-radius: 50%; padding: 0; }
+.note-bubble:active, .note-elbow:active { cursor: grabbing; }
 .note-pin { position: absolute; pointer-events: auto; transform: translate(-50%, -50%); touch-action: manipulation; display: grid; place-items: center; min-width: 24px; height: 24px; border: 1px solid #6950dd; border-radius: 8px; padding: 0 4px; background: #f0ebff; color: #4e38ac; font-size: 13px; font-weight: 700; box-shadow: 0 1px 5px #34256026; }
 .note-pin[aria-pressed="true"] { color: white; background: var(--accent); }
 .comments-panel { padding: 13px 15px; }
@@ -375,7 +383,7 @@ svg { width: 18px; height: 18px; display: block; flex: none; }
 .note-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .note-actions .button { min-height: 29px; }
 .note-body { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); line-height: 1.4; font-size: 14px; }
-@media (pointer: coarse) { .note-pin { min-width: 30px; height: 30px; } }
+@media (pointer: coarse) { .note-pin { min-width: 30px; height: 30px; } .note-elbow { width: 24px; height: 24px; } }
 
 .table-formatbar { flex-wrap: wrap; gap: 7px 12px; }
 .table-style-group { display: flex; flex-wrap: wrap; align-items: end; gap: 7px; }

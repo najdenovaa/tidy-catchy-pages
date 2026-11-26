@@ -1,15 +1,34 @@
 import { icon } from './icons.js';
+import { calloutLayout } from './comment-layout.js';
+
+const svgNode = (name, attributes) => {
+  const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
+  return element;
+};
 
 export class Comments {
-  constructor({ layer, panel, container, toggle, getNotes, show, save, remove }) {
-    Object.assign(this, { layer, panel, container, toggle, getNotes, show, save, remove });
+  constructor({ layer, panel, container, toggle, getPage, show, revealPage, save, move, remove }) {
+    Object.assign(this, { layer, panel, container, toggle, getPage, show, revealPage, save, move, remove });
+    this.getNotes = () => this.getPage()?.notes ?? [];
     this.active = null;
     this.draft = null;
     this.visible = false;
     this.layer.addEventListener('click', event => {
       const pin = event.target.closest('[data-pin]');
       if (pin) this.select(Number(pin.dataset.pin));
+      const callout = event.target.closest('[data-callout]');
+      if (callout && event.detail === 0 && callout.dataset.part === 'bubble') this.select(Number(callout.dataset.callout));
     });
+    this.layer.addEventListener('pointerdown', event => this.startMove(event));
+    this.layer.addEventListener('pointermove', event => this.updateMove(event));
+    this.layer.addEventListener('pointerup', event => this.finishMove(event));
+    this.layer.addEventListener('lostpointercapture', event => {
+      if (this.drag?.id !== event.pointerId) return;
+      this.drag = null;
+      this.renderMarkers();
+    });
+    this.layer.addEventListener('keydown', event => this.moveWithKeys(event));
     this.panel.addEventListener('click', event => this.actions(event));
     this.panel.addEventListener('submit', event => {
       event.preventDefault();
@@ -40,9 +59,10 @@ export class Comments {
     this.renderMarkers();
   }
 
-  begin(anchor, box) {
+  begin(anchor, boxes) {
     this.active = null;
-    this.draft = { anchor, box, text: '' };
+    this.selection = null;
+    this.draft = { anchor, boxes, text: '' };
     this.open();
     this.panel.querySelector('textarea').focus({ preventScroll: true });
   }
@@ -58,6 +78,8 @@ export class Comments {
   reset() {
     this.draft = null;
     this.active = null;
+    this.selection = null;
+    this.drag = null;
     this.render();
   }
 
@@ -72,7 +94,7 @@ export class Comments {
     if (!action) return;
     const note = this.getNotes().find(note => note.index === this.active);
     if (action === 'cancel-note') this.draft = null;
-    if (action === 'edit-note' && note) this.draft = { index: note.index, box: note.box, text: note.text };
+    if (action === 'edit-note' && note) this.draft = { index: note.index, boxes: note.boxes ?? [note.box], text: note.text };
     if (action === 'delete-note' && note && this.remove(note.index)) this.active = null;
     this.render();
     if (action === 'edit-note') this.panel.querySelector('textarea')?.focus({ preventScroll: true });
@@ -83,7 +105,10 @@ export class Comments {
     this.draft = null;
     const index = this.save(draft, text);
     if (index === null) this.draft = draft;
-    else this.active = index;
+    else {
+      this.active = index;
+      this.revealPage();
+    }
     this.render();
   }
 
@@ -99,7 +124,7 @@ export class Comments {
       if (!notes.length && !this.draft) {
         const empty = document.createElement('p');
         empty.className = 'comments-empty';
-        empty.textContent = 'Выберите «Комментарий» на панели инструментов и нажмите на слово или объект.';
+        empty.textContent = 'Выберите «Комментарий» и протяните по тексту. Щелчок добавит комментарий к слову или объекту.';
         this.panel.append(empty);
       }
       notes.forEach((note, index) => this.panel.append(this.card(note, index + 1)));
@@ -154,12 +179,72 @@ export class Comments {
     return card;
   }
 
+  previewSelection(boxes) {
+    this.selection = boxes;
+    this.renderMarkers();
+  }
+
+  startMove(event) {
+    const control = event.target.closest('[data-callout]');
+    if (!control || !event.isPrimary || event.button !== 0 || this.draft) return;
+    const index = Number(control.dataset.callout);
+    const note = this.getNotes().find(note => note.index === index);
+    if (!note) return;
+    const page = this.getPage();
+    const layout = calloutLayout(page.pageWidth, page.pageHeight, note);
+    const { x, y, w, h } = layout.bubble;
+    const part = control.dataset.part;
+    const point = part === 'bubble' ? [x + w / 2, y + h / 2] : layout.line[1];
+    this.drag = {
+      id: event.pointerId, index, part, start: [event.clientX, event.clientY],
+      point: [point[0] / page.pageWidth, point[1] / page.pageHeight],
+    };
+    this.layer.setPointerCapture(event.pointerId);
+  }
+
+  updateMove(event) {
+    const drag = this.drag;
+    if (!drag || drag.id !== event.pointerId) return;
+    const dx = event.clientX - drag.start[0], dy = event.clientY - drag.start[1];
+    if (!drag.position && Math.hypot(dx, dy) < 4) return;
+    drag.position = { [drag.part]: [drag.point[0] + dx / this.layer.clientWidth, drag.point[1] + dy / this.layer.clientHeight] };
+    this.active = drag.index;
+    this.renderMarkers();
+  }
+
+  finishMove(event) {
+    if (this.drag?.id !== event.pointerId) return;
+    const { index, position, part } = this.drag;
+    this.drag = null;
+    if (!position && part === 'bubble') this.select(index);
+    else if (!position || !this.move(index, position)) this.renderMarkers();
+  }
+
+  moveWithKeys(event) {
+    const control = event.target.closest('[data-callout]');
+    const direction = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
+    if (!control || !direction || this.draft) return;
+    event.preventDefault();
+    const index = Number(control.dataset.callout);
+    const note = this.getNotes().find(note => note.index === index);
+    if (!note) return;
+    const part = control.dataset.part;
+    const { pageWidth, pageHeight } = this.getPage();
+    const layout = calloutLayout(pageWidth, pageHeight, note);
+    const { x, y, w, h } = layout.bubble;
+    const point = part === 'bubble' ? [x + w / 2, y + h / 2] : layout.line[1];
+    const step = event.shiftKey ? 14 : 3;
+    this.active = index;
+    this.move(index, { [part]: [(point[0] + direction[0] * step) / pageWidth, (point[1] + direction[1] * step) / pageHeight] });
+    this.layer.querySelector(`[data-callout="${index}"][data-part="${part}"]`)?.focus({ preventScroll: true });
+  }
+
   renderMarkers() {
     this.layer.replaceChildren();
     const notes = this.getNotes();
     const selected = notes.find(note => note.index === this.active);
-    const box = this.visible ? this.draft?.box ?? selected?.box : null;
-    if (box) {
+    const boxes = this.selection ?? (this.visible ? this.draft?.boxes ?? (selected?.box && [selected.box]) : null);
+    for (const box of boxes ?? []) {
       const highlight = document.createElement('span');
       highlight.className = 'note-highlight';
       Object.assign(highlight.style, {
@@ -169,6 +254,10 @@ export class Comments {
       this.layer.append(highlight);
     }
     notes.forEach((note, index) => {
+      if (note.callout) {
+        this.renderCallout(note, index + 1);
+        return;
+      }
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'note-pin';
@@ -181,5 +270,47 @@ export class Comments {
       button.textContent = index + 1;
       this.layer.append(button);
     });
+  }
+
+  renderCallout(note, number) {
+    const { pageWidth, pageHeight } = this.getPage();
+    const current = this.active === note.index;
+    const moving = this.drag?.index === note.index ? this.drag.position : null;
+    const layout = calloutLayout(pageWidth, pageHeight, { ...note, ...moving });
+    const drawing = svgNode('svg', { class: 'note-drawing', viewBox: `0 0 ${pageWidth} ${pageHeight}`, 'aria-hidden': 'true' });
+    for (const { x, y, w, h } of layout.targets) {
+      drawing.append(svgNode('rect', { x, y, width: w, height: h, class: 'note-target' }));
+    }
+    drawing.append(svgNode('polyline', { points: layout.line.map(point => point.join(',')).join(' '), class: 'note-leader' }));
+    this.layer.append(drawing);
+    const bubble = document.createElement('button');
+    bubble.type = 'button';
+    bubble.className = 'note-bubble';
+    bubble.dataset.callout = note.index;
+    bubble.dataset.part = 'bubble';
+    bubble.title = 'Перетащите облачко или нажмите, чтобы открыть комментарий';
+    bubble.setAttribute('aria-label', `Комментарий ${number}. ${note.text}`);
+    bubble.setAttribute('aria-pressed', current);
+    bubble.textContent = layout.lines.join('\n');
+    const { x, y, w, h } = layout.bubble;
+    const viewScale = this.layer.clientWidth / pageWidth;
+    Object.assign(bubble.style, {
+      left: `${x / pageWidth * 100}%`, top: `${y / pageHeight * 100}%`,
+      width: `${w / pageWidth * 100}%`, height: `${h / pageHeight * 100}%`,
+      padding: `${layout.padding * viewScale}px`, fontSize: `${11 * viewScale}px`, lineHeight: `${14 * viewScale}px`,
+    });
+    this.layer.append(bubble);
+    if (current) {
+      const elbow = document.createElement('button');
+      elbow.type = 'button';
+      elbow.className = 'note-elbow';
+      elbow.dataset.callout = note.index;
+      elbow.dataset.part = 'elbow';
+      elbow.setAttribute('aria-label', 'Переместить изгиб линии комментария');
+      elbow.title = 'Перетащите, чтобы изменить изгиб линии';
+      elbow.style.left = `${layout.line[1][0] / pageWidth * 100}%`;
+      elbow.style.top = `${layout.line[1][1] / pageHeight * 100}%`;
+      this.layer.append(elbow);
+    }
   }
 }
