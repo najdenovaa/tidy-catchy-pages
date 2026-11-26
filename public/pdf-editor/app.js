@@ -10,6 +10,7 @@ import { prepareOCR, recognizePage } from './scan.js';
 import { bindPinch, containImage, resizeImage } from './gestures.js';
 import { fileMimes, inputFormat, officeToPdf, pdfToOffice } from './convert.js';
 import { readArtwork } from './stamps.js';
+import { makeQr } from './qr.js';
 
 const $ = id => document.getElementById(id);
 const stage = $('stage');
@@ -256,7 +257,7 @@ const imageLike = object => object?.kind === kinds.image || object?.clipboardIma
 
 function objectName(object) {
   if (object.clipboardImage) return 'Изображение';
-  if (object.watermark) return 'Водяной знак · ' + object.text;
+  if (object.watermark) return object.text ? 'Водяной знак · ' + object.text : 'Водяной знак · Изображение';
   if (object.tableIndex !== undefined) return `Таблица · ${object.rows.length} × ${object.widths.length}`;
   return object.text?.trim() || labels[object.kind][0];
 }
@@ -324,7 +325,7 @@ function renderInspector() {
     <div class="field-row">${position}</div>
     ${sizes ? `<div class="field-row">${sizes}</div>` : ''}
     ${colorInput(object.color, object.stroke ? 'Цвет контура' : 'Цвет')}
-    ${object.kind === kinds.image ? '<button type="button" class="button outlined" data-replace>Заменить изображение</button>' : ''}
+    ${object.kind === kinds.image && !object.watermark ? '<button type="button" class="button outlined" data-replace>Заменить изображение</button>' : ''}
     <button type="submit" class="button primary">Применить</button></form>`;
 }
 
@@ -406,6 +407,7 @@ function setMode(mode) {
       text: 'Нажмите на страницу, чтобы добавить текст',
       shape: 'Нажмите на страницу, чтобы добавить прямоугольник',
       image: 'Нажмите на страницу, куда нужно вставить изображение',
+      qr: 'Нажмите на страницу, чтобы разместить QR-код',
       paste: 'Нажмите на страницу, куда вставить содержимое буфера',
       comment: 'Нажмите на слово или объект для комментария',
       marker: state.markerColor ? 'Нажимайте на слова, чтобы выделить их цветом' : 'Нажимайте на слова, чтобы снять выделение',
@@ -1362,6 +1364,11 @@ overlay.addEventListener('click', event => {
   }
   if (mode === 'select') selectObject(object?.index ?? null, { showPanel: true });
   if (mode === 'image') chooseImage({ x, y });
+  if (mode === 'qr') {
+    setMode('select');
+    mutate(engine => engine.addImage(state.index, x, y, state.qr, 'png', 1, 150),
+      { select: true, message: 'QR-код добавлен' });
+  }
   if (mode === 'stamp') {
     const stamp = state.stamp;
     setMode('select');
@@ -1459,27 +1466,112 @@ $('leave-marker').addEventListener('click', () => {
   setMode('select');
 });
 
-for (const id of ['watermark', 'sign', 'convert']) {
+for (const id of ['sign', 'convert']) {
   $(id).addEventListener('click', () => {
     if (editor.finish()) $(id + '-dialog').showModal();
   });
 }
 document.querySelectorAll('dialog [data-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 
-$('apply-watermark').addEventListener('click', () => {
-  const text = $('watermark-text').value.trim();
-  const controls = ['opacity', 'angle', 'size'].map(name => $('watermark-' + name));
-  if (!text) {
-    $('watermark-text').focus();
+$('qr').addEventListener('click', () => {
+  if (!editor.finish()) return;
+  if (state.mode === 'qr') setMode('select');
+  $('place-qr').disabled = !state.engine?.count || state.busy;
+  $('qr-dialog').showModal();
+});
+$('qr-text').addEventListener('input', () => {
+  state.qr = null;
+  $('qr-preview').hidden = $('qr-actions').hidden = $('qr-status').hidden = true;
+});
+$('qr-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const field = $('qr-text');
+  const button = $('generate-qr');
+  const preview = $('qr-preview');
+  const feedback = $('qr-status');
+  button.disabled = field.readOnly = true;
+  feedback.hidden = true;
+  try {
+    state.qr = await makeQr(preview, field.value);
+    preview.hidden = $('qr-actions').hidden = false;
+  } catch (error) {
+    feedback.textContent = error.message || 'Не удалось создать QR-код.';
+    feedback.hidden = false;
+  } finally {
+    button.disabled = field.readOnly = false;
+  }
+});
+$('download-qr').addEventListener('click', () => {
+  if (state.qr) download(state.qr, 'QR-код.png', 'png');
+});
+$('place-qr').addEventListener('click', () => {
+  if (!state.qr || !state.engine?.count || state.busy) return;
+  $('qr-dialog').close();
+  setMode('qr');
+});
+
+let watermarkDialogVersion = 0;
+$('watermark').addEventListener('click', () => {
+  if (!editor.finish()) return;
+  watermarkDialogVersion++;
+  $('watermark-status').hidden = true;
+  $('watermark-dialog').showModal();
+});
+$('watermark-type').addEventListener('change', event => {
+  const image = event.target.value === 'image';
+  for (const id of ['text', 'color', 'size']) $('watermark-' + id + '-field').hidden = image;
+  for (const id of ['file', 'width']) $('watermark-' + id + '-field').hidden = !image;
+  $('watermark-status').hidden = true;
+});
+$('watermark-file').addEventListener('change', () => { $('watermark-status').hidden = true; });
+
+$('apply-watermark').addEventListener('click', async () => {
+  const dialog = $('watermark-dialog');
+  const feedback = $('watermark-status');
+  const isImage = $('watermark-type').value === 'image';
+  const controls = ['opacity', 'angle', isImage ? 'width' : 'size'].map(name => $('watermark-' + name));
+  if (controls.some(control => !control.reportValidity())) return;
+  const [opacity, angle, size] = controls.map(control => control.valueAsNumber);
+  const indices = $('watermark-scope').value === 'all' ? Array.from({ length: state.engine.count }, (_, i) => i) : [state.index];
+  const add = change => {
+    if (mutate(engine => indices.forEach(index => change(engine, index)), { message: 'Водяной знак добавлен' })) dialog.close();
+  };
+  if (!isImage) {
+    const text = $('watermark-text').value.trim();
+    if (!text) {
+      $('watermark-text').focus();
+      return;
+    }
+    const color = $('watermark-color').value.slice(1).match(/../g).map(channel => parseInt(channel, 16));
+    const spec = { text, size, angle, color: [...color, Math.round(255 * opacity / 100)] };
+    add((engine, index) => engine.watermark(index, spec));
     return;
   }
-  if (controls.some(control => !control.reportValidity() || !Number.isFinite(control.valueAsNumber))) return;
-  const [opacity, angle, size] = controls.map(control => control.valueAsNumber);
-  const color = $('watermark-color').value.slice(1).match(/../g).map(channel => parseInt(channel, 16));
-  const spec = { text, size, angle, color: [...color, Math.round(255 * opacity / 100)] };
-  const indices = $('watermark-scope').value === 'all' ? Array.from({ length: state.engine.count }, (_, i) => i) : [state.index];
-  $('watermark-dialog').close();
-  mutate(engine => indices.forEach(index => engine.watermark(index, spec)), { message: 'Водяной знак добавлен' });
+  const input = $('watermark-file');
+  const button = $('apply-watermark');
+  const file = input.files[0];
+  const version = watermarkDialogVersion;
+  feedback.hidden = true;
+  if (!file) {
+    feedback.textContent = 'Выберите PNG или JPEG.';
+    feedback.hidden = false;
+    input.focus();
+    return;
+  }
+  button.disabled = true;
+  try {
+    const image = await readArtwork(file, { opacity: opacity / 100, maxSide: 1200 });
+    if (dialog.open && watermarkDialogVersion === version) {
+      add((engine, index) => engine.imageWatermark(index, { ...image, width: size, angle }));
+    }
+  } catch (error) {
+    if (dialog.open && watermarkDialogVersion === version) {
+      feedback.textContent = error.message;
+      feedback.hidden = false;
+    }
+  } finally {
+    button.disabled = false;
+  }
 });
 
 for (const [type, label, limit] of [['signature', 'Подпись', 130], ['seal', 'Печать', 112]]) {
@@ -1494,7 +1586,7 @@ for (const [type, label, limit] of [['signature', 'Подпись', 130], ['seal
     const button = $('place-' + type);
     button.disabled = true;
     try {
-      const image = await readArtwork(file, $('stamp-remove-white').checked);
+      const image = await readArtwork(file, { removeWhite: $('stamp-remove-white').checked });
       state.stamp = { ...image, limit, label };
       $('sign-dialog').close();
       setMode('stamp');

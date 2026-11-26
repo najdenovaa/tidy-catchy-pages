@@ -311,7 +311,7 @@ svg { width: 18px; height: 18px; display: block; flex: none; }
 
 .stage { touch-action: pan-x pan-y; overflow-anchor: none; }
 .overlay.movable { touch-action: pan-x pan-y; }
-.overlay[data-mode="stamp"] { cursor: crosshair; }
+.overlay[data-mode="stamp"], .overlay[data-mode="qr"] { cursor: crosshair; }
 .selection-grip { position: absolute; inset: auto auto calc(100% + 17px) 0; z-index: 2; transform: translateX(-1px); border: 1px solid var(--accent); border-radius: 6px 6px 0 0; color: var(--accent-dark); background: white; width: 31px; height: 29px; display: grid; place-items: center; padding: 0; cursor: move; pointer-events: auto; touch-action: none; }
 .selection-grip svg { width: 17px; height: 17px; }
 .tool-dialog { color: var(--ink); width: min(475px, calc(100% - 24px)); max-height: 88vh; border: 1px solid var(--line); border-radius: 15px; padding: 0; box-shadow: 0 25px 70px #171d4a36; }
@@ -320,7 +320,9 @@ svg { width: 18px; height: 18px; display: block; flex: none; }
 .dialog-head h2 { margin: 0; font-size: 19px; }
 .dialog-body { display: grid; gap: 14px; padding: 16px 19px 19px; }
 .dialog-body label { display: grid; min-width: 0; gap: 5px; font-size: 14px; color: var(--muted); font-weight: 600; }
-.dialog-body input:not([type="checkbox"]), .dialog-body select { width: 100%; min-width: 0; min-height: 38px; border: 1px solid #dfe3ef; border-radius: 7px; padding: 5px 8px; background: white; color: var(--ink); font-size: 16px; }
+.dialog-body input:not([type="checkbox"]), .dialog-body select, .dialog-body textarea { width: 100%; min-width: 0; min-height: 38px; border: 1px solid #dfe3ef; border-radius: 7px; padding: 5px 8px; background: white; color: var(--ink); font-size: 16px; }
+.dialog-body textarea { resize: vertical; }
+#qr-preview { justify-self: center; display: block; width: min(100%, 220px); height: auto; border: 1px solid var(--line); border-radius: 8px; image-rendering: pixelated; }
 .dialog-fields { display: grid; gap: 10px 12px; grid-template-columns: 1fr 1fr; }
 .tool-note { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
 .dialog-body .inline-check { display: flex; align-items: center; gap: 8px; }

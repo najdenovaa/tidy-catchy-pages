@@ -917,6 +917,25 @@ export class PdfEngine {
     });
   }
 
+  imageWatermark(index, { bytes, format, ratio, width: targetWidth, angle }) {
+    return this.edit(index, page => {
+      const { width, height, rotation } = this.dimensions(page);
+      const radians = angle * Math.PI / 180;
+      const cos = Math.abs(Math.cos(radians));
+      const sin = Math.abs(Math.sin(radians));
+      const w = Math.min(targetWidth, width * .92 / (cos + sin / ratio), height * .92 / (sin + cos / ratio));
+      const h = w / ratio;
+      const rotated = radians + rotation * Math.PI / 2;
+      const [cx, cy] = this.documentPoint(page, .5, .5);
+      const a = w * Math.cos(rotated), b = w * Math.sin(rotated);
+      const c = -h * Math.sin(rotated), d = h * Math.cos(rotated);
+      const image = this.createImage(bytes, format, [a, b, c, d, cx - (a + c) / 2, cy - (b + d) / 2]);
+      const position = this.insert(page, image);
+      this.api.FPDFPageObj_AddMark(image, 'ListPDFWatermark');
+      return position;
+    });
+  }
+
   textInArea(index, { x, y, w, h }) {
     return this.page(index, page => {
       const a = this.api;
