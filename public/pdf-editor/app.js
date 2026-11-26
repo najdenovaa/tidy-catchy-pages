@@ -111,8 +111,9 @@ const editor = new InlineEditor({
 
 const comments = new Comments({
   layer: $('annotation-layer'), panel: $('comments-panel'), container: $('properties-body'),
-  toggle: $('comments-toggle'), getNotes: () => state.page?.notes ?? [],
+  toggle: $('comments-toggle'), getPage: () => state.page,
   show: () => { if (mobile.matches) setPanel('properties'); },
+  revealPage: () => { if (mobile.matches) setPanel(null); },
   save: (draft, text) => {
     let index = draft.index;
     const ok = mutate(engine => {
@@ -120,6 +121,11 @@ const comments = new Comments({
       else engine.editNote(state.index, index, text);
     }, { message: 'Комментарий сохранён' });
     return ok ? index : null;
+  },
+  move: (index, position) => {
+    const note = state.page?.notes.find(note => note.index === index);
+    if (!note) return false;
+    return mutate(engine => engine.editNote(state.index, index, note.text, position), { message: 'Комментарий перемещён' });
   },
   remove: index => mutate(engine => engine.removeNote(state.index, index), { message: 'Комментарий удалён' }),
 });
@@ -389,6 +395,7 @@ function renderSelection() {
 
 function setMode(mode) {
   clearArea();
+  clearCommentDrag();
   state.mode = mode;
   state.hover = null;
   overlay.style.cursor = '';
@@ -409,7 +416,7 @@ function setMode(mode) {
       image: 'Нажмите на страницу, куда нужно вставить изображение',
       qr: 'Нажмите на страницу, чтобы разместить QR-код',
       paste: 'Нажмите на страницу, куда вставить содержимое буфера',
-      comment: 'Нажмите на слово или объект для комментария',
+      comment: 'Протяните по тексту или нажмите на слово либо объект',
       marker: state.markerColor ? 'Нажимайте на слова, чтобы выделить их цветом' : 'Нажимайте на слова, чтобы снять выделение',
       stamp: 'Нажмите на страницу, чтобы разместить выбранный элемент',
       table: 'Нажмите для вставки таблицы или обведите существующую рамкой',
@@ -454,6 +461,7 @@ function refresh(rebuild = false) {
 function setPage(index) {
   if (!state.engine?.count || index < 0 || index >= state.engine.count || state.busy || !editor.finish()) return;
   comments.reset();
+  clearCommentDrag();
   clearArea();
   state.index = index;
   state.history[state.revision].page = index;
@@ -574,10 +582,21 @@ function addComment(target, point) {
     return { raw: [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)],
       label: target.text?.trim().slice(0, 100) || (target.kind ? labels[target.kind][0] : target.label ?? 'Таблица') };
   });
-  const box = state.engine.page(state.index, handle => state.engine.displayRect(handle, note.raw));
+  beginComment(note);
+}
+
+function beginComment(note) {
+  const { boxes } = state.engine.page(state.index, handle => state.engine.commentPosition(handle, note));
   setMode('select');
   selectObject(null);
-  comments.begin(note, box);
+  comments.begin(note, boxes);
+}
+
+function clearCommentDrag() {
+  if (!state.commentDrag) return;
+  cancelAnimationFrame(state.commentDrag.frame);
+  state.commentDrag = null;
+  comments.previewSelection(null);
 }
 
 function numericInput(form, name, defaultValue) {
@@ -1135,6 +1154,7 @@ function cancelDrag() {
   state.drag = null;
   state.region = null;
   state.areaDrag = null;
+  clearCommentDrag();
   state.suppressClickUntil = performance.now() + 180;
   if (moved) scheduleDragPaint();
   renderSelection();
@@ -1195,6 +1215,19 @@ overlay.addEventListener('keydown', event => {
 overlay.addEventListener('pointermove', event => {
   if (state.busy) return;
   const point = atPosition(event);
+  if (state.commentDrag?.id === event.pointerId) {
+    const drag = state.commentDrag;
+    drag.end = areaPoint(event);
+    if (!drag.frame && Math.hypot(event.clientX - drag.clientX, event.clientY - drag.clientY) >= 5) {
+      drag.frame = requestAnimationFrame(() => {
+        drag.frame = null;
+        const note = state.engine.commentRange(state.index, drag.start, drag.end);
+        const boxes = note && state.engine.page(state.index, handle => state.engine.commentPosition(handle, note).boxes);
+        comments.previewSelection(boxes);
+      });
+    }
+    return;
+  }
   if (state.areaDrag?.id === event.pointerId) {
     state.areaDrag.end = areaPoint(event);
     renderSelection();
@@ -1238,6 +1271,11 @@ overlay.addEventListener('pointerdown', event => {
     return;
   }
   if (editor.draft) return;
+  if (state.mode === 'comment') {
+    state.commentDrag = { id: event.pointerId, start: areaPoint(event), clientX: event.clientX, clientY: event.clientY };
+    overlay.setPointerCapture(event.pointerId);
+    return;
+  }
   const blankMouse = event.pointerType === 'mouse' && !event.target.closest('.image-selected')
     && !objectAt(point) && !tableAt(point);
   if (state.mode === 'area' || state.mode === 'select' && (event.shiftKey || blankMouse)) {
@@ -1259,6 +1297,17 @@ overlay.addEventListener('pointerdown', event => {
 });
 overlay.addEventListener('pointercancel', cancelDrag);
 overlay.addEventListener('pointerup', event => {
+  if (state.commentDrag?.id === event.pointerId) {
+    const { start, clientX, clientY } = state.commentDrag;
+    clearCommentDrag();
+    if (Math.hypot(event.clientX - clientX, event.clientY - clientY) >= 5) {
+      state.suppressClickUntil = performance.now() + 180;
+      const note = state.engine.commentRange(state.index, start, areaPoint(event));
+      if (note) beginComment(note);
+      else notice('Начните и закончите выделение на тексте. Для скана сначала распознайте текст.');
+    }
+    return;
+  }
   if (state.areaDrag?.id === event.pointerId) {
     const bounds = areaBounds(state.areaDrag, areaPoint(event));
     state.areaDrag = null;

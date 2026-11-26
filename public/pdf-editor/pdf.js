@@ -3,6 +3,9 @@ import { init } from './vendor/index.browser.js';
 import { coreFonts, fonts as fontFamilies } from './layout.js';
 import { edgeStyle, rgb, sameBorder, tableStyle } from './table-style.js';
 import { readFontMetrics } from './font-metrics.js';
+import { calloutLayout, paintCallout } from './comment-layout.js';
+
+const calloutNote = 13;
 
 export const kinds = { text: 1, path: 2, image: 3, shading: 4, group: 5 };
 const pointGrid = 1000000;
@@ -126,19 +129,31 @@ export class PdfEngine {
       const bitmap = check(a.FPDFBitmap_CreateEx(width, height, 4, 0, 0), 'Не удалось создать изображение страницы.');
       try {
         const objects = withObjects ? this.objects(page) : [];
-        const restore = this.preview(page, dimensions, objects, preview);
+        const notes = withObjects ? this.notes(page) : [];
+        const hidden = notes.filter(note => note.callout).map(note => {
+          const annotation = a.FPDFPage_GetAnnot(page, note.index);
+          const flags = a.FPDFAnnot_GetFlags(annotation);
+          a.FPDFAnnot_SetFlags(annotation, flags | 2);
+          return { annotation, flags };
+        });
+        let restore;
         try {
+          restore = this.preview(page, dimensions, objects, preview);
           a.FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xffffffff);
           a.FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, 0x01 | 0x10);
         } finally {
           restore?.();
+          for (const { annotation, flags } of hidden) {
+            a.FPDFAnnot_SetFlags(annotation, flags);
+            a.FPDFPage_CloseAnnot(annotation);
+          }
         }
         const buffer = a.FPDFBitmap_GetBuffer(bitmap);
         const pixels = new Uint8ClampedArray(a.pdfium.HEAPU8.slice(buffer, buffer + width * height * 4));
         return {
           width, height, pixels, rotation: dimensions.rotation,
           pageWidth: dimensions.width, pageHeight: dimensions.height,
-          objects, notes: withObjects ? this.notes(page) : [],
+          objects, notes,
         };
       } finally {
         a.FPDFBitmap_Destroy(bitmap);
@@ -496,6 +511,14 @@ export class PdfEngine {
     this.page(index, page => {
       const a = this.api;
       a.FPDFPage_SetRotation(page, (a.FPDFPage_GetRotation(page) + 1) % 4);
+      for (const note of this.notes(page).filter(note => note.callout)) {
+        const annotation = a.FPDFPage_GetAnnot(page, note.index);
+        try {
+          this.writeCallout(page, annotation, note.anchor, note.text);
+        } finally {
+          a.FPDFPage_CloseAnnot(annotation);
+        }
+      }
     });
   }
 
@@ -1000,6 +1023,44 @@ export class PdfEngine {
     });
   }
 
+  commentRange(index, start, end) {
+    return this.page(index, page => {
+      const a = this.api;
+      const textPage = a.FPDFText_LoadPage(page);
+      if (!textPage) return null;
+      try {
+        const { width, height } = this.dimensions(page);
+        const at = point => a.FPDFText_GetCharIndexAtPos(textPage, ...this.documentPoint(page, point.x, point.y),
+          Math.max(3, width * .017), Math.max(3, height * .013));
+        const first = at(start), last = at(end);
+        if (first < 0 || last < 0) return null;
+        const from = Math.min(first, last), count = Math.abs(first - last) + 1;
+        const total = a.FPDFText_CountRects(textPage, from, count);
+        if (!total || total > 240) return null;
+        const rects = this.memory(32, ptr => {
+          const result = [];
+          for (let i = 0; i < total; i++) {
+            if (!a.FPDFText_GetRect(textPage, i, ptr, ptr + 8, ptr + 16, ptr + 24)) continue;
+            const rect = [0, 24, 16, 8].map(offset => a.pdfium.getValue(ptr + offset, 'double'));
+            if (rect.every(Number.isFinite) && rect[2] > rect[0] && rect[3] > rect[1]) result.push(rect);
+          }
+          return result;
+        });
+        if (!rects.length) return null;
+        const raw = rects.reduce(([x0, y0, x1, y1], [l, b, r, t]) =>
+          [Math.min(x0, l), Math.min(y0, b), Math.max(x1, r), Math.max(y1, t)]);
+        let label = '';
+        for (let i = from; i < from + Math.min(count, 180); i++) {
+          const char = a.FPDFText_GetUnicode(textPage, i);
+          if (char > 0 && char <= 0x10ffff) label += String.fromCodePoint(char);
+        }
+        return { raw, rects, label: label.replace(/\s+/gu, ' ').trim() || 'Выделенный текст' };
+      } finally {
+        a.FPDFText_ClosePage(textPage);
+      }
+    });
+  }
+
   noteString(annotation, key) {
     const a = this.api;
     const length = a.FPDFAnnot_GetStringValue(annotation, key, 0, 0);
@@ -1027,6 +1088,14 @@ export class PdfEngine {
     });
   }
 
+  setNoteRect(annotation, [left, bottom, right, top]) {
+    const a = this.api;
+    this.memory(16, ptr => {
+      [left, top, right, bottom].forEach((value, i) => a.pdfium.setValue(ptr + i * 4, value, 'float'));
+      check(a.FPDFAnnot_SetRect(annotation, ptr), 'Не удалось разместить комментарий.');
+    });
+  }
+
   displayRect(page, raw) {
     const [x1, y1] = this.screenPoint(page, raw[0], raw[1]);
     const [x2, y2] = this.screenPoint(page, raw[2], raw[3]);
@@ -1041,7 +1110,8 @@ export class PdfEngine {
       const annotation = a.FPDFPage_GetAnnot(page, index);
       if (!annotation) continue;
       try {
-        if (a.FPDFAnnot_GetSubtype(annotation) !== 1) continue;
+        const subtype = a.FPDFAnnot_GetSubtype(annotation);
+        if (subtype !== 1 && subtype !== calloutNote) continue;
         const text = this.noteString(annotation, 'Contents');
         const rect = this.noteRect(annotation);
         if (!text || !rect) continue;
@@ -1050,8 +1120,17 @@ export class PdfEngine {
           const data = JSON.parse(this.noteString(annotation, 'ListPDFAnchor'));
           if (Array.isArray(data.raw) && data.raw.length === 4 && data.raw.every(Number.isFinite)) {
             anchor = { raw: data.raw, label: typeof data.label === 'string' ? data.label.slice(0, 180) : '' };
+            const isRect = value => Array.isArray(value) && value.length === 4 && value.every(Number.isFinite);
+            const isPoint = value => Array.isArray(value) && value.length === 2 && value.every(Number.isFinite);
+            if (Array.isArray(data.rects) && data.rects.length <= 240 && data.rects.length && data.rects.every(isRect)) anchor.rects = data.rects;
+            if (isPoint(data.bubble)) anchor.bubble = data.bubble;
+            if (isPoint(data.elbow)) anchor.elbow = data.elbow;
           }
         } catch { /* Standard PDF notes do not need an editor anchor. */ }
+        if (subtype === calloutNote) {
+          if (anchor) notes.push({ index, text, label: anchor.label, anchor, callout: true, ...this.commentPosition(page, anchor) });
+          continue;
+        }
         notes.push({ index, text, label: anchor?.label ?? '', box: this.displayRect(page, anchor?.raw ?? rect),
           pin: this.displayRect(page, rect), attached: !!anchor });
       } finally {
@@ -1061,39 +1140,56 @@ export class PdfEngine {
     return notes;
   }
 
+  commentPosition(page, anchor) {
+    return {
+      boxes: (anchor.rects ?? [anchor.raw]).map(rect => this.displayRect(page, rect)),
+      bubble: anchor.bubble && this.screenPoint(page, ...anchor.bubble),
+      elbow: anchor.elbow && this.screenPoint(page, ...anchor.elbow),
+    };
+  }
+
+  writeCallout(page, annotation, anchor, text) {
+    const a = this.api;
+    const { width, height } = this.dimensions(page);
+    const layout = calloutLayout(width, height, { text, ...this.commentPosition(page, anchor) });
+    const boxes = [...layout.targets, layout.bubble];
+    const x = Math.min(...boxes.map(box => box.x), ...layout.line.map(point => point[0])) - 2;
+    const y = Math.min(...boxes.map(box => box.y), ...layout.line.map(point => point[1])) - 2;
+    const right = Math.max(...boxes.map(box => box.x + box.w), ...layout.line.map(point => point[0])) + 2;
+    const bottom = Math.max(...boxes.map(box => box.y + box.h), ...layout.line.map(point => point[1])) + 2;
+    const w = right - x, h = bottom - y;
+    const scale = Math.min(3, 2200 / Math.max(w, h));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(w * scale);
+    canvas.height = Math.ceil(h * scale);
+    const context = canvas.getContext('2d');
+    context.setTransform(canvas.width / w, 0, 0, canvas.height / h, -x * canvas.width / w, -y * canvas.height / h);
+    paintCallout(context, layout);
+    const png = Uint8Array.from(atob(canvas.toDataURL('image/png').split(',')[1]), char => char.charCodeAt(0));
+    const point = (left, top) => this.documentPoint(page, left / width, top / height);
+    const [x0, y0] = point(x, bottom);
+    const [x1, y1] = point(right, bottom);
+    const [x2, y2] = point(x, y);
+    const [x3, y3] = point(right, y);
+    const left = Math.min(x0, x3), low = Math.min(y0, y3), far = Math.max(x0, x3), high = Math.max(y0, y3);
+    check(a.FPDFAnnot_SetAP(annotation, 0, 0), 'Не удалось обновить внешний вид комментария.');
+    this.setNoteRect(annotation, [left, low, far, high]);
+    this.setNoteString(annotation, 'Contents', text);
+    this.setNoteString(annotation, 'ListPDFAnchor', JSON.stringify({ ...anchor, label: anchor.label.slice(0, 180) }));
+    const image = this.createImage(png, 'png', [x1 - x0, y1 - y0, x2 - x0, y2 - y0, x0, y0]);
+    if (!a.FPDFAnnot_AppendObject(annotation, image)) {
+      a.FPDFPageObj_Destroy(image);
+      throw new Error('Не удалось нарисовать комментарий.');
+    }
+  }
+
   addNote(index, anchor, text) {
     return this.page(index, page => {
       const a = this.api;
-      const { width, height } = this.dimensions(page);
-      const target = this.displayRect(page, anchor.raw);
-      const iconWidth = 18 / width, iconHeight = 18 / height;
-      const x = Math.max(.5, 1 - 27 / width);
-      const minY = 4 / height, maxY = 1 - iconHeight - minY;
-      let y = Math.max(minY, Math.min(maxY, target.y));
-      const existing = this.notes(page).filter(note => note.pin.x > .8);
-      const preferred = y;
-      const gap = 31 / height;
-      for (let step = 0; step < 100; step++) {
-        const distance = Math.ceil(step / 2) * gap * (step % 2 ? 1 : -1);
-        const candidate = preferred + distance;
-        if (candidate < minY || candidate > maxY) continue;
-        if (existing.every(note => Math.abs(note.pin.y - candidate) > gap * .85)) {
-          y = candidate;
-          break;
-        }
-      }
-      const [x1, y1] = this.documentPoint(page, x, y);
-      const [x2, y2] = this.documentPoint(page, x + iconWidth, y + iconHeight);
-      const annotation = check(a.EPDFPage_CreateAnnot(page, 1), 'Не удалось создать комментарий.');
+      const annotation = check(a.EPDFPage_CreateAnnot(page, calloutNote), 'Не удалось создать комментарий.');
       try {
-        this.memory(16, ptr => {
-          [Math.min(x1, x2), Math.max(y1, y2), Math.max(x1, x2), Math.min(y1, y2)].forEach((value, i) =>
-            a.pdfium.setValue(ptr + i * 4, value, 'float'));
-          check(a.FPDFAnnot_SetRect(annotation, ptr), 'Не удалось разместить комментарий.');
-        });
-        a.FPDFAnnot_SetColor(annotation, 0, 108, 89, 231, 255);
-        this.setNoteString(annotation, 'Contents', text);
-        this.setNoteString(annotation, 'ListPDFAnchor', JSON.stringify({ raw: anchor.raw, label: anchor.label.slice(0, 180) }));
+        a.FPDFAnnot_SetFlags(annotation, 4);
+        this.writeCallout(page, annotation, anchor, text);
         return a.FPDFPage_GetAnnotIndex(page, annotation);
       } finally {
         a.FPDFPage_CloseAnnot(annotation);
@@ -1101,12 +1197,21 @@ export class PdfEngine {
     });
   }
 
-  editNote(pageIndex, index, text) {
+  editNote(pageIndex, index, text, position = null) {
     this.page(pageIndex, page => {
       const a = this.api;
       const annotation = check(a.FPDFPage_GetAnnot(page, index), 'Комментарий не найден.');
       try {
-        this.setNoteString(annotation, 'Contents', text);
+        const note = this.notes(page).find(note => note.index === index);
+        if (note?.callout) {
+          const anchor = { ...note.anchor };
+          if (position) {
+            for (const key of ['bubble', 'elbow']) {
+              if (position[key]) anchor[key] = this.documentPoint(page, ...position[key]);
+            }
+          }
+          this.writeCallout(page, annotation, anchor, text);
+        } else this.setNoteString(annotation, 'Contents', text);
       } finally {
         a.FPDFPage_CloseAnnot(annotation);
       }
