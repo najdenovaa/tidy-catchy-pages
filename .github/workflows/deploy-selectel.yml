@@ -28,6 +28,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Bundle local PDF OCR models
+        continue-on-error: true
+        run: bash scripts/bundle-pdf-ocr-models.sh dist/pdf-editor/vendor/ocr/lstm
+
       - name: Determine IP directory month
         id: ip-directory-month
         run: date -u '+month=%Y-%m' >> "$GITHUB_OUTPUT"
@@ -65,7 +69,11 @@ jobs:
           if [ ! -f dist/ip-directory/catalog.json ]; then
             preserve_ip_directory=(--filter='protect /ip-directory/***')
           fi
-          rsync -avz --delete --omit-dir-times "${preserve_ip_directory[@]}" \
+          preserve_ocr_models=()
+          if [ ! -f dist/pdf-editor/vendor/ocr/lstm/models.json ]; then
+            preserve_ocr_models=(--filter='protect /pdf-editor/vendor/ocr/lstm/***')
+          fi
+          rsync -avz --delete --omit-dir-times "${preserve_ip_directory[@]}" "${preserve_ocr_models[@]}" \
             -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes" \
             dist/ "${DEPLOY_USER}@${DEPLOY_HOST}:/var/www/deallsoft/dist/"
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes \
