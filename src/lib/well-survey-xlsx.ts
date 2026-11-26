@@ -3,6 +3,7 @@
 import * as XLSX from 'xlsx';
 import {SURVEY_MAX_BYTES,SURVEY_MAX_ROWS,surveyColumns,surveyColumn,surveyNumber,type ImportTable} from './well-survey-import';
 const MAX_SOURCE_ROWS=SURVEY_MAX_ROWS+100;
+const MAX_HEADER_ROWS=200;
 function checkBytes(bytes:ArrayBuffer){
   if(bytes.byteLength>SURVEY_MAX_BYTES)throw new Error('Файл больше 10 МБ. Разделите его на интервалы.');
   const b=new Uint8Array(bytes),zip=b[0]===0x50&&b[1]===0x4b&&b[2]===3&&b[3]===4,ole=b[0]===0xd0&&b[1]===0xcf&&b[2]===0x11&&b[3]===0xe0;
@@ -28,16 +29,40 @@ export function parseSurveyWorksheet(bytes:ArrayBuffer,sheetName:string,options:
   let header=options.headerRow;
   if(header===undefined){
     header=0;
-    for(let r=range.s.r+1;r<=Math.min(totalRows,range.s.r+20);r++){
+    for(let r=range.s.r+1;r<=Math.min(totalRows,range.s.r+MAX_HEADER_ROWS);r++){
       const m=surveyColumns({columns:names(r).map(surveyColumn),rows:[],warnings:[]});
       if(Object.values(m).every(x=>x>=0)&&new Set(Object.values(m)).size===3){header=r;break;}
     }
   }
   if(!Number.isInteger(header)||header<0||header>totalRows)throw new Error('Строка заголовка: 0 (без заголовка) либо номер существующей строки листа.');
-  const first=options.firstDataRow??(header?header+1:range.s.r+1),last=options.lastDataRow??totalRows;
+  const columns=(header?names(header):Array.from({length:width},(_,i)=>`Колонка ${i+1}`)).map((n,i)=>surveyColumn(n||`Колонка ${i+1}`));
+  const templateHeaders=['MD','Zenith','Azimuth','TVD'];
+  if(header===1&&sheetName==='Инклинометрия'&&w.SheetNames.includes('Инструкция')
+    &&columns.length===templateHeaders.length&&columns.every((column,i)=>column.name===templateHeaders[i])){
+    ['m','deg','deg','m'].forEach((unit,i)=>{columns[i].unit=unit;});
+  }
+  const first=options.firstDataRow??(header?header+1:range.s.r+1);
+  let last=options.lastDataRow??totalRows;
+  if(options.lastDataRow===undefined&&header){
+    const mapping=surveyColumns({columns,rows:[],warnings:[]});
+    const selected=Object.values(mapping);
+    if(selected.every(c=>c>=0)&&new Set(selected).size===3){
+      const empty=(v:XLSX.CellObject|undefined)=>!v||(!v.f&&!v.F&&v.t!=='e'&&String(v.v??'').trim()==='');
+      const footer=(r:number)=>{
+        const row=Array.from({length:width},(_,c)=>cell(r,c));
+        if(row.some(v=>v?.f||v?.F||v?.t==='e'||v?.t==='d'||v?.t==='b'||surveyNumber(v?.v)!==null))return false;
+        const values=selected.map(c=>cell(r,c));
+        if(values.every(empty))return true;
+        // Label/value metadata can reuse an angle column below the survey.
+        return empty(cell(r,mapping.md))
+          &&values.every(v=>empty(v)||(!v?.f&&!v?.F&&v?.t==='s'&&surveyNumber(v.v)===null))
+          &&names(r).some((name,c)=>!selected.includes(c)&&/^[\p{L}][\p{L}\s/()_-]*:$/u.test(name));
+      };
+      while(last>first&&footer(last))last--;
+    }
+  }
   if(!Number.isInteger(first)||!Number.isInteger(last)||first<1||last>totalRows||last<first||(header&&first<=header))throw new Error('Проверьте диапазон строк данных: после заголовка, в пределах листа.');
   if(last-first+1>SURVEY_MAX_ROWS)throw new Error('Больше 100 000 точек. Разделите файл.');
-  const columns=(header?names(header):Array.from({length:width},(_,i)=>`Колонка ${i+1}`)).map((n,i)=>surveyColumn(n||`Колонка ${i+1}`));
   const rows:ImportTable['rows']=[],sourceRows:number[]=[],cellIssues:NonNullable<ImportTable['cellIssues']>={};
   for(let r=first;r<=last;r++){
     const out:(number|null)[]=[];

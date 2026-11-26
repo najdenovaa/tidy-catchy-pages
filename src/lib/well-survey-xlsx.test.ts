@@ -34,6 +34,21 @@ describe('F04 unified TXT / Excel import',()=>{
   const date=file(grid,'xlsx',s=>{s.B3={t:'d',v:new Date('2026-01-01T00:00:00Z')};});expect(()=>run(date)).toThrow(/B3: дата/);
   const error=file(grid,'xlsx',s=>{s.B3={t:'e',v:7};});expect(()=>run(error)).toThrow(/B3: ошибка Excel/);
  });
+ it('finds a late field-report header, uses true azimuth and excludes trailing report metadata',()=>{
+  const b=file([
+   ['Survey report'], ...Array.from({length:21},()=>['']),
+   ['Comments','MD\n(m)','Incl\n(°)','Azim Mag\n(°)','Closure Azimuth\n(°)','Azim True\n(°)','TVD\n(m)'],
+   ['Tie-In',0,0,341.9,190,0,0],
+   ['Last station',100,3,121,45,141,99],
+   [],['Survey Type:',null,'Non-Def Survey'],
+  ]);
+  const t=parseSurveyWorksheet(b,'Замеры'),mapping=surveyColumns(t);
+  expect(t.headerRow).toBe(23);expect(t.sourceRows).toEqual([24,25]);
+  expect(mapping).toEqual({md:1,azimuth:5,zenith:2});
+  expect(buildSurvey(t,mapping,'m','deg').points[1]).toMatchObject({md:100,azimuth:141,zenith:3});
+  const manual=parseSurveyWorksheet(b,'Замеры',{lastDataRow:27});
+  expect(()=>buildSurvey(manual,mapping,'m','deg')).toThrow(/Строка 26/);
+ });
  it('enforces common duplicate, tie-in, range and column-selection rules',()=>{
   expect(()=>run(file([grid[0],grid[1],grid[1]]))).toThrow(/Повторяются/);
   expect(()=>run(file([grid[0],...grid.slice(2)]))).toThrow(/MD=0/);
@@ -58,6 +73,7 @@ describe('F04 unified TXT / Excel import',()=>{
  it('reads the shipped template with the same mapping and reproduces downstream hydrostatic depth and centering',()=>{
   const source=readFileSync('public/trajectory_template.xlsx'),b=source.buffer.slice(source.byteOffset,source.byteOffset+source.byteLength) as ArrayBuffer;
   const t=parseSurveyWorksheet(b,surveyWorkbookSheets(b)[0]);expect(surveyColumns(t).md).toBeGreaterThanOrEqual(0);
+  expect(t.columns.map(c=>c.unit)).toEqual(['m','deg','deg','m']);
   const x=buildSurvey(t,surveyColumns(t),'m','deg');expect(x.points.length).toBeGreaterThan(1);
   const tx=run(file(grid)).points,txt=buildSurvey(parseSurveyText(grid.map(r=>r.join(';')).join('\n')),surveyColumns(parseSurveyWorksheet(file(grid),'Замеры')),'ft','rad','deg').points;
   const w={...getCementingExample().wellData,casingDepthMD:60,wellDepthMD:60,trajectory:tx};
