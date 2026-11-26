@@ -779,7 +779,7 @@ async function startRecognition(prepareOnly) {
       if (small.objects.some(item => item.kind === kinds.text && item.text?.trim())) continue;
       pageLabel = `Распознаём страницу ${index + 1} из ${state.engine.count}…`;
       label.textContent = pageLabel;
-      const view = state.engine.render(index, 2050, 2650);
+      const view = state.engine.render(index, 2200, 3000);
       const result = await recognizePage(worker, view);
       doubtful += result.doubtful;
       if (result.lines.length) pages.push({ index, lines: result.lines });
