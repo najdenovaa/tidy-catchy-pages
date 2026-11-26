@@ -5,9 +5,10 @@ export const noteColor = {
 };
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-const measuring = document.createElement('canvas').getContext('2d');
+let measuring;
 
 export function calloutLayout(pageWidth, pageHeight, note) {
+  measuring ??= document.createElement('canvas').getContext('2d');
   const box = ({ x, y, w, h }) => ({ x: x * pageWidth, y: y * pageHeight, w: w * pageWidth, h: h * pageHeight });
   const targets = note.boxes.map(box);
   const target = targets[0];

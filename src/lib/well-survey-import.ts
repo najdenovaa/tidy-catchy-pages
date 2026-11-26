@@ -106,9 +106,14 @@ export function parseSurveyText(text:string):ImportTable {
   return {columns,rows,sourceRows:source.slice(header?1:0).map(x=>x.row),warnings:header?[]:['Нет заголовка: назначьте MD, азимут и зенит вручную.']};
 }
 export function surveyColumns(t:ImportTable):{md:number;azimuth:number;zenith:number}{
-  const n=t.columns.map(c=>c.name.toLowerCase());return {
+  const n=t.columns.map(c=>c.name.toLowerCase());
+  const isAzimuth=(x:string)=>/azim|азим|\bazi?\b/.test(x);
+  const surveyAzimuth=(x:string)=>isAzimuth(x)&&!/closure|замыкан|vertical section|проектн|\bvs\b/.test(x);
+  const trueAzimuth=n.findIndex(x=>surveyAzimuth(x)&&/\btrue\b|истин/.test(x));
+  return {
     md:n.findIndex(x=>!/tvd|вертик|vertical/.test(x)&&/\bmd\b|measured|depth|глубин|ствол/.test(x)),
-    azimuth:n.findIndex(x=>/azim|азим|\bazi?\b/.test(x)),zenith:n.findIndex(x=>!/azim|азим|\bazi?\b/.test(x)&&/zen|зенит|incl|\binc\b|угол/.test(x)),
+    azimuth:trueAzimuth>=0?trueAzimuth:n.findIndex(surveyAzimuth),
+    zenith:n.findIndex(x=>!isAzimuth(x)&&/zen|зенит|incl|\binc\b|угол/.test(x)),
   };
 }
 export function buildSurvey(t:ImportTable,m:{md:number;azimuth:number;zenith:number},depthUnit:LengthUnit,angleUnit:AngleUnit,azimuthUnit:AngleUnit=angleUnit,options:{maxGapM?:number;targetDepthMD?:number}={}):{points:TrajectoryPoint[];warnings:string[]}{
