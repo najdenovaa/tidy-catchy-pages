@@ -1,21 +1,24 @@
 import { sniffImage } from './office.js';
 
-export async function readArtwork(file, removeWhite = false) {
+export async function readArtwork(file, { removeWhite = false, opacity = 1, maxSide = Infinity } = {}) {
   if (file.size > 16 * 1024 * 1024) throw new Error('Выберите изображение размером до 16 МБ.');
   const bytes = new Uint8Array(await file.arrayBuffer());
   const format = sniffImage(bytes);
   if (!format) throw new Error('Поддерживаются изображения PNG и JPEG.');
   const bitmap = await createImageBitmap(file);
   try {
-    const { width, height } = bitmap;
-    if (width * height > 24000000) throw new Error('Выберите изображение размером до 24 мегапикселей.');
-    const ratio = width / height;
-    if (format === 'png' && !removeWhite) return { bytes, format, ratio };
+    if (bitmap.width * bitmap.height > 24000000) throw new Error('Выберите изображение размером до 24 мегапикселей.');
+    const ratio = bitmap.width / bitmap.height;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    if (format === 'png' && !removeWhite && opacity === 1 && scale === 1) return { bytes, format, ratio };
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const context = canvas.getContext('2d', { willReadFrequently: removeWhite });
-    context.drawImage(bitmap, 0, 0);
+    context.globalAlpha = opacity;
+    context.drawImage(bitmap, 0, 0, width, height);
     if (removeWhite) {
       const image = context.getImageData(0, 0, width, height);
       const data = image.data;

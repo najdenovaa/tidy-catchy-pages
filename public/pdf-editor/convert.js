@@ -13,6 +13,7 @@ export function inputFormat(name) {
 
 export const fileMimes = {
   pdf: 'application/pdf',
+  png: 'image/png',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 };
