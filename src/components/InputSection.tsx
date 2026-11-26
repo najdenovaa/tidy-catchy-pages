@@ -6,6 +6,7 @@ import FluidLibrary from "./FluidLibrary";
 import WellGeometrySummary from "./WellGeometrySummary";
 import { cavernIntervalCoeff } from "@/lib/well-geometry";
 import WellSurveyImport from "./WellSurveyImport";
+import DisplacementPlanChart from "./DisplacementPlanChart";
 import { CementProductPicker, ProductDetails } from "./CementProductPicker";
 import { productAdditive } from "@/lib/cement-product-catalog";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +38,7 @@ interface Props {
   flushVolumeM3: number;
   onFlushVolumeM3Change: (v: number) => void;
   displacementVolume?: number;
+  displacementPreviewWell?: WellData;
   dynamicBHPMap?: Record<string, { bhp: number; fracP: number }>; // ключ = "stageName|rateLps"
   onCalculate?: () => void;
   /** Загрузить пример из руководства */
@@ -184,6 +186,11 @@ export default function InputSection(props: Props) {
   };
 
   const calcDispVol = displacementVolume ?? 0;
+  const previewWell = props.displacementPreviewWell ?? wellData;
+  const displacementPreview = useMemo(() => ({
+    wellData: previewWell, drillingFluid, buffers, slurries, displacementFluids,
+    fractureGradient, flushTimeMin, flushVolumeM3,
+  }), [previewWell, drillingFluid, buffers, slurries, displacementFluids, fractureGradient, flushTimeMin, flushVolumeM3]);
 
   const casingID = getCasingID(wellData.casingOD, wellData.casingWall);
   const annVPM = annularVolumePerMeter(wellData.holeDiameter, wellData.casingOD, wellData.cavernCoeff);
@@ -1130,6 +1137,7 @@ export default function InputSection(props: Props) {
                 получают остаток до расчётного объёма. Если сумма больше расчётной — лишнее срезается с конца (пробка сядет раньше).
               </div>
             )}
+            <DisplacementPlanChart input={displacementPreview} volumeM3={calcDispVol} />
           </CardContent>
         )}
       </Card>

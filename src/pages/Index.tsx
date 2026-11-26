@@ -60,7 +60,7 @@ import SkcControlSection from "@/components/SkcControlSection";
 import { applyVariant, type ProgramVariant, type CentralizerPlan } from "@/lib/cement-optimizer";
 
 import type { CentralizationResult } from "@/lib/centralization-calculations";
-import { calculateVolumes, calculatePressureProfile, calculateMaterials, pipeVolumePerMeter, getCasingID } from "@/lib/cementing-calculations";
+import { calculateVolumes, calculatePressureProfile, calculateMaterials, totalPipeVolumeForRange } from "@/lib/cementing-calculations";
 import type { WellData, BufferFluid, DrillingFluid, SlurryInput, DisplacementFluid } from "@/lib/cementing-calculations";
 import { getCementingExample } from "@/lib/cementing-example";
 import { FileDown, Loader2, Send, Home, RotateCcw, Save, LogOut, LayoutDashboard } from "lucide-react";
@@ -204,10 +204,9 @@ export default function Index() {
   }, [fetchStats]);
 
   const liveDispVol = useMemo(() => {
-    const cid = getCasingID(wellData.casingOD, wellData.casingWall);
     const compressionCoeff = Math.max(displacementFluids?.[0]?.compressionCoeff || 1.0, 1.0);
-    return pipeVolumePerMeter(cid) * wellData.ckodDepth * compressionCoeff;
-  }, [wellData.casingOD, wellData.casingWall, wellData.ckodDepth, displacementFluids]);
+    return totalPipeVolumeForRange(0, wellData.ckodDepth, wellData.casingOD, wellData.casingWall, wellData.casingSections) * compressionCoeff;
+  }, [wellData.casingOD, wellData.casingWall, wellData.ckodDepth, wellData.casingSections, displacementFluids]);
 
   const [calcSnapshot, setCalcSnapshot] = useState<CalcSnapshot | null>(null);
 
@@ -365,6 +364,10 @@ export default function Index() {
     [centralizationResults],
   );
   const avgStandoffPct = standoffProfile ? standoffProfile.reduce((a, r) => a + r.standoffPct, 0) / standoffProfile.length : 67;
+  const displacementPreviewWell = useMemo(
+    () => ({ ...wellData, standoffProfile, annularStandoffPct: avgStandoffPct }),
+    [wellData, standoffProfile, avgStandoffPct],
+  );
   const snapWellData = useMemo(
     () => calcSnapshot ? { ...calcSnapshot.wellData, pressureObservation:wellData.pressureObservation, standoffProfile, annularStandoffPct: avgStandoffPct } : null,
     [calcSnapshot, standoffProfile, avgStandoffPct,wellData.pressureObservation],
@@ -690,6 +693,7 @@ export default function Index() {
                 displacementFluids={displacementFluids}
                 onDisplacementFluidsChange={setDisplacementFluids}
                 displacementVolume={liveDispVol}
+                displacementPreviewWell={displacementPreviewWell}
                 fractureGradient={fractureGradient}
                 onFractureGradientChange={setFractureGradient}
                 flushTimeMin={flushTimeMin}
