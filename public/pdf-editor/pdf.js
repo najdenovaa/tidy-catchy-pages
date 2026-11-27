@@ -490,15 +490,17 @@ export class PdfEngine {
     });
   }
 
-  rotateObjects(index, items, degrees, selected) {
+  rotationMatrix(page, center, degrees) {
+    const [cx, cy] = this.documentPoint(page, center.x, center.y);
+    const radians = -degrees * Math.PI / 180;
+    const cosine = Math.cos(radians), sine = Math.sin(radians);
+    return [cosine, sine, -sine, cosine, cx - cosine * cx + sine * cy, cy - sine * cx - cosine * cy];
+  }
+
+  rotateObjects(index, items, center, degrees, selected) {
     return this.edit(index, page => {
       const a = this.api;
-      const bounds = items.map(item => item.raw);
-      const cx = (Math.min(...bounds.map(box => box[0])) + Math.max(...bounds.map(box => box[2]))) / 2;
-      const cy = (Math.min(...bounds.map(box => box[1])) + Math.max(...bounds.map(box => box[3]))) / 2;
-      const radians = -degrees * Math.PI / 180;
-      const cosine = Math.cos(radians), sine = Math.sin(radians);
-      const matrix = [cosine, sine, -sine, cosine, cx - cosine * cx + sine * cy, cy - sine * cx - cosine * cy];
+      const matrix = this.rotationMatrix(page, center, degrees);
       for (const item of items) {
         this.transform(check(a.FPDFPage_GetObject(page, item.index), 'Объект отсутствует на странице.'), matrix);
       }
@@ -602,11 +604,18 @@ export class PdfEngine {
     if (!preview) return null;
     const changed = [];
     const hidden = new Set(preview.indices);
+    const turn = preview.turn;
+    const turned = new Set(turn?.indices);
+    const rotation = turn && this.rotationMatrix(page, turn.center, turn.degrees);
+    const inverseRotation = turn && this.rotationMatrix(page, turn.center, -turn.degrees);
     const a = this.api;
     for (const item of objects) {
       const pointer = a.FPDFPage_GetObject(page, item.index);
       if (hidden.has(item.index)) {
         if (a.FPDFPageObj_SetIsActive(pointer, false)) changed.push([pointer, null]);
+      } else if (rotation && turned.has(item.index)) {
+        this.transform(pointer, rotation);
+        changed.push([pointer, inverseRotation]);
       } else {
         const motion = preview.motion?.index === item.index ? preview.motion
           : preview.delta && item.y * height >= preview.after - .45 ? { dx: 0, dy: preview.delta / height }

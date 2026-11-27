@@ -18,8 +18,8 @@ const maxRows = 65;
 const maxColumns = 12;
 
 export class InlineEditor {
-  constructor({ layer, toolbar, stylebar, getPage, render, commit, message, loadFont, objectAction, changed = () => {}, scanRect = () => null }) {
-    Object.assign(this, { layer, toolbar, stylebar, getPage, render, commit, message, loadFont, objectAction, changed, scanRect });
+  constructor({ layer, toolbar, stylebar, getPage, render, commit, message, loadFont, objectAction, makeRotationGrip, changed = () => {}, scanRect = () => null }) {
+    Object.assign(this, { layer, toolbar, stylebar, getPage, render, commit, message, loadFont, objectAction, makeRotationGrip, changed, scanRect });
     this.fillColor = '#fff2a8';
     this.stylebar.addEventListener('input', event => this.styleInput(event));
     this.stylebar.addEventListener('click', event => this.action(event));
@@ -383,6 +383,7 @@ export class InlineEditor {
       const width = parseFloat(node.style.width), height = parseFloat(node.style.height);
       Object.assign(this.layer.querySelector('.text-grip').style, { left: `${left}px`, top: `${Math.max(0, top - 26)}px` });
       Object.assign(this.layer.querySelector('.text-resize').style, { left: `${left + width - 5}px`, top: `${top + height / 2 - 12}px` });
+      this.positionRotationGrip(left, top, width, height);
       const field = this.toolbar.querySelector('[name="text-width"]');
       if (document.activeElement !== field) field.value = String(Math.round(plan.width / pointsPerMillimeter * 10) / 10);
       field.max = String(Math.floor((this.getPage().pageWidth - plan.x - 3) / pointsPerMillimeter));
@@ -402,6 +403,7 @@ export class InlineEditor {
     grid.style.gridTemplateRows = plan.heights.map(value => `${value * scale}px`).join(' ');
     grid.style.setProperty('--cell-padding-x', `${6 * scale}px`);
     grid.style.setProperty('--cell-padding-y', `${5 * scale}px`);
+    this.positionRotationGrip(plan.x * scale, plan.y * scale, sum(plan.widths) * scale, sum(plan.heights) * scale);
     for (const cell of grid.children) {
       const [row, col] = cell.dataset.cell.split(':').map(Number);
       cell.style.setProperty('--cell-fill', plan.style.cells[row][col].fill ?? 'transparent');
@@ -410,6 +412,18 @@ export class InlineEditor {
       cell.style.borderBottom = row === plan.rows.length - 1 ? borderCSS(edgeStyle(plan.style, 'h', row + 1, col), scale) : 'none';
       cell.style.borderRight = col === plan.widths.length - 1 ? borderCSS(edgeStyle(plan.style, 'v', row, col + 1), scale) : 'none';
     }
+  }
+
+  positionRotationGrip(left, top, width, height) {
+    if (!this.makeRotationGrip) return;
+    let grip = this.layer.querySelector('.rotation-grip');
+    if (!grip) {
+      grip = this.makeRotationGrip();
+      this.layer.append(grip);
+    }
+    const below = top < 34;
+    grip.classList.toggle('below', below);
+    Object.assign(grip.style, { left: `${left + width / 2}px`, top: `${below ? top + height + 12 : top - 34}px`, bottom: 'auto' });
   }
 
   measureBaseline(line, size, font, bold) {
