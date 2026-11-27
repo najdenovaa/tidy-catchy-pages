@@ -100,6 +100,7 @@ const editor = new InlineEditor({
   scanRect: cover => state.engine.page(state.index, page => state.engine.displayRect(page, cover.raw)),
   layer: $('editor-layer'), toolbar: $('formatbar'), stylebar: $('table-formatbar'), getPage: () => state.page,
   render: () => renderSafely(), message: notice, loadFont: family => prepareBrowserFont(state.engine, family),
+  makeRotationGrip: rotationGrip,
   objectAction: angle => {
     const draft = editor.draft;
     if (angle === null) {
@@ -107,11 +108,7 @@ const editor = new InlineEditor({
       if (draft.indices.length) mutate(engine => engine.removeObjects(state.index, draft.indices), { message: 'Объект удалён' });
       return;
     }
-    if (draft.mode === 'table' && !state.page.objects.some(item => item.tableId === draft.id)) draft.dirty = true;
-    if (!editor.finish()) return;
-    const object = state.page.objects.find(item => (item.kind === kinds.text && item.blockId === draft.id)
-      || (item.tableSpec && item.tableId === draft.id))
-      ?? (!draft.dirty && state.page.objects.find(item => item.kind === kinds.text && draft.indices.includes(item.index)));
+    const object = finishForRotation();
     if (object) rotateObject(object, angle);
   },
   commit: plan => {
@@ -194,7 +191,9 @@ function renderPage() {
   const height = dimensions.height * scale;
   const dpr = Math.min(devicePixelRatio || 1, 2, 2800 / Math.max(width, height));
   const drag = state.drag;
-  const preview = imageLike(drag?.object)
+  const preview = state.turn
+    ? { indices: [], turn: state.turn }
+    : imageLike(drag?.object)
     ? { indices: [], motion: { index: drag.object.index, dx: drag.dx, dy: drag.dy, widthRatio: drag.widthRatio, heightRatio: drag.heightRatio } }
     : editor.preview();
   const page = state.engine.render(state.index, width * dpr, height * dpr, true, preview);
@@ -240,14 +239,17 @@ const thumbnailObserver = new IntersectionObserver(entries => {
 
 function renderThumbnails(rebuild) {
   if (rebuild) {
+    finishPageDrag();
     const scroll = thumbs.scrollTop;
     thumbnailObserver.disconnect();
     const fragment = document.createDocumentFragment();
     for (let index = 0; index < state.engine.count; index++) {
       const button = document.createElement('button');
       button.className = 'thumb';
+      button.draggable = true;
       button.dataset.page = index;
       button.setAttribute('aria-label', `Страница ${index + 1}`);
+      button.title = 'Перетащите для изменения порядка страниц';
       button.innerHTML = `<span class="thumb-preview"><canvas aria-hidden="true"></canvas></span><span>${index + 1}</span>`;
       fragment.append(button);
     }
@@ -366,6 +368,12 @@ function putBox(box, selected, { dx = 0, dy = 0, widthRatio = 1, heightRatio = 1
     left: `${(box.x + dx) * 100}%`, top: `${(box.y + dy) * 100}%`,
     width: `max(3px, ${box.w * widthRatio * 100}%)`, height: `max(3px, ${box.h * heightRatio * 100}%)`,
   });
+  if (selected && state.turn) element.style.transform = `rotate(${state.turn.degrees}deg)`;
+  if (selected) {
+    const grip = rotationGrip();
+    grip.classList.toggle('below', box.y * overlay.clientHeight < 34);
+    element.append(grip);
+  }
   if (selected && imageLike(box)) element.classList.add('image-selected');
   if (selected && imageLike(box) && !state.drag) {
     const grip = document.createElement('button');
@@ -400,6 +408,19 @@ function renderSelection() {
   overlay.replaceChildren();
   areaActions.hidden = true;
   if (editor.draft) return;
+  if (state.mode === 'paste' && state.pendingPaste?.type === 'area' && state.pastePoint) {
+    const image = state.pendingPaste.image;
+    const target = bitmapPosition(state.pastePoint, image);
+    const ghost = document.createElement('img');
+    ghost.className = 'area-paste-preview';
+    ghost.alt = '';
+    ghost.src = image.preview;
+    Object.assign(ghost.style, {
+      left: `${target.x / state.page.pageWidth * 100}%`, top: `${target.y / state.page.pageHeight * 100}%`,
+      width: `${target.width / state.page.pageWidth * 100}%`, height: `${target.height / state.page.pageHeight * 100}%`,
+    });
+    overlay.append(ghost);
+  }
   const area = state.areaDrag ? areaBounds(state.areaDrag, state.areaDrag.end) : state.area;
   if (area) {
     const box = document.createElement('div');
@@ -419,8 +440,8 @@ function renderSelection() {
   }
   if (state.mode !== 'select' || area) return;
   const selected = getSelected();
-  if (state.hover && state.hover.index !== selected?.index && !state.drag) putBox(state.hover, false);
-  if (selected) putBox(selected, true, state.drag ?? undefined);
+  if (state.hover && state.hover.index !== selected?.index && !state.drag && !state.turn) putBox(state.hover, false);
+  if (selected) putBox(state.turn?.box ?? (state.drag ? selected : objectBounds(objectGroup(selected), selected)), true, state.drag ?? undefined);
 }
 
 function setMode(mode) {
@@ -674,10 +695,40 @@ function objectGroup(object) {
   return object.blockId ? state.page.objects.filter(item => item.blockId === object.blockId) : [object];
 }
 
+function objectBounds(items, object) {
+  const x = Math.min(...items.map(item => item.x)), y = Math.min(...items.map(item => item.y));
+  const w = Math.max(...items.map(item => item.x + item.w)) - x;
+  const h = Math.max(...items.map(item => item.y + item.h)) - y;
+  return { ...object, x, y, w, h };
+}
+
+function rotationGrip() {
+  const grip = document.createElement('button');
+  grip.type = 'button';
+  grip.className = 'rotation-grip';
+  grip.title = 'Перетащите для поворота. Shift — шаг 15°.';
+  grip.setAttribute('aria-label', 'Поворот объекта перетаскиванием');
+  grip.innerHTML = icon('rotate');
+  return grip;
+}
+
+function finishForRotation() {
+  const draft = editor.draft;
+  if (!draft) return getSelected();
+  if (draft.mode === 'table' && !state.page.objects.some(item => item.tableId === draft.id)) draft.dirty = true;
+  if (!editor.finish()) return null;
+  return state.page.objects.find(item => (item.kind === kinds.text && item.blockId === draft.id)
+    || (item.tableSpec && item.tableId === draft.id))
+    ?? (!draft.dirty && state.page.objects.find(item => item.kind === kinds.text && draft.indices.includes(item.index)));
+}
+
+const boxCenter = box => ({ x: box.x + box.w / 2, y: box.y + box.h / 2 });
+
 function rotateObject(object, degrees) {
   if (!Number.isFinite(degrees) || degrees % 360 === 0) return;
   const items = objectGroup(object);
-  mutate(engine => engine.rotateObjects(state.index, items, degrees, object.index), { select: true, message: 'Объект повёрнут' });
+  const center = boxCenter(objectBounds(items, object));
+  return mutate(engine => engine.rotateObjects(state.index, items, center, degrees, object.index), { select: true, message: 'Объект повёрнут' });
 }
 
 function updateZoom(direction) {
@@ -946,11 +997,16 @@ function selectedField() {
   return editor.layer.querySelector('.inline-text, .inline-cell.active');
 }
 
+const areaClipboardType = 'application/x-listpdf-area';
+
 function rememberClipboard(payload, systemEvent) {
   state.clipboard = payload;
   if (systemEvent) {
     systemEvent.preventDefault();
     systemEvent.clipboardData?.setData('text/plain', payload.text ?? '');
+    if (payload.type === 'area') {
+      systemEvent.clipboardData?.setData(areaClipboardType, payload.id);
+    }
   } else if (payload.text && navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(payload.text).catch(() => {});
   }
@@ -973,8 +1029,7 @@ function copySelection(event) {
       const table = structuredClone({ rows, widths, heights, font, size, boldHeader, style });
       rememberClipboard({ type: 'table', label: 'таблица', table, text: rows.map(row => row.join('\t')).join('\n') }, event);
     } else if (state.area) {
-      event?.preventDefault();
-      copyArea(state.area);
+      copyArea(state.area, event);
     } else {
       const object = getSelected();
       if (!object) {
@@ -1032,13 +1087,24 @@ function beginPaste(payload) {
     return;
   }
   state.pendingPaste = payload;
+  state.pastePoint = state.lastPagePoint ?? { x: .08, y: .08 };
+  state.suppressClickUntil = 0;
   selectObject(null);
   setMode('paste');
+}
+
+function bitmapPosition(point, { width: storedWidth, ratio }) {
+  const { pageWidth, pageHeight } = state.page;
+  const width = Math.min(storedWidth, pageWidth, pageHeight * ratio);
+  const height = width / ratio;
+  return { width, height, x: Math.max(0, Math.min(point.x * pageWidth, pageWidth - width)),
+    y: Math.max(0, Math.min(point.y * pageHeight, pageHeight - height)) };
 }
 
 function pasteAt(point) {
   const payload = state.pendingPaste;
   state.pendingPaste = null;
+  state.pastePoint = null;
   setMode('select');
   const { pageWidth, pageHeight } = state.page;
   if (payload.type === 'text') editor.newText(point.x * pageWidth, point.y * pageHeight, payload.text.slice(0, 12000), payload.format ?? {});
@@ -1049,15 +1115,12 @@ function pasteAt(point) {
     const widths = table.widths.map(width => width * scale);
     editor.openTable({ ...table, widths, x: Math.max(5, Math.min(point.x * pageWidth, pageWidth - total * scale - 7)),
       y: Math.max(5, point.y * pageHeight), h: 0, indices: [], shift: false });
-  } else if (payload.type === 'bitmap') {
+  } else if (payload.type === 'bitmap' || payload.type === 'area') {
     const { bytes, format, ratio, width: storedWidth } = payload.image;
-    const insert = storedWidth ? engine => engine.edit(state.index, page => {
-      const width = Math.min(storedWidth, pageWidth, pageHeight * ratio);
-      const height = width / ratio;
-      return engine.placeImage(page, { x: Math.min(point.x * pageWidth, pageWidth - width),
-        y: Math.min(point.y * pageHeight, pageHeight - height), width, height, bytes, format });
-    }) : engine => engine.addImage(state.index, point.x, point.y, bytes, format, ratio);
-    mutate(insert, { select: true, message: 'Изображение вставлено' });
+    const insert = storedWidth ? engine => engine.edit(state.index, page =>
+      engine.placeImage(page, { ...bitmapPosition(point, payload.image), bytes, format }))
+      : engine => engine.addImage(state.index, point.x, point.y, bytes, format, ratio);
+    mutate(insert, { select: true, message: payload.type === 'area' ? 'Область вставлена' : 'Изображение вставлено' });
   } else mutate(engine => engine.pasteObject(state.index, payload, point), { select: true, message: 'Объект вставлен' });
 }
 
@@ -1077,7 +1140,7 @@ function clearArea() {
   state.areaDrag = null;
 }
 
-async function copyArea(area) {
+function copyArea(area, event) {
   try {
     const page = state.engine.render(state.index, 2200, 2800);
     const x = Math.floor(area.x * page.width), y = Math.floor(area.y * page.height);
@@ -1087,12 +1150,13 @@ async function copyArea(area) {
     crop.width = width;
     crop.height = height;
     crop.getContext('2d').putImageData(new ImageData(page.pixels, page.width, page.height), -x, -y, x, y, width, height);
-    const blob = await new Promise(resolve => crop.toBlob(resolve));
-    if (!blob) throw new Error('Не удалось скопировать область.');
-    rememberClipboard({ type: 'bitmap', label: 'фрагмент страницы', image: {
-      bytes: new Uint8Array(await blob.arrayBuffer()), format: 'png', ratio: width / height,
-      width: area.w * page.pageWidth,
-    } });
+    const preview = crop.toDataURL('image/png');
+    const bytes = Uint8Array.from(atob(preview.split(',')[1]), char => char.charCodeAt(0));
+    const text = event ? state.engine.textInArea(state.index, area) : '';
+    rememberClipboard({ type: 'area', id: crypto.randomUUID(), localOnly: !event, label: 'фрагмент страницы', text, image: {
+      bytes, preview, format: 'png', ratio: width / height, width: area.w * page.pageWidth,
+    } }, event);
+    status('Область скопирована. Нажмите Ctrl+V и укажите место вставки.');
   } catch (error) { report(error); }
 }
 
@@ -1214,7 +1278,8 @@ function scheduleDragPaint() {
 }
 
 function cancelDrag() {
-  const moved = imageLike(state.drag?.object);
+  const moved = state.turn || imageLike(state.drag?.object);
+  state.turn = null;
   state.drag = null;
   state.region = null;
   state.areaDrag = null;
@@ -1244,6 +1309,44 @@ function dragOffset(drag, point) {
   if (drag.corner) return resizeImage(drag.object, drag.corner, dx, dy, overlay.clientWidth, overlay.clientHeight);
   return imageLike(drag.object) ? containImage(drag.object, dx, dy) : { dx, dy };
 }
+
+function pointerAngle(event, center) {
+  const bounds = overlay.getBoundingClientRect();
+  return Math.atan2(event.clientY - bounds.top - center.y * bounds.height,
+    event.clientX - bounds.left - center.x * bounds.width) * 180 / Math.PI;
+}
+
+function draggedDegrees(event, turn) {
+  const delta = pointerAngle(event, turn.center) - turn.startAngle;
+  const degrees = ((delta + 540) % 360) - 180;
+  return event.shiftKey ? Math.round(degrees / 15) * 15 : degrees;
+}
+
+paper.addEventListener('pointerdown', event => {
+  if (!event.target.closest('.rotation-grip') || state.busy || event.button !== 0 || !event.isPrimary) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const wasEditing = Boolean(editor.draft);
+  const object = finishForRotation();
+  if (!object) return;
+  if (wasEditing) renderSafely();
+  const items = objectGroup(object);
+  const box = objectBounds(items, object);
+  const center = boxCenter(box);
+  state.turn = { id: event.pointerId, object, box, center, degrees: 0,
+    startAngle: pointerAngle(event, center), indices: items.map(item => item.index) };
+  selectObject(object.index);
+  overlay.setPointerCapture(event.pointerId);
+}, true);
+
+paper.addEventListener('keydown', event => {
+  if (!event.target.closest('.rotation-grip') || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  event.preventDefault();
+  const object = finishForRotation();
+  if (object && rotateObject(object, (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 15 : 1))) {
+    overlay.querySelector('.rotation-grip')?.focus({ preventScroll: true });
+  }
+});
 
 overlay.addEventListener('keydown', event => {
   const resize = event.target.closest('.resize-grip');
@@ -1279,6 +1382,17 @@ overlay.addEventListener('keydown', event => {
 overlay.addEventListener('pointermove', event => {
   if (state.busy) return;
   const point = atPosition(event);
+  state.lastPagePoint = point;
+  if (state.turn?.id === event.pointerId) {
+    state.turn.degrees = draggedDegrees(event, state.turn);
+    scheduleDragPaint();
+    return;
+  }
+  if (state.mode === 'paste' && state.pendingPaste?.type === 'area') {
+    state.pastePoint = point;
+    renderSelection();
+    return;
+  }
   if (state.commentDrag?.id === event.pointerId) {
     const drag = state.commentDrag;
     drag.end = areaPoint(event);
@@ -1310,7 +1424,7 @@ overlay.addEventListener('pointermove', event => {
     else renderSelection();
     return;
   }
-  if (event.target.closest('.image-selected')) return;
+  if (event.target.closest('.image-selected, .rotation-grip')) return;
   const table = tableAt(point);
   const object = table
     ? { index: -1, x: table.x / state.page.pageWidth, y: table.y / state.page.pageHeight,
@@ -1323,11 +1437,13 @@ overlay.addEventListener('pointermove', event => {
   }
 });
 overlay.addEventListener('pointerleave', () => {
+  if (state.turn) return;
   state.hover = null;
   if (!state.drag) renderSelection();
 });
 overlay.addEventListener('pointerdown', event => {
   if (event.button !== 0 || state.busy || !event.isPrimary || event.target.closest('[data-image-action]')) return;
+  if (event.pointerType === 'mouse') state.suppressClickUntil = 0;
   const point = atPosition(event);
   if (state.mode === 'table') {
     state.region = { ...point, endX: point.x, endY: point.y, id: event.pointerId };
@@ -1360,7 +1476,18 @@ overlay.addEventListener('pointerdown', event => {
   }
 });
 overlay.addEventListener('pointercancel', cancelDrag);
+overlay.addEventListener('lostpointercapture', event => {
+  if (state.turn?.id === event.pointerId) cancelDrag();
+});
 overlay.addEventListener('pointerup', event => {
+  if (state.turn?.id === event.pointerId) {
+    const turn = state.turn;
+    const degrees = draggedDegrees(event, turn);
+    state.turn = null;
+    state.suppressClickUntil = performance.now() + 180;
+    if (Math.abs(degrees) < .3 || !rotateObject(turn.object, degrees)) renderSafely();
+    return;
+  }
   if (state.commentDrag?.id === event.pointerId) {
     const { start, clientX, clientY } = state.commentDrag;
     clearCommentDrag();
@@ -1547,11 +1674,14 @@ $('paste-system').addEventListener('click', async () => {
     $('clipboard-status').textContent = 'Браузер ограничил доступ. Вставьте через обычную команду «Вставить».';
   }
 });
+const clipboardField = target => target.closest?.('input, textarea, select, dialog, [contenteditable]');
+let areaPasteFallback;
 document.addEventListener('copy', event => {
-  if (!event.target.closest?.('input, textarea, select, dialog')) copySelection(event);
+  if (!clipboardField(event.target)) copySelection(event);
 });
 document.addEventListener('paste', event => {
-  if (event.target.closest?.('input, textarea, select, dialog') || state.busy || !state.engine?.count) return;
+  clearTimeout(areaPasteFallback);
+  if (clipboardField(event.target) || state.busy || !state.engine?.count) return;
   const image = Array.from(event.clipboardData?.files ?? []).find(file => /^image\/(png|jpeg)$/i.test(file.type));
   if (image) {
     event.preventDefault();
@@ -1560,7 +1690,8 @@ document.addEventListener('paste', event => {
   }
   const text = event.clipboardData?.getData('text/plain');
   const clip = state.clipboard;
-  const copy = text && text !== clip?.text ? externalText(text) : clip;
+  const localArea = clip?.type === 'area' && (clip.localOnly || event.clipboardData?.getData(areaClipboardType) === clip.id);
+  const copy = !localArea && text && text !== clip?.text ? externalText(text) : clip;
   if (!copy) return;
   event.preventDefault();
   beginPaste(copy);
@@ -1823,6 +1954,76 @@ $('duplicate-page').addEventListener('click', () => mutate(engine => engine.dupl
 $('move-up').addEventListener('click', () => mutate(engine => engine.movePage(state.index, state.index - 1), { page: state.index - 1, message: 'Порядок страниц изменён' }));
 $('move-down').addEventListener('click', () => mutate(engine => engine.movePage(state.index, state.index + 1), { page: state.index + 1, message: 'Порядок страниц изменён' }));
 $('delete-page').addEventListener('click', () => mutate(engine => engine.deletePage(state.index), { message: 'Страница удалена' }));
+
+let pageDrag;
+function showPageDrop(y) {
+  const thumbnails = Array.from(thumbs.children);
+  const target = thumbnails.find(thumb => thumb.getBoundingClientRect().bottom >= y) ?? thumbnails.at(-1);
+  if (!target) return;
+  const box = target.getBoundingClientRect();
+  const after = y > (box.top + box.bottom) / 2;
+  const slot = Number(target.dataset.page) + Number(after);
+  pageDrag.to = slot > pageDrag.from ? slot - 1 : slot;
+  if (pageDrag.target === target && pageDrag.after === after) return;
+  pageDrag.target?.classList.remove('drop-before', 'drop-after');
+  target.classList.add(after ? 'drop-after' : 'drop-before');
+  pageDrag.target = target;
+  pageDrag.after = after;
+}
+
+function finishPageDrag() {
+  if (!pageDrag) return;
+  clearInterval(pageDrag.scrollTimer);
+  pageDrag.source.classList.remove('dragged');
+  pageDrag.target?.classList.remove('drop-before', 'drop-after');
+  pageDrag = null;
+}
+
+thumbs.addEventListener('dragstart', event => {
+  const thumb = event.target.closest('.thumb');
+  if (!thumb || state.busy || state.engine.count < 2 || !editor.finish()) {
+    event.preventDefault();
+    return;
+  }
+  const from = Number(thumb.dataset.page);
+  pageDrag = { source: thumb, from, to: from, entry: state.history[state.revision], scrollDelta: 0 };
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('application/x-listpdf-page', String(from));
+  thumb.classList.add('dragged');
+});
+thumbs.addEventListener('dragover', event => {
+  if (!pageDrag) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  pageDrag.y = event.clientY;
+  showPageDrop(pageDrag.y);
+  const { top, bottom } = thumbs.getBoundingClientRect();
+  pageDrag.scrollDelta = event.clientY < top + 36 ? -12 : event.clientY > bottom - 36 ? 12 : 0;
+  if (!pageDrag.scrollTimer) {
+    pageDrag.scrollTimer = setInterval(() => {
+      if (!pageDrag.scrollDelta) return;
+      thumbs.scrollTop += pageDrag.scrollDelta;
+      showPageDrop(pageDrag.y);
+    }, 30);
+  }
+});
+thumbs.addEventListener('dragleave', event => {
+  if (!pageDrag || thumbs.contains(event.relatedTarget)) return;
+  pageDrag.scrollDelta = 0;
+  pageDrag.target?.classList.remove('drop-before', 'drop-after');
+  pageDrag.target = null;
+});
+thumbs.addEventListener('drop', event => {
+  if (!pageDrag) return;
+  event.preventDefault();
+  showPageDrop(event.clientY);
+  const { from, to, entry } = pageDrag;
+  finishPageDrag();
+  if (from !== to && entry === state.history[state.revision]) {
+    mutate(engine => engine.movePage(from, to), { page: to, message: 'Порядок страниц изменён' });
+  }
+});
+thumbs.addEventListener('dragend', finishPageDrag);
 thumbs.addEventListener('click', event => {
   const page = event.target.closest('[data-page]');
   if (!page) return;
@@ -1900,6 +2101,18 @@ document.addEventListener('keydown', event => {
   const key = event.key.toLowerCase();
   const editing = event.target instanceof HTMLElement && event.target.closest('input, textarea, select');
   const shortcut = event.ctrlKey || event.metaKey;
+  if (state.turn) {
+    if (key === 'escape') cancelDrag();
+    if (shortcut || key === 'escape') event.preventDefault();
+    return;
+  }
+  if (shortcut && key === 'v' && !clipboardField(event.target) && state.clipboard?.type === 'area' && !state.busy && state.engine?.count) {
+    clearTimeout(areaPasteFallback);
+    const clip = state.clipboard;
+    areaPasteFallback = setTimeout(() => {
+      if (state.clipboard === clip) beginPaste(clip);
+    }, 75);
+  }
   if (shortcut && key === 'o') {
     event.preventDefault();
     openPicker();
