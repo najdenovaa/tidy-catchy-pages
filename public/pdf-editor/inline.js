@@ -18,8 +18,8 @@ const maxRows = 65;
 const maxColumns = 12;
 
 export class InlineEditor {
-  constructor({ layer, toolbar, stylebar, getPage, render, commit, message, loadFont, changed = () => {}, scanRect = () => null }) {
-    Object.assign(this, { layer, toolbar, stylebar, getPage, render, commit, message, loadFont, changed, scanRect });
+  constructor({ layer, toolbar, stylebar, getPage, render, commit, message, loadFont, objectAction, changed = () => {}, scanRect = () => null }) {
+    Object.assign(this, { layer, toolbar, stylebar, getPage, render, commit, message, loadFont, objectAction, changed, scanRect });
     this.fillColor = '#fff2a8';
     this.stylebar.addEventListener('input', event => this.styleInput(event));
     this.stylebar.addEventListener('click', event => this.action(event));
@@ -186,6 +186,11 @@ export class InlineEditor {
           <button type="button" class="button ghost" data-action="drop-row">Удалить строку</button>
           <button type="button" class="button ghost" data-action="drop-col">Удалить столбец</button>
         </div>`;
+    const subject = draft.mode === 'text' ? 'текст' : 'таблицу';
+    this.toolbar.insertAdjacentHTML('beforeend', `
+      <button type="button" class="icon-button" data-action="turn-left" title="Повернуть ${subject} влево" aria-label="Повернуть ${subject} влево">${icon('rotate')}</button>
+      <button type="button" class="icon-button" data-action="turn-right" title="Повернуть ${subject} вправо" aria-label="Повернуть ${subject} вправо">${icon('rotate')}</button>
+      <button type="button" class="icon-button danger-icon" data-action="delete-object" title="Удалить ${subject}" aria-label="Удалить ${subject}">${icon('trash')}</button>`);
     if (draft.mode === 'text') this.toolbar.insertAdjacentHTML('beforeend', `
       <label>Ширина, мм <input name="text-width" type="number" min="1" step="1" aria-label="Ширина текстового поля, мм"></label>
       <button type="button" class="button outlined" data-action="expand-text" title="Расширить поле до правого края страницы">Расширить поле</button>`);
@@ -496,6 +501,9 @@ export class InlineEditor {
     if (!button || !draft) return;
     switch (button.dataset.action) {
       case 'apply': this.finish(); return;
+      case 'turn-left': this.objectAction?.(-90); return;
+      case 'turn-right': this.objectAction?.(90); return;
+      case 'delete-object': this.objectAction?.(null); return;
       case 'table-style': this.openTableStyle(); return;
       case 'fill-cell': case 'clear-fill': {
         const cell = draft.style.cells[draft.row][draft.col];

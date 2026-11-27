@@ -314,6 +314,10 @@ svg { width: 18px; height: 18px; display: block; flex: none; }
 .overlay[data-mode="stamp"], .overlay[data-mode="qr"] { cursor: crosshair; }
 .selection-grip { position: absolute; inset: auto auto calc(100% + 17px) 0; z-index: 2; transform: translateX(-1px); border: 1px solid var(--accent); border-radius: 6px 6px 0 0; color: var(--accent-dark); background: white; width: 31px; height: 29px; display: grid; place-items: center; padding: 0; cursor: move; pointer-events: auto; touch-action: none; }
 .selection-grip svg { width: 17px; height: 17px; }
+.image-actions { position: absolute; z-index: 3; left: 34px; bottom: calc(100% + 17px); display: flex; padding: 1px; border: 1px solid var(--accent); border-radius: 6px; background: white; pointer-events: auto; }
+.image-actions.inset { top: 2px; left: 51px; bottom: auto; }
+.image-actions .icon-button { min-height: 25px; width: 26px; border-radius: 4px; }
+.image-actions svg { width: 15px; height: 15px; }
 .tool-dialog { color: var(--ink); width: min(475px, calc(100% - 24px)); max-height: 88vh; border: 1px solid var(--line); border-radius: 15px; padding: 0; box-shadow: 0 25px 70px #171d4a36; }
 .tool-dialog::backdrop { background: #22244065; }
 .dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px 13px 19px; border-bottom: 1px solid var(--line); }
@@ -324,6 +328,14 @@ svg { width: 18px; height: 18px; display: block; flex: none; }
 .dialog-body textarea { resize: vertical; }
 #qr-preview { justify-self: center; display: block; width: min(100%, 220px); height: auto; border: 1px solid var(--line); border-radius: 8px; image-rendering: pixelated; }
 .dialog-fields { display: grid; gap: 10px 12px; grid-template-columns: 1fr 1fr; }
+.shape-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 7px; }
+.shape-picker .button { display: grid; place-items: center; gap: 4px; background: white; color: var(--accent); min-height: 71px; padding: 6px; white-space: normal; line-height: 1.15; font-size: 11px; }
+.shape-picker .button svg { width: 25px; height: 25px; }
+.shape-picker .button span { color: var(--muted); }
+.object-rotation { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; }
+.object-rotation label { flex: 1; min-width: 90px; }
+.object-rotation button[data-turn="-90"] svg, .formatbar [data-action="turn-left"] svg { transform: scaleX(-1); }
+.formatbar [data-action="turn-left"], .formatbar [data-action="turn-right"], .formatbar [data-action="delete-object"] { flex-shrink: 0; order: -1; }
 .tool-note { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
 .dialog-body .inline-check { display: flex; align-items: center; gap: 8px; }
 .inline-check input { accent-color: var(--accent); width: 16px; height: 16px; }

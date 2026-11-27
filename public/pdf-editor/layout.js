@@ -204,13 +204,13 @@ export function detectTables(page) {
     if (!tagged.has(object.tableId)) tagged.set(object.tableId, { indices: [] });
     const table = tagged.get(object.tableId);
     table.indices.push(object.index);
-    if (object.tableSpec) {
+    if (object.tableSpec && !object.tableTurned) {
       const frame = rect(object, page);
       const width = object.tableSpec.widths.reduce((sum, value) => sum + value, 0);
       const height = object.tableSpec.heights.reduce((sum, value) => sum + value, 0);
       if (Math.abs(width - frame.w) < 2 && Math.abs(height - frame.h) < 2) {
         Object.assign(table, object.tableSpec, {
-          x: frame.x + (frame.w - width) / 2, y: frame.y + (frame.h - height) / 2, w: width, h: height,
+          id: object.tableId, x: frame.x + (frame.w - width) / 2, y: frame.y + (frame.h - height) / 2, w: width, h: height,
         });
       }
     }
@@ -220,7 +220,7 @@ export function detectTables(page) {
   const horizontals = [];
   const verticals = [];
   for (const object of page.objects) {
-    if (object.kind !== 2 || object.blockId || excluded.has(object.index)) continue;
+    if (object.kind !== 2 || object.blockId || object.tableId || excluded.has(object.index)) continue;
     const geometry = object.stroke && object.lines?.length ? object.lines.map(line => rect(line, page)) : [rect(object, page)];
     for (const line of geometry) {
       if (line.h <= 1.6 && line.w >= 54) horizontals.push(line);

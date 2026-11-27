@@ -37,7 +37,7 @@
         <button id="add-text" class="button mode" data-mode="text" aria-pressed="false" title="Добавить текст"><span data-icon="text"></span><span>Текст</span></button>
         <button id="add-image" class="button mode" data-mode="image" aria-pressed="false" title="Добавить изображение"><span data-icon="image"></span><span>Изображение</span></button>
         <button id="qr" class="button mode extra-tool" data-mode="qr" aria-pressed="false" aria-label="QR-код" title="Создать QR-код"><span data-icon="qr"></span><span>QR-код</span></button>
-        <button id="add-shape" class="button mode" data-mode="shape" aria-pressed="false" title="Добавить прямоугольник"><span data-icon="rectangle"></span><span>Фигура</span></button>
+        <button id="add-shape" class="button mode" data-mode="shape" aria-pressed="false" aria-haspopup="dialog" title="Выбрать фигуру"><span data-icon="rectangle"></span><span>Фигура</span></button>
         <button id="add-table" class="button mode" data-mode="table" aria-pressed="false" aria-label="Таблица" title="Добавить таблицу или выделить существующую"><span data-icon="table"></span><span>Таблица</span></button>
         <button id="ocr" class="button mode extra-tool" aria-label="Распознать скан" title="Распознать текст в скане и фото"><span data-icon="ocr"></span><span>Распознать</span></button>
         <button id="clipboard" class="button mode extra-tool" aria-label="Копирование и вставка" title="Копирование и вставка"><span data-icon="clipboard"></span><span>Буфер</span></button>
@@ -52,7 +52,7 @@
 
     <main class="workspace">
       <aside class="pages sidebar" aria-label="Страницы PDF">
-        <div class="panel-head"><div class="panel-title"><span data-icon="pages"></span><h2>Страницы</h2><span id="page-count" class="count"></span></div><button id="add-page" class="icon-button panel-action" data-icon="plus" title="Добавить пустую страницу" aria-label="Добавить пустую страницу" disabled></button></div>
+        <div class="panel-head"><div class="panel-title"><span data-icon="pages"></span><h2>Страницы</h2><span id="page-count" class="count"></span></div><div class="side-actions"><button id="add-files" class="icon-button panel-action" data-icon="folder" title="Вставить файлы после текущей страницы" aria-label="Вставить файлы" disabled></button><button id="add-page" class="icon-button panel-action" data-icon="plus" title="Добавить пустую страницу" aria-label="Добавить пустую страницу" disabled></button></div></div>
         <div id="thumbnails" class="thumbnails"></div>
         <div class="page-tools" aria-label="Операции со страницей">
           <button id="rotate-page" class="icon-button" data-icon="rotate" title="Повернуть страницу на 90°" aria-label="Повернуть страницу" disabled></button>
@@ -116,7 +116,8 @@
       <span><span class="status-dot"></span><span id="status">Загрузка редактора</span></span>
       <span id="status-detail" role="status"><span data-icon="shield"></span><span id="session-status">Документы остаются в этом браузере</span></span>
     </footer>
-    <input id="file-input" type="file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" hidden>
+    <input id="file-input" type="file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" multiple hidden>
+    <input id="append-files" type="file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" multiple hidden>
     <input id="image-input" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" hidden>
   </div>
   <dialog id="ocr-dialog" class="tool-dialog" aria-labelledby="ocr-title">
@@ -159,6 +160,13 @@
         <button id="use-marker" type="button" class="button primary">Использовать цвет</button>
       </div>
       <div class="dialog-action-row"><button id="erase-marker" type="button" class="button outlined">Снять выделение</button><button id="leave-marker" type="button" class="button ghost" hidden>Завершить выделение</button></div>
+    </div>
+  </dialog>
+  <dialog id="shape-dialog" class="tool-dialog" aria-labelledby="shape-title">
+    <div class="dialog-head"><h2 id="shape-title">Фигуры</h2><button type="button" class="icon-button" data-close data-icon="close" aria-label="Закрыть"></button></div>
+    <div class="dialog-body">
+      <label>Цвет фигуры <input type="color" id="shape-color" value="#5547df"></label>
+      <div id="shape-picker" class="shape-picker"></div>
     </div>
   </dialog>
   <dialog id="qr-dialog" class="tool-dialog" aria-labelledby="qr-title">
@@ -239,7 +247,7 @@
   </dialog>
   <input id="font-input" type="file" accept=".ttf,font/ttf" multiple hidden>
   <input id="markup-file" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" hidden>
-  <input id="office-file" type="file" accept=".docx,.xlsx" hidden>
+  <input id="office-file" type="file" accept=".docx,.xlsx" multiple hidden>
   <script type="module" src="./app.js"></script>
   <div id="page-menu" class="page-menu" role="menu" aria-label="Действия на странице" hidden></div>
 </body>

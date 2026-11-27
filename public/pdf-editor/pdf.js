@@ -270,12 +270,28 @@ export class PdfEngine {
           const mark = this.layoutMark(object);
           if (mark) Object.assign(data, mark);
         }
+        if (data.tableSpec && kind === kinds.path) data.tableTurned = !this.pathStartsRight(object, page);
         objects.push(data);
       }
       return objects;
     } finally {
       if (textPage) a.FPDFText_ClosePage(textPage);
     }
+  }
+
+  pathStartsRight(object, page) {
+    const a = this.api;
+    const matrix = this.getMatrix(object);
+    return this.memory(8, ptr => {
+      const read = index => {
+        const segment = a.FPDFPath_GetPathSegment(object, index);
+        if (!segment || !a.FPDFPathSegment_GetPoint(segment, ptr, ptr + 4)) return null;
+        const x = a.pdfium.getValue(ptr, 'float'), y = a.pdfium.getValue(ptr + 4, 'float');
+        return this.screenPoint(page, x * matrix[0] + y * matrix[2] + matrix[4], x * matrix[1] + y * matrix[3] + matrix[5]);
+      };
+      const first = read(0), second = read(1);
+      return first && second && second[0] > first[0] && Math.abs(second[1] - first[1]) < 0.0005;
+    });
   }
 
   invalidateFont(family) {
@@ -445,18 +461,48 @@ export class PdfEngine {
     });
   }
 
-  addShape(index, x, y, fill) {
+  addShape(index, x, y, figure, color) {
     return this.edit(index, page => {
       const { width, height } = this.dimensions(page);
-      const left = Math.min(Math.max(0, x), Math.max(0, 1 - 112 / width));
-      const top = Math.min(Math.max(0, y), Math.max(0, 1 - 62 / height));
-      const [x1, y1] = this.documentPoint(page, left, top);
-      const [x2, y2] = this.documentPoint(page, left + 110 / width, top + 60 / height);
+      const w = Math.min(110 / width, 1), h = Math.min(72 / height, 1);
+      const left = Math.min(Math.max(0, x), 1 - w);
+      const top = Math.min(Math.max(0, y), 1 - h);
+      const coords = values => {
+        const points = [];
+        for (let i = 0; i < values.length; i += 2) {
+          points.push(...this.documentPoint(page, left + w * values[i] / 100, top + h * values[i + 1] / 100));
+        }
+        return points;
+      };
       const a = this.api;
-      const shape = check(a.FPDFPageObj_CreateNewRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1)), 'Не удалось создать фигуру.');
-      a.FPDFPath_SetDrawMode(shape, 1, false);
-      a.FPDFPageObj_SetFillColor(shape, ...fill);
+      const shape = check(a.FPDFPageObj_CreateNewPath(...coords(figure.path[0].slice(1))), 'Не удалось создать фигуру.');
+      for (const [command, ...values] of figure.path.slice(1)) {
+        if (command === 'L') a.FPDFPath_LineTo(shape, ...coords(values));
+        if (command === 'C') a.FPDFPath_BezierTo(shape, ...coords(values));
+        if (command === 'Z') a.FPDFPath_Close(shape);
+      }
+      a.FPDFPath_SetDrawMode(shape, figure.stroke ? 0 : 1, !!figure.stroke);
+      if (figure.stroke) {
+        a.FPDFPageObj_SetStrokeWidth(shape, 2.5);
+        a.FPDFPageObj_SetStrokeColor(shape, ...color);
+      } else a.FPDFPageObj_SetFillColor(shape, ...color);
       return this.insert(page, shape);
+    });
+  }
+
+  rotateObjects(index, items, degrees, selected) {
+    return this.edit(index, page => {
+      const a = this.api;
+      const bounds = items.map(item => item.raw);
+      const cx = (Math.min(...bounds.map(box => box[0])) + Math.max(...bounds.map(box => box[2]))) / 2;
+      const cy = (Math.min(...bounds.map(box => box[1])) + Math.max(...bounds.map(box => box[3]))) / 2;
+      const radians = -degrees * Math.PI / 180;
+      const cosine = Math.cos(radians), sine = Math.sin(radians);
+      const matrix = [cosine, sine, -sine, cosine, cx - cosine * cx + sine * cy, cy - sine * cx - cosine * cy];
+      for (const item of items) {
+        this.transform(check(a.FPDFPage_GetObject(page, item.index), 'Объект отсутствует на странице.'), matrix);
+      }
+      return selected;
     });
   }
 
@@ -499,6 +545,15 @@ export class PdfEngine {
 
   removeObject(index, objectIndex) {
     this.edit(index, page => this.remove(page, this.api.FPDFPage_GetObject(page, objectIndex)));
+  }
+
+  removeObjects(index, indices) {
+    this.edit(index, page => {
+      const a = this.api;
+      for (const i of [...new Set(indices)].sort((a, b) => b - a)) {
+        this.remove(page, check(a.FPDFPage_GetObject(page, i), 'Объект отсутствует на странице.'));
+      }
+    });
   }
 
   addPage(index, width = 595.28, height = 841.89) {
@@ -854,8 +909,8 @@ export class PdfEngine {
     this.document = check(this.api.FPDF_CreateNewDocument(), 'Не удалось создать PDF.');
   }
 
-  appendDocument(source) {
-    check(this.api.FPDF_ImportPages(this.document, source.document, null, this.count), 'Не удалось добавить страницы.');
+  appendDocument(source, at = this.count) {
+    check(this.api.FPDF_ImportPages(this.document, source.document, null, at), 'Не удалось добавить страницы.');
   }
 
   placeImage(page, { x, y, width, height, bytes, format }) {
