@@ -11,6 +11,7 @@ import { bindPinch, containImage, resizeImage } from './gestures.js';
 import { fileMimes, inputFormat, officeToPdf, pdfToOffice } from './convert.js';
 import { readArtwork } from './stamps.js';
 import { makeQr } from './qr.js';
+import { shapes, shapeIcon } from './shapes.js';
 
 const $ = id => document.getElementById(id);
 const stage = $('stage');
@@ -99,6 +100,20 @@ const editor = new InlineEditor({
   scanRect: cover => state.engine.page(state.index, page => state.engine.displayRect(page, cover.raw)),
   layer: $('editor-layer'), toolbar: $('formatbar'), stylebar: $('table-formatbar'), getPage: () => state.page,
   render: () => renderSafely(), message: notice, loadFont: family => prepareBrowserFont(state.engine, family),
+  objectAction: angle => {
+    const draft = editor.draft;
+    if (angle === null) {
+      editor.cancel();
+      if (draft.indices.length) mutate(engine => engine.removeObjects(state.index, draft.indices), { message: 'Объект удалён' });
+      return;
+    }
+    if (draft.mode === 'table' && !state.page.objects.some(item => item.tableId === draft.id)) draft.dirty = true;
+    if (!editor.finish()) return;
+    const object = state.page.objects.find(item => (item.kind === kinds.text && item.blockId === draft.id)
+      || (item.tableSpec && item.tableId === draft.id))
+      ?? (!draft.dirty && state.page.objects.find(item => item.kind === kinds.text && draft.indices.includes(item.index)));
+    if (object) rotateObject(object, angle);
+  },
   commit: plan => {
     const oldHeight = state.page.pageHeight;
     const ok = mutate(engine => plan.mode === 'text' ? engine.writeBlock(state.index, plan) : engine.writeTable(state.index, plan), { inline: true });
@@ -147,6 +162,7 @@ function syncControls() {
   $('demo').disabled = state.busy || !state.engine;
   $('convert').disabled = state.busy || !state.engine;
   $('comments-toggle').disabled = !ready;
+  $('add-files').disabled = !ready;
   $('pick-office').disabled = state.busy || !state.engine;
   $('undo').disabled = !ready || state.revision === 0;
   $('redo').disabled = !ready || state.revision >= state.history.length - 1;
@@ -265,12 +281,14 @@ function objectName(object) {
   if (object.clipboardImage) return 'Изображение';
   if (object.watermark) return object.text ? 'Водяной знак · ' + object.text : 'Водяной знак · Изображение';
   if (object.tableIndex !== undefined) return `Таблица · ${object.rows.length} × ${object.widths.length}`;
+  if (object.tableSpec) return `Таблица · ${object.tableSpec.rows.length} × ${object.tableSpec.widths.length}`;
   return object.text?.trim() || labels[object.kind][0];
 }
 
 function renderObjects() {
   const hidden = tableMembers();
-  const objects = (state.page?.objects ?? []).filter(object => !hidden.has(object.index) && !(object.blockId && object.kind === kinds.path))
+  const objects = (state.page?.objects ?? []).filter(object => !hidden.has(object.index) && !(object.blockId && object.kind === kinds.path)
+    && (!object.tableId || object.tableSpec))
     .concat(state.tables.map((table, tableIndex) => ({ ...table, y: table.y / state.page.pageHeight, x: table.x / state.page.pageWidth, tableIndex })));
   $('object-count').textContent = objects.length || '';
   const filtered = objects.filter(object => state.filter === 'all'
@@ -288,7 +306,7 @@ function renderObjects() {
     const name = html(objectName(object));
     const target = object.tableIndex === undefined ? `data-object="${object.index}"` : `data-table="${object.tableIndex}"`;
     return `<button type="button" class="object${active ? ' active' : ''}" ${target} aria-pressed="${active}" title="${name}">
-      <span class="object-icon">${icon(object.tableIndex === undefined ? labels[object.kind][1] : 'table')}</span><span class="object-name">${name}</span></button>`;
+      <span class="object-icon">${icon(object.tableIndex !== undefined || object.tableSpec ? 'table' : labels[object.kind][1])}</span><span class="object-name">${name}</span></button>`;
   }).join('') + (filtered.length > visible.length || state.expanded && filtered.length > 10
     ? `<button type="button" class="button ghost object-more" data-more>${state.expanded ? 'Свернуть список' : `Показать все (${filtered.length})`}</button>` : '');
 }
@@ -312,27 +330,33 @@ function renderInspector() {
     return;
   }
   const { pageWidth: w, pageHeight: h } = state.page;
-  const [label, iconName] = object.watermark ? ['Водяной знак', 'watermark'] : imageLike(object) ? labels[kinds.image] : labels[object.kind];
-  const isText = object.kind === kinds.text && !object.watermark;
-  const canResize = !isText && !object.watermark && object.w * w >= 0.1 && object.h * h >= 0.1;
+  const [label, iconName] = object.tableId ? ['Таблица', 'table'] : object.watermark ? ['Водяной знак', 'watermark'] : imageLike(object) ? labels[kinds.image] : labels[object.kind];
+  const table = object.tableId && state.tables.find(entry => entry.indices.includes(object.index));
+  const isText = object.kind === kinds.text && !object.watermark && !object.tableId;
+  const canEditDimensions = !isText && !object.tableId;
+  const canResize = canEditDimensions && !object.watermark && object.w * w >= 0.1 && object.h * h >= 0.1;
   const position = numeric('left', 'Слева, пт', object.x * w, -w * 2, w * 2)
     + numeric('top', 'Сверху, пт', object.y * h, -h * 2, h * 2);
   const sizes = canResize
     ? numeric('width', 'Ширина, пт', object.w * w, 0.1, w * 3) + numeric('height', 'Высота, пт', object.h * h, 0.1, h * 3)
     : '';
-  if (isText) {
-    inspector.innerHTML = `<div class="inspector-empty"><div class="empty-icon">${icon('text')}</div><strong>Текст</strong>
-      <p><button type="button" class="button outlined" data-inline>Редактировать на странице</button></p></div>`;
-    return;
-  }
   inspector.innerHTML = `<form class="edit-form" id="edit-form">
     <div class="edit-title"><span class="object-icon">${icon(iconName)}</span><strong>${label}</strong>
       <button type="button" class="icon-button danger-icon" aria-label="Удалить объект" title="Удалить объект" data-remove>${icon('trash')}</button></div>
-    <div class="field-row">${position}</div>
+    ${canEditDimensions ? `<div class="field-row">${position}</div>` : ''}
     ${sizes ? `<div class="field-row">${sizes}</div>` : ''}
-    ${colorInput(object.color, object.stroke ? 'Цвет контура' : 'Цвет')}
+    ${canEditDimensions ? colorInput(object.color, object.stroke ? 'Цвет контура' : 'Цвет') : ''}
+    <div class="object-rotation">
+      <button type="button" class="icon-button outlined" aria-label="Повернуть влево на 90°" title="Повернуть влево на 90°" data-turn="-90">${icon('rotate')}</button>
+      <button type="button" class="icon-button outlined" aria-label="Повернуть вправо на 90°" title="Повернуть вправо на 90°" data-turn="90">${icon('rotate')}</button>
+      ${numeric('turn', 'Поворот, °', 0, -360, 360)}
+      <button type="button" class="button outlined" data-turn="custom">Повернуть</button>
+    </div>
+    ${isText && object.horizontal ? '<button type="button" class="button outlined" data-inline>Редактировать на странице</button>' : ''}
+    ${isText && !object.horizontal ? '<p class="tool-note">Для правки верните текст в горизонтальное положение.</p>' : ''}
+    ${table ? '<button type="button" class="button outlined" data-inline-table>Редактировать таблицу</button>' : ''}
     ${object.kind === kinds.image && !object.watermark ? '<button type="button" class="button outlined" data-replace>Заменить изображение</button>' : ''}
-    <button type="submit" class="button primary">Применить</button></form>`;
+    ${canEditDimensions ? '<button type="submit" class="button primary">Применить</button>' : ''}</form>`;
 }
 
 function putBox(box, selected, { dx = 0, dy = 0, widthRatio = 1, heightRatio = 1 } = {}) {
@@ -352,6 +376,12 @@ function putBox(box, selected, { dx = 0, dy = 0, widthRatio = 1, heightRatio = 1
     grip.title = 'Перетащите изображение';
     grip.innerHTML = icon('move');
     element.append(grip);
+    const actions = document.createElement('span');
+    actions.className = 'image-actions';
+    if (box.y < .075) actions.classList.add('inset');
+    actions.innerHTML = `<button type="button" class="icon-button" data-image-action="turn" title="Повернуть выделенное вправо" aria-label="Повернуть выделенное вправо">${icon('rotate')}</button>
+      <button type="button" class="icon-button danger-icon" data-image-action="delete" title="Удалить выделенное" aria-label="Удалить выделенное">${icon('trash')}</button>`;
+    element.append(actions);
     const corners = { nw: 'левый верхний', ne: 'правый верхний', sw: 'левый нижний', se: 'правый нижний' };
     for (const [direction, name] of Object.entries(corners)) {
       const resize = document.createElement('button');
@@ -412,7 +442,7 @@ function setMode(mode) {
     status({
       area: 'Протяните рамку по нужной части страницы',
       text: 'Нажмите на страницу, чтобы добавить текст',
-      shape: 'Нажмите на страницу, чтобы добавить прямоугольник',
+      shape: 'Нажмите на страницу, чтобы разместить фигуру',
       image: 'Нажмите на страницу, куда нужно вставить изображение',
       qr: 'Нажмите на страницу, чтобы разместить QR-код',
       paste: 'Нажмите на страницу, куда вставить содержимое буфера',
@@ -547,6 +577,10 @@ function tableAt({ x, y }) {
 }
 
 function editText(object, point) {
+  if (!object?.horizontal || object.tableId) {
+    if (object) selectObject(object.index, { showPanel: true });
+    return;
+  }
   setMode('select');
   setPanel(null);
   selectObject(null);
@@ -632,7 +666,18 @@ function applyProperties(event) {
 
 function removeSelected() {
   const object = getSelected();
-  if (object) mutate(engine => engine.removeObject(state.index, object.index), { message: 'Объект удалён' });
+  if (object) mutate(engine => engine.removeObjects(state.index, objectGroup(object).map(item => item.index)), { message: 'Объект удалён' });
+}
+
+function objectGroup(object) {
+  if (object.tableId) return state.page.objects.filter(item => item.tableId === object.tableId);
+  return object.blockId ? state.page.objects.filter(item => item.blockId === object.blockId) : [object];
+}
+
+function rotateObject(object, degrees) {
+  if (!Number.isFinite(degrees) || degrees % 360 === 0) return;
+  const items = objectGroup(object);
+  mutate(engine => engine.rotateObjects(state.index, items, degrees, object.index), { select: true, message: 'Объект повёрнут' });
 }
 
 function updateZoom(direction) {
@@ -710,46 +755,65 @@ function loadDocument(bytes, name, demo) {
   void saveSession();
 }
 
-async function openFile(file, append = false, fromDialog = false) {
-  if (state.busy || !state.engine || !file) return;
-  const fail = error => {
-    if (fromDialog) $('convert-status').textContent = error.message;
-    else report(error);
-  };
-  if (file.size > maxFileSize) {
-    fail(new Error('Выберите файл размером до 65 МБ.'));
-    return;
+async function readFilePdf(file) {
+  if (file.size > maxFileSize) throw new Error('Выберите файл размером до 65 МБ.');
+  const format = inputFormat(file.name) ?? Object.keys(fileMimes).find(key => fileMimes[key] === file.type);
+  if (format === 'png' || /\.(png|jpe?g)$/i.test(file.name) || /^image\/(png|jpeg)$/i.test(file.type)) {
+    return openImageBytes(file);
   }
-  let format = inputFormat(file.name) ?? Object.keys(fileMimes).find(key => fileMimes[key] === file.type);
-  if (!format && (/\.(png|jpe?g)$/i.test(file.name) || /^image\/(png|jpeg)$/i.test(file.type))) format = 'image';
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (format === 'pdf' || new TextDecoder().decode(bytes.subarray(0, 5)) === '%PDF-') return bytes;
+  if (format === 'docx' || format === 'xlsx') return officeToPdf(state.engine, bytes, format);
+  throw new Error('Откройте файл PDF, PNG, JPEG, DOCX или XLSX.');
+}
+
+async function openFiles(files, append = false, fromDialog = false) {
+  if (state.busy || !state.engine || !files.length || !editor.finish()) return;
+  const insertAt = append && state.engine.count ? (fromDialog ? state.engine.count : state.index + 1) : null;
+  let bundle, source;
   state.busy = true;
-  const loading = !format || ['pdf', 'image'].includes(format) ? 'Открываем файл…' : 'Преобразуем ' + format.toUpperCase() + '…';
-  status(loading);
-  if (fromDialog) $('convert-status').textContent = loading;
   syncControls();
-  let temporary;
   try {
-    const input = new Uint8Array(await file.arrayBuffer());
-    if (!format && new TextDecoder().decode(input.subarray(0, 5)) === '%PDF-') format = 'pdf';
-    if (!format) throw new Error('Откройте файл PDF, PNG, JPEG, DOCX или XLSX.');
-    const bytes = format === 'pdf' ? input : format === 'image' ? await openImageBytes(file) : await officeToPdf(state.engine, input, format);
-    if (append && state.engine.count) {
-      temporary = state.engine.temporary();
-      temporary.open(bytes);
-      const next = state.engine.count;
+    if (files.length > 1 || insertAt !== null) {
+      bundle = state.engine.temporary();
+      bundle.createDocument();
+      source = state.engine.temporary();
+    }
+    let bytes;
+    for (const [index, file] of files.entries()) {
+      const loading = files.length === 1 ? 'Открываем файл…' : `Обрабатываем файлы: ${index + 1} из ${files.length}…`;
+      status(loading);
+      if (fromDialog) $('convert-status').textContent = loading;
+      try {
+        bytes = await readFilePdf(file);
+        if (bundle) {
+          source.open(bytes);
+          bundle.appendDocument(source);
+          source.clear();
+        }
+      } catch (error) {
+        throw new Error(file.name + ' · ' + (error.message || 'Не удалось прочитать файл.'));
+      }
+    }
+    if (insertAt !== null) {
       state.busy = false;
-      if (!mutate(engine => engine.appendDocument(temporary), { page: next, message: 'Страницы добавлены в PDF' })) {
-        throw new Error('Не удалось добавить страницы.');
+      if (!mutate(engine => engine.appendDocument(bundle, insertAt), { page: insertAt, message: `Добавлено страниц: ${bundle.count}` })) {
+        if (fromDialog) $('convert-status').textContent = 'Не удалось добавить страницы.';
+        return;
       }
     } else {
-      loadDocument(bytes, format === 'pdf' ? file.name : file.name.replace(/\.[^.]+$/, '.pdf'), false);
-      if (format !== 'pdf') notice('Документ преобразован в PDF');
+      const name = bundle ? 'Сборка PDF.pdf' : files[0].name.replace(/\.[^.]+$/, '') + '.pdf';
+      loadDocument(bundle ? bundle.save() : bytes, name, false);
+      if (bundle) notice(`Собрано страниц: ${bundle.count}`);
+      else if (!/\.pdf$/i.test(files[0].name)) notice('Документ преобразован в PDF');
     }
     if (fromDialog) $('convert-dialog').close();
   } catch (error) {
-    fail(error);
+    if (fromDialog) $('convert-status').textContent = error.message;
+    else report(error);
   } finally {
-    temporary?.clear();
+    bundle?.clear();
+    source?.clear();
     state.busy = false;
     status(state.engine.count ? 'Готово к редактированию' : 'Откройте файл');
     syncControls();
@@ -1263,7 +1327,7 @@ overlay.addEventListener('pointerleave', () => {
   if (!state.drag) renderSelection();
 });
 overlay.addEventListener('pointerdown', event => {
-  if (event.button !== 0 || state.busy || !event.isPrimary) return;
+  if (event.button !== 0 || state.busy || !event.isPrimary || event.target.closest('[data-image-action]')) return;
   const point = atPosition(event);
   if (state.mode === 'table') {
     state.region = { ...point, endX: point.x, endY: point.y, id: event.pointerId };
@@ -1361,6 +1425,12 @@ overlay.addEventListener('pointerup', event => {
 });
 overlay.addEventListener('click', event => {
   if (state.busy || performance.now() < state.suppressClickUntil) return;
+  const action = event.target.closest('[data-image-action]')?.dataset.imageAction;
+  if (action) {
+    if (action === 'delete') removeSelected();
+    else if (getSelected()) rotateObject(getSelected(), 90);
+    return;
+  }
   if (editor.draft) {
     editor.finish();
     return;
@@ -1407,7 +1477,7 @@ overlay.addEventListener('click', event => {
     return;
   }
   const object = mode === 'select' || mode === 'text' ? objectAt(point) : null;
-  if (object?.kind === kinds.text && !object.watermark) {
+  if (object?.kind === kinds.text && !object.watermark && !object.tableId && object.horizontal) {
     editText(object, point);
     return;
   }
@@ -1427,8 +1497,9 @@ overlay.addEventListener('click', event => {
       { select: true, message: stamp.label + ' добавлена' });
   }
   if (mode === 'shape') {
+    const { figure, color } = state.shape;
     setMode('select');
-    mutate(engine => engine.addShape(state.index, x, y, [85, 71, 223, 255]), { select: true, message: 'Фигура добавлена' });
+    mutate(engine => engine.addShape(state.index, x, y, figure, color), { select: true, message: 'Фигура добавлена' });
   }
   if (mode === 'text' || mode === 'table') {
     setMode('select');
@@ -1521,6 +1592,16 @@ for (const id of ['sign', 'convert']) {
   });
 }
 document.querySelectorAll('dialog [data-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+
+$('shape-picker').innerHTML = shapes.map(shape => `<button class="button outlined" type="button" data-shape="${shape.id}">${shapeIcon(shape)}<span>${shape.name}</span></button>`).join('');
+$('shape-picker').addEventListener('click', event => {
+  const button = event.target.closest('[data-shape]');
+  if (!button) return;
+  const color = $('shape-color').value.slice(1).match(/../g).map(channel => parseInt(channel, 16));
+  state.shape = { figure: shapes.find(shape => shape.id === button.dataset.shape), color: [...color, 255] };
+  $('shape-dialog').close();
+  setMode('shape');
+});
 
 $('qr').addEventListener('click', () => {
   if (!editor.finish()) return;
@@ -1683,7 +1764,7 @@ $('pick-office').addEventListener('click', () => {
   $('office-file').value = '';
   $('office-file').click();
 });
-$('office-file').addEventListener('change', event => openFile(event.target.files[0], $('convert-append').checked, true));
+$('office-file').addEventListener('change', event => openFiles(Array.from(event.target.files), $('convert-append').checked, true));
 $('export-docx').addEventListener('click', () => exportOffice('docx'));
 $('export-xlsx').addEventListener('click', () => exportOffice('xlsx'));
 
@@ -1691,11 +1772,16 @@ $('open').addEventListener('click', openPicker);
 $('upload-document').addEventListener('click', openPicker);
 $('demo').addEventListener('click', () => { if (confirmOpen()) openDemo(); });
 $('export').addEventListener('click', exportFile);
-$('file-input').addEventListener('change', event => {
-  const file = event.target.files[0];
-  event.target.value = '';
-  openFile(file);
+$('add-files').addEventListener('click', () => {
+  if (!state.busy && editor.finish()) $('append-files').click();
 });
+for (const id of ['file-input', 'append-files']) {
+  $(id).addEventListener('change', event => {
+    const files = Array.from(event.target.files);
+    event.target.value = '';
+    openFiles(files, id === 'append-files');
+  });
+}
 $('image-input').addEventListener('change', event => {
   const target = state.imageTarget;
   state.imageTarget = null;
@@ -1705,6 +1791,10 @@ document.querySelectorAll('button[data-mode]').forEach(button => {
   button.addEventListener('click', () => {
     if (!editor.finish()) return;
     const mode = button.dataset.mode;
+    if (mode === 'shape') {
+      $('shape-dialog').showModal();
+      return;
+    }
     const selected = getSelected();
     if (mode === 'comment' && state.area) addComment({ ...state.area, label: 'Выделенная область' });
     else if (mode === 'comment' && selected) addComment(selected);
@@ -1752,7 +1842,6 @@ objectsPanel.addEventListener('click', event => {
     }
     const object = state.page.objects.find(object => object.index === Number(button.dataset.object));
     if (object && state.mode === 'comment') addComment(object);
-    else if (object?.kind === kinds.text && !object.watermark) editText(object);
     else {
       setMode('select');
       selectObject(object?.index ?? null);
@@ -1768,6 +1857,17 @@ inspector.addEventListener('click', event => {
   if (event.target.closest('[data-remove]')) removeSelected();
   if (event.target.closest('[data-replace]')) chooseImage({ replace: state.selected });
   if (event.target.closest('[data-inline]')) editText(getSelected());
+  if (event.target.closest('[data-inline-table]')) {
+    const table = state.tables.find(entry => entry.indices.includes(state.selected));
+    if (table) editTable(table);
+  }
+  const turn = event.target.closest('[data-turn]');
+  const object = getSelected();
+  if (!turn || !object) return;
+  const field = turn.form.elements.namedItem('turn');
+  if (turn.dataset.turn !== 'custom' || field.reportValidity()) {
+    rotateObject(object, turn.dataset.turn === 'custom' ? field.valueAsNumber : Number(turn.dataset.turn));
+  }
 });
 
 let dropDepth = 0;
@@ -1793,7 +1893,7 @@ document.addEventListener('drop', event => {
   event.preventDefault();
   dropDepth = 0;
   $('drop-target').hidden = true;
-  if (confirmOpen()) openFile(event.dataTransfer.files[0]);
+  if (confirmOpen()) openFiles(Array.from(event.dataTransfer.files));
 });
 document.addEventListener('keydown', event => {
   if (event.target instanceof HTMLElement && event.target.closest('dialog[open]')) return;
